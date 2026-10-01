@@ -3,6 +3,7 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import { IFinancialTransactionRepository } from '#domain/repositories/financial-transaction.repository.interface';
 import { FinancialTransaction } from '#domain/entities/financial-transaction.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseFinancialTransactionRepository implements IFinancialTransactionRepository {
@@ -17,7 +18,7 @@ export class SupabaseFinancialTransactionRepository implements IFinancialTransac
       .select('*')
       .eq('invoice_id', invoiceId)
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -29,7 +30,7 @@ export class SupabaseFinancialTransactionRepository implements IFinancialTransac
       .insert(data)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 }

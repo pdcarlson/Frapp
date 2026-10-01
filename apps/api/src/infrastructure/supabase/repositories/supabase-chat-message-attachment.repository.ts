@@ -6,6 +6,7 @@ import type {
   NewChatMessageAttachment,
 } from '#domain/repositories/chat.repository.interface';
 import { ChatMessageAttachment } from '#domain/entities/chat.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 /**
  * `chat_message_attachments` reads and writes.
@@ -61,7 +62,7 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
         ignoreDuplicates: true,
       })
       .select();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     // Stripped on this exit too, not only on the read. The comment on
     // `external_url` promises it cannot reach a client "whatever a future writer
     // puts in it", and a promise that holds on one of two return paths is not
@@ -80,7 +81,7 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
       .eq('message_id', messageId)
       .eq('chat_channels.chapter_id', chapterId)
       .order('created_at', { ascending: true });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? []).map(stripAttachmentRow);
   }
 
@@ -140,7 +141,7 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
         probe = probe.neq('message_id', excludingMessageId);
       }
       const { data, error } = await probe.limit(1);
-      if (error) throw error;
+      if (error) throw new SupabaseQueryError(error);
 
       if ((data ?? []).length > 0) shared.push(candidate);
     }

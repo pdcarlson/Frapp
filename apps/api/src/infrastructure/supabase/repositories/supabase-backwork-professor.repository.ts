@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import type { IBackworkProfessorRepository } from '#domain/repositories/backwork.repository.interface';
 import { BackworkProfessor } from '#domain/entities/backwork.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseBackworkProfessorRepository implements IBackworkProfessorRepository {
@@ -21,7 +22,7 @@ export class SupabaseBackworkProfessorRepository implements IBackworkProfessorRe
       .select('*')
       .eq('chapter_id', chapterId)
       .order('name', { ascending: true });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -35,7 +36,7 @@ export class SupabaseBackworkProfessorRepository implements IBackworkProfessorRe
       .eq('chapter_id', chapterId)
       .eq('name', name)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -49,7 +50,7 @@ export class SupabaseBackworkProfessorRepository implements IBackworkProfessorRe
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -61,7 +62,7 @@ export class SupabaseBackworkProfessorRepository implements IBackworkProfessorRe
       .insert(data)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -78,7 +79,7 @@ export class SupabaseBackworkProfessorRepository implements IBackworkProfessorRe
       .eq('chapter_id', chapterId)
       .select()
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return updated;
   }
 
@@ -88,6 +89,6 @@ export class SupabaseBackworkProfessorRepository implements IBackworkProfessorRe
       .delete()
       .eq('id', id)
       .eq('chapter_id', chapterId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }

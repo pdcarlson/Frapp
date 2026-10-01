@@ -1,3 +1,8 @@
+import {
+  type PostgrestErrorRecord,
+  SupabaseQueryError,
+} from './supabase-query-error';
+
 export function escapeFilterValue(value: string): string {
   // PostgREST string quoting: surround with double quotes and escape internal
   // backslashes and double quotes.
@@ -23,7 +28,7 @@ export function escapeLikePattern(value: string): string {
 /** The shape every PostgREST query resolves to, narrowed to what paging needs. */
 export interface PagedQueryResult<T> {
   data: T[] | null;
-  error: unknown;
+  error: PostgrestErrorRecord | null;
 }
 
 /**
@@ -89,13 +94,10 @@ export async function fetchAllPages<T>(
     }
     const to = Math.min(from + pageSize, ceiling) - 1;
     const { data, error } = await page(from, to);
-    // Rethrown verbatim, not wrapped: a PostgREST error is a plain object
-    // carrying `code`/`details`/`hint`, and callers depend on those fields —
-    // `supabase-discord-import.repository.ts` parses the quota violation out of
-    // one. Wrapping it in an Error would satisfy the lint rule by destroying
-    // the information the callers actually read.
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    if (error) throw error;
+    // Wrapped like every other query failure (#1264). The wrapper keeps `code`
+    // and `hint`, which is what a caller branching on the failure reads, and
+    // drops `details`, the row values.
+    if (error) throw new SupabaseQueryError(error);
 
     const batch = data ?? [];
     rows.push(...batch);

@@ -8,7 +8,8 @@ import { REPOSITORY_SRC_ROOT as SRC_ROOT } from '#test/helpers/repository-corpus
  * ConsoleLogger `util.inspect`s a non-stack extra argument, so `details`
  * (row values) reached plaintext logs.
  *
- * `error as Error` is a type lie: repositories still throw plain objects,
+ * `error as Error` is a type lie wherever a raw PostgREST record can still
+ * arrive (the repositories wrap theirs in `SupabaseQueryError` since #1264),
  * and inspect prints `details`. Catch bindings named `err` and
  * `Promise.allSettled` `reason` are the same hole. Vendor SDK failures
  * (PostHog, Resend) and Realtime `removeChannel` errors go through

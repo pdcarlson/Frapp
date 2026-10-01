@@ -10,6 +10,7 @@ import Stripe from 'stripe';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import { buildSentryOptions } from '../../infrastructure/observability/sentry-options';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
+import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
 
 /**
  * What `AllExceptionsFilter` ships for a rethrown 5xx, through the **real**
@@ -161,6 +162,52 @@ describe('AllExceptionsFilter → Sentry, for a rethrown 5xx (#2131)', () => {
       ['{{ default }}', 'BadGatewayException', 'NonErrorThrowable:PGRST301'],
       ['{{ default }}', 'BadGatewayException', 'NonErrorThrowable:42P01'],
     ]);
+  });
+
+  it('reports a failed query with the stack of the method that ran it (#1264)', async () => {
+    const failed = {
+      code: 'PGRST205',
+      message: "Could not find the table 'public.chapters' in the schema cache",
+      details:
+        'Key (email)=(alice@example.com) is not present in table "users".',
+      hint: null,
+    };
+    const chain: Record<string, unknown> = {
+      select: () => chain,
+      eq: () => chain,
+      maybeSingle: () => Promise.resolve({ data: null, error: failed }),
+    };
+    const repo = new SupabaseChapterRepository({
+      from: () => chain,
+    } as never);
+    const thrown = await repo.findById('chapter-1').catch((e: unknown) => e);
+
+    report(thrown);
+    await Sentry.flush(2000);
+
+    expect(sent).toHaveLength(1);
+    const [exception] = sent[0].exception?.values ?? [];
+    expect(exception.type).toBe('SupabaseQueryError');
+    expect(exception.value).toContain('PGRST205');
+    // Frames run oldest first, so the last is where the error was built:
+    // the repository method, not the normalizer or this filter.
+    const frames = exception.stacktrace?.frames ?? [];
+    expect(frames.at(-1)?.filename).toMatch(
+      /supabase-chapter\.repository\.ts$/,
+    );
+    expect(frames.at(-1)?.function).toContain('findById');
+    expect(
+      frames.some((frame) =>
+        /reportable-error|all-exceptions\.filter\.ts/.test(
+          frame.filename ?? '',
+        ),
+      ),
+    ).toBe(false);
+    expect(sent[0].fingerprint).toEqual([
+      '{{ default }}',
+      'SupabaseQueryError:PGRST205',
+    ]);
+    expect(JSON.stringify(sent[0])).not.toContain('alice@example.com');
   });
 
   it('leaves an ordinary 500 on default grouping', async () => {

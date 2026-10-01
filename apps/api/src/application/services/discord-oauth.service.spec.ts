@@ -24,6 +24,7 @@ import {
 } from '#domain/adapters/discord.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
 import type { DiscordOAuthState } from '#domain/entities/discord-connection.entity';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 const CHAPTER = 'chapter-1';
 const OTHER_CHAPTER = 'chapter-2';
@@ -42,21 +43,21 @@ const ADMINISTRATOR = String(1n << 3n);
 const SEND_MESSAGES = String(1n << 11n);
 
 /**
- * What the repository actually throws when the table is not there.
+ * What the repository actually throws when the table is not there: the exact
+ * PostgREST payload the deployed staging incident produced, wrapped the way
+ * every repository wraps a failed query (#1264).
  *
- * Verbatim PostgREST, and deliberately NOT an `Error`: `postgrest-js`
- * constructs a real `PostgrestError` only under `shouldThrowOnError`, which
- * nothing in this codebase enables, so `if (error) throw error` rethrows the
- * parsed response body as a plain object. This is the exact payload the
- * deployed staging incident produced.
+ * Before that wrap, `if (error) throw error` rethrew the parsed response body
+ * as a plain object, because `postgrest-js` constructs a real `PostgrestError`
+ * only under `shouldThrowOnError`, which nothing in this codebase enables.
  */
-const PGRST_TABLE_MISSING = {
+const PGRST_TABLE_MISSING = new SupabaseQueryError({
   code: 'PGRST205',
   details: null,
   hint: "Perhaps you meant the table 'public.discord_oauth_states'",
   message:
     "Could not find the table 'public.discord_oauth_states' in the schema cache",
-};
+});
 
 function stateRow(
   overrides: Partial<DiscordOAuthState> = {},
@@ -722,12 +723,11 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     // path where it rejects, which is why the suite was green while staging
     // was not.
     //
-    // The rejected value is the shape PostgREST ACTUALLY produces, which is the
-    // second half of the same lesson. `postgrest-js` builds a real
-    // `PostgrestError` only under `shouldThrowOnError`, which nothing here
-    // sets, so what the repository rethrows is the parsed body: a plain object,
-    // not an `Error`. Rejecting with `new Error(...)` would keep this test
-    // green while exercising a branch production never reaches.
+    // The rejected value is what the repository ACTUALLY throws, which is the
+    // second half of the same lesson: a `SupabaseQueryError` carrying
+    // PostgREST's own code and hint (#1264). Until that wrap it was the parsed
+    // body itself, a plain object, and a test rejecting with `new Error(...)`
+    // stayed green while exercising a branch production never reached.
     const service = await build();
     repo.consumeState.mockRejectedValue(PGRST_TABLE_MISSING);
 
@@ -827,15 +827,18 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
     repo.consumeState.mockResolvedValue(null);
     const expired = await service.handleCallback({ code: 'c', state: STATE });
 
-    // A network failure rather than a schema one, and again in the shape
-    // postgrest-js really hands back: its fetch-rejection branch also produces
-    // a plain object, not a `TypeError`.
-    repo.consumeState.mockRejectedValue({
-      code: '',
-      details: 'TypeError: fetch failed',
-      hint: '',
-      message: 'connection terminated',
-    });
+    // A network failure rather than a schema one, and again in the shape the
+    // repository really throws: postgrest-js's fetch-rejection branch also
+    // resolves an error record rather than rejecting with a `TypeError`, and
+    // the repository wraps it like any other.
+    repo.consumeState.mockRejectedValue(
+      new SupabaseQueryError({
+        code: '',
+        details: 'TypeError: fetch failed',
+        hint: '',
+        message: 'connection terminated',
+      }),
+    );
     const failed = await service.handleCallback({ code: 'c', state: STATE });
 
     expect(expired.code).toBe('expired');
@@ -898,24 +901,26 @@ describe('DiscordOAuthService — the callback’s trust boundary', () => {
   });
 
   it('fingerprints what it swallows by code, so two faults are two issues (#2131)', async () => {
-    // Every NonErrorThrowable the normalizer builds here has the same stack,
-    // so the fingerprint is what keeps a missing table and a timeout apart.
+    // Both fail at the same query, so they share a stack (#1264): the
+    // fingerprint is what keeps a missing table and a timeout apart.
     const service = await build();
     captureException.mockClear();
     repo.consumeState.mockRejectedValueOnce(PGRST_TABLE_MISSING);
     await service.handleCallback({ code: 'c', state: STATE });
-    repo.consumeState.mockRejectedValueOnce({
-      code: '57014',
-      message: 'canceling statement due to statement timeout',
-    });
+    repo.consumeState.mockRejectedValueOnce(
+      new SupabaseQueryError({
+        code: '57014',
+        message: 'canceling statement due to statement timeout',
+      }),
+    );
     await service.handleCallback({ code: 'c', state: STATE });
 
     const fingerprints = captureException.mock.calls.map(
       ([, options]) => (options as { fingerprint?: string[] }).fingerprint,
     );
     expect(fingerprints).toEqual([
-      ['{{ default }}', 'NonErrorThrowable:PGRST205'],
-      ['{{ default }}', 'NonErrorThrowable:57014'],
+      ['{{ default }}', 'SupabaseQueryError:PGRST205'],
+      ['{{ default }}', 'SupabaseQueryError:57014'],
     ]);
   });
 

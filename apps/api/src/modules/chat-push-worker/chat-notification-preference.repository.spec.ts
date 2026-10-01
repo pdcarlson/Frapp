@@ -393,8 +393,8 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
     /**
      * The degradation covers a failed QUERY, not a broken read.
      *
-     * A PostgREST failure arrives as a plain `{ code, message, ... }` object,
-     * so an `Error` instance means something else went wrong — here, a 200
+     * A failed query arrives as a `SupabaseQueryError` (#1264), so anything
+     * else means something other than the query went wrong — here, a 200
      * carrying a non-array body, which makes the paging helper's spread throw
      * `TypeError: … is not iterable`. Swallowing that would hand back an empty
      * map, and an absent user reads as "stored no preferences", i.e. *not
@@ -435,8 +435,9 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
      * channel — it can quote the offending row, including a `Key (user_id)=(…)`
      * fragment, into plaintext application logs. #1669 is the open issue for
      * call sites that hand the whole error object to a logger; this one goes
-     * through `logThrowable` / `toReportableError`, which joins `code`,
-     * `message` and `hint` and drops `details`.
+     * through `logThrowable`, and what it logs is the `SupabaseQueryError`
+     * the paging helper wrapped the record in (#1264), whose message joins
+     * `code`, `message` and `hint` and which never carries `details`.
      *
      * The assertions below pin the property, not the formatting: one string
      * argument, the diagnostic fields present, the row value absent. That

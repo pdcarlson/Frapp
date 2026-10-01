@@ -4,6 +4,7 @@ import type { FrappSupabaseClient } from '../database.types';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import type { IRushCandidateRepository } from '#domain/repositories/rush-candidate.repository.interface';
 import type { RushCandidate } from '#domain/entities/rush-candidate.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseRushCandidateRepository implements IRushCandidateRepository {
@@ -19,7 +20,7 @@ export class SupabaseRushCandidateRepository implements IRushCandidateRepository
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -33,7 +34,7 @@ export class SupabaseRushCandidateRepository implements IRushCandidateRepository
       .eq('chapter_id', chapterId)
       .eq('name_key', nameKey)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -57,7 +58,7 @@ export class SupabaseRushCandidateRepository implements IRushCandidateRepository
       })
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -69,7 +70,7 @@ export class SupabaseRushCandidateRepository implements IRushCandidateRepository
       .eq('chapter_id', chapterId)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -87,7 +88,7 @@ export class SupabaseRushCandidateRepository implements IRushCandidateRepository
       if (error.code === PG_UNIQUE_VIOLATION) {
         return 'duplicate';
       }
-      throw error;
+      throw new SupabaseQueryError(error);
     }
     return 'inserted';
   }
@@ -98,7 +99,7 @@ export class SupabaseRushCandidateRepository implements IRushCandidateRepository
       .select('*', { count: 'exact', head: true })
       .eq('candidate_id', candidateId)
       .eq('chapter_id', chapterId);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return count ?? 0;
   }
 
@@ -114,7 +115,7 @@ export class SupabaseRushCandidateRepository implements IRushCandidateRepository
       .eq('chapter_id', chapterId)
       .eq('voter_id', voterId)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data != null;
   }
 }

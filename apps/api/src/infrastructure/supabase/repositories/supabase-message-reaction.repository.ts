@@ -3,6 +3,7 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { IMessageReactionRepository } from '#domain/repositories/chat.repository.interface';
 import { MessageReaction } from '#domain/entities/chat.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
 export class SupabaseMessageReactionRepository implements IMessageReactionRepository {
@@ -17,7 +18,7 @@ export class SupabaseMessageReactionRepository implements IMessageReactionReposi
       .select('*')
       .eq('message_id', messageId)
       .order('created_at', { ascending: true });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data || [];
   }
 
@@ -33,7 +34,7 @@ export class SupabaseMessageReactionRepository implements IMessageReactionReposi
       .eq('user_id', userId)
       .eq('emoji', emoji)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data;
   }
 
@@ -45,7 +46,7 @@ export class SupabaseMessageReactionRepository implements IMessageReactionReposi
       .insert(data)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return created;
   }
 
@@ -60,6 +61,6 @@ export class SupabaseMessageReactionRepository implements IMessageReactionReposi
       .eq('message_id', messageId)
       .eq('user_id', userId)
       .eq('emoji', emoji);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }

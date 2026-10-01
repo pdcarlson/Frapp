@@ -111,9 +111,11 @@ const ADMINISTRATOR = 1n << 3n;
  * `toReportableError`: `error instanceof Error ? error.stack : undefined` is
  * silently `undefined` for **every** error PostgREST actually produces, because
  * postgrest-js only builds a real `PostgrestError` under `shouldThrowOnError`
- * — which nothing here sets — so the client hands back the parsed body and the
- * repositories rethrow that plain object verbatim. `String(error)` is no better:
- * on a plain object it prints `[object Object]`.
+ * — which nothing here sets — so the client hands back the parsed body, and
+ * until #1264 the repositories rethrew that plain object verbatim.
+ * `String(error)` is no better: on a plain object it prints `[object Object]`.
+ * The repositories now throw `SupabaseQueryError`, a real `Error` with the
+ * query's own stack, and `toReportableError` passes it through untouched.
  *
  * It delegates now because the same defect blinds every 5xx the API raises, not
  * just this route, so the fix belongs at the reporting seam rather than in one

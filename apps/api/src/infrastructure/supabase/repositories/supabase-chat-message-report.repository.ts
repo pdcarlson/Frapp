@@ -21,6 +21,7 @@ import type {
   ChatReportStatus,
   ReportedAttachment,
 } from '#domain/entities/chat-moderation.entity';
+import { SupabaseQueryError } from '../supabase-query-error';
 
 /**
  * Rows per page of the hold lookup. A chapter's holding reports are few, so
@@ -121,7 +122,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
         // row would be a lie about what is in the queue.
         if (existing) return { report: existing, created: false };
       }
-      throw error;
+      throw new SupabaseQueryError(error);
     }
 
     return { report: stripReportRow(data), created: true };
@@ -145,7 +146,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       .eq('chapter_id', chapterId)
       .or(notAbout(reviewerUserId))
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ? stripReportRow(data) : null;
   }
 
@@ -161,7 +162,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       .eq('status', status)
       .or(notAbout(reviewerUserId))
       .order('created_at', { ascending: false });
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? []).map(stripReportRow);
   }
 
@@ -196,7 +197,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       .or(notAbout(resolvedBy))
       .select()
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ? stripReportRow(data) : null;
   }
 
@@ -221,7 +222,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       .eq('status', 'open')
       .or(notAbout(resolvedBy))
       .select();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? []).map(stripReportRow);
   }
 
@@ -252,7 +253,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       .eq('resolved_at', resolvedAt)
       .select('id')
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data !== null;
   }
 
@@ -278,7 +279,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       .eq('status', 'open')
       .select('id')
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data !== null;
   }
 
@@ -306,7 +307,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       .eq('message_id', messageId)
       .eq('status', 'open')
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ? stripReportRow(data) : null;
   }
 
@@ -334,7 +335,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       const { data, error } = await page
         .order('id', { ascending: true })
         .limit(HELD_OBJECTS_PAGE_SIZE);
-      if (error) throw error;
+      if (error) throw new SupabaseQueryError(error);
       const rows = data ?? [];
       if (rows.length === 0) return [...held.values()];
       for (const row of rows) {
@@ -375,7 +376,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       .eq('chapter_id', chapterId)
       .or(notAbout(reviewerUserId))
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return data ? toEvidence(data) : null;
   }
 
@@ -392,7 +393,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       .neq('status', 'open')
       .is('evidence_released_at', null)
       .filter('reported_attachments', 'neq', HOLDS_NOTHING);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? []).map(toEvidence);
   }
 
@@ -417,7 +418,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
     const { data, error } = await page
       .order('id', { ascending: true })
       .limit(limit);
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
     return (data ?? []).map(toEvidence);
   }
 
@@ -432,7 +433,7 @@ export class SupabaseChatMessageReportRepository implements IChatMessageReportRe
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .neq('status', 'open');
-    if (error) throw error;
+    if (error) throw new SupabaseQueryError(error);
   }
 }
 

@@ -42,6 +42,7 @@ import {
   type AuditDiff,
 } from './chapter-audit-log.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 /**
  * Paid module keys, read from the catalog rather than a second hand-kept list —
@@ -239,7 +240,7 @@ export class ChapterConfigService {
         `chapters read failed for chapter ${chapterId}; refusing to report a ` +
           `read failure as a missing chapter: ${error.message}`,
       );
-      throw error;
+      throw new SupabaseQueryError(error);
     }
     if (!chapter) {
       throw new NotFoundException('Chapter not found');
@@ -269,7 +270,7 @@ export class ChapterConfigService {
         `chapter_workflows read failed for chapter ${chapterId}; refusing to ` +
           `report or write against a fabricated prior state: ${workflowError.message}`,
       );
-      throw workflowError;
+      throw new SupabaseQueryError(workflowError);
     }
     const workflowOverrides = new Map(
       (
@@ -310,7 +311,7 @@ export class ChapterConfigService {
         `chapter_dues_config read failed for chapter ${chapterId}; refusing to ` +
           `report or write against a fabricated prior state: ${duesReadError.message}`,
       );
-      throw duesReadError;
+      throw new SupabaseQueryError(duesReadError);
     }
     const dues: DuesConfig = {
       ...DUES_DEFAULTS,
@@ -332,7 +333,7 @@ export class ChapterConfigService {
         `chapter_service_config read failed for chapter ${chapterId}; refusing to ` +
           `report or write against a fabricated prior state: ${serviceReadError.message}`,
       );
-      throw serviceReadError;
+      throw new SupabaseQueryError(serviceReadError);
     }
     const service: ServiceConfig = {
       ...SERVICE_CONFIG_DEFAULTS,
@@ -422,7 +423,7 @@ export class ChapterConfigService {
         'Failed to validate default invite role',
         error,
       );
-      throw error;
+      throw new SupabaseQueryError(error);
     }
     if (!data) {
       throw new BadRequestException({
@@ -674,7 +675,7 @@ export class ChapterConfigService {
           'Failed to update chapter config',
           updateError,
         );
-        throw updateError;
+        throw new SupabaseQueryError(updateError);
       }
     }
 
@@ -690,7 +691,7 @@ export class ChapterConfigService {
           'Failed to update chapter workflows',
           workflowError,
         );
-        throw workflowError;
+        throw new SupabaseQueryError(workflowError);
       }
     }
 
@@ -706,7 +707,7 @@ export class ChapterConfigService {
           'Failed to update chapter dues config',
           duesError,
         );
-        throw duesError;
+        throw new SupabaseQueryError(duesError);
       }
     }
 
@@ -722,7 +723,7 @@ export class ChapterConfigService {
           'Failed to update chapter service config',
           serviceError,
         );
-        throw serviceError;
+        throw new SupabaseQueryError(serviceError);
       }
     }
 
@@ -738,7 +739,7 @@ export class ChapterConfigService {
           'Failed to update chapter points config',
           pointsError,
         );
-        throw pointsError;
+        throw new SupabaseQueryError(pointsError);
       }
     }
 
@@ -953,7 +954,7 @@ export class ChapterConfigService {
           `recompute; refusing to report a read failure as a missing ` +
           `chapter: ${error.message}`,
       );
-      throw error;
+      throw new SupabaseQueryError(error);
     }
     if (!chapter) {
       throw new NotFoundException('Chapter not found');
@@ -1030,7 +1031,7 @@ export class ChapterConfigService {
         'Failed to persist theme palette',
         error,
       );
-      throw error;
+      throw new SupabaseQueryError(error);
     }
 
     const written = (data?.length ?? 0) > 0;
