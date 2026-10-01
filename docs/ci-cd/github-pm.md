@@ -41,7 +41,7 @@ GitHub Issues (canonical: planning, status, Triage intake)
   - **`incident`** issues are the watchdogs' live alerts (`scripts/ci/lib/alert-issue.mjs`), filed
     by CI and assigned to the owner. `/next` never claims one, in any mode, because it closes itself
     when the fault is fixed. What agents may do with one:
-    [`ALERT_ROUTING.md` § Escalation](../internal/ops/ALERT_ROUTING.md#escalation).
+    [`alert-routing.md` § Escalation](../ops/alert-routing.md#escalation).
 - **Work is closed by the PR that does it** (`Fixes #N` in the PR **body** — native GitHub
   close-on-merge, one line per issue the PR closes; GitHub ignores closing keywords in the PR
   *title*, so the body is load-bearing). GitHub matches the closing keywords (`close` /

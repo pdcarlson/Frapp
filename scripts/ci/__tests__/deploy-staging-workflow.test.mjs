@@ -285,7 +285,7 @@ describe("_deploy.yml: the deploy job", () => {
   it("queues rather than cancels, under the environment's migration lock", () => {
     // Cancelling mid-`db push` half-migrates the database; cancelling between
     // the API and the upload splits the hosts across commits. For staging the
-    // group is `db-migrate-staging`, the name DB_PROMOTION_RUNBOOK.md
+    // group is `db-migrate-staging`, the name db-promotion-runbook.md
     // documents; production's is `db-migrate-production`.
     const concurrency = sharedJob().keys.get("concurrency");
     assert.equal(concurrency.get("group"), "db-migrate-${{ inputs.environment }}");

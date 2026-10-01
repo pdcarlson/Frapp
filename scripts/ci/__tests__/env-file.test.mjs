@@ -54,7 +54,7 @@ test("parses the shapes a hand-written .env actually contains", () => {
 });
 
 test("accepts a leading `export`, as pasted from the runbook", () => {
-  // GITHUB_BRANCH_PROTECTION_RUNBOOK.md spells the token out as
+  // github-branch-protection-runbook.md spells the token out as
   // `export GITHUB_PAT=<token>`, so a `.env` built by pasting from it has one.
   const parsed = parseEnvFile("export GITHUB_PAT=from_export\n");
   assert.equal(parsed.GITHUB_PAT, "from_export");

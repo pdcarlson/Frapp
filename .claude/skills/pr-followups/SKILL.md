@@ -122,7 +122,7 @@ anything already tracked. If the thread shows Paul already decided, it's settled
    decision) or `agent-doable` (an agent could ship it as a PR).
 2. **Research** before filing: the files and config it touches, the runbooks
    ([`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md),
-   [`agent-infra.md`](../../../docs/ci-cd/agent-infra.md), `docs/internal/ops/`), and
+   [`agent-infra.md`](../../../docs/ci-cd/agent-infra.md), `docs/ops/`), and
    [`/infrastructure-research`](../infrastructure-research/SKILL.md) for provider state. Write a
    **How to do it** section: numbered steps, exact setting, secret and file names, and what proves
    it done. If it turns out to be done already, don't file.

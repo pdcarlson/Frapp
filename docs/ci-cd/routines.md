@@ -223,7 +223,7 @@ rule), no record is posted, and the missing record is the signal. Never post one
 **Routine heartbeat** workflow reads these comments and raises an `incident` alert when a routine's
 latest scheduled run has no record or a `stopped` one; the rules are in
 [`scripts/ci/routine-heartbeat.mjs`](../../scripts/ci/routine-heartbeat.mjs), and the alert's row is
-in [`ALERT_ROUTING.md`](../internal/ops/ALERT_ROUTING.md#automated-github-issue-alerts). Only
+in [`alert-routing.md`](../ops/alert-routing.md#automated-github-issue-alerts). Only
 comments from the owner's account count, because the repository is public.
 
 ## Settings (per routine, set in the Routines UI)

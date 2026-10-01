@@ -36,7 +36,7 @@ import {
   OfflineState,
 } from "@/components/shared/async-states";
 import { useToast } from "@/hooks/use-toast";
-import { getErrorMessage, parseGuardedInt } from "@/lib/utils";
+import { getErrorMessage, guardIntDraft, parseGuardedInt } from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -354,17 +354,14 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
   }
 
   function setMaxLength(raw: string) {
-    const trimmed = raw.trim();
-    if (trimmed === "") {
-      setDraft((prev) => ({ ...prev, maxLength: "" }));
-      return;
-    }
-    // Guard-parse: only commit a positive integer (matches Workflows/Dues).
-    // maxLength is stored as the trimmed string (bound directly to the
-    // input), not the parsed number, so parseGuardedInt is used only for
-    // its validation here.
-    if (parseGuardedInt(raw, 1) === undefined) return;
-    setDraft((prev) => ({ ...prev, maxLength: trimmed }));
+    // Guard-parse: only commit a nonnegative integer. maxLength is stored as
+    // text (bound directly to the input), so it can be cleared. Its floor of 1
+    // is checked at submit, so the "0" left by deleting the 1 of "100" isn't
+    // refused mid-edit. (The Dues, Workflows and Roles-rank inputs still check
+    // on each keystroke against number state: #3050.)
+    const next = guardIntDraft(raw);
+    if (next === undefined) return;
+    setDraft((prev) => ({ ...prev, maxLength: next }));
   }
 
   const selectMissingChoices = isSelect && draft.choices.length === 0;
@@ -381,7 +378,16 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
 
     const options: { choices?: string[]; max_length?: number } = {};
     if (isSelect) options.choices = draft.choices;
-    if (isText && draft.maxLength) options.max_length = Number(draft.maxLength);
+    const maxLength = isText ? parseGuardedInt(draft.maxLength, 1) : undefined;
+    if (isText && draft.maxLength !== "" && maxLength === undefined) {
+      toast({
+        title: "Max length starts at 1",
+        description: "Enter 1 or more, or clear it for no limit.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (maxLength !== undefined) options.max_length = maxLength;
 
     try {
       await createField.mutateAsync({

@@ -79,6 +79,13 @@ export function subscriptionRefusalOf(
  */
 export const SUBSCRIPTION_REFUSAL_COPY = {
   task: "Your chapter's subscription isn't active, so new tasks can't be saved. An officer can sort this out for the chapter.",
+  /**
+   * `PATCH /v1/tasks/:id/status`, the s08 board's checkbox (#2710). Says
+   * "updates" rather than "new tasks": the member is ticking off a task they
+   * already have, and the board stays readable.
+   */
+  taskStatus:
+    "Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.",
   checkIn:
     "Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.",
   study:

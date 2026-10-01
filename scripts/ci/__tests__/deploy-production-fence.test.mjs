@@ -28,6 +28,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
+import { ALERT_ROUTING } from "../lib/ops-docs.mjs";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -972,8 +973,8 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
     assert.deepEqual(config.deployJobs, ["deploy"]);
     assert.equal(callerJob("deploy").keys.get("uses"), "./.github/workflows/_deploy.yml");
     assert.ok(config.alert.labels.includes("P1"));
-    const routing = readFileSync(join(REPO_ROOT, "docs", "internal", "ops", "ALERT_ROUTING.md"), "utf8");
-    assert.ok(routing.includes(`*${config.alert.title}*`), "ALERT_ROUTING.md's roster must list the alert by its title");
+    const routing = readFileSync(join(REPO_ROOT, ALERT_ROUTING), "utf8");
+    assert.ok(routing.includes(`*${config.alert.title}*`), "alert-routing.md's roster must list the alert by its title");
   });
 
   // A deploy job that never ran a step fails or cancels like one that broke.
@@ -1003,7 +1004,7 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
       });
       return { code: result.status, out: result.stdout };
     };
-    const ROLLBACK = /DB_ROLLBACK_PLAYBOOK/;
+    const ROLLBACK = /db-rollback-playbook/;
     try {
       const notStarted = run({ ALERT_OUTCOME: "not-started" });
       assert.equal(notStarted.code, 1);

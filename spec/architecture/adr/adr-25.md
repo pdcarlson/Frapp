@@ -44,23 +44,23 @@
        - The App Review demo seed's placeholder PDF text in `scripts/demo/seed-demo.mjs`. If the production seed (#2309) runs before this step, re-run its `storage` command after it.
      - *Specs and docs:*
        - the PDF footer in `spec/behavior/reports.md` and `spec/product/modules.md`;
-       - a new dated entry for the system actor in `DB_PROMOTION_RUNBOOK.md` and `DB_ROLLBACK_PLAYBOOK.md`, which record the 2026-09-09 `Signet System` rename;
-       - every email string in `docs/internal/ops/deployment/supabase.md`: the SMTP table, the From addresses, the conformance description, and the Magic Link template's subject and body;
-       - the conformance assertions restated in `agent-infra.md` (the staging and production conformance rows) and `ALERT_ROUTING.md` (the production Auth row);
+       - a new dated entry for the system actor in `db-promotion-runbook.md` and `db-rollback-playbook.md`, which record the 2026-09-09 `Signet System` rename;
+       - every email string in `docs/ops/deployment/supabase.md`: the SMTP table, the From addresses, the conformance description, and the Magic Link template's subject and body;
+       - the conformance assertions restated in `agent-infra.md` (the staging and production conformance rows) and `alert-routing.md` (the production Auth row);
        - the `RESEND_FROM_EMAIL` default and staging value in `ENV_REFERENCE.md`.
      - *Consoles (owner):*
        - on `frapp-staging` and `frapp-prod`, in Supabase Auth: the SMTP sender name, the mailer subjects, and the **Magic Link template body**, whose heading and link both read "Sign in to Signet". Conformance checks the subject and the body's link shape (TokenHash and `type=magiclink`, no ConfirmationURL), but never the body's brand text, so a missed heading stays silent. Keep the link shape when retyping it. *2026-09-24: step 3 closed that gap. `auth-magic-link` now also fails a Magic Link body that says Signet ([#2578](https://github.com/pdcarlson/Frapp/issues/2578)).*
        - `RESEND_FROM_EMAIL` in Infisical `staging`, documented as `Signet <invites@mail.staging.frapp.live>`, and in `prod` if it is set there.
-       - *2026-09-24: staging never had `RESEND_FROM_EMAIL` set (the staging API's boot log), so its invites took the new Frapp default when step 3 deployed and nothing needed changing there. Moving them onto `mail.staging.frapp.live` is [#2655](https://github.com/pdcarlson/Frapp/issues/2655). The order of these console changes, and why, is in [`supabase.md` § ADR-25 step 3](../../../docs/internal/ops/deployment/supabase.md#adr-25-step-3-the-sender-becomes-frapp).*
+       - *2026-09-24: staging never had `RESEND_FROM_EMAIL` set (the staging API's boot log), so its invites took the new Frapp default when step 3 deployed and nothing needed changing there. Moving them onto `mail.staging.frapp.live` is [#2655](https://github.com/pdcarlson/Frapp/issues/2655). The order of these console changes, and why, is in [`supabase.md` § ADR-25 step 3](../../../docs/ops/deployment/supabase.md#adr-25-step-3-the-sender-becomes-frapp).*
   4. **Web dashboard and third-party sign-in and billing.**
      - *Code:*
        - Tab titles, the auth headings, onboarding, settings and roles copy, the invite share text and the CSV and ICS filenames, plus the `packages/validation` and `packages/hooks` strings the dashboard renders.
        - Everything that names the Discord application or bot, on both sides: the web import copy, and the API's Discord error messages (`discord-import.service.ts`, `discord-bot-gateway.service.ts`, `discord-api-message.ts`).
      - *Specs and docs:*
        - the web half of `writing.md` § 7's Sign in title;
-       - the tab-title template and title-lock description in `spec/ui/web-greenfield/deletion-checklist.md` § Copy, with a dated note;
+       - the tab-title template and title-lock description in `spec/ui/web-greenfield/deletion-checklist.md` § Copy, with a dated note (*2026-10-01:* that file is deleted, and the rule it recorded is [`spec/ui/web-dashboard/README.md` § Errors and tab titles](../../ui/web-dashboard/README.md#errors-and-tab-titles), [#2743](https://github.com/pdcarlson/Frapp/issues/2743));
        - the onboarding welcome slide in `spec/ui/design-system/iconography.md`;
-       - the Discord application and bot names and the consent screen in `docs/internal/ops/deployment/integrations.md`, `ENV_REFERENCE.md` (`DISCORD_BOT_TOKEN`), `DB_PROMOTION_RUNBOOK.md` and `DB_ROLLBACK_PLAYBOOK.md`;
+       - the Discord application and bot names and the consent screen in `docs/ops/deployment/integrations.md`, `ENV_REFERENCE.md` (`DISCORD_BOT_TOKEN`), `db-promotion-runbook.md` and `db-rollback-playbook.md`;
        - the Services ID Description in `supabase.md` § Auth OAuth providers;
        - the Stripe account name in `ENV_REFERENCE.md`.
      - *Consoles (owner),* so no recovery instruction or consent screen names something the member can't find:
@@ -68,7 +68,7 @@
        - set the Sign in with Apple Services ID `live.frapp.mobile.web` Description (Apple Developer → Identifiers → Services IDs) to Frapp, because it shows on the web consent sheet;
        - if they say Signet, change the Stripe account's public business name and statement descriptor (Settings → Business → Public details), which checkout, the billing portal and receipts show;
        - and the app name on the Google Cloud OAuth consent screen. No doc records that one, so check it.
-       - *2026-09-24: the owner reported all four done on [#2669](https://github.com/pdcarlson/Frapp/issues/2669). The Discord application and bot, the Services ID Description ("Signet Web") and the Google app name read Signet before. Stripe's public business name and statement descriptor now read Frapp and `FRAPP.LIVE`; their earlier values were not reported. [`supabase.md` § Auth OAuth providers](../../../docs/internal/ops/deployment/supabase.md#auth-oauth-providers-google-and-apple) now records the Google app name.*
+       - *2026-09-24: the owner reported all four done on [#2669](https://github.com/pdcarlson/Frapp/issues/2669). The Discord application and bot, the Services ID Description ("Signet Web") and the Google app name read Signet before. Stripe's public business name and statement descriptor now read Frapp and `FRAPP.LIVE`; their earlier values were not reported. [`supabase.md` § Auth OAuth providers](../../../docs/ops/deployment/supabase.md#auth-oauth-providers-google-and-apple) now records the Google app name.*
      - *2026-09-24: code, specs and docs done in step 4 ([#2579](https://github.com/pdcarlson/Frapp/issues/2579)). The step's grep found sites inside the list's categories that it doesn't name one by one, all moved with it, among them the analytics sentences, the Accent card's mark sentence and the Discord connect messages in `packages/hooks`. The owner's console steps are tracked in [#2669](https://github.com/pdcarlson/Frapp/issues/2669). The web CSV and ICS names now sit in `frapp-web-copy.test.mjs`, a walk of the dashboard's copy, which replaced `signet-export-filenames`. `signet-calendar-prodid` kept only the UID host and became `ics-uid-host`.*
   5. **Landing and legal.**
      - *Code:*

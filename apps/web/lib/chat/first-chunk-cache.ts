@@ -6,7 +6,7 @@
  * of waiting on `GET /v1/channels` and `GET /v1/channels/:id/messages`.
  *
  * This is the board's `1s` "first chunk" clause
- * (`spec/ui/web-greenfield/reference/` §`1s`), which
+ * (`spec/ui/web-dashboard/reference/` §`1s`), which
  * `spec/ui/resilience/performance-budgets.md` recorded as unbuilt: "cached
  * channel readable" measured a network round trip because there was nothing
  * cached to read.

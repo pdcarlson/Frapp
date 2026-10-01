@@ -91,7 +91,7 @@ run-name: "${{ inputs.dry_run_only == true && 'DRY RUN · ' || '' }}${{ inputs.s
 # reaching the refusal later, mid-run, with less explanation — not reaching a
 # different outcome. Recovery from either is a human act by design (decision 7:
 # `--include-all` is human-run, never set by a workflow) and is documented at
-# `docs/internal/ops/DB_PROMOTION_RUNBOOK.md` § `--include-all`.
+# `docs/ops/db-promotion-runbook.md` § `--include-all`.
 #
 # The case that IS a genuine gap: a non-transactional partial apply — say
 # `CREATE INDEX CONCURRENTLY` leaving objects behind with no history row. The
@@ -428,7 +428,7 @@ jobs:
             exit 1
           fi
           if [ "$DEPLOY_RESULT" != "success" ]; then
-            echo "::error::Production deploy did not succeed ($DEPLOY_RESULT). Read the failing step above; if migrations were applied, docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md owns recovery."
+            echo "::error::Production deploy did not succeed ($DEPLOY_RESULT). Read the failing step above; if migrations were applied, docs/ops/db-rollback-playbook.md owns recovery."
             exit 1
           fi
 

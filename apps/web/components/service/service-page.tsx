@@ -58,7 +58,14 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { asArray, getErrorMessage } from "@/lib/utils";
+import {
+  asArray,
+  getErrorMessage,
+  guardDecimalDraft,
+  guardIntDraft,
+  parseGuardedDecimal,
+  parseGuardedInt,
+} from "@/lib/utils";
 import {
   MAX_UPLOAD_LABEL,
   acceptAttribute,
@@ -197,9 +204,14 @@ export function ServiceHoursPage() {
   async function submitDraft(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting) return;
+    // Both drafts are "" or a nonnegative number (guarded on every
+    // keystroke), so an empty or invalid duration sums to 0 and is refused
+    // below rather than reaching the API as NaN. Hours take a decimal, as on
+    // mobile (`1.5` is 90 minutes), and round to the whole minute the API
+    // stores.
     const totalMinutes =
-      Math.max(0, Number(draft.hours)) * 60 +
-      Math.max(0, Number(draft.minutes));
+      Math.round((parseGuardedDecimal(draft.hours) ?? 0) * 60) +
+      (parseGuardedInt(draft.minutes) ?? 0);
     if (totalMinutes === 0) {
       toast({
         title: "Enter a duration",
@@ -491,13 +503,13 @@ export function ServiceHoursPage() {
                         id="service-hours"
                         type="number"
                         min={0}
+                        step="any"
                         value={draft.hours}
-                        onChange={(event) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            hours: event.target.value,
-                          }))
-                        }
+                        onChange={(event) => {
+                          const next = guardDecimalDraft(event.target.value);
+                          if (next === undefined) return;
+                          setDraft((prev) => ({ ...prev, hours: next }));
+                        }}
                       />
                     </div>
                     <div className="grid gap-1">
@@ -508,12 +520,11 @@ export function ServiceHoursPage() {
                         min={0}
                         max={59}
                         value={draft.minutes}
-                        onChange={(event) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            minutes: event.target.value,
-                          }))
-                        }
+                        onChange={(event) => {
+                          const next = guardIntDraft(event.target.value);
+                          if (next === undefined) return;
+                          setDraft((prev) => ({ ...prev, minutes: next }));
+                        }}
                       />
                     </div>
                   </div>

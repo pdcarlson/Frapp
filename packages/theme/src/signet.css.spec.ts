@@ -368,9 +368,9 @@ describe("each surface imports exactly its own system", () => {
  * ============================================================================
  *
  * `spec/ui/brand-identity.md` §2: the mark and logo MUST NOT take the chapter
- * accent, ever. `spec/ui/web-greenfield/README.md` §2 restates it precisely
- * because it is "the lock a greenfield lane is most likely to break by
- * accident, wiring the mark to `--primary` with everything else."
+ * accent, ever. `spec/ui/web-dashboard/README.md` § Brand and copy locks
+ * restates it precisely because "wiring the mark to `--primary` with
+ * everything else is the easiest way to break it on this surface."
  *
  * What was already covered, stated accurately because the first draft of this
  * block did not: the blocks above compare every declared value against

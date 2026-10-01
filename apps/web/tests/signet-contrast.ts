@@ -218,7 +218,7 @@ export const AA_NON_TEXT = 3;
  * pure-luminance model understates the difference. (That value was adopted as
  * "the mark's field", was not it while the raster measured `#151515`, and is
  * it again since #2153 re-exported the mark. See
- * `spec/ui/web-greenfield/tokens.md` L-08. The hue argument here holds either
+ * `spec/ui/web-dashboard/tokens.md` L-08. The hue argument here holds either
  * way: achromatic beside warm is the point, not which achromatic.)
  */
 export const INDISTINGUISHABLE = 1.15;

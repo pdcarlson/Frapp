@@ -94,6 +94,7 @@ import {
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
+import { ALERT_ROUTING, ROLLBACK_PLAYBOOK } from "./lib/ops-docs.mjs";
 
 // ── Alert configurations ────────────────────────────────────────────────────
 // One entry per watched deploy workflow. A config is the complete answer to
@@ -207,7 +208,7 @@ export const DEPLOY_STAGING_CONFIG = {
  * after a live ship reds the run's summary, and `production-release-pin.yml`
  * raises its own P1 when the hosts are left untagged.
  *
- * P1, like every alert in ALERT_ROUTING.md that production is down or
+ * P1, like every alert in alert-routing.md that production is down or
  * drifting. (The source-map alerts are P2: minified stack traces, nothing down.)
  */
 export const DEPLOY_PRODUCTION_CONFIG = {
@@ -241,7 +242,7 @@ export const DEPLOY_PRODUCTION_CONFIG = {
     "list and emails only the person who ran it. Nothing durable recorded that production was left",
     "half-shipped: a migrated database under the previous API, or a new API under the previous",
     "frontends. The run log names the step that failed, and what each step leaves behind is in",
-    "`docs/internal/ops/ALERT_ROUTING.md`. Recovery: `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`.",
+    `\`${ALERT_ROUTING}\`. Recovery: \`${ROLLBACK_PLAYBOOK}\`.`,
   ],
 };
 
@@ -543,7 +544,7 @@ export function buildAlertIssueBody({
     "### Why this issue exists",
     "",
     // The DIAGNOSIS belongs here, not only on the run page. This issue is the
-    // durable artifact — linked from ALERT_ROUTING.md, and it outlives log
+    // durable artifact — linked from alert-routing.md, and it outlives log
     // retention — so a responder who never opens the run still needs the
     // sentence naming what actually drifted.
     ...(escalated ? [config.noOpNote, ""] : []),

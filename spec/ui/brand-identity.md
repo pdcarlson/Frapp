@@ -48,7 +48,7 @@ The shipping mark is **locked emblem B**: an abstract crest with a neck break, g
 > the next clean export against the spec it was meant to define. The source of truth is a vector
 > now, and `check:brand-assets` reads pixels, so this table and the rasters cannot silently part
 > again. History and the full census are in
-> [`web-greenfield/tokens.md`](web-greenfield/tokens.md) L-08.
+> [`web-dashboard/tokens.md`](web-dashboard/tokens.md) L-08.
 
 The mark and logo **MUST NOT** take the chapter accent — ever. Chapter theming recolors product UI through the accent engine; the brand itself never retints.
 
@@ -107,6 +107,6 @@ Signet's direction is dark-first, warm, and consumer-grade. Every fact below has
 ## 5. What still ships legacy
 
 
-**Nothing on `main` does.** The landing site shipped the legacy Frapp **bone/bronze** look until its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) merged; it is now on the Signet tokens, and with it the last legacy surface is gone. Its README records the reskin's decisions — [landing/README.md](landing/README.md). The web dashboard cut over with the #920 shell slice — [web-dashboard/README.md](web-dashboard/README.md). Merged is not live: `www.frapp.live` serves whatever the last Deploy production run shipped ([vercel.md § 4.3](../../docs/internal/ops/deployment/vercel.md#43-domain-configuration)).
+**Nothing on `main` does.** The landing site shipped the legacy Frapp **bone/bronze** look until its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) merged; it is now on the Signet tokens, and with it the last legacy surface is gone. Its README records the reskin's decisions — [landing/README.md](landing/README.md). The web dashboard cut over with the #920 shell slice — [web-dashboard/README.md](web-dashboard/README.md). Merged is not live: `www.frapp.live` serves whatever the last Deploy production run shipped ([vercel.md § 4.3](../../docs/ops/deployment/vercel.md#43-domain-configuration)).
 
 The landing reskin ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)) is through its **composition** slice too ([#2367](https://github.com/pdcarlson/Frapp/issues/2367)): `apps/landing/app/page.tsx` renders the boards' section map, so the surface is safe to read on either tokens or structure. Slice 3 polish ([#2368](https://github.com/pdcarlson/Frapp/issues/2368)) closed on 2026-09-18. What remains is owner decisions, among them D4's signature moment on the crest, which is cut until brand sign-off on the reveal mask and backing light clears ([#2378](https://github.com/pdcarlson/Frapp/issues/2378)) — see [landing/README.md](landing/README.md).
