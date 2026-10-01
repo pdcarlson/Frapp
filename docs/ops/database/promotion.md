@@ -55,7 +55,7 @@ applies it — and then, depending on `scope`:
 | `scope`           | What happens                                                                                                                                                                                                | Use it when                                                                                                                           |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `full` (default)  | Builds both Vercel bundles _before_ applying (a build failure then ships nothing), migrates, deploys the Supabase Edge Functions, deploys the same commit to Render, health-checks it, uploads the prebuilt bundles to Vercel, and tags `vX.Y.Z` | Almost always. Migrations and the code that needs them move together                                                                  |
-| `migrations-only` | Migrates and stops. No Edge Functions or Render deploy, no Vercel build, **no tag**                                                                                                                                           | Re-running an apply that failed partway; applying a backlog ahead of the code that needs it; applying on a schedule no deploy matches |
+| `migrations-only` | Migrates, checks that the API it didn't redeploy still serves and answers its clients, and stops. No Edge Functions or Render deploy, no Vercel build, **no tag**                                                                                                                                           | Re-running an apply that failed partway; applying a backlog ahead of the code that needs it; applying on a schedule no deploy matches |
 
 There is also a **dry-run-only** mode that validates and rehearses, then stops
 without applying anything, under either scope.
@@ -298,8 +298,10 @@ will succeed.
 If you need to apply migrations _without_ shipping code — recovering a failed
 apply, or clearing a backlog — run the same workflow with **`scope:
 migrations-only`**. It keeps every gate the full path has (SHA validation, the
-provider preflight, the replay, the working-tree fence) and simply stops after
-the apply: no Render deploy, no Vercel build, no tag. Production is then running
+provider preflight, the replay, the working-tree fence) and stops after the apply
+and the checks that production still serves and answers its clients
+([`ci-cd.md` § Deploy verification](../deployment/ci-cd.md#deploy-verification)): no
+Render deploy, no Vercel build, no tag. Production is then running
 the previous code against the new schema until you come back with a `full` run,
 so the migration must be forward-compatible with the deployed API.
 
@@ -314,7 +316,8 @@ rejects an empty string as it does an absent key), a client key or an unresolved
 `${…}` reference in `SUPABASE_SERVICE_ROLE_KEY`, a staging or localhost `APP_URL`
 beside the production `SUPABASE_URL`, and a malformed `MOBILE_MIN_VERSION_*` /
 `MOBILE_UPDATE_URL_*`. The same step requires `SUPABASE_FUNCTIONS_DEPLOY_TOKEN` when the
-run deploys an Edge Function and `API_HEALTHCHECK_URL` on every run. A `migrations-only`
+run deploys an Edge Function, and on every run what the verify and client checks read:
+`API_HEALTHCHECK_URL` as the API's `/health` URL, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. A `migrations-only`
 run deploys no API, so it skips the boot check. Before #3112 each of these failed only
 after the apply, with the schema already moved: a blank required secret crash-looped
 the new container until Render marked the deploy `update_failed`.
@@ -332,7 +335,8 @@ Before you promote, check what that step can't see:
 
 Post-apply production checks:
 
-- [ ] `GET /health` succeeds
+- [ ] `GET /health` succeeds (automated on every real run: the served-commit and client checks,
+  [`ci-cd.md` § Deploy verification](../deployment/ci-cd.md#deploy-verification))
 - [ ] Critical API smoke tests pass (auth + chapter-scoped endpoint)
 - [ ] Webhook delivery in Stripe dashboard is green
 - [ ] No elevated 5xx/Sentry alerts after deploy

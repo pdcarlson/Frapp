@@ -356,17 +356,20 @@ describe("deploy-staging.yml: the order", () => {
     plan: indexOf((s) => s.body.includes("scripts/ci/plan-staging-deploy.mjs"), "plans the deploy"),
     render: indexOf((s) => s.name === "Deploy the commit to Render (staging)", "deploys staging's API to Render"),
     verify: indexOf((s) => s.name === "Verify staging serves the commit", "verifies the served commit"),
+    clients: indexOf((s) => s.name === "Check the API answers its clients (staging)", "checks the API's clients"),
     upload: indexOf((s) => runsVercel("upload")(s) && s.env.get("DEPLOY_TARGET") === "preview", "uploads web + landing (DEPLOY_PHASE upload)"),
     alias: indexOf((s) => s.body.includes("scripts/ci/ensure-vercel-staging-alias.mjs"), "aliases the staging hosts"),
   });
 
-  it("runs install → trusted ref → baseline → inject → deployed commit → plan → build → migrate → Render → verify → upload → alias", () => {
+  it("runs install → trusted ref → baseline → inject → deployed commit → plan → build → migrate → Render → verify → client checks → upload → alias", () => {
     // The plan is read-only and comes first so a run with nothing to upload
     // builds nothing; every step that changes anything keeps #2803's order.
     // The migration dry run lists what is pending ahead of the build, as
-    // production's does (#2805): it writes nothing.
+    // production's does (#2805): it writes nothing. The client checks (#3113)
+    // sit between the verify and the upload, so a dashboard ships only behind
+    // an API that admits it.
     const o = order();
-    const sequence = ["npmCi", "cli", "trusted", "supabase", "baseline", "inject", "detach", "plan", "migrateDry", "build", "migrate", "render", "verify", "upload", "alias"];
+    const sequence = ["npmCi", "cli", "trusted", "supabase", "baseline", "inject", "detach", "plan", "migrateDry", "build", "migrate", "render", "verify", "clients", "upload", "alias"];
     for (let i = 1; i < sequence.length; i += 1) {
       assert.ok(
         o[sequence[i - 1]] < o[sequence[i]],
