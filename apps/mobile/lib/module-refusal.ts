@@ -33,7 +33,7 @@ export function moduleRefusalOf(error: unknown): { moduleKey: string } | null {
 
 /**
  * Per-surface member copy (`writing.md` § Module off (mobile, cross-surface)).
- * Study's two rows live with its other copy, as `MODULE_OFF_COPY` in
+ * Study's rows live with its other copy, as `MODULE_OFF_COPY` in
  * `lib/study/errors.ts`.
  *
  * Each names the module as Settings → Modules labels it (`MODULE_CATALOG` in

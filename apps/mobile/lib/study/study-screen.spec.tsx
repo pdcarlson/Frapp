@@ -66,6 +66,8 @@ const HOURS_ON = { enabled_modules: { hours: true } };
 const HOURS_OFF = { enabled_modules: { hours: false } };
 /** The chapter payload `useCurrentChapter` answers with. */
 let chapter: unknown = HOURS_ON;
+/** The chapter query's `refetch`: a spec sets `chapter` from it to play the server's answer. */
+const refetchChapter = vi.fn();
 const ZONES = [{ id: "zone-1", name: "Library", is_active: true }];
 const NO_SESSIONS: unknown[] = [];
 const LIVE_SESSION = [
@@ -90,7 +92,7 @@ let sessions: unknown[] = NO_SESSIONS;
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useCurrentChapter: () => ({ data: chapter }),
+  useCurrentChapter: () => ({ data: chapter, refetch: refetchChapter }),
   useGeofences: () => ({
     data: ZONES,
     isPending: false,
@@ -176,7 +178,19 @@ beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
   sessions = NO_SESSIONS;
   chapter = HOURS_ON;
+  refetchChapter.mockReset().mockResolvedValue(undefined);
 });
+
+/** Re-render, as the query does when a refetch lands. */
+function rerender(tree: ReactTestRenderer) {
+  act(() =>
+    tree.update(
+      <FrappThemeProvider>
+        <StudyScreen />
+      </FrappThemeProvider>,
+    ),
+  );
+}
 
 const endButton = (tree: ReactTestRenderer) =>
   tree.root.findAll(
@@ -380,6 +394,48 @@ describe("Study on a module-off refusal (#2393)", () => {
   });
 });
 
+describe("Study when hours is switched off under a cached payload that says on (#2718)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-27T12:01:00Z"));
+    sessions = LIVE_SESSION;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("refetches the payload on a module-off refusal, so the module-off screen replaces the card", async () => {
+    api.heartbeat.mockRejectedValue(MODULE_OFF);
+    refetchChapter.mockImplementation(async () => {
+      chapter = HOURS_OFF;
+    });
+    const tree = render();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+    });
+    expect(refetchChapter).toHaveBeenCalledTimes(1);
+    rerender(tree);
+
+    expect(endButton(tree)).toHaveLength(0);
+    expect(screenText(tree)).toContain(MODULE_OFF_COPY.runningSession);
+    expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.session);
+    act(() => tree.unmount());
+  });
+
+  it("refetches nothing on a failure that isn't the module gate", async () => {
+    api.heartbeat.mockRejectedValue(REFUSED);
+    const tree = render();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+    });
+
+    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.studySession);
+    expect(refetchChapter).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+});
+
 describe("Study with hours switched off (#2718)", () => {
   it("shows the module-off empty state when no session is running", () => {
     chapter = HOURS_OFF;
@@ -472,6 +528,56 @@ describe("Study with hours switched off (#2718)", () => {
       expect(endButton(tree)).toHaveLength(1);
       expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
       expect(screenText(tree)).not.toContain(MODULE_OFF_TITLE);
+      act(() => tree.unmount());
+    });
+
+    it("hides a subscription refusal's line too, rather than stack it above the screen", async () => {
+      // The guard checks the subscription before the module, so a chapter
+      // with both problems answers every write with the subscription refusal.
+      api.heartbeat.mockRejectedValue(REFUSED);
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      expect(api.heartbeat).toHaveBeenCalled();
+      expect(screenText(tree)).not.toContain(
+        SUBSCRIPTION_REFUSAL_COPY.studySession,
+      );
+      expect(screenText(tree)).toContain(MODULE_OFF_COPY.runningSession);
+      act(() => tree.unmount());
+    });
+
+    it("refetches the payload when a heartbeat gets through under the screen, which brings the card back", async () => {
+      // An officer turned hours back on, but this payload is cached for five
+      // minutes and the tab is never unmounted.
+      api.heartbeat.mockResolvedValue(LIVE_SESSION[0]);
+      refetchChapter.mockImplementation(async () => {
+        chapter = HOURS_ON;
+      });
+      const tree = render();
+      expect(endButton(tree)).toHaveLength(0);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+      expect(refetchChapter).toHaveBeenCalledTimes(1);
+      rerender(tree);
+
+      expect(endButton(tree)).toHaveLength(1);
+      expect(screenText(tree)).not.toContain(MODULE_OFF_TITLE);
+      act(() => tree.unmount());
+    });
+
+    it("doesn't refetch on a refusal the payload already agrees with", async () => {
+      api.heartbeat.mockRejectedValue(MODULE_OFF);
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      expect(api.heartbeat).toHaveBeenCalled();
+      expect(refetchChapter).not.toHaveBeenCalled();
       act(() => tree.unmount());
     });
 

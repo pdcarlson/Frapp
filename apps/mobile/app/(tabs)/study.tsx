@@ -122,6 +122,15 @@ export default function StudyScreen() {
   const primerSheetRef = useRef<BottomSheetModal>(null);
 
   const chapterQuery = useCurrentChapter();
+  // Fails open, and deliberately: `useCurrentChapter` is `enabled: !!chapterId`
+  // and a missing claim (no membership yet, or a hook-off incident) would hide
+  // the screen from everyone if we required it. The writes are gated
+  // server-side regardless — this only avoids offering a surface a chapter
+  // switched off.
+  const hoursEnabled = isModuleEnabled(
+    chapterQuery.data?.enabled_modules,
+    "hours",
+  );
   const zonesQuery = useGeofences();
   const sessionsQuery = useStudySessions();
 
@@ -235,6 +244,12 @@ export default function StudyScreen() {
     appStateRef.current = appState;
   }, [appState]);
 
+  /** The payload's `hours` verdict, readable from `applyResponse`. */
+  const hoursEnabledRef = useRef(hoursEnabled);
+  useEffect(() => {
+    hoursEnabledRef.current = hoursEnabled;
+  }, [hoursEnabled]);
+
   /**
    * `useMutation` hands back a fresh object every render, so an effect keying on
    * `mutateAsync` would tear down and rebuild the heartbeat interval constantly.
@@ -249,6 +264,7 @@ export default function StudyScreen() {
     resume: resumeSession.mutateAsync,
     stop: stopSession.mutateAsync,
     refetchSessions: sessionsQuery.refetch,
+    refetchChapter: chapterQuery.refetch,
   });
   useEffect(() => {
     apiRef.current = {
@@ -258,8 +274,25 @@ export default function StudyScreen() {
       resume: resumeSession.mutateAsync,
       stop: stopSession.mutateAsync,
       refetchSessions: sessionsQuery.refetch,
+      refetchChapter: chapterQuery.refetch,
     };
   });
+
+  /**
+   * A module-off refusal is the server saying `hours` is off, so a payload
+   * that still says on is stale. Refetch it so the module-off screen takes
+   * over (#2718); otherwise a foregrounded app keeps the card, its refused End
+   * and a "that didn't save" line for as long as the 5-minute cached payload
+   * goes unrefreshed, which on a never-unmounted tab can be indefinitely. The
+   * reverse, a write that succeeds under a payload saying off, is
+   * `applyResponse`'s.
+   */
+  useEffect(() => {
+    if (!hoursEnabled) return;
+    if (failure !== MODULE_OFF_COPY.start && failure !== MODULE_OFF_COPY.session)
+      return;
+    void apiRef.current.refetchChapter();
+  }, [failure, hoursEnabled]);
 
   /** Adopt the live session — on cold start, and after any invalidation. */
   useEffect(() => {
@@ -332,6 +365,12 @@ export default function StudyScreen() {
     // A response older than one already applied says nothing new and can only
     // undo it.
     if (seq < appliedSeqRef.current) return;
+
+    // A session write got through, so the module gate is passing whatever the
+    // cached payload says. If it still says `hours` is off, the screen is
+    // hiding a live session behind "can't be updated or ended" (#2718), and
+    // that payload can sit stale for as long as the app stays foregrounded.
+    if (!hoursEnabledRef.current) void apiRef.current.refetchChapter();
 
     const settled = settleIfEnded(response, sessionIdRef.current);
     if (settled.ended) {
@@ -707,23 +746,6 @@ export default function StudyScreen() {
     );
   }, [endSession]);
 
-  const enabledModules = chapterQuery.data?.enabled_modules;
-  // Fails open, and deliberately: `useCurrentChapter` is `enabled: !!chapterId`
-  // and a missing claim (no membership yet, or a hook-off incident) would hide
-  // the screen from everyone if we required it. The writes are gated
-  // server-side regardless — this only avoids offering a surface a chapter
-  // switched off.
-  const hoursEnabled = isModuleEnabled(enabledModules, "hours");
-  /**
-   * The module-off screen says why nothing here works, so a refused write's
-   * module-off line above it would only say it again (#2718): the start copy
-   * is its body word for word, and the in-session copy's "that didn't save"
-   * names a write under a card this screen no longer draws.
-   */
-  const moduleOffCopyShown =
-    !hoursEnabled &&
-    (failure === MODULE_OFF_COPY.start || failure === MODULE_OFF_COPY.session);
-
   function renderBody() {
     // No `NoChapterState` branch. `GET /v1/study-sessions` resolves a sole
     // membership server-side, so it works without an `active_chapter_id` claim —
@@ -736,9 +758,11 @@ export default function StudyScreen() {
     // still running under it: End, pause and heartbeat are all refused while
     // the module is off, and nothing sweeps a stale session, so its card would
     // tick a clamped timer beside an End that can't work, for as long as the
-    // module stays off. The body names the session instead. The heartbeat
-    // keeps probing underneath, so a module turned back on before this
-    // payload refreshes still banks the session while it can be credited.
+    // module stays off. The body names the session instead. Underneath, an
+    // unpaused foregrounded session keeps heartbeating, and a paused one
+    // retries its resume on the next return to the app; the first of those
+    // to get through refetches this payload (`applyResponse`), which brings
+    // the card back while the session can still be credited.
     if (!hoursEnabled) {
       return (
         <EmptyState
@@ -841,7 +865,10 @@ export default function StudyScreen() {
       subtitle="Tracked sessions inside your chapter's study zones."
     >
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-      {failure && !moduleOffCopyShown ? (
+      {/* Under the module-off screen no failure line applies: each one is about
+          a card, an End or a Start that screen has replaced, and its body
+          already says why nothing here works (#2718). */}
+      {failure && hoursEnabled ? (
         <Text style={styles.failure}>{failure}</Text>
       ) : null}
 
