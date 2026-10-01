@@ -4,7 +4,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { CHAT_SINCE_NOT_FOUND_CODE } from "@repo/validation";
 import {
   BACKFILL_PAGE_LIMIT,
-  BackfillCursorNotFoundError,
   chatRealtime,
   createBackfillFetcher,
   POLL_DEGRADE_AFTER_MS,
@@ -18,6 +17,7 @@ import {
   type ChannelCache,
   type RawChatMessage,
 } from "./types";
+import { FIRST_PAGE_LIMIT, SinceCursorNotFoundError } from "./history";
 import {
   emptyCache,
   mergeServerRows,
@@ -218,7 +218,7 @@ describe("ChatRealtimeManager — subscribe-then-backfill gate", () => {
 
     expect(backfill).toHaveBeenCalledTimes(1);
     expect(backfill).toHaveBeenLastCalledWith("channel-1", {
-      limit: BACKFILL_PAGE_LIMIT,
+      limit: FIRST_PAGE_LIMIT,
     });
   });
 
@@ -242,7 +242,7 @@ describe("ChatRealtimeManager — subscribe-then-backfill gate", () => {
     ch!.trigger("SUBSCRIBED");
     expect(backfill).toHaveBeenCalledTimes(1);
     expect(backfill).toHaveBeenLastCalledWith("channel-1", {
-      limit: BACKFILL_PAGE_LIMIT,
+      limit: FIRST_PAGE_LIMIT,
     });
 
     // Let the first backfill resolve and persist its last-seen cursor.
@@ -319,7 +319,7 @@ describe("ChatRealtimeManager — polling fallback (spec/ui/resilience/message-d
     expect(status).toBe("polling");
     expect(backfill).toHaveBeenCalledTimes(1);
     expect(backfill).toHaveBeenLastCalledWith("channel-1", {
-      limit: BACKFILL_PAGE_LIMIT,
+      limit: FIRST_PAGE_LIMIT,
     });
 
     // ...then once per interval for as long as Realtime stays down.
@@ -453,7 +453,7 @@ describe("ChatRealtimeManager — polling fallback (spec/ui/resilience/message-d
     await vi.advanceTimersByTimeAsync(1);
     expect(status).toBe("polling");
     expect(backfill).toHaveBeenCalledWith("channel-1", {
-      limit: BACKFILL_PAGE_LIMIT,
+      limit: FIRST_PAGE_LIMIT,
     });
   });
 
@@ -1195,7 +1195,7 @@ describe("ChatRealtimeManager — configure attaches waiting channels and follow
     expect(ch!.track).toHaveBeenCalledWith(
       expect.objectContaining({ userId: VIEWER }),
     );
-    expect(backfill).toHaveBeenCalledWith("c1", { limit: BACKFILL_PAGE_LIMIT });
+    expect(backfill).toHaveBeenCalledWith("c1", { limit: FIRST_PAGE_LIMIT });
   });
 
   test("a viewer that resolves after the join is tracked on the joined channel, without a rejoin", async () => {
@@ -1444,7 +1444,7 @@ describe("ChatRealtimeManager — a backfill that missed more than a page (#2807
     // would fail every reconnect and every poll after this one.
     heldThrough("m-purged");
     backfill
-      .mockRejectedValueOnce(new BackfillCursorNotFoundError("c1", "m-purged"))
+      .mockRejectedValueOnce(new SinceCursorNotFoundError("c1", "m-purged"))
       .mockResolvedValueOnce(newestFirst(4, 6));
 
     reconnect();
@@ -1454,9 +1454,85 @@ describe("ChatRealtimeManager — a backfill that missed more than a page (#2807
     );
     expect(backfill.mock.calls).toEqual([
       ["c1", { since: "m-purged", limit: BACKFILL_PAGE_LIMIT }],
-      ["c1", { limit: BACKFILL_PAGE_LIMIT }],
+      ["c1", { limit: FIRST_PAGE_LIMIT }],
     ]);
     expect(cachedIds()).toContain("m6");
+  });
+
+  test("a cursor whose newest page comes back empty is still dropped", async () => {
+    // Every message after it was purged too. The fallback writes no cursor of
+    // its own, so only the drop keeps the next attempt off the 404.
+    heldThrough("m-purged");
+    backfill
+      .mockRejectedValueOnce(new SinceCursorNotFoundError("c1", "m-purged"))
+      .mockResolvedValueOnce([]);
+
+    reconnect();
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(window.localStorage.getItem("chat:lastSeen:c1")).toBeNull(),
+    );
+
+    channels.get("chat:channel:c1")!.trigger("SUBSCRIBED");
+    expect(backfill).toHaveBeenLastCalledWith("c1", {
+      limit: FIRST_PAGE_LIMIT,
+    });
+  });
+
+  test("a cursor a live row replaced while the 404 was in flight is kept", async () => {
+    heldThrough("m-purged");
+    backfill
+      .mockImplementationOnce(async () => {
+        channels
+          .get("chat:channel:c1")!
+          .emitPostgresChange({ eventType: "INSERT", new: at(300) });
+        throw new SinceCursorNotFoundError("c1", "m-purged");
+      })
+      .mockResolvedValueOnce([]);
+
+    reconnect();
+    await vi.waitFor(() => expect(backfill).toHaveBeenCalledTimes(2));
+
+    expect(window.localStorage.getItem("chat:lastSeen:c1")).toBe("m300");
+  });
+
+  test("with no cursor the read is the newest page at the channel query's size", async () => {
+    // So it brings no row that page, and the reactions it read, don't cover.
+    heldThrough("m3");
+    window.localStorage.clear();
+    backfill.mockResolvedValueOnce(newestFirst(204, 253));
+
+    reconnect();
+
+    await vi.waitFor(() =>
+      expect(window.localStorage.getItem("chat:lastSeen:c1")).toBe("m253"),
+    );
+    expect(backfill).toHaveBeenCalledWith("c1", { limit: FIRST_PAGE_LIMIT });
+    // A full newest page can't vouch for m1–m3 either.
+    expect(oldestConfirmed(cache())?.id).toBe("m204");
+  });
+
+  test("a store that drops every write still keeps the cursor for this session", async () => {
+    // A browser refusing site storage. Without the session's own copy every
+    // poll would read without a cursor, and a full newest page would trim
+    // the member's scrollback on each pass.
+    chatRealtime.destroy();
+    chatRealtime.configure({
+      queryClient,
+      supabase,
+      backfill,
+      kv: { get: () => null, set: () => {}, remove: () => {} },
+    });
+    backfill.mockResolvedValueOnce(newestFirst(1, 3));
+
+    reconnect();
+    await vi.waitFor(() => expect(cachedIds()).toContain("m3"));
+    channels.get("chat:channel:c1")!.trigger("SUBSCRIBED");
+
+    expect(backfill).toHaveBeenLastCalledWith("c1", {
+      since: "m3",
+      limit: BACKFILL_PAGE_LIMIT,
+    });
   });
 
   test("any other failure keeps the cursor for the next attempt", async () => {
@@ -1515,7 +1591,7 @@ describe("createBackfillFetcher (#2807)", () => {
 
     await expect(
       createBackfillFetcher(client)("c1", { since: "m3", limit: 100 }),
-    ).rejects.toBeInstanceOf(BackfillCursorNotFoundError);
+    ).rejects.toBeInstanceOf(SinceCursorNotFoundError);
   });
 
   test("any other 404 is the read's failure, so the cursor stays", async () => {

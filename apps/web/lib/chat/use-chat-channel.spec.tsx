@@ -20,6 +20,7 @@ import {
   type ChannelCache,
 } from "@repo/chat-core/types";
 import { QueryProvider } from "@/lib/providers/query-provider";
+import { CHAT_SINCE_NOT_FOUND_CODE } from "@repo/validation";
 import { OLDER_PAGE_LIMIT } from "@repo/chat-core/history";
 import { useChatChannel } from "./use-chat-channel";
 
@@ -758,6 +759,36 @@ describe("useChatChannel — older history, the edges (#1571 review)", () => {
     });
 
     expect(read).toBeNull();
+  });
+
+  it("drops a newest row the server no longer holds and folds in the newest page (#2807)", async () => {
+    mocks.GET.mockResolvedValueOnce(historyPage(101, 150));
+    const { result } = await mountChannel();
+
+    // msg-150 was purged and its Realtime delete missed, so the server knows
+    // no message to read after.
+    mocks.GET.mockResolvedValueOnce({
+      data: undefined,
+      error: {
+        statusCode: 404,
+        code: CHAT_SINCE_NOT_FOUND_CODE,
+        message: "The since message is not in this channel",
+      },
+    });
+    mocks.GET.mockResolvedValueOnce(historyPage(101, 149));
+    let read: number | null | undefined;
+    await act(async () => {
+      read = await result.current.loadNewer();
+    });
+
+    expect(read).toBe(0);
+    expect(mocks.GET.mock.calls[2]![1].params.query).toEqual({
+      limit: OLDER_PAGE_LIMIT,
+    });
+    await waitFor(() =>
+      expect(result.current.messages.map((m) => m.id)).not.toContain("msg-150"),
+    );
+    expect(result.current.messages.at(-1)?.id).toBe("msg-149");
   });
 
   it("reads what arrived after the newest row and merges it", async () => {

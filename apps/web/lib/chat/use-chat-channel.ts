@@ -42,6 +42,7 @@ import {
   mergeUnheldRows,
   newestConfirmed,
   reconcileNewestPage,
+  removeMessage,
   selectMessages,
 } from "@repo/chat-core/cache";
 import {
@@ -49,6 +50,8 @@ import {
   createHistoryPager,
   OLDER_PAGE_LIMIT,
   olderHistoryView,
+  SinceCursorNotFoundError,
+  type HistoryPage,
   type LoadOlderResult,
 } from "@repo/chat-core/history";
 import {
@@ -333,23 +336,37 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     const newest = newestConfirmed(queryClient.getQueryData<ChannelCache>(key));
     if (!newest) return 0;
     try {
-      const { rows, actions, actionsIncomplete } = await fetchPage(channelId, {
-        limit: OLDER_PAGE_LIMIT,
-        since: newest.id,
-      });
+      // The server no longer holds the newest row this thread does (purged,
+      // and its Realtime delete missed), so nothing reads as after it. It
+      // goes, and the newest page is folded in the way a full page is;
+      // otherwise every later forward read would key on it and fail too.
+      let gone: string | null = null;
+      let page: HistoryPage;
+      try {
+        page = await fetchPage(channelId, {
+          limit: OLDER_PAGE_LIMIT,
+          since: newest.id,
+        });
+      } catch (error) {
+        if (!(error instanceof SinceCursorNotFoundError)) throw error;
+        gone = newest.id;
+        page = await fetchPage(channelId, { limit: OLDER_PAGE_LIMIT });
+      }
+      const { rows, actions, actionsIncomplete } = page;
       // Merged once, like an older page, so partial tallies would stay: a
       // failed read instead, which the jump reports.
       if (actionsIncomplete) return null;
-      const full = rows.length >= OLDER_PAGE_LIMIT;
+      const full = gone !== null || rows.length >= OLDER_PAGE_LIMIT;
       let added = 0;
       queryClient.setQueryData<ChannelCache>(key, (current) => {
         if (!current) return current;
+        const held = gone ? removeMessage(current, gone) : current;
         let next: ChannelCache;
         if (full) {
-          next = reconcileNewestPage(current, cacheFromPage(rows, actions));
-          added = rows.filter((row) => !current.byId[row.id]).length;
+          next = reconcileNewestPage(held, cacheFromPage(rows, actions));
+          added = rows.filter((row) => !held.byId[row.id]).length;
         } else {
-          const merged = mergeUnheldRows(current, rows, actions);
+          const merged = mergeUnheldRows(held, rows, actions);
           next = merged.cache;
           added = merged.added;
         }

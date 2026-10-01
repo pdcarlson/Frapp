@@ -763,7 +763,7 @@ export class GetChannelMessagesQueryDto {
 
   @ApiPropertyOptional({
     description:
-      'Message UUID — returns messages created after this message (reconnect replay). Still newest first under `limit`: the page is the newest `limit` messages after this one, so a full page may not reach back to it. 404 with code `chat.since_not_found` when no message in this channel has this id.',
+      'Message UUID — returns messages created after this message (reconnect replay), including any written in its same instant. Still newest first under `limit`: the page is the newest `limit` messages after this one, so a full page may not reach back to it. 404 with code `chat.since_not_found` when no message in this channel has this id.',
     format: 'uuid',
   })
   @IsOptional()

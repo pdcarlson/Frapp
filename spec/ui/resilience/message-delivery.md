@@ -161,20 +161,25 @@ Supabase Realtime (preferred)
 ```
 
 **Gap recovery:** When Realtime reconnects after a disconnect:
-1. Fetch messages created after the last known message (`GET /v1/channels/{id}/messages?since=<id>`)
-2. Merge into the local message list (deduplicate by ID)
-3. This ensures no messages are lost during the disconnect window
+1. Fetch the messages created after the last known message, by its id (`since=`; the API
+   contract is [chat § Reconnect replay](../../behavior/chat/README.md#reconnect-replay))
+2. Merge them into the local message list (deduplicate by ID), by the full-page rule below
+3. Nothing is lost: what a page did not reach is read when the member scrolls back to it
 
-The `since` read is the **newest** `limit` messages after the cursor, newest first, not the ones
-right after it. Both callers want the newest rows, and a cursor persisted on the device can be days
-old. So a page shorter than `limit` holds everything after the cursor and merges as it is, while a
-**full page may not reach back to the cursor**. Merged as is, the messages between them would
-render as silence. Instead, the client drops the cached rows older than the page, the way a
-rebuild from the newest page does, and scrolling back reads through the hole
-(`mergeSincePage` in `packages/chat-core/src/cache.ts`, #2807). A cursor that names no message in
-the channel, such as one hard-deleted since, gets a 404 with the code `chat.since_not_found`. The
-client then drops the cursor and reads the newest page, so a stale cursor can't stall every
-reconnect and poll.
+The read returns the newest `limit` messages after the cursor, not the ones right after it. Both
+callers want the newest rows, and a cursor persisted on the device can be days old. So a page
+shorter than `limit` holds everything after the cursor and merges as it is. A **full page may not
+reach back to the cursor**, and merged as is, the messages between them would render as silence.
+So the client also drops the cached rows older than a full page, the way a rebuild from the newest
+page does, and scrolling back reads through the hole (`mergeSincePage` in
+`packages/chat-core/src/cache.ts`, #2807). Rows the member had scrolled back through therefore
+don't survive a reconnect that missed a full page; they load again when they scroll back.
+
+With no cursor, as on the first join on a device, the client reads the newest page at the size the
+channel's first read uses. A cursor the server no longer holds, which it answers with
+`chat.since_not_found`, is dropped and the newest page read instead. The cursor also lives in
+memory for the session, so a browser that refuses site storage still reads after one rather than
+trimming on every poll.
 
 Polling reuses that same gap-recovery fetch on a timer rather than a second
 code path, so a message delivered by both a poll and the reconnect backfill

@@ -1177,7 +1177,11 @@ These are the user-observable guarantees of the chat client (web and mobile), in
 
 ## Reconnect replay
 
-`GET /channels/:id/messages?since=<message_uuid>&limit=50` returns messages created AFTER the given message UUID. Clients use this on reconnect to backfill missed messages before resubscribing to Realtime.
+`GET /v1/channels/{id}/messages?since=<message_uuid>&limit=<n>` returns the **newest** `n` messages created at or after that message's instant, newest first, with the message itself left out. It is not the `n` right after it, so a page of exactly `n` rows may not reach back to the cursor (#2807). A row written in the cursor's own instant is included rather than skipped; rows in one imported batch can share one.
+
+When no message in the channel has that id (one hard-deleted since, or another channel's), the answer is a 404 with the code `chat.since_not_found` (`CHAT_SINCE_NOT_FOUND_CODE` in `@repo/validation`), not the channel's newest page. The code is what tells it apart from the route's other 404, a channel the caller can't read.
+
+Clients read it after resubscribing (Resubscribe before backfill, above). How they merge the page, a full one included, is [`message-delivery.md` § Receiving Messages](../../ui/resilience/message-delivery.md#receiving-messages-realtime).
 
 ## Web ↔ mobile parity
 

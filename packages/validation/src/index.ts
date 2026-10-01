@@ -50,8 +50,9 @@ export const LEGAL_ACCEPTANCE_REQUIRED_MESSAGE =
 
 /**
  * The 404 code on `GET /v1/channels/{id}/messages` when its `since` cursor
- * names no message in the channel (#2807). The chat backfill reads it to tell
- * a cursor it should drop from a channel it can't read, which answers 404 too.
+ * names no message in the channel (#2807). Chat clients read it
+ * (`readMessageRows` in `@repo/chat-core/history`) to tell a cursor they should
+ * drop from a channel they can't read, which answers 404 too.
  */
 export const CHAT_SINCE_NOT_FOUND_CODE = "chat.since_not_found";
 

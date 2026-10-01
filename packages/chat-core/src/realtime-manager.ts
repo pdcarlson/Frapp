@@ -10,8 +10,9 @@
  *   - One global Postgres Changes subscription on `chat_message_actions` (no
  *     `channel_id` column on that table to filter by) — events are dispatched
  *     to whichever subscribed channel cache holds the message. Reactions on
- *     not-yet-loaded messages are intentionally dropped; backfill recovers
- *     them.
+ *     not-yet-loaded messages are intentionally dropped. Nothing here reads
+ *     back the actions written while this subscription was down: the
+ *     backfill reads message rows only (#3039).
  *   - Aggregates per-channel subscribe status into `"live" | "polling" |
  *     "reconnecting" | "offline"` for the UI "Reconnecting…" pill, with
  *     exponential backoff (1→2→4→8→16→30s capped) on
@@ -51,8 +52,6 @@ import type {
   RealtimePostgresChangesPayload,
   SupabaseClient,
 } from "@supabase/supabase-js";
-import { codeOf, type createFrappClient } from "@repo/api-sdk";
-import { CHAT_SINCE_NOT_FOUND_CODE } from "@repo/validation";
 import {
   applyReactionDelete,
   applyReactionInsert,
@@ -62,6 +61,13 @@ import {
   mergeSincePage,
   removeMessage,
 } from "./cache";
+import type { FrappApiClient } from "./chat-client";
+import {
+  FIRST_PAGE_LIMIT,
+  readMessageRows,
+  SinceCursorNotFoundError,
+  type HistoryPageQuery,
+} from "./history";
 import {
   chatMessagesKey,
   type ChannelCache,
@@ -79,8 +85,6 @@ import {
   releaseTopic as releaseRealtimeTopic,
 } from "./topic-registry";
 import { dropNotices } from "./heavy-command-notices";
-
-type FrappClient = ReturnType<typeof createFrappClient>;
 
 export type ConnectionStatus = "live" | "polling" | "reconnecting" | "offline";
 
@@ -104,59 +108,32 @@ export const POLL_INTERVAL_MS = 5_000;
 export const NO_TYPING_USERS: readonly string[] = Object.freeze([]);
 
 /**
- * Rows per backfill read, reconnect and poll alike. A read is the newest
- * `limit` rows after the cursor, so a page this full may not reach back to
- * it, and is merged as one that may not (`mergeSincePage`, #2807).
+ * Rows per backfill read after a cursor, reconnect and poll alike. The read
+ * is the newest `limit` rows after the cursor, so a page this full may not
+ * reach back to it, and is merged as one that may not (`mergeSincePage`,
+ * #2807). With no cursor the read is the newest page, at the size the
+ * channel query reads it (`FIRST_PAGE_LIMIT`), so it brings no row that page
+ * and its reactions don't already cover.
  */
 export const BACKFILL_PAGE_LIMIT = 100;
 
 /** One backfill read: after `since` when there is a cursor, else the newest page. */
-export interface BackfillQuery {
-  since?: string;
-  limit: number;
-}
+export type BackfillQuery = Pick<HistoryPageQuery, "since" | "limit">;
 
+/**
+ * Message rows only. Throws `SinceCursorNotFoundError` when the server holds
+ * no message by the cursor in that channel; the manager then drops the
+ * cursor and reads the newest page.
+ */
 export interface BackfillFetcher {
   (channelId: string, query: BackfillQuery): Promise<RawChatMessage[]>;
 }
 
-/**
- * What a `BackfillFetcher` throws when the server holds no message by the
- * cursor in that channel (#2807): one hard-deleted since it was stored (the
- * Discord import purge), or a cursor that names another channel's message.
- * The manager drops the cursor and reads the newest page; kept, the cursor
- * would fail every reconnect and every poll for as long as it was stored.
- */
-export class BackfillCursorNotFoundError extends Error {
-  constructor(
-    readonly channelId: string,
-    readonly since: string,
-  ) {
-    super("The backfill cursor names no message in this channel");
-    this.name = "BackfillCursorNotFoundError";
-  }
-}
-
-/**
- * The backfill read both clients configure the manager with:
- * `GET /v1/channels/{id}/messages`, message rows only. A 404 counts as the
- * cursor's only by its code (`CHAT_SINCE_NOT_FOUND_CODE`), because a channel
- * the viewer can no longer read answers 404 too, and dropping the cursor
- * would not help that read.
- */
-export function createBackfillFetcher(apiClient: FrappClient): BackfillFetcher {
-  return async (channelId, query) => {
-    const { data, error } = await apiClient.GET("/v1/channels/{id}/messages", {
-      params: { path: { id: channelId }, query },
-    });
-    if (error) {
-      if (query.since && codeOf(error) === CHAT_SINCE_NOT_FOUND_CODE) {
-        throw new BackfillCursorNotFoundError(channelId, query.since);
-      }
-      throw error;
-    }
-    return Array.isArray(data) ? (data as RawChatMessage[]) : [];
-  };
+/** The backfill read both clients configure the manager with. */
+export function createBackfillFetcher(
+  apiClient: FrappApiClient,
+): BackfillFetcher {
+  return (channelId, query) => readMessageRows(apiClient, channelId, query);
 }
 
 export interface ManagerContext {
@@ -232,6 +209,15 @@ class ChatRealtimeManager {
   private offline = false;
   /** Unsubscribe for the `NetworkState` connectivity subscription. */
   private netUnsub: (() => void) | null = null;
+  /**
+   * This process's copy of each channel's backfill cursor (`null` once
+   * dropped), read before the store. The store is best-effort: a browser that
+   * refuses site storage drops every write silently, and without this copy
+   * every reconnect and poll would then read without a cursor, and a full
+   * newest page would trim the history the member scrolled back through on
+   * each pass (#2807).
+   */
+  private lastSeen = new Map<string, string | null>();
   private typingTickHandle: ReturnType<typeof setInterval> | null = null;
   /** Armed while a channel is non-live; firing promotes us into polling. */
   private pollDegradeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -322,6 +308,7 @@ class ChatRealtimeManager {
     // otherwise leave the flag latched on this module singleton, and the next
     // configure() would come up with polling permanently short-circuited.
     this.pollInFlight = false;
+    this.lastSeen.clear();
     this.ctx = null;
   }
 
@@ -467,6 +454,7 @@ class ChatRealtimeManager {
   // sits inside the Supabase postgres_changes dispatch, where an escaping
   // storage error would abort frame processing after the cache merge.
   private readLastSeen(channelId: string): string | null {
+    if (this.lastSeen.has(channelId)) return this.lastSeen.get(channelId)!;
     try {
       return this.kvStore().get(LAST_SEEN_PREFIX + channelId);
     } catch {
@@ -475,6 +463,7 @@ class ChatRealtimeManager {
   }
 
   private writeLastSeen(channelId: string, messageId: string | null): void {
+    this.lastSeen.set(channelId, messageId || null);
     try {
       if (!messageId) this.kvStore().remove(LAST_SEEN_PREFIX + channelId);
       else this.kvStore().set(LAST_SEEN_PREFIX + channelId, messageId);
@@ -760,8 +749,9 @@ class ChatRealtimeManager {
       }
       this.installActionsChannel(topic);
     } catch {
-      // Reactions fall back to the per-channel backfill, so a failure here
-      // degrades one feature — it must never propagate out of `configure()`.
+      // Live reactions and votes stop until the next attach; nothing else
+      // brings them back (#3039). One feature degrades, and it must never
+      // propagate out of `configure()`.
       this.actionsChannel = null;
     }
   }
@@ -899,9 +889,10 @@ class ChatRealtimeManager {
 
   /**
    * One poll pass over every channel still waiting on Realtime. Reuses
-   * `runBackfill`, so merges go through the same id-keyed `mergeServerRow`
-   * path and the same last-seen cursor the reconnect backfill uses — a row
-   * that arrives by poll and again by Realtime collapses to one message.
+   * `runBackfill`, so merges go through the same `mergeSincePage` (id-keyed,
+   * and trimming behind a full page) and the same last-seen cursor the
+   * reconnect backfill uses — a row that arrives by poll and again by
+   * Realtime collapses to one message.
    */
   private async pollOnce(): Promise<void> {
     if (!this.ctx || this.offline) return;
@@ -926,15 +917,16 @@ class ChatRealtimeManager {
   private async runBackfill(channelId: string): Promise<void> {
     if (!this.ctx) return;
     try {
-      const rows = await this.readBackfill(this.ctx.backfill, channelId);
+      const { rows, limit } = await this.readBackfill(
+        this.ctx.backfill,
+        channelId,
+      );
       if (rows.length === 0) return;
       // The page is the newest rows after the cursor, so a full one may not
       // reach back to it. Merged as is, the rows in between would draw as
       // silence; `mergeSincePage` drops what it can't vouch for instead, and
       // paging back reads through the hole (#2807).
-      this.patchCache(channelId, (cache) =>
-        mergeSincePage(cache, rows, BACKFILL_PAGE_LIMIT),
-      );
+      this.patchCache(channelId, (cache) => mergeSincePage(cache, rows, limit));
       // A card that arrived while Realtime was down lands here instead.
       this.settleNotices(channelId, rows);
       // Advance the cursor to the newest row we just merged.
@@ -953,25 +945,30 @@ class ChatRealtimeManager {
   }
 
   /**
-   * The rows after the channel's cursor, or its newest page when it has none.
-   * A cursor the server no longer knows is dropped, unless a live row has
-   * replaced it meanwhile, and the read is made again as the newest page.
+   * The rows after the channel's cursor, or its newest page when it has none,
+   * with the page size they were read at. A cursor the server no longer knows
+   * is dropped, unless a live row has replaced it meanwhile, and the read is
+   * made again as the newest page.
    */
   private async readBackfill(
     backfill: BackfillFetcher,
     channelId: string,
-  ): Promise<RawChatMessage[]> {
-    const limit = BACKFILL_PAGE_LIMIT;
+  ): Promise<{ rows: RawChatMessage[]; limit: number }> {
+    const newestPage = async () => ({
+      rows: await backfill(channelId, { limit: FIRST_PAGE_LIMIT }),
+      limit: FIRST_PAGE_LIMIT,
+    });
     const since = this.readLastSeen(channelId);
-    if (!since) return backfill(channelId, { limit });
+    if (!since) return newestPage();
     try {
-      return await backfill(channelId, { since, limit });
+      const limit = BACKFILL_PAGE_LIMIT;
+      return { rows: await backfill(channelId, { since, limit }), limit };
     } catch (error) {
-      if (!(error instanceof BackfillCursorNotFoundError)) throw error;
+      if (!(error instanceof SinceCursorNotFoundError)) throw error;
       if (this.readLastSeen(channelId) === since) {
         this.writeLastSeen(channelId, null);
       }
-      return backfill(channelId, { limit });
+      return newestPage();
     }
   }
 

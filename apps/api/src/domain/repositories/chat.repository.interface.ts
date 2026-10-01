@@ -158,9 +158,10 @@ export interface IChatMessageRepository {
   findById(id: string): Promise<ChatMessage | null>;
   /**
    * Newest first, at most `limit` rows. `before` keeps rows created strictly
-   * before an instant. `since` keeps rows created after that message, and the
-   * page is still the **newest** `limit` of them, not the ones right after it:
-   * a full page may not reach back to the cursor (#2807). Throws
+   * before an instant. `since` keeps rows created at or after that message's
+   * instant, the message itself excluded, and the page is still the **newest**
+   * `limit` of them, not the ones right after it: a full page may not reach
+   * back to the cursor (#2807). Throws
    * `ChatMessageCursorNotFoundError` when `since` names no message in this
    * channel.
    */
