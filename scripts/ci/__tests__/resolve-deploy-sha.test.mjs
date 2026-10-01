@@ -18,6 +18,7 @@ import {
   renderSummary,
   resolveDeploySha,
   runCli,
+  STAGING_CALLER_JOB,
   STAGING_DEPLOY_JOB,
   STAGING_VERIFY_STEP,
   stagingRunSha,
@@ -41,15 +42,23 @@ const DEFAULT_COMMITS = [commit(TIP, "feat: newest"), commit(MIDDLE, "fix: middl
 
 /**
  * A `git` double answering the resolver's own calls: the tag listing, the
- * tag's commit, its ancestry, and the first-parent log above it.
+ * tags containing the floor, each tag's commit, ancestry, and the
+ * first-parent log above the floor. Every tag names the floor's commit unless
+ * `tagCommits` says otherwise.
  */
-function makeGit({ tags = "v0.7.0\nv0.6.0\n", floorOnMain = true, commits = DEFAULT_COMMITS } = {}) {
+function makeGit({
+  tags = "v0.7.0\nv0.6.0\n",
+  containing = "v0.7.0\n",
+  tagCommits = {},
+  floorOnMain = true,
+  commits = DEFAULT_COMMITS,
+} = {}) {
   const calls = [];
   const git = (args) => {
     calls.push(args);
     const [cmd] = args;
-    if (cmd === "tag") return tags;
-    if (cmd === "rev-parse") return `${FLOOR}\n`;
+    if (cmd === "tag") return args.includes("--contains") ? containing : tags;
+    if (cmd === "rev-parse") return `${tagCommits[args[1].replace("^{commit}", "")] ?? FLOOR}\n`;
     if (cmd === "merge-base") {
       if (!floorOnMain) throw new Error("exit 1");
       return "";
@@ -87,7 +96,7 @@ function run(
 ) {
   const deployDone = deploy !== "in_progress" && deploy !== "queued";
   const deployJob = {
-    name: `${STAGING_DEPLOY_JOB} / deploy`,
+    name: `${STAGING_CALLER_JOB} / ${STAGING_DEPLOY_JOB}`,
     status: deployDone ? "completed" : deploy,
     conclusion: deployDone ? deploy : null,
     steps: steps ?? [
@@ -209,7 +218,7 @@ describe("resolveDeploySha — staging must have deployed and verified the commi
     const result = await resolve({ git, validate, fetchImpl: api([run(TIP, { verify: "skipped" }), run(MIDDLE)]) });
     assert.equal(result.sha, MIDDLE);
     assert.deepEqual(asked, [MIDDLE]);
-    assert.match(result.skipped[0].reason, /shipped and verified nothing.*plan `stale`/);
+    assert.match(result.skipped[0].reason, /run verified nothing.*plan `stale`/);
   });
 
   // `prune-vercel-staging` is housekeeping beside the deploy: its failure reds
@@ -229,7 +238,16 @@ describe("resolveDeploySha — staging must have deployed and verified the commi
 
   it("refuses a completed run with no deploy job", () => {
     const r = run(TIP);
-    assert.match(stagingVerdict(r, r.jobs.slice(1)), /lists 0 `deploy` jobs/);
+    assert.match(stagingVerdict(r, r.jobs.slice(1)), /lists 0 `deploy \/ deploy` jobs/);
+  });
+
+  // Matched by the full jobs-API name, so another job in `_deploy.yml` can't
+  // be mistaken for the deploy, and two of it can't be picked between.
+  it("reads only the job named deploy / deploy, and refuses two of it", () => {
+    const r = run(TIP);
+    const preflight = { name: `${STAGING_CALLER_JOB} / preflight`, status: "completed", conclusion: "failure", steps: [] };
+    assert.equal(stagingVerdict(r, [preflight, ...r.jobs]), null);
+    assert.match(stagingVerdict(r, [r.jobs[0], ...r.jobs]), /lists 2 `deploy \/ deploy` jobs, not one/);
   });
 
   it("reads a deploy that verified as no objection, whatever the run's own conclusion", () => {
@@ -328,6 +346,28 @@ describe("resolveDeploySha — the floor: an empty sha never resolves a rollback
     const result = await resolve({ git, validate: makeValidate().validate, fetchImpl: api([]) });
     assert.equal(result.ok, false);
     assert.match(result.reason, /the checkout holds no v\* tag/);
+  });
+
+  // Rolling back through Deploy production tags the older commit with a higher
+  // version. Every commit above it, the rolled-back change included, would be
+  // a candidate again, and only the operator knows whether a revert merged.
+  it("refuses while production is rolled back behind an earlier release on main", async () => {
+    const BAD = sha("e");
+    const { git } = makeGit({ tags: "v0.7.1\nv0.7.0\n", containing: "v0.7.0\nv0.7.1\n", tagCommits: { "v0.7.0": BAD } });
+    const result = await resolve({ git, validate: makeValidate().validate, fetchImpl: api([run(TIP)]) });
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /Production's v0\.7\.1 \(ffffffffffff\) is behind v0\.7\.0 on origin\/main: production was rolled back/);
+  });
+
+  it("does not count a release tag off main as one production is behind", async () => {
+    const OFF = sha("d");
+    const { git: base } = makeGit({ containing: "v0.7.0\nv0.9.0\n", tagCommits: { "v0.9.0": OFF } });
+    const git = (args) => {
+      if (args[0] === "merge-base" && args[2] === OFF) throw new Error("exit 1");
+      return base(args);
+    };
+    const result = await resolve({ git, validate: makeValidate().validate, fetchImpl: api([run(TIP)]) });
+    assert.equal(result.ok, true);
   });
 
   it("refuses when the latest tag is not on main", async () => {
@@ -435,14 +475,18 @@ describe("the workflows the resolver reads", () => {
   // The jobs API names a called job `<caller> / <callee>`, by each job's `name`
   // or, without one, its id. A rename reads as "not verified" on every commit.
   it("finds the deploy job and its verify step by the names the resolver looks for", () => {
-    const deploy = workflowJobs(STAGING_WORKFLOW).find((j) => j.jobId === STAGING_DEPLOY_JOB);
-    assert.ok(deploy, `deploy-staging.yml has no job "${STAGING_DEPLOY_JOB}"`);
-    assert.equal(deploy.keys.get("uses"), "./.github/workflows/_deploy.yml");
-    assert.equal(deploy.keys.has("name"), false, "a name would replace the job id in the jobs API");
+    const caller = workflowJobs(STAGING_WORKFLOW).find((j) => j.jobId === STAGING_CALLER_JOB);
+    assert.ok(caller, `deploy-staging.yml has no job "${STAGING_CALLER_JOB}"`);
+    assert.equal(caller.keys.get("uses"), "./.github/workflows/_deploy.yml");
+    assert.equal(caller.keys.has("name"), false, "a name would replace the job id in the jobs API");
+    const called = workflowJobs(SHARED_DEPLOY).find((j) => j.jobId === STAGING_DEPLOY_JOB);
+    assert.ok(called, `_deploy.yml has no job "${STAGING_DEPLOY_JOB}"`);
+    assert.equal(called.keys.has("name"), false, "a name would replace the job id in the jobs API");
     const verify = workflowSteps(SHARED_DEPLOY).filter((s) => s.name === STAGING_VERIFY_STEP);
     assert.equal(verify.length, 1, `_deploy.yml has one step named "${STAGING_VERIFY_STEP}"`);
-    // Skipped exactly when the plan ships nothing, which is what makes a
-    // skipped verify mean "staging didn't take this commit".
+    assert.equal(verify[0].jobId, STAGING_DEPLOY_JOB);
+    // Skipped exactly when the plan sets no `verify_sha`, which is what makes a
+    // skipped verify mean "staging's API wasn't checked for this commit".
     assert.equal(verify[0].if, "steps.plan.outputs.verify_sha != ''");
   });
 });
@@ -542,7 +586,8 @@ describe("renderSummary — what the approver reads before approving", () => {
     });
     assert.match(text, new RegExp(`Newest green \`main\` commit: \`${MIDDLE}\``));
     assert.match(text, /fix: middle/);
-    assert.ok(text.includes(`[run ${stagingRun.id}](${stagingRun.html_url}): deployed, and "${STAGING_VERIFY_STEP}" passed`));
+    assert.ok(text.includes(`[run ${stagingRun.id}](${stagingRun.html_url}): "${STAGING_VERIFY_STEP}" passed, so staging's API carries this commit's`));
+    assert.match(text, /Web and landing aren't checked here/, "the summary says what the rule doesn't cover");
     assert.match(text, /`v0\.7\.0` \(`ffffffffffff`\)/);
     assert.match(text, /paste it into `sha`/);
     assert.match(text, /\| `cccccccccccc` \| feat: a \\\| b \| CI is not green \|/, "a pipe in a subject can't break the table");

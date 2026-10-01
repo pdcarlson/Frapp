@@ -30,6 +30,15 @@
 // and `production-release-pin.yml` both go red, and the summary names the
 // floor so the approver can see it.
 //
+// After a rollback the floor is no protection. Rolling production back to an
+// older commit through Deploy production tags that commit with a higher
+// version, so the latest release sits behind an earlier one on `main`, and
+// every commit above it, the rolled-back change included, is a candidate
+// again. Whether a revert has merged since is something only the operator
+// knows, so the resolver refuses while any release on `main` is newer than
+// production's (`releasesAhead`): paste the SHA. It clears once a ship past
+// that release is tagged.
+//
 // ── Matching a Deploy staging run to its commit ─────────────────────────────
 // Deploy staging runs on `workflow_run`, and such a run's `head_sha` is
 // `main`'s tip when it fired, NOT the commit CI verified and the run deployed:
@@ -41,17 +50,23 @@
 // SHA, so their commits read as having no run: the walk goes newest first, so
 // that only matters until the first deploy after it merged.
 //
-// ── What "staging succeeded" means ──────────────────────────────────────────
+// ── What "staging succeeded" means (the canonical statement) ────────────────
+// `docs/ops/database/promotion.md` links here for the exact rule, and states
+// only what it means for an operator.
 // In the newest Deploy staging run naming the commit, the `deploy` job
 // succeeded AND its "Verify staging serves the commit" step passed. That step
-// runs whenever the run shipped anything: it checks that staging serves, ready,
-// this commit's API (`deploy`, `forward`), or the commit staging already served
-// when its image carries this one's (`current`, and a `stale` plan that
-// uploads the frontends). The run's conclusion alone would say less:
-//   * A `stale` plan that ships nothing skips the step and still concludes
-//     `success`. That covers a run that couldn't tell what staging serves
-//     (`plan-staging-deploy.mjs`'s `unsure`), which deployed and verified
-//     nothing, so the commit doesn't count.
+// runs whenever the plan sets `verify_sha` (`plan-staging-deploy.mjs`), and
+// checks that staging serves it, ready: this commit when the run deployed it
+// (`deploy`, `forward`), or the commit staging already served when nothing the
+// API image is built from changed since (`current`, and a `stale` plan that
+// uploads the frontends). So a pass means staging's API carries this commit's.
+// It says nothing about web and landing: a run can verify the API and skip the
+// upload, when it can't read what a staging host serves, say (#3120). The
+// run's conclusion alone would say less:
+//   * A `stale` plan that uploads nothing sets no `verify_sha`, skips the step
+//     and still concludes `success`, though its migrations apply. That covers
+//     a run that couldn't tell what staging serves (the planner's `unsure`),
+//     which verified nothing, so the commit doesn't count.
 //   * `prune-vercel-staging` is a separate housekeeping job whose failure reds
 //     the run without meaning the deploy failed, so it doesn't disqualify.
 //   * When GitHub replaces the deploy job while it is still queued
@@ -73,20 +88,23 @@ import { ALL_REQUIRED_CHECKS } from "./lib/required-checks.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
-import { latestReleaseTag } from "./lib/release-tag.mjs";
+import { latestReleaseTag, RELEASE_TAG_PATTERN } from "./lib/release-tag.mjs";
 import { isFullSha, validateDeploySha } from "./validate-deploy-sha.mjs";
 
 /** The workflow file whose runs say which commits reached staging. */
 export const STAGING_WORKFLOW_FILE = "deploy-staging.yml";
 
 /**
- * `deploy-staging.yml`'s job that calls `_deploy.yml` (the jobs API names it
- * `deploy / deploy`), and that job's step that checks staging serves the
- * commit. `resolve-deploy-sha.test.mjs` pins both against the workflows: a
- * rename would otherwise read as "not verified" on every commit.
+ * The staging deploy job as the jobs API names it, `<caller job> / <called
+ * job>`: `deploy-staging.yml`'s job `deploy` calls `_deploy.yml`'s job
+ * `deploy`, neither with a `name:`. And that job's step that checks staging
+ * serves the commit. `resolve-deploy-sha.test.mjs` pins all three against the
+ * workflows: a rename would otherwise read as "not verified" on every commit.
  */
+export const STAGING_CALLER_JOB = "deploy";
 export const STAGING_DEPLOY_JOB = "deploy";
 export const STAGING_VERIFY_STEP = "Verify staging serves the commit";
+const DEPLOY_JOB_NAME = `${STAGING_CALLER_JOB} / ${STAGING_DEPLOY_JOB}`;
 
 /** How many commits above the floor the walk reads before it gives up. */
 export const MAX_CANDIDATES = 50;
@@ -142,12 +160,10 @@ export function indexStagingRuns(runs) {
  */
 export function stagingVerdict(run, jobs) {
   const where = run.html_url ? ` (${run.html_url})` : "";
-  const deployJobs = (Array.isArray(jobs) ? jobs : []).filter(
-    (job) => job?.name === STAGING_DEPLOY_JOB || String(job?.name ?? "").startsWith(`${STAGING_DEPLOY_JOB} / `),
-  );
+  const deployJobs = (Array.isArray(jobs) ? jobs : []).filter((job) => job?.name === DEPLOY_JOB_NAME);
   if (deployJobs.length !== 1) {
     if (run.status !== "completed") return `its Deploy staging run is still ${run.status}${where}`;
-    return `its Deploy staging run lists ${deployJobs.length} \`${STAGING_DEPLOY_JOB}\` jobs, not one${where}`;
+    return `its Deploy staging run lists ${deployJobs.length} \`${DEPLOY_JOB_NAME}\` jobs, not one${where}`;
   }
   const [job] = deployJobs;
   if (job.status !== "completed") return `its Deploy staging deploy is still ${job.status}${where}`;
@@ -159,8 +175,8 @@ export function stagingVerdict(run, jobs) {
   if (!verify) return `its Deploy staging deploy has no "${STAGING_VERIFY_STEP}" step, so nothing shows staging serves it${where}`;
   if (verify.conclusion === "skipped") {
     return (
-      `its Deploy staging run shipped and verified nothing${where}: staging already served a newer ` +
-      "commit, or the run couldn't tell what staging serves (plan `stale`)"
+      `its Deploy staging run verified nothing${where} (plan \`stale\`: staging already served a newer ` +
+      "commit, nothing it would ship changed, or it couldn't tell what staging serves)"
     );
   }
   if (verify.conclusion !== "success") return `its "${STAGING_VERIFY_STEP}" step concluded ${verify.conclusion}${where}`;
@@ -191,6 +207,28 @@ export function releaseFloor({ git = defaultGit }) {
   } catch (error) {
     return { tag: latest.tag, sha: null, error: `${latest.tag} does not name a commit here: ${error.message}` };
   }
+}
+
+/**
+ * The vX.Y.Z tags on `mainRef` whose commits are strictly newer than
+ * `floorSha`: releases production has been rolled back behind. Empty in the
+ * ordinary case, where the latest release is also the newest on `main`.
+ */
+export function releasesAhead({ floorSha, mainRef, git = defaultGit }) {
+  const tags = git(["tag", "--list", "v*", "--contains", floorSha])
+    .split("\n")
+    .map((t) => t.trim())
+    .filter((t) => RELEASE_TAG_PATTERN.test(t));
+  return tags.filter((tag) => {
+    const tagged = git(["rev-parse", `${tag}^{commit}`]).trim();
+    if (tagged === floorSha) return false;
+    try {
+      git(["merge-base", "--is-ancestor", tagged, mainRef]);
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 /**
@@ -282,6 +320,19 @@ export async function resolveDeploySha({
       reason:
         `Production's newest tag ${floor.tag} (${short(floor.sha)}) is not an ancestor of ${mainRef}, so ` +
         `"newer than production" has no meaning on main. Paste the SHA to deploy.`,
+      floor,
+      skipped: [],
+    };
+  }
+
+  const ahead = releasesAhead({ floorSha: floor.sha, mainRef, git });
+  if (ahead.length > 0) {
+    return {
+      ok: false,
+      reason:
+        `Production's ${floor.tag} (${short(floor.sha)}) is behind ${ahead.join(", ")} on ${mainRef}: production ` +
+        "was rolled back. Main still holds what was rolled back unless a revert merged since, so an empty " +
+        "`sha` won't choose. Paste the SHA to deploy.",
       floor,
       skipped: [],
     };
@@ -383,7 +434,7 @@ export function renderSummary(result) {
       "| | |",
       "| --- | --- |",
       `| Commit | \`${result.sha}\` ${cell(result.subject)} |`,
-      `| Deploy staging | [run ${result.stagingRun.id}](${result.stagingRun.html_url}): deployed, and "${STAGING_VERIFY_STEP}" passed |`,
+      `| Deploy staging | [run ${result.stagingRun.id}](${result.stagingRun.html_url}): "${STAGING_VERIFY_STEP}" passed, so staging's API carries this commit's (that run may have verified the commit staging already served, with the same API image). Web and landing aren't checked here: the run's own summary says whether it uploaded them |`,
       "| Required checks | green; the next step checks them again, as it does a pasted SHA |",
       `| Production now | \`${result.floor.tag}\` (\`${short(result.floor.sha)}\`); only newer commits were candidates |`,
       "",

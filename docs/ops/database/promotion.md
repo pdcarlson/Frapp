@@ -65,14 +65,13 @@ without applying anything, under either scope.
 | `sha`  | What ships |
 | ------ | ---------- |
 | pasted | Exactly that commit, once it passes the ancestry and CI checks |
-| empty  | The newest commit on `main`, above production's latest release tag, whose required checks passed **and** which its **Deploy staging** run deployed and verified. It then passes the same checks a pasted SHA does |
+| empty  | The newest commit on `main`, above production's latest release tag, whose required checks passed **and** whose newest **Deploy staging** run verified that staging's API carries it. It then passes the same checks a pasted SHA does |
 
 An empty `sha` titles the run `<scope> (newest green main)`, because the title
 is set at dispatch, before the commit is chosen. The `validate` job's summary
 names the commit it picked, its subject and Deploy staging run, and every newer
 commit it skipped with the reason. That summary exists before GitHub asks for
-the approval, so read it before you approve. The rules
-(`scripts/ci/resolve-deploy-sha.mjs`):
+the approval, so read it before you approve. What that means for you:
 
 - **It never picks a rollback.** Only commits newer than production's latest
   release tag (the newest `v*` tag, which must be `vX.Y.Z`, as `release.yml`
@@ -80,25 +79,27 @@ the approval, so read it before you approve. The rules
   the run fails before the approval and you paste a SHA. A live ship whose tag
   failed is the one gap: production then runs a commit newer than its tag, and
   `deploy-outcome` and `production-release-pin.yml` both go red.
-- **"Deployed and verified" is read from the newest Deploy staging run naming
-  the commit:** its `deploy` job succeeded, and that job's "Verify staging
-  serves the commit" step passed. That step runs whenever the run shipped
-  anything, and checks that staging serves, ready, either this commit or the
-  one it already served whose API image carries this commit's (a `current`
-  plan, or a `stale` one that uploaded the frontends). Three consequences:
-  - A `stale` run that shipped nothing skips the step and doesn't count, even
-    though it concludes `success`. That includes a run that couldn't tell what
-    staging serves (an unreadable `/health`, say), which verified nothing.
-  - A run reddened only by `prune-vercel-staging`, the housekeeping job beside
-    the deploy, still counts.
-  - When GitHub replaces a queued deploy job with a newer run's, the job ends
-    `cancelled` and that commit is skipped. The newer commit whose run
-    replaced it is normally picked instead.
-
-  "Newest" is the run whose latest attempt started last, so a re-run counts
-  as new. Deploy staging titles each run with the commit it deploys, because a
-  `workflow_run` run's own `head_sha` is `main`'s tip when it fired. Runs from
-  before #3114 have no SHA in their title, so their commits never qualify.
+- **It refuses while production is rolled back.** Rolling back through Deploy
+  production tags the older commit with a higher version, which leaves an
+  earlier release ahead of it on `main`, and the change you rolled back is on
+  `main` until a revert merges. While any release on `main` is newer than
+  production's, an empty `sha` refuses and you paste the SHA. It clears once a
+  ship past that release is tagged.
+- **Staging counts a commit when the newest Deploy staging run naming it
+  verified staging's API carries it:** the run's `deploy` job succeeded and its
+  "Verify staging serves the commit" step passed. That step checks staging
+  serves, ready, either this commit or the one staging already served with the
+  same API image. A run's own conclusion isn't the test: a `stale` run that
+  verified nothing still concludes `success`, and a run reddened only by
+  `prune-vercel-staging` still counts. The exact rule, including replaced and
+  re-run runs and why run titles carry the SHA: the header of
+  [`resolve-deploy-sha.mjs`](../../../scripts/ci/resolve-deploy-sha.mjs).
+  Runs from before #3114 have no SHA in their title, so their commits never
+  qualify.
+- **Web and landing aren't checked** (#3120). A run can verify the API and
+  skip the frontend upload, when it can't read what a staging host serves,
+  say. The staging run's own summary says whether it uploaded; open it from
+  the `validate` summary when the commit changes web or landing.
 
 `main` can move between a dry run and the real one, and an empty `sha` picks
 again. To ship exactly what you rehearsed, paste the SHA the dry run's summary
@@ -231,8 +232,8 @@ touches the database.
 ```text
 Actions → Deploy production → Run workflow
   sha           <full 40-char SHA, already merged to main and CI-green>
-                (or empty: the newest main commit with green CI and a green
-                Deploy staging run; for the real run, paste what the dry run picked)
+                (or empty: the newest main commit with green CI whose staging
+                deploy was verified; for the real run, paste what the dry run picked)
   confirm       DEPLOY TO PRODUCTION
   dry_run_only  ✔ first pass, ✗ for the real one
   scope         full (or migrations-only — see below)
@@ -343,10 +344,9 @@ Post-apply production checks:
 - Deploy the commit you validated on staging. `Deploy production` takes a SHA
   rather than a branch precisely so "what we tested" and "what shipped" are the
   same object — `main` may have moved on since. An empty `sha` picks only a
-  commit that staging deployed and verified, as defined above, and names it
-  before the approval. Staging may have verified it through the commit it
-  already served, when nothing the API image is built from changed between the
-  two, so read the summary's staging run when that matters.
+  commit whose staging API was verified, as defined above, and names it
+  before the approval. That verification covers the API, not web and landing,
+  so read the summary's staging run when the frontends matter.
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `db-rollback-playbook.md`.
 - **Reference data reaches a hosted project only by migration.** `chapter_directory`'s

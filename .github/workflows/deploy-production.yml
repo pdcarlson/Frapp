@@ -51,11 +51,10 @@ run-name: "${{ inputs.dry_run_only == true && 'DRY RUN · ' || '' }}${{ inputs.s
 # built for Vercel production, and tagged.
 #
 # ── An empty `sha` (#3114) ──────────────────────────────────────────────────
-# Leave `sha` empty and `validate` picks the commit:
-# `scripts/ci/resolve-deploy-sha.mjs` walks `main` newest first, down to
-# production's latest release tag (what production runs, so it never resolves
-# a rollback), and takes the first commit with green required checks AND a
-# Deploy staging run that deployed and verified it. That SHA then takes the same "Validate the commit" step a pasted
+# Leave `sha` empty and `validate` picks the commit with
+# `scripts/ci/resolve-deploy-sha.mjs`. Which commit it picks is
+# `docs/ops/database/promotion.md` § Production: one path, two scopes. Here,
+# the wiring: that SHA then takes the same "Validate the commit" step a pasted
 # one does and becomes `validate`'s `sha` output, so `deploy`, `release` and
 # `deploy-outcome` can't tell the two modes apart. The commit is still named
 # before anything ships, in `validate`'s summary, ahead of the approval:
@@ -148,7 +147,7 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: "Full 40-character commit SHA to deploy (must be on main and CI-green). Empty: the newest main commit with green CI that Deploy staging deployed and verified"
+        description: "Full 40-character commit SHA to deploy (must be on main and CI-green). Empty: the newest main commit with green CI whose staging deploy was verified"
         required: false
         default: ""
         type: string
@@ -260,13 +259,10 @@ jobs:
         with:
           install: none
 
-      # Only for an empty `sha`. Picks the newest commit on main, above
-      # production's latest release tag, with green required checks and a
-      # Deploy staging run that deployed and verified it, and writes the pick
-      # and every newer commit it skipped to this job's summary. The tags are
-      # fetched here rather than trusted to the checkout: without them the
-      # floor is unknown, and the script refuses. Semantics:
-      # `scripts/ci/resolve-deploy-sha.mjs`.
+      # Only for an empty `sha`. Picks the commit (see the header) and writes
+      # the pick and every newer commit it skipped to this job's summary. The
+      # tags are fetched here rather than trusted to the checkout: without
+      # them production's release is unknown, and the script refuses.
       - name: Resolve the newest green main commit
         id: resolve
         if: ${{ steps.trim.outputs.sha == '' }}
