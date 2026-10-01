@@ -99,7 +99,7 @@ export function RushCard({ message, isConfirmed }: RushCardProps) {
         <span className="text-muted-foreground"> · added by </span>
         <span className="font-semibold">{payload.added_by_name}</span>
       </div>
-      <div className="mt-1 text-[12.5px] text-muted-foreground">
+      <div className="mt-1 text-caption text-muted-foreground">
         {live.isError
           ? "Couldn't load votes"
           : voteCount === 1

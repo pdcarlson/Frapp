@@ -380,7 +380,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         </DialogHeader>
 
         {hasLiveDataError ? (
-          <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning-tint p-3 text-[12.5px] text-warning">
+          <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning-tint p-3 text-caption text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             {/*
               This banner is the **only** explanation for two disabled controls
@@ -461,10 +461,10 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                   className="flex items-center justify-between gap-2 rounded-md border border-accent-border bg-accent-subtle-hover p-2"
                 >
                   <div className="min-w-0">
-                    <p className="truncate font-mono text-[12.5px]">
+                    <p className="truncate font-mono text-caption">
                       {invite.token}
                     </p>
-                    <p className="text-[12.5px] text-muted-foreground">
+                    <p className="text-caption text-muted-foreground">
                       {invite.role} • expires {formatDate(invite.expires_at)}
                     </p>
                   </div>
@@ -501,10 +501,10 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                 className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-input p-3"
               >
                 <div className="space-y-1">
-                  <p className="font-mono text-[12.5px]">{invite.token}</p>
+                  <p className="font-mono text-caption">{invite.token}</p>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{invite.role}</Badge>
-                    <span className="text-[12.5px] text-muted-foreground">
+                    <span className="text-caption text-muted-foreground">
                       Expires {formatDate(invite.expires_at)}
                     </span>
                   </div>

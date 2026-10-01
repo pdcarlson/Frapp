@@ -96,7 +96,7 @@ export function NotificationLevelPanel({
   return (
     <>
       <div className="border-b border-border px-3 py-3">
-        <p className="text-[12.5px] text-foreground">
+        <p className="text-caption text-foreground">
           {unknown
             ? "Notification level unavailable"
             : `Notifications: ${CURRENT_LABEL[level]}`}
@@ -135,12 +135,12 @@ export function NotificationLevelPanel({
                     : "text-foreground hover:bg-card",
                 )}
               >
-                <span className="text-[14.5px] font-semibold">
+                <span className="text-label font-semibold">
                   {option.label}
                 </span>
                 <span
                   className={cn(
-                    "text-[12.5px]",
+                    "text-caption",
                     selected ? "text-accent-text" : "text-muted-foreground",
                   )}
                 >

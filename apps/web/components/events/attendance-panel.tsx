@@ -373,17 +373,17 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
                     {row.displayName}
                   </p>
                   {row.email ? (
-                    <p className="truncate text-[12.5px] text-muted-foreground">
+                    <p className="truncate text-caption text-muted-foreground">
                       {row.email}
                     </p>
                   ) : null}
                   {row.status === "PRESENT" || row.status === "LATE" ? (
-                    <p className="text-[12.5px] text-muted-foreground">
+                    <p className="text-caption text-muted-foreground">
                       Checked in: {formatDate(row.checkInTime)}
                     </p>
                   ) : null}
                   {row.status === "EXCUSED" && row.excuseReason ? (
-                    <p className="text-[12.5px] text-muted-foreground">
+                    <p className="text-caption text-muted-foreground">
                       Reason: {row.excuseReason}
                     </p>
                   ) : null}
@@ -395,7 +395,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
                   <Can
                     permission="events:update"
                     deniedFallback={
-                      <span className="text-[12.5px] text-muted-foreground">
+                      <span className="text-caption text-muted-foreground">
                         View only
                       </span>
                     }

@@ -337,11 +337,11 @@ export function PointsAuditCard() {
                             ) : null}
                           </div>
                           {row.description ? (
-                            <p className="truncate text-[12.5px] text-muted-foreground">
+                            <p className="truncate text-caption text-muted-foreground">
                               {row.description}
                             </p>
                           ) : null}
-                          <p className="text-[12.5px] text-muted-foreground">
+                          <p className="text-caption text-muted-foreground">
                             {formatTimestamp(row.created_at)}
                           </p>
                         </div>
