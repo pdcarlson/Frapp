@@ -151,6 +151,18 @@ export function applyAnalyticsOptOut(next: boolean): void {
   adapter.optInCapturing();
 }
 
+/**
+ * `reset()` clears the SDK's stored consent along with the identity. posthog-js
+ * removes it (`consent.reset()`), PostHog core nulls its persisted `OptedOut`,
+ * and both then fall back to capturing. A reset runs whenever identity is
+ * missing, including while the identity read is still loading, so without this
+ * it would quietly undo a chapter opt-out applied a moment earlier (#2957).
+ */
+function resetKeepingOptOut(adapter: PostHogAdapter): void {
+  adapter.reset();
+  if (optedOut) adapter.optOutCapturing();
+}
+
 export function applyAnalyticsIdentity(
   identity: AnalyticsIdentity | null | undefined,
 ): void {
@@ -160,7 +172,7 @@ export function applyAnalyticsIdentity(
   if (!distinct) {
     // Missing/invalid hex must not keep a prior identify (magic-link swap
     // whose next GET fails, or a settled `enabled: false` payload).
-    adapter.reset();
+    resetKeepingOptOut(adapter);
     return;
   }
   adapter.identify(distinct);
@@ -237,7 +249,8 @@ export function namedAnalyticsEventBody(input: {
 }
 
 export function resetPostHog(): void {
-  currentAdapter()?.reset();
+  const adapter = currentAdapter();
+  if (adapter) resetKeepingOptOut(adapter);
 }
 
 /**

@@ -11,7 +11,6 @@ import {
   useMembers,
   useRoles,
   useUpdateMemberRoles,
-  useOrgConfig,
 } from "@repo/hooks";
 import type { MemberProfile } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
@@ -61,6 +60,7 @@ import {
   type PresenceStatus,
 } from "@/lib/realtime/presence-status";
 import { vocab } from "@/lib/vocabulary";
+import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { asArray, cn, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 
@@ -186,7 +186,10 @@ export function MembersDirectory() {
   const searchQuery = useMemberSearch(deferredQuery);
   const rolesQuery = useRoles();
   const leaderboardQuery = useLeaderboard();
-  const orgConfig = useOrgConfig();
+  // From the member view, not `useOrgConfig()`: every member opens this
+  // screen, and the config read refuses every seeded role below President, so
+  // they saw the IFC default instead of their chapter's word (#2957).
+  const chapterVocabulary = useChapterVocabulary();
   const updateRolesMutation = useUpdateMemberRoles();
   // Presence is chapter-wide and ephemeral (ADR-02) — it rides the Realtime
   // socket and touches no table, so this adds no query and no write. The
@@ -280,7 +283,7 @@ export function MembersDirectory() {
     return map;
   }, [leaderboardQuery.data]);
 
-  const cohortTerm = vocab("class", orgConfig.data);
+  const cohortTerm = vocab("class", chapterVocabulary);
   // Cohort options come from the full roster (not the search-narrowed list) so a
   // selected cohort never silently loses its <option> mid-search. Alumni class
   // years join them only while a search spans both tabs, as the role filter's

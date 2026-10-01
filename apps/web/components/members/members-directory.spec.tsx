@@ -82,7 +82,13 @@ vi.mock("@repo/hooks", () => ({
   useMemberSearch: (q: string) => (q ? searchRead : membersRead),
   useRoles: () => rolesRead,
   useLeaderboard: () => leaderboardRead,
-  useOrgConfig: () => ({ data: undefined }),
+  // The member view, which every member can read. The config read refuses
+  // every seeded role below President (#2957), so the directory must not
+  // depend on it; it reports that refusal here rather than being left out.
+  useCurrentChapter: () => ({
+    data: { org_archetype: "ifc", vocabulary: { class: "Line" } },
+  }),
+  useOrgConfig: () => ({ data: undefined, isError: true }),
   useUpdateMemberRoles: () => ({ mutateAsync: mutateRoles, isPending: false }),
 }));
 
@@ -254,6 +260,14 @@ describe("Directory on the greenfield shell", () => {
     );
     expect(
       screen.getByText("No actives match the filters"),
+    ).toBeInTheDocument();
+  });
+
+  it("names the cohort filter with the chapter's word from the member view", () => {
+    render(<MembersDirectory />);
+    const cohort = screen.getByLabelText("Filter members by Line");
+    expect(
+      within(cohort).getByRole("option", { name: "Line: All" }),
     ).toBeInTheDocument();
   });
 

@@ -20,7 +20,8 @@ export function initWebPostHog(): void {
   const key = webPostHogKey();
   if (!key) return;
   if (typeof window === "undefined") return;
-  posthog.init(key, buildWebPostHogInitOptions());
+  const options = buildWebPostHogInitOptions();
+  posthog.init(key, options);
   setLivePostHogAdapter({
     identify(distinctId) {
       posthog.identify(distinctId);
@@ -38,7 +39,17 @@ export function initWebPostHog(): void {
       posthog.opt_out_capturing();
     },
     optInCapturing() {
-      posthog.opt_in_capturing();
+      // Opting out stops replay with `stopSessionRecording()`, which sets
+      // `disable_session_recording: true` for good: `opt_in_capturing()` never
+      // clears it. Web is opted out on every load until the chapter read
+      // answers (#2957), so restore the init-time setting first, or replay
+      // would never run once it is enabled.
+      posthog.set_config({
+        disable_session_recording: options.disable_session_recording,
+      });
+      // No `$opt_in` event. An opt-in follows a settled chapter read, not a
+      // person's choice, so the event would record nothing.
+      posthog.opt_in_capturing({ captureEventName: false });
     },
     stopSessionRecording() {
       posthog.stopSessionRecording();
