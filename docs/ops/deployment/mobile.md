@@ -244,10 +244,90 @@ the files in order, for the default language. The upload needs the developer acc
 
 ### 6.6 Store submission
 
-Submission is by hand from a maintainer's terminal, after the build finishes on EAS. No CI job
-runs `eas submit`, and CI has no `EXPO_TOKEN`. Both platforms read the `production` submit profile
-in `apps/mobile/eas.json`; `eas submit` defaults to it, and falls back to it when the build's own
-profile has no submit profile of the same name.
+Two paths put a production build on the stores: **Deploy production** does it on request (CI,
+below), and a maintainer can still do it from a terminal (by hand, further below). Both **upload
+without releasing**. iOS lands on TestFlight and Android on the Play `internal` track
+(`submit.production.android.track` in `apps/mobile/eas.json`). Submitting for App Review and
+promoting a Play track stay a human's clicks in the consoles.
+
+**Which commit.** Build a store binary from the commit production serves, which is the latest `v*`
+tag (`git tag --list 'v*' --sort=-version:refname | head -n1`), and never from `main`'s tip. A
+binary newer than production calls routes production doesn't serve yet (#2526); that is why the
+`v0.7.0` ship had to come before the 0.9.0 binary. The CI path builds the commit it just shipped
+and tagged, so it can't break this rule. The manual path keeps it by hand.
+
+**Record every upload.** Each build uploaded to TestFlight or a Play track gets a
+`shipped-builds.json` entry before any tester installs it, because that list arms the required
+`api-contract-check` gate. The CI path opens that PR itself. By hand, it's
+[`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract).
+
+**Version and build number.** `expo.version` in `apps/mobile/app.json` is still a manual bump
+before any build with native changes
+([`spec/environments/README.md` § Mobile (EAS)](../../../spec/environments/README.md#mobile-eas),
+**Native changes**). Neither path bumps it. The build number is EAS's: `appVersionSource: remote`
+with `autoIncrement` gives every production build the next one. When a store refuses an upload
+(a version it no longer takes, say), the upload step fails with the store's message.
+
+#### From Deploy production (CI)
+
+Dispatch **Deploy production** as usual and set **`mobile_build`** to `ios`, `android` or `all`.
+The default, `none`, builds nothing, and the run is exactly what it was without the input. The
+store build runs only on a `full`, non-dry-run ship, after the deploy **and** the version tag
+succeed. A dry run or a `migrations-only` run never builds, whatever the input says. The `mobile`
+job then calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111):
+
+1. **`build`** checks out the validated SHA and nothing else, runs `npm ci` and installs eas-cli
+   **24.8.0** (pinned), and refuses to go on unless the tree is exactly that commit with nothing
+   changed: eas-cli uploads uncommitted changes with the build. Then it runs
+   `eas build --platform <choice> --profile production --non-interactive --wait --json`. Every
+   build that finished is uploaded by id with
+   `eas submit --platform <p> --profile production --id <build id> --non-interactive --wait`; iOS
+   also passes `--no-auto-testflight-setup`, so CI never creates a TestFlight group. One platform's
+   failure doesn't stop the other's upload.
+2. **`record`** opens the PR that adds one `shipped-builds.json` entry per uploaded build
+   (`scripts/ci/record-shipped-builds.mjs`). It uses the PR base sync GitHub App's token, because
+   a PR opened with the Actions `GITHUB_TOKEN` starts no CI, and that PR's `api-contract-check`
+   is the point. **Merge it before any tester installs the build.** A build EAS reports from any
+   other commit is refused, not recorded. The run summary lists every build: its EAS id, status,
+   version, upload result, and whether it was recorded.
+
+Both jobs name the `automation` environment, which has no reviewers, so a ship stays one Approve
+click ([`agent-infra.md` § GitHub environments and bootstrap secrets](../../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets)).
+The build reads the same EAS `production` environment variables (§ 6.3) and credentials as a
+laptop build, so anything a hand build needs, this one needs too.
+
+**When it fails.** Production and the tag are already live and stay as they are. The `mobile` job
+goes red on its own, and the deploy summary and alert don't change. The `record` job's summary
+says what finished, what uploaded, and the `eas submit … --id <build id>` that finishes an upload
+by hand. A build that uploaded but couldn't be recorded is listed there as the JSON entries to add.
+To retry, use **Re-run failed jobs** on the same run: the deploy and the tag succeeded and don't
+run again, and the retry builds a fresh build number.
+
+**Before the first run.** These exist outside the repo, and a non-interactive run stops without
+each one:
+
+- **`EXPO_TOKEN`**: an Expo access token (a robot user's, so it isn't tied to a person), as a
+  secret of the GitHub **`automation`** environment. Not Infisical, and never a repository secret
+  (#2518). Without it the `build` job's first step fails, before any checkout.
+- **iOS signing credentials in EAS.** A non-interactive build can't create the distribution
+  certificate (eas-cli's `SetUpDistributionCertificate` throws `MissingCredentialsNonInteractiveError`).
+  One interactive `eas build --platform ios --profile production` creates it, and the first
+  binary built by hand does that.
+- **An App Store Connect API key stored in EAS for submissions** (`eas credentials --platform ios`
+  → App Store Connect API Key). The table below says why.
+- **Android:** the Play service-account key in EAS credentials (#2556, #938). Until it exists,
+  choose `ios`: an Android build would finish and then fail its upload. The keystore is no
+  obstacle: a non-interactive build generates one when none exists (`CreateKeystore`). A
+  production Android build also needs the `GOOGLE_SERVICES_JSON` file variable
+  (`apps/mobile/app.config.js` refuses to evaluate without it).
+- **An EAS plan whose build quota covers each ticked ship** (one build per platform).
+
+#### By hand
+
+Run from `apps/mobile`, after checking out the latest `v*` tag and building it on EAS
+(`eas build --platform <p> --profile production`). Both platforms read the `production` submit
+profile in `apps/mobile/eas.json`; `eas submit` defaults to it, and falls back to it when the
+build's own profile has no submit profile of the same name.
 
 **Google Play:** `eas submit -p android --latest` uploads to the `internal` track, the one the
 profile sets. It authenticates with the Play service-account key held in EAS credentials, or a
@@ -255,19 +335,19 @@ local file named by `serviceAccountKeyPath` in the profile. No key exists yet (#
 it lives: [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md#appsmobile-expo--eas), the
 `eas submit` note.
 
-**App Store:** `eas submit -p ios --latest`, run interactively. The profile has no `ios` block, so
-eas-cli uses its default iOS profile:
+**App Store:** `eas submit -p ios --latest`, interactively or not:
 
-- **App.** With no `ascAppId`, the run signs in to the Apple account and finds the App Store
-  Connect app by bundle ID (it would create one if none existed). The record exists: its Apple ID
-  is in [`apps/mobile/store/README.md`](../../../apps/mobile/store/README.md) § As submitted.
+- **App.** `submit.production.ios.ascAppId` names the App Store Connect app, `6812025642`, the
+  Apple ID recorded in [`apps/mobile/store/README.md`](../../../apps/mobile/store/README.md)
+  § As submitted. Without it, an interactive run signs in to the Apple account and finds the app
+  by bundle ID (it would create one if none existed), and a non-interactive run stops.
 - **Credentials.** The upload uses the App Store Connect API key stored in EAS credentials for
   submissions; with none stored, the interactive run offers to create one. If
   `EXPO_APPLE_APP_SPECIFIC_PASSWORD` is set, it is used **instead of** the key, and it needs an
   Apple ID too (`EXPO_APPLE_ID`, or the sign-in).
 
-**What a `--non-interactive` run needs** (any CI job; none exists). Each gap stops the run with
-the message shown:
+**What a `--non-interactive` run needs** (the CI path is one). Each gap stops the run with the
+message shown:
 
 | Missing | eas-cli stops with |
 | --- | --- |
@@ -276,12 +356,16 @@ the message shown:
 | iOS: a submissions App Store Connect API key already stored in EAS | "App Store Connect API Keys cannot be set up in --non-interactive mode." |
 | iOS, password route: an Apple ID | "Set appleId in the submit profile (eas.json)." |
 
-Plus `EXPO_TOKEN` for the Expo account. `eas-production-profile.test.mjs` allows an `ios` submit
-block with `ascAppId`; none is committed, because nothing runs non-interactively yet.
+Plus `EXPO_TOKEN` for the Expo account. `ascAppId` is committed since #3111.
+`eas-production-profile.test.mjs` doesn't require it.
 
 **Source:** read from the eas-cli 24.8.0 source (`IosSubmitCommand`, `AscApiKeySource`,
 `SetUpAscApiKey`, `AppSpecificPasswordSource`, `submit/commons`) and `@expo/eas-json` 24.8.0
-(`resolveSubmitProfile`) on 2026-09-27 (#2379). eas-cli isn't pinned (see the top of this section),
-so re-check the table against `eas submit --help` when a run disagrees.
+(`resolveSubmitProfile`) on 2026-09-27 (#2379). The CI path's flags, the `--json` build fields
+(`appVersion`, `appBuildVersion`, `gitCommitHash`, `status`), and the exit codes (`eas build --wait`
+exits 1 only for an `ERRORED` build, not a `CANCELED` one; `eas submit --wait` exits 1 unless the
+submission `FINISHED`) were read from the same version's `--help` and source on 2026-10-01 (#3111).
+CI pins that version; a laptop isn't pinned (see the top of this section), so re-check the table
+against `eas submit --help` when a run disagrees.
 
 ---

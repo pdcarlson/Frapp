@@ -423,10 +423,12 @@ is unavailable in that state and the sign-in screen says so.
 > `serviceAccountKeyPath` in `submit.production.android` (eas-cli has no `--key` flag).
 > `apps/mobile/play-service-account.json` stays gitignored in case a local copy is ever
 > used; it must never be committed. No such key exists yet — it
-> becomes real when Play submission is set up (#938). The iOS submit identifiers
-> (`appleId`, `ascAppId`, `appleTeamId`) are likewise not in `eas.json` any more: an
-> interactive `eas submit` gets them from the Apple sign-in, so the file carries no
-> placeholders. How each store is submitted, and what a non-interactive run would need:
+> becomes real when Play submission is set up (#938). Of the iOS submit identifiers, only
+> `ascAppId` is in `eas.json` (`submit.production.ios`, since #3111): the App Store Connect
+> app's Apple ID, which is not a secret and which a non-interactive submit can't run without.
+> `appleId` and `appleTeamId` are not, so the file carries no placeholders; an interactive
+> `eas submit` gets them from the Apple sign-in. How each store is submitted, and what a
+> non-interactive run needs:
 > [`mobile.md` § 6.6](../../ops/deployment/mobile.md#66-store-submission).
 
 > **Push credentials also live outside Infisical, and Android needs two of them.**

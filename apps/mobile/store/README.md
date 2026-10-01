@@ -733,7 +733,10 @@ compared against nothing. Why it blocks, and how it fails:
 [`quality-gates.md` § Two comparisons, two postures](../../../docs/ci-cd/quality-gates.md#two-comparisons-two-postures).
 
 **Record a build when it is first uploaded to TestFlight or a Play track**, before any tester can
-install it, in a PR that adds one entry per build:
+install it, in a PR that adds one entry per build. When **Deploy production** uploads the build
+(its `mobile_build` input), its `record` job opens that PR, and merging it is all that's left
+([`mobile.md` § 6.6](../../../docs/ops/deployment/mobile.md#66-store-submission)). A build uploaded
+by hand is recorded by hand:
 
 ```json
 { "platform": "ios", "version": "0.9.0", "build": "12", "sha": "<40-character commit SHA>", "recorded": "2026-10-01" }
@@ -742,8 +745,10 @@ install it, in a PR that adds one entry per build:
 - `platform` is `ios` or `android`. `version` is the store version and `build` the native build
   number, as a string: the `<version>+<build>` the binary sends in `X-Client-Version`
   ([`spec/ui/mobile/patterns.md` § Minimum version](../../../spec/ui/mobile/patterns.md#minimum-version)).
-- `sha` is the full commit the build was made from. Build store binaries from a commit on `main`:
-  CI reads the contract with `git show <sha>:apps/api/openapi.json`, and a SHA it can't read fails
+- `sha` is the full commit the build was made from. Build store binaries from the latest `v*`
+  tag, the commit production serves, never from `main`'s tip: a binary newer than production
+  calls routes production doesn't serve yet. That commit is on `main`, which the check needs: CI
+  reads the contract with `git show <sha>:apps/api/openapi.json`, and a SHA it can't read fails
   the check rather than being skipped.
 - An iOS and an Android build from the same commit are two entries, and are compared once.
 
