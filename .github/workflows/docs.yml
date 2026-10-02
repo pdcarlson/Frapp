@@ -49,6 +49,7 @@ jobs:
   # passes.
   env-slugs:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v7
