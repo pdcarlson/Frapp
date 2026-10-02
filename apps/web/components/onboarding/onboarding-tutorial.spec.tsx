@@ -42,11 +42,12 @@ import { OnboardingTutorial } from "./onboarding-tutorial";
  */
 describe("the step strip", () => {
   it("carries no fill, and no opacity wash in either Tailwind spelling", () => {
-    // `bg-secondary/60` inside a `DialogContent` composited to 1.050:1 —
-    // `--secondary` holds `--card`'s value and a dialog is `--popover`. The
-    // class-string guard in `components/profile/family-call-sites.spec.ts`
-    // catches the source; this catches the rendered element, which is the half
-    // a conditional could hide from a grep.
+    // `bg-secondary/60` inside a `DialogContent` composited to ~1.06:1 —
+    // `--secondary` held `--card`'s value (deleted, #3036) and a dialog is
+    // `--popover`. The class-string guard in
+    // `components/profile/family-call-sites.spec.ts` catches the source; this
+    // catches the rendered element, which is the half a conditional could hide
+    // from a grep.
     render(<OnboardingTutorial />);
     const strip = screen.getByRole("group", { name: /step 1 of 8/i });
     expect(strip.className).not.toMatch(/\bbg-secondary\b/);

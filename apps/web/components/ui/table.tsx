@@ -22,8 +22,9 @@ import { cn } from "@/lib/utils"
  * ── Row states, and why they are three classes rather than one ──────────────
  *
  * The full `hover:bg-accent` that replaced that half-mix had the same defect at
- * full strength: `--accent` holds the same value as `--popover`, so a row on a
- * `--card` surface hovered at **1.085:1** — no feedback at all. §2's remedy is
+ * full strength: `--accent` held the same value as `--popover` (the alias is
+ * deleted, #3036), so a row on a `--card` surface hovered at **1.085:1** — no
+ * feedback at all. §2's remedy is
  * the accent tint, and the trap is that the tint does not fix it *by luminance*:
  * `--accent-subtle` measures 1.032–1.143:1 on `--card` across the 19 seeded
  * chapter colours, which straddles the neutral step it replaces rather than
