@@ -2,7 +2,7 @@
 //
 // The section tells an agent to reach for these before writing a helper, so a
 // module missing from it is one the next script copies instead. It listed 6 of
-// 17 modules before this test, and nothing noticed. The exports column is
+// 20 modules before this test, and nothing noticed. The exports column is
 // checked against what each module actually exports, read by importing it.
 
 import { test } from "node:test";
