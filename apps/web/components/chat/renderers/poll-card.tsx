@@ -13,24 +13,15 @@ import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   POLL_VOTE_ACTION_TYPE,
-  POLLS_OFF_COPY,
+  pollsGateReason,
   readPollPayload,
   tallyPollVotes,
   type PollOption,
+  type PollsGate,
 } from "@repo/chat-core/polls";
 import { useNow } from "@repo/hooks";
 import { parseInstant } from "@repo/formatting";
 
-/**
- * Why the vote is withdrawn while the Polls gate has not answered "on":
- * `spec/ui/design-system/writing.md` § Module off, "Poll (chat card, web and
- * mobile)" and the two rows under it. Off reads `POLLS_OFF_COPY`, the sentence
- * a refused vote already carried.
- */
-export const POLLS_GATE_LOADING_COPY =
-  "Checking whether polls are on for your chapter…";
-export const POLLS_GATE_ERROR_COPY =
-  "Couldn't check whether polls are on for your chapter, so voting is paused.";
 
 interface PollCardProps {
   message: ChatMessage;
@@ -65,7 +56,7 @@ export function PollCard({
   // closed while that read is loading or failed, saying which, as the slash
   // palette and composer do with the same hook. A missing `polls` key is on.
   const moduleGate = useChapterModuleGateState();
-  const pollsGate =
+  const pollsGate: PollsGate =
     moduleGate.status !== "ready"
       ? moduleGate.status
       : moduleGate.isModuleEnabled("polls")
@@ -100,15 +91,7 @@ export function PollCard({
     against; an unusable id is an unresolved viewer whatever shape it arrives in.
   */
   const canVote = isConfirmed && !isClosed && !!viewerId && pollsGate === "on";
-  // A closed poll takes no vote whatever the module says, so it gets no reason.
-  const gateReason =
-    isClosed || pollsGate === "on"
-      ? null
-      : pollsGate === "off"
-        ? POLLS_OFF_COPY
-        : pollsGate === "loading"
-          ? POLLS_GATE_LOADING_COPY
-          : POLLS_GATE_ERROR_COPY;
+  const gateReason = pollsGateReason(pollsGate, isClosed);
 
   const cast = (option: PollOption) => {
     if (!canVote) return;

@@ -1,7 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { POLLS_OFF_COPY } from "@repo/chat-core/polls";
+import {
+  POLLS_GATE_ERROR_COPY,
+  POLLS_GATE_LOADING_COPY,
+  POLLS_OFF_COPY,
+} from "@repo/chat-core/polls";
 
 /**
  * The poll card mirrors the Polls module gate (#3012). The server refuses a
@@ -37,8 +41,7 @@ vi.mock("@/lib/stores/chapter-store", () => ({
     selector({ activeChapterId: "chapter-1" }),
 }));
 
-const { PollCard, POLLS_GATE_ERROR_COPY, POLLS_GATE_LOADING_COPY } =
-  await import("./poll-card");
+const { PollCard } = await import("./poll-card");
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";

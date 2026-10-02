@@ -3,10 +3,11 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   POLL_VOTE_ACTION_TYPE,
-  POLLS_OFF_COPY,
+  pollsGateReason,
   readPollPayload,
   tallyPollVotes,
   type PollOption,
+  type PollsGate,
 } from "@repo/chat-core/polls";
 import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
@@ -65,18 +66,7 @@ import {
  * paths before choosing which one to mirror.
  */
 
-/**
- * Why the vote is withdrawn while the Polls gate has not answered "on":
- * `spec/ui/design-system/writing.md` § Module off, "Poll (chat card, web and
- * mobile)" and the two rows under it. Off reads `POLLS_OFF_COPY`, the sentence
- * a refused vote already carried.
- */
-export const POLLS_GATE_LOADING_COPY =
-  "Checking whether polls are on for your chapter…";
-export const POLLS_GATE_ERROR_COPY =
-  "Couldn't check whether polls are on for your chapter, so voting is paused.";
 
-type PollsGate = "on" | "off" | "loading" | "error";
 
 /**
  * The Polls module gate, from the member view (`useCurrentChapter`'s
@@ -221,15 +211,7 @@ export function PollCard({
   const closesAt = parseInstant(payload.closes_at);
   const isClosed = closesAt ? closesAt.getTime() < now : false;
   const canVote = isConfirmed && !isClosed && pollsGate === "on";
-  // A closed poll takes no vote whatever the module says, so it gets no reason.
-  const gateReason =
-    isClosed || pollsGate === "on"
-      ? null
-      : pollsGate === "off"
-        ? POLLS_OFF_COPY
-        : pollsGate === "loading"
-          ? POLLS_GATE_LOADING_COPY
-          : POLLS_GATE_ERROR_COPY;
+  const gateReason = pollsGateReason(pollsGate, isClosed);
 
   const cast = (option: PollOption) => {
     if (!canVote) return;

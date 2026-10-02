@@ -4,7 +4,11 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { POLLS_OFF_COPY } from "@repo/chat-core/polls";
+import {
+  POLLS_GATE_ERROR_COPY,
+  POLLS_GATE_LOADING_COPY,
+  POLLS_OFF_COPY,
+} from "@repo/chat-core/polls";
 import { FrappThemeProvider } from "@/lib/theme";
 import { UNCONFIRMED_NOTE, RECORDED_NOTE } from "@/lib/chat/delivery-status";
 
@@ -41,12 +45,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import {
-  PollCard,
-  type PollCardProps,
-  POLLS_GATE_ERROR_COPY,
-  POLLS_GATE_LOADING_COPY,
-} from "./poll-card";
+import { PollCard, type PollCardProps } from "./poll-card";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";

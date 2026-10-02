@@ -39,6 +39,37 @@ export const POLLS_OFF_COPY =
   "Polls are turned off for your chapter right now. An officer can turn them back on.";
 
 /**
+ * The Polls gate as a poll card's Vote reads it (#3012): the member view's
+ * `enabled_modules.polls`, or why that isn't known yet. Each client derives it
+ * from its own chapter read.
+ */
+export type PollsGate = "on" | "off" | "loading" | "error";
+
+/**
+ * The poll card's withdrawn-Vote reasons while the Polls check hasn't answered:
+ * `spec/ui/design-system/writing.md` § Module off, the two rows under "Poll
+ * (chat card, web and mobile)".
+ */
+export const POLLS_GATE_LOADING_COPY =
+  "Checking whether polls are on for your chapter…";
+export const POLLS_GATE_ERROR_COPY =
+  "Couldn't check whether polls are on for your chapter, so voting is paused.";
+
+/**
+ * The line a poll card shows under its options when the gate withdraws its
+ * Vote, or `null` when it doesn't. A closed poll takes no vote whatever the
+ * module says, so it gets no reason.
+ */
+export function pollsGateReason(
+  gate: PollsGate,
+  isClosed: boolean,
+): string | null {
+  if (isClosed || gate === "on") return null;
+  if (gate === "off") return POLLS_OFF_COPY;
+  return gate === "loading" ? POLLS_GATE_LOADING_COPY : POLLS_GATE_ERROR_COPY;
+}
+
+/**
  * A poll sent or voted on while Polls is off is refused with the module
  * gate's sentence to an officer ("Re-enable it in Settings → Modules"), which
  * a member can't act on (#2993). chat-core runs every server message it
