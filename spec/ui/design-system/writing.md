@@ -667,6 +667,26 @@ is unavailable ([#2299](https://github.com/pdcarlson/Frapp/issues/2299)).
 | Installed build, module failed to load | `Unavailable` (row value) | `Notifications couldn't start in this version of the app. Updating the app may fix it. You'll still see everything here in the app.` |
 | No EAS project id | `Unavailable` (row value) | `Notifications aren't switched on for this build yet. You'll still see everything here in the app.` |
 
+### Notification preferences (mobile, s16)
+
+The one footnote under Settings' notification switches (`notificationsMeta` in
+`apps/mobile/app/(tabs)/preferences.tsx`). It shows the first row that applies,
+in this order, so a write in flight reads as saving even while the first read is
+still out.
+
+| State | Title | Description |
+|---|---|---|
+| Reading this device's copy | — | `Loading your saved preferences…` |
+| This device's copy was unreadable | — | `Saved preferences were unreadable and have been reset to defaults.` |
+| Signed out | — | `Saved on this device only. Sign in to change the settings on your account.` |
+| No chapter | — | `Category switches sync once you choose a chapter.` |
+| A read or write failed | — | `Couldn't reach the server. Change a setting again to retry.` |
+| A write in flight | — | `Saving…` |
+| A read in flight, nothing being written | — | `Loading your preferences…` |
+| Synced | — | `Synced with your account.` |
+
+**The read row borrows the web Preferences card's loading line** (`Profile (dashboard)` below), because it is the same `GET /v1/settings`. Until #2938 a read in flight said `Saving…`, while nothing was being saved.
+
 ### Report and block (mobile s05 / s13 / s16, web `/chat` and `/profile`)
 
 Member-safety copy (#2257, #2313). The behavior each string describes is owned by
