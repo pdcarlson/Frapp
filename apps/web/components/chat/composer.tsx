@@ -30,7 +30,8 @@ import {
   SlashCommandGlyph,
 } from "./chat-glyphs";
 import { cn } from "@/lib/utils";
-import { CHAT_CONTROL_CLASS, MENTION_CHIP } from "./chip";
+import { compactControlClassName } from "@/components/shared/table-controls";
+import { MENTION_CHIP } from "./chip";
 import {
   useChapterRoster,
   useRequestChatUploadUrl,
@@ -97,7 +98,7 @@ export const COMPOSER_INPUT_CLASS =
  * on it.
  *
  * `pointer-coarse:h-11` is not decoration and is not what `ComposerSkeleton`
- * reserved: `CHAT_CONTROL_CLASS` is `h-8 pointer-coarse:h-11` and the Send
+ * reserved: `compactControlClassName` is `h-8 pointer-coarse:h-11` and the Send
  * button carries the same pair, so on a touch device the real row is 44px and
  * the old skeleton reserved 32px — a 12px shift directly above the composer on
  * exactly the devices least able to absorb it. `Composer` does not use this
@@ -767,7 +768,7 @@ function ComposerHelp() {
           type="button"
           variant="ghost"
           size="icon"
-          className={CHAT_CONTROL_CLASS}
+          className={compactControlClassName}
           aria-label="Composing help"
         >
           <span aria-hidden="true" className="text-sm font-bold">
@@ -1523,7 +1524,7 @@ export function Composer({
         <EditorContent editor={editor} />
         {/*
           No `COMPOSER_TOOLBAR_CLASS` here, and that is deliberate: this row's
-          height is intrinsic — `CHAT_CONTROL_CLASS` is `h-8` and
+          height is intrinsic — `compactControlClassName` is `h-8` and
           `pointer-coarse:h-11`, and the Send button matches. Pinning it to the
           shell's reserved height would cap the coarse-pointer row at 32px and
           overflow every touch target on it. The constant reserves what this row
@@ -1537,7 +1538,7 @@ export function Composer({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className={CHAT_CONTROL_CLASS}
+                  className={compactControlClassName}
                   aria-label="Open emoji picker"
                 >
                   <ReactionGlyph className="h-5 w-5" />
@@ -1551,7 +1552,7 @@ export function Composer({
               type="button"
               variant="ghost"
               size="icon"
-              className={CHAT_CONTROL_CLASS}
+              className={compactControlClassName}
               aria-label="Attach file"
               onClick={() => fileInput.current?.click()}
               disabled={attachPending}
@@ -1576,7 +1577,7 @@ export function Composer({
               type="button"
               variant="ghost"
               size="icon"
-              className={CHAT_CONTROL_CLASS}
+              className={compactControlClassName}
               aria-label="Open slash commands (Command Slash)"
               aria-haspopup="dialog"
               aria-expanded={palette.open}
