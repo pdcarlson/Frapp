@@ -42,7 +42,7 @@ function mountProvider(optOut: boolean | undefined) {
   harness.chapter.mockReturnValue({
     data: { analytics_opt_out: optOut },
   });
-  render(
+  return render(
     <AnalyticsProvider>
       <TrackButton eventName="logged-hours" />
     </AnalyticsProvider>,
@@ -79,6 +79,63 @@ describe("mobile AnalyticsProvider", () => {
     mountProvider(undefined);
     fireEvent.click(screen.getByRole("button", { name: "send" }));
     expect(harness.post).toHaveBeenCalledTimes(1);
+  });
+
+  // #3101: the chapter counts as opted out until its read answers, because
+  // nothing on the server stands behind what the PostHog SDK sends directly.
+  it.each([
+    ["pending", { data: undefined, isPending: true, isError: false }],
+    [
+      "failed with nothing cached",
+      { data: undefined, isPending: false, isError: true },
+    ],
+    ["answered null", { data: null, isPending: false, isError: false }],
+  ])(
+    "keeps the SDK opted out and posts nothing while the read is %s",
+    (_, read) => {
+      harness.chapter.mockReturnValue(read);
+      render(
+        <AnalyticsProvider>
+          <TrackButton eventName="logged-hours" />
+        </AnalyticsProvider>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "send" }));
+      expect(harness.optOut).toHaveBeenLastCalledWith(true);
+      expect(harness.optOut).not.toHaveBeenCalledWith(false);
+      expect(harness.post).not.toHaveBeenCalled();
+    },
+  );
+
+  it("opts the SDK in once the read answers false", () => {
+    harness.chapter.mockReturnValue({ data: undefined });
+    const view = render(
+      <AnalyticsProvider>
+        <TrackButton eventName="logged-hours" />
+      </AnalyticsProvider>,
+    );
+    expect(harness.optOut).toHaveBeenLastCalledWith(true);
+
+    harness.chapter.mockReturnValue({ data: { analytics_opt_out: false } });
+    view.rerender(
+      <AnalyticsProvider>
+        <TrackButton eventName="logged-hours" />
+      </AnalyticsProvider>,
+    );
+    expect(harness.optOut).toHaveBeenLastCalledWith(false);
+    fireEvent.click(screen.getByRole("button", { name: "send" }));
+    expect(harness.post).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the SDK opted out with no active chapter, whose read never runs", () => {
+    harness.activeChapter = null;
+    harness.chapter.mockReturnValue({ data: undefined });
+    render(
+      <AnalyticsProvider>
+        <TrackButton eventName="logged-hours" />
+      </AnalyticsProvider>,
+    );
+    expect(harness.optOut).toHaveBeenLastCalledWith(true);
+    expect(harness.optOut).not.toHaveBeenCalledWith(false);
   });
 
   it("is a no-op until an active chapter exists", () => {

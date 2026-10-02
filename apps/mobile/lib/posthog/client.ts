@@ -1,5 +1,6 @@
 import PostHog from "posthog-react-native";
 import {
+  applyAnalyticsOptOut,
   canStartLivePostHogInit,
   isAnalyticsCaptureOptedOut,
   setLivePostHogAdapter,
@@ -63,4 +64,10 @@ export function initMobilePostHog(): void {
       client.reloadFeatureFlags();
     },
   });
+  // Opted out from the start, until `AnalyticsProvider` has the chapter's
+  // answer (#3101). Init runs at module scope, before the first commit mounts
+  // the provider, and the SDK otherwise starts from whatever consent the last
+  // session persisted, so a chapter that opted out since could still send the
+  // `sentry-error-correlated` marker in that window.
+  applyAnalyticsOptOut(true);
 }
