@@ -21,6 +21,8 @@ import { ChapterModule } from '../chapter/chapter.module';
  * - `ChatPushWorkerModule` — the push audience, which is the severe one: a
  *   notification is content delivered to a lock screen and a persisted row,
  *   past every client-side list.
+ * - `NotificationModule` — the in-app list withholds the chat rows written
+ *   before a block (#2715).
  *
  * Imports `ChapterModule` for `MEMBER_REPOSITORY`, which the block write uses to
  * check the target is a member of this chapter — the check that stops a stray

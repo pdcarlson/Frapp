@@ -216,6 +216,39 @@ describe('ChatPushWorkerService', () => {
       );
     });
 
+    it('records the sender on every row it writes, bundled ones included (#2715)', async () => {
+      // The in-app list withholds a member's chat rows from someone who blocks
+      // them later, and `senderId` is what it filters on. A row without it is
+      // withheld from anyone with a block, so dropping it here would quietly
+      // empty blockers' history instead of failing anything.
+      service.__setChannelForTest(CHANNEL);
+      setMembers(['sender', 'bystander']);
+
+      for (let i = 0; i < 3; i++) {
+        await service.handleMessage({
+          id: `m${i}`,
+          channel_id: CHANNEL.id,
+          sender_id: 'sender',
+          content: `message ${i}`,
+          kind: 'text',
+          mentions: ['bystander'],
+          created_at: '',
+        });
+      }
+
+      const data = notifyUser.mock.calls.map(
+        (c) => (c[2] as { data: Record<string, unknown> }).data,
+      );
+      expect(data.some((d) => d.bundled === true)).toBe(true);
+      expect(data.some((d) => d.bundled === undefined)).toBe(true);
+      for (const d of data) {
+        expect(d).toMatchObject({
+          target: { screen: 'chat', channelId: CHANNEL.id },
+          senderId: 'sender',
+        });
+      }
+    });
+
     it('drops a blocker even when the message mentions them', async () => {
       // The sharpest case: `decidePush` returns 'send' on `hasMention` BEFORE
       // the level check, so a mention overrides an explicit `off`. If the block
