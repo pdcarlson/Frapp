@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import {
   dayDelta,
   parseInstant,
-  parseInstantOrBareUtcNoon,
+  parseInstantOrBareLocalNoon,
 } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -101,7 +101,7 @@ export function selectNextEvent(
  * Nearest task still owed. `COMPLETED` is excluded; `OVERDUE` deliberately is
  * not — an overdue task is the most urgent thing the strip can say.
  *
- * Sort keys go through {@link parseInstantOrBareUtcNoon}, the same parse as
+ * Sort keys go through {@link parseInstantOrBareLocalNoon}, the same parse as
  * {@link formatDueDate} / {@link isDueUrgent}. `new Date("YYYY-MM-DD")` is UTC
  * midnight; mixing that with the noon parse would pick a different "nearest"
  * task if a chat card ever handed a full timestamp beside a bare due date.
@@ -133,7 +133,7 @@ export function selectNextTask(
       const status = str(row, "status") ?? "TODO";
       if (!id || !title || !dueDate) return null;
       if (status === "COMPLETED") return null;
-      const parsed = parseInstantOrBareUtcNoon(dueDate);
+      const parsed = parseInstantOrBareLocalNoon(dueDate);
       if (!parsed) return null;
       const at = parsed.getTime();
       return { at, task: { id, title, due_date: dueDate, status } };
@@ -171,16 +171,16 @@ export function formatEventTime(startTime: string, now: Date): string {
  * **midnight** — the previous local day for everyone west of Greenwich. Fed to
  * the local-calendar `dayDelta`, that made every due date land one day
  * early: a task due Saturday painted `destructive` on Thursday for every US
- * user. UTC noon is the fix `lib/more/service-hours.ts` already documents.
+ * user. Local noon is the fix `lib/more/service-hours.ts` already documents.
  *
  * A full timestamp is passed through untouched, because the chat `kind:"task"`
- * card can carry one and forcing `T12:00:00Z` onto it would produce `NaN`.
+ * card can carry one and forcing `T12:00:00` onto it would produce `NaN`.
  */
 function parseDueInstant(value: string): Date | null {
-  // Bare YYYY-MM-DD at UTC noon (protected cluster) so a west-of-Greenwich
-  // timezone does not shift the due date back a day. Full timestamps pass
-  // through — appending T12:00:00Z to one yields NaN.
-  return parseInstantOrBareUtcNoon(value);
+  // Bare YYYY-MM-DD at local noon (protected cluster) so no timezone shifts
+  // the due date a day. Full timestamps pass through — appending T12:00:00
+  // to one yields NaN.
+  return parseInstantOrBareLocalNoon(value);
 }
 
 export function formatDueDate(dueDate: string, now: Date): string {
