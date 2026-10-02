@@ -91,3 +91,48 @@ export const CHAT_MESSAGE_CONTENT_MAX_LENGTH = 10_000;
  * steps down to, so the cap is the tile, not the column.
  */
 export const CHAPTER_SHORT_NAME_MAX_LENGTH = 6;
+
+/**
+ * The largest value a Postgres `int` (int4) column holds (#3045).
+ *
+ * `enableImplicitConversion` lets any integer clear `@IsInt()`, and Postgres
+ * answers one past this with `22003 integer out of range`, which reaches the
+ * client as a 500 rather than a 400 naming the field. Several of those writes
+ * were also partial: a config PATCH committed its `chapters` row and skipped
+ * the audit row, and a Discord channel mapping deleted the old rows before the
+ * insert failed. So every `@IsInt()` request field that reaches an `int`
+ * column carries a `@Max`, and `dto-constraint-coverage.spec.ts` fails on one
+ * that doesn't.
+ *
+ * This is the fallback, for a field with no product ceiling (a workflow
+ * threshold whose units vary, an import's message count). Prefer a bound that
+ * means something where one exists.
+ */
+export const INT4_MAX = 2_147_483_647;
+
+/**
+ * A list position a client may set: role and category `display_order`, custom
+ * field `sort`, document folder `sort_order`, custom role `rank`.
+ *
+ * Far above any list a chapter keeps, and far below {@link INT4_MAX} on
+ * purpose: the services that place a new row last compute `max + 1`, so a row
+ * stored at `INT4_MAX` itself would make every later create in that list 500.
+ */
+export const POSITION_MAX = 1_000_000;
+
+/**
+ * A calendar year a person types: a backwork resource's year, a chapter's
+ * founding year. Four digits; the clients hold the tighter "not after next
+ * year" bound, which a static decorator can't express.
+ */
+export const YEAR_MAX = 9_999;
+
+/**
+ * A study zone's minute settings (`minutes_per_point`, `min_session_minutes`,
+ * `pause_grace_minutes`). A day: a session is kept alive by a heartbeat every
+ * five minutes, so no setting longer than that can ever be met.
+ */
+export const STUDY_ZONE_MINUTES_MAX = 24 * 60;
+
+/** Options on one poll; an option index is below this. */
+export const POLL_OPTIONS_MAX = 10;

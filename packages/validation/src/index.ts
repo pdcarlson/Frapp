@@ -1027,6 +1027,13 @@ export {
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   CHAPTER_SHORT_NAME_MAX_LENGTH,
 };
+export {
+  INT4_MAX,
+  POLL_OPTIONS_MAX,
+  POSITION_MAX,
+  STUDY_ZONE_MINUTES_MAX,
+  YEAR_MAX,
+} from "./field-limits";
 
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export {

@@ -5,10 +5,12 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+import { POLL_OPTIONS_MAX } from '@repo/validation';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBooleanQueryString } from '../decorators/is-boolean-query-string.decorator';
@@ -55,6 +57,7 @@ export class VoteDto {
   @IsArray()
   @IsInt({ each: true })
   @Min(0, { each: true })
+  @Max(POLL_OPTIONS_MAX - 1, { each: true })
   option_indexes: number[];
 }
 

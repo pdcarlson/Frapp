@@ -6,7 +6,11 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { isPollClosed, validateIndexedPollVote } from '@repo/validation';
+import {
+  isPollClosed,
+  POLL_OPTIONS_MAX,
+  validateIndexedPollVote,
+} from '@repo/validation';
 import { CHAT_MESSAGE_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
 import { POLL_VOTE_REPOSITORY } from '#domain/repositories/poll-vote.repository.interface';
@@ -27,7 +31,6 @@ import { clampListLimit } from '#domain/constants/list-query-limits';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 const MIN_OPTIONS = 2;
-const MAX_OPTIONS = 10;
 
 export interface CreatePollInput {
   channelId: string;
@@ -67,10 +70,10 @@ export class PollService {
 
     if (
       input.options.length < MIN_OPTIONS ||
-      input.options.length > MAX_OPTIONS
+      input.options.length > POLL_OPTIONS_MAX
     ) {
       throw new BadRequestException(
-        `Poll must have between ${MIN_OPTIONS} and ${MAX_OPTIONS} options`,
+        `Poll must have between ${MIN_OPTIONS} and ${POLL_OPTIONS_MAX} options`,
       );
     }
 
