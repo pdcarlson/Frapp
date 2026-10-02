@@ -104,11 +104,14 @@
 > it after the first nightly run that follows the merge: the Sentry MCP's `find_monitors` (org
 > `frapp-live`) lists `production-db-backup`. *(Confirmed 2026-09-30: the first nightly run after
 > the merge checked in at 12:49Z, and the monitor reads `active`, its `production` environment `ok`
-> ([#2505](https://github.com/pdcarlson/Frapp/issues/2505)).)*
+> ([#2505](https://github.com/pdcarlson/Frapp/issues/2505)).)* A change to the script's schedule or
+> limits reaches the live monitor the same way, with the next check-in, so `get_monitor_details`
+> shows the old values until then; the night it lands is still judged by the old ones.
 >
 > Once it exists, it raises an issue when a run reports `error` (the job's 30-minute
 > `timeout-minutes` included: the finish step then reports `error`), when no check-in arrives within
-> 3 hours of 06:30 UTC (the margin is wide because GitHub starts scheduled runs late), and when a
+> 12 hours of 06:30 UTC, so by 18:30Z (the margin is wide because GitHub has started this run as late
+> as 14:46Z; [#3098](https://github.com/pdcarlson/Frapp/issues/3098)), and when a
 > run's closing check-in never arrives (Sentry marks it timed out after `max_runtime`). A check-in that
 > can't be sent never fails or skips the backup; it warns. The script's `MONITORS` entry holds the
 > schedule and limits, and a test pins them to the workflow.
@@ -210,7 +213,8 @@ is more than 3h old at its probe (hung), and otherwise passes that day on the pr
 success, as a warning, and opens the next day, once that success is older than 36h. Three P1s,
 one fix. The Sentry cron monitor `production-db-backup` ([Primary channels](#primary-channels))
 watches the same `backup-production` job, so a failed or missing dump also raises a Sentry issue
-that morning, hours before the 13:15 freshness alert: two signals, one cause. The second: each
+the same day: a failed dump when it ends, which on a late night is after the 13:15 probe, and a
+missing one at 18:30Z, the day before the freshness alert opens. Two signals, one cause. The second: each
 project's Supabase token. `supabase-quota.yml` reads each project with the same read-only token
 that `staging-conformance.yml` reads `frapp-staging` with, and that `production-auth-conformance.yml`
 reads `frapp-prod` with, and all three count a refused read as a failure. So a revoked or expired

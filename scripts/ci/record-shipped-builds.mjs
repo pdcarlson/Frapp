@@ -292,7 +292,7 @@ export function nextStep(row, { sha, tag = {}, blockRerun = false }) {
   // The same flag CI passes: a hand upload must not create the TestFlight
   // group CI deliberately doesn't.
   const submit = (id) =>
-    `\`eas submit --platform ${row.store} --profile production --id ${id} --non-interactive${row.store === "ios" ? " --no-auto-testflight-setup" : ""}\` from \`apps/mobile\``;
+    `\`npm run eas -- submit --platform ${row.store} --profile production --id ${id} --non-interactive${row.store === "ios" ? " --no-auto-testflight-setup" : ""}\` from the repo root`;
   if (row.status === "FINISHED" && row.upload !== "success" && row.buildId) {
     if (tag.beforeUpload === "failure") {
       return `${name} built, and was not uploaded because the latest-tag check before uploading failed without finding production moved: it couldn't read the tags, or the latest \`v*\` tag isn't a \`vX.Y.Z\` release (its log says which). Once that's resolved, and \`${sha}\` is the latest \`v*\` tag, upload it by hand with ${submit(row.buildId)} and record it. Don't re-run: that builds every platform again.`;
