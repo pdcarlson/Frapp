@@ -500,11 +500,12 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
                       onClick={() => removeChoice(choice)}
                       aria-label={`Remove option ${choice}`}
                       /*
-                        `--accent` aliases `--popover`, so `hover:bg-accent`
-                        on a chip inside a card composites to 1.085:1 —
-                        `shared/table-contrast.spec.ts` pins that exact
-                        measurement. The accent tint separates by hue instead
-                        of by a ladder step that is not there.
+                        `--accent` was an alias of `--popover` (deleted, #3036),
+                        so `hover:bg-accent` on a chip inside a card composited
+                        to 1.085:1 at the time, and `shared/table-contrast.spec.ts`
+                        asserts that pair stays indistinguishable. The accent
+                        tint separates by hue instead of by a ladder step that
+                        is not there.
                       */
                       className={`rounded-sm hover:bg-accent-subtle ${FOCUS_RING_OFFSET}`}
                     >

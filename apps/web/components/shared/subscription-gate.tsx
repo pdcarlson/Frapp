@@ -315,12 +315,13 @@ export function SubscriptionNotice({
         // that warning-coloured would be the decorative use of a semantic hue
         // §5 forbids; it stays neutral on the elevated step.
         //
-        // `bg-secondary/40` was neither: on Signet `--secondary` is the card
+        // `bg-secondary/40` was neither: on Signet `--secondary` was the card
         // value, so a 40% wash of it on a card was invisible. `bg-accent` was
-        // the same mistake one step over — `--accent` holds `--popover`'s value,
+        // the same mistake one step over — `--accent` held `--popover`'s value,
         // so on a card it is the 1.085:1 near-miss the #920 Directory & Finance
         // slice measured for table-row hover, and inside a Dialog (which *is*
-        // `--popover`) it is literally 1:1. This notice renders in both places.
+        // `--popover`) it was literally 1:1. This notice renders in both
+        // places. Both aliases are deleted (#3036).
         // The pending branch therefore carries no fill at all: components.md §2
         // makes the hairline the load-bearing edge, and a hairline reads on
         // every step of the ladder where a one-step fill does not.
