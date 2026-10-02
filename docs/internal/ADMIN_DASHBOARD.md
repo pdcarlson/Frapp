@@ -13,11 +13,10 @@ The admin dashboard includes an `OfflineBanner` component to gracefully handle n
 
 ### Permission-aware navigation
 The sidebar and mobile sheet render from a single nav config
-(`apps/web/components/layout/nav-config.ts`) grouped into Overview / People /
-Operations / Communications / Resources / Finance / Settings sections. Each
-entry declares an optional `requirePermission` or `requireAnyOf` rule; the
-shell hides items the caller cannot access and disables roadmap items with a
-`Soon` chip. The caller's effective permission set is loaded once per chapter
+(`apps/web/components/layout/nav-config.ts`): Chat as the unheaded anchor,
+then the Chapter and Resources sections. Each entry declares an optional
+`requirePermission` or `requireAnyOf` rule, and the shell hides items the
+caller cannot access. The caller's effective permission set is loaded once per chapter
 via `GET /v1/users/me/permissions` (backed by
 `RbacService.getEffectivePermissions`), cached with TanStack Query, and reused
 by any component that wraps controls in `<Can>` or calls `can()` /

@@ -22,7 +22,6 @@ const moduleItem: NavItem = {
   label: "Events",
   icon: PointsGlyph,
   href: "/events",
-  status: "available",
   module: "events",
 };
 
@@ -31,7 +30,6 @@ const coreItem: NavItem = {
   label: "Chat",
   icon: PointsGlyph,
   href: "/chat",
-  status: "available",
 };
 
 function renderItem(item: NavItem, isModuleEnabled?: (key: string) => boolean) {
@@ -91,7 +89,6 @@ describe("isNavItemVisible", () => {
     label: "Roles",
     icon: PointsGlyph,
     href: "/settings?tab=roles",
-    status: "available",
     requirePermission: "roles:manage",
   };
 
