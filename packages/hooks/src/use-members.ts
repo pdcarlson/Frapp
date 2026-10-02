@@ -320,9 +320,10 @@ export function useUpdateOnboarding() {
  * read sees the first write.
  *
  * Chosen over disabling the control while `isPending`. `query-provider.tsx`
- * sets `retry: 2` with `min(1000 * 2 ** attempt, 10_000)`, so a disabled
- * control would grey out the *successor* card — a different nudge the member
- * has not acted on — for ~3s of backoff across three attempts, plus however
+ * retries a transient failure twice with `min(1000 * 2 ** attempt, 10_000)`,
+ * so a disabled control would grey out the *successor* card — a different
+ * nudge the member has not acted on — for ~3s of backoff across three
+ * attempts, plus however
  * long each request itself takes. `scope` costs that nothing: the second write
  * simply queues, and its control stays pressable throughout.
  *

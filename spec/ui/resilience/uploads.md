@@ -8,7 +8,7 @@
 [User selects file]
        │
        ▼
-[Request signed URL from API]  ← retry 2x on failure
+[Request signed URL from API]  ← web retries a transient failure 2x
        │
        ▼
 [Upload file to Supabase Storage via signed URL]
@@ -16,7 +16,7 @@
        │ ← timeout: 60s for files up to 25MB
        │
        ▼
-[Confirm upload with API (send metadata)]  ← retry 2x
+[Confirm upload with API (send metadata)]  ← web retries a transient failure 2x
        │
        ▼
 [Success: show uploaded file/image]
@@ -39,10 +39,10 @@ xhr.upload.onprogress = (e) => {
 
 | Failure Point | Recovery |
 |---------------|----------|
-| Signed URL request fails | A definitive refusal (a 4xx other than 408 or 429: no posting rights, a file the API rejects) is not retried and shows the server's reason, because client errors are never retried ([API retry](api-retry.md#retry-configuration)) and a retry can't change the answer (#2199). Any other failure: retry 2x. On persistent failure: "Upload failed. Please try again." |
+| Signed URL request fails | A definitive refusal (a 4xx other than the intermediary statuses 408, 499 and 460: no posting rights, a file the API rejects, the throttler's 429) is not retried, because a retry gets the same answer ([API retry § Writes](api-retry.md#writes), #2199, #3100). Any other failure: web retries 2x, mobile doesn't retry. In chat, the toast shows the server's reason for a refusal, or asks the member to retry in a moment for a 429; that copy lives with each client's chat upload flow (`uploadFailureDescription` in `apps/web/components/chat/composer.tsx`, `UPLOAD_FAILED` in `apps/mobile/lib/chat/attachment-upload.ts`). Web's other uploads (documents, backwork, service proof, avatar) toast the body's message as-is, which for a 429 is still the throttler's framework text (#3142). |
 | Upload to Storage fails (network) | Show "Upload interrupted. [Retry]". Do NOT re-request signed URL (reuse). |
 | Upload to Storage fails (timeout) | Show "Upload timed out. Check your connection and try again." |
-| Confirm metadata fails | File is in storage but not tracked. Retry confirm 3x. On persistent failure: "File uploaded but not saved. [Retry]" |
+| Confirm metadata fails | File is in storage but not tracked. Web retries a transient failure 2x; a refusal isn't retried. On persistent failure: "File uploaded but not saved. [Retry]" |
 
 ## Chunked Upload (Future Enhancement)
 
