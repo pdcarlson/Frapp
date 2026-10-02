@@ -3,10 +3,12 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+import { POSITION_MAX } from '@repo/validation';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RequestDocumentUploadUrlDto {
@@ -110,10 +112,12 @@ export class CreateDocumentFolderDto {
 
   @ApiPropertyOptional({
     description: 'Display position. Defaults to the end of the list.',
+    maximum: POSITION_MAX,
   })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(POSITION_MAX)
   sort_order?: number;
 }
 
@@ -128,9 +132,13 @@ export class UpdateDocumentFolderDto {
   @MaxLength(100)
   name?: string;
 
-  @ApiPropertyOptional({ description: 'New display position' })
+  @ApiPropertyOptional({
+    description: 'New display position',
+    maximum: POSITION_MAX,
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(POSITION_MAX)
   sort_order?: number;
 }

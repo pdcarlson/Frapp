@@ -10710,7 +10710,8 @@
             "type": "string"
           },
           "founded_at": {
-            "type": "number"
+            "type": "number",
+            "maximum": 9999
           },
           "colors": {
             "$ref": "#/components/schemas/BrandingColorsDto"
@@ -11055,33 +11056,40 @@
           },
           "active_amount_cents": {
             "type": "number",
-            "description": "Active member dues in cents"
+            "description": "Active member dues in cents",
+            "maximum": 99999999
           },
           "new_member_amount_cents": {
             "type": "number",
-            "description": "New member dues in cents"
+            "description": "New member dues in cents",
+            "maximum": 99999999
           },
           "alumni_amount_cents": {
             "type": "number",
-            "description": "Alumni dues in cents"
+            "description": "Alumni dues in cents",
+            "maximum": 99999999
           },
           "installments_allowed": {
             "type": "boolean"
           },
           "installment_count": {
             "type": "number",
-            "description": "Number of installments (>= 1)"
+            "description": "Number of installments (>= 1)",
+            "maximum": 2147483647
           },
           "late_fee_cents": {
             "type": "number",
-            "description": "Late fee in cents"
+            "description": "Late fee in cents",
+            "maximum": 99999999
           },
           "grace_days": {
-            "type": "number"
+            "type": "number",
+            "maximum": 2147483647
           },
           "scholarship_pool_cents": {
             "type": "number",
-            "description": "Scholarship pool in cents"
+            "description": "Scholarship pool in cents",
+            "maximum": 2147483647
           }
         }
       },
@@ -11092,7 +11100,8 @@
             "type": "number",
             "description": "Minutes of approved service that earn one SERVICE point (default 60). Must be at least 1 — a rate of 0 would divide by zero when awarding.",
             "minimum": 1,
-            "example": 60
+            "example": 60,
+            "maximum": 100000
           }
         }
       },
@@ -11127,7 +11136,8 @@
           },
           "threshold": {
             "type": "number",
-            "description": "Optional numeric threshold (guard-parsed; NaN/negative rejected)"
+            "description": "Optional numeric threshold (guard-parsed; NaN/negative rejected)",
+            "maximum": 2147483647
           }
         }
       },
@@ -11242,7 +11252,8 @@
           },
           "rank": {
             "type": "number",
-            "description": "Hierarchy order; lower ranks first"
+            "description": "Hierarchy order; lower ranks first",
+            "maximum": 1000000000
           },
           "capabilities": {
             "type": "array",
@@ -11264,7 +11275,8 @@
             "maxLength": 100
           },
           "rank": {
-            "type": "number"
+            "type": "number",
+            "maximum": 1000000000
           },
           "capabilities": {
             "type": "array",
@@ -11420,7 +11432,8 @@
           },
           "sort": {
             "type": "number",
-            "description": "Display order; lower sorts first"
+            "description": "Display order; lower sorts first",
+            "maximum": 1000000000
           }
         },
         "required": [
@@ -11460,7 +11473,8 @@
             ]
           },
           "sort": {
-            "type": "number"
+            "type": "number",
+            "maximum": 1000000000
           }
         }
       },
@@ -11542,7 +11556,8 @@
             }
           },
           "display_order": {
-            "type": "number"
+            "type": "number",
+            "maximum": 1000000000
           },
           "color": {
             "type": "string"
@@ -11567,7 +11582,8 @@
             }
           },
           "display_order": {
-            "type": "number"
+            "type": "number",
+            "maximum": 1000000000
           },
           "color": {
             "type": "string"
@@ -12233,7 +12249,8 @@
           },
           "display_order": {
             "type": "number",
-            "default": 0
+            "default": 0,
+            "maximum": 1000000000
           }
         },
         "required": [
@@ -12247,7 +12264,8 @@
             "type": "string"
           },
           "display_order": {
-            "type": "number"
+            "type": "number",
+            "maximum": 1000000000
           }
         }
       },
@@ -13637,7 +13655,8 @@
             "description": "Professor name"
           },
           "year": {
-            "type": "number"
+            "type": "number",
+            "maximum": 9999
           },
           "semester": {
             "type": "string",
@@ -13664,7 +13683,8 @@
             ]
           },
           "assignment_number": {
-            "type": "number"
+            "type": "number",
+            "maximum": 2147483647
           },
           "document_variant": {
             "type": "string",
@@ -14208,7 +14228,8 @@
           },
           "minutes_per_point": {
             "type": "number",
-            "default": 30
+            "default": 30,
+            "maximum": 2147483647
           },
           "points_per_interval": {
             "type": "number",
@@ -14216,12 +14237,14 @@
           },
           "min_session_minutes": {
             "type": "number",
-            "default": 15
+            "default": 15,
+            "maximum": 2147483647
           },
           "pause_grace_minutes": {
             "type": "number",
             "default": 5,
-            "description": "Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED."
+            "description": "Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED.",
+            "maximum": 2147483647
           }
         },
         "required": [
@@ -14245,17 +14268,20 @@
             "type": "boolean"
           },
           "minutes_per_point": {
-            "type": "number"
+            "type": "number",
+            "maximum": 2147483647
           },
           "points_per_interval": {
             "type": "number"
           },
           "min_session_minutes": {
-            "type": "number"
+            "type": "number",
+            "maximum": 2147483647
           },
           "pause_grace_minutes": {
             "type": "number",
-            "description": "Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED."
+            "description": "Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED.",
+            "maximum": 2147483647
           }
         }
       },
@@ -14406,7 +14432,8 @@
           },
           "sort_order": {
             "type": "number",
-            "description": "Display position. Defaults to the end of the list."
+            "description": "Display position. Defaults to the end of the list.",
+            "maximum": 1000000000
           }
         },
         "required": [
@@ -14422,7 +14449,8 @@
           },
           "sort_order": {
             "type": "number",
-            "description": "New display position"
+            "description": "New display position",
+            "maximum": 1000000000
           }
         }
       },
@@ -15058,7 +15086,8 @@
           },
           "part_index": {
             "type": "number",
-            "description": "Order of this JSON partition. Ignored for media."
+            "description": "Order of this JSON partition. Ignored for media.",
+            "maximum": 2147483647
           }
         },
         "required": [
@@ -15172,7 +15201,8 @@
             }
           },
           "message_count": {
-            "type": "number"
+            "type": "number",
+            "maximum": 2147483647
           }
         },
         "required": [

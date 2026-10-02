@@ -6,11 +6,12 @@ import {
   IsString,
   IsUUID,
   Matches,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ROLE_NAME_MAX_LENGTH } from '@repo/validation';
+import { POSITION_MAX, ROLE_NAME_MAX_LENGTH } from '@repo/validation';
 
 export class CreateRoleDto {
   @ApiProperty({ maxLength: ROLE_NAME_MAX_LENGTH })
@@ -24,10 +25,11 @@ export class CreateRoleDto {
   @IsString({ each: true })
   permissions: string[];
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maximum: POSITION_MAX })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(POSITION_MAX)
   display_order?: number;
 
   @ApiPropertyOptional()
@@ -49,10 +51,11 @@ export class UpdateRoleDto {
   @IsString({ each: true })
   permissions?: string[];
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maximum: POSITION_MAX })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(POSITION_MAX)
   display_order?: number;
 
   @ApiPropertyOptional()
