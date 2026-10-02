@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 /**
  * The reskin's fold, asserted rather than eyeballed.
@@ -8,7 +8,9 @@ import { expect, test } from "@playwright/test";
  * viewports are what the boards commit to, so they are what checks 1 to 5
  * measure. Check 6 is about the two chat frames rather than the fold, and
  * sweeps the widths in its own loop, 320 to 1440. The event frame is not in
- * it: its height is the phone board's, fixed on purpose.
+ * it: its height is the phone board's, fixed on purpose. Check 7 sweeps the
+ * narrow phone widths for horizontal scroll and the events section's gutters,
+ * which the board width loop (390 only) cannot see.
  *
  * **This is deliberately not a screenshot test**, and that is the repo's
  * position rather than a shortcut. The advisory snapshot suite that
@@ -25,7 +27,7 @@ import { expect, test } from "@playwright/test";
  *
  * What it covers is the set of fold properties slice 2 verified by hand and
  * nothing then held in place (checks 1 to 5), plus the chat frames' fit, which
- * #2893 added (check 6):
+ * #2893 added (check 6), and the phone-width sweep #3079 added (check 7):
  *
  *  1. Neither board width opens a horizontal scrollbar. The fold's chat frame
  *     deliberately overruns its column at `lg` and is clipped by the section's
@@ -54,6 +56,13 @@ import { expect, test } from "@playwright/test";
  *     which bleeds off the right edge on purpose. Before #2893 a fixed height
  *     ran the newest rows under the composer at phone width, or pushed the
  *     composer out of the frame.
+ *  7. No phone width opens a horizontal scrollbar (320, 360, 375 and 390), and
+ *     the events section's two grid items sit inside its content box there.
+ *     Check 1 only measures the two board widths, and 390 is the one phone
+ *     width where the event frame's 350px fits, so it could not see the events
+ *     section's grid track held at that 350px at 320 and 360 (#3079). At 375
+ *     the held track ran into the shell's gutter without scrolling, which only
+ *     the content-box half sees.
  *
  * **What was tried and is deliberately NOT here.** An assertion that a direct
  * `/#pricing` load never arms an already-painted block — the flash slice 2 fixed
@@ -69,6 +78,58 @@ import { expect, test } from "@playwright/test";
  * guards and watching it go red.
  */
 
+/**
+ * How far the page scrolls sideways, against the root's `clientWidth` (the
+ * viewport less any classic scrollbar, so a headed run measures what it
+ * shows), and the furthest-right element no ancestor clips, to name in the
+ * failure. Checks 1 and 7 share it.
+ */
+async function measureHorizontalOverflow(page: Page) {
+  return page.evaluate(() => {
+    const doc = document.documentElement;
+    const width = doc.clientWidth;
+    const offender = [...document.querySelectorAll("body *")]
+      .map((el) => ({ el, rect: el.getBoundingClientRect() }))
+      .filter(({ el, rect }) => {
+        if (rect.right <= width + 0.5) return false;
+        // An element clipped by an ancestor contributes no page overflow.
+        for (
+          let node: Element | null = el;
+          node && node !== document.body;
+          node = node.parentElement
+        ) {
+          if (getComputedStyle(node).overflowX !== "visible") return false;
+        }
+        return true;
+      })
+      .sort((a, b) => b.rect.right - a.rect.right)[0];
+    return {
+      width,
+      overflow: doc.scrollWidth - width,
+      widest: offender
+        ? {
+            right: Math.round(offender.rect.right),
+            tag: offender.el.tagName.toLowerCase(),
+            className: offender.el.getAttribute("class") ?? "",
+          }
+        : null,
+    };
+  });
+}
+
+/** The failure message for `measureHorizontalOverflow`, with a hint for the cause. */
+function overflowMessage(
+  measured: Awaited<ReturnType<typeof measureHorizontalOverflow>>,
+  hint: string,
+): string {
+  return measured.widest
+    ? `the page overflows ${measured.width}px by ${measured.overflow}px. The furthest ` +
+        `unclipped element is <${measured.widest.tag}> reaching ${measured.widest.right}px: ` +
+        `class="${measured.widest.className}". ${hint}`
+    : `the page overflows ${measured.width}px by ${measured.overflow}px, but every element is ` +
+        "either inside it or clipped by an ancestor, so the cause is the shell rather than one box.";
+}
+
 const FOLDS = [
   { name: "desktop", width: 1440, height: 900 },
   { name: "phone", width: 390, height: 844 },
@@ -83,48 +144,15 @@ test.describe("the landing fold holds the boards' geometry", () => {
       await page.goto("/");
       await page.waitForLoadState("networkidle");
 
-      const measured = await page.evaluate((width) => {
-        const doc = document.documentElement;
-        const offender = [...document.querySelectorAll("body *")]
-          .map((el) => ({ el, rect: el.getBoundingClientRect() }))
-          .filter(({ el, rect }) => {
-            if (rect.right <= width + 0.5) return false;
-            // An element clipped by an ancestor contributes no page overflow.
-            for (
-              let node: Element | null = el;
-              node && node !== document.body;
-              node = node.parentElement
-            ) {
-              const overflowX = getComputedStyle(node).overflowX;
-              if (overflowX !== "visible") return false;
-            }
-            return true;
-          })
-          .sort((a, b) => b.rect.right - a.rect.right)[0];
-        return {
-          scrollWidth: doc.scrollWidth,
-          widest: offender
-            ? {
-                right: Math.round(offender.rect.right),
-                tag: offender.el.tagName.toLowerCase(),
-                className: offender.el.getAttribute("class") ?? "",
-              }
-            : null,
-        };
-      }, fold.width);
-
+      const measured = await measureHorizontalOverflow(page);
       expect(
-        measured.scrollWidth,
-        measured.widest
-          ? `the page overflows ${fold.width}px by ${measured.scrollWidth - fold.width}px. The ` +
-            `furthest unclipped element is <${measured.widest.tag}> reaching ` +
-            `${measured.widest.right}px: class="${measured.widest.className}". The fold frame is ` +
-            "supposed to bleed and be CLIPPED by its section's `overflow-hidden`, so check that " +
-            "clip first."
-          : `the page overflows ${fold.width}px by ${measured.scrollWidth - fold.width}px, but ` +
-            "every element is either inside it or clipped by an ancestor, so the cause is the " +
-            "shell rather than one box.",
-      ).toBeLessThanOrEqual(fold.width);
+        measured.overflow,
+        overflowMessage(
+          measured,
+          "The fold frame is supposed to bleed and be CLIPPED by its section's " +
+            "`overflow-hidden`, so check that clip first.",
+        ),
+      ).toBeLessThanOrEqual(0);
     });
 
     test(`${fold.name} ${fold.width}x${fold.height} keeps the offer and the action inside the fold`, async ({
@@ -280,6 +308,64 @@ test.describe("the landing fold holds the boards' geometry", () => {
       await context.close();
     }
   });
+
+  for (const width of [320, 360, 375, 390]) {
+    test(`at ${width} wide, the page does not scroll and the events section keeps its gutters`, async ({
+      browser,
+    }) => {
+      const context = await browser.newContext({
+        reducedMotion: "reduce",
+        viewport: { width, height: 844 },
+      });
+      const page = await context.newPage();
+      try {
+        await page.goto("/");
+        await page.waitForLoadState("networkidle");
+
+        const measured = await measureHorizontalOverflow(page);
+        expect(
+          measured.overflow,
+          overflowMessage(
+            measured,
+            "A grid item holding a fixed-width frame needs `min-w-0`, or the implicit " +
+              "track stays at the frame's width and everything in it overflows (#3079).",
+          ),
+        ).toBeLessThanOrEqual(0);
+
+        // Page scroll alone misses a track held at 350 when it only runs into
+        // the shell's gutter (375), or when a section clip hides it. So each
+        // grid item must also sit inside the section's content box, as check 6
+        // asks of the chat frames.
+        const items = await page.evaluate(() => {
+          const section = document.getElementById("events")?.closest("section");
+          const grid = document.getElementById("events")?.closest(".grid");
+          if (!section || !grid) return null;
+          const s = section.getBoundingClientRect();
+          const style = getComputedStyle(section);
+          const left = s.left + parseFloat(style.paddingLeft);
+          const right = s.right - parseFloat(style.paddingRight);
+          return [...grid.children].map((item) => {
+            const box = item.getBoundingClientRect();
+            return {
+              className: item.getAttribute("class") ?? "",
+              inside: Math.min(box.left - left, right - box.right),
+            };
+          });
+        });
+        expect(items, "the events section's heading or grid moved").not.toBeNull();
+        expect(items).toHaveLength(2);
+        for (const item of items ?? []) {
+          expect(
+            item.inside,
+            `an events grid item runs past the section's content edge at ${width} wide: ` +
+              `class="${item.className}" (#3079)`,
+          ).toBeGreaterThanOrEqual(-0.5);
+        }
+      } finally {
+        await context.close();
+      }
+    });
+  }
 
   for (const width of [320, 360, 390, 640, 1024, 1440]) {
     test(`at ${width} wide, neither chat frame crops a row or loses its composer`, async ({
