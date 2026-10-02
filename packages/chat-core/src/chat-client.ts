@@ -239,16 +239,26 @@ export function classifyChatError(error: unknown): {
 }
 
 /**
+ * What a member reads for a 429. The API's throttler sends the same sentence
+ * (`THROTTLED_MESSAGE`); `spec/ui/design-system/writing.md` § Rate limited
+ * (global) owns the copy.
+ */
+export const RATE_LIMITED_COPY =
+  "Too many requests in a short time. Wait a minute, then try again.";
+
+/**
  * The server's reason for a definitive refusal, for a member to read, or
  * `null` when a retry could help.
  *
  * For a surface that shows the API's refusal and otherwise its own sentence:
  * the web composer and mobile's photo upload both read their upload-URL mint
  * through this, so one response can't read two ways (#2199). It is
- * `classifyChatError`'s terminal split with one more transient case: a 429's
- * body is the throttler's framework text ("ThrottlerException: Too Many
- * Requests"), and waiting is the remedy. It is also `null` for a refusal with
- * no message, so the caller's sentence stands in for an empty line.
+ * `classifyChatError`'s terminal split with one exception: a 429 reads as
+ * `RATE_LIMITED_COPY`, whatever its body says. Its remedy is waiting a full
+ * minute (the throttler blocks a key for its whole 60s window), which a
+ * caller's "in a moment" retry sentence understates, and an intermediary's 429
+ * carries its own text. It is also `null` for a refusal with no message, so
+ * the caller's sentence stands in for an empty line.
  *
  * Reads API bodies only. A thrown `Error` is `null` here, because what one
  * says is the surface's call: web shows its own Errors' text, while mobile's
@@ -257,7 +267,8 @@ export function classifyChatError(error: unknown): {
 export function definitiveRefusalMessage(error: unknown): string | null {
   if (error instanceof Error) return null;
   const { terminal, status } = classifyChatError(error);
-  if (!terminal || status === 429) return null;
+  if (status === 429) return RATE_LIMITED_COPY;
+  if (!terminal) return null;
   const reason = serverReasonOf(error);
   return reason === null ? null : memberFacingRefusal(reason);
 }
