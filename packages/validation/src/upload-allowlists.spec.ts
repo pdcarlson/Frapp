@@ -147,7 +147,12 @@ describe("uploadMimeTypes identity", () => {
 
 describe("fileExtension", () => {
   it("is the extension the allowlist judged, trailing whitespace and all (#3066)", () => {
-    for (const name of ["beach.jpg\u00a0", "beach.JPG ", " beach.jpg\n"]) {
+    for (const name of [
+      "beach.jpg\u00a0",
+      "beach.JPG ",
+      " beach.jpg\n",
+      "beach.\u00a0jpg",
+    ]) {
       expect(fileExtension(name)).toBe("jpg");
       expect(isAllowedUploadExtension("image", name)).toBe(true);
     }
@@ -156,5 +161,6 @@ describe("fileExtension", () => {
   it("is empty with no dot, or only a trailing one", () => {
     expect(fileExtension("README")).toBe("");
     expect(fileExtension("beach. ")).toBe("");
+    expect(fileExtension("beach.")).toBe("");
   });
 });

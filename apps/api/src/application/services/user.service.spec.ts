@@ -185,7 +185,12 @@ describe('UserService', () => {
       expect(result.storagePath).toMatch(UUID_KEY);
     });
 
-    it.each(['beach.jpg\u00a0', 'beach.jpg ', 'beach.JPG\t'])(
+    it.each([
+      'beach.jpg\u00a0',
+      'beach.jpg ',
+      'beach.JPG\t',
+      'beach.\u00a0jpg',
+    ])(
       'keys a trailing-whitespace name by the extension the allowlist approved (%j, #3066)',
       async (filename) => {
         mockStorageProvider.getSignedUploadUrl.mockResolvedValue('https://put');
