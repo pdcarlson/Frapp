@@ -6,13 +6,21 @@ import {
   parseInstantOrBareLocalNoon,
 } from "./bare-date";
 
-/** Runs `fn` with the process in `zone`; Node re-reads `TZ` on assignment. */
+/**
+ * Runs `fn` with the process in `zone`. Node re-reads `TZ` on assignment in a
+ * process's main thread (vitest's default `forks` pool), not in a `threads`
+ * worker, so the switch is checked rather than assumed.
+ */
 function inZone<T>(zone: string, fn: () => T): T {
   /* eslint-disable turbo/no-undeclared-env-vars -- the zone under test, not a
      build input: no turbo task's output depends on it. */
   const previous = process.env.TZ;
   process.env.TZ = zone;
   try {
+    const active = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (active !== zone) {
+      throw new Error(`inZone: asked for ${zone}, the process is in ${active}`);
+    }
     return fn();
   } finally {
     // Assigning `undefined` would set the string "undefined", not unset it.
@@ -74,7 +82,8 @@ describe("parseBareDateLocalNoon", () => {
 
   it("would not with the UTC-noon parse it replaced", () => {
     // What `T12:00:00Z` did: already the next local day at +13 and +14, so a
-    // test that only ran in UTC and Tokyo never saw it.
+    // test that only ran in UTC and Tokyo never saw it. (This pins the zones,
+    // not the product code: the sweep above is the regression test.)
     for (const zone of ["Pacific/Kiritimati", "Pacific/Tongatapu"]) {
       inZone(zone, () => {
         expect(new Date("2026-09-30T12:00:00Z").getDate(), zone).toBe(1);

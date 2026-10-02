@@ -69,7 +69,7 @@ type TaskPatch = Partial<
  * when someone finishes a task due today.
  *
  * Human-readable date *copy* is a different problem with a different answer —
- * see the UTC-noon parsing in `apps/mobile/lib/more/service-hours.ts`.
+ * see the local-noon parsing in `apps/mobile/lib/more/service-hours.ts`.
  */
 function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);

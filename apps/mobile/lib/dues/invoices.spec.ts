@@ -11,24 +11,9 @@ import {
   splitAmount,
   type InvoiceRow,
 } from "./invoices";
+import { inZone } from "@/test/in-zone";
 
 const VIEWER = "u-1";
-
-/** Runs `fn` with the process in `zone`; Node re-reads `TZ` on assignment. */
-function inZone(zone: string, fn: () => void): void {
-  /* eslint-disable turbo/no-undeclared-env-vars -- the zone under test, not a
-     build input: no turbo task's output depends on it. */
-  const previous = process.env.TZ;
-  process.env.TZ = zone;
-  try {
-    fn();
-  } finally {
-    // Assigning `undefined` would set the string "undefined", not unset it.
-    if (previous === undefined) delete process.env.TZ;
-    else process.env.TZ = previous;
-  }
-  /* eslint-enable turbo/no-undeclared-env-vars */
-}
 
 function invoice(overrides: Record<string, unknown> = {}) {
   return {

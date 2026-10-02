@@ -14,8 +14,13 @@
  * - {@link parseBareDateLocalNoon} — `T12:00:00` (no Z). Local noon, which is
  *   the submitted calendar day in every zone, UTC−12 to UTC+14. Mobile
  *   service hours, invoices, task due dates, and {@link formatBareDate}.
- * - {@link parseBareDateLocalMidnight} — `T00:00:00` (no Z). Local midnight
- *   so a chat task card matches a server-formatted local day. Web only.
+ * - {@link parseBareDateLocalMidnight} — `T00:00:00` (no Z). Local midnight,
+ *   for when the *instant* matters, not only the day: the Discord import sends
+ *   it as "from this date" (`import-wizard.tsx`), where noon would drop the
+ *   morning's messages. Web only (that, and the chat task card).
+ *
+ * Both now read the same local day, so neither can stand in for the other by
+ * that test alone: noon is the one for display, midnight the one for a cutoff.
  *
  * Do not fold either into `formatLocaleDate` / `new Date(value)`.
  *

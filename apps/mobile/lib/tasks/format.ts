@@ -28,7 +28,7 @@ import {
 export { isDueUrgent } from "@/components/chat/up-next-strip";
 
 /**
- * A bare `YYYY-MM-DD` parsed at UTC **noon**.
+ * A bare `YYYY-MM-DD` parsed at local **noon**.
  *
  * Midnight would render as the previous day for anyone west of Greenwich, and a
  * task due the 22nd must not read "Due Aug 21". Same reasoning, same fix as

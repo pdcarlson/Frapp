@@ -5,6 +5,7 @@ import {
   formatPointsChip,
   isDueUrgent,
 } from "./format";
+import { inZone } from "@/test/in-zone";
 
 /**
  * Local-time constructors, not ISO strings with a zone: every label here comes
@@ -37,10 +38,27 @@ describe("formatDueSubtitle", () => {
   });
 
   it("parses a bare date at local noon, so it never slips a day", () => {
-    // 11pm local on the 17th is already the 18th in UTC.
+    // 11pm local on the 17th is already the 18th in UTC west of Greenwich.
     expect(formatDueSubtitle("2026-08-17", at(2026, 8, 17, 23))).toBe(
       "Due today",
     );
+  });
+
+  it("keeps the due day at UTC+13 and +14, where UTC noon is the next day (#3026)", () => {
+    for (const zone of ["Pacific/Kiritimati", "Pacific/Tongatapu"]) {
+      inZone(zone, () => {
+        const morning = at(2026, 8, 17, 9);
+        expect(formatDueSubtitle("2026-08-17", morning), zone).toBe(
+          "Due today",
+        );
+        expect(formatDueSubtitle("2026-08-18", morning), zone).toBe(
+          "Due tomorrow",
+        );
+        expect(formatDueSubtitle("2026-08-24", morning), zone).toBe(
+          "Due Aug 24",
+        );
+      });
+    }
   });
 
   it("returns null rather than rendering an unreadable date", () => {
