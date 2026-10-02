@@ -57,7 +57,7 @@ import { EYEBROW } from "@/components/ui/typography";
 import { SectionLabel } from "@/components/shared/section-label";
 import {
   denseListClassName,
-  denseRowControlClassName,
+  compactControlClassName,
 } from "@/components/shared/table-controls";
 import {
   UPLOAD_FIELD_CLASS,
@@ -170,7 +170,7 @@ function DownloadButton({ id }: { id: string }) {
     row in a list this lane pulled down to 40.
 
     The label stays. An icon-only download is the version that needs a tooltip
-    to be usable, and `denseRowControlClassName`'s coarse-pointer carve-out
+    to be usable, and `compactControlClassName`'s coarse-pointer carve-out
     gets the 44px target back on touch either way.
   */
   return (
@@ -960,7 +960,7 @@ export function DocumentsPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                className={denseRowControlClassName}
+                className={compactControlClassName}
                 aria-label="New folder"
                 onClick={() => openFolderDialog(null)}
                 {...gate.controlProps(folderBusy)}
@@ -1293,7 +1293,7 @@ export function DocumentsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className={denseRowControlClassName}
+                          className={compactControlClassName}
                           aria-label={`Delete ${doc.title}`}
                           onClick={() => void handleDelete(doc)}
                           {...gate.controlProps(deletingIds.has(doc.id))}
