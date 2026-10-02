@@ -26,11 +26,11 @@ import {
  * dialog and `bg-secondary/40` on a card are only wrong once you know that
  * `--accent` was an alias of `--popover` and `--secondary` an alias of `--card`.
  *
- * Both aliases are deleted (#3036), and the trap is kept here as the
- * measurement that made them wrong: a wash of a surface step over that same
- * step. It reads `--popover` and `--card` from `signetDarkTokens` rather than
- * restating them — a guard that hardcodes the values it guards goes green
- * against constants that no longer ship.
+ * Both aliases are deleted (#3036). The two tests below stay as the record of
+ * why they were wrong: a wash of a colour over itself composites to that
+ * colour, so a surface step washed over the same step is nothing. That holds
+ * for any value, so they pin no token; `packages/theme/src/signet.css.spec.ts`
+ * keeps the aliases from being declared again.
  *
  * It lives in `shared/` for `table-contrast.spec.ts`'s reason: four families
  * composited the same ladder mistake here, and the families whose #920 slice
@@ -42,8 +42,8 @@ import {
  */
 
 describe("the aliases that made two fills invisible (deleted, #3036)", () => {
-  // `SURFACE` is read from the token source, not restated. These two stay as
-  // the record of why the ShadCN names were wrong: the scaffold's `--accent`
+  // These two stay as the record of why the ShadCN names were wrong (see the
+  // file header: they hold for any value): the scaffold's `--accent`
   // held `--popover`'s value and its `--secondary` held `--card`'s, so a wash
   // of either over its own container composited to the container.
   it("a --popover wash inside a dialog is nothing, which is what bg-accent was", () => {

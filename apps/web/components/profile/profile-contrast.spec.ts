@@ -82,7 +82,8 @@ describe("the archetype card's selected state", () => {
 describe("the tutorial's step strip, and the fix that would have been a second defect", () => {
   it("would have caught `bg-secondary/60` inside a DialogContent", () => {
     // `--secondary` held `--card`'s value (deleted, #3036) and a dialog is
-    // `--popover`, so the strip composited to `#211E19` — 1.050:1 against its own container.
+    // `--popover`, so the strip composited to 1.064:1 against its own
+    // container at today's ladder (1.050:1, `#211E19`, when first measured).
     const washed = applyAlpha(SURFACE.card, 0.6, SURFACE.popover);
     expect(ratio(washed, SURFACE.popover)).toBeCloseTo(1.064, 2);
     expect(ratio(washed, SURFACE.popover)).toBeLessThan(1.1);
