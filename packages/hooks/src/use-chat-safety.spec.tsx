@@ -20,6 +20,7 @@ import {
   CHANNEL_UNREAD_COUNTS_KEY,
 } from "./use-chat";
 import { FrappClientProvider } from "./use-frapp-client";
+import { notificationKeys } from "./use-notifications";
 
 const CHAPTER = "chapter-1";
 const ALICE = "11111111-1111-4111-8111-111111111111";
@@ -270,6 +271,10 @@ describe("useBlockMember / useUnblockMember", () => {
       queryKey: CHANNEL_LIST_KEY,
       exact: true,
     });
+    // The in-app list withholds a blocked member's chat rows (#2715).
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: notificationKeys.lists(CHAPTER),
+    });
     await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
     await waitFor(() =>
       expect([...result.current.list.ids].sort()).toEqual([ALICE, BOB].sort()),
@@ -348,6 +353,10 @@ describe("useBlockMember / useUnblockMember", () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: CHANNEL_LIST_KEY,
       exact: true,
+    });
+    // And an unblock brings their chat rows back to the in-app list (#2715).
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: notificationKeys.lists(CHAPTER),
     });
     await waitFor(() => expect(result.current.list.isRetrying).toBe(false));
     expect(result.current.list.status).toBe("unavailable");

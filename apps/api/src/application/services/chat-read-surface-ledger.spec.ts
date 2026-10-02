@@ -335,16 +335,28 @@ const HTTP_LEDGER: Record<string, Entry> = {
   },
   NotificationController_listNotifications_v1: {
     // Serves every in-app row, whoever wrote it. The chat rows the push worker
-    // writes (DMs and announcements among them, since #2771) are
-    // masked at write time: no row is written for a member who had blocked the
-    // sender (PUSH_LEDGER below holds the proofs), and a row written before the
-    // block stays, as notification history, though the thread now tombstones
-    // the same message: no spec row decides that, so the route is open on it
-    // (#2715). The non-chat rows that quote a member's text are MEMBER_TEXT,
-    // which a block does not hide (#2498).
-    status: 'open',
-    issues: [2715],
-    why: "Chat rows are masked at write time, but a chat row written before the block keeps the blocked member's text, and whether it should is undecided. The non-chat rows carrying a member's own text (a task title, an event name) are not hidden, by the spec's table row for non-chat modules.",
+    // writes (DMs and announcements among them, since #2771) are masked twice:
+    // no row is written for a member who had blocked the sender (PUSH_LEDGER
+    // below holds the proofs), and a row written before the block is withheld
+    // when the list is read, by the sender each row records (#2715). The
+    // non-chat rows that quote a member's text are MEMBER_TEXT, which a block
+    // does not hide (#2498), so the route as a whole serves another member's
+    // text on purpose, like the activity feed.
+    status: 'not-hidden',
+    why: "Chat rows are masked, including ones written before the block. The non-chat rows carrying a member's own text (a task title, an event name) are not hidden, by the spec's table row for non-chat modules.",
+    proof: {
+      spec: 'infrastructure/supabase/repositories/supabase-notification.repository.spec.ts',
+      test: 'leaves out the blocked member chat rows and the senderless chat rows, and keeps the rest',
+    },
+  },
+  NotificationController_markRead_v1: {
+    // A client can hold the id of a chat row the list now withholds, read
+    // before the block. Marking it read returns the row without its text.
+    status: 'masked',
+    proof: {
+      spec: 'application/services/notification.service.spec.ts',
+      test: 'marks a blocked member chat row read without handing its text back',
+    },
   },
 };
 

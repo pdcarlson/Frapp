@@ -410,21 +410,43 @@ function parseOrTerm(term: string): Filter {
     return {
       op: '__not__',
       column,
-      value: { op, column, value: coerceFilterLiteral(rest) },
+      value: { op, column, value: coerceOperand(op, rest) },
     };
   }
 
-  return { op, column, value: coerceFilterLiteral(rest) };
+  return { op, column, value: coerceOperand(op, rest) };
 }
 
-/** Splits on top-level commas only — a quoted operand may contain them. */
+/**
+ * An operand as the filter evaluator wants it: `in.("a","b")` is a list, so
+ * its parenthesised text becomes an array of literals; anything else is one.
+ */
+function coerceOperand(op: string, raw: string): unknown {
+  if (op !== 'in') return coerceFilterLiteral(raw);
+  if (!raw.startsWith('(') || !raw.endsWith(')')) {
+    throw new Error(
+      `tenant-scope harness: cannot parse in-list "${raw}". Expected "(a,b)".`,
+    );
+  }
+  return splitOrTerms(raw.slice(1, -1)).map((item) =>
+    coerceFilterLiteral(item.trim()),
+  );
+}
+
+/**
+ * Splits on top-level commas only — a quoted operand may contain them, and so
+ * may an `in.(…)` list.
+ */
 function splitOrTerms(expression: string): string[] {
   const terms: string[] = [];
   let current = '';
   let quoted = false;
+  let depth = 0;
   for (const char of expression) {
     if (char === '"') quoted = !quoted;
-    if (char === ',' && !quoted) {
+    if (!quoted && char === '(') depth += 1;
+    if (!quoted && char === ')') depth -= 1;
+    if (char === ',' && !quoted && depth === 0) {
       terms.push(current);
       current = '';
       continue;
@@ -436,7 +458,8 @@ function splitOrTerms(expression: string): string[] {
 }
 
 function parseOr(expression: string): Filter[] {
-  if (expression.includes('(')) {
+  // An `in.(…)` list is an operand, not a group; `and(…)` and `or(…)` are.
+  if (/(^|,)\s*(and|or|not\.and|not\.or)\(/.test(expression)) {
     throw new Error(
       `tenant-scope harness: nested .or()/.and() groups are not supported ` +
         `("${expression}").`,

@@ -14,10 +14,19 @@ export const USER_SETTINGS_REPOSITORY = 'USER_SETTINGS_REPOSITORY';
 export interface INotificationRepository {
   create(data: Partial<Notification>): Promise<Notification>;
   createMany(data: Partial<Notification>[]): Promise<Notification[]>;
+  /**
+   * The member's newest in-app rows in this chapter.
+   *
+   * `withholdChatFrom`, when non-empty, leaves out every chat row (`data.target
+   * .screen` is `chat`) whose `data.senderId` is one of those users, and every
+   * chat row that records no sender at all (written before #2715), in the query
+   * itself so `limit` still counts rows the member is served. Rows of any other
+   * kind are untouched.
+   */
   findByUser(
     userId: string,
     chapterId: string,
-    options?: { limit?: number },
+    options?: { limit?: number; withholdChatFrom?: readonly string[] },
   ): Promise<Notification[]>;
   findById(id: string, chapterId: string): Promise<Notification | null>;
   markRead(

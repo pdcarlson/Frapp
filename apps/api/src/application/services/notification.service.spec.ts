@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { NotificationService } from './notification.service';
+import { ChatBlockService } from './chat-block.service';
 import {
   NOTIFICATION_REPOSITORY,
   PUSH_TOKEN_REPOSITORY,
@@ -38,6 +39,7 @@ describe('NotificationService', () => {
   let mockSettingsRepo: jest.Mocked<IUserSettingsRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockPushProvider: jest.Mocked<INotificationProvider>;
+  let listBlockedUserIds: jest.Mock;
 
   beforeEach(async () => {
     mockNotificationRepo = {
@@ -82,6 +84,8 @@ describe('NotificationService', () => {
     mockPushProvider = {
       sendToUser: jest.fn().mockResolvedValue({ invalidTokens: [] }),
     };
+    // Default: the caller has blocked nobody.
+    listBlockedUserIds = jest.fn().mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -95,6 +99,7 @@ describe('NotificationService', () => {
         { provide: USER_SETTINGS_REPOSITORY, useValue: mockSettingsRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: NOTIFICATION_PROVIDER, useValue: mockPushProvider },
+        { provide: ChatBlockService, useValue: { listBlockedUserIds } },
       ],
     }).compile();
 
@@ -911,6 +916,71 @@ describe('NotificationService', () => {
       expect(result.read_at).toBe('2026-02-27T01:00:00.000Z');
     });
 
+    describe('a chat row the list withholds (#2715)', () => {
+      const chatRow = (data: Record<string, unknown>): Notification => ({
+        ...baseNotification,
+        title: 'Blocked Member',
+        body: 'something unkind',
+        data,
+        read_at: '2026-02-27T01:00:00.000Z',
+      });
+      const target = { screen: 'chat', channelId: 'c-1' };
+
+      async function markReadAs(data: Record<string, unknown>) {
+        listBlockedUserIds.mockResolvedValue(['b-1']);
+        mockNotificationRepo.findById.mockResolvedValue(chatRow(data));
+        mockNotificationRepo.markRead.mockResolvedValue(chatRow(data));
+        const result = await service.markNotificationRead('n-1', 'u-1', 'ch-1');
+        expect(mockNotificationRepo.markRead).toHaveBeenCalled();
+        expect(result.read_at).toBe('2026-02-27T01:00:00.000Z');
+        return result;
+      }
+
+      it('marks a blocked member chat row read without handing its text back', async () => {
+        const result = await markReadAs({ target, senderId: 'b-1' });
+
+        expect(result).toMatchObject({ id: 'n-1', title: '', body: '' });
+      });
+
+      it('marks a chat row that records no sender read without handing its text back', async () => {
+        const result = await markReadAs({ target });
+
+        expect(result).toMatchObject({ id: 'n-1', title: '', body: '' });
+      });
+
+      it('returns a chat row from anyone else, and any non-chat row, as it is', async () => {
+        listBlockedUserIds.mockResolvedValue(['b-1']);
+        for (const data of [
+          { target, senderId: 'other' },
+          { target: { screen: 'tasks', taskId: 't-1' } },
+          {},
+        ]) {
+          mockNotificationRepo.findById.mockResolvedValue(chatRow(data));
+          mockNotificationRepo.markRead.mockResolvedValue(chatRow(data));
+
+          const result = await service.markNotificationRead(
+            'n-1',
+            'u-1',
+            'ch-1',
+          );
+
+          expect(result.body).toBe('something unkind');
+        }
+      });
+
+      it('changes nothing when the block list cannot be read', async () => {
+        listBlockedUserIds.mockRejectedValue(new Error('blocks unreadable'));
+        mockNotificationRepo.findById.mockResolvedValue(
+          chatRow({ target, senderId: 'b-1' }),
+        );
+
+        await expect(
+          service.markNotificationRead('n-1', 'u-1', 'ch-1'),
+        ).rejects.toThrow('blocks unreadable');
+        expect(mockNotificationRepo.markRead).not.toHaveBeenCalled();
+      });
+    });
+
     it('should throw NotFoundException when notification not found', async () => {
       mockNotificationRepo.findById.mockResolvedValue(null);
 
@@ -1241,6 +1311,59 @@ describe('NotificationService', () => {
         },
       );
       expect(result).toEqual([baseNotification]);
+    });
+
+    it('reads the block list as the caller, in the caller chapter', async () => {
+      mockNotificationRepo.findByUser.mockResolvedValue([]);
+
+      await service.listNotifications('u-1', 'ch-1');
+
+      expect(listBlockedUserIds).toHaveBeenCalledWith('ch-1', 'u-1');
+    });
+
+    it('withholds the chat rows of a member the caller has blocked, including ones written before the block', async () => {
+      // #2715: the push worker drops a blocker from the audience of every
+      // message sent after the block, but a row written before it carries the
+      // blocked member's text. The list asks the query to leave those out.
+      listBlockedUserIds.mockResolvedValue(['blocked-1', 'blocked-2']);
+      mockNotificationRepo.findByUser.mockResolvedValue([baseNotification]);
+
+      const result = await service.listNotifications('u-1', 'ch-1', {
+        limit: 20,
+      });
+
+      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith(
+        'u-1',
+        'ch-1',
+        { limit: 20, withholdChatFrom: ['blocked-1', 'blocked-2'] },
+      );
+      expect(result).toEqual([baseNotification]);
+    });
+
+    it('serves the history unfiltered to the blocked member and to other recipients, whose own lists are empty', async () => {
+      // A block hides the blocked member from the blocker, not the other way
+      // round: only the caller's own list decides what is withheld.
+      mockNotificationRepo.findByUser.mockResolvedValue([baseNotification]);
+
+      await service.listNotifications('blocked-1', 'ch-1');
+
+      expect(listBlockedUserIds).toHaveBeenCalledWith('ch-1', 'blocked-1');
+      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith(
+        'blocked-1',
+        'ch-1',
+        { limit: LIST_QUERY_LIMIT_DEFAULT },
+      );
+    });
+
+    it('fails closed when the block list cannot be read', async () => {
+      // A list that can't be read is not an empty list: serving the history
+      // unfiltered would hand back the text the block hides.
+      listBlockedUserIds.mockRejectedValue(new Error('blocks unreadable'));
+
+      await expect(service.listNotifications('u-1', 'ch-1')).rejects.toThrow(
+        'blocks unreadable',
+      );
+      expect(mockNotificationRepo.findByUser).not.toHaveBeenCalled();
     });
 
     it('should clamp a zero or oversized limit before the repository', async () => {
