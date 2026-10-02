@@ -8,13 +8,18 @@ import {
 
 /** Runs `fn` with the process in `zone`; Node re-reads `TZ` on assignment. */
 function inZone<T>(zone: string, fn: () => T): T {
+  /* eslint-disable turbo/no-undeclared-env-vars -- the zone under test, not a
+     build input: no turbo task's output depends on it. */
   const previous = process.env.TZ;
   process.env.TZ = zone;
   try {
     return fn();
   } finally {
-    process.env.TZ = previous;
+    // Assigning `undefined` would set the string "undefined", not unset it.
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
   }
+  /* eslint-enable turbo/no-undeclared-env-vars */
 }
 
 /**

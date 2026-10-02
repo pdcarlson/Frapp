@@ -14,6 +14,22 @@ import {
 
 const VIEWER = "u-1";
 
+/** Runs `fn` with the process in `zone`; Node re-reads `TZ` on assignment. */
+function inZone(zone: string, fn: () => void): void {
+  /* eslint-disable turbo/no-undeclared-env-vars -- the zone under test, not a
+     build input: no turbo task's output depends on it. */
+  const previous = process.env.TZ;
+  process.env.TZ = zone;
+  try {
+    fn();
+  } finally {
+    // Assigning `undefined` would set the string "undefined", not unset it.
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
+  }
+  /* eslint-enable turbo/no-undeclared-env-vars */
+}
+
 function invoice(overrides: Record<string, unknown> = {}) {
   return {
     id: "inv-1",
@@ -165,9 +181,7 @@ describe("dueChip", () => {
       "Pacific/Tongatapu",
       "Pacific/Pago_Pago",
     ]) {
-      const previous = process.env.TZ;
-      process.env.TZ = zone;
-      try {
+      inZone(zone, () => {
         const lateOnDueDate = dueChip(row(), new Date(2026, 8, 15, 23, 30, 0));
         expect(lateOnDueDate, zone).toEqual({
           state: "upcoming",
@@ -178,9 +192,7 @@ describe("dueChip", () => {
           state: "past-due",
           label: "Past due Sep 15",
         });
-      } finally {
-        process.env.TZ = previous;
-      }
+      });
     }
   });
 
