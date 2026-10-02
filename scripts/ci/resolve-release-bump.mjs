@@ -104,8 +104,8 @@ export function highestBump(labelSets) {
  * would mint 1.0.0. So on a 0.x version a `major` becomes `minor`. Leaving 0.x
  * is a decision taken by dispatching Deploy production with `bump=major`, which
  * never reaches this: an override skips the label scan. (Not a Release
- * dispatch: that retries the tag for a commit already live and tagged, so it
- * would put a second tag on the same commit.)
+ * dispatch: that retries the tag for a commit already live, and a commit that
+ * carries the newest `vX.Y.Z` keeps it rather than taking a new one, #3126.)
  */
 export function capBumpBeforeOne(currentVersion, bump) {
   const major = Number.parseInt(String(currentVersion).split(".")[0], 10) || 0;
