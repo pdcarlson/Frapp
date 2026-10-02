@@ -216,7 +216,9 @@ jobs:
       # Move the two together, deliberately, re-reading `eas build --help`
       # and `eas submit --help` (the store build's suite pins the pair).
       # `scripts/eas.mjs` (`npm run eas`) reads this line and installs the same
-      # thing on a laptop, so keep its shape or change that parse with it (#3124).
+      # thing on a laptop. Its `parseEasCliPin` is the one parse of this line,
+      # which deploy-production-mobile.test.mjs uses too, so a change of shape
+      # changes that function (#3124).
       - name: Install EAS CLI
         run: npm install --global --ignore-scripts --before=2026-10-01 eas-cli@24.8.0
 

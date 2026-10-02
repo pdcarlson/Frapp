@@ -1,15 +1,20 @@
 ## 6. Mobile (EAS) Setup
 
 > **Run `eas` as `npm run eas -- <command>`, from the repo root.** eas-cli is pinned to the
-> version CI's store build installs (`.github/workflows/_mobile-build.yml`, step "Install EAS CLI",
-> today **24.8.0**), and [`scripts/eas.mjs`](../../../scripts/eas.mjs) installs that version into
-> the gitignored `.cache/eas-cli/` on first use (about 10 seconds), with CI's flags, then runs it in
-> `apps/mobile`, where `app.json` and `eas.json` are. Nothing needs installing globally, and it works
-> the same from Windows Git Bash, PowerShell or cmd. Inside `apps/mobile` npm reads that workspace's
-> own `package.json` and answers `Missing script: "eas"`, so run it from the root (any other
-> directory in the repo works too). Add `-s` (`npm run -s eas -- …`) when you parse the output, so
-> npm's own `> node scripts/eas.mjs` banner stays off stdout. To move the version, change CI's
-> install line; this follows it.
+> version CI's store build installs (`.github/workflows/_mobile-build.yml`, step "Install EAS CLI"),
+> and [`scripts/eas.mjs`](../../../scripts/eas.mjs) installs that version into the gitignored
+> `.cache/eas-cli/` on first use (about 10 seconds), with CI's flags, then runs it in `apps/mobile`,
+> where `app.json` and `eas.json` are. Nothing needs installing globally, and it works the same from
+> Windows Git Bash, PowerShell or cmd. Inside a workspace (`apps/mobile`, or any other `apps/*` or
+> `packages/*` directory) npm reads that workspace's own `package.json` and answers
+> `Missing script: "eas"`, so run it from the root. Add `-s` (`npm run -s eas -- …`) when you parse
+> the output, so npm's own `> node scripts/eas.mjs` banner stays off stdout. To move the version,
+> change CI's install line; this follows it.
+>
+> **Never put a secret on an `npm run` command line.** npm prints every argument in that banner
+> and keeps them in its debug log (`~/.npm/_logs/`, the last ten runs), `-s` or not. Leave
+> `--value` off and eas asks for the value at a hidden prompt (§ 6.3's `SENTRY_AUTH_TOKEN`), or run
+> `node scripts/eas.mjs <command>` from the root, which doesn't go through npm.
 >
 > A global `npm install -g eas-cli` still works as a fallback, at whatever version you get, which may
 > not take the flags written here. `eas env:set` (§ 6.3) needs **>= 21.1.0** (`21.0.0` has only the
@@ -55,6 +60,7 @@ npm start
 **Option B: Development build (better for testing native features)**
 
 ```bash
+# From the repo root (Option A leaves you in apps/mobile: `cd ../..` first)
 npm run eas -- build --profile development --platform ios
 # or --platform android
 # Install the resulting build on your device
@@ -71,7 +77,7 @@ npm run eas -- build --profile development --platform ios
 > § 6.3 for `preview` first, or you will pay for a build you cannot sign into.
 
 ```bash
-# One platform per command: `--platform all` starts Android, then stops on an iOS
+# From the repo root. One platform per command: `--platform all` starts Android, then stops on an iOS
 # failure and leaves the Android build running unreported (§ 6.6).
 npm run eas -- build --profile preview --platform ios
 npm run eas -- build --profile preview --platform android
@@ -143,14 +149,18 @@ row is the canonical account; this section only creates the variable.
 
 ```bash
 # From the repo root. Sentry -> Settings -> Auth Tokens, at the ORGANIZATION level (frapp-live), not a personal token.
+# No --value: eas asks for the token at a hidden prompt, once per environment. On the command
+# line npm would print it and log it (the note at the top of § 6).
 for ENV in preview production; do
-  npm run eas -- env:set --environment $ENV --scope project --visibility secret \
-    --name SENTRY_AUTH_TOKEN --value "<token>"
+  npm run eas -- env:set --environment $ENV --scope project --visibility secret --type string \
+    --name SENTRY_AUTH_TOKEN
 done
 ```
 
 `--visibility secret`, not the `plaintext` above: those values ship inside the binary anyway, this
-one must not be readable back. `preview` and `production` because the upload is skipped whenever the
+one must not be readable back. With no `--value`, eas-cli 24.8.0 prompts for it as a password
+field whenever the visibility isn't `plaintext`, and `--type string` skips its question about a
+file (read from its `env:set` source, `resolveVariableDetailsAsync`). `preview` and `production` because the upload is skipped whenever the
 compiled Xcode configuration or Gradle variant name contains `debug` — that is keyed on the
 configuration, **not** on the profile name, so a `development` profile given an explicit Release
 `buildConfiguration` would need the token too.
