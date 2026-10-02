@@ -496,6 +496,7 @@ export class ChatPushWorkerService
       senderName ??= this.resolveSenderName(row.sender_id);
       const payload = this.buildPayload(
         channel,
+        row.sender_id,
         senderPreview,
         burst,
         await senderName,
@@ -844,6 +845,7 @@ export class ChatPushWorkerService
 
   private buildPayload(
     channel: ChannelRow,
+    senderId: string | null,
     preview: string,
     burst: ReturnType<BurstBundler['record']>,
     senderName: string | null,
@@ -859,21 +861,22 @@ export class ChatPushWorkerService
       category: isAnnouncement ? 'announcements' : 'chat',
       priority: isAnnouncement ? ('URGENT' as const) : ('NORMAL' as const),
     };
+    // The sender rides on every chat row, bundled or not, so the in-app list
+    // can withhold a member's rows from someone who blocks them later (#2715).
+    // A bundle is one sender's burst (the bundle key starts with the sender).
+    const target = { screen: 'chat', channelId: channel.id };
+    const sender = senderId ? { senderId } : {};
     if (burst.action === 'bundle') {
       return {
         ...shared,
         body: `${burst.count} new messages`,
-        data: {
-          target: { screen: 'chat', channelId: channel.id },
-          bundled: true,
-          count: burst.count,
-        },
+        data: { target, ...sender, bundled: true, count: burst.count },
       };
     }
     return {
       ...shared,
       body: preview,
-      data: { target: { screen: 'chat', channelId: channel.id } },
+      data: { target, ...sender },
     };
   }
 
