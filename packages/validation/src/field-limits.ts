@@ -114,25 +114,24 @@ export const INT4_MAX = 2_147_483_647;
  * A list position a client may set: role and category `display_order`, custom
  * field `sort`, document folder `sort_order`, custom role `rank`.
  *
- * Far above any list a chapter keeps, and far below {@link INT4_MAX} on
- * purpose: the services that place a new row last compute `max + 1`, so a row
- * stored at `INT4_MAX` itself would make every later create in that list 500.
+ * Generous, so no position a chapter has stored is refused when a form sends
+ * it back unchanged, but well below {@link INT4_MAX}: a list placed last
+ * computes `max + 1` (`CustomFieldService.nextSort`,
+ * `ChapterDocumentService.nextSortOrder`, the Discord role import, and the web
+ * chat admin for a new category), and a row stored at `INT4_MAX` itself would
+ * make every later create in that list fail. Rows already stored at
+ * `INT4_MAX` before this bound are not repaired here.
  */
-export const POSITION_MAX = 1_000_000;
+export const POSITION_MAX = 1_000_000_000;
 
 /**
- * A calendar year a person types: a backwork resource's year, a chapter's
- * founding year. Four digits; the clients hold the tighter "not after next
- * year" bound, which a static decorator can't express.
+ * A calendar year a person types: a chapter's founding year, a backwork
+ * resource's year. Four digits. The founding year's clients also refuse a year
+ * after next (`latestFoundedYear` in `@repo/hooks`); backwork's form checks
+ * only its minimum, and a static decorator can't express "after next year".
  */
 export const YEAR_MAX = 9_999;
 
-/**
- * A study zone's minute settings (`minutes_per_point`, `min_session_minutes`,
- * `pause_grace_minutes`). A day: a session is kept alive by a heartbeat every
- * five minutes, so no setting longer than that can ever be met.
- */
-export const STUDY_ZONE_MINUTES_MAX = 24 * 60;
-
-/** Options on one poll; an option index is below this. */
+/** Options on one poll, and the fewest a poll may have. */
 export const POLL_OPTIONS_MAX = 10;
+export const POLL_OPTIONS_MIN = 2;

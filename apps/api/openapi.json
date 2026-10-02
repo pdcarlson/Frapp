@@ -11253,7 +11253,7 @@
           "rank": {
             "type": "number",
             "description": "Hierarchy order; lower ranks first",
-            "maximum": 1000000
+            "maximum": 1000000000
           },
           "capabilities": {
             "type": "array",
@@ -11276,7 +11276,7 @@
           },
           "rank": {
             "type": "number",
-            "maximum": 1000000
+            "maximum": 1000000000
           },
           "capabilities": {
             "type": "array",
@@ -11433,7 +11433,7 @@
           "sort": {
             "type": "number",
             "description": "Display order; lower sorts first",
-            "maximum": 1000000
+            "maximum": 1000000000
           }
         },
         "required": [
@@ -11474,7 +11474,7 @@
           },
           "sort": {
             "type": "number",
-            "maximum": 1000000
+            "maximum": 1000000000
           }
         }
       },
@@ -11557,7 +11557,7 @@
           },
           "display_order": {
             "type": "number",
-            "maximum": 1000000
+            "maximum": 1000000000
           },
           "color": {
             "type": "string"
@@ -11583,7 +11583,7 @@
           },
           "display_order": {
             "type": "number",
-            "maximum": 1000000
+            "maximum": 1000000000
           },
           "color": {
             "type": "string"
@@ -12250,7 +12250,7 @@
           "display_order": {
             "type": "number",
             "default": 0,
-            "maximum": 1000000
+            "maximum": 1000000000
           }
         },
         "required": [
@@ -12265,7 +12265,7 @@
           },
           "display_order": {
             "type": "number",
-            "maximum": 1000000
+            "maximum": 1000000000
           }
         }
       },
@@ -14229,7 +14229,7 @@
           "minutes_per_point": {
             "type": "number",
             "default": 30,
-            "maximum": 1440
+            "maximum": 2147483647
           },
           "points_per_interval": {
             "type": "number",
@@ -14238,13 +14238,13 @@
           "min_session_minutes": {
             "type": "number",
             "default": 15,
-            "maximum": 1440
+            "maximum": 2147483647
           },
           "pause_grace_minutes": {
             "type": "number",
             "default": 5,
             "description": "Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED.",
-            "maximum": 1440
+            "maximum": 2147483647
           }
         },
         "required": [
@@ -14269,19 +14269,19 @@
           },
           "minutes_per_point": {
             "type": "number",
-            "maximum": 1440
+            "maximum": 2147483647
           },
           "points_per_interval": {
             "type": "number"
           },
           "min_session_minutes": {
             "type": "number",
-            "maximum": 1440
+            "maximum": 2147483647
           },
           "pause_grace_minutes": {
             "type": "number",
             "description": "Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED.",
-            "maximum": 1440
+            "maximum": 2147483647
           }
         }
       },
@@ -14433,7 +14433,7 @@
           "sort_order": {
             "type": "number",
             "description": "Display position. Defaults to the end of the list.",
-            "maximum": 1000000
+            "maximum": 1000000000
           }
         },
         "required": [
@@ -14450,7 +14450,7 @@
           "sort_order": {
             "type": "number",
             "description": "New display position",
-            "maximum": 1000000
+            "maximum": 1000000000
           }
         }
       },

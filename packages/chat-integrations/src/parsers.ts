@@ -11,6 +11,8 @@
 import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
+  POLL_OPTIONS_MAX,
+  POLL_OPTIONS_MIN,
 } from "@repo/validation";
 
 /** Result of a successful parse for `/poll`. */
@@ -148,11 +150,14 @@ export function parsePollArgs(args: string): ParseResult<PollArgs> {
     options.push(opt);
   }
 
-  if (options.length < 2) {
+  if (options.length < POLL_OPTIONS_MIN) {
     return { ok: false, error: "Polls need at least two distinct options" };
   }
-  if (options.length > 10) {
-    return { ok: false, error: "Polls support up to 10 options" };
+  if (options.length > POLL_OPTIONS_MAX) {
+    return {
+      ok: false,
+      error: `Polls support up to ${POLL_OPTIONS_MAX} options`,
+    };
   }
 
   return {

@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { getMetadataStorage, validate, ValidationTypes } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
+import { INT4_MAX } from '@repo/validation';
 import { loadDtoClasses, type DtoClass } from '#test/helpers/dto-corpus';
 
 /**
@@ -37,6 +38,7 @@ const GATE_ONLY: readonly string[] = [
 interface RegisteredValidator {
   type: string;
   name: string;
+  constraints: unknown[];
 }
 
 function constraintsByProperty(
@@ -52,7 +54,11 @@ function constraintsByProperty(
   for (const m of metadatas) {
     if (!m.propertyName) continue;
     const found = byProp.get(m.propertyName) ?? [];
-    found.push({ type: m.type, name: (m as { name?: string }).name ?? m.type });
+    found.push({
+      type: m.type,
+      name: (m as { name?: string }).name ?? m.type,
+      constraints: m.constraints ?? [],
+    });
     byProp.set(m.propertyName, found);
   }
   return byProp;
@@ -123,10 +129,14 @@ describe('DTO constraint coverage (#849)', () => {
 
     for (const cls of classes) {
       for (const [prop, found] of constraintsByProperty(cls)) {
-        const names = found.map((v) => v.name);
-        if (!names.includes('isInt') || names.includes('max')) continue;
+        if (!found.some((v) => v.name === 'isInt')) continue;
         const key = `${cls.name}.${prop}`;
-        if (key in UNBOUNDED_INTS) reasoned.add(key);
+        const max = found.find((v) => v.name === 'max');
+        if (max) {
+          // A ceiling above int4 lets 2147483648 through to the same 22003.
+          const ceiling = Number(max.constraints[0]);
+          if (!(ceiling <= INT4_MAX)) offenders.push(`${key} (max ${ceiling})`);
+        } else if (key in UNBOUNDED_INTS) reasoned.add(key);
         else offenders.push(key);
       }
     }

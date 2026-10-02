@@ -235,6 +235,8 @@ export class ServiceConfigDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  // A service entry's `duration_minutes` is capped at POINTS_ADJUSTMENT_MAX,
+  // so a rate above it could never award a point.
   @Max(POINTS_ADJUSTMENT_MAX)
   minutes_per_point?: number;
 }

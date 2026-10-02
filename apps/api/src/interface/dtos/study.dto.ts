@@ -12,10 +12,7 @@ import {
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  POINTS_ADJUSTMENT_MAX,
-  STUDY_ZONE_MINUTES_MAX,
-} from '@repo/validation';
+import { INT4_MAX, POINTS_ADJUSTMENT_MAX } from '@repo/validation';
 
 export class GeofenceCoordinateDto {
   @ApiProperty()
@@ -43,11 +40,11 @@ export class CreateGeofenceDto {
   @IsStrictBoolean()
   is_active?: boolean;
 
-  @ApiPropertyOptional({ default: 30, maximum: STUDY_ZONE_MINUTES_MAX })
+  @ApiPropertyOptional({ default: 30, maximum: INT4_MAX })
   @IsOptional()
   @IsInt()
   @Min(1)
-  @Max(STUDY_ZONE_MINUTES_MAX)
+  @Max(INT4_MAX)
   minutes_per_point?: number;
 
   @ApiPropertyOptional({ default: 1 })
@@ -61,23 +58,23 @@ export class CreateGeofenceDto {
   @Max(POINTS_ADJUSTMENT_MAX)
   points_per_interval?: number;
 
-  @ApiPropertyOptional({ default: 15, maximum: STUDY_ZONE_MINUTES_MAX })
+  @ApiPropertyOptional({ default: 15, maximum: INT4_MAX })
   @IsOptional()
   @IsInt()
   @Min(0)
-  @Max(STUDY_ZONE_MINUTES_MAX)
+  @Max(INT4_MAX)
   min_session_minutes?: number;
 
   @ApiPropertyOptional({
     default: 5,
     description:
       'Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED.',
-    maximum: STUDY_ZONE_MINUTES_MAX,
+    maximum: INT4_MAX,
   })
   @IsOptional()
   @IsInt()
   @Min(1)
-  @Max(STUDY_ZONE_MINUTES_MAX)
+  @Max(INT4_MAX)
   pause_grace_minutes?: number;
 }
 
@@ -99,11 +96,11 @@ export class UpdateGeofenceDto {
   @IsStrictBoolean()
   is_active?: boolean;
 
-  @ApiPropertyOptional({ maximum: STUDY_ZONE_MINUTES_MAX })
+  @ApiPropertyOptional({ maximum: INT4_MAX })
   @IsOptional()
   @IsInt()
   @Min(1)
-  @Max(STUDY_ZONE_MINUTES_MAX)
+  @Max(INT4_MAX)
   minutes_per_point?: number;
 
   @ApiPropertyOptional()
@@ -117,22 +114,22 @@ export class UpdateGeofenceDto {
   @Max(POINTS_ADJUSTMENT_MAX)
   points_per_interval?: number;
 
-  @ApiPropertyOptional({ maximum: STUDY_ZONE_MINUTES_MAX })
+  @ApiPropertyOptional({ maximum: INT4_MAX })
   @IsOptional()
   @IsInt()
   @Min(0)
-  @Max(STUDY_ZONE_MINUTES_MAX)
+  @Max(INT4_MAX)
   min_session_minutes?: number;
 
   @ApiPropertyOptional({
     description:
       'Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED.',
-    maximum: STUDY_ZONE_MINUTES_MAX,
+    maximum: INT4_MAX,
   })
   @IsOptional()
   @IsInt()
   @Min(1)
-  @Max(STUDY_ZONE_MINUTES_MAX)
+  @Max(INT4_MAX)
   pause_grace_minutes?: number;
 }
 
