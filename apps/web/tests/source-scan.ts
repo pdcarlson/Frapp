@@ -56,51 +56,101 @@ export function productSourceFiles(source: RegExp = TS_SOURCE): string[] {
 }
 
 /**
- * Comments are dropped before matching: prose may name the banned shape to
- * explain why a line does not use it.
- */
-export function withoutComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
-}
-
-/**
  * The text a class list can live in, for a scan that must not be blinded by a
- * comment marker inside a string (#2842).
+ * comment marker inside a string (#2842, #3088).
  *
- * {@link withoutComments} strips with regexes that cannot see strings, so a
- * `"image/*"` opens a "comment" that runs to the next `*\/` and hides every
- * class in between, and a `//` inside a template string drops the rest of its
- * line. Script files are therefore parsed instead: only their string literals
- * and template-literal text are returned, one per line, so a match cannot
- * cross from one literal into the next and a comment is never read at all.
- * CSS keeps the regex, because CSS has no `//` comment and a `/*` inside a CSS
- * string is not a shape this codebase writes. Anything else (`.mdx`) is
+ * A regex comment stripper cannot see strings, so a `"image/*"` opens a
+ * "comment" that runs to the next `*\/` and hides every class in between, and
+ * a `//` inside a template string drops the rest of its line. Script files are
+ * therefore parsed instead: only their string literals and template-literal
+ * text are returned, so a match cannot cross from one literal into the next
+ * and a comment is never read at all. CSS keeps a `/* *\/` regex, because CSS
+ * has no `//` comment and a `/*` inside a CSS string is not a shape this
+ * codebase writes; it comes back as one entry. Anything else (`.mdx`) is
  * returned whole, which can only make a scan stricter.
  */
-export function classSourceText(path: string): string {
+export function classLiterals(path: string): string[] {
   const text = readFileSync(path, "utf8");
   const ext = extname(path);
-  if (ext === ".css") return text.replace(/\/\*[\s\S]*?\*\//g, "");
+  if (ext === ".css") return [text.replace(/\/\*[\s\S]*?\*\//g, "")];
   const kind = SCRIPT_KINDS[ext];
-  if (kind === undefined) return text;
+  if (kind === undefined) return [text];
   const file = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, false, kind);
   const parts: string[] = [];
   const visit = (node: ts.Node) => {
-    if (
-      ts.isStringLiteral(node) ||
-      ts.isNoSubstitutionTemplateLiteral(node) ||
-      ts.isTemplateHead(node) ||
-      ts.isTemplateMiddle(node) ||
-      ts.isTemplateTail(node)
-    ) {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       parts.push(node.text);
+    } else if (ts.isTemplateExpression(node)) {
+      // One class list, its interpolations read as a gap: a tint before a
+      // `${…}` and a text after it are still on the same element.
+      parts.push(
+        [
+          node.head.text,
+          ...node.templateSpans.map((span) => span.literal.text),
+        ].join(" "),
+      );
+      for (const span of node.templateSpans) visit(span.expression);
+      return;
     }
     ts.forEachChild(node, visit);
   };
   visit(file);
-  return parts.join("\n");
+  return parts;
+}
+
+/** {@link classLiterals}, one per line, for a scan that matches text. */
+export function classSourceText(path: string): string {
+  return classLiterals(path).join("\n");
+}
+
+/**
+ * A script file's code with its comments removed, for a guard that pins
+ * structure (a JSX attribute, a function body) and so can't read literals
+ * alone. The comments are the ones the parser finds, so a `/*` or `//` inside
+ * a string, a template or JSX text is left as it is (#3088).
+ */
+export function codeWithoutComments(path: string): string {
+  const text = readFileSync(path, "utf8");
+  const kind = SCRIPT_KINDS[extname(path)];
+  if (kind === undefined) {
+    throw new Error(`codeWithoutComments reads script files, not ${path}`);
+  }
+  const file = ts.createSourceFile(
+    path,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    kind,
+  );
+  // JSX text is not trivia, so a `//` that opens it is prose, not a comment.
+  const jsxText: Array<[number, number]> = [];
+  const comments = new Map<number, number>();
+  const collect = (ranges: ts.CommentRange[] | undefined) => {
+    for (const range of ranges ?? []) comments.set(range.pos, range.end);
+  };
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxText(node)) {
+      jsxText.push([node.pos, node.end]);
+      return;
+    }
+    collect(ts.getLeadingCommentRanges(text, node.pos));
+    collect(ts.getTrailingCommentRanges(text, node.end));
+    for (const child of node.getChildren(file)) visit(child);
+  };
+  visit(file);
+  const inJsxText = (pos: number) =>
+    jsxText.some(([start, end]) => pos >= start && pos < end);
+  // One forward pass, skipping whatever an earlier cut already covers: the
+  // walk also asks inside a JSDoc block, which reports a `// …` or `{@link}`
+  // in it as a second, nested range.
+  let code = "";
+  let cursor = 0;
+  for (const [pos, end] of [...comments].sort(([a], [b]) => a - b)) {
+    if (pos < cursor || inJsxText(pos)) continue;
+    code += text.slice(cursor, pos);
+    cursor = end;
+  }
+  return code + text.slice(cursor);
 }
 
 const SCRIPT_KINDS: Record<string, ts.ScriptKind> = {
