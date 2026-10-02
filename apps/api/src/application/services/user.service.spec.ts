@@ -185,6 +185,22 @@ describe('UserService', () => {
       expect(result.storagePath).toMatch(UUID_KEY);
     });
 
+    it.each(['beach.jpg\u00a0', 'beach.jpg ', 'beach.JPG\t'])(
+      'keys a trailing-whitespace name by the extension the allowlist approved (%j, #3066)',
+      async (filename) => {
+        mockStorageProvider.getSignedUploadUrl.mockResolvedValue('https://put');
+
+        const result = await service.requestAvatarUploadUrl(
+          'ch-1',
+          'user-1',
+          filename,
+          'image/jpeg',
+        );
+
+        expect(result.storagePath).toMatch(UUID_KEY);
+      },
+    );
+
     it('should throw BadRequestException for invalid file extension', async () => {
       await expect(
         service.requestAvatarUploadUrl(

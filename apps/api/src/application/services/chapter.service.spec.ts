@@ -1242,6 +1242,18 @@ describe('ChapterService', () => {
     );
   });
 
+  it('keys a trailing-whitespace name by the extension the allowlist approved (#3066)', async () => {
+    const result = await service.requestLogoUploadUrl(
+      'ch-1',
+      'crest.PNG\u00a0',
+      'image/png',
+    );
+
+    expect(result.storagePath).toMatch(
+      /^chapters\/ch-1\/branding\/logo-[0-9a-f-]{36}\.png$/,
+    );
+  });
+
   it('mints a different key for each upload of the same extension (#2592)', async () => {
     // The key used to be `logo.<ext>`, so a second PNG collided with the first
     // at the mint and storage answered 409.
