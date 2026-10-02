@@ -5,13 +5,22 @@
  * `apps/web`) and mobile renders it with the same library into React Native
  * `Text` (`message-markdown.tsx` in `apps/mobile`). What decides the output
  * lives here, so the two can't drift: the element allowlist, the #2209 depth
- * cap, the #2664 parse budget, and the bare-URL links. Each is
+ * cap, the #2664 parse budget, the bare-URL links, and the line layout
+ * (`markdown-flow.ts`, #2934). Each is
  * dependency-free: the mdast they walk is written out, for the reason
  * `markdown-depth-cap.ts` gives.
  */
 
 import { bareUrlEnd, bareUrls, isOpenableHref } from "./links";
 import { opensTooManyContainers } from "./markdown-depth-cap";
+export {
+  applyMessageAllowlist,
+  endsInOwnLineBlock,
+  isElement,
+  layOutMessageFlow,
+  textOf,
+  type HastNode,
+} from "./markdown-flow";
 import { exceedsParseBudget } from "./markdown-parse-budget";
 
 // Only the combined check is exported, not its two halves: a renderer that

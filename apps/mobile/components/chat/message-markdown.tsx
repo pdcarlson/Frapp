@@ -19,9 +19,15 @@ import remarkBreaks from "remark-breaks";
 import { isOpenableHref } from "@repo/chat-core/links";
 import {
   MESSAGE_MARKDOWN_ELEMENTS,
+  applyMessageAllowlist,
+  endsInOwnLineBlock,
+  isElement,
+  layOutMessageFlow,
   remarkBareUrls,
   remarkDepthCap,
   skipsMarkdownParse,
+  textOf,
+  type HastNode,
 } from "@repo/chat-core/markdown";
 import { SignetTokens } from "@repo/theme/signet";
 import { openMessageLink } from "@/lib/chat/open-link";
@@ -50,7 +56,8 @@ import {
  *   named actions (`linkA11yActions`).
  *
  * A paragraph or a code block can't be a block box inside a `Text`, so
- * `rehypeTextFlow` lays blocks out as line breaks instead.
+ * `rehypeTextFlow` lays blocks out as line breaks instead, with the layout web
+ * shares (`layOutMessageFlow`).
  */
 
 /** A link in a body, in reading order: what it reads as, and where it goes. */
@@ -76,128 +83,6 @@ export interface ParsedMessageMarkdown {
    * heading or raw HTML reads as a line of text, and they trail it, as on web.
    */
   trailingOnOwnLine: boolean;
-}
-
-/**
- * The slice of hast the layout needs, written out rather than imported: `hast`
- * reaches this app only through react-markdown, for the reason
- * `markdown-depth-cap.ts` in `@repo/chat-core` gives about mdast.
- */
-interface HastNode {
-  type: string;
-  tagName?: string;
-  value?: string;
-  properties?: Record<string, unknown>;
-  children?: HastNode[];
-}
-
-const ALLOWED = new Set(MESSAGE_MARKDOWN_ELEMENTS);
-
-/** The elements web draws as blocks. Everything else flows inline. */
-const BLOCKS = new Set(["p", "pre"]);
-
-/** The blocks the trailing markers go under rather than after (§11). */
-const OWN_LINE_AFTER = new Set(["pre", "ul", "ol", "blockquote"]);
-
-/** Breaks between two blocks: web's `pre-wrap` shows a paragraph gap, one blank line. */
-const MAX_BREAKS = 2;
-
-/** The characters a node draws, a line break included. */
-function textOf(node: HastNode): string {
-  // Raw HTML draws as the characters typed (`applyAllowlist`).
-  if (node.type === "text" || node.type === "raw") return node.value ?? "";
-  if (isElement(node, "br")) return "\n";
-  return (node.children ?? []).map(textOf).join("");
-}
-
-/** A text node holding only the line breaks hast puts between blocks. */
-function isSeparator(node: HastNode): boolean {
-  return node.type === "text" && /^\n+$/.test(node.value ?? "");
-}
-
-function isElement(node: HastNode | undefined, tagName: string): boolean {
-  return node?.type === "element" && node.tagName === tagName;
-}
-
-/**
- * An element that draws nothing once the allowlist has had it: a divider, or
- * the paragraph left around an image. The layout skips it, so it adds no
- * blank line, and the trailing markers look past it.
- */
-function drawsNothing(node: HastNode): boolean {
-  return (
-    node.type === "element" &&
-    node.tagName !== "br" &&
-    textOf(node).trim() === ""
-  );
-}
-
-/**
- * The allowlist, applied as react-markdown's own pass applies it
- * (`allowedElements` with `unwrapDisallowed`, raw HTML as its text), but here,
- * so the layout below sees the tree that will render. react-markdown applies
- * both again afterwards and finds nothing left to do.
- *
- * It also drops the `"\n"` that hast puts after every `br`. Kept, that
- * newline breaks the line a second time in a `Text`, as it does in web's
- * `pre-wrap` body (#2934).
- *
- * Recursive, which is safe because `remarkDepthCap` already ran: the tree is at
- * most `MAX_MESSAGE_MARKDOWN_DEPTH` deep.
- */
-function applyAllowlist(nodes: HastNode[]): HastNode[] {
-  const out: HastNode[] = [];
-  for (const node of nodes) {
-    if (node.type === "raw") {
-      out.push({ type: "text", value: node.value ?? "" });
-    } else if (node.type === "element") {
-      const children = applyAllowlist(node.children ?? []);
-      if (ALLOWED.has(node.tagName ?? "")) out.push({ ...node, children });
-      else out.push(...children);
-    } else {
-      out.push(node);
-    }
-  }
-  return out.filter(
-    (node, index) => !(isSeparator(node) && isElement(out[index - 1], "br")),
-  );
-}
-
-/**
- * The body's top level as one line of flow, with each block boundary written
- * out as the line breaks web's layout shows there.
- *
- * On web the body is `pre-wrap` with block paragraphs and code, so each
- * `"\n"` that hast puts between blocks shows as a line of its own. A block
- * ends its line, and each separator adds one more. So two paragraphs show a
- * blank line between them, a list's items one line each, and a paragraph that
- * follows a heading starts on the next line. That count is capped at one blank
- * line. Separators at the start or end of the body are dropped, so a body
- * that opens with a list or a quote doesn't open with an empty line, as it
- * does on web (#2934).
- */
-function layOut(nodes: HastNode[]): HastNode[] {
-  const out: HastNode[] = [];
-  let separators = 0;
-  let afterBlock = false;
-  for (const node of nodes) {
-    if (isSeparator(node)) {
-      separators += (node.value ?? "").length;
-      continue;
-    }
-    if (drawsNothing(node)) continue;
-    const block = node.type === "element" && BLOCKS.has(node.tagName ?? "");
-    if (out.length > 0) {
-      let breaks = separators + (afterBlock ? 1 : 0);
-      if (block || afterBlock) breaks = Math.max(breaks, 1);
-      breaks = Math.min(breaks, MAX_BREAKS);
-      if (breaks > 0) out.push({ type: "text", value: "\n".repeat(breaks) });
-    }
-    out.push(node);
-    separators = 0;
-    afterBlock = block;
-  }
-  return out;
 }
 
 /**
@@ -228,17 +113,20 @@ function collectLinks(root: HastNode): MessageLink[] {
 
 type TextFlowResult = Omit<ParsedMessageMarkdown, "body">;
 
-/** The rehype pass that shapes the tree for one `Text`. It must run last. */
+const ALLOWED: ReadonlySet<string> = new Set(MESSAGE_MARKDOWN_ELEMENTS);
+
+/**
+ * The rehype pass that shapes the tree for one `Text`: the shared line layout
+ * (`markdown-flow.ts` in `@repo/chat-core`, which web runs too), plus what the
+ * row needs from the parse. It must run last.
+ */
 function rehypeTextFlow(result: TextFlowResult) {
   return (root: HastNode): void => {
-    // Read before the allowlist unwraps the blocks it is asking about: the
-    // last block that draws anything, so a divider after a list doesn't count.
-    const last = (root.children ?? [])
-      .filter((node) => !isSeparator(node) && !drawsNothing(node))
-      .pop();
-    result.trailingOnOwnLine =
-      last?.type === "element" && OWN_LINE_AFTER.has(last.tagName ?? "");
-    root.children = layOut(applyAllowlist(root.children ?? []));
+    // Read before the allowlist unwraps the blocks it is asking about.
+    result.trailingOnOwnLine = endsInOwnLineBlock(root.children ?? []);
+    root.children = layOutMessageFlow(
+      applyMessageAllowlist(root.children ?? [], ALLOWED),
+    );
     result.links = collectLinks(root);
     result.empty = textOf(root).trim() === "";
   };

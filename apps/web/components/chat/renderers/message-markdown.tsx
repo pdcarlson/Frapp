@@ -6,8 +6,12 @@ import remarkBreaks from "remark-breaks";
 import { isSafeHref } from "@repo/chat-core/links";
 import {
   MESSAGE_MARKDOWN_ELEMENTS,
+  applyMessageAllowlist,
+  endsInOwnLineBlock,
+  layOutMessageFlow,
   remarkDepthCap,
   skipsMarkdownParse,
+  type HastNode,
 } from "@repo/chat-core/markdown";
 import { remarkMentionChips } from "./remark-mention-chips";
 import { cn } from "@/lib/utils";
@@ -23,6 +27,32 @@ import { cn } from "@/lib/utils";
  * plugins run, not to the source.
  */
 const ALLOWED_ELEMENTS = [...MESSAGE_MARKDOWN_ELEMENTS, "mark"];
+const ALLOWED: ReadonlySet<string> = new Set(ALLOWED_ELEMENTS);
+
+/**
+ * The body's line structure, shared with mobile (`markdown-flow.ts` in
+ * `@repo/chat-core`). It writes every break out as `"\n"` exactly once, and
+ * the body draws as one inline flow under `pre-wrap`: paragraphs are inline
+ * and a code block is an inline-block that fills the width. Left as hast
+ * builds it, a `<br>` was followed by a `"\n"` that `pre-wrap` drew as a
+ * second break, and the separators around an unwrapped list or quote drew as
+ * empty lines (#2934).
+ *
+ * When the body ends in a code block, a list or a quote, it ends with a
+ * `"\n"`, which puts `TextRenderer`'s trailing markers on a line of their own
+ * under it (`components.md` §11 § What rides the row). With no markers after
+ * it, a closing newline draws no extra line.
+ */
+function rehypeMessageFlow() {
+  return (root: HastNode): void => {
+    const ownLine = endsInOwnLineBlock(root.children ?? []);
+    const flow = layOutMessageFlow(
+      applyMessageAllowlist(root.children ?? [], ALLOWED),
+    );
+    if (ownLine && flow.length > 0) flow.push({ type: "text", value: "\n" });
+    root.children = flow;
+  };
+}
 
 /**
  * The shared safe renderer for `message.content` — a fenced-off subset of
@@ -59,10 +89,12 @@ export const MessageMarkdown = memo(function MessageMarkdown({ content }: { cont
         remarkBreaks,
         [remarkMentionChips, { content }],
       ]}
+      // Last, so it lays out the tree that renders.
+      rehypePlugins={[rehypeMessageFlow]}
       allowedElements={ALLOWED_ELEMENTS}
       unwrapDisallowed
       components={{
-        p: ({ children }) => <p className="m-0">{children}</p>,
+        p: ({ children }) => <p className="m-0 inline">{children}</p>,
         a: ({ href, children }) => {
           if (!href || !isSafeHref(href)) {
             return <>{children}</>;
@@ -88,7 +120,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({ content }: { cont
             return (
               <code
                 className={cn(
-                  "block overflow-x-auto whitespace-pre rounded-md bg-black/15 px-3 py-2 font-mono text-sm",
+                  "inline-block w-full overflow-x-auto whitespace-pre rounded-md bg-black/15 px-3 py-2 align-top font-mono text-sm",
                   className,
                 )}
               >
