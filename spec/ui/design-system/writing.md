@@ -158,6 +158,14 @@ A paused permission check is **not** the surface being unavailable, and must not
 
 Implementation: `PermissionsOffline` (`apps/web/components/shared/async-states.tsx`) carries the first string; the second is passed to `<Can offlineFallback>` at each screen-level gate. Behaviour is [README.md](README.md) §4.
 
+### Rate limited (global)
+
+| State | Title | Description |
+|---|---|---|
+| Any API request refused with a 429 (the body's `message`) | the surface's own | `Too many requests in a short time. Wait a minute, then try again.` |
+
+The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.guard.ts`, #3142); before it, a throttled write toasted the framework's `ThrottlerException: Too Many Requests`. Both buckets reset within a minute, so "a minute" is the longest wait; `Retry-After` carries the exact seconds. Surfaces that treat a 429 as a wait rather than a refusal (chat's upload mints on web and mobile) show their own retry sentence instead, which says the same thing.
+
 ### Members (dashboard)
 
 | State | Title | Description |

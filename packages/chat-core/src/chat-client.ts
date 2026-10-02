@@ -245,10 +245,12 @@ export function classifyChatError(error: unknown): {
  * For a surface that shows the API's refusal and otherwise its own sentence:
  * the web composer and mobile's photo upload both read their upload-URL mint
  * through this, so one response can't read two ways (#2199). It is
- * `classifyChatError`'s terminal split with one more transient case: a 429's
- * body is the throttler's framework text ("ThrottlerException: Too Many
- * Requests"), and waiting is the remedy. It is also `null` for a refusal with
- * no message, so the caller's sentence stands in for an empty line.
+ * `classifyChatError`'s terminal split with one more transient case: a 429,
+ * whose remedy is waiting, which the caller's own retry sentence already says.
+ * (Its body was the throttler's framework text, "ThrottlerException: Too Many
+ * Requests", until #3142 gave it a sentence; the carve-out stays because a 429
+ * is not a refusal of the request itself.) It is also `null` for a refusal
+ * with no message, so the caller's sentence stands in for an empty line.
  *
  * Reads API bodies only. A thrown `Error` is `null` here, because what one
  * says is the surface's call: web shows its own Errors' text, while mobile's
