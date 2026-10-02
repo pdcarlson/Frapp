@@ -799,7 +799,8 @@ describe('PointsService', () => {
         }),
       ).rejects.toMatchObject({
         status: 429,
-        message: 'Rate limit exceeded: maximum 50 point adjustments per hour',
+        message:
+          "You've made 50 point adjustments in this chapter in the last hour, the most allowed. Try again later.",
       });
 
       expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
@@ -850,7 +851,8 @@ describe('PointsService', () => {
 
         await expect(adjust()).rejects.toMatchObject({
           status: 429,
-          message: 'Rate limit exceeded: maximum 5 point adjustments per hour',
+          message:
+            "You've made 5 point adjustments in this chapter in the last hour, the most allowed. Try again later.",
         });
         expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
       });
