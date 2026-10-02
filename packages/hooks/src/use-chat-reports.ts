@@ -267,8 +267,8 @@ export function useResolveChatReport() {
   return useMutation({
     // No retry (`docs/hooks/README.md`): this is a compare-and-set on
     // `status = 'open'`, so if the first attempt lands and only its response
-    // is lost, the web client's default `retry: 2` is answered with a
-    // guaranteed 409 and the officer is told a resolution failed that
+    // is lost, the web client's default retry of a transient failure is
+    // answered with a guaranteed 409 and the officer is told a resolution failed that
     // actually happened. `onSettled` reconciles instead.
     retry: false,
     mutationFn: async ({
@@ -318,7 +318,7 @@ export function useRemoveReportedMessage(timeline: ReportedMessageTimeline) {
   return useMutation({
     // No retry, although the route is idempotent and a retry is safe. A first
     // attempt that removed the message and then lost its response would be
-    // answered, on the web client's default `retry: 2`, with
+    // answered, on the web client's default retry of a transient failure, with
     // `message_already_deleted: true` — and the officer told "already
     // removed" about a removal they just made. The unknown outcome is shown
     // instead, and the queue refetch says what happened.
