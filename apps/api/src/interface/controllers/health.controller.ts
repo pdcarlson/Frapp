@@ -90,6 +90,10 @@ export class HealthController {
     // through a Stripe blip. Deploy smoke and production uptime poll this path,
     // so a Price/account mismatch (resource_missing / inactive) 503s here —
     // and `StripePriceConsistencyService.onModuleInit` already refused boot.
+    //
+    // This route is public, so the body names only the error's `category`,
+    // never its message (#2999). The service's error log and the Sentry
+    // `cause` keep the full detail.
     try {
       await this.stripePriceConsistency.assertConfiguredPrice();
     } catch (err) {
@@ -97,7 +101,7 @@ export class HealthController {
         throw new ServiceUnavailableException(
           {
             code: 'DEGRADED',
-            message: `database: ${payload.database}, storage: ${payload.storage}, billing: ${err.message}`,
+            message: `database: ${payload.database}, storage: ${payload.storage}, billing: ${err.category}`,
           },
           { cause: toReportableError(err) },
         );
