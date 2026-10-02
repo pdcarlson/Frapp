@@ -176,6 +176,143 @@ test("conflicted PR gets a wake comment and never an update attempt", async () =
   );
 });
 
+// A wake comment that fails to post is the one signal a conflicted PR's session
+// gets, so the failure must not read as success (#3019).
+function capture() {
+  const lines = [];
+  return { logger: { log: (line) => lines.push(line) }, lines };
+}
+const refusedCommentRoute = (number) => ({
+  method: "POST",
+  path: `/issues/${number}/comments`,
+  status: 403,
+  body: { message: "Resource not accessible by integration" },
+});
+
+test("a conflict wake that fails to post says so, with GitHub's status and message", async () => {
+  const pr = makePr(31, { mergeable: false, mergeable_state: "dirty" });
+  const { logger, lines } = capture();
+  const { results } = await sweep({
+    routes: [listRoute([pr]), detailRoute(pr), emptyCommentsRoute, refusedCommentRoute(31)],
+    updateToken: "pat",
+    logger,
+  });
+  assert.deepEqual(results, [
+    { number: 31, verdict: "conflict", action: "comment-failed", status: 403 },
+  ]);
+  const warning = lines.find((line) => line.startsWith("::warning::"));
+  assert.ok(warning, "a failed wake must be a workflow warning, not a plain log line");
+  assert.match(warning, /#31: CONFLICTS with main/);
+  assert.match(warning, /HTTP 403: Resource not accessible by integration/);
+});
+
+test("a wake that posts is a plain log line, never a warning", async () => {
+  const pr = makePr(34, { mergeable: false, mergeable_state: "dirty" });
+  const { logger, lines } = capture();
+  const { results } = await sweep({
+    routes: [listRoute([pr]), detailRoute(pr), emptyCommentsRoute],
+    logger,
+  });
+  assert.equal(results[0].action, "commented");
+  assert.ok(lines.some((line) => /#34: CONFLICTS with main — wake comment posted/.test(line)));
+  assert.ok(!lines.some((line) => line.startsWith("::")), "a warning on success buries real failures");
+});
+
+test("an HTML error page is cut to one escaped line, so the warning keeps its tail", async () => {
+  const pr = makePr(35, { mergeable: false, mergeable_state: "dirty" });
+  const { logger, lines } = capture();
+  await sweep({
+    routes: [
+      listRoute([pr]),
+      detailRoute(pr),
+      emptyCommentsRoute,
+      {
+        method: "POST",
+        path: "/issues/35/comments",
+        status: 502,
+        body: "<!DOCTYPE html>\n<html><body>Unicorn! 100% down</body></html>",
+      },
+    ],
+    logger,
+  });
+  const warning = lines.find((line) => line.startsWith("::warning::"));
+  assert.ok(warning);
+  assert.ok(!/[\r\n]/.test(warning), "a raw newline ends the annotation early");
+  assert.match(warning, /HTTP 502: <!DOCTYPE html>\); the session watching this PR was not woken$/);
+  assert.ok(!warning.includes("Unicorn"));
+});
+
+test("update-branch goes through the app token, and nothing else does", async () => {
+  // GITHUB_TOKEN holds pull-requests: write for the wake comments, so the
+  // permission no longer refuses update-branch through it; only the code
+  // keeps that push (which would trigger no CI) on the app token.
+  const behind = makePr(36);
+  const conflicted = makePr(37, { mergeable: false, mergeable_state: "dirty" });
+  const { calls } = await sweep({
+    routes: [
+      listRoute([behind, conflicted]),
+      detailRoute(behind),
+      detailRoute(conflicted),
+      compareRoute(behind.head.sha, 1),
+      { method: "PUT", path: "/pulls/36/update-branch", status: 202, body: {} },
+      emptyCommentsRoute,
+    ],
+    updateToken: "pat",
+  });
+  const updates = calls.filter((c) => c.url.includes("/update-branch"));
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].token, "pat");
+  const others = calls.filter((c) => !c.url.includes("/update-branch"));
+  assert.ok(others.length > 0);
+  assert.ok(
+    others.every((c) => c.token === "t"),
+    "reads, wake comments and the alert go through GITHUB_TOKEN, never the app token",
+  );
+});
+
+test("a behind wake that fails to post says so too", async () => {
+  const pr = makePr(32, {
+    head: {
+      ref: "feature",
+      sha: "32".padStart(40, "0"),
+      repo: { full_name: "someone-else/Frapp" },
+    },
+  });
+  const { logger, lines } = capture();
+  const { results } = await sweep({
+    routes: [
+      listRoute([pr]),
+      detailRoute(pr),
+      compareRoute(pr.head.sha, 1),
+      emptyCommentsRoute,
+      refusedCommentRoute(32),
+    ],
+    updateToken: "pat",
+    logger,
+  });
+  assert.deepEqual(results, [
+    { number: 32, verdict: "behind", action: "comment-failed", status: 403 },
+  ]);
+  assert.ok(lines.some((line) => /^::warning::.*#32: behind by 1.*FAILED \(HTTP 403/.test(line)));
+});
+
+test("a wake that gets no response names that instead of a status", async () => {
+  const pr = makePr(33, { mergeable: false, mergeable_state: "dirty" });
+  const { logger, lines } = capture();
+  const { results } = await sweep({
+    routes: [listRoute([pr]), detailRoute(pr), emptyCommentsRoute],
+    logger,
+    fetchWrapper: (fetchImpl) => (url, init) => {
+      if (init?.method === "POST" && url.includes("/issues/33/comments")) {
+        return Promise.reject(new Error("ECONNRESET"));
+      }
+      return fetchImpl(url, init);
+    },
+  });
+  assert.equal(results[0].action, "comment-failed");
+  assert.ok(lines.some((line) => /^::warning::.*#33.*FAILED \(no response/.test(line)));
+});
+
 // ── Sweep: behind PR, with and without the PAT ──────────────────────────────
 
 test("behind + PAT: updates via update-branch with expected_head_sha, no comment", async () => {
