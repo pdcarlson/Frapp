@@ -445,9 +445,34 @@ export async function upsertWakeComment({
     path: `/repos/${repo}/issues/${prNumber}/comments`,
     body: { body },
   });
-  let error = null;
-  if (!ok) error = typeof data === "string" ? data : (data?.message ?? null);
-  return { posted: ok, status, error };
+  return { posted: ok, status, error: ok ? null : failureReason(data) };
+}
+
+/**
+ * GitHub's reason a write failed, as one short line. A JSON error carries a
+ * `message`; an edge 5xx can answer with a whole HTML page, of which only the
+ * first line is worth a log line.
+ */
+function failureReason(data) {
+  const text = typeof data === "string" ? data : data?.message;
+  if (typeof text !== "string") return null;
+  const line = text.trim().split(/\r?\n/, 1)[0].trim();
+  if (!line) return null;
+  return line.length > 200 ? `${line.slice(0, 199)}…` : line;
+}
+
+/**
+ * A failed wake post in words: the HTTP status and GitHub's reason, or "no
+ * response" for a transport failure, which `ghRequest` reports as status 0.
+ */
+export function describeWakeFailure({ status, error }) {
+  const reason = error ? `: ${error}` : "";
+  return status ? `HTTP ${status}${reason}` : `no response${reason}`;
+}
+
+/** One `::warning::` line: the runner ends an annotation at a raw newline. */
+export function warningAnnotation(message) {
+  return `::warning::${message.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A")}`;
 }
 
 // ── Orchestration ───────────────────────────────────────────────────────────
@@ -564,7 +589,10 @@ export async function processCompletedRun({
   logger.log?.(
     posted
       ? `[ci-wake] wake comment posted on #${prNumber}`
-      : `[ci-wake] comment post failed on #${prNumber}: HTTP ${status}${error ? ` (${error})` : ""}`,
+      : warningAnnotation(
+          `[ci-wake] wake comment FAILED on #${prNumber} (${describeWakeFailure({ status, error })}); ` +
+            "the session watching this PR was not woken",
+        ),
   );
   return {
     ...classification,

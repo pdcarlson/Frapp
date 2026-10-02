@@ -49,7 +49,12 @@
 // it exists to remove); 1 only on unexpected errors.
 
 import { ghRequest } from "./lib/github.mjs";
-import { clearMarkedComments, upsertWakeComment } from "./ci-wake.mjs";
+import {
+  clearMarkedComments,
+  describeWakeFailure,
+  upsertWakeComment,
+  warningAnnotation,
+} from "./ci-wake.mjs";
 import {
   defineAlert,
   findAlertIssuesDetailed,
@@ -694,11 +699,15 @@ async function processOnePr({
  * is loud: a `::warning::` annotation on the run, carrying GitHub's status and
  * message, and `action: "comment-failed"` instead of `"commented"` (#3019).
  *
- * Deliberately not a red run. This workflow runs on every push to `main`, and
- * a failed check on `main`'s commit reads to everything that consumes its
- * check state (the production deploy's green-CI gate, the base-recovered
- * notices) as `main` being broken. The annotation is on the run's summary,
- * and the next push to `main` retries the post.
+ * Deliberately not a red run, for the reason in this file's header: a
+ * watchdog that reds CI creates the noise it exists to remove, and this one
+ * runs on every push to `main`, so its red mark would sit on `main`'s commit.
+ * Not the alert issue either: that issue's identity and body are the app
+ * token's (one repo-wide cause, closed by a working update), and a failed post
+ * can be per-PR (a locked thread). The annotation is on the run's summary, the
+ * next push to `main` retries the post, and the warning's status says whether
+ * the cause is repo-wide. If posts keep failing for one repo-wide reason, that
+ * is the case for a second alert identity.
  */
 async function postWakeComment({ token, repo, number, body, what, fetchImpl, logger }) {
   const { posted, status, error } = await upsertWakeComment({
@@ -713,11 +722,11 @@ async function postWakeComment({ token, repo, number, body, what, fetchImpl, log
     logger.log?.(`[pr-base-sync] #${number}: ${what} — wake comment posted`);
     return { action: "commented" };
   }
-  const detail = error ? `: ${error}` : "";
-  const why = status ? `HTTP ${status}${detail}` : `no response${detail}`;
   logger.log?.(
-    `::warning::[pr-base-sync] #${number}: ${what} — wake comment FAILED (${why}); ` +
-      "the session watching this PR was not woken",
+    warningAnnotation(
+      `[pr-base-sync] #${number}: ${what} — wake comment FAILED ` +
+        `(${describeWakeFailure({ status, error })}); the session watching this PR was not woken`,
+    ),
   );
   return { action: "comment-failed", status };
 }

@@ -34,7 +34,7 @@ permissions:
   # this token triggers no CI (recursion guard) and would strand required checks
   # at "Expected", the exact state the script refuses.
   pull-requests: write
-  issues: write # the alert issue, and the comment endpoint's issue half
+  issues: write # the alert issue (and possibly the wake comments; see above)
 
 # Only the newest sweep matters — it re-reads every open PR against the newest
 # base tip, so cancelling a superseded in-progress or pending run loses nothing
