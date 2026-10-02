@@ -6,7 +6,7 @@
  * comes back here is already the member's own history — no client-side filter
  * makes that true, and none should pretend to.
  */
-import { formatMinutesRounded, parseBareDateUtcNoon } from "@repo/formatting";
+import { formatMinutesRounded, parseBareDateLocalNoon } from "@repo/formatting";
 import { metaLine, num, records, str } from "./narrow";
 import { formatHours } from "./profile";
 
@@ -40,11 +40,12 @@ export const MAX_DURATION_MINUTES = 24 * 60;
 
 /** `"2026-08-12"` → `"Aug 12"`. Falls back to the raw value if unparseable. */
 function formatDate(value: string): string {
-  // Parsed as UTC noon, not midnight: a bare `YYYY-MM-DD` is UTC midnight, which
-  // renders as the previous day for anyone west of Greenwich — and a service
-  // entry dated the 12th must not display as the 11th. Protected cluster —
-  // do not fold into formatLocaleDate.
-  const date = parseBareDateUtcNoon(value);
+  // Parsed at local noon: `new Date` reads a bare `YYYY-MM-DD` as UTC midnight,
+  // which renders as the previous day for anyone west of Greenwich, and UTC
+  // noon is already the next day at UTC+12 and east (#3026). A service entry
+  // dated the 12th must read the 12th everywhere. Protected cluster — do not
+  // fold into formatLocaleDate.
+  const date = parseBareDateLocalNoon(value);
   if (!date) return value;
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
