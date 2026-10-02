@@ -830,8 +830,8 @@ describe("useNotificationPreferencesSync", () => {
       wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
     });
 
-    // `quietHoursEnabled` defaults to true, so it is not a hydration signal —
-    // wait for the server window itself to land.
+    // `quietHoursEnabled` has a local default before the server answers, so it
+    // is not a hydration signal — wait for the server window itself to land.
     await waitFor(() => {
       expect(result.current.quietHoursSync).toBe("synced");
       expect(result.current.quietHoursWindow).toEqual({

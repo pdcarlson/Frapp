@@ -148,8 +148,9 @@ export type QuietHoursWindow = {
 };
 
 /**
- * `loading` is the first read still in flight, with nothing being written:
- * the screen must not call that "Saving…" (#2938). `pending` is a write.
+ * `loading` is a read in flight with no answer yet and nothing being written
+ * (the first read, or a new chapter's preferences): the screen must not call
+ * that "Saving…" (#2938). `pending` is a write.
  */
 export type SyncIndicator = "synced" | "loading" | "pending" | "cached" | "retry";
 
