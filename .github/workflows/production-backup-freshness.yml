@@ -9,8 +9,14 @@ name: Production backup freshness
 # workflow fails closed if the job stops, skips, hangs, or ages out. The
 # reviewer watch (1956) only sees GitHub environment `production-backup`.
 #
-# 13:15 UTC is after the observed dump window (~11:00–12:47 UTC; documented
-# cron stays 06:30). Do not change `db-backup.yml` to make this job green.
+# 13:15 UTC was chosen to follow the dump window observed then (~11:00–12:47
+# UTC; documented cron stays 06:30). GitHub has since started the dump as
+# late as 14:46Z, and after 12:00Z every night from 09-27 to 10-01 (#3098), so
+# on a late night this watch runs before that night's dump and judges the
+# previous one. A missed night is still caught here the next day, once the
+# last success passes 36 hours; the Sentry cron monitor reports the same miss
+# at 18:30Z that day (`scripts/ci/sentry-cron-checkin.mjs`). Do not change
+# `db-backup.yml` to make this job green.
 #
 # ── Why this job does NOT say `environment: production` ─────────────────────
 # ADR-19 put Required reviewers on the `production` GitHub environment. A
@@ -27,7 +33,7 @@ name: Production backup freshness
 
 on:
   schedule:
-    # 13:15 UTC daily, after the observed ~11:30 dump window. One of the
+    # 13:15 UTC daily (see the header on the dump window). One of the
     # daily staggered watchdogs. Full schedule:
     # docs/ci-cd/agent-infra.md § Scheduled conformance.
     #
