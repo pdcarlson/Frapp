@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -82,11 +85,29 @@ describe("shipped options", () => {
     expect(buildMobileSentryOptions(DSN).sendDefaultPii).toBe(false);
   });
 
+  it("pins the SDK rule that makes an absent replay rate matter (#3110)", () => {
+    // `getDefaultIntegrations` adds `mobileReplayIntegration` when either rate
+    // is a number, whatever its value. Read from the installed SDK, so a bump
+    // that changes the test fails here and the omission above gets re-checked.
+    const require = createRequire(import.meta.url);
+    const sdk = dirname(require.resolve("@sentry/react-native/package.json"));
+    const defaults = readFileSync(
+      join(sdk, "dist", "js", "integrations", "default.js"),
+      "utf8",
+    );
+    expect(defaults).toMatch(
+      /typeof options\.replaysOnErrorSampleRate === 'number' \|\| typeof options\.replaysSessionSampleRate === 'number'/,
+    );
+    expect(defaults).toMatch(/integrations\.push\(mobileReplayIntegration\(\)\)/);
+  });
+
   it("does not send Sentry Replay or a lowered error sample rate", async () => {
     const { buildMobileSentryOptions } = await loadOptions();
     const options = buildMobileSentryOptions(DSN);
-    expect(options.replaysSessionSampleRate).toBe(0);
-    expect(options.replaysOnErrorSampleRate).toBe(0);
+    // Absent, not 0: the SDK installs its replay integration whenever either
+    // rate is a number (#3110; pinned against the SDK below).
+    expect(options).not.toHaveProperty("replaysSessionSampleRate");
+    expect(options).not.toHaveProperty("replaysOnErrorSampleRate");
     expect(options.sampleRate).toBeUndefined();
     expect(options.tracePropagationTargets).toEqual(
       expect.arrayContaining([
