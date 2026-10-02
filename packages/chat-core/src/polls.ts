@@ -39,6 +39,63 @@ export const POLLS_OFF_COPY =
   "Polls are turned off for your chapter right now. An officer can turn them back on.";
 
 /**
+ * The Polls gate as a poll card's Vote reads it (#3012): the member view's
+ * `enabled_modules.polls`, or why that isn't known yet. Each client derives it
+ * from its own chapter read.
+ */
+export type PollsGate = "on" | "off" | "loading" | "error";
+
+/**
+ * Where a client's chapter read stands, in TanStack Query's terms: whether
+ * the cached member view has Polls on (`undefined` while nothing is cached;
+ * a missing `polls` key is on, so callers pass `isModuleEnabled(...)`), and
+ * the read's `fetchStatus`.
+ */
+export interface PollsGateRead {
+  pollsEnabled: boolean | undefined;
+  fetchStatus: "fetching" | "paused" | "idle";
+}
+
+/**
+ * The Polls gate from a chapter read, the same on web and mobile. A cached
+ * answer wins, even over a failed refetch. With nothing cached, only a read
+ * that is actually running is "loading"; a failed, paused (offline) or
+ * disabled one is "error", because nothing is checking and a Retry is the only
+ * way forward. It fails closed rather than open: design-system README §4,
+ * "Idle with nothing cached still fails closed".
+ */
+export function pollsGateOf(read: PollsGateRead): PollsGate {
+  if (read.pollsEnabled !== undefined) return read.pollsEnabled ? "on" : "off";
+  return read.fetchStatus === "fetching" ? "loading" : "error";
+}
+
+/**
+ * The poll card's withdrawn-Vote reasons while the Polls check hasn't answered:
+ * `spec/ui/design-system/writing.md` § Module off, the two rows under "Poll
+ * (chat card, web and mobile)".
+ */
+export const POLLS_GATE_LOADING_COPY =
+  "Checking whether polls are on for your chapter…";
+export const POLLS_GATE_ERROR_COPY =
+  "Couldn't check whether polls are on for your chapter, so voting is paused.";
+
+/**
+ * The line a poll card shows under its options when the gate withdraws its
+ * Vote, or `null` when it doesn't. A card that takes no vote whatever the
+ * module says gets no reason: a closed poll, and a pending or failed row,
+ * whose own delivery chrome already says why (a refused send shows
+ * {@link POLLS_OFF_COPY} there through {@link memberFacingRefusal}).
+ */
+export function pollsGateReason(
+  gate: PollsGate,
+  card: { isClosed: boolean; isConfirmed: boolean },
+): string | null {
+  if (card.isClosed || !card.isConfirmed || gate === "on") return null;
+  if (gate === "off") return POLLS_OFF_COPY;
+  return gate === "loading" ? POLLS_GATE_LOADING_COPY : POLLS_GATE_ERROR_COPY;
+}
+
+/**
  * A poll sent or voted on while Polls is off is refused with the module
  * gate's sentence to an officer ("Re-enable it in Settings → Modules"), which
  * a member can't act on (#2993). chat-core runs every server message it
