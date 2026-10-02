@@ -2265,7 +2265,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Cast a vote on a candidate (idempotent; already-voted is 200) */
+        /** Cast a vote on a candidate (idempotent; a repeat vote returns 201 again, not a conflict) */
         post: operations["RushController_vote_v1"];
         delete?: never;
         options?: never;
@@ -2282,7 +2282,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Extend a bid (idempotent; already-extended is 200) */
+        /** Extend a bid (idempotent; a repeat bid returns 201 again, not a conflict) */
         post: operations["RushController_bid_v1"];
         delete?: never;
         options?: never;
@@ -10244,7 +10244,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10274,7 +10274,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11564,7 +11564,7 @@ export interface operations {
             };
         };
         responses: {
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11660,7 +11660,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11900,7 +11900,7 @@ export interface operations {
             };
         };
         responses: {
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11932,7 +11932,7 @@ export interface operations {
             };
         };
         responses: {
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12016,7 +12016,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12048,7 +12048,7 @@ export interface operations {
             };
         };
         responses: {
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
