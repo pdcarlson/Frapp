@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,9 +47,10 @@ function commit(cwd, file, content) {
 /**
  * A session whose PR branch `claude/fix` was squash-merged on the remote and then
  * deleted there (unless `deleteRemote: false`), after which the session fetched main and
- * reset the branch to it. Main also gained `laterCommits` other commits after the merge.
+ * reset the branch to it (unless `reset: false`). Main also gained `laterCommits` other
+ * commits after the merge. The bare remote is `remote.git` beside the returned clone.
  */
-function mergedAndReset(t, { deleteRemote = true, laterCommits = 1 } = {}) {
+function mergedAndReset(t, { deleteRemote = true, laterCommits = 1, reset = true } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), "stale-upstream-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const remote = path.join(dir, "remote.git");
@@ -80,7 +81,7 @@ function mergedAndReset(t, { deleteRemote = true, laterCommits = 1 } = {}) {
 
   // The session's next.md Phase 4 reset.
   git(work, "fetch", "-q", "origin", "main");
-  git(work, "checkout", "-q", "-B", "claude/fix", "origin/main");
+  if (reset) git(work, "checkout", "-q", "-B", "claude/fix", "origin/main");
   return work;
 }
 
@@ -91,8 +92,14 @@ function unpushed(cwd) {
   return r.status === 0 ? Number(r.stdout.trim()) : 0;
 }
 
-function runHook(cwd, command = "git checkout -B claude/fix origin/main") {
-  const input = JSON.stringify({ hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command }, cwd });
+function runHook(cwd, command = "git checkout -B claude/fix origin/main", stdout = "") {
+  const input = JSON.stringify({
+    hook_event_name: "PostToolUse",
+    tool_name: "Bash",
+    tool_input: { command },
+    tool_response: { stdout, stderr: "" },
+    cwd,
+  });
   return spawnSync("bash", [HOOK], { cwd, env: GIT_ENV, input, encoding: "utf8" });
 }
 
@@ -109,24 +116,22 @@ test("the squash-merged, deleted branch: the stale ref goes and the Stop hook co
   assert.equal(out.hookSpecificOutput.hookEventName, "PostToolUse");
   assert.match(out.hookSpecificOutput.additionalContext, /origin\/claude\/fix/);
   assert.match(out.hookSpecificOutput.additionalContext, /3 commit/);
+  // It proves the branch is gone, not that its PR merged, and says only that.
+  assert.match(out.hookSpecificOutput.additionalContext, /does not show whether/);
 });
 
-test("with origin/HEAD set to main, new work on the reset branch still reads as unpushed", (t) => {
+test("origin/HEAD is never created, so other never-pushed branches aren't affected", (t) => {
   const work = mergedAndReset(t);
   runHook(work);
-  assert.equal(git(work, "symbolic-ref", "refs/remotes/origin/HEAD"), "refs/remotes/origin/main");
-
-  commit(work, "next.txt", "next\n");
-  assert.equal(unpushed(work), 1);
+  assert.equal(resolves(work, "refs/remotes/origin/HEAD"), false);
 });
 
-test("an origin/HEAD that already exists is left as it is", (t) => {
-  const work = mergedAndReset(t);
-  // Any existing target will do; what matters is that the hook doesn't rewrite it.
-  git(work, "fetch", "-q", "origin", "main:refs/remotes/origin/other");
-  git(work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/other");
-  runHook(work);
-  assert.equal(git(work, "symbolic-ref", "refs/remotes/origin/HEAD"), "refs/remotes/origin/other");
+test("before the reset, while HEAD is still the old PR head, the ref stays", (t) => {
+  // Fetched main, not yet reset: removing the ref now would make the PR's own commits,
+  // which main holds only as a squash, read as unpushed against nothing.
+  const work = mergedAndReset(t, { reset: false });
+  runHook(work, "git fetch origin main");
+  assert.equal(resolves(work, "refs/remotes/origin/claude/fix"), true);
 });
 
 test("a branch that still exists on the remote keeps its tracking ref", (t) => {
@@ -135,6 +140,23 @@ test("a branch that still exists on the remote keeps its tracking ref", (t) => {
   assert.equal(r.status, 0);
   assert.equal(r.stdout, "");
   assert.equal(resolves(work, "refs/remotes/origin/claude/fix"), true);
+});
+
+test("'still on origin' is remembered for ten minutes, then asked again", (t) => {
+  const work = mergedAndReset(t, { deleteRemote: false });
+  runHook(work);
+  const marker = path.join(work, ".git", "frapp-upstream-still-on-origin");
+  assert.match(readFileSync(marker, "utf8"), /^claude\/fix [0-9a-f]{40}\n$/);
+
+  // Deleted on origin now, but the remembered answer is fresh: no network call, ref kept.
+  git(path.join(work, ".."), "--git-dir=remote.git", "update-ref", "-d", "refs/heads/claude/fix");
+  runHook(work);
+  assert.equal(resolves(work, "refs/remotes/origin/claude/fix"), true);
+
+  const old = new Date(Date.now() - 11 * 60 * 1000);
+  utimesSync(marker, old, old);
+  runHook(work);
+  assert.equal(resolves(work, "refs/remotes/origin/claude/fix"), false);
 });
 
 test("a commit of the session's own on top keeps the ref, so the Stop hook still asks for a push", (t) => {
@@ -153,12 +175,25 @@ test("a remote it can't reach proves nothing, so the ref stays", (t) => {
   assert.equal(resolves(work, "refs/remotes/origin/claude/fix"), true);
 });
 
-test("a Bash call that isn't about git does nothing", (t) => {
+test("a Bash command that isn't git does nothing, even when its output mentions git", (t) => {
   const work = mergedAndReset(t);
-  const input = JSON.stringify({ hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "ls" }, cwd: work });
-  const r = spawnSync("bash", [HOOK], { cwd: work, env: GIT_ENV, input, encoding: "utf8" });
+  const r = runHook(work, "ls -a", ".github\n.gitignore\n");
   assert.equal(r.status, 0);
   assert.equal(resolves(work, "refs/remotes/origin/claude/fix"), true);
+});
+
+test("a git command after other shell, with quotes before it, still counts", (t) => {
+  const work = mergedAndReset(t);
+  runHook(work, 'echo "resetting" && cd . && git checkout -B claude/fix origin/main');
+  assert.equal(resolves(work, "refs/remotes/origin/claude/fix"), false);
+});
+
+test("settings.json runs the hook after every Bash call", () => {
+  const settings = JSON.parse(readFileSync(path.join(REPO_ROOT, ".claude/settings.json"), "utf8"));
+  const commands = (settings.hooks.PostToolUse ?? [])
+    .filter((entry) => entry.matcher === "Bash")
+    .flatMap((entry) => entry.hooks.map((h) => h.command));
+  assert.ok(commands.includes("$CLAUDE_PROJECT_DIR/.claude/hooks/drop-stale-upstream.sh"), JSON.stringify(commands));
 });
 
 test("a detached HEAD, and a directory outside any repo, are no-ops", (t) => {
