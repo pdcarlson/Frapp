@@ -423,6 +423,10 @@ export async function clearMarkedComments({
 /**
  * Delete-then-create upsert scoped to one workflow's marker. Creating (not
  * editing) is what makes the webhook deliver action=created to the wake path.
+ *
+ * A failed post returns GitHub's own `message` as `error` beside the status,
+ * because the status alone can't tell a missing token permission ("Resource
+ * not accessible by integration") from a locked thread or an abuse limit.
  */
 export async function upsertWakeComment({
   token,
@@ -434,14 +438,41 @@ export async function upsertWakeComment({
 }) {
   await clearMarkedComments({ token, repo, prNumber, marker, fetchImpl });
 
-  const { ok, status } = await ghRequest({
+  const { ok, status, data } = await ghRequest({
     token,
     fetchImpl,
     method: "POST",
     path: `/repos/${repo}/issues/${prNumber}/comments`,
     body: { body },
   });
-  return { posted: ok, status };
+  return { posted: ok, status, error: ok ? null : failureReason(data) };
+}
+
+/**
+ * GitHub's reason a write failed, as one short line. A JSON error carries a
+ * `message`; an edge 5xx can answer with a whole HTML page, of which only the
+ * first line is worth a log line.
+ */
+function failureReason(data) {
+  const text = typeof data === "string" ? data : data?.message;
+  if (typeof text !== "string") return null;
+  const line = text.trim().split(/\r?\n/, 1)[0].trim();
+  if (!line) return null;
+  return line.length > 200 ? `${line.slice(0, 199)}…` : line;
+}
+
+/**
+ * A failed wake post in words: the HTTP status and GitHub's reason, or "no
+ * response" for a transport failure, which `ghRequest` reports as status 0.
+ */
+export function describeWakeFailure({ status, error }) {
+  const reason = error ? `: ${error}` : "";
+  return status ? `HTTP ${status}${reason}` : `no response${reason}`;
+}
+
+/** One `::warning::` line: the runner ends an annotation at a raw newline. */
+export function warningAnnotation(message) {
+  return `::warning::${message.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A")}`;
 }
 
 // ── Orchestration ───────────────────────────────────────────────────────────
@@ -547,7 +578,7 @@ export async function processCompletedRun({
     reason: classification.reason,
     rerunResult,
   });
-  const { posted, status } = await upsertWakeComment({
+  const { posted, status, error } = await upsertWakeComment({
     token,
     repo,
     prNumber,
@@ -558,7 +589,10 @@ export async function processCompletedRun({
   logger.log?.(
     posted
       ? `[ci-wake] wake comment posted on #${prNumber}`
-      : `[ci-wake] comment post failed on #${prNumber}: HTTP ${status}`,
+      : warningAnnotation(
+          `[ci-wake] wake comment FAILED on #${prNumber} (${describeWakeFailure({ status, error })}); ` +
+            "the session watching this PR was not woken",
+        ),
   );
   return {
     ...classification,
