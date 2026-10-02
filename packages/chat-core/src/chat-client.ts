@@ -195,13 +195,16 @@ function serverReasonOf(error: unknown): string | null {
  * transient ones (network, 5xx). 4xx → `failed` + toast; transient → keep the
  * message pending in the outbox for the reconnect flush.
  *
- * A 429 is terminal too, by choice (#3061). The outbox flushes on reconnect,
- * not on a timer, so a throttled send left pending would sit unsent while the
- * member stays online. Failing it puts the row's Retry in front of them, which
- * resends the same `client_message_id` once the minute is up. `sendMessage`
- * titles that toast `Message not sent` rather than `Message rejected` and
- * reads it as `RATE_LIMITED_COPY`, because the server refused the pace, not
- * the message.
+ * A 429 is terminal too, by choice (#3061). The outbox flushes on boot and
+ * when a channel's connection goes live, not on a timer, so a throttled send
+ * left pending would sit unsent while the member stays online. Failing it puts
+ * the row's Retry in front of them, which resends the same
+ * `client_message_id` once the minute is up. `sendMessage` titles that toast
+ * `Message not sent` rather than `Message rejected` and reads it as
+ * `RATE_LIMITED_COPY`, because the server refused the pace, not the message.
+ * A flush that outruns the bucket fails each row past it the same way, each
+ * with its own Retry. Stopping the flush at the first 429 would leave those
+ * rows pending with nothing to resend them, which is the case this avoids.
  *
  * Handles three error shapes:
  *   - openapi-fetch `{ error, response }` rejected envelope (NestJS API)
