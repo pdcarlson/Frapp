@@ -195,6 +195,14 @@ function serverReasonOf(error: unknown): string | null {
  * transient ones (network, 5xx). 4xx → `failed` + toast; transient → keep the
  * message pending in the outbox for the reconnect flush.
  *
+ * A 429 is terminal too, by choice (#3061). The outbox flushes on reconnect,
+ * not on a timer, so a throttled send left pending would sit unsent while the
+ * member stays online. Failing it puts the row's Retry in front of them, which
+ * resends the same `client_message_id` once the minute is up. `sendMessage`
+ * titles that toast `Message not sent` rather than `Message rejected` and
+ * reads it as `RATE_LIMITED_COPY`, because the server refused the pace, not
+ * the message.
+ *
  * Handles three error shapes:
  *   - openapi-fetch `{ error, response }` rejected envelope (NestJS API)
  *   - generic `Error` with `status` / `context.response.status`
@@ -471,7 +479,12 @@ export async function sendMessage(
       mergeServerRow(cache, message),
     );
   } catch (err) {
-    const { terminal, status, message } = classifyChatError(err);
+    const classified = classifyChatError(err);
+    const { terminal, status } = classified;
+    // Any 429 reads as the one-minute sentence: an intermediary's carries its
+    // own text, and the row's Retry is the remedy either way.
+    const throttled = status === 429;
+    const message = throttled ? RATE_LIMITED_COPY : classified.message;
     if (terminal) {
       patchCache(ctx.queryClient, args.channelId, (cache) =>
         markFailed(cache, clientId, message),
@@ -479,7 +492,7 @@ export async function sendMessage(
       // Toast before the Dexie write: a `markFailed` throw used to skip the
       // toast and then, once swallowed, look like success to slash dispatch.
       ctx.toast?.({
-        title: "Message rejected",
+        title: throttled ? "Message not sent" : "Message rejected",
         description: message,
         variant: "destructive",
       });
