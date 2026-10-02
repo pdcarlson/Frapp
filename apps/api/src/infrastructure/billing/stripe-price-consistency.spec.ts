@@ -65,6 +65,51 @@ describe('StripePriceAccountMismatchError', () => {
     expect(err.message).toContain('price_abc');
     expect(err.message).not.toMatch(/sk_(test|live)_/);
   });
+
+  // `category` is what the public /health/ready body shows (#2999).
+  describe('category', () => {
+    it("is the error's own code when it has one", () => {
+      const err = new StripePriceAccountMismatchError('price_x', 'inactive', {
+        code: 'price_inactive',
+      });
+      expect(err.category).toBe('price_inactive');
+    });
+
+    it("is the Stripe error's code, never its message", () => {
+      const err = new StripePriceAccountMismatchError('price_x', 'expired', {
+        cause: Object.assign(
+          new Error('Invalid API Key provided: sk_live_****abcd'),
+          {
+            code: 'api_key_expired',
+            type: 'StripeAuthenticationError',
+            rawType: 'authentication_error',
+          },
+        ),
+      });
+      expect(err.category).toBe('api_key_expired');
+    });
+
+    it("falls back to the Stripe API type, not stripe-node's class name", () => {
+      const err = new StripePriceAccountMismatchError('price_x', 'denied', {
+        cause: Object.assign(new Error('denied'), {
+          type: 'StripeAuthenticationError',
+          rawType: 'authentication_error',
+        }),
+      });
+      expect(err.category).toBe('authentication_error');
+    });
+
+    it('is `misconfigured` when nothing names the fault in a known shape', () => {
+      expect(
+        new StripePriceAccountMismatchError('price_x', 'odd', {
+          cause: Object.assign(new Error('x'), { code: 'Free text: sk_live' }),
+        }).category,
+      ).toBe('misconfigured');
+      expect(
+        new StripePriceAccountMismatchError('price_x', 'no cause').category,
+      ).toBe('misconfigured');
+    });
+  });
 });
 
 describe('isStripePriceMisconfigurationError — stripe-node error shapes', () => {

@@ -258,6 +258,12 @@ describe('HealthController', () => {
       const mismatch = new StripePriceAccountMismatchError(
         'price_1SecretConfiguredId',
         'api_key_expired: Invalid API Key provided: sk_live_****abcd',
+        {
+          cause: Object.assign(
+            new Error('Invalid API Key provided: sk_live_****abcd'),
+            { code: 'api_key_expired', rawType: 'authentication_error' },
+          ),
+        },
       );
       stripePriceConsistency.assertConfiguredPrice.mockRejectedValue(mismatch);
 
@@ -275,6 +281,8 @@ describe('HealthController', () => {
       expect(body).not.toContain('sk_live');
       expect(body).not.toContain('abcd');
       expect(body).not.toContain('STRIPE_');
+      // The Stripe code is a fixed enum: it says "rotate the key", not which.
+      expect(body).toContain('billing: api_key_expired');
       expect((err as Error).cause).toBe(mismatch);
       expect(mismatch.message).toContain('sk_live_****abcd');
     });
