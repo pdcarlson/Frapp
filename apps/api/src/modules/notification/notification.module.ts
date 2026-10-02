@@ -16,9 +16,12 @@ import { NOTIFICATION_PROVIDER } from '#domain/adapters/notification.interface';
 import { ExpoPushProvider } from '../../infrastructure/notifications/expo-push.provider';
 import { AuthModule } from '../auth/auth.module';
 import { ChapterModule } from '../chapter/chapter.module';
+import { ChatBlockModule } from '../chat-block/chat-block.module';
 
 @Module({
-  imports: [AuthModule, ChapterModule],
+  // `ChatBlockModule` → `ChatBlockService`: the in-app list withholds the chat
+  // rows of a member the caller has blocked (#2715).
+  imports: [AuthModule, ChapterModule, ChatBlockModule],
   controllers: [NotificationController],
   providers: [
     AuthSyncInterceptor,

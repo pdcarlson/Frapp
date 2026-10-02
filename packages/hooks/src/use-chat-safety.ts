@@ -16,6 +16,7 @@ import {
   CHANNEL_UNREAD_COUNTS_KEY,
 } from "./use-chat";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { notificationKeys } from "./use-notifications";
 
 // ── Report and block (#2257) ────────────────────────────────────────────────
 //
@@ -344,6 +345,13 @@ async function applyConfirmedBlockChange(
   void queryClient.invalidateQueries({
     queryKey: CHANNEL_LIST_KEY,
     exact: true,
+  });
+  // And the in-app notification list, which withholds a blocked member's chat
+  // rows, the ones written before the block included (#2715). Without this the
+  // web drawer, whose query stays mounted in the dashboard shell, keeps showing
+  // their message previews after a block until something else refetches.
+  void queryClient.invalidateQueries({
+    queryKey: notificationKeys.lists(chapterId),
   });
 }
 

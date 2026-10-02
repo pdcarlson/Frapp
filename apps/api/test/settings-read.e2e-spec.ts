@@ -4,6 +4,7 @@ import request from 'supertest';
 import { NotificationController } from '../src/interface/controllers/notification.controller';
 import { NotificationService } from '../src/application/services/notification.service';
 import { AuthService } from '../src/application/services/auth.service';
+import { ChatBlockService } from '../src/application/services/chat-block.service';
 import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';
 import { ChapterGuard } from '../src/interface/guards/chapter.guard';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
@@ -63,6 +64,7 @@ describe('GET /v1/settings — a member with no settings row (#2885)', () => {
         { provide: NOTIFICATION_PREFERENCE_REPOSITORY, useValue: {} },
         { provide: MEMBER_REPOSITORY, useValue: {} },
         { provide: NOTIFICATION_PROVIDER, useValue: {} },
+        { provide: ChatBlockService, useValue: {} },
         {
           provide: AuthService,
           useValue: { syncUser: jest.fn().mockResolvedValue({ id: 'user-1' }) },
