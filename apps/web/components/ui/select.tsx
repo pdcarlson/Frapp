@@ -11,12 +11,13 @@ import { FOCUS_RING } from "@/components/ui/focus"
  * The highlighted-row recipe in this file is `--accent-subtle` / `--accent-text`,
  * not `--accent`.
  *
- * That is not a preference. On Signet `--accent` and `--popover` are the SAME
- * value (`#26221C`) — `--accent` is the neutral highlight for a control sitting
- * on a lower surface, and a menu is already on the top step of the ladder. The
- * scaffold's `focus:bg-accent` on a `bg-popover` panel therefore painted the
- * hovered row in exactly its own background: keyboard navigation through a
- * dropdown moved an invisible cursor.
+ * That is not a preference. On Signet the scaffold's `--accent` held the SAME
+ * value as `--popover` (`#2A2621`) — it was the neutral highlight for a control
+ * sitting on a lower surface, and a menu is already on the top step of the
+ * ladder. The scaffold's `focus:bg-accent` on a `bg-popover` panel therefore
+ * painted the hovered row in exactly its own background: keyboard navigation
+ * through a dropdown moved an invisible cursor. `--accent` is deleted (#3036),
+ * so that class now compiles to nothing.
  *
  * The selected row separates by hue instead, which is what the shell slice
  * settled for the same reason (the ladder's own steps are ~1.1:1 apart) and

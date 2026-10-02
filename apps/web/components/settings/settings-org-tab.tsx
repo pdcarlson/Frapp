@@ -228,11 +228,11 @@ export function SettingsOrgTab({
         <Fragment key={permission}>
           {index > 0 ? " and " : null}
           {/*
-            `--secondary` aliases `--card` and this sits in a `CardContent`, so
-            `bg-secondary` here was 1.000:1 — a chip with no chip. `--surface-1`
-            is the step *below* the card, which is what §4 already specifies for
-            an input fill inside a card, and a recess cannot invert the way a
-            raised step can.
+            `--secondary` was an alias of `--card` (deleted, #3036) and this sits
+            in a `CardContent`, so `bg-secondary` here was 1.000:1 — a chip with
+            no chip. `--surface-1` is the step *below* the card, which is what
+            §4 already specifies for an input fill inside a card, and a recess
+            cannot invert the way a raised step can.
           */}
           <code className="rounded bg-surface-1 px-1 py-0.5">{permission}</code>
         </Fragment>
