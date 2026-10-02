@@ -141,21 +141,15 @@ const config: Partial<Config> = {
           foreground: colorVar("--muted-foreground"),
         },
         /*
-         * The ShadCN aliases: `--secondary` is `--card` and `--accent` is
-         * `--popover` (`signet.css`). Nothing paints them any more, and
-         * `apps/web/components/shared/elevation-call-sites.spec.ts` bans them
-         * in both Next surfaces, because the names hid that `hover:bg-accent`
-         * was the elevated step itself. Deleting these keys and the variables
-         * behind them is #3036.
+         * No `secondary` or `accent` key. They were the ShadCN scaffold's
+         * names for `--card` and `--popover`, bound here as aliases, and
+         * `hover:bg-accent` was the elevated step itself (#1208, #1220).
+         * Deleted with the variables behind them (#3036), and
+         * `tailwind.config.spec.ts` asserts the keys stay absent. A rest fill
+         * names its ladder step (`bg-card`, `bg-popover`); `accent-subtle`,
+         * `accent-border` and `accent-text` below are the chapter accent, a
+         * different family.
          */
-        secondary: {
-          DEFAULT: colorVar("--secondary"),
-          foreground: colorVar("--secondary-foreground"),
-        },
-        accent: {
-          DEFAULT: colorVar("--accent"),
-          foreground: colorVar("--accent-foreground"),
-        },
         destructive: {
           DEFAULT: colorVar("--destructive"),
           foreground: colorVar("--destructive-foreground"),

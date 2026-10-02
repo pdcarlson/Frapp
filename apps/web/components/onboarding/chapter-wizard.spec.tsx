@@ -393,8 +393,9 @@ describe("the archetype card, at the call site", () => {
      *
      * The card shipped `border-primary bg-primary/5` selected and
      * `hover:bg-accent/50` resting. The wash measured 1.005–1.106:1 across all
-     * 19 seeds, so the selection it expressed did not render; `--accent` holds
-     * `--popover`'s value, so the hover was a colour over itself. This is the
+     * 19 seeds, so the selection it expressed did not render; `--accent` held
+     * `--popover`'s value (deleted, #3036), so the hover was a colour over
+     * itself. This is the
      * same defect the Settings archetype grid had, one slice earlier — that
      * slice fixed one of the two grids.
      */
