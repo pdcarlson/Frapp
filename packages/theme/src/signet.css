@@ -139,23 +139,21 @@
     --mention-chip: #4C3A1A;
     --mention-chip-text: #FAA81A;
 
-    /* ── Neutral interactive fills (ShadCN compat) ────────────────
-     * `--secondary` and `--accent` are pure aliases of `--card` and
-     * `--popover`, kept only because the ShadCN scaffold named them.
-     * The alias is the trap: `hover:bg-accent` reads like a highlight
-     * and is the elevated step itself, so inside a dialog it painted a
-     * control in its container's own colour (#1208, #1220). Nothing in
-     * either Next app paints them any more, and
-     * `apps/web/components/shared/elevation-call-sites.spec.ts` keeps
-     * it that way; deleting them is #3036. A rest fill names its ladder
-     * step (`bg-card`, `bg-popover`). A hover takes a state above what
-     * it sits on (`--card-hover` below, or `--accent-subtle` for a row
-     * in a menu or table), never the surface it already sits on.
+    /* ── Card-filled control hover ────────────────────────────────
+     * The ShadCN scaffold's `--secondary` and `--accent` (and their
+     * `-foreground` pairs) were declared here as pure aliases of `--card`
+     * and `--popover`, and are gone (#3036). The aliases were the trap:
+     * `hover:bg-accent` read like a highlight and was the elevated step
+     * itself, so inside a dialog it painted a control in its container's
+     * own colour (#1208, #1220). Nothing painted them by the time they
+     * were deleted. A rest fill names its ladder step (`bg-card`,
+     * `bg-popover`). A hover takes a state above what it sits on
+     * (`--card-hover` below, or `--accent-subtle` for a row in a menu or
+     * table), never the surface it already sits on.
+     * `apps/web/components/shared/elevation-call-sites.spec.ts` keeps the
+     * old names out, because with the variables gone `hover:bg-accent`
+     * compiles to nothing (#1145).
      * Chapter-accent tints are a different thing: `--accent-subtle`. */
-    --secondary: #211E1A;
-    --secondary-foreground: #EDEAE3;
-    --accent: #2A2621;
-    --accent-foreground: #EDEAE3;
 
     /* `--card-hover` is the hover of a card-filled control: the
      * Secondary button (components.md §3) and a card-filled row or tile.

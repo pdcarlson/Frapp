@@ -449,12 +449,13 @@ export function RolesAndPermissionsPage() {
                         <button
                           type="button"
                           /*
-                            `--accent` aliases `--popover`; inside this
-                            `CardContent` that is 1.085:1, i.e. no hover at
-                            all. Same recipe as `/documents`' folder rail: the
-                            tint for hover, `accent-4` plus `accent-11` for the
-                            selected row, since a rail on a card needs two
-                            states the ladder cannot give it.
+                            `--accent` was an alias of `--popover` (deleted,
+                            #3036); inside this `CardContent` that was
+                            1.085:1, i.e. no hover at all. Same recipe as
+                            `/documents`' folder rail: the tint for hover,
+                            `accent-4` plus `accent-11` for the selected row,
+                            since a rail on a card needs two states the ladder
+                            cannot give it.
                           */
                           className={cn(
                             "flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-1 text-left transition-colors",

@@ -18,10 +18,11 @@ import {
 /**
  * The defect this file exists for.
  *
- * `/polls` drew its vote tally on a `bg-secondary` track. `--secondary` is an
- * alias of `--card` and the bar sits inside a `<CardContent>`, so the track
- * composited to **exactly 1.000:1** — every poll on the page shipped a bar
- * with no groove behind it, and the class name read fine.
+ * `/polls` drew its vote tally on a `bg-secondary` track. `--secondary` was an
+ * alias of `--card` until it was deleted (#3036) and the bar sits inside a
+ * `<CardContent>`, so the track composited to **exactly 1.000:1** — every
+ * poll on the page shipped a bar with no groove behind it, and the class name
+ * read fine.
  *
  * Chat's poll card had the right answer already (`bg-input`) and the reference
  * meters a third one (`--popover`), which made this three spellings of one
@@ -73,7 +74,7 @@ const fillFor = (seed: string) => roleFor(seed, "--primary");
 
 describe("the invisible track", () => {
   it("would have caught bg-secondary on a card — the shipped defect", () => {
-    // Not a near-miss. `--secondary` holds `--card`'s value, so this is the
+    // Not a near-miss. `--secondary` held `--card`'s value, so this is the
     // container's own colour washed over itself.
     expect(ratio(SURFACE.card, SURFACE.card)).toBeCloseTo(1, 3);
   });
