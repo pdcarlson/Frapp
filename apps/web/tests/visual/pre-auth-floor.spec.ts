@@ -96,8 +96,8 @@ test.describe("pre-auth routes hold the 375px floor", () => {
 /**
  * The guard this suite's existence costs, restored.
  *
- * Playwright exits 1 only when a run collects **no** tests (the `forbidOnly`
- * note in `playwright.config.ts`). So with more than one spec in this
+ * Playwright exits 1 only when a run collects **no** tests
+ * (docs/ci-cd/quality-gates.md). So with more than one spec in this
  * directory, deleting or renaming the floor spec would let the run pass on the
  * survivors and exit 0 with the floor silently unmeasured.
  *
