@@ -30,7 +30,13 @@ import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
-import { asArray, getErrorMessage, parseGuardedInt } from "@/lib/utils";
+import {
+  asArray,
+  getErrorMessage,
+  guardIntDraft,
+  parseGuardedInt,
+} from "@/lib/utils";
+import { intDraftRefusal } from "./int-draft-refusal";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { can } from "@repo/validation";
 import { RolesAndPermissionsPage } from "@/components/roles/roles-page";
@@ -379,7 +385,8 @@ function DefaultInviteRoleCard({
 const EMPTY_DRAFT = {
   key: "",
   label: "",
-  rank: 99,
+  /** Text, so the field can be emptied mid-edit; its floor is checked at save. */
+  rank: "99",
   capabilities: [] as string[],
 };
 
@@ -409,9 +416,9 @@ function CustomView({
   );
 
   function setRank(raw: string) {
-    const parsed = parseGuardedInt(raw, 0);
-    if (parsed === undefined) return;
-    setDraft((prev) => ({ ...prev, rank: parsed }));
+    const next = guardIntDraft(raw);
+    if (next === undefined) return;
+    setDraft((prev) => ({ ...prev, rank: next }));
   }
 
   function toggleDraftCapability(permission: string) {
@@ -426,11 +433,19 @@ function CustomView({
   async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draft.key.trim() || !draft.label.trim()) return;
+    const rank = parseGuardedInt(draft.rank);
+    if (rank === undefined) {
+      toast({
+        ...intDraftRefusal(draft.rank, 0, "Rank")!,
+        variant: "destructive",
+      });
+      return;
+    }
     try {
       await createRole.mutateAsync({
         key: draft.key.trim(),
         label: draft.label.trim(),
-        rank: draft.rank,
+        rank,
         capabilities: draft.capabilities,
       });
       toast({

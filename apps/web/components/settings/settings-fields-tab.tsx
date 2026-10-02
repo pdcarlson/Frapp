@@ -357,8 +357,7 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
     // Guard-parse: only commit a nonnegative integer. maxLength is stored as
     // text (bound directly to the input), so it can be cleared. Its floor of 1
     // is checked at submit, so the "0" left by deleting the 1 of "100" isn't
-    // refused mid-edit. (The Dues, Workflows and Roles-rank inputs still check
-    // on each keystroke against number state: #3050.)
+    // refused mid-edit.
     const next = guardIntDraft(raw);
     if (next === undefined) return;
     setDraft((prev) => ({ ...prev, maxLength: next }));

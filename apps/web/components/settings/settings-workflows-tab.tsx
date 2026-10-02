@@ -13,16 +13,27 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { parseGuardedInt } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import { guardIntDraft, parseGuardedInt } from "@/lib/utils";
+import { intDraftRefusal } from "./int-draft-refusal";
 import type { OrgWorkflow } from "@repo/hooks";
 
 type WorkflowDraft = {
   key: string;
   label: string;
   enabled: boolean;
-  threshold?: number;
+  /** The text the threshold input shows; `undefined` when the catalog gives none. */
+  threshold?: string;
   units?: string;
 };
+
+function toDrafts(workflows: OrgWorkflow[]): WorkflowDraft[] {
+  return workflows.map((wf) => ({
+    ...wf,
+    threshold:
+      typeof wf.threshold === "number" ? String(wf.threshold) : undefined,
+  }));
+}
 
 type Props = {
   /** Merged workflow catalog (seed defaults overlaid with chapter overrides). */
@@ -38,15 +49,17 @@ type Props = {
 
 /** A workflow exposes a threshold input only when the catalog gives it one. */
 function hasThreshold(workflow: WorkflowDraft): boolean {
-  return workflow.units != null || typeof workflow.threshold === "number";
+  return workflow.units != null || workflow.threshold !== undefined;
 }
 
 /**
  * Settings → Workflows. A toggle list over the chapter's `chapter_workflows`,
  * each enabled workflow optionally carrying a numeric threshold. Edits are held
  * locally and committed with one save, which writes a `chapter_audit_log` row
- * (mirrored to `#chapter-audit`). Threshold inputs guard-parse — a non-integer,
- * negative, or empty value keeps the previous value rather than storing `NaN`.
+ * (mirrored to `#chapter-audit`). Threshold inputs hold a text draft
+ * (`guardIntDraft`): a decimal or negative keeps the previous text, a field can
+ * be emptied mid-edit, and an enabled workflow's empty threshold is refused at
+ * save by name rather than sent (#3050).
  */
 export function SettingsWorkflowsTab({
   workflows,
@@ -54,7 +67,10 @@ export function SettingsWorkflowsTab({
   onSave,
   isSaving,
 }: Props) {
-  const [draft, setDraft] = useState<WorkflowDraft[]>(workflows);
+  const { toast } = useToast();
+  const [draft, setDraft] = useState<WorkflowDraft[]>(() =>
+    toDrafts(workflows),
+  );
 
   // Reconcile local draft when the server config changes (e.g. after a save
   // settles and the query refetches). Skip the optimistic-update payload: it
@@ -64,7 +80,7 @@ export function SettingsWorkflowsTab({
   useEffect(() => {
     if (workflows.some((wf) => wf.label === undefined)) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seed workflow drafts after a save refetch; skip the partial optimistic payload
-    setDraft(workflows);
+    setDraft(toDrafts(workflows));
   }, [workflows]);
 
   function setEnabled(key: string, enabled: boolean) {
@@ -74,23 +90,42 @@ export function SettingsWorkflowsTab({
   }
 
   function setThreshold(key: string, raw: string) {
-    const parsed = parseGuardedInt(raw, 0);
-    if (parsed === undefined) return;
+    const next = guardIntDraft(raw);
+    if (next === undefined) return;
     setDraft((prev) =>
-      prev.map((wf) => (wf.key === key ? { ...wf, threshold: parsed } : wf)),
+      prev.map((wf) => (wf.key === key ? { ...wf, threshold: next } : wf)),
     );
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Only a shown threshold is checked. A disabled workflow's input is
+    // hidden, so an emptied one is left out of the save, as before.
+    for (const wf of draft) {
+      if (!wf.enabled || wf.threshold === undefined) continue;
+      // Catalog labels can end in "threshold" already, so the label is quoted.
+      const refusal = intDraftRefusal(
+        wf.threshold,
+        0,
+        `The threshold for “${wf.label}”`,
+      );
+      if (refusal) {
+        toast({ ...refusal, variant: "destructive" });
+        return;
+      }
+    }
     onSave(
-      draft.map((wf) => ({
-        key: wf.key,
-        enabled: wf.enabled,
-        ...(hasThreshold(wf) && typeof wf.threshold === "number"
-          ? { threshold: wf.threshold }
-          : {}),
-      })),
+      draft.map((wf) => {
+        const threshold =
+          wf.threshold === undefined
+            ? undefined
+            : parseGuardedInt(wf.threshold);
+        return {
+          key: wf.key,
+          enabled: wf.enabled,
+          ...(threshold !== undefined ? { threshold } : {}),
+        };
+      }),
     );
   }
 
@@ -119,9 +154,7 @@ export function SettingsWorkflowsTab({
                         step={1}
                         inputMode="numeric"
                         aria-label={`${wf.label} threshold`}
-                        value={
-                          typeof wf.threshold === "number" ? wf.threshold : ""
-                        }
+                        value={wf.threshold ?? ""}
                         disabled={!canManage || isSaving}
                         onChange={(event) =>
                           setThreshold(wf.key, event.target.value)
