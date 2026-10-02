@@ -45,7 +45,11 @@ import { mobileTracePropagationTargets } from "./trace-targets";
  *
  * Sentry Replay stays off ({@link SENTRY_REPLAY_ENABLED}). Session replay is
  * PostHog's, and production PostHog replay is itself off until #2038. Do not
- * add `mobileReplayIntegration`.
+ * add `mobileReplayIntegration`, and while replay is off do not pass either
+ * replay rate, not even `0`: the SDK's `getDefaultIntegrations` installs
+ * `mobileReplayIntegration` whenever either rate is a number, whatever its
+ * value. Nothing records at `0`, but the integration still hooks every
+ * request breadcrumb and wraps `beforeSend` (#3110).
  */
 
 const { scrubError, scrubTransaction, scrubRecordedBreadcrumb } =
@@ -185,8 +189,9 @@ export function buildMobileSentryOptions(
     environment: environment(),
     tracesSampleRate: TRACES_SAMPLE_RATE,
     sendDefaultPii: false,
-    replaysSessionSampleRate: SENTRY_REPLAY_ENABLED ? 0.1 : 0,
-    replaysOnErrorSampleRate: SENTRY_REPLAY_ENABLED ? 0.1 : 0,
+    ...(SENTRY_REPLAY_ENABLED
+      ? { replaysSessionSampleRate: 0.1, replaysOnErrorSampleRate: 0.1 }
+      : {}),
     tracePropagationTargets: mobileTracePropagationTargets(),
     ...(SENTRY_ERROR_SAMPLE_RATE === 1
       ? {}
