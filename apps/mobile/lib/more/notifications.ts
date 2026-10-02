@@ -14,7 +14,7 @@
  * Rows whose target names no known screen fall back to no label rather than to
  * a guessed one.
  */
-import { dayDelta, parseInstantOrBareUtcNoon } from "@repo/formatting";
+import { dayDelta, parseInstantOrBareLocalNoon } from "@repo/formatting";
 import { isRecord, records, str } from "./narrow";
 import {
   notificationHref,
@@ -103,7 +103,7 @@ export function categoryLabelFor(data: unknown): string | null {
 function parseCreatedAt(value: string): Date | null {
   // Full ISO timestamps pass through; a bare `YYYY-MM-DD` (not what the API
   // writes today) still keeps its calendar day east and west of Greenwich.
-  return parseInstantOrBareUtcNoon(value);
+  return parseInstantOrBareLocalNoon(value);
 }
 
 function formatTime(value: string): string | null {

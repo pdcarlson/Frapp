@@ -1,4 +1,4 @@
-import { parseBareDateUtcNoon } from "@repo/formatting";
+import { parseBareDateLocalNoon } from "@repo/formatting";
 
 /**
  * Draft state and validation for the s19 "New task" sheet.
@@ -105,11 +105,11 @@ export function duePresets(now: Date): DuePreset[] {
 /**
  * The drawn date-field label — "Fri, Aug 21".
  *
- * Parsed at UTC noon so a bare `YYYY-MM-DD` does not render as the previous day
- * west of Greenwich, the same fix `lib/more/service-hours.ts` documents.
+ * Parsed at local noon so a bare `YYYY-MM-DD` renders as its own day in every
+ * zone, the same fix `lib/more/service-hours.ts` documents.
  */
 export function formatDueFieldLabel(isoDate: string): string {
-  const date = parseBareDateUtcNoon(isoDate);
+  const date = parseBareDateLocalNoon(isoDate);
   if (!date) return isoDate;
   return date.toLocaleDateString(undefined, {
     weekday: "short",
