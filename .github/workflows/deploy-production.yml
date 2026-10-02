@@ -584,7 +584,7 @@ jobs:
             echo "::error::Deploy succeeded but the release tag did not ($RELEASE_RESULT). Production IS updated. Re-run the 'Release' workflow manually with sha=$SHA to record it."
             case "$MOBILE_BUILD" in
               ios|android|all)
-                echo "::error::This run also asked for a store build ($MOBILE_BUILD), which starts only after the tag. To keep it, fix the tag's cause, then use Re-run failed jobs on this run instead: that retries the tag without redeploying, then builds. The Release workflow on its own tags and builds nothing. If the release job's log says it created the tag (a later step failed), retry neither: either would tag this commit twice (#3126); build by hand from that tag (docs/ops/deployment/mobile.md § 6.6)."
+                echo "::error::This run also asked for a store build ($MOBILE_BUILD), which starts only after the tag. To keep it, fix the tag's cause, then use Re-run failed jobs on this run instead: that retries the tag without redeploying, then builds. The Release workflow on its own tags and builds nothing. Either retry is safe if the release job already created the tag and a later step failed: it reuses that tag rather than minting another (#3126)."
                 ;;
             esac
             exit 1
