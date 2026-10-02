@@ -11,6 +11,7 @@ import {
   requeueRun,
   upsertWakeComment,
   wakeMarkerFor,
+  warningAnnotation,
 } from "../ci-wake.mjs";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -335,6 +336,31 @@ test("upsert deletes only this workflow's stale markers, then creates", async ()
   assert.equal(creates.length, 1);
 });
 
+test("a refused upsert reports GitHub's message beside the status", async () => {
+  const { fetchImpl } = makeFetchMock([
+    { method: "GET", path: "/issues/659/comments", body: [] },
+    {
+      method: "POST",
+      path: "/issues/659/comments",
+      status: 403,
+      body: { message: "Resource not accessible by integration" },
+    },
+  ]);
+  const result = await upsertWakeComment({
+    token: "t",
+    repo: "o/r",
+    prNumber: 659,
+    marker: wakeMarkerFor("CI"),
+    body: "new",
+    fetchImpl,
+  });
+  assert.deepEqual(result, {
+    posted: false,
+    status: 403,
+    error: "Resource not accessible by integration",
+  });
+});
+
 test("upsert collects stale ids across pages before deleting (no shift-skip)", async () => {
   const page1 = Array.from({ length: 100 }, (_, i) => ({ id: i + 1, body: "human" }));
   page1[94] = { id: 95, body: `${wakeMarkerFor("CI")}\nstale A` };
@@ -430,6 +456,51 @@ test("infra failure that could NOT be requeued still comments", async () => {
   // Nothing else is going to say this: the webhook fired on the failure, but
   // only this watchdog knows the automatic retry is not coming.
   assert.equal(result.commented, true);
+});
+
+test("a wake that fails to post is a warning with GitHub's status and message", async () => {
+  const { fetchImpl } = makeFetchMock([
+    {
+      method: "GET",
+      path: "/actions/workflows/241114608/runs",
+      body: { workflow_runs: [{ id: 31119232391, created_at: "2026-08-06T16:16:24Z" }] },
+    },
+    {
+      method: "GET",
+      path: "/actions/runs/31119232391/jobs",
+      body: { jobs: [outageSecretScanJob, outageCancelledJob] },
+    },
+    { method: "POST", path: "/rerun-failed-jobs", status: 500, body: {} },
+    { method: "POST", path: "/rerun", status: 500, body: {} },
+    { method: "GET", path: "/pulls?head=", body: [{ number: 659 }] },
+    { method: "GET", path: "/issues/659/comments", body: [] },
+    {
+      method: "POST",
+      path: "/issues/659/comments",
+      status: 403,
+      body: { message: "Resource not accessible by integration" },
+    },
+  ]);
+  const lines = [];
+  const result = await processCompletedRun({
+    token: "t",
+    repo: "pdcarlson/Frapp",
+    run: makeRun(),
+    fetchImpl,
+    logger: { log: (line) => lines.push(line) },
+  });
+  assert.equal(result.commented, false);
+  assert.ok(
+    lines.some(
+      (line) =>
+        line.startsWith("::warning::") &&
+        line.includes("#659 (HTTP 403: Resource not accessible by integration)"),
+    ),
+  );
+});
+
+test("warningAnnotation escapes what would end or corrupt the annotation", () => {
+  assert.equal(warningAnnotation("a%b\r\nc"), "::warning::a%25b%0D%0Ac");
 });
 
 test("superseded runs short-circuit: no jobs fetch, no writes", async () => {
