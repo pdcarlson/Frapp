@@ -244,7 +244,7 @@ const PRODUCTION_SUPABASE_KEY_ERROR = [
   "JWT anon key, with nothing around it. Supabase supports legacy keys only until the",
   "end of 2026, and a store binary keeps its key until it is updated from the",
   "store. Copy it from Supabase → frapp-prod → Project Settings → API Keys and",
-  "set it on the EAS production environment (eas env:list --environment production).",
+  "set it on the EAS production environment (npm run eas -- env:list --environment production, from the repo root).",
   "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
@@ -399,7 +399,7 @@ const PRODUCTION_ASK_ENABLED_ERROR = [
   '(only "1" and "true" switch it on, the parse in apps/mobile/lib/ask/flag.ts).',
   "Ask answers from a synthetic corpus, and the App Store listing and review",
   "notes describe a store binary with no Ask (#2259). Remove it from the EAS",
-  "production environment (eas env:list --environment production).",
+  "production environment (npm run eas -- env:list --environment production, from the repo root).",
   "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
 ].join(" ");
 
