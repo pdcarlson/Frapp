@@ -294,9 +294,9 @@ function ModuleRow({
 
       {open && hasSubFeatures ? (
         /*
-          No fill. `--secondary` aliases `--card` (`elevation-contrast.spec.ts`
-          pins it), so `bg-secondary/30` inside this card composited to
-          1.000:1 — the strip it was meant to draw was never there. The
+          No fill. `--secondary` was an alias of `--card` (deleted, #3036;
+          `elevation-contrast.spec.ts` records it), so `bg-secondary/30` inside
+          this card composited to 1.000:1 — the strip it was meant to draw was never there. The
           hairline above it is the load-bearing edge (§2), and it already
           separates the expansion from the row; adding a step that cannot
           exist is what §10 means by a state that cannot rise above its
