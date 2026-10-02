@@ -7,8 +7,8 @@
 // from 15:52 until it was cancelled by hand at ~18:20, and the three merges
 // behind it never got required checks. A job stopped by its timeout ends
 // `cancelled` (GitHub has no separate job conclusion for it), which frees the
-// lock and can be re-run; a hung one starves the queue silently. CI wake does
-// not yet tell that cancel from a deliberate one (#3162).
+// lock and can be re-run; a hung one starves the queue silently. CI wake names
+// such a job as timed out rather than deliberately cancelled (#3162).
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
