@@ -12,6 +12,7 @@ import {
   markLocalRecorded,
   markLocalUnconfirmed,
   POSTED_OUTBOX_WARNING,
+  RATE_LIMITED_COPY,
   react,
   removeLocalPlaceholder,
   retryOutboxRow,
@@ -1814,13 +1815,13 @@ describe("definitiveRefusalMessage", () => {
     ).toBe("You do not have access to this channel");
   });
 
-  it("is null for a 429, even with the throttler's readable sentence", () => {
-    expect(
-      definitiveRefusalMessage({
-        statusCode: 429,
-        message: "Too many requests in a short time. Wait a minute, then try again.",
-      }),
-    ).toBeNull();
+  it.each([
+    ["the throttler's sentence", "Too many requests in a short time. Wait a minute, then try again."],
+    ["an intermediary's text", "Too Many Requests"],
+  ])("reads a 429 carrying %s as the rate-limit sentence", (_label, message) => {
+    expect(definitiveRefusalMessage({ statusCode: 429, message })).toBe(
+      RATE_LIMITED_COPY,
+    );
   });
 
   it.each([

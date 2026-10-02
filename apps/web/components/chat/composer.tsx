@@ -729,7 +729,8 @@ export function notifyDispatchOutcome(
  * upload does. A definitive refusal is the server telling the member why, and
  * retrying can't change it: a member who lost posting rights inside the channel
  * list's staleTime (the mint authorizes as a post), or a file the API refuses.
- * Anything a retry could fix (a 429, a 5xx, no status) gets retry advice.
+ * A 429 reads as the rate-limit sentence, a wait of a minute. Anything else a
+ * retry could fix (a 5xx, no status) gets retry advice.
  *
  * A thrown `Error` is not an API body (`readSignedUpload`'s contract error, the
  * storage PUT's `SignedUploadError`, a network failure) and keeps the message

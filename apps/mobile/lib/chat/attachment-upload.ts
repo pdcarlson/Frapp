@@ -229,11 +229,11 @@ export const UPLOAD_FAILED = "Couldn't upload that photo. Try again in a moment.
  * `@repo/hooks` mutations throw the API's error body, a plain object carrying
  * the `statusCode` and a `message`. A definitive refusal's message is the API's
  * reason for a member to read, read by the same `definitiveRefusalMessage` the
- * web composer uses, so one response reads the same on both (#2199). A 429 is
- * a wait, not a refusal, and a 5xx's body is framework text ("Internal server
- * error"); a thrown `Error` is a native networking failure or a parse error in
- * platform jargon. Each of those reads as the generic sentence, which already
- * says to try again in a moment.
+ * web composer uses, so one response reads the same on both (#2199). A 429
+ * reads as its rate-limit sentence, a wait of a minute. A 5xx's body is
+ * framework text ("Internal server error"), and a thrown `Error` is a native
+ * networking failure or a parse error in platform jargon; each reads as the
+ * generic sentence, which says to try again in a moment.
  */
 export function uploadFailureReason(err: unknown): string {
   return definitiveRefusalMessage(err) ?? UPLOAD_FAILED;
