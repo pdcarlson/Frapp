@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ChapterCustomRole } from "@repo/validation";
@@ -46,10 +46,15 @@ vi.mock("@/components/roles/roles-page", () => ({
   RolesAndPermissionsPage: () => <div data-testid="live-roles" />,
 }));
 
+const mockToast = vi.fn();
 vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: mockToast }),
 }));
 
+import {
+  expectClearingEntriesEmpty,
+  expectRefusedEntriesKeep,
+} from "@/tests/numeric-input";
 import { SettingsRolesTab } from "./settings-roles-tab";
 
 const CATALOG = [
@@ -369,6 +374,58 @@ describe("SettingsRolesTab", () => {
       label: "Social Chair",
       rank: 99,
       capabilities: ["events:create"],
+    });
+  });
+
+  describe("the new role's rank (#3050)", () => {
+    const renderTab = () =>
+      render(
+        <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+          defaultInviteRoleId={null}
+          onSaveDefaultInviteRole={mockSaveDefaultRole}
+        />,
+      );
+    const rank = () => screen.getByLabelText("Rank");
+
+    async function draftRole() {
+      const user = userEvent.setup();
+      renderTab();
+      await user.type(screen.getByLabelText("Key"), "social_chair");
+      await user.type(screen.getByLabelText("Label"), "Social Chair");
+      return user;
+    }
+
+    it("keeps the last whole number through a negative or a decimal", () => {
+      renderTab();
+      expectRefusedEntriesKeep(rank(), "40");
+    });
+
+    it("lets the field be emptied mid-edit instead of snapping back", () => {
+      renderTab();
+      expectClearingEntriesEmpty(rank(), "40");
+    });
+
+    it("refuses an emptied rank at create by name, and sends nothing", async () => {
+      const user = await draftRole();
+      fireEvent.change(rank(), { target: { value: "" } });
+      await user.click(screen.getByRole("button", { name: /create role/i }));
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Rank needs a number",
+          variant: "destructive",
+        }),
+      );
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it("creates with rank 0, its floor", async () => {
+      mockCreate.mockResolvedValue({});
+      const user = await draftRole();
+      fireEvent.change(rank(), { target: { value: "0" } });
+      await user.click(screen.getByRole("button", { name: /create role/i }));
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ rank: 0 }),
+      );
     });
   });
 
