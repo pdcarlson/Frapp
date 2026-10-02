@@ -106,9 +106,10 @@ type Branding = {
 // tab is product UI and retints.
 //
 // **`--accent-subtle`/`--accent-text` are that retinting family. Plain
-// `--accent` is not**: it is a ShadCN alias of `--popover` (`#2A2621`), so
-// `bg-accent` would paint the active tab a dead grey on every chapter, gold
-// included. No surface paints it (`components/shared/elevation-call-sites.spec.ts`).
+// `--accent` was not**: it was a ShadCN alias of `--popover` (`#2A2621`), so
+// `bg-accent` painted the active tab a dead grey on every chapter, gold
+// included. The alias is deleted (#3036); `elevation-call-sites.spec.ts` keeps
+// the name out.
 //
 // Below `lg` the rail is still a horizontal wrap row, so the chip reads the
 // same either way — there is no underline variant to keep in sync any more.
