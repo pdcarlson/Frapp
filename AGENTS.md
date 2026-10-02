@@ -143,7 +143,7 @@ Scheduled routines are exempt and follow their own skill's PR rules ([`routines.
 
 1. Open a PR against `main`, the only legal base, without being asked.
 2. Subscribe with `subscribe_pr_activity`. Don't call `send_later` or add it to `permissions.allow`: it prompts the owner, so it can't run unattended. The PR-activity webhook plus the repo's `CI wake` and `PR base sync` comments cover wakes ([wake coverage](docs/ci-cd/pr-babysitting.md#wake-coverage)).
-3. Triage a CI failure before fixing it. A job that died before its first repo step is Actions infra: re-run it, don't patch. `CI wake` comments only on a deliberate cancellation or an infra failure its auto-requeue couldn't absorb, so its silence doesn't mean green; an ordinary red run arrives through the webhook for you to diagnose.
+3. Triage a CI failure before fixing it. A job that died before its first repo step is Actions infra: re-run it, don't patch. `CI wake` comments only on a deliberate cancellation, a job that ran to its `timeout-minutes`, or an infra failure its auto-requeue couldn't absorb, so its silence doesn't mean green; an ordinary red run arrives through the webhook for you to diagnose.
 4. Babysit until green: fix real CI failures, and address and resolve review threads. A `PR base sync` comment (`<!-- frapp-base-sync -->`) means merge `origin/main`, or do what it says. When the base-sync App token is available, a clean behind-PR is updated silently, so judge by the PR's mergeability, never by the absence of a comment ([base-branch sync](docs/ci-cd/pr-babysitting.md#base-branch-sync-scriptscipr-base-syncmjs)).
 5. Stop when the PR is green and review-clean, when what's left is out of scope (file an issue, report, stop), or when the user says to stop.
 
