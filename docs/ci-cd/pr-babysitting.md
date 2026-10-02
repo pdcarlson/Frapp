@@ -86,7 +86,7 @@ never reaches `main` and CI never ran.
 | Signal | Fires on | Misses |
 | ------ | -------- | ------ |
 | PR-activity webhook (`subscribe_pr_activity`) | CI **failure**, **successful check-suite rollups** (observed 2026-08-21 — see below), comments, reviews | cancelled, timed-out, merge-conflict — all silent |
-| `CI wake` watchdog comment (`ci-wake.yml`) | exactly two things, and it is worth being precise because most of this list is *silent* on attempts 1-2: (a) a **deliberate** cancellation — a run cancelled after some job had started, or with the jobs/runs API down so it cannot be told from an infra one; (b) an **infra failure the auto-requeue did not absorb**, i.e. the re-queue call failed or the 3-attempt cap is spent. `timed_out`, `startup_failure`, `stale`, and a cancel where no job ever started all classify as infra-failure and are requeued first, so they say nothing until that runs out | outages that kill the watchdog run itself; a wake comment that fails to post (a `::warning::` on the run with GitHub's status and message); merge-conflict; review-state changes. **Deliberately silent:** success and real failures (the webhook carries both), any infra failure that WAS requeued (the fresh attempt's own completion is the wake), `skipped`/`neutral`/`action_required`, and superseded runs |
+| `CI wake` watchdog comment (`ci-wake.yml`) | exactly three things, and it is worth being precise because most of this list is *silent* on attempts 1-2: (a) a **deliberate** cancellation — a run cancelled after some job had started, or with the jobs/runs/annotations API down so it cannot be told from an infra one or a timeout; (b) a **job that ran to its `timeout-minutes`** (verdict `timed-out`, naming the job and its limit), which GitHub concludes `cancelled` and only the job's check-run annotation tells apart (#3162), never requeued because it is usually a hang a re-run meets again, even beside an infra failure that would otherwise be; (c) an **infra failure the auto-requeue did not absorb**, i.e. the re-queue call failed or the 3-attempt cap is spent. A run-level `timed_out`, `startup_failure`, `stale`, and a cancel where no job ever started all classify as infra-failure and are requeued first, so they say nothing until that runs out | outages that kill the watchdog run itself; a wake comment that fails to post (a `::warning::` on the run with GitHub's status and message); merge-conflict; review-state changes. **Deliberately silent:** success and real failures (the webhook carries both), any infra failure that WAS requeued (the fresh attempt's own completion is the wake), `skipped`/`neutral`/`action_required`, and superseded runs |
 | `PR base sync` wake comment (`pr-base-sync.yml`) | `main` moving while this PR is conflicted with it, or behind it and un-updateable for a reason specific to this PR (a fork head, a one-off API error) — the comment says which and what to do | base moves while the sweep run itself dies; PRs past the sweep's 20-PR cap this round (logged; the sweep processes least-recently-updated first, so deferred PRs rotate to the front of a later sweep); unknown mergeability (skipped fail-safe, deliberately silent); a wake comment that fails to post (a `::warning::` on the run with GitHub's status and message, and the run stays green; the next push to `main` retries it, #3019) |
 | `PR base sync` alert issue | a missing or rejected app token — the one cause that is repo-wide rather than per-PR | anything per-PR (those comment); a sweep where nothing was behind, which proves nothing either way and deliberately leaves an open alert open |
 | Retired — do not call `send_later` | — | Entire layer. Unusable unattended on the cloud surface (prompts the owner every call). Do not re-add it to `permissions.allow`. |
@@ -174,8 +174,15 @@ that has already failed three times.
 - **Classifies** the completed run. *Infra failure*: every failed job died before its first
   repo-defined step (runner-phase steps only — the outage signature); a `cancelled` run counts
   only when **no job ever started a step** (never got a runner), so a deliberate human/agent
-  cancellation of a running job is commented but never resurrected; `timed_out` /
-  `startup_failure` / `stale` count too. *Code failure*: any job failed in a real step —
+  cancellation of a running job is commented but never resurrected; a run-level `timed_out` /
+  `startup_failure` / `stale` counts too. *Timed out*: a started job that was cancelled for
+  running to its `timeout-minutes`. GitHub has no `timed_out` job conclusion, so the watchdog
+  reads each started, cancelled job's check-run annotations for "The job has exceeded the
+  maximum execution time of …" (hence `checks: read`). It is commented with the job and its
+  limit and never requeued, including when it sits beside an infra failure that would otherwise
+  be (a re-run re-runs the hung job too); an annotation it can't read falls back to the
+  deliberate-cancel wake, or to an un-requeued one for that infra failure, saying a timeout
+  can't be ruled out. *Code failure*: any job failed in a real step —
   classified, logged, and then deliberately **not** commented on, because `failure` is the one
   conclusion the PR-activity webhook has always delivered.
   *Superseded*: a newer run of the same workflow exists for the branch (repush; `ci.yml`'s
@@ -192,7 +199,7 @@ that has already failed three times.
   this trigger + `run_attempt` guard. These are docs-verified claims (2026-08-06), not yet
   observed in this repo — confirm on the first post-merge firing.
 - **Upserts one wake comment per workflow** on the open PR — but only for a deliberate cancellation,
-  or for an infra failure (from any of `failure` / `cancelled` / `timed_out` / `startup_failure` /
+  a job timeout, or for an infra failure (from any of `failure` / `cancelled` / `timed_out` / `startup_failure` /
   `stale`) that the auto-requeue did **not** absorb. Note the `failure`-conclusion infra case is in
   that set: the webhook did fire, but only this watchdog knows the failure was the 2026-08-06
   "Failed to resolve action download info" shape and that the automatic retry is not coming. It deletes that workflow's previous marker comments
