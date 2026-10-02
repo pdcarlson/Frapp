@@ -6,7 +6,7 @@
  * `Text` (`message-markdown.tsx` in `apps/mobile`). What decides the output
  * lives here, so the two can't drift: the element allowlist, the #2209 depth
  * cap, the #2664 parse budget, the bare-URL links, and the line layout
- * (`markdown-flow.ts`, #2934). Each is
+ * (`markdown-flow.ts`, #2934, which walks hast rather than mdast). Each is
  * dependency-free: the mdast they walk is written out, for the reason
  * `markdown-depth-cap.ts` gives.
  */
@@ -14,12 +14,11 @@
 import { bareUrlEnd, bareUrls, isOpenableHref } from "./links";
 import { opensTooManyContainers } from "./markdown-depth-cap";
 export {
-  applyMessageAllowlist,
-  endsInOwnLineBlock,
   isElement,
-  layOutMessageFlow,
+  layOutMessageBody,
   textOf,
   type HastNode,
+  type MessageBodyLayout,
 } from "./markdown-flow";
 import { exceedsParseBudget } from "./markdown-parse-budget";
 

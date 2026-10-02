@@ -19,10 +19,8 @@ import remarkBreaks from "remark-breaks";
 import { isOpenableHref } from "@repo/chat-core/links";
 import {
   MESSAGE_MARKDOWN_ELEMENTS,
-  applyMessageAllowlist,
-  endsInOwnLineBlock,
   isElement,
-  layOutMessageFlow,
+  layOutMessageBody,
   remarkBareUrls,
   remarkDepthCap,
   skipsMarkdownParse,
@@ -57,7 +55,7 @@ import {
  *
  * A paragraph or a code block can't be a block box inside a `Text`, so
  * `rehypeTextFlow` lays blocks out as line breaks instead, with the layout web
- * shares (`layOutMessageFlow`).
+ * shares (`layOutMessageBody`).
  */
 
 /** A link in a body, in reading order: what it reads as, and where it goes. */
@@ -77,10 +75,9 @@ export interface ParsedMessageMarkdown {
    */
   empty: boolean;
   /**
-   * The body ends in a block that keeps lines of its own (a list, a quote, a
-   * code block), so the trailing markers take a line of their own under it
-   * rather than breaking it (`components.md` §11 § What rides the row). A
-   * heading or raw HTML reads as a line of text, and they trail it, as on web.
+   * The trailing markers take a line of their own under the body's last
+   * block (`MessageBodyLayout.endsOnOwnLine` in `@repo/chat-core/markdown`
+   * says which blocks, for both clients).
    */
   trailingOnOwnLine: boolean;
 }
@@ -120,13 +117,21 @@ const ALLOWED: ReadonlySet<string> = new Set(MESSAGE_MARKDOWN_ELEMENTS);
  * (`markdown-flow.ts` in `@repo/chat-core`, which web runs too), plus what the
  * row needs from the parse. It must run last.
  */
-function rehypeTextFlow(result: TextFlowResult) {
+function rehypeTextFlow({
+  result,
+  source,
+}: {
+  result: TextFlowResult;
+  /** The string remark parsed, which the tree's positions index into. */
+  source: string;
+}) {
   return (root: HastNode): void => {
-    // Read before the allowlist unwraps the blocks it is asking about.
-    result.trailingOnOwnLine = endsInOwnLineBlock(root.children ?? []);
-    root.children = layOutMessageFlow(
-      applyMessageAllowlist(root.children ?? [], ALLOWED),
-    );
+    const layout = layOutMessageBody(root.children ?? [], {
+      allowed: ALLOWED,
+      source,
+    });
+    result.trailingOnOwnLine = layout.endsOnOwnLine;
+    root.children = layout.children;
     result.links = collectLinks(root);
     result.empty = textOf(root).trim() === "";
   };
@@ -159,7 +164,7 @@ export function parseMessageMarkdown(content: string): ParsedMessageMarkdown {
       [remarkBareUrls, { content }],
       remarkBreaks,
     ],
-    rehypePlugins: [[rehypeTextFlow, result]],
+    rehypePlugins: [[rehypeTextFlow, { result, source: flatten ? "" : content }]],
     allowedElements: MESSAGE_MARKDOWN_ELEMENTS,
     unwrapDisallowed: true,
     components: COMPONENTS,

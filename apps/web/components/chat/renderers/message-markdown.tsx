@@ -6,9 +6,7 @@ import remarkBreaks from "remark-breaks";
 import { isSafeHref } from "@repo/chat-core/links";
 import {
   MESSAGE_MARKDOWN_ELEMENTS,
-  applyMessageAllowlist,
-  endsInOwnLineBlock,
-  layOutMessageFlow,
+  layOutMessageBody,
   remarkDepthCap,
   skipsMarkdownParse,
   type HastNode,
@@ -43,14 +41,16 @@ const ALLOWED: ReadonlySet<string> = new Set(ALLOWED_ELEMENTS);
  * under it (`components.md` §11 § What rides the row). With no markers after
  * it, a closing newline draws no extra line.
  */
-function rehypeMessageFlow() {
+function rehypeMessageFlow({ source }: { source: string }) {
   return (root: HastNode): void => {
-    const ownLine = endsInOwnLineBlock(root.children ?? []);
-    const flow = layOutMessageFlow(
-      applyMessageAllowlist(root.children ?? [], ALLOWED),
-    );
-    if (ownLine && flow.length > 0) flow.push({ type: "text", value: "\n" });
-    root.children = flow;
+    const { children, endsOnOwnLine } = layOutMessageBody(root.children ?? [], {
+      allowed: ALLOWED,
+      source,
+    });
+    if (endsOnOwnLine && children.length > 0) {
+      children.push({ type: "text", value: "\n" });
+    }
+    root.children = children;
   };
 }
 
@@ -90,7 +90,8 @@ export const MessageMarkdown = memo(function MessageMarkdown({ content }: { cont
         [remarkMentionChips, { content }],
       ]}
       // Last, so it lays out the tree that renders.
-      rehypePlugins={[rehypeMessageFlow]}
+      // `source` is the string remark parses, which the positions index into.
+      rehypePlugins={[[rehypeMessageFlow, { source: flatten ? "" : content }]]}
       allowedElements={ALLOWED_ELEMENTS}
       unwrapDisallowed
       components={{

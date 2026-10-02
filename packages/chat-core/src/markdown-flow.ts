@@ -7,13 +7,14 @@
  * mobile, web's `pre-wrap` body), each `br` breaks its line twice, and a body
  * that opens with a list or a quote opens with an empty line.
  *
- * These passes take the hast react-markdown builds and write each break out
- * once: `applyMessageAllowlist` unwraps what the allowlist drops and removes
- * the `"\n"` after a `br`, then `layOutMessageFlow` turns the top level into
- * one line of flow with every block boundary as explicit `"\n"`s. A renderer
- * that draws the result inline (mobile's single `Text`, web's inline
- * paragraphs under `pre-wrap`) shows one line per break and one blank line
- * per paragraph gap, and the two clients agree by construction.
+ * `layOutMessageBody` takes the hast react-markdown builds and writes each
+ * break out once: it unwraps what the allowlist drops, removes the `"\n"`
+ * after a `br`, and turns the top level into one line of flow with every
+ * boundary as explicit `"\n"`s, counted from the source. A renderer that draws
+ * the result inline (mobile's single `Text`, web's inline paragraphs under
+ * `pre-wrap`) shows one line per break and one blank line per paragraph gap,
+ * and the two clients agree by construction. It runs as each client's last
+ * rehype pass.
  *
  * The hast slice is written out rather than imported: `hast` reaches the
  * clients only through react-markdown, for the reason `markdown-depth-cap.ts`
@@ -26,6 +27,10 @@ export interface HastNode {
   value?: string;
   properties?: Record<string, unknown>;
   children?: HastNode[];
+  position?: {
+    start?: { offset?: number };
+    end?: { offset?: number };
+  };
 }
 
 /** The elements drawn as blocks. Everything else flows inline. */
@@ -36,6 +41,9 @@ const OWN_LINE_AFTER = new Set(["pre", "ul", "ol", "blockquote"]);
 
 /** Breaks between two blocks: one blank line, a paragraph gap, at most. */
 const MAX_BREAKS = 2;
+
+/** A line ending, as micromark reads one. */
+const LINE_ENDING = /\r\n|\r|\n/g;
 
 export function isElement(node: HastNode | undefined, tagName: string): boolean {
   return node?.type === "element" && node.tagName === tagName;
@@ -79,7 +87,7 @@ function drawsNothing(node: HastNode): boolean {
  * Recursive, which is safe because `remarkDepthCap` already ran: the tree is at
  * most `MAX_MESSAGE_MARKDOWN_DEPTH` deep.
  */
-export function applyMessageAllowlist(
+function applyMessageAllowlist(
   nodes: HastNode[],
   allowed: ReadonlySet<string>,
 ): HastNode[] {
@@ -100,21 +108,51 @@ export function applyMessageAllowlist(
   );
 }
 
+/** Where a node starts or ends in the source, from it or its first or last descendant. */
+function offsetOf(node: HastNode, edge: "start" | "end"): number | undefined {
+  const own = node.position?.[edge]?.offset;
+  if (own !== undefined) return own;
+  const children = node.children ?? [];
+  const next = edge === "start" ? children[0] : children[children.length - 1];
+  return next ? offsetOf(next, edge) : undefined;
+}
+
 /**
- * The body's top level as one line of flow, with each block boundary written
- * out as line breaks.
- *
- * A block ends its line, and each separator hast put after it adds one more.
- * So two paragraphs get a blank line between them, a list's items one line
- * each, and a paragraph that follows a heading starts on the next line. That
- * count is capped at one blank line. Separators at the start or end of the
- * body are dropped, so a body that opens with a list or a quote doesn't open
- * with an empty line (#2934).
+ * The line endings typed between two nodes, or `undefined` when either has no
+ * source position. Plugins that split a text node (`remark-breaks`, the
+ * mention chips) leave the pieces without one.
  */
-export function layOutMessageFlow(nodes: HastNode[]): HastNode[] {
+function typedBreaks(
+  previous: HastNode,
+  next: HastNode,
+  source: string,
+): number | undefined {
+  const from = offsetOf(previous, "end");
+  const to = offsetOf(next, "start");
+  if (from === undefined || to === undefined || from > to) return undefined;
+  return source.slice(from, to).match(LINE_ENDING)?.length ?? 0;
+}
+
+/**
+ * The body's top level as one line of flow, with each boundary written out
+ * as line breaks.
+ *
+ * The count comes from the source: the line endings typed between two drawn
+ * nodes, capped at one blank line. hast can't say it, since it puts one
+ * `"\n"` between any two blocks and wraps every list and quote in more, so
+ * reading its separators drew `Items:` and a list on the next line with a
+ * blank line between them, and a nested list's items double-spaced. A
+ * paragraph always ends its line, and a code block is always set apart by a
+ * blank line. Where a node has no position, the separators decide, as they
+ * did before. Nothing is written before the first node or after the last, so
+ * a body that opens with a list or a quote doesn't open with an empty line
+ * (#2934).
+ */
+function layOutMessageFlow(nodes: HastNode[], source: string): HastNode[] {
   const out: HastNode[] = [];
   let separators = 0;
   let afterBlock = false;
+  let previous: HastNode | undefined;
   for (const node of nodes) {
     if (isSeparator(node)) {
       separators += (node.value ?? "").length;
@@ -122,13 +160,19 @@ export function layOutMessageFlow(nodes: HastNode[]): HastNode[] {
     }
     if (drawsNothing(node)) continue;
     const block = node.type === "element" && BLOCKS.has(node.tagName ?? "");
-    if (out.length > 0) {
-      let breaks = separators + (afterBlock ? 1 : 0);
+    if (previous) {
+      let breaks =
+        typedBreaks(previous, node, source) ??
+        separators + (afterBlock ? 1 : 0);
       if (block || afterBlock) breaks = Math.max(breaks, 1);
+      if (isElement(node, "pre") || isElement(previous, "pre")) {
+        breaks = MAX_BREAKS;
+      }
       breaks = Math.min(breaks, MAX_BREAKS);
       if (breaks > 0) out.push({ type: "text", value: "\n".repeat(breaks) });
     }
     out.push(node);
+    previous = node;
     separators = 0;
     afterBlock = block;
   }
@@ -141,13 +185,39 @@ export function layOutMessageFlow(nodes: HastNode[]): HastNode[] {
  * rather than breaking it (`components.md` §11 § What rides the row). A
  * heading or raw HTML reads as a line of text, and the markers trail it.
  *
- * Asked of the top level before `applyMessageAllowlist` unwraps the blocks it
- * is about. The last block that draws anything decides, so a divider after a
- * list doesn't count.
+ * Asked of the top level before the allowlist unwraps the blocks it is about.
+ * The last block that draws anything decides, so a divider after a list
+ * doesn't count.
  */
-export function endsInOwnLineBlock(nodes: HastNode[]): boolean {
+function endsInOwnLineBlock(nodes: HastNode[]): boolean {
   const last = nodes
     .filter((node) => !isSeparator(node) && !drawsNothing(node))
     .pop();
   return last?.type === "element" && OWN_LINE_AFTER.has(last.tagName ?? "");
+}
+
+export interface MessageBodyLayout {
+  /** The new top level, to replace the root's children. */
+  children: HastNode[];
+  /** The trailing markers take a line of their own (`endsInOwnLineBlock`). */
+  endsOnOwnLine: boolean;
+}
+
+/**
+ * The whole pass, in the order it has to run: the closing block is read
+ * before the allowlist unwraps it, then the allowlist, then the layout.
+ *
+ * `allowed` is the renderer's `allowedElements`. `source` is the string remark
+ * parsed (the body, or `""` when `skipsMarkdownParse` flattened it), which the
+ * positions index into.
+ */
+export function layOutMessageBody(
+  nodes: HastNode[],
+  { allowed, source }: { allowed: ReadonlySet<string>; source: string },
+): MessageBodyLayout {
+  const endsOnOwnLine = endsInOwnLineBlock(nodes);
+  return {
+    children: layOutMessageFlow(applyMessageAllowlist(nodes, allowed), source),
+    endsOnOwnLine,
+  };
 }

@@ -449,6 +449,9 @@ describe("TextRenderer compact body", () => {
     );
     const body = container.querySelector('[data-slot="message-body"]')!;
     expect(drawn(body)).toMatch(/\n\(edited\)$/);
+    // The break is the body's own, not the newline at the end of a code
+    // block's text, which breaks no line outside the block's box.
+    expect(body.lastElementChild?.previousSibling?.nodeValue).toBe("\n");
   });
 
   it("mutes a body still sending", () => {
@@ -468,7 +471,13 @@ describe("TextRenderer compact body", () => {
 function drawn(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) return node.nodeValue ?? "";
   if (node.nodeName === "BR") return "\n";
-  return Array.from(node.childNodes).map(drawn).join("");
+  const text = Array.from(node.childNodes).map(drawn).join("");
+  // A code block is its own box: the newline hast ends its text with breaks
+  // no line in the body around it.
+  if (node.nodeName === "CODE" && (node as Element).classList.contains("inline-block")) {
+    return text.replace(/\n$/, "");
+  }
+  return text;
 }
 
 /**
@@ -499,6 +508,15 @@ describe("TextRenderer line breaks", () => {
     ["an opening quote without an empty first line", "> quoted\nafter", "quoted\nafter"],
     ["a paragraph then a list with one blank line", "Items:\n\n- a\n- b", "Items:\n\na\nb"],
     ["a list then a paragraph with one blank line", "- a\n- b\n\nAfter", "a\nb\n\nAfter"],
+    // The breaks come from what was typed, not from hast's separators, which
+    // put a blank line before a list typed on the next line and between a
+    // nested list's items.
+    ["a list typed on the next line with no blank line", "Items:\n- a\n- b", "Items:\na\nb"],
+    ["a quote typed on the next line with no blank line", "text\n> quoted", "text\nquoted"],
+    ["a nested list one item a line", "- a\n  - b\n- c", "a\nb\nc"],
+    ["a quote inside a list item one line", "- > q\n- x", "q\nx"],
+    ["a blank line after a heading as one blank line", "# Title\n\nbody", "Title\n\nbody"],
+    ["a mention in a tight list one item a line", "- hi @jane\n- b", "hi @jane\nb"],
   ])("draws %s", (_, content, expected) => {
     expect(lines(content)).toBe(expected);
   });
@@ -517,7 +535,7 @@ describe("TextRenderer line breaks", () => {
     const code = el.querySelector("code")!;
     expect(code.textContent).toBe("x = 1\ny = 2\n");
     expect(code.className).toContain("whitespace-pre");
-    expect(drawn(el)).toBe("before\n\nx = 1\ny = 2\n\n\nafter");
+    expect(drawn(el)).toBe("before\n\nx = 1\ny = 2\n\nafter");
   });
 
   it("draws paragraphs inline, so pre-wrap's newlines are the only breaks", () => {
