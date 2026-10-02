@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Post, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -71,7 +72,7 @@ export class DiscordAuthorLinkController {
     description:
       'Mints a single-use handshake bound to you and this chapter and returns the Discord authorize URL, which asks for `identify` only. Discord returns the browser to `/profile` with a one-time token that `POST /v1/discord/author-link/confirm` spends.',
   })
-  @ApiOkResponse({ type: BeginDiscordAuthorLinkResponseDto })
+  @ApiCreatedResponse({ type: BeginDiscordAuthorLinkResponseDto })
   begin(
     @CurrentChapterId() chapterId: string,
     @CurrentUser() user: { id: string },
@@ -85,7 +86,7 @@ export class DiscordAuthorLinkController {
     description:
       'Links the account only for the member who started the handshake, in this chapter, and attributes that Discord author’s imported messages here to them. 409 when the account is already linked to another member of the chapter. Linking a different account replaces your previous link.',
   })
-  @ApiOkResponse({ type: ConfirmDiscordAuthorLinkResponseDto })
+  @ApiCreatedResponse({ type: ConfirmDiscordAuthorLinkResponseDto })
   confirm(
     @CurrentChapterId() chapterId: string,
     @CurrentUser() user: { id: string },
