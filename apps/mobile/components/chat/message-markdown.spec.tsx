@@ -135,6 +135,15 @@ describe("MessageMarkdown: lines, laid out as web's body shows them", () => {
     ["a heading", "# Big\ntext", "Big\ntext"],
     ["a list after a paragraph", "text\n\n- a\n- b", "text\n\na\nb"],
     ["a quote at the end", "text\n\n> end", "text\n\nend"],
+    // The breaks come from what was typed, not from hast's separators, which
+    // put a blank line before a list typed on the next line and between a
+    // nested list's items (#2934).
+    ["a list on the next line", "Items:\n- a\n- b", "Items:\na\nb"],
+    ["a quote on the next line", "text\n> quoted", "text\nquoted"],
+    ["a nested list, one item a line", "- a\n  - b\n- c", "a\nb\nc"],
+    ["a quote inside a list item", "- > q\n- x", "q\nx"],
+    ["a blank line after a heading", "# Title\n\nbody", "Title\n\nbody"],
+    ["a linked item in a tight list", "- see https://x.test\n- b", "see https://x.test\nb"],
   ])("unwraps %s, keeping its text", (_label, content, expected) => {
     expect(drawn(content)).toBe(expected);
   });
