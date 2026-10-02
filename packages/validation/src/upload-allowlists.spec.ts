@@ -5,6 +5,7 @@ import {
   MAX_UPLOAD_LABEL,
   acceptAttribute,
   contentTypeByExtension,
+  fileExtension,
   inspectUploadFile,
   isAllowedUploadExtension,
   isAllowedUploadMime,
@@ -141,5 +142,25 @@ describe("inspectUploadFile", () => {
 describe("uploadMimeTypes identity", () => {
   it("returns the same Set instance across calls so services can hold a reference", () => {
     expect(uploadMimeTypes("document")).toBe(uploadMimeTypes("document"));
+  });
+});
+
+describe("fileExtension", () => {
+  it("is the extension the allowlist judged, trailing whitespace and all (#3066)", () => {
+    for (const name of [
+      "beach.jpg\u00a0",
+      "beach.JPG ",
+      " beach.jpg\n",
+      "beach.\u00a0jpg",
+    ]) {
+      expect(fileExtension(name)).toBe("jpg");
+      expect(isAllowedUploadExtension("image", name)).toBe(true);
+    }
+  });
+
+  it("is empty with no dot, or only a trailing one", () => {
+    expect(fileExtension("README")).toBe("");
+    expect(fileExtension("beach. ")).toBe("");
+    expect(fileExtension("beach.")).toBe("");
   });
 });

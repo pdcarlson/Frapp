@@ -321,12 +321,19 @@ export function acceptAttribute(kind: UploadKind): string {
 
 /**
  * Lowercase extension without a leading dot. Empty when `filename` has no
- * usable extension (no dot, or a trailing dot).
+ * usable extension (no dot, or nothing but whitespace after the last one).
+ *
+ * Trimmed, as the allowlist's lookup is: the API builds storage keys from this
+ * value, and a raw `jpg\u00a0` (or ` jpg`, after the dot) that passed the
+ * allowlist as `jpg` minted a key storage refuses (#3066).
  */
 export function fileExtension(filename: string): string {
   const dot = filename.lastIndexOf(".");
-  if (dot < 0 || dot === filename.length - 1) return "";
-  return filename.slice(dot + 1).toLowerCase();
+  if (dot < 0) return "";
+  return filename
+    .slice(dot + 1)
+    .trim()
+    .toLowerCase();
 }
 
 /**

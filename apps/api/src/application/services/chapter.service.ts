@@ -9,6 +9,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  fileExtension,
   isAllowedUploadExtension,
   isAllowedUploadMime,
 } from '@repo/validation';
@@ -552,9 +553,9 @@ export class ChapterService {
     filename: string,
     contentType: string,
   ): Promise<{ signedUrl: string; storagePath: string }> {
-    const ext = filename.includes('.')
-      ? (filename.split('.').pop()?.toLowerCase() ?? 'png')
-      : 'png';
+    // `fileExtension` trims, as the allowlist does, so the key's extension is
+    // the one the allowlist approved (#3066).
+    const ext = filename.includes('.') ? fileExtension(filename) : 'png';
 
     if (!isAllowedUploadMime('image', contentType)) {
       throw new BadRequestException(
