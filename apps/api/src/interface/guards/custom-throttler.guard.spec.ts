@@ -12,6 +12,7 @@ import { createHmac } from 'node:crypto';
 import {
   CustomThrottlerGuard,
   READ_THROTTLE_METHODS,
+  THROTTLED_MESSAGE,
   UNKNOWN_KID_ATTEMPT_INTERVAL_MS,
 } from './custom-throttler.guard';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -827,6 +828,29 @@ describe('CustomThrottlerGuard', () => {
         guard.throwThrottling(context, detail),
       ).rejects.toBeInstanceOf(ThrottlerException);
       expect(header).toHaveBeenCalledWith('Retry-After', '42');
+    });
+
+    it('says what happened and what to do, not the framework class name (#3142)', async () => {
+      const context = {
+        switchToHttp: () => ({ getResponse: () => ({ header: jest.fn() }) }),
+        getClass: () => class {},
+        getHandler: () => () => undefined,
+      } as unknown as ExecutionContext;
+      const detail = {
+        timeToBlockExpire: 42,
+      } as unknown as ThrottlerLimitDetail;
+
+      const thrown = await guard
+        .throwThrottling(context, detail)
+        .catch((error: unknown) => error);
+
+      expect(thrown).toBeInstanceOf(ThrottlerException);
+      expect((thrown as ThrottlerException).getStatus()).toBe(429);
+      // The body's `message` is what clients show; the filter reads it from here.
+      expect((thrown as ThrottlerException).getResponse()).toBe(
+        THROTTLED_MESSAGE,
+      );
+      expect(THROTTLED_MESSAGE).not.toMatch(/Throttler|Exception/);
     });
   });
 });

@@ -400,7 +400,7 @@ export class PointsService {
       if (raced) return this.completeReplay(raced, input);
 
       throw new HttpException(
-        `Rate limit exceeded: maximum ${rateLimit} point adjustments per hour`,
+        `You've made ${rateLimit} point adjustments in this chapter in the last hour, the most allowed. Try again later.`,
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
