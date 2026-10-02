@@ -22,8 +22,8 @@ import {
  * `/events` — and the defect it exists for was invisible in all four at once.
  *
  * The defect: `hover:bg-accent` composited to **1.085:1** on a row inside a
- * `<Card>`, because `--accent` holds the same value as `--popover`. No hover at
- * all, on the busiest table in the product.
+ * `<Card>`, because `--accent` held the same value as `--popover` (deleted,
+ * #3036). No hover at all, on the busiest table in the product.
  *
  * The reason this file is not two assertions long is the *fix* had the same
  * trap in it. components.md §2 says to highlight with the accent tint instead,
@@ -40,8 +40,8 @@ import {
 
 describe("the defect this file exists for", () => {
   it("would have caught `hover:bg-accent` on a card-seated row", () => {
-    // `--accent` and `--popover` are the same value, so hovering a row inside a
-    // card moved it one neutral step: no feedback a person could see.
+    // `--accent` and `--popover` were the same value, so hovering a row inside
+    // a card moved it one neutral step: no feedback a person could see.
     expect(ratio(SURFACE.popover, SURFACE.card)).toBeLessThan(
       INDISTINGUISHABLE,
     );

@@ -11,8 +11,9 @@ import { cn } from "@/lib/utils"
  * initials in `--muted-foreground` at the caption size and 700. The scaffold
  * filled the fallback with `bg-secondary`, which under Signet is the card step
  * — one below elevated, so an avatar sitting on a card vanished into it. The
- * fill is spelled `bg-popover`, not the `bg-accent` alias that holds the same
- * value: `components/shared/elevation-call-sites.spec.ts` bans the alias.
+ * fill is spelled `bg-popover`, not the `bg-accent` alias that held the same
+ * value (deleted, #3036): `components/shared/elevation-call-sites.spec.ts` bans
+ * the name.
  */
 
 const Avatar = React.forwardRef<

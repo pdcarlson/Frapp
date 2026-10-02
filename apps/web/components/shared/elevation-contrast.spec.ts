@@ -11,7 +11,6 @@ import {
   SEEDS,
   SEMANTIC,
   SURFACE,
-  signetDarkTokens,
   statusTint,
   INDISTINGUISHABLE,
   TEXT,
@@ -25,11 +24,13 @@ import {
  * card-seated row, but a container's own colour washed over itself. Both
  * survived review twice because the class names read fine: `bg-accent/40` on a
  * dialog and `bg-secondary/40` on a card are only wrong once you know that
- * `--accent` is an alias of `--popover` and `--secondary` an alias of `--card`.
+ * `--accent` was an alias of `--popover` and `--secondary` an alias of `--card`.
  *
- * That aliasing is the trap, so it is asserted from `signetDarkTokens` rather
- * than restated — a guard that hardcodes the values it guards goes green
- * against constants that no longer ship.
+ * Both aliases are deleted (#3036). The two tests below stay as the record of
+ * why they were wrong: a wash of a colour over itself composites to that
+ * colour, so a surface step washed over the same step is nothing. That holds
+ * for any value, so they pin no token; `packages/theme/src/signet.css.spec.ts`
+ * keeps the aliases from being declared again.
  *
  * It lives in `shared/` for `table-contrast.spec.ts`'s reason: four families
  * composited the same ladder mistake here, and the families whose #920 slice
@@ -40,22 +41,23 @@ import {
  * the call-site half is `elevation-call-sites.spec.ts` beside this file.
  */
 
-/** `signet.css` is the token source; these read it rather than restating it. */
-const ALIASES = signetDarkTokens.color.surface;
-
-describe("the aliases that made two fills invisible", () => {
-  it("holds --accent at --popover's value, so bg-accent inside a dialog is nothing", () => {
+describe("the aliases that made two fills invisible (deleted, #3036)", () => {
+  // These two stay as the record of why the ShadCN names were wrong (see the
+  // file header: they hold for any value): the scaffold's `--accent`
+  // held `--popover`'s value and its `--secondary` held `--card`'s, so a wash
+  // of either over its own container composited to the container.
+  it("a --popover wash inside a dialog is nothing, which is what bg-accent was", () => {
     // `event-editor-dialog`'s role rows were `hover:bg-accent/40` inside a
     // `DialogContent`, which *is* `--popover`.
-    const composited = applyAlpha(ALIASES.popover, 0.4, ALIASES.popover);
-    expect(ratio(composited, ALIASES.popover)).toBeCloseTo(1, 3);
+    const composited = applyAlpha(SURFACE.popover, 0.4, SURFACE.popover);
+    expect(ratio(composited, SURFACE.popover)).toBeCloseTo(1, 3);
   });
 
-  it("holds --secondary at --card's value, so bg-secondary inside a card is nothing", () => {
+  it("a --card wash inside a card is nothing, which is what bg-secondary was", () => {
     // `geofences-admin-page`'s coordinate list was `bg-secondary/40` inside a
     // `CardContent`. `shared/subscription-gate.tsx` records the same pair.
-    const composited = applyAlpha(ALIASES.card, 0.4, ALIASES.card);
-    expect(ratio(composited, ALIASES.card)).toBeCloseTo(1, 3);
+    const composited = applyAlpha(SURFACE.card, 0.4, SURFACE.card);
+    expect(ratio(composited, SURFACE.card)).toBeCloseTo(1, 3);
   });
 });
 
@@ -145,7 +147,7 @@ describe("a card-filled control hovers above the ladder (#1220)", () => {
   /*
    * The Secondary button's hover was the elevated step, `hover:bg-accent`. On a
    * card that moved it 1.105:1; inside a dialog, which IS `--popover`, it
-   * painted the button in the dialog's own colour (the alias test at the top).
+   * painted the button in the dialog's own colour (the wash test at the top).
    * There is no step above `--popover` to borrow, so `--card-hover` is one: the
    * elevated step lifted toward white, which is distinct from every step by
    * being above all of them.
