@@ -28,9 +28,11 @@ function createTestQueryClient() {
 }
 
 /**
- * The web dashboard's defaults (`apps/web/lib/providers/query-provider.tsx`
- * retries every mutation twice), with no delay so a retry would show up
- * inside the test.
+ * A client that retries every failed mutation twice, with no delay so a retry
+ * would show up inside the test. Broader than the web dashboard's default
+ * (`retryMutation` in `apps/web/lib/providers/query-provider.tsx`, which
+ * retries only a transient failure), so a hook's own `retry: false` is what
+ * keeps it to one attempt here.
  */
 function createRetryingQueryClient() {
   return new QueryClient({

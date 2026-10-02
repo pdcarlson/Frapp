@@ -10,16 +10,16 @@ const RETRY_CONFIG = {
   baseDelay: 1000,         // 1 second
   maxDelay: 30_000,        // 30 seconds
   backoffMultiplier: 2,    // exponential: 1s, 2s, 4s
-  retryableStatusCodes: [408, 429, 500, 502, 503, 504], // reads; a write never retries a 429 (§ Writes)
+  retryableStatusCodes: [408, 429, 500, 502, 503, 504], // intended; reads are status-blind today (#3141), writes never retry a 429 (§ Writes)
   nonRetryableStatusCodes: [400, 401, 403, 404, 409, 422],
 };
 ```
 
 ## Writes
 
-A write is retried only when it failed in a way that may have reached the server or may pass next time: a 5xx, a failure with no status (a dropped connection, a timeout), or the 4xx an intermediary sends after the origin may have processed the request (408, and 499 and 460). A definitive client refusal, the throttler's 429 included, is never retried: the same request gets the same answer, and every repeat is another write the throttler counts. `isRetryableFailure` in `@repo/api-sdk` (`packages/api-sdk/src/api-error.ts`) is that one predicate. Web's default mutation retry is two more attempts through it (`retryMutation`, `apps/web/lib/providers/query-provider.tsx`, #3100); mobile's default mutation retry is none (`apps/mobile/lib/query-client.ts`).
+A write is retried only when it failed in a way that may have reached the server or may pass next time: a 5xx, a failure with no status (a dropped connection, a timeout), or the 4xx an intermediary sends after the origin may have processed the request (408, and 499 and 460). A definitive client refusal, the throttler's 429 included, is never retried: the same request gets the same answer, and every repeat is another write the throttler counts. `isRetryableFailure` in `@repo/api-sdk` (`packages/api-sdk/src/api-error.ts`) is that one predicate. Web's default mutation retry is two more attempts through it (`retryMutation`, `apps/web/lib/providers/query-provider.tsx`, #3100); mobile's default mutation retry is none (`apps/mobile/lib/query-client.ts`). The rule assumes the API's status is honest. Two answers aren't yet: the auth and chapter guards answer an infrastructure failure as 401/403 (#3143), and the payment-intent mint's "already in progress" 409 clears on a retry (#3144).
 
-Non-idempotent writes keep that default. Two kinds need more:
+Non-idempotent writes keep that default, a create without an idempotency key included. Such a create can be written twice when its first attempt commits and only the response is lost (a proxy's 502 or 408); that duplicate is the accepted price of not failing every write a transient fault interrupts. Two kinds need more:
 
 - A write that carries an idempotency key (a chat send's `client_message_id`, a points adjustment's key) is safe to retry, because the server dedupes the replay.
 - A compare-and-set write without one (a task status change, resolving a report) sets `retry: false`, because if its first attempt lands and only the response is lost, the retry is refused and the client reports a failure for a write that happened ([`docs/hooks/README.md`](../../../docs/hooks/README.md)).
@@ -60,7 +60,7 @@ async function fetchWithRetry(fn, config = RETRY_CONFIG) {
 | Endpoint Category | Timeout | Retry | Notes |
 |-------------------|---------|-------|-------|
 | Read (GET) | 15s | 3x | Stale cache shown while retrying |
-| Write (POST/PATCH) | 20s | 2x, transient failures only (§ Writes) | Optimistic UI + rollback |
+| Write (POST/PATCH) | 20s | Web 2x, transient failures only; mobile 0x (§ Writes) | Optimistic UI + rollback |
 | File upload (signed URL) | 60s | 1x | Large payloads |
 | Webhook (POST /webhooks) | 30s | 0x | Server-initiated, not user-facing |
 | Search (GET /search) | 10s | 1x | Debounced input, non-critical |
