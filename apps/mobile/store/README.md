@@ -77,7 +77,7 @@ trademark record is on #1901; this file is the listing paste.
 | Bundle id / package | `live.frapp.mobile` |
 | Category | Productivity (primary); Social Networking (secondary, iOS) |
 | Age rating | **13+** (iOS) / Everyone (Android, **pending**: the IARC questionnaire in Play Console issues the real rating, [#2720](https://github.com/pdcarlson/Frapp/issues/2720)). See § Age rating below — 13+ is a deliberate override of the 4+ the questionnaire calculated. |
-| Price | Free (chapters subscribe on the web dashboard. The app has no in-app purchases, and no payment can be taken in the app at all — card payments are not switched on for this build. **Basis: no Stripe key in the EAS `production` environment, per #2415's `env:list` of 2026-09-18. Re-run `eas env:list --environment production` against the build you actually submit before pasting this.** See § Review notes.) |
+| Price | Free (chapters subscribe on the web dashboard. The app has no in-app purchases, and no payment can be taken in the app at all — card payments are not switched on for this build. **Basis: no Stripe key in the EAS `production` environment, per #2415's `env:list` of 2026-09-18. Re-run `npm run eas -- env:list --environment production` (from the repo root) against the build you actually submit before pasting this.** See § Review notes.) |
 | Privacy policy URL | https://frapp.live/privacy |
 | Terms URL | https://frapp.live/terms |
 | Support URL | https://frapp.live/support |
