@@ -51,11 +51,13 @@ replaced it.** `test:floor` runs the whole `apps/web/tests/visual/` directory in
 `--grep @floor`. Directory selection is the safer default for *adding* a spec: a new one joins the
 required job rather than falling into no job at all, which is why a `--grep` filter must not come
 back without a second job catching what it excludes. But it keys on the collected-test count, and
-with two specs there, deleting or renaming the floor spec would pass on the survivor. So
-`pre-auth-floor.spec.ts` asserts that `responsive-floor.spec.ts` still exists and that
-`DASHBOARD_ROUTES` still holds its exact entry count
-([`apps/web/tests/visual/README.md`](../../apps/web/tests/visual/README.md)). That guard runs one
-way only: it lives in the pre-auth spec, and nothing guards that spec. Deleting or renaming
+with more than one spec there, deleting or renaming the floor spec would pass on the survivors. So
+`pre-auth-floor.spec.ts` asserts that `responsive-floor.spec.ts` still exists, that its source
+still names `DASHBOARD_ROUTES`, and that the list still holds its exact entry count
+([`apps/web/tests/visual/README.md`](../../apps/web/tests/visual/README.md)). The middle check
+matches text, not an import, and nothing reads what the floor spec does with the list, so a floor
+spec that skips or slices it, or keeps the name only in a comment, passes. That guard runs one way
+only: it lives in the pre-auth spec, and nothing guards that spec. Deleting or renaming
 `pre-auth-floor.spec.ts` passes on the floor spec, silently dropping the pre-auth routes from the
 375px check and the `DASHBOARD_ROUTES` count guard with them.
 

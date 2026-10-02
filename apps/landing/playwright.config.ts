@@ -17,8 +17,8 @@ const isCi = Boolean(process.env.CI);
  * from 320 to 1440 wide (#2893); `tests/visual/fold.spec.ts` lists them all.
  *
  * `testDir` selection is by DIRECTORY, not by tag, for the reason
- * `apps/web/playwright.config.ts` gives: a new spec dropped in here joins the
- * CI job by default instead of falling through into no job at all.
+ * docs/ci-cd/quality-gates.md gives for apps/web: a new spec dropped in here
+ * joins the CI job by default instead of falling through into no job at all.
  *
  * **The zero-test guard is load-bearing and is why this directory holds one
  * spec.** Playwright exits 1 when a run collects no tests, which is what stops
