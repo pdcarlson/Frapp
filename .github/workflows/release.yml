@@ -20,7 +20,7 @@ name: Release
 # for a store build (`mobile_build`), Re-run failed jobs on it instead: it
 # retries this job without redeploying, then starts the build (#3111). Either
 # retry is safe after the tag landed and a later step failed: a commit that
-# already carries a `vX.Y.Z` keeps it, and only its missing GitHub Release is
+# carries the newest `vX.Y.Z` keeps it, and only its missing GitHub Release is
 # made (#3126).
 #
 # ── Traps this file used to walk into ───────────────────────────────────────
@@ -144,21 +144,34 @@ jobs:
 
       # A retry after the tag landed (a later step failed) must not bump again:
       # `vN..SHA` is then empty, the bump defaults to a patch, and a second tag
-      # lands on the same commit (#3126). A plain `vX.Y.Z` already on this SHA
-      # is its release, so every step below reuses it and none mints another.
-      # `--points-at` matches an annotated tag by the commit it peels to.
+      # lands on the same commit (#3126). So when this SHA carries the newest
+      # plain `vX.Y.Z`, every step below reuses it and none mints another.
+      # Only the newest: a rollback ships an older, already-tagged commit, and
+      # it must still take a higher tag so the latest release is what
+      # production serves (`resolve-deploy-sha.mjs`'s `releasesAhead`,
+      # `_mobile-build.yml`'s latest-tag checks). `--points-at` matches an
+      # annotated tag by the commit it peels to.
       - name: Find a release tag already on this commit
         id: existing
         env:
           SHA: ${{ steps.sha.outputs.sha }}
+          BUMP: ${{ inputs.bump }}
         run: |
           set -euo pipefail
-          TAG=$(git tag --points-at "$SHA" --list 'v*' --sort=-version:refname \
-            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          if [ -n "$TAG" ]; then
-            echo "$SHA already carries $TAG: reusing it, so no bump and no new tag."
+          plain() { grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true; }
+          NEWEST=$(git tag --list 'v*' --sort=-version:refname | plain)
+          ON_SHA=$(git tag --points-at "$SHA" --list 'v*' --sort=-version:refname | plain)
+          TAG=""
+          if [ -n "$ON_SHA" ] && [ "$ON_SHA" = "$NEWEST" ]; then
+            TAG="$ON_SHA"
+            echo "$SHA already carries $TAG, the newest release: reusing it, so no bump and no new tag."
+            if [ "${BUMP:-auto}" != "auto" ]; then
+              echo "::warning::bump=$BUMP was ignored: $SHA is already released as $TAG. A version change takes a commit that isn't tagged yet."
+            fi
+          elif [ -n "$ON_SHA" ]; then
+            echo "$SHA carries $ON_SHA but $NEWEST is newer: a rollback, so it takes a higher tag."
           fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       # The live-SHA checkout is load-bearing for the tag, and it is the wrong
       # tree for the bump classifier. Proven 2026-09-07 on run 34155737950:
@@ -249,7 +262,7 @@ jobs:
             echo "Reusing $TAG, already on $SHA (#3126)."
           elif git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
             echo "created=false" >> "$GITHUB_OUTPUT"
-            echo "Tag $TAG already exists on remote — skipping (likely a re-run)."
+            echo "Tag $TAG already exists on remote — skipping (another Release run minted it after this one fetched tags)."
           else
             # Do not send this tag through receive-pack. GITHUB_TOKEN is a
             # GitHub App; it refuses a tag whose tree's `.github/workflows`
@@ -296,11 +309,9 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          # The release tag below this one, so the range lists what is new in
-          # THIS release. Below by version, not just "any other": a reused tag
-          # (#3126) need not be the newest one.
-          PREVIOUS=$(git tag --list 'v*' --sort=-version:refname \
-            | awk -v tag="$TAG" 'seen { print; exit } $0 == tag { seen = 1 }')
+          # The tag just created is excluded from the range, so this lists what
+          # is new in THIS release.
+          PREVIOUS=$(git tag --list 'v*' --sort=-version:refname | grep -v "^${TAG}$" | head -n1 || true)
 
           {
             echo "## Changes"
@@ -331,17 +342,9 @@ jobs:
             echo "$TAG already has its GitHub Release."
             exit 0
           fi
-          # A tag this run minted is the newest by construction (its local
-          # fetch may have failed, so don't ask the list). A reused one is
-          # Latest only if no later ship has been tagged since.
-          LATEST=true
-          NEWEST=$(git tag --list 'v*' --sort=-version:refname | head -n1)
-          if [ "${CREATED:-}" != "true" ] && [ "$TAG" != "$NEWEST" ]; then
-            LATEST=false
-          fi
           # Same token as Create tag. A just-minted tag on a SHA whose
           # workflow tree differs from main may 403 under GITHUB_TOKEN too.
           gh release create "$TAG" \
             --title "$TAG" \
             --notes-file /tmp/changelog.md \
-            --latest="$LATEST"
+            --latest

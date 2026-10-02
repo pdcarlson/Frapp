@@ -105,7 +105,7 @@ export function highestBump(labelSets) {
  * is a decision taken by dispatching Deploy production with `bump=major`, which
  * never reaches this: an override skips the label scan. (Not a Release
  * dispatch: that retries the tag for a commit already live, and a commit that
- * already carries a `vX.Y.Z` keeps it rather than taking a new one, #3126.)
+ * carries the newest `vX.Y.Z` keeps it rather than taking a new one, #3126.)
  */
 export function capBumpBeforeOne(currentVersion, bump) {
   const major = Number.parseInt(String(currentVersion).split(".")[0], 10) || 0;

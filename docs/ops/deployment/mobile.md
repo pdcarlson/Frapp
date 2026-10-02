@@ -353,8 +353,10 @@ nothing is still building.
   run rather than the Release workflow: it retries the tag without redeploying, then runs the
   store build. The Release workflow on its own tags and builds nothing; if that is how the tag
   landed, build by hand from it (below). Either retry is safe when the release job created the tag
-  and a later step failed: a commit that already carries a `vX.Y.Z` keeps it, and only its missing
-  GitHub Release is made (#3126).
+  and a later step failed: a commit that carries the newest `vX.Y.Z` keeps it, and only its missing
+  GitHub Release is made (#3126). (An older tag means a rollback, which takes a higher one.) Re-run
+  failed jobs replays the run's own revision of `release.yml`, so this holds for runs dispatched
+  after #3126 merged.
 
 **What a run needs outside the repo.** A non-interactive run stops without each of these. Each
 *Status* says what existed when someone last looked, and how they looked.

@@ -144,7 +144,25 @@ function fixture({ tags = {}, releases = [] } = {}) {
 }
 
 describe("release.yml run again for a commit it already tagged (#3126)", () => {
-  it("finds a plain vX.Y.Z on the SHA, annotated or not, and the highest of two", () => {
+  it("wires the lookup's output into every step it gates", () => {
+    // The step tests below set EXISTING and CREATED themselves, so these pin
+    // the plumbing they bypass: a renamed id or a dropped env line would
+    // bring the second tag back with every step test still green.
+    assert.match(
+      step("Find a release tag already on this commit").body,
+      /^\s+id: existing$/m,
+    );
+    assert.equal(
+      step("Create tag").stepEnv.get("EXISTING"),
+      "${{ steps.existing.outputs.tag }}",
+    );
+    assert.equal(
+      step("Create GitHub Release").stepEnv.get("CREATED"),
+      "${{ steps.tag.outputs.created }}",
+    );
+  });
+
+  it("finds the newest plain vX.Y.Z on the SHA, annotated or not, and the highest of two", () => {
     for (const annotated of [false, true]) {
       const f = fixture({
         tags: { "v0.1.0": "old", "v0.2.0": { at: "live", annotated } },
@@ -240,7 +258,7 @@ describe("release.yml run again for a commit it already tagged (#3126)", () => {
       assert.equal(release.status, 0, release.stdout);
       assert.deepEqual(missing.ghCalls(), [
         "release view v0.2.0",
-        "release create v0.2.0 --title v0.2.0 --notes-file /tmp/changelog.md --latest=true",
+        "release create v0.2.0 --title v0.2.0 --notes-file /tmp/changelog.md --latest",
       ]);
     } finally {
       missing.cleanup();
@@ -261,9 +279,7 @@ describe("release.yml run again for a commit it already tagged (#3126)", () => {
     }
   });
 
-  it("marks a tag this run minted Latest even when its local fetch failed", () => {
-    // Create tag only warns when fetching the new ref fails, so the local list
-    // can lack it; a minted tag is still the newest.
+  it("makes a minted tag's Release without asking whether one exists", () => {
     const f = fixture({ tags: { "v0.1.0": "old" } });
     try {
       const release = f.run("Create GitHub Release", {
@@ -272,33 +288,48 @@ describe("release.yml run again for a commit it already tagged (#3126)", () => {
       });
       assert.equal(release.status, 0, release.stdout);
       assert.deepEqual(f.ghCalls(), [
-        "release create v0.2.0 --title v0.2.0 --notes-file /tmp/changelog.md --latest=true",
+        "release create v0.2.0 --title v0.2.0 --notes-file /tmp/changelog.md --latest",
       ]);
     } finally {
       f.cleanup();
     }
   });
 
-  it("doesn't mark a reused tag Latest, or diff it against a newer one, once a later ship is tagged", () => {
-    const f = fixture({
-      tags: { "v0.1.0": "old", "v0.2.0": "live", "v0.3.0": "live" },
-    });
+  it("doesn't reuse an older tag: a rollback still takes a higher one", () => {
+    // Rolling production back to an earlier release's commit must leave the
+    // newest tag on what is live (`resolve-deploy-sha.mjs`'s releasesAhead,
+    // `_mobile-build.yml`'s latest-tag checks), so only the newest is reused.
+    const f = fixture({ tags: { "v0.1.0": "old", "v0.2.0": "live" } });
     try {
-      // v0.2.0 reused while v0.3.0 is newer: the Release is not Latest...
-      const release = f.run("Create GitHub Release", {
-        TAG: "v0.2.0",
-        CREATED: "false",
+      const found = f.run("Find a release tag already on this commit", {
+        SHA: f.commits.old,
       });
-      assert.equal(release.status, 0, release.stdout);
-      assert.match(f.ghCalls().at(-1), /--latest=false$/);
-      // ...and its notes start from the tag below it, not the newer one.
-      const notes = f.run("Generate changelog", {
-        SHA: f.commits.live,
-        TAG: "v0.2.0",
-      });
-      assert.equal(notes.status, 0, notes.stdout);
-      assert.match(notes.stdout, /- [0-9a-f]+ live/);
-      assert.doesNotMatch(notes.stdout, /- [0-9a-f]+ old/);
+      assert.equal(found.status, 0, found.stdout);
+      assert.equal(found.outputs.tag, "");
+      assert.match(found.stdout, /a rollback, so it takes a higher tag/);
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  it("warns that an explicit bump was ignored when the SHA is already the newest release", () => {
+    const f = fixture({ tags: { "v0.2.0": "live" } });
+    try {
+      for (const [bump, warns] of [
+        ["major", true],
+        ["auto", false],
+      ]) {
+        const found = f.run("Find a release tag already on this commit", {
+          SHA: f.commits.live,
+          BUMP: bump,
+        });
+        assert.equal(found.outputs.tag, "v0.2.0");
+        assert.equal(
+          /::warning::bump=major was ignored/.test(found.stdout),
+          warns,
+          bump,
+        );
+      }
     } finally {
       f.cleanup();
     }
