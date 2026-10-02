@@ -1,5 +1,6 @@
 "use client";
 
+import { localIsoDate } from "@repo/formatting";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ChannelChoice } from "./channel-mapping-step";
@@ -116,7 +117,8 @@ export function ReviewStep({
             type="date"
             className="max-w-48"
             value={messagesSince}
-            max={todayForDateInput()}
+            // Today in the viewer's own zone.
+            max={localIsoDate(new Date())}
             aria-describedby="import-messages-since-hint"
             aria-invalid={messagesSinceProblem ? true : undefined}
             onChange={(event) => onMessagesSinceChange(event.target.value)}
@@ -194,11 +196,4 @@ export function ReviewStep({
       </p>
     </div>
   );
-}
-
-/** Today as a date input's `max`, in the viewer's own zone. */
-function todayForDateInput(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }

@@ -688,3 +688,61 @@ describe("ServiceHoursPage duration guard (#2206)", () => {
     expect(mockCreateEntry).not.toHaveBeenCalled();
   });
 });
+
+/* eslint-disable turbo/no-undeclared-env-vars -- the zone under test, not a
+   build input: no turbo task's output depends on it. */
+describe("ServiceHoursPage pre-filled date (#3167)", () => {
+  const previousZone = process.env.TZ;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
+    chapter.active();
+    // 20:00 on Sep 30 in Los Angeles, already Oct 1 in UTC. Only `Date` is
+    // faked, so user-event's own timers still run.
+    process.env.TZ = "America/Los_Angeles";
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-01T03:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    // Assigning `undefined` would set the string "undefined", not unset it.
+    if (previousZone === undefined) delete process.env.TZ;
+    else process.env.TZ = previousZone;
+  });
+
+  it("pre-fills the member's own calendar day, not UTC's", async () => {
+    // A forks-pool worker re-reads TZ on assignment; a threads worker would
+    // not, and this would pass in UTC without proving anything.
+    expect(new Date().getDate()).toBe(30);
+    render(<ServiceHoursPage />);
+    await userEvent.click(logTrigger());
+    expect(
+      within(screen.getByRole("dialog")).getByLabelText(/^date$/i),
+    ).toHaveValue("2026-09-30");
+  });
+
+  it("resets to the member's own calendar day after a submit", async () => {
+    mockCreateEntry.mockResolvedValue(undefined);
+    render(<ServiceHoursPage />);
+    await userEvent.click(logTrigger());
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/^date$/i), {
+      target: { value: "2026-09-12" },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/what did you do/i), {
+      target: { value: "Campus cleanup" },
+    });
+    fireEvent.submit(document.getElementById("service-log-form")!);
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+
+    await userEvent.click(logTrigger());
+    expect(
+      within(screen.getByRole("dialog")).getByLabelText(/^date$/i),
+    ).toHaveValue("2026-09-30");
+  });
+});
+/* eslint-enable turbo/no-undeclared-env-vars */

@@ -53,7 +53,8 @@ export interface DuePreset {
  *
  * Deliberately not `toISOString().slice(0, 10)`, which is UTC: at 9pm PDT that
  * returns tomorrow, so a member choosing "Today" would file a task due the next
- * day. Identical to `todayIsoDate` in `lib/more/service-hours.ts`.
+ * day. A copy of `@repo/formatting`'s `localIsoDate`, which replaces it once
+ * #3168 (which rewrites this file's import) has landed.
  */
 export function localIsoDate(date: Date): string {
   const year = date.getFullYear();

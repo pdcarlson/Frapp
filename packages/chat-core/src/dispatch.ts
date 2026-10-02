@@ -36,6 +36,7 @@ import {
   randomClientId,
   serverMessageOf,
 } from "@repo/api-sdk";
+import { localIsoDate } from "@repo/formatting";
 import type { ReplayRequest } from "./types";
 
 export interface DispatchResult {
@@ -881,20 +882,6 @@ async function dispatchEvent(
 }
 
 /**
- * Today's date as `YYYY-MM-DD` in the browser's local timezone. `/hours log`
- * has no date token — the entry is for today. `toISOString().slice(0, 10)`
- * would be UTC and would stamp yesterday for anyone west of Greenwich in the
- * evening.
- */
-function localTodayIsoDate(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-/**
  * Dispatch `/hours log <duration> <description>`. Like `/task` and `/event`, a
  * "heavy" command: it creates a real service-entry row, so the hours card is
  * server-originated (a client cannot post `kind:"hours"` directly). We show an
@@ -929,7 +916,8 @@ async function dispatchHours(
   try {
     const result = await ctx.apiClient.POST("/v1/service-entries", {
       body: {
-        date: localTodayIsoDate(),
+        // `/hours log` has no date token: the entry is for the local today.
+        date: localIsoDate(new Date()),
         duration_minutes: parsed.value.durationMinutes,
         description: parsed.value.description,
         channel_id: channelId,

@@ -6,7 +6,7 @@ import { EventsGlyph } from "@/components/events/chapter-ops-glyphs";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
-import { formatClock, parseInstant } from "@repo/formatting";
+import { formatClock, localIsoDate, parseInstant } from "@repo/formatting";
 
 type EventRow = Record<string, unknown>;
 
@@ -55,9 +55,7 @@ export function startOfMonth(date: Date): Date {
 // Local (viewer-timezone) day key, not UTC — an event's calendar day is
 // wherever the officer viewing it is standing, matching how `formatDate`
 // elsewhere on this page already renders `start_time` in local time.
-function localDayKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
+const localDayKey = localIsoDate;
 
 // A 6x7 grid anchored to the Sunday on/before the 1st, so every month
 // renders the same fixed height regardless of how many weeks it spans.

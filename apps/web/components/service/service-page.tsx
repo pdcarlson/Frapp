@@ -72,7 +72,10 @@ import {
   inspectUploadFile,
   readSignedUpload,
 } from "@repo/validation";
-import { formatMinutesExact as formatDuration } from "@repo/formatting";
+import {
+  formatMinutesExact as formatDuration,
+  localIsoDate,
+} from "@repo/formatting";
 
 type ServiceEntry = {
   id: string;
@@ -179,7 +182,7 @@ export function ServiceHoursPage() {
   const logDialog = useGatedDialog(gate);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [draft, setDraft] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: localIsoDate(new Date()),
     hours: "1",
     minutes: "0",
     description: "",
@@ -273,7 +276,7 @@ export function ServiceHoursPage() {
       });
       logDialog.setOpen(false);
       setDraft({
-        date: new Date().toISOString().slice(0, 10),
+        date: localIsoDate(new Date()),
         hours: "1",
         minutes: "0",
         description: "",
