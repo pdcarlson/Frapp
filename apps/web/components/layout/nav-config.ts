@@ -83,7 +83,6 @@ export type NavItem = {
   /** A Signet duotone glyph (`nav-glyphs.tsx`) — the intent → glyph map is `iconography.md` §6.2. */
   icon: NavGlyphComponent;
   href: string;
-  breadcrumbTitle?: string;
   description?: string;
   /** `enabled_modules` key that gates this item; omit for always-on items. */
   module?: string;
@@ -127,7 +126,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Chat",
         icon: ChatGlyph,
         href: "/chat",
-        breadcrumbTitle: "Chat",
         description: "Channels, DMs, announcements, realtime.",
       },
     ],
@@ -141,7 +139,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Events",
         icon: EventsGlyph,
         href: "/events",
-        breadcrumbTitle: "Events",
         description: "Schedule, attendance, check-ins, calendar export.",
         module: "events",
       },
@@ -150,7 +147,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Tasks",
         icon: TasksGlyph,
         href: "/tasks",
-        breadcrumbTitle: "Tasks",
         description: "Assign, track, and confirm chapter tasks.",
         module: "tasks",
       },
@@ -159,7 +155,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Points",
         icon: PointsGlyph,
         href: "/points",
-        breadcrumbTitle: "Points Ledger",
         description: "Leaderboard, transactions, anomaly audit.",
         module: "points",
       },
@@ -168,7 +163,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Study hours",
         icon: StudyGlyph,
         href: "/study",
-        breadcrumbTitle: "Study hours",
         description: "Start a tracked study session inside a study zone.",
         module: "hours",
       },
@@ -177,7 +171,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Service hours",
         icon: ServiceGlyph,
         href: "/service",
-        breadcrumbTitle: "Service hours",
         description: "Log service hours and approve entries for points.",
         module: "hours",
       },
@@ -186,7 +179,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Polls",
         icon: PollsGlyph,
         href: "/polls",
-        breadcrumbTitle: "Polls",
         description: "Chapter poll list with live results.",
         module: "polls",
         requirePermission: "polls:view_all",
@@ -202,7 +194,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Documents",
         icon: DocumentsGlyph,
         href: "/documents",
-        breadcrumbTitle: "Chapter Documents",
         description: "Chapter files and organizational documents.",
         module: "documents",
       },
@@ -211,7 +202,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Backwork",
         icon: BackworkGlyph,
         href: "/backwork",
-        breadcrumbTitle: "Backwork",
         description: "Academic library with rich filters.",
         module: "backwork",
       },
@@ -241,7 +231,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Directory",
         icon: DirectoryGlyph,
         href: "/members",
-        breadcrumbTitle: "Directory",
         description: "Actives and alumni, profile cards, invites, deactivation.",
         requirePermission: "members:view",
       },
@@ -250,7 +239,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Billing",
         icon: BillingGlyph,
         href: "/billing",
-        breadcrumbTitle: "Billing",
         description: "Subscription, Stripe portal, member invoices, dues.",
         requirePermission: "billing:view",
       },
@@ -259,7 +247,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Settings",
         icon: SettingsGlyph,
         href: "/settings",
-        breadcrumbTitle: "Chapter Settings",
         description:
           "Chapter setup, roles, and officer tools: chat admin, Discord import, study zones, reports.",
         // Shown to anyone Settings has something for: a tab they can use, or
@@ -276,34 +263,8 @@ export const DASHBOARD_NAV: NavSection[] = [
   },
 ];
 
-/**
- * Titles for routes that are reachable but deliberately absent from the nav.
- *
- * **This no longer feeds the shell.** It existed because the shell derived
- * every page's title from `DASHBOARD_NAV_BY_HREF`, so a route with no nav row
- * fell through to a bare "Dashboard" — which is what `/profile` rendered.
- * #2141 moved titles into the pages themselves (`page-header.tsx`), so a route
- * now names itself and cannot fall through to anything.
- *
- * It is kept as the record of what those off-nav routes are called, so the two
- * places that need the string agree: the page's own `PageHeader`, and the
- * route's `metadata.title`. Adding a row here does NOT make a title appear.
- */
-export const OFF_NAV_ROUTE_TITLES: Record<string, string> = {
-  "/profile": "My Profile",
-};
-
-/** Flattened list of nav items for lookup helpers. */
+/** Every nav row, flattened (the plan matrix reads their `module` keys). */
 export const DASHBOARD_NAV_ITEMS: NavItem[] = DASHBOARD_NAV.flatMap(
   (section) => section.items,
 );
 
-/**
- * Map of route → nav item. The breadcrumb and header-title resolver that used
- * to read this is gone (#2141); it survives for lookups by href, and
- * `breadcrumbTitle` survives as the canonical display name for a route.
- */
-export const DASHBOARD_NAV_BY_HREF: Record<string, NavItem> =
-  Object.fromEntries(
-    DASHBOARD_NAV_ITEMS.map((item) => [item.href, item]),
-  );
