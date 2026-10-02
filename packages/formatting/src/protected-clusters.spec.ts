@@ -16,7 +16,7 @@ import {
 import {
   formatBareDate,
   parseBareDateLocalMidnight,
-  parseBareDateUtcNoon,
+  parseBareDateLocalNoon,
 } from "./bare-date";
 import { formatMinutesExact, formatMinutesRounded } from "./minutes";
 import { formatPaddedStopwatch, formatTimer } from "./stopwatch";
@@ -56,8 +56,8 @@ describe("protected clusters stay distinct from the generic formatter", () => {
   });
 
   describe("2. bare-date timezone parsing", () => {
-    it("UTC noon keeps the submitted calendar day; generic Date(date-only) does not", () => {
-      const noon = parseBareDateUtcNoon(BARE);
+    it("local noon keeps the submitted calendar day; generic Date(date-only) does not", () => {
+      const noon = parseBareDateLocalNoon(BARE);
       const generic = new Date(BARE);
       expect(noon).not.toBeNull();
       expect(noon!.getDate()).toBe(12);
@@ -76,8 +76,8 @@ describe("protected clusters stay distinct from the generic formatter", () => {
       expect(formatLocaleDate(BARE)).not.toBe(local!.toLocaleDateString());
     });
 
-    it("does not fold UTC noon into local midnight (they are different instants)", () => {
-      expect(parseBareDateUtcNoon(BARE)!.getTime()).not.toBe(
+    it("does not fold local noon into local midnight (they are different instants)", () => {
+      expect(parseBareDateLocalNoon(BARE)!.getTime()).not.toBe(
         parseBareDateLocalMidnight(BARE)!.getTime(),
       );
     });
@@ -96,7 +96,7 @@ describe("protected clusters stay distinct from the generic formatter", () => {
     it("renders the stored calendar day; the generic formatter renders the day before", () => {
       // Same string, two different rendered days, west of Greenwich.
       expect(formatBareDate(BARE)).toBe(
-        parseBareDateUtcNoon(BARE)!.toLocaleDateString(),
+        parseBareDateLocalNoon(BARE)!.toLocaleDateString(),
       );
       expect(formatBareDate(BARE)).not.toBe(formatLocaleDate(BARE));
       expect(formatLocaleDate(BARE)).toBe(new Date(BARE).toLocaleDateString());
