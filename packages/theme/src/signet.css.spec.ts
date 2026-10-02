@@ -103,6 +103,20 @@ describe("signet.css is dark-only and side-token-free", () => {
     expect(css).not.toMatch(/^\s*\.dark\s*\{/m);
   });
 
+  it("declares none of the ShadCN aliases deleted in #3036", () => {
+    // `--secondary` and `--accent` held `--card`'s and `--popover`'s values,
+    // and `hover:bg-accent` painted a control in its container's own colour
+    // (#1208, #1220). The Tailwind keys' half is `tailwind.config.spec.ts`.
+    for (const name of [
+      "--secondary",
+      "--secondary-foreground",
+      "--accent",
+      "--accent-foreground",
+    ]) {
+      expect(root.has(name), name).toBe(false);
+    }
+  });
+
   it("defines no --side-* token — that family died with the legacy shell", () => {
     expect([...root.keys()].filter((t) => t.startsWith("--side-"))).toEqual([]);
   });
