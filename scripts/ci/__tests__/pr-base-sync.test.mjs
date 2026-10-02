@@ -6,6 +6,7 @@ import {
   BASE_SYNC_MARKER,
   MAX_PRS,
   MERGEABLE_POLL_ATTEMPTS,
+  UPDATE_BRANCH_TRANSPORT_FAILURES_BEFORE_STOP,
   buildBehindComment,
   buildConflictComment,
   compareBehindBy,
@@ -791,5 +792,140 @@ test("a quote-reply embedding the marker mid-body is never treated as a wake com
   assert.ok(
     !calls.some((c) => c.method === "DELETE" && c.url.includes("/issues/comments/950")),
     "the quote-reply must survive",
+  );
+});
+
+// ── A stalled update-branch API (#2973) ─────────────────────────────────────
+
+/** A fetch that never answers update-branch, until its deadline aborts it. */
+function stallUpdateBranch(fetchImpl, { except = () => false } = {}) {
+  return (url, init) => {
+    if (!url.includes("/update-branch") || except(url)) return fetchImpl(url, init);
+    return new Promise((_, reject) => {
+      init.signal?.addEventListener("abort", () => reject(init.signal.reason));
+    });
+  };
+}
+
+test("a stalled update-branch API stops being called, and the sweep still files its alert", async () => {
+  const prs = Array.from({ length: MAX_PRS }, (_, i) => makePr(300 + i));
+  const { fetchImpl, calls } = makeFetchMock([
+    listRoute(prs),
+    ...prs.map(detailRoute),
+    ...prs.map((pr) => compareRoute(pr.head.sha, 1)),
+    emptyCommentsRoute,
+    { method: "GET", path: "/issues?state=all", body: [] },
+  ]);
+  const results = await processBaseMove({
+    token: "t",
+    updateToken: "app",
+    repo: REPO,
+    baseRef: BASE_REF,
+    baseSha: BASE_SHA,
+    fetchImpl: stallUpdateBranch(fetchImpl),
+    sleep: makeSleep().sleep,
+    logger: quiet,
+    // Stands in for the two-minute write ceiling. What the sweep pays is this
+    // times the number of calls, which the next test pins.
+    updateBranchTimeoutMs: 50,
+  });
+
+  // Every PR is behind and blocked, none updated, and none skipped.
+  assert.equal(results.length, MAX_PRS);
+  assert.ok(results.every((r) => r.verdict === "behind" && r.action === "commented"));
+  assert.ok(results.every((r) => /update-branch API is failing/.test(r.blockedDetail)));
+  assert.equal(filedIssues(calls).length, 1, "the repo-level alert is reached and filed");
+  assert.equal(
+    calls.filter((c) => c.method === "POST" && c.url.includes("/comments")).length,
+    MAX_PRS,
+    "every behind PR still gets its wake",
+  );
+});
+
+test("a stalled update-branch is attempted only until the stop threshold", async () => {
+  const prs = Array.from({ length: 5 }, (_, i) => makePr(320 + i));
+  const { fetchImpl } = makeFetchMock([
+    listRoute(prs),
+    ...prs.map(detailRoute),
+    ...prs.map((pr) => compareRoute(pr.head.sha, 1)),
+    emptyCommentsRoute,
+    { method: "GET", path: "/issues?state=all", body: [] },
+  ]);
+  const attempted = [];
+  const stalled = stallUpdateBranch(fetchImpl);
+  await processBaseMove({
+    token: "t",
+    updateToken: "app",
+    repo: REPO,
+    baseRef: BASE_REF,
+    baseSha: BASE_SHA,
+    fetchImpl: (url, init) => {
+      if (url.includes("/update-branch")) attempted.push(url);
+      return stalled(url, init);
+    },
+    sleep: makeSleep().sleep,
+    logger: quiet,
+    updateBranchTimeoutMs: 20,
+  });
+  assert.equal(attempted.length, UPDATE_BRANCH_TRANSPORT_FAILURES_BEFORE_STOP);
+});
+
+test("one stalled update among working ones stops nothing and files no alert", async () => {
+  const prs = Array.from({ length: 4 }, (_, i) => makePr(340 + i));
+  const { fetchImpl, calls } = makeFetchMock([
+    listRoute(prs),
+    ...prs.map(detailRoute),
+    ...prs.map((pr) => compareRoute(pr.head.sha, 1)),
+    ...prs.map((pr) => ({
+      method: "PUT",
+      path: `/pulls/${pr.number}/update-branch`,
+      status: 202,
+      body: {},
+    })),
+    emptyCommentsRoute,
+    { method: "GET", path: "/issues?state=all", body: [] },
+  ]);
+  const results = await processBaseMove({
+    token: "t",
+    updateToken: "app",
+    repo: REPO,
+    baseRef: BASE_REF,
+    baseSha: BASE_SHA,
+    // Only the first PR's update stalls.
+    fetchImpl: stallUpdateBranch(fetchImpl, { except: (url) => !url.includes("/pulls/340/") }),
+    sleep: makeSleep().sleep,
+    logger: quiet,
+    updateBranchTimeoutMs: 20,
+  });
+  assert.equal(results[0].action, "commented");
+  assert.deepEqual(
+    results.slice(1).map((r) => r.action),
+    ["updated", "updated", "updated"],
+  );
+  assert.equal(filedIssues(calls).length, 0, "a success outranks the one stalled sibling");
+});
+
+test("a 5xx from update-branch is answered fast, so it does not stop the sweep's updates", async () => {
+  const prs = Array.from({ length: 4 }, (_, i) => makePr(360 + i));
+  const { calls } = await sweep({
+    routes: [
+      listRoute(prs),
+      ...prs.map(detailRoute),
+      ...prs.map((pr) => compareRoute(pr.head.sha, 1)),
+      ...prs.map((pr) => ({
+        method: "PUT",
+        path: `/pulls/${pr.number}/update-branch`,
+        status: 502,
+        body: { message: "Bad Gateway" },
+      })),
+      emptyCommentsRoute,
+      { method: "GET", path: "/issues?state=all", body: [] },
+    ],
+    updateToken: "app",
+  });
+  assert.equal(
+    calls.filter((c) => c.method === "PUT").length,
+    4,
+    "every PR is still tried: a quick refusal costs the sweep nothing",
   );
 });
