@@ -18,6 +18,8 @@
 //   1. Classify the completed run: code failure vs GitHub-infra failure
 //      (job died before its first repo step) vs superseded (a newer run for
 //      the same workflow+branch exists, e.g. concurrency cancel-in-progress)
+//      vs a job that ran to its `timeout-minutes` (GitHub concludes that
+//      `cancelled` too; only the job's check-run annotation tells it apart)
 //      vs deliberate cancellation (a job had already started running).
 //      Classification fails CLOSED: if the jobs or runs API errors, the run
 //      is never called "infra" and never requeued — an API blip must not
@@ -35,7 +37,8 @@
 //      agent wake path) never see.
 //
 // Env inputs:
-//   GITHUB_TOKEN       — required (actions: write + pull-requests/issues: write)
+//   GITHUB_TOKEN       — required (actions: write + pull-requests/issues: write
+//                        + checks: read for the timeout annotations)
 //   GITHUB_REPOSITORY  — required, owner/repo
 //   GITHUB_EVENT_PATH  — required, workflow_run event payload
 //
@@ -75,6 +78,16 @@ export const IGNORED_RUN_CONCLUSIONS = new Set([
 // outcome is final: still commented, never re-queued.
 export const MAX_RUN_ATTEMPTS = 3;
 
+// GitHub has no `timed_out` *job* conclusion: a job stopped by its
+// `timeout-minutes` concludes `cancelled`, as do its running step, its check
+// run and the whole run, exactly like a deliberate cancel (#3162). The job's
+// check-run annotation is what says which. Verified on run 36572961883
+// (2026-09-29), whose `backup-staging-storage` ran 13:08:37–14:08:56 against a
+// 60-minute timeout: "The job has exceeded the maximum execution time of
+// 1h0m0s".
+export const JOB_TIMEOUT_ANNOTATION =
+  /The job has exceeded the maximum execution time of (\S+)/;
+
 // Per-workflow marker: each watched workflow owns exactly one live comment,
 // so verdicts from different workflows never overwrite each other.
 export const WAKE_COMMENT_MARKER_PREFIX = "<!-- frapp-ci-wake:";
@@ -105,10 +118,18 @@ export function jobFailedInRealStep(job) {
  * Pure classifier. `run` is the workflow_run payload object. `jobs` is the
  * run's latest-attempt jobs, or null when the jobs API errored (unknown).
  * `hasNewerRun` is true/false, or null when the runs API errored (unknown).
+ * `timedOut` is the started-and-cancelled jobs that hit their timeout
+ * (`{ name, limit }`, from {@link fetchTimedOutJobs}), or null when their
+ * annotations could not all be read (unknown).
  * Unknowns fail closed: never "infra", never a requeue.
  * Returns { verdict, shouldRerun, shouldComment, reason }.
  */
-export function classifyRun({ run, jobs = [], hasNewerRun = false }) {
+export function classifyRun({
+  run,
+  jobs = [],
+  hasNewerRun = false,
+  timedOut = [],
+}) {
   if (hasNewerRun === true) {
     return {
       verdict: "superseded",
@@ -192,14 +213,37 @@ export function classifyRun({ run, jobs = [], hasNewerRun = false }) {
       };
     }
     const anyJobStarted = jobs.some((job) => (job.steps ?? []).length > 0);
+    if (anyJobStarted && timedOut?.length) {
+      const which = timedOut
+        .map(({ name, limit }) => `\`${name}\` (limit ${limit})`)
+        .join(", ");
+      return {
+        verdict: "timed-out",
+        // Not requeued: a job that runs to its limit usually hung on
+        // something a re-run meets again, and every attempt holds the
+        // workflow's concurrency lock for the full limit.
+        shouldRerun: false,
+        shouldComment: true,
+        reason:
+          `${which} ran to ${timedOut.length === 1 ? "its" : "their"} ` +
+          "`timeout-minutes`, which GitHub concludes `cancelled` — a hang " +
+          "inside the job, not a deliberate cancel and not Actions infra, so " +
+          "not auto-requeued. Find what hung in the job log; re-run once only " +
+          "if it was transient (a package mirror or registry that stalled).",
+      };
+    }
     if (anyJobStarted) {
       return {
         verdict: "cancelled",
         shouldRerun: false,
         shouldComment: true,
         reason:
-          "At least one job had started running — treating this as a " +
-          "deliberate or mid-run cancellation, not auto-requeued.",
+          timedOut === null
+            ? "At least one job had started running, and its check-run " +
+              "annotations were unavailable, so a timeout cannot be told " +
+              "from a deliberate cancel — not auto-requeued."
+            : "At least one job had started running — treating this as a " +
+              "deliberate or mid-run cancellation, not auto-requeued.",
       };
     }
     return {
@@ -306,6 +350,36 @@ export async function fetchLatestJobs({ token, repo, run, fetchImpl }) {
     path: `/repos/${repo}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`,
   });
   return ok && Array.isArray(data?.jobs) ? data.jobs : null;
+}
+
+/**
+ * The started jobs that GitHub cancelled for running to their
+ * `timeout-minutes`, as `{ name, limit }`, read from each cancelled job's
+ * check-run annotations (a job's id is its check run's id). Null when any read
+ * fails: a timeout that can't be ruled out must not read as a deliberate
+ * cancel, nor one that can't be shown read as a timeout.
+ */
+export async function fetchTimedOutJobs({ token, repo, jobs, fetchImpl }) {
+  const candidates = jobs.filter(
+    (job) => job.conclusion === "cancelled" && (job.steps ?? []).length > 0,
+  );
+  const timedOut = [];
+  for (const job of candidates) {
+    const { ok, data } = await ghRequest({
+      token,
+      fetchImpl,
+      path: `/repos/${repo}/check-runs/${job.id}/annotations?per_page=100`,
+    });
+    if (!ok || !Array.isArray(data)) return null;
+    for (const annotation of data) {
+      const match = JOB_TIMEOUT_ANNOTATION.exec(annotation?.message ?? "");
+      if (match) {
+        timedOut.push({ name: job.name, limit: match[1] });
+        break;
+      }
+    }
+  }
+  return timedOut;
 }
 
 /**
@@ -506,7 +580,18 @@ export async function processCompletedRun({
     run.conclusion === "failure" || run.conclusion === "cancelled"
       ? await fetchLatestJobs({ token, repo, run, fetchImpl })
       : [];
-  const classification = classifyRun({ run, jobs, hasNewerRun: newer });
+  // Only a cancelled run whose freshness and jobs are known gets this far in
+  // classifyRun, so only then are the annotations worth reading.
+  const timedOut =
+    run.conclusion === "cancelled" && newer === false && jobs !== null
+      ? await fetchTimedOutJobs({ token, repo, jobs, fetchImpl })
+      : [];
+  const classification = classifyRun({
+    run,
+    jobs,
+    hasNewerRun: newer,
+    timedOut,
+  });
   logger.log?.(
     `[ci-wake] ${run.name} #${run.id} attempt ${run.run_attempt}: ` +
       `${run.conclusion} → ${classification.verdict} (${classification.reason})`,
