@@ -33,6 +33,13 @@ vi.mock("@repo/hooks", async () => {
       attachmentHook.calls += 1;
       return { isPending: false, isError: false, data: attachmentHook.data };
     },
+    // The poll card's Polls gate (#3012); its own spec covers the gate.
+    useCurrentChapter: () => ({
+      data: { enabled_modules: {} },
+      isError: false,
+      fetchStatus: "idle",
+      refetch: vi.fn(),
+    }),
   };
 });
 
