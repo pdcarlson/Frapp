@@ -176,7 +176,7 @@ export class DiscordImportController {
     description:
       'The browser PUTs directly to storage, so no export byte passes through the API.',
   })
-  @ApiOkResponse({ type: [DiscordUploadTicketDto] })
+  @ApiCreatedResponse({ type: [DiscordUploadTicketDto] })
   requestUploadUrls(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
@@ -254,7 +254,7 @@ export class DiscordImportController {
     description:
       'Lists every channel in the server, and the threads of each channel the bot can read, and records them against this import, all set to `skip` until mapped. Each channel carries whether the bot can read it and whether it was private in Discord. Also returns the guild’s roles for the role step (every role but `@everyone` and the managed bot and booster roles) and, on each private channel, which of them could read it; and any warnings about what could not be read.',
   })
-  @ApiOkResponse({ type: DiscordDiscoveryResponseDto })
+  @ApiCreatedResponse({ type: DiscordDiscoveryResponseDto })
   discover(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
