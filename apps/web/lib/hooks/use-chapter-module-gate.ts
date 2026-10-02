@@ -7,7 +7,8 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 
 /**
  * The module gate for member-facing chrome: the sidebar, the drawer, the Ask
- * pill, the Settings tools list, and chat's slash commands.
+ * pill, the Settings tools list, chat's slash commands, and a poll card's
+ * Vote (#3012).
  *
  * **It reads `enabled_modules` from `GET /v1/chapters/current`, not from
  * `useOrgConfig()`.** The config read (`GET /v1/chapters/:id/config`) is guarded
@@ -30,12 +31,19 @@ export interface ChapterModuleGateState {
   isModuleEnabled: (moduleKey: string) => boolean;
   /** Re-runs the member-view read, for a caller offering a Retry. */
   retry: () => void;
+  /**
+   * The read's TanStack `fetchStatus`, for a caller that must tell a running
+   * read from a paused or disabled one, which `status` reports as `"loading"`
+   * too: the poll card (`pollsGateOf` in `@repo/chat-core/polls`).
+   */
+  fetchStatus: "fetching" | "paused" | "idle";
 }
 
 /**
  * The gate with its read state, for a caller that must refuse differently
  * while the read is pending or failed than when a module is off: chat's slash
- * palette and composer (#2993). Nav chrome wants {@link useChapterModuleGate}.
+ * palette and composer (#2993), and the poll card's Vote (#3012). Nav chrome
+ * wants {@link useChapterModuleGate}.
  *
  * A failed refetch with a cached payload still answers `"ready"` from the
  * cache.
@@ -57,14 +65,17 @@ export function useChapterModuleGateState(): ChapterModuleGateState {
     (moduleKey: string) => isModuleEnabled(enabledModules, moduleKey),
     [enabledModules],
   );
-  const { refetch } = chapterQuery;
+  const { refetch, fetchStatus } = chapterQuery;
   const retry = useCallback(() => void refetch(), [refetch]);
 
-  if (loaded) return { status: "ready", isModuleEnabled: gate, retry };
+  if (loaded) {
+    return { status: "ready", isModuleEnabled: gate, retry, fetchStatus };
+  }
   return {
     status: chapterQuery.isError ? "error" : "loading",
     isModuleEnabled: GATE_CLOSED,
     retry,
+    fetchStatus,
   };
 }
 
