@@ -2295,6 +2295,56 @@ describe('ChatService', () => {
         expect(mockAttachmentRepo.createMany).not.toHaveBeenCalled();
       });
 
+      it('accepts a filename with two dots in a row, as the mint does (#3059)', async () => {
+        // `safeObjectFilename` keeps dots and the mint's segment check passes
+        // `Notes..final.png`, so the bytes are already uploaded by now.
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+        const storage_path =
+          'chapters/ch-1/chat/ch-chan-1/aaaaaaaa-0000-4000-8000-000000000001/Notes..final.png';
+
+        await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: '',
+          attachments: [
+            {
+              ...ATTACHMENT,
+              storage_path,
+              filename: 'Notes..final.png',
+              content_type: 'image/png',
+            },
+          ],
+        });
+
+        expect(mockAttachmentRepo.createMany).toHaveBeenCalledWith([
+          expect.objectContaining({ storage_path }),
+        ]);
+      });
+
+      it.each([
+        'chapters/ch-1/chat/ch-chan-1/../other-channel/m/secret.pdf',
+        'chapters/ch-1/chat/ch-chan-1/%2e%2e/other-channel/m/secret.pdf',
+        'chapters/ch-1/chat/ch-chan-1/m/./secret.pdf',
+      ])(
+        'refuses a dot segment under the channel prefix (%s)',
+        async (storage_path) => {
+          mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+          await expect(
+            service.sendMessage({
+              chapter_id: 'ch-1',
+              channel_id: 'ch-chan-1',
+              sender_id: 'user-1',
+              content: 'look',
+              attachments: [{ ...ATTACHMENT, storage_path }],
+            }),
+          ).rejects.toThrow('Invalid attachment path');
+          expect(mockAttachmentRepo.createMany).not.toHaveBeenCalled();
+        },
+      );
+
       it('stamps attachment_count so a live client knows to fetch', async () => {
         // A postgres_changes echo cannot carry a join, so this count is the only
         // way a recipient learns the message has files. Without it an
