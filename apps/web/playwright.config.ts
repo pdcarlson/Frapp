@@ -46,27 +46,9 @@ export default defineConfig({
    * A committed `test.only` narrows the run to that one test and still exits 0.
    * `web-responsive-floor` is a required check, so the gate would report success
    * having measured a single dashboard route — the same silent-coverage loss it
-   * exists to catch.
-   *
-   * The other hollow-gate route is running zero tests and exiting 0. Playwright
-   * still guards that: when a run collects **no tests at all** it prints "No
-   * tests found" and exits **1**. Verified by running it, not assumed — against
-   * 1.62.1, which is what `npm ci` resolves today; `package.json` asks for
-   * `^1.62.1`, so re-check this on any upgrade that moves the lockfile.
-   *
-   * Note what that guard covers, because directory selection narrowed it. Under
-   * `--grep @floor` it fired whenever no test carried the tag — that is,
-   * whenever *the floor suite specifically* went missing. Selecting by directory
-   * it fires on the collected-test count instead, so on its own it stops
-   * catching the multi-spec case: with more than one spec here, delete or
-   * rename the floor spec and the run passes on the survivors and exits 0 with
-   * the floor silently unmeasured. The directory holds three specs now
-   * (`responsive-floor`, `pre-auth-floor`, `nav-fit`), and that case was taken
-   * on deliberately: `pre-auth-floor.spec.ts` reads `responsive-floor.spec.ts`
-   * off disk and pins `DASHBOARD_ROUTES`' length, so deleting or renaming the
-   * floor spec, dropping its read of the route list, or shrinking that list
-   * turns this job red whatever else the directory holds. It does not catch
-   * a floor spec that still reads the list but skips or slices it.
+   * exists to catch. The other hollow-gate route, a run that collects no tests
+   * or loses the floor spec among several, is covered in
+   * docs/ci-cd/quality-gates.md (the floor gate's two guards).
    */
   forbidOnly: isCi,
   /**
