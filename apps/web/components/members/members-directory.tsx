@@ -154,7 +154,7 @@ function formatJoined(value: string): string | null {
  * name on one truncating line; `4d`'s 40px data row is a plan matrix. 34 is not
  * a Tailwind step and `min-h-9` (36) is the adjacent one, so the row is
  * `min-h-9` with `pointer-coarse:min-h-11` restoring §2's 44px floor on touch —
- * the same carve-out `denseRowControlClassName` and lane 4's folder rail take,
+ * the same carve-out `compactControlClassName` and lane 4's folder rail take,
  * and the reading §2 spells out ("compact 34px controls are web/pointer-only").
  * It is deliberately *not* lane 4's flat `min-h-11` document row: that row is
  * not itself a control, where this one is the member's whole hit target, and
