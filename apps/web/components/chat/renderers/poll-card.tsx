@@ -1,23 +1,36 @@
 "use client";
 
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 import {
   meterFillClassName,
   meterTrackDenseClassName,
 } from "@/components/shared/meter";
 import { Button } from "@/components/ui/button";
-import { EYEBROW, MESSAGE_CARD } from "../chip";
+import { CHIP, CHIP_HIT_AREA, EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
+import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   POLL_VOTE_ACTION_TYPE,
+  POLLS_OFF_COPY,
   readPollPayload,
   tallyPollVotes,
   type PollOption,
 } from "@repo/chat-core/polls";
 import { useNow } from "@repo/hooks";
 import { parseInstant } from "@repo/formatting";
+
+/**
+ * Why the vote is withdrawn while the Polls gate has not answered "on":
+ * `spec/ui/design-system/writing.md` § Module off, "Poll (chat card, web and
+ * mobile)" and the two rows under it. Off reads `POLLS_OFF_COPY`, the sentence
+ * a refused vote already carried.
+ */
+export const POLLS_GATE_LOADING_COPY =
+  "Checking whether polls are on for your chapter…";
+export const POLLS_GATE_ERROR_COPY =
+  "Couldn't check whether polls are on for your chapter, so voting is paused.";
 
 interface PollCardProps {
   message: ChatMessage;
@@ -46,6 +59,19 @@ export function PollCard({
 }: PollCardProps) {
   const payload = readPollPayload(message);
   const now = useNow();
+  // A card vote is a Polls write, and the server refuses it while Polls is off
+  // (#2993). The gate is mirrored here so the member sees that before tapping
+  // (#3012). It reads the member view, never the officer-only config, and fails
+  // closed while that read is loading or failed, saying which, as the slash
+  // palette and composer do with the same hook. A missing `polls` key is on.
+  const moduleGate = useChapterModuleGateState();
+  const pollsGate =
+    moduleGate.status !== "ready"
+      ? moduleGate.status
+      : moduleGate.isModuleEnabled("polls")
+        ? "on"
+        : "off";
+  const gateReasonId = useId();
 
   const {
     byOption,
@@ -73,7 +99,16 @@ export function PollCard({
     this. The same hole `message-timeline.tsx`'s gate spells out and guards
     against; an unusable id is an unresolved viewer whatever shape it arrives in.
   */
-  const canVote = isConfirmed && !isClosed && !!viewerId;
+  const canVote = isConfirmed && !isClosed && !!viewerId && pollsGate === "on";
+  // A closed poll takes no vote whatever the module says, so it gets no reason.
+  const gateReason =
+    isClosed || pollsGate === "on"
+      ? null
+      : pollsGate === "off"
+        ? POLLS_OFF_COPY
+        : pollsGate === "loading"
+          ? POLLS_GATE_LOADING_COPY
+          : POLLS_GATE_ERROR_COPY;
 
   const cast = (option: PollOption) => {
     if (!canVote) return;
@@ -104,6 +139,7 @@ export function PollCard({
                 onClick={() => cast(option)}
                 disabled={!canVote}
                 aria-pressed={isMyVote}
+                aria-describedby={gateReason ? gateReasonId : undefined}
               >
                 <span className="truncate">{option.label}</span>
                 {/*
@@ -141,6 +177,20 @@ export function PollCard({
           {viewerVote ? " · your vote is highlighted" : ""}
         </p>
       )}
+      {gateReason ? (
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
+          <p id={gateReasonId}>{gateReason}</p>
+          {pollsGate === "error" ? (
+            <button
+              type="button"
+              className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
+              onClick={moduleGate.retry}
+            >
+              Retry
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </Card>
   );
 }

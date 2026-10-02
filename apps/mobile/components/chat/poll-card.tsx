@@ -3,19 +3,21 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   POLL_VOTE_ACTION_TYPE,
+  POLLS_OFF_COPY,
   readPollPayload,
   tallyPollVotes,
   type PollOption,
 } from "@repo/chat-core/polls";
 import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
+import { isModuleEnabled } from "@repo/validation";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   deliveryChrome,
   type DeliveryChrome,
 } from "@/lib/chat/delivery-status";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { useNow } from "@repo/hooks";
+import { useCurrentChapter, useNow } from "@repo/hooks";
 import {
   groupReactions,
   messageActionsA11yProps,
@@ -62,6 +64,39 @@ import {
  * `chat_message_actions`, not `poll_votes` — confirmed by reading both
  * paths before choosing which one to mirror.
  */
+
+/**
+ * Why the vote is withdrawn while the Polls gate has not answered "on":
+ * `spec/ui/design-system/writing.md` § Module off, "Poll (chat card, web and
+ * mobile)" and the two rows under it. Off reads `POLLS_OFF_COPY`, the sentence
+ * a refused vote already carried.
+ */
+export const POLLS_GATE_LOADING_COPY =
+  "Checking whether polls are on for your chapter…";
+export const POLLS_GATE_ERROR_COPY =
+  "Couldn't check whether polls are on for your chapter, so voting is paused.";
+
+type PollsGate = "on" | "off" | "loading" | "error";
+
+/**
+ * The Polls module gate, from the member view (`useCurrentChapter`'s
+ * `enabled_modules`, as `app/(tabs)/study.tsx` reads it). A missing `polls`
+ * key is on. With nothing cached it fails closed and says which: still
+ * loading, or failed. A disabled read (no chapter claim) is not loading
+ * (design-system README §4), since nothing will ever answer it, so it fails
+ * open as study's gate does; the server refuses the vote either way.
+ */
+function pollsGateOf(query: {
+  data?: { enabled_modules?: Record<string, boolean> | null } | null;
+  isError: boolean;
+  fetchStatus: string;
+}): PollsGate {
+  if (query.data !== undefined) {
+    return isModuleEnabled(query.data?.enabled_modules, "polls") ? "on" : "off";
+  }
+  if (query.isError) return "error";
+  return query.fetchStatus === "idle" ? "on" : "loading";
+}
 
 export interface PollCardProps {
   message: ChatMessage;
@@ -114,6 +149,11 @@ export function PollCard({
   const payload = readPollPayload(message);
   const now = useNow();
   const reactions = groupReactions(message, viewerId);
+  // A card vote is a Polls write, and the server refuses it while Polls is off
+  // (#2993). The gate is mirrored here so the member sees that before tapping
+  // (#3012).
+  const chapterQuery = useCurrentChapter();
+  const pollsGate = pollsGateOf(chapterQuery);
 
   const {
     byOption,
@@ -180,7 +220,16 @@ export function PollCard({
 
   const closesAt = parseInstant(payload.closes_at);
   const isClosed = closesAt ? closesAt.getTime() < now : false;
-  const canVote = isConfirmed && !isClosed;
+  const canVote = isConfirmed && !isClosed && pollsGate === "on";
+  // A closed poll takes no vote whatever the module says, so it gets no reason.
+  const gateReason =
+    isClosed || pollsGate === "on"
+      ? null
+      : pollsGate === "off"
+        ? POLLS_OFF_COPY
+        : pollsGate === "loading"
+          ? POLLS_GATE_LOADING_COPY
+          : POLLS_GATE_ERROR_COPY;
 
   const cast = (option: PollOption) => {
     if (!canVote) return;
@@ -209,6 +258,7 @@ export function PollCard({
               <Pressable
                 accessibilityRole="button"
                 accessibilityState={{ selected: isMyVote, disabled: !canVote }}
+                accessibilityHint={gateReason ?? undefined}
                 disabled={!canVote}
                 onPress={() => cast(option)}
                 // An option is most of the card's area. Without this a long
@@ -257,6 +307,21 @@ export function PollCard({
           ? `No votes yet${canVote ? " · be the first to vote" : ""}.`
           : `${total} vote${total === 1 ? "" : "s"}${viewerVote ? " · your vote is highlighted" : ""}`}
       </Text>
+      {gateReason ? (
+        <View style={styles.gateRow}>
+          <Text style={styles.gateText}>{gateReason}</Text>
+          {pollsGate === "error" ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Retry checking whether polls are on"
+              hitSlop={8}
+              onPress={() => void chapterQuery.refetch()}
+            >
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
       {statusAndActions}
       {reactionRow}
     </Pressable>
@@ -396,6 +461,14 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
       marginTop: tokens.spacing.sm + 1,
+    },
+    gateRow: {
+      marginTop: tokens.spacing.xs,
+      gap: tokens.spacing.xs,
+    },
+    gateText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
     // Matches `MessageItem`'s delivery line in message-item.tsx — same
     // pending/failed/unconfirmed/recorded treatment, since a poll message
