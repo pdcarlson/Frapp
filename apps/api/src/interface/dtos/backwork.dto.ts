@@ -5,9 +5,11 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
+import { INT4_MAX, YEAR_MAX } from '@repo/validation';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -96,10 +98,11 @@ export class ConfirmBackworkUploadDto {
   @MaxLength(255)
   professor_name?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maximum: YEAR_MAX })
   @IsOptional()
   @IsInt()
   @Min(1900)
+  @Max(YEAR_MAX)
   year?: number;
 
   @ApiPropertyOptional({ enum: SEMESTERS })
@@ -112,10 +115,11 @@ export class ConfirmBackworkUploadDto {
   @IsIn(ASSIGNMENT_TYPES)
   assignment_type?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maximum: INT4_MAX })
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(INT4_MAX)
   assignment_number?: number;
 
   @ApiPropertyOptional({ enum: DOCUMENT_VARIANTS })

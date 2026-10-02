@@ -6,9 +6,11 @@ import {
   IsOptional,
   IsString,
   Matches,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
+import { POSITION_MAX } from '@repo/validation';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -93,10 +95,14 @@ export class CreateCustomFieldDto {
   @Type(() => CustomFieldOptionsDto)
   options?: CustomFieldOptionsDto;
 
-  @ApiPropertyOptional({ description: 'Display order; lower sorts first' })
+  @ApiPropertyOptional({
+    description: 'Display order; lower sorts first',
+    maximum: POSITION_MAX,
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(POSITION_MAX)
   sort?: number;
 }
 
@@ -129,10 +135,11 @@ export class UpdateCustomFieldDto {
   @Type(() => CustomFieldOptionsDto)
   options?: CustomFieldOptionsDto | null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maximum: POSITION_MAX })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(POSITION_MAX)
   sort?: number;
 }
 
