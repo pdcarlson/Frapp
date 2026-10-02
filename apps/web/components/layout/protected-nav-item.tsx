@@ -82,9 +82,7 @@ export function isNavItemVisible(
 
 /**
  * Dashboard sidebar entry that hides itself when the caller lacks the
- * item's required permissions. Items that are not yet wired to a route
- * render as disabled with a small "Soon" chip to preserve roadmap
- * visibility without offering dead-end clicks.
+ * item's required permissions.
  *
  * Permission checks fall back to the plain "always show" behavior while
  * the permissions query is loading — UI hides only when the fetch has
@@ -123,64 +121,34 @@ export function ProtectedNavItem({
    * stock-text-on-branded-surface failures (#1150/#1164). Hover skips to
    * `--card`, the board's own hover step.
    */
-  if (item.href) {
-    return (
-      <Link
-        href={item.href}
-        onClick={onNavigate}
-        aria-current={current}
-        // In the rail the label has nowhere to render, so the accessible name
-        // has to come from somewhere other than the text content.
-        aria-label={collapsed ? item.label : undefined}
-        title={collapsed ? item.label : item.description}
-        className={cn(
-          /*
-           * 34px is the board's POINTER geometry. The drawer that renders this
-           * below `lg` is touch-only, and `--touch-min` (44px) is binding on
-           * web as well as mobile (foundations §9) - so the row is 44px until
-           * the desktop breakpoint, then takes the board's density.
-           */
-          "flex min-h-touch items-center rounded-[10px] text-left text-sm transition lg:h-[34px] lg:min-h-0",
-          collapsed
-            ? "w-[34px] justify-center"
-            : "w-full gap-2.5 px-2.5",
-          focusClassName,
-          isActive
-            ? "bg-accent-subtle font-semibold text-accent-text"
-            : "text-muted-foreground hover:bg-card hover:text-foreground",
-        )}
-      >
-        <item.icon className={iconClassName} active={isActive} />
-        {collapsed ? null : <span className="truncate">{item.label}</span>}
-      </Link>
-    );
-  }
-
   return (
-    <button
-      type="button"
-      aria-disabled="true"
-      tabIndex={-1}
+    <Link
+      href={item.href}
+      onClick={onNavigate}
+      aria-current={current}
+      // In the rail the label has nowhere to render, so the accessible name
+      // has to come from somewhere other than the text content.
       aria-label={collapsed ? item.label : undefined}
-      title={
-        collapsed
-          ? item.label
-          : (item.description ?? item.statusLabel ?? "Coming soon")
-      }
-      onClick={(e) => e.preventDefault()}
+      title={collapsed ? item.label : item.description}
       className={cn(
-        "flex min-h-touch cursor-not-allowed items-center rounded-[10px] text-left text-sm text-disabled lg:h-[34px] lg:min-h-0",
-        collapsed ? "w-[34px] justify-center" : "w-full gap-2.5 px-2.5",
+        /*
+         * 34px is the board's POINTER geometry. The drawer that renders this
+         * below `lg` is touch-only, and `--touch-min` (44px) is binding on
+         * web as well as mobile (foundations §9) - so the row is 44px until
+         * the desktop breakpoint, then takes the board's density.
+         */
+        "flex min-h-touch items-center rounded-[10px] text-left text-sm transition lg:h-[34px] lg:min-h-0",
+        collapsed
+          ? "w-[34px] justify-center"
+          : "w-full gap-2.5 px-2.5",
         focusClassName,
+        isActive
+          ? "bg-accent-subtle font-semibold text-accent-text"
+          : "text-muted-foreground hover:bg-card hover:text-foreground",
       )}
     >
-      <item.icon className={iconClassName} />
+      <item.icon className={iconClassName} active={isActive} />
       {collapsed ? null : <span className="truncate">{item.label}</span>}
-      {!collapsed && item.statusLabel ? (
-        <span className="ml-auto rounded-xs border border-border px-2 py-0.5 text-caption uppercase tracking-wide text-muted">
-          {item.statusLabel}
-        </span>
-      ) : null}
-    </button>
+    </Link>
   );
 }
