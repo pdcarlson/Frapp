@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiExcludeEndpoint,
   ApiOkResponse,
   ApiOperation,
@@ -89,7 +90,7 @@ export class DiscordConnectionController {
     description:
       'Mints a single-use state bound to this chapter and returns the Discord authorize URL to send the admin to. No credential is returned and none is ever asked for: the only thing this flow stores per chapter is a guild id.',
   })
-  @ApiOkResponse({ type: BeginDiscordConnectResponseDto })
+  @ApiCreatedResponse({ type: BeginDiscordConnectResponseDto })
   beginConnect(
     @CurrentChapterId() chapterId: string,
     @CurrentUser() user: { id: string },
@@ -111,7 +112,7 @@ export class DiscordConnectionController {
     description:
       'The OAuth callback does not link anything by itself: it parks what Discord told it and hands the browser a one-time token. This route is what binds the server, and it binds it only to the chapter this request is scoped to — so an authorization completed by somebody else, for a chapter they are not in, activates nothing.',
   })
-  @ApiOkResponse({ type: DiscordConnectionDto })
+  @ApiCreatedResponse({ type: DiscordConnectionDto })
   confirmConnect(
     @CurrentChapterId() chapterId: string,
     @CurrentUser() user: { id: string },
