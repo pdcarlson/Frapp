@@ -13,7 +13,7 @@
  * `user_id` is not the viewer's" — and s11 is a *member* surface, so it filters
  * to the viewer entirely rather than only gating the button.
  */
-import { parseBareDateUtcNoon, parseInstant } from "@repo/formatting";
+import { parseBareDateLocalNoon, parseInstant } from "@repo/formatting";
 import { num, records, str } from "../more/narrow";
 
 export type InvoiceStatus = "DRAFT" | "OPEN" | "PAID" | "VOID";
@@ -126,16 +126,17 @@ function shortDate(date: Date): string {
 /**
  * A bare `YYYY-MM-DD` calendar date → `"Sep 15"`.
  *
- * Parsed at noon UTC, not midnight: a bare date at midnight renders as the
- * previous day west of Greenwich, and a due date is exactly the field where
- * being a day early is a bill the member thinks they missed.
+ * Parsed at local noon: a bare date at UTC midnight renders as the previous day
+ * west of Greenwich, and UTC noon as the next day at UTC+12 and east (#3026).
+ * A due date is exactly the field where a day off either way is a bill the
+ * member thinks they missed, or a "Past due" on the day it is due.
  *
  * **Only for bare dates.** An instant carries its own offset and must go
  * through {@link formatInstant} — truncating one to its UTC day and re-anchoring
  * it here dates a 9pm payment in New York to the following morning.
  */
 function formatCalendarDate(value: string): string {
-  const date = parseBareDateUtcNoon(value);
+  const date = parseBareDateLocalNoon(value);
   if (!date) return value;
   return shortDate(date);
 }
@@ -150,9 +151,10 @@ function formatInstant(value: string): string | null {
  * The local end of a bare calendar date, as a timestamp.
  *
  * The boundary an invoice is "past due" at is the end of its due date **where
- * the member is**. Reusing the noon-UTC render parse as the comparison put the
- * cutoff at 12:00 UTC, so an invoice due the 15th turned red at 5am on the 15th
- * in Los Angeles.
+ * the member is**. Comparing against the render parse itself would put the
+ * cutoff at local noon on the due date, half a day early. (When that parse was
+ * UTC noon, an invoice due the 15th turned red at 5am on the 15th in Los
+ * Angeles.)
  */
 function endOfLocalDay(value: string): number {
   const [year, month, day] = value.split("-").map(Number);

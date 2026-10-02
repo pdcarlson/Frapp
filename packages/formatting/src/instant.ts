@@ -22,7 +22,7 @@
  * This is the primitive, not a formatter. `locale.ts` and `bare-date.ts` both
  * parse through it, and the distinction their docs protect is *which string
  * they hand it*, never how the result is guarded — a bare `YYYY-MM-DD` column
- * still goes to `parseBareDateUtcNoon`, which reads it at UTC noon; handing one
+ * still goes to `parseBareDateLocalNoon`, which reads it at local noon; handing one
  * straight to this function is the UTC-midnight bug that file exists to prevent.
  */
 export function parseInstant(value: unknown): Date | null {

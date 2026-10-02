@@ -40,7 +40,7 @@ function weekday(value: string): string | null {
  * `end_time`, which a terminal row should never have but the API does not
  * promise) degrades to the start alone rather than rendering a dangling dash.
  *
- * These are full ISO instants, not bare `YYYY-MM-DD`, so the noon-UTC parse
+ * These are full ISO instants, not bare `YYYY-MM-DD`, so the local-noon parse
  * `lib/more/service-hours.ts` needs does not apply — a timestamp already carries
  * its offset and `new Date` reads it correctly in every zone.
  */
