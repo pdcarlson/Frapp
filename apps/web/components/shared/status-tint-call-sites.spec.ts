@@ -1,7 +1,8 @@
-import { readFileSync } from "node:fs";
-import { relative } from "node:path";
-import { describe, expect, it } from "vitest";
-import { productSourceFiles, REPO, withoutComments } from "@/tests/source-scan";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
+import { classLiterals, productSourceFiles, REPO } from "@/tests/source-scan";
 
 /**
  * #2376: no Next surface draws a semantic status fill as an alpha utility, and
@@ -23,16 +24,15 @@ import { productSourceFiles, REPO, withoutComments } from "@/tests/source-scan";
  * a bolder border with nothing drawn in its colour on top of it.
  */
 
-/** Roots, walker and comment stripping: `tests/source-scan.ts`, shared with
- * `elevation-call-sites.spec.ts` so the two bans cannot scan different trees. */
+/** Roots, walker and literal reading: `tests/source-scan.ts`, shared with
+ * `elevation-call-sites.spec.ts` so the two bans cannot scan different trees.
+ * Only string and template text is read, so prose naming a banned shape is
+ * skipped and a `"image/*"` can't hide what follows it (#3088). */
 const sourceFiles = () => productSourceFiles();
 
 /** A semantic status family's background, followed by an opacity modifier. */
 export const ALPHA_STATUS_FILL =
   /(?<![\w-])bg-(success|warning|destructive|info)\/[\w.[\]%]+/g;
-
-/** Every string literal in a source, each a candidate class list. */
-const STRING_LITERAL = /"([^"\\\n]*)"|'([^'\\\n]*)'|`([^`\\]*)`/g;
 
 /**
  * A class's variants and its utility: `enabled:group-[.destructive]:hover:x`
@@ -114,6 +114,16 @@ export function unliftedDangerOnTint(classList: string): string[] {
   return [...found];
 }
 
+/** Every alpha status fill in a file's class text. */
+export const alphaStatusFillsIn = (path: string) =>
+  classLiterals(path).flatMap(
+    (literal) => literal.match(ALPHA_STATUS_FILL) ?? [],
+  );
+
+/** Every unlifted danger label on the danger tint, one class list at a time. */
+export const unliftedDangerIn = (path: string) =>
+  classLiterals(path).flatMap(unliftedDangerOnTint);
+
 describe("semantic status fills are tint tokens, never an alpha utility (#2376)", () => {
   const files = sourceFiles();
 
@@ -144,10 +154,9 @@ describe("semantic status fills are tint tokens, never an alpha utility (#2376)"
 
   it("finds no alpha status fill in any Next surface", () => {
     const offenders = files.flatMap((file) =>
-      (
-        withoutComments(readFileSync(file, "utf8")).match(ALPHA_STATUS_FILL) ??
-        []
-      ).map((match) => `${relative(REPO, file)}: ${match}`),
+      alphaStatusFillsIn(file).map(
+        (match) => `${relative(REPO, file)}: ${match}`,
+      ),
     );
     expect(
       offenders,
@@ -190,13 +199,60 @@ describe("semantic status fills are tint tokens, never an alpha utility (#2376)"
 
   it("finds no danger label on the danger tint in the unlifted hue", () => {
     const offenders = files.flatMap((file) =>
-      [...withoutComments(readFileSync(file, "utf8")).matchAll(STRING_LITERAL)]
-        .flatMap((m) => unliftedDangerOnTint(m[1] ?? m[2] ?? m[3] ?? ""))
-        .map((hit) => `${relative(REPO, file)}: ${hit}`),
+      unliftedDangerIn(file).map((hit) => `${relative(REPO, file)}: ${hit}`),
     );
     expect(
       offenders,
       "danger text on the danger tint is text-destructive-text (foundations §5)",
     ).toEqual([]);
+  });
+  describe("reads class strings, not comments (#3088)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "status-tint-"));
+    afterAll(() => rmSync(dir, { recursive: true, force: true }));
+    const write = (body: string) => {
+      const path = join(
+        dir,
+        `fixture-${Math.random().toString(36).slice(2)}.tsx`,
+      );
+      writeFileSync(path, body);
+      return path;
+    };
+
+    it("sees a banned class after a string holding a comment opener", () => {
+      // A regex stripper read `"image/*"` as a comment running to the next
+      // `*\/`, and the class between them vanished.
+      const path = write(
+        [
+          'export const A = <input accept="image/*" />;',
+          'export const B = <p className="bg-success/15">x</p>;',
+          'export const C = "bg-destructive-tint text-destructive";',
+          "/** end */",
+        ].join("\n"),
+      );
+      expect(alphaStatusFillsIn(path)).toEqual(["bg-success/15"]);
+      expect(unliftedDangerIn(path)).toHaveLength(1);
+    });
+
+    it("sees a class after a `//` inside a template", () => {
+      const path = write(
+        "export const A = `${base}//x bg-warning/20 ${tint}`;\n" +
+          "export const B = `bg-destructive-tint ${extra} text-destructive`;",
+      );
+      expect(alphaStatusFillsIn(path)).toEqual(["bg-warning/20"]);
+      // A template's interpolation doesn't split one class list in two.
+      expect(unliftedDangerIn(path)).toHaveLength(1);
+    });
+
+    it("skips prose that names the banned shape", () => {
+      const path = write(
+        [
+          "// never bg-success/15 here",
+          "/* bg-destructive-tint text-destructive */",
+          'export const A = "bg-success-tint";',
+        ].join("\n"),
+      );
+      expect(alphaStatusFillsIn(path)).toEqual([]);
+      expect(unliftedDangerIn(path)).toEqual([]);
+    });
   });
 });
