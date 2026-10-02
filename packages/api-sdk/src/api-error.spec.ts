@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   codeOf,
   isDefinitiveClientError,
+  isRetryableFailure,
   serverMessageOf,
   statusOf,
   throwUnlessOk,
@@ -152,5 +153,22 @@ describe("isDefinitiveClientError", () => {
   it("is false outside the 4xx band", () => {
     expect(isDefinitiveClientError(500)).toBe(false);
     expect(isDefinitiveClientError(201)).toBe(false);
+  });
+});
+
+describe("isRetryableFailure", () => {
+  it("refuses to repeat a definitive refusal, the throttler's 429 included", () => {
+    for (const statusCode of [400, 401, 403, 404, 409, 422, 429]) {
+      expect(isRetryableFailure({ statusCode, message: "no" })).toBe(false);
+    }
+    expect(isRetryableFailure({ status: 403 })).toBe(false);
+  });
+
+  it("repeats what may have reached the origin or may pass next time", () => {
+    expect(isRetryableFailure({ statusCode: 500 })).toBe(true);
+    expect(isRetryableFailure({ statusCode: 503 })).toBe(true);
+    expect(isRetryableFailure({ statusCode: 408 })).toBe(true);
+    expect(isRetryableFailure(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isRetryableFailure(undefined)).toBe(true);
   });
 });
