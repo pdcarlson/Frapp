@@ -160,6 +160,23 @@ export function withAgentNote(body, repo) {
   );
 }
 
+// The footer `withAgentNote` appends, whatever its link said when written.
+// A body edited in GitHub's web UI comes back with CRLF line endings.
+const AGENT_NOTE = /\r?\n\r?\n---\r?\n_Agents: triage and report on this alert\.[^\r\n]*_\s*$/;
+
+/**
+ * `body` with its agent note rebuilt from the current `ALERT_ROUTING` path, or
+ * added when it has none (#3027). A reopen without `refreshBodyOnRaise` keeps
+ * the body as first written, and its absolute `blob/main` link 404s once the
+ * doc it names moves, so the part of the body this library owns is rewritten
+ * on every reopen. `null` when the body needs no change.
+ */
+function refreshedAgentNote(body, repo) {
+  if (typeof body !== "string") return null;
+  const refreshed = withAgentNote(body.replace(AGENT_NOTE, ""), repo);
+  return refreshed === body ? null : refreshed;
+}
+
 /** The owner added to an issue's current assignees; PATCH replaces the whole set. */
 function withOwnerAssigned(issue) {
   const current = (issue.assignees ?? []).map((user) => user?.login).filter(Boolean);
@@ -330,9 +347,14 @@ export async function raiseAlert({
   // recovered. Carrying that state into a new incident resurrects a settled
   // gate, and any of those items that cannot be asserted now would keep the
   // new alert open forever.
+  //
+  // Without refreshBodyOnRaise a reopen rewrites only the footer, and in its
+  // own PATCH after the reopen lands: a body GitHub rejects must not leave the
+  // alert closed.
   if (refreshBodyOnRaise) {
     patch.body = withAgentNote(buildIssueBody(reopened ? null : (target.body ?? null)), repo);
   }
+  const refreshedNote = reopened && !refreshBodyOnRaise ? refreshedAgentNote(target.body, repo) : null;
   if (Object.keys(patch).length > 0) {
     const { ok: patchOk } = await writeAssigned({
       token,
@@ -349,6 +371,15 @@ export async function raiseAlert({
     // the comment that records what actually failed today.
     if (!patchOk && reopened) return { action: "failed", issueNumber: target.number };
     if (!patchOk) bodyRefreshFailed = true;
+  }
+  if (refreshedNote !== null) {
+    await ghRequest({
+      token,
+      fetchImpl,
+      method: "PATCH",
+      path: `/repos/${repo}/issues/${target.number}`,
+      body: { body: refreshedNote },
+    });
   }
 
   const { ok } = await ghRequest({
