@@ -4,14 +4,20 @@
 
 /**
  * Minimal fetch mock: routes matched by method + path substring in order,
- * calls recorded (method, url, body). `body` may be a function of the recorded
+ * calls recorded (method, url, body, and the bearer token that sent it). `body` may be a function of the recorded
  * calls array, for responses that change across attempts (polling sequences).
  */
 export function makeFetchMock(routes) {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     const method = init.method ?? "GET";
-    calls.push({ method, url, body: init.body ?? null });
+    const auth = init.headers?.Authorization ?? "";
+    calls.push({
+      method,
+      url,
+      body: init.body ?? null,
+      token: auth.startsWith("Bearer ") ? auth.slice(7) : null,
+    });
     const route = routes.find(
       (r) => r.method === method && url.includes(r.path),
     );
