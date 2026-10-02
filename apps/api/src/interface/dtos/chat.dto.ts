@@ -20,6 +20,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   CHAT_NOTIFICATION_LEVELS,
+  POSITION_MAX,
 } from '@repo/validation';
 import {
   CHAT_MESSAGE_KINDS,
@@ -164,10 +165,11 @@ export class CreateCategoryDto {
   @MaxLength(100)
   name: string;
 
-  @ApiPropertyOptional({ default: 0 })
+  @ApiPropertyOptional({ default: 0, maximum: POSITION_MAX })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(POSITION_MAX)
   display_order?: number;
 }
 
@@ -178,10 +180,11 @@ export class UpdateCategoryDto {
   @MaxLength(100)
   name?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maximum: POSITION_MAX })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(POSITION_MAX)
   display_order?: number;
 }
 

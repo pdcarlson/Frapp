@@ -5,11 +5,16 @@ import {
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ROLE_KEY_MAX_LENGTH, ROLE_NAME_MAX_LENGTH } from '@repo/validation';
+import {
+  POSITION_MAX,
+  ROLE_KEY_MAX_LENGTH,
+  ROLE_NAME_MAX_LENGTH,
+} from '@repo/validation';
 
 /**
  * A custom role persisted to `chapter_custom_roles` (Settings → Roles → Custom).
@@ -37,10 +42,14 @@ export class CreateCustomRoleDto {
   @MaxLength(ROLE_NAME_MAX_LENGTH)
   label: string;
 
-  @ApiPropertyOptional({ description: 'Hierarchy order; lower ranks first' })
+  @ApiPropertyOptional({
+    description: 'Hierarchy order; lower ranks first',
+    maximum: POSITION_MAX,
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(POSITION_MAX)
   rank?: number;
 
   @ApiPropertyOptional({ type: [String] })
@@ -58,10 +67,11 @@ export class UpdateCustomRoleDto {
   @MaxLength(ROLE_NAME_MAX_LENGTH)
   label?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maximum: POSITION_MAX })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(POSITION_MAX)
   rank?: number;
 
   @ApiPropertyOptional({ type: [String] })

@@ -37,10 +37,13 @@ function MutationHarness({
   onSettle,
   retryDelay,
   onAttempt,
+  failWith = new Error("network unreachable"),
 }: {
   onSettle: (how: string) => void;
   retryDelay?: number;
   onAttempt?: () => void;
+  /** What each attempt throws; by default a failure with no HTTP status. */
+  failWith?: unknown;
 }) {
   const mutation = useMutation({
     // Stands in for a fetch that cannot reach the API. Under TanStack's default
@@ -48,7 +51,7 @@ function MutationHarness({
     // `isPaused` before it is called — which is what `onAttempt` detects.
     mutationFn: async () => {
       onAttempt?.();
-      throw new Error("network unreachable");
+      throw failWith;
     },
     ...(retryDelay === undefined ? {} : { retryDelay }),
   });
@@ -106,8 +109,8 @@ describe("QueryProvider — offline mutations", () => {
     // `retry` is deliberately NOT made offline-aware. Refusing offline retries
     // would reject on the first failure — tidier-sounding, but it throws away
     // the AP roam or lift that comes back inside the backoff, where the write
-    // currently lands invisibly. It would also falsify `retry: 2` where
-    // `packages/hooks` and `docs/hooks/README.md` cite it as the reason a
+    // currently lands invisibly. It would also falsify the retries
+    // `packages/hooks` and `docs/hooks/README.md` cite as the reason a
     // non-idempotent compare-and-set write must opt out.
     onlineManager.setOnline(false);
     const settled: string[] = [];
@@ -128,7 +131,7 @@ describe("QueryProvider — offline mutations", () => {
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
 
     await waitFor(() => expect(settled).toEqual(["rejected"]));
-    // The provider's `retry: 2` — one initial attempt plus two retries, all of
+    // The provider's two retries — one initial attempt plus two retries, all of
     // which fire offline because `networkMode: "always"` clears `canContinue`'s
     // network conjunct.
     expect(attempts).toBe(3);
@@ -167,5 +170,50 @@ describe("QueryProvider — offline mutations", () => {
     // ...and resolves itself the moment the member comes back to the tab.
     focusManager.setFocused(true);
     await waitFor(() => expect(settled).toEqual(["rejected"]));
+  });
+});
+
+/**
+ * A definitive client refusal is never retried (#3100,
+ * `spec/ui/resilience/api-retry.md`): the same request gets the same answer,
+ * and each repeat is a write the throttler counts. What may have reached the
+ * origin, or may pass next time, still gets the two retries.
+ */
+describe("QueryProvider — which failed mutations retry", () => {
+  async function attemptsFor(failWith: unknown): Promise<number> {
+    const settled: string[] = [];
+    let attempts = 0;
+    const view = render(
+      <QueryProvider>
+        <MutationHarness
+          onSettle={(how) => settled.push(how)}
+          onAttempt={() => {
+            attempts += 1;
+          }}
+          retryDelay={0}
+          failWith={failWith}
+        />
+      </QueryProvider>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(settled).toEqual(["rejected"]));
+    view.unmount();
+    return attempts;
+  }
+
+  it.each([400, 401, 403, 404, 409, 422, 429])(
+    "sends a %i refusal once",
+    async (statusCode) => {
+      expect(await attemptsFor({ statusCode, message: "Refused" })).toBe(1);
+    },
+  );
+
+  it.each([
+    ["a 500", { statusCode: 500 }],
+    ["a 503", { statusCode: 503 }],
+    ["a proxy's 408, which may follow a write", { statusCode: 408 }],
+    ["a failure with no status", new TypeError("Failed to fetch")],
+  ])("retries %s twice", async (_label, failWith) => {
+    expect(await attemptsFor(failWith)).toBe(3);
   });
 });
