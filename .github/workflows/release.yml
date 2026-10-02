@@ -99,6 +99,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # Secrets belong to the `automation` environment: `main` only, no required
     # reviewers (#2518, #2583).
     # See docs/ci-cd/agent-infra.md § GitHub environments and bootstrap secrets.
