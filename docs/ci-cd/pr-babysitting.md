@@ -254,12 +254,13 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
   cannot act on, and repeating it on twenty threads is the noise. So the per-PR reason for these
   cases just points at the issue. The alert is **P2, not P1**: PRs still merge, they just need
   `Update branch` pressed by hand — where the repo was before this sweep existed.
-  - **Unreachable** stops the sweep calling update-branch. A call that never answers costs the
-    full two-minute write ceiling, and the alert is written after the loop, inside the job's
-    10-minute timeout, so a stalled endpoint used to run the job out before the alert. After
-    `UPDATE_BRANCH_TRANSPORT_FAILURES_BEFORE_STOP` (two) unanswered calls in one sweep, every later
-    behind PR gets the same wake without a call. Two rather than one, so a single transient failure
-    doesn't stop the updates that would otherwise outrank it (#2973).
+  - **Stalled** stops the sweep calling update-branch. A call that never answers costs the full
+    two-minute write ceiling, and the alert is written after the loop, inside the job's 10-minute
+    timeout, so a stalled endpoint used to run the job out before the alert. After
+    `UPDATE_BRANCH_STALLS_BEFORE_STOP` (two) calls in a row run to that ceiling, every later behind
+    PR gets the same wake without a call. Only a stall counts: a reset or a DNS failure answers at
+    once and costs nothing, and any other outcome restarts the count, so an isolated stall doesn't
+    stop the updates that would otherwise outrank it (#2973).
   - A **secondary rate limit** is deliberately not in that set. GitHub answers it with 403, the same
     status as a dead token, and a sequential twenty-push sweep is exactly the shape to trip one — so
     a rate-limited 403 skips fail-safe rather than filing a P2 accusing a working credential.

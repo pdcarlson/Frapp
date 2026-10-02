@@ -6,7 +6,7 @@ import {
   BASE_SYNC_MARKER,
   MAX_PRS,
   MERGEABLE_POLL_ATTEMPTS,
-  UPDATE_BRANCH_TRANSPORT_FAILURES_BEFORE_STOP,
+  UPDATE_BRANCH_STALLS_BEFORE_STOP,
   buildBehindComment,
   buildConflictComment,
   compareBehindBy,
@@ -807,7 +807,11 @@ function stallUpdateBranch(fetchImpl, { except = () => false } = {}) {
   };
 }
 
-test("a stalled update-branch API stops being called, and the sweep still files its alert", async () => {
+// A deadline that stops firing would hang these tests rather than fail them:
+// node:test has no per-test timeout of its own.
+const STALL_TEST = { timeout: 10_000 };
+
+test("a stalled update-branch API stops being called, and the sweep still files its alert", STALL_TEST, async () => {
   const prs = Array.from({ length: MAX_PRS }, (_, i) => makePr(300 + i));
   const { fetchImpl, calls } = makeFetchMock([
     listRoute(prs),
@@ -834,6 +838,11 @@ test("a stalled update-branch API stops being called, and the sweep still files 
   assert.equal(results.length, MAX_PRS);
   assert.ok(results.every((r) => r.verdict === "behind" && r.action === "commented"));
   assert.ok(results.every((r) => /update-branch API is failing/.test(r.blockedDetail)));
+  assert.match(
+    results[0].blockedDetail,
+    /\(no response: .*timeout.*\)/i,
+    "the alert names the transport failure, not a bare HTTP 0",
+  );
   assert.equal(filedIssues(calls).length, 1, "the repo-level alert is reached and filed");
   assert.equal(
     calls.filter((c) => c.method === "POST" && c.url.includes("/comments")).length,
@@ -842,7 +851,7 @@ test("a stalled update-branch API stops being called, and the sweep still files 
   );
 });
 
-test("a stalled update-branch is attempted only until the stop threshold", async () => {
+test("a stalled update-branch is attempted only until the stop threshold", STALL_TEST, async () => {
   const prs = Array.from({ length: 5 }, (_, i) => makePr(320 + i));
   const { fetchImpl } = makeFetchMock([
     listRoute(prs),
@@ -867,10 +876,10 @@ test("a stalled update-branch is attempted only until the stop threshold", async
     logger: quiet,
     updateBranchTimeoutMs: 20,
   });
-  assert.equal(attempted.length, UPDATE_BRANCH_TRANSPORT_FAILURES_BEFORE_STOP);
+  assert.equal(attempted.length, UPDATE_BRANCH_STALLS_BEFORE_STOP);
 });
 
-test("one stalled update among working ones stops nothing and files no alert", async () => {
+test("one stalled update among working ones stops nothing and files no alert", STALL_TEST, async () => {
   const prs = Array.from({ length: 4 }, (_, i) => makePr(340 + i));
   const { fetchImpl, calls } = makeFetchMock([
     listRoute(prs),
@@ -903,6 +912,86 @@ test("one stalled update among working ones stops nothing and files no alert", a
     ["updated", "updated", "updated"],
   );
   assert.equal(filedIssues(calls).length, 0, "a success outranks the one stalled sibling");
+});
+
+test("a stall, an update, then a stall does not stop the sweep: stalls count in a row", STALL_TEST, async () => {
+  const prs = Array.from({ length: 5 }, (_, i) => makePr(350 + i));
+  const { fetchImpl } = makeFetchMock([
+    listRoute(prs),
+    ...prs.map(detailRoute),
+    ...prs.map((pr) => compareRoute(pr.head.sha, 1)),
+    ...prs.map((pr) => ({
+      method: "PUT",
+      path: `/pulls/${pr.number}/update-branch`,
+      status: 202,
+      body: {},
+    })),
+    emptyCommentsRoute,
+    { method: "GET", path: "/issues?state=all", body: [] },
+  ]);
+  const attempted = [];
+  // PRs 350 and 352 stall; 351, 353 and 354 answer.
+  const stalled = stallUpdateBranch(fetchImpl, {
+    except: (url) => !/\/pulls\/35[02]\//.test(url),
+  });
+  const results = await processBaseMove({
+    token: "t",
+    updateToken: "app",
+    repo: REPO,
+    baseRef: BASE_REF,
+    baseSha: BASE_SHA,
+    fetchImpl: (url, init) => {
+      if (url.includes("/update-branch")) attempted.push(url);
+      return stalled(url, init);
+    },
+    sleep: makeSleep().sleep,
+    logger: quiet,
+    updateBranchTimeoutMs: 20,
+  });
+  assert.equal(attempted.length, 5, "every PR is tried");
+  assert.deepEqual(
+    results.map((r) => r.action),
+    ["commented", "updated", "commented", "updated", "updated"],
+  );
+});
+
+test("an update-branch that fails fast without an answer does not stop the sweep", async () => {
+  // A reset or a DNS failure is a transport failure too, but it costs nothing,
+  // so it is no reason to stop trying the PRs after it.
+  const prs = Array.from({ length: 4 }, (_, i) => makePr(370 + i));
+  const { fetchImpl, calls } = makeFetchMock([
+    listRoute(prs),
+    ...prs.map(detailRoute),
+    ...prs.map((pr) => compareRoute(pr.head.sha, 1)),
+    ...prs.map((pr) => ({
+      method: "PUT",
+      path: `/pulls/${pr.number}/update-branch`,
+      status: 202,
+      body: {},
+    })),
+    emptyCommentsRoute,
+    { method: "GET", path: "/issues?state=all", body: [] },
+  ]);
+  const reset = (url, init) =>
+    /\/pulls\/37[01]\/update-branch/.test(url)
+      ? Promise.reject(new TypeError("fetch failed", { cause: new Error("read ECONNRESET") }))
+      : fetchImpl(url, init);
+  const results = await processBaseMove({
+    token: "t",
+    updateToken: "app",
+    repo: REPO,
+    baseRef: BASE_REF,
+    baseSha: BASE_SHA,
+    fetchImpl: reset,
+    sleep: makeSleep().sleep,
+    logger: quiet,
+  });
+  assert.deepEqual(
+    results.map((r) => r.action),
+    ["commented", "commented", "updated", "updated"],
+  );
+  assert.match(results[0].blockedDetail, /no response: fetch failed: read ECONNRESET/);
+  assert.equal(filedIssues(calls).length, 0, "the later updates outrank the resets");
 });
 
 test("a 5xx from update-branch is answered fast, so it does not stop the sweep's updates", async () => {

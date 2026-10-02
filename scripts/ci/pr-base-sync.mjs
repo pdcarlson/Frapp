@@ -49,6 +49,7 @@
 // it exists to remove); 1 only on unexpected errors.
 
 import { ghRequest } from "./lib/github.mjs";
+import { NON_IDEMPOTENT_TIMEOUT_MS } from "./lib/http.mjs";
 import {
   clearMarkedComments,
   describeWakeFailure,
@@ -241,9 +242,10 @@ export async function compareBehindBy({
 /**
  * update-branch via the app token. `expected_head_sha` makes the call a no-op 422 if
  * the head moved since we read it — a fresh push means fresh CI anyway, so
- * losing that race is fine. Returns { updated } or { updated: false, status, error };
- * `status` is what lets the caller tell a repo-wide auth rejection (401/403 —
- * one alert issue) from a per-PR problem (a comment on that PR).
+ * losing that race is fine. Returns { updated } or { updated: false, status, error,
+ * stalled }; `status` is what lets the caller tell a repo-wide auth rejection
+ * (401/403 — one alert issue) from a per-PR problem (a comment on that PR), and
+ * `stalled` marks a call that got no answer before its deadline (#2973).
  */
 export async function updatePrBranch({
   updateToken,
@@ -252,7 +254,9 @@ export async function updatePrBranch({
   expectedHeadSha,
   fetchImpl,
   timeoutMs,
+  now = Date.now,
 }) {
+  const startedAt = now();
   const { ok, status, data } = await ghRequest({
     token: updateToken,
     fetchImpl,
@@ -263,29 +267,40 @@ export async function updatePrBranch({
     ...(timeoutMs ? { retryOptions: { timeoutMs } } : {}),
   });
   if (ok) return { updated: true };
+  // A transport failure carries its reason as a string (`ghRequest`'s
+  // describeThrown), an answer as GitHub's JSON `message`.
+  const text = typeof data === "string" ? data : data?.message;
+  const why =
+    typeof text === "string" ? text.trim().split(/\r?\n/, 1)[0].slice(0, 200) : "";
+  // Only a call that ran to its deadline is a stall: a reset or a DNS failure
+  // has no answer either, but it costs the sweep nothing.
+  const ceiling = timeoutMs || NON_IDEMPOTENT_TIMEOUT_MS;
   return {
     updated: false,
     status,
-    error: `HTTP ${status}${data?.message ? `: ${data.message}` : ""}`,
+    error: describeWakeFailure({ status, error: why || null }),
+    stalled: !status && now() - startedAt >= ceiling * 0.9,
   };
 }
 
 /**
- * Transport failures (no HTTP answer: a stall to the write ceiling, a reset)
- * from update-branch after which a sweep stops calling it (#2973).
+ * Stalled update-branch calls in a row (each ran to the write ceiling with no
+ * answer) after which a sweep stops calling it (#2973).
  *
  * Each stalled PUT costs the full write ceiling, two minutes, and the sweep
  * runs its PRs one at a time inside the job's `timeout-minutes: 10`, with the
  * repo-level alert written only after the loop. So an endpoint that accepts
  * connections and never answers used to run the job out at about five PRs,
- * and the alert was never filed. After this many, every later behind PR gets
- * the same blocked wake without a call, and the sweep reaches the alert.
+ * and the alert was never filed. After this many in a row, every later behind
+ * PR gets the same blocked wake without a call, and the sweep reaches the alert.
  *
- * Two, not one: a single transient failure among working updates must not
- * stop the updates after it, which would leave no success to outrank it and
- * file an alert against a working endpoint (see reconcileTokenAlert).
+ * Two in a row, not one and not two in total: an isolated stall among working
+ * updates must not stop the updates after it, which would leave no success to
+ * outrank the failures and file an alert against a working endpoint (see
+ * reconcileTokenAlert). Any other outcome, an answer or a quick transport
+ * failure, resets the run.
  */
-export const UPDATE_BRANCH_TRANSPORT_FAILURES_BEFORE_STOP = 2;
+export const UPDATE_BRANCH_STALLS_BEFORE_STOP = 2;
 
 /** Deletes this sweep's stale wake comments without posting a new one. */
 export async function clearWakeComments({ token, repo, prNumber, fetchImpl }) {
@@ -397,8 +412,8 @@ export async function processBaseMove({
         : " (no app token — auto-update off; a behind PR raises the alert issue)"),
   );
 
-  // Shared by every PR in this sweep: see UPDATE_BRANCH_TRANSPORT_FAILURES_BEFORE_STOP.
-  const updateBranch = { transportFailures: 0, stoppedDetail: null };
+  // Shared by every PR in this sweep: see UPDATE_BRANCH_STALLS_BEFORE_STOP.
+  const updateBranch = { stalls: 0, stoppedDetail: null };
   const results = [];
   for (const listed of prs) {
     const number = listed.number;
@@ -645,7 +660,7 @@ async function processOnePr({
   } else if (updateBranch.stoppedDetail) {
     logger.log?.(
       `[pr-base-sync] #${number}: behind by ${behindBy} — update-branch not attempted; ` +
-        `it failed without an answer ${updateBranch.transportFailures} times this sweep`,
+        `it stalled to its deadline ${updateBranch.stalls} times in a row this sweep`,
     );
     reason = autoUpdateBlocked(updateBranch.stoppedDetail);
   } else {
@@ -657,6 +672,7 @@ async function processOnePr({
       fetchImpl,
       timeoutMs: updateBranchTimeoutMs,
     });
+    updateBranch.stalls = result.stalled ? updateBranch.stalls + 1 : 0;
     if (result.updated) {
       const cleared = await clearWakeComments({
         token,
@@ -704,14 +720,8 @@ async function processOnePr({
         `the update-branch API is failing (${result.error}) — a GitHub incident ` +
         "or a network fault, not this PR";
       reason = autoUpdateBlocked(detail);
-      if (!result.status) {
-        updateBranch.transportFailures += 1;
-        if (
-          updateBranch.transportFailures >=
-          UPDATE_BRANCH_TRANSPORT_FAILURES_BEFORE_STOP
-        ) {
-          updateBranch.stoppedDetail = detail;
-        }
+      if (updateBranch.stalls >= UPDATE_BRANCH_STALLS_BEFORE_STOP) {
+        updateBranch.stoppedDetail = detail;
       }
     } else {
       reason = `the update-branch call failed (${result.error})`;
