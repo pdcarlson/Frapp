@@ -35,7 +35,7 @@
 // through cmd.exe on Windows, where `bash -c` can resolve to WSL's bash or to nothing.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
@@ -76,7 +76,19 @@ export function pinDir({ version, before }, cacheRoot = CACHE_ROOT) {
 
 /** The arguments to `npm`: CI's flags, into `dir` instead of the global prefix. */
 export function installArgs({ version, before }, dir) {
-  return ["install", "--prefix", dir, "--ignore-scripts", `--before=${before}`, "--no-audit", "--no-fund", `eas-cli@${version}`];
+  // `--loglevel=error` beats the `npm_config_loglevel=silent` that `npm run -s` hands down, so a
+  // failed install still says why; it also drops npm's deprecation notices about eas-cli's tree.
+  return [
+    "install",
+    "--prefix",
+    dir,
+    "--ignore-scripts",
+    `--before=${before}`,
+    "--loglevel=error",
+    "--no-audit",
+    "--no-fund",
+    `eas-cli@${version}`,
+  ];
 }
 
 /**
@@ -129,6 +141,48 @@ function removeQuietly(dir) {
   }
 }
 
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM"; // it exists, and belongs to someone else
+  }
+}
+
+/** Temporary trees whose install died (Ctrl-C, a closed terminal): never the one still running. */
+function sweepAbandoned(dir, { alive = pidAlive } = {}) {
+  const base = path.basename(dir);
+  let names = [];
+  try {
+    names = readdirSync(path.dirname(dir));
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const m = name.startsWith(`${base}.`) && name.match(/\.(?:tmp|broken)-(\d+)$/);
+    if (m && !alive(Number(m[1]))) removeQuietly(path.join(path.dirname(dir), name));
+  }
+}
+
+const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/**
+ * `renameSync`, retried while Windows refuses because an antivirus or indexer still holds one of
+ * the files npm just wrote (EPERM / EACCES / EBUSY), as npm's own graceful-fs does. ENOTEMPTY or
+ * EEXIST means the target is there: that is the caller's to judge, so it isn't retried.
+ */
+export function renameWithRetry(from, to, { rename = renameSync, wait = sleep, tries = 10 } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return rename(from, to);
+    } catch (err) {
+      if (attempt >= tries || !["EPERM", "EACCES", "EBUSY"].includes(err.code)) throw err;
+      wait(attempt * 100);
+    }
+  }
+}
+
 function log(message) {
   process.stderr.write(`[eas-cli] ${message}\n`);
 }
@@ -140,6 +194,7 @@ function log(message) {
 export function install(pin, { cacheRoot = CACHE_ROOT, spawn = spawnSync, npm = npmCommand(), pid = process.pid } = {}) {
   const dir = pinDir(pin, cacheRoot);
   const tmp = `${dir}.tmp-${pid}`;
+  sweepAbandoned(dir);
   log(`Installing eas-cli ${pin.version} (dependencies published before ${pin.before}) into ${path.relative(ROOT, dir) || dir}...`);
   try {
     removeQuietly(tmp);
@@ -164,13 +219,23 @@ export function install(pin, { cacheRoot = CACHE_ROOT, spawn = spawnSync, npm = 
     removeQuietly(tmp);
     return null;
   }
+  // Only a whole, proven tree is ever renamed into place, so a pin directory that doesn't run
+  // was damaged after the fact (a delete cut short, a quarantined file): move it aside first.
+  if (existsSync(dir) && !easBin(dir, pin.version)) {
+    try {
+      renameWithRetry(dir, `${dir}.broken-${pid}`);
+      removeQuietly(`${dir}.broken-${pid}`);
+    } catch {
+      // Left for the rename below to report.
+    }
+  }
   try {
-    renameSync(tmp, dir);
+    renameWithRetry(tmp, dir);
   } catch (err) {
     // Another run finished first and its tree is in place: use it, drop ours.
     removeQuietly(tmp);
     if (!easBin(dir, pin.version)) {
-      log(`ERROR: could not move the install into ${dir}: ${err.message}`);
+      log(`ERROR: could not move the install into ${dir}: ${err.message}. Delete ${dir} and run it again.`);
       return null;
     }
   }
@@ -181,6 +246,10 @@ export function install(pin, { cacheRoot = CACHE_ROOT, spawn = spawnSync, npm = 
 export function main(argv, { pin = readEasCliPin(), cacheRoot = CACHE_ROOT, spawn = spawnSync, installer = install } = {}) {
   const bin = easBin(pinDir(pin, cacheRoot), pin.version) ?? installer(pin, { cacheRoot, spawn });
   if (!bin) return 1;
+  if (!existsSync(MOBILE_DIR)) {
+    log(`ERROR: ${MOBILE_DIR} is missing, so eas has no project to run against.`);
+    return 1;
+  }
   const result = spawn(process.execPath, [bin, ...argv], { cwd: MOBILE_DIR, stdio: "inherit" });
   if (result.error) {
     log(`ERROR: could not start eas: ${result.error.message}`);

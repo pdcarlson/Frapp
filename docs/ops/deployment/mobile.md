@@ -11,10 +11,10 @@
 > the output, so npm's own `> node scripts/eas.mjs` banner stays off stdout. To move the version,
 > change CI's install line; this follows it.
 >
-> **Never put a secret on an `npm run` command line.** npm prints every argument in that banner
-> and keeps them in its debug log (`~/.npm/_logs/`, the last ten runs), `-s` or not. Leave
-> `--value` off and eas asks for the value at a hidden prompt (§ 6.3's `SENTRY_AUTH_TOKEN`), or run
-> `node scripts/eas.mjs <command>` from the root, which doesn't go through npm.
+> **Never put a secret on the command line.** Through `npm run`, npm prints every argument in that
+> banner and keeps them in its debug log (`~/.npm/_logs/`, the last ten runs), `-s` or not; any
+> command line also lands in your shell's history. Leave `--value` off and eas asks for the value
+> at a hidden prompt (§ 6.3's `SENTRY_AUTH_TOKEN`).
 >
 > A global `npm install -g eas-cli` still works as a fallback, at whatever version you get, which may
 > not take the flags written here. `eas env:set` (§ 6.3) needs **>= 21.1.0** (`21.0.0` has only the

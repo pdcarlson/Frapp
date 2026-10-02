@@ -14,6 +14,7 @@ import {
   installArgs,
   main,
   npmCommand,
+  renameWithRetry,
   parseEasCliPin,
   pinDir,
   readEasCliPin,
@@ -53,12 +54,21 @@ test("installs with CI's flags into the pin's own gitignored directory, never gl
   const args = installArgs(PIN, dir);
   assert.equal(args[0], "install");
   assert.deepEqual(args.slice(1, 3), ["--prefix", dir]);
-  for (const flag of ["--ignore-scripts", "--before=2026-10-01", "eas-cli@24.8.0"]) {
+  // --loglevel=error: `npm run -s` would otherwise silence the reason an install failed.
+  for (const flag of ["--ignore-scripts", "--before=2026-10-01", "--loglevel=error", "eas-cli@24.8.0"]) {
     assert.ok(args.includes(flag), `missing ${flag}`);
   }
   assert.ok(!args.includes("--global") && !args.includes("-g"), "a laptop install stays out of the global prefix");
   assert.equal(relative(REPO, CACHE_ROOT), join(".cache", "eas-cli"));
   assert.match(readFileSync(join(REPO, ".gitignore"), "utf8"), /^\/\.cache\/$/m, ".cache/ must stay ignored");
+});
+
+test("the store-build section cites the version and cutoff CI installs", () => {
+  const doc = readFileSync(join(REPO, "docs", "ops", "deployment", "mobile.md"), "utf8");
+  const { version, before } = readEasCliPin();
+  const m = doc.match(/installs eas-cli\s+\*\*(\S+)\*\* with `--before=(\S+)`/);
+  assert.ok(m, "mobile.md's store-build steps name the pinned eas-cli");
+  assert.deepEqual({ version: m[1], before: m[2] }, { version, before }, "move mobile.md with CI's install line");
 });
 
 test("`npm run eas` is the root script, so it works from a fresh `npm ci`", () => {
@@ -154,9 +164,48 @@ test("a failed install runs nothing, and leaves no directory that would count as
       const status = main(["whoami"], { pin: PIN, cacheRoot, spawn, installer: (pin, o) => install(pin, { ...o, npm }) });
       assert.equal(status, 1, JSON.stringify(fail));
       assert.equal(calls.length, 1, "eas never starts");
-      assert.equal(easBin(pinDir(PIN, cacheRoot), PIN.version), null);
+      // Not merely "doesn't count": a tree renamed into place would block every later install.
+      assert.throws(() => statSync(pinDir(PIN, cacheRoot)), /ENOENT/, JSON.stringify(fail));
     }
   }));
+
+test("a pin directory damaged after the fact is replaced, not left to fail every run", () =>
+  withTmp((cacheRoot) => {
+    fakeInstall(pinDir(PIN, cacheRoot), { writeBin: false }); // say, a quarantined bin/run
+    const { spawn } = fakeSpawn();
+    const bin = install(PIN, { cacheRoot, spawn, npm, pid: 9 });
+    assert.equal(bin, join(pinDir(PIN, cacheRoot), "node_modules", "eas-cli", "bin", "run"));
+    assert.throws(() => statSync(`${pinDir(PIN, cacheRoot)}.broken-9`), /ENOENT/);
+  }));
+
+test("an install that died leaves a temporary tree the next install removes, unless its run is still alive", () =>
+  withTmp((cacheRoot) => {
+    const dead = `${pinDir(PIN, cacheRoot)}.tmp-4194303`;
+    const live = `${pinDir(PIN, cacheRoot)}.tmp-${process.pid}`;
+    for (const d of [dead, live]) mkdirSync(d, { recursive: true });
+    const { spawn } = fakeSpawn();
+    install(PIN, { cacheRoot, spawn, npm, pid: 11 });
+    assert.throws(() => statSync(dead), /ENOENT/);
+    assert.ok(statSync(live).isDirectory(), "a running install's tree is not touched");
+  }));
+
+test("the rename into place waits out Windows' transient refusals, and nothing else", () => {
+  const failing = (codes) => {
+    let n = 0;
+    return () => {
+      if (n < codes.length) {
+        const err = new Error(codes[n]);
+        err.code = codes[n++];
+        throw err;
+      }
+    };
+  };
+  const waits = [];
+  renameWithRetry("a", "b", { rename: failing(["EPERM", "EBUSY", "EACCES"]), wait: (ms) => waits.push(ms) });
+  assert.deepEqual(waits, [100, 200, 300]);
+  assert.throws(() => renameWithRetry("a", "b", { rename: failing(["ENOTEMPTY"]), wait: () => assert.fail("no retry") }), /ENOTEMPTY/);
+  assert.throws(() => renameWithRetry("a", "b", { rename: failing(Array(10).fill("EPERM")), wait: () => {} }), /EPERM/);
+});
 
 test("when another run finished the install first, its tree is used and ours is dropped", () =>
   withTmp((cacheRoot) => {
