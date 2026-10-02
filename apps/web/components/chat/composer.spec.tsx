@@ -1599,7 +1599,7 @@ describe("ComposerShell (#2176)", () => {
   });
 
   it("reserves the toolbar row at both pointer sizes", () => {
-    // `CHAT_CONTROL_CLASS` and the Send button are `h-8 pointer-coarse:h-11`,
+    // `compactControlClassName` and the Send button are `h-8 pointer-coarse:h-11`,
     // so a shell that reserved only `h-8` left a 12px shift on touch devices —
     // which is what `ComposerSkeleton` did.
     const { container } = render(<ComposerShell />);
