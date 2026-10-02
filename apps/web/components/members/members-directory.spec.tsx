@@ -173,7 +173,7 @@ describe("Directory on the greenfield shell", () => {
     const { container } = render(<MembersDirectory />);
     const row = container.querySelector("li");
     expect(row?.className).toContain("min-h-9");
-    // §2's touch floor, via the carve-out `denseRowControlClassName` uses.
+    // §2's touch floor, via the carve-out `compactControlClassName` uses.
     expect(row?.className).toContain("pointer-coarse:min-h-11");
   });
 
