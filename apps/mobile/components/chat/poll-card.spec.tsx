@@ -171,6 +171,20 @@ describe("PollCard module gate (#3012)", () => {
     );
   }
 
+  /**
+   * Whether `copy` is a visible line on the card. The flattened tree also
+   * carries each option's `accessibilityHint`, so a substring check on it
+   * would pass with the line missing.
+   */
+  function shows(tree: ReactTestRenderer, copy: string) {
+    return (
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" && node.props.children === copy,
+      ).length > 0
+    );
+  }
+
   function expectReadable(flat: string) {
     expect(flat).toContain("Lunch?");
     expect(flat).toContain('"Yes"');
@@ -188,7 +202,7 @@ describe("PollCard module gate (#3012)", () => {
     expect(no.props.disabled).toBe(false);
     act(() => no.props.onPress());
     expect(onVote).toHaveBeenCalledWith("msg-1", "vote", { option_id: "no" });
-    expect(JSON.stringify(tree.toJSON())).not.toContain(POLLS_OFF_COPY);
+    expect(shows(tree, POLLS_OFF_COPY)).toBe(false);
   });
 
   it("treats a chapter with no polls key as on", () => {
@@ -198,7 +212,7 @@ describe("PollCard module gate (#3012)", () => {
     for (const option of options(tree)) {
       expect(option.props.disabled).toBe(false);
     }
-    expect(JSON.stringify(tree.toJSON())).not.toContain(POLLS_OFF_COPY);
+    expect(shows(tree, POLLS_OFF_COPY)).toBe(false);
   });
 
   it("withdraws the vote while Polls is off, says why, and keeps the tally", () => {
@@ -208,7 +222,7 @@ describe("PollCard module gate (#3012)", () => {
     const flat = JSON.stringify(tree.toJSON());
 
     expectReadable(flat);
-    expect(flat).toContain(POLLS_OFF_COPY);
+    expect(shows(tree, POLLS_OFF_COPY)).toBe(true);
     const rows = options(tree);
     expect(rows).toHaveLength(2);
     for (const option of rows) {
@@ -239,10 +253,12 @@ describe("PollCard module gate (#3012)", () => {
     const flat = JSON.stringify(tree.toJSON());
 
     expectReadable(flat);
-    expect(flat).toContain(POLLS_GATE_LOADING_COPY);
+    expect(shows(tree, POLLS_GATE_LOADING_COPY)).toBe(true);
     for (const option of options(tree)) {
       expect(option.props.disabled).toBe(true);
     }
+    // The read is running, so there is nothing to retry yet.
+    expect(flat).not.toContain("Retry checking whether polls are on");
   });
 
   it("holds the vote, says the check failed, and offers Retry", () => {
@@ -256,7 +272,7 @@ describe("PollCard module gate (#3012)", () => {
     const tree = renderPoll(voted());
 
     expectReadable(JSON.stringify(tree.toJSON()));
-    expect(JSON.stringify(tree.toJSON())).toContain(POLLS_GATE_ERROR_COPY);
+    expect(shows(tree, POLLS_GATE_ERROR_COPY)).toBe(true);
     for (const option of options(tree)) {
       expect(option.props.disabled).toBe(true);
     }
@@ -269,20 +285,44 @@ describe("PollCard module gate (#3012)", () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
-  it("fails open on a read that will never run (no chapter claim), as study does", () => {
-    chapterRead.current = {
-      data: undefined,
-      isError: false,
-      fetchStatus: "idle",
-      refetch: vi.fn(),
-    };
-    const tree = renderPoll(voted());
+  it("fails closed with Retry on a paused or disabled read with nothing cached", () => {
+    // Offline before the read ever answered (paused), or no chapter claim
+    // (disabled): nothing is checking, so "Checking…" would never resolve, and
+    // design-system §4 says idle with nothing cached fails closed.
+    for (const fetchStatus of ["paused", "idle"]) {
+      const refetch = vi.fn(() => Promise.resolve());
+      chapterRead.current = {
+        data: undefined,
+        isError: false,
+        fetchStatus,
+        refetch,
+      };
+      const tree = renderPoll(voted());
 
-    for (const option of options(tree)) {
-      expect(option.props.disabled).toBe(false);
+      for (const option of options(tree)) {
+        expect(option.props.disabled).toBe(true);
+      }
+      expect(shows(tree, POLLS_GATE_ERROR_COPY)).toBe(true);
+      expect(shows(tree, POLLS_GATE_LOADING_COPY)).toBe(false);
+      const retry = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel ===
+            "Retry checking whether polls are on",
+      );
+      act(() => retry.props.onPress());
+      expect(refetch).toHaveBeenCalledTimes(1);
     }
-    expect(JSON.stringify(tree.toJSON())).not.toContain(
-      POLLS_GATE_LOADING_COPY,
-    );
+  });
+
+  it("gives a pending or failed row no gate line; its delivery chrome speaks", () => {
+    chapterRead.current.data = { enabled_modules: { polls: false } };
+    for (const status of ["unconfirmed", "failed"] as const) {
+      const tree = renderPoll(poll({ _status: status }));
+      expect(shows(tree, POLLS_OFF_COPY)).toBe(false);
+      for (const option of options(tree)) {
+        expect(option.props.accessibilityHint).toBeUndefined();
+      }
+    }
   });
 });

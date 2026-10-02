@@ -13,15 +13,14 @@ import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   POLL_VOTE_ACTION_TYPE,
+  pollsGateOf,
   pollsGateReason,
   readPollPayload,
   tallyPollVotes,
   type PollOption,
-  type PollsGate,
 } from "@repo/chat-core/polls";
 import { useNow } from "@repo/hooks";
 import { parseInstant } from "@repo/formatting";
-
 
 interface PollCardProps {
   message: ChatMessage;
@@ -53,15 +52,17 @@ export function PollCard({
   // A card vote is a Polls write, and the server refuses it while Polls is off
   // (#2993). The gate is mirrored here so the member sees that before tapping
   // (#3012). It reads the member view, never the officer-only config, and fails
-  // closed while that read is loading or failed, saying which, as the slash
-  // palette and composer do with the same hook. A missing `polls` key is on.
+  // closed until that read answers, saying whether it is still running or
+  // needs a Retry (`pollsGateOf`, shared with mobile). A missing `polls` key
+  // is on.
   const moduleGate = useChapterModuleGateState();
-  const pollsGate: PollsGate =
-    moduleGate.status !== "ready"
-      ? moduleGate.status
-      : moduleGate.isModuleEnabled("polls")
-        ? "on"
-        : "off";
+  const pollsGate = pollsGateOf({
+    pollsEnabled:
+      moduleGate.status === "ready"
+        ? moduleGate.isModuleEnabled("polls")
+        : undefined,
+    fetchStatus: moduleGate.fetchStatus,
+  });
   const gateReasonId = useId();
 
   const {
@@ -91,7 +92,7 @@ export function PollCard({
     against; an unusable id is an unresolved viewer whatever shape it arrives in.
   */
   const canVote = isConfirmed && !isClosed && !!viewerId && pollsGate === "on";
-  const gateReason = pollsGateReason(pollsGate, isClosed);
+  const gateReason = pollsGateReason(pollsGate, { isClosed, isConfirmed });
 
   const cast = (option: PollOption) => {
     if (!canVote) return;

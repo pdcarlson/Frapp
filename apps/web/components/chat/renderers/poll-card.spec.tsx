@@ -13,23 +13,33 @@ import {
  * says why, while the question, options and tally stay readable: reads are
  * never gated (`spec/product/modules.md` § Module disabling behavior).
  *
- * The real gate hook runs; only its read is stubbed, so these also pin that it
- * is the member view and not the officer-only config.
+ * The real gate hook runs; only its read and the chapter store are stubbed, so
+ * these also pin that it is the member view and not the officer-only config.
  */
 
 const chapterRead = vi.hoisted(() => ({
   current: {} as {
     data?: unknown;
     isError?: boolean;
+    fetchStatus?: "fetching" | "paused" | "idle";
     refetch?: () => unknown;
   },
+  /** The options the hook last read with. */
+  options: undefined as unknown,
+}));
+
+const chapterStore = vi.hoisted(() => ({
+  activeChapterId: "chapter-1" as string | null,
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    useCurrentChapter: () => chapterRead.current,
+    useCurrentChapter: (options: unknown) => {
+      chapterRead.options = options;
+      return chapterRead.current;
+    },
     useOrgConfig: () => {
       throw new Error("the poll card must not read the officer-only config");
     },
@@ -37,8 +47,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
 });
 
 vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
-    selector({ activeChapterId: "chapter-1" }),
+  useChapterStore: (
+    selector: (s: { activeChapterId: string | null }) => unknown,
+  ) => selector(chapterStore),
 }));
 
 const { PollCard } = await import("./poll-card");
@@ -73,13 +84,13 @@ function poll(overrides: Partial<ChatMessage> = {}): ChatMessage {
   } as unknown as ChatMessage;
 }
 
-function renderPoll(message: ChatMessage = poll()) {
+function renderPoll(message: ChatMessage = poll(), isConfirmed = true) {
   const onVote = vi.fn();
   render(
     <PollCard
       message={message}
       viewerId={VIEWER}
-      isConfirmed
+      isConfirmed={isConfirmed}
       onVote={onVote}
     />,
   );
@@ -99,9 +110,11 @@ function expectReadable() {
 
 describe("PollCard module gate (#3012)", () => {
   beforeEach(() => {
+    chapterStore.activeChapterId = "chapter-1";
     chapterRead.current = {
       data: { enabled_modules: { polls: true } },
       isError: false,
+      fetchStatus: "idle",
       refetch: vi.fn(),
     };
   });
@@ -162,18 +175,30 @@ describe("PollCard module gate (#3012)", () => {
   });
 
   it("holds the vote and says so while the gate's read is in flight", () => {
-    chapterRead.current = { data: undefined, isError: false, refetch: vi.fn() };
+    chapterRead.current = {
+      data: undefined,
+      isError: false,
+      fetchStatus: "fetching",
+      refetch: vi.fn(),
+    };
     renderPoll();
 
     expectReadable();
     expect(optionButton("No")).toBeDisabled();
     expect(screen.getByText(POLLS_GATE_LOADING_COPY)).toBeInTheDocument();
     expect(screen.queryByText(POLLS_OFF_COPY)).not.toBeInTheDocument();
+    // The read is running, so there is nothing to retry yet.
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
   it("holds the vote, says the check failed, and offers Retry", () => {
     const refetch = vi.fn();
-    chapterRead.current = { data: undefined, isError: true, refetch };
+    chapterRead.current = {
+      data: undefined,
+      isError: true,
+      fetchStatus: "idle",
+      refetch,
+    };
     renderPoll();
 
     expectReadable();
@@ -181,6 +206,54 @@ describe("PollCard module gate (#3012)", () => {
     expect(screen.getByText(POLLS_GATE_ERROR_COPY)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed with Retry when offline before the read ever answered", () => {
+    // A paused read: nothing is checking, so "Checking…" would never resolve.
+    const refetch = vi.fn();
+    chapterRead.current = {
+      data: undefined,
+      isError: false,
+      fetchStatus: "paused",
+      refetch,
+    };
+    renderPoll();
+
+    expect(optionButton("No")).toBeDisabled();
+    expect(screen.getByText(POLLS_GATE_ERROR_COPY)).toBeInTheDocument();
+    expect(screen.queryByText(POLLS_GATE_LOADING_COPY)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed, not loading, when there is no active chapter to read", () => {
+    // The read is disabled, so it will never answer by itself
+    // (design-system §4: idle with nothing cached fails closed).
+    chapterStore.activeChapterId = null;
+    chapterRead.current = {
+      data: undefined,
+      isError: false,
+      fetchStatus: "idle",
+      refetch: vi.fn(),
+    };
+    renderPoll();
+
+    expect(chapterRead.options).toEqual({ chapterId: null, enabled: false });
+    expect(optionButton("No")).toBeDisabled();
+    expect(screen.getByText(POLLS_GATE_ERROR_COPY)).toBeInTheDocument();
+    expect(screen.queryByText(POLLS_GATE_LOADING_COPY)).toBeNull();
+  });
+
+  it("gives a pending or failed row no gate line; its delivery chrome speaks", () => {
+    chapterRead.current = {
+      ...chapterRead.current,
+      data: { enabled_modules: { polls: false } },
+    };
+    renderPoll(poll({ _status: "failed" }), false);
+
+    expect(optionButton("No")).toBeDisabled();
+    expect(optionButton("No")).not.toHaveAttribute("aria-describedby");
+    expect(screen.queryByText(POLLS_OFF_COPY)).not.toBeInTheDocument();
   });
 
   it("gives a closed poll no module reason", () => {

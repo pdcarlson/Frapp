@@ -3,11 +3,11 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   POLL_VOTE_ACTION_TYPE,
+  pollsGateOf,
   pollsGateReason,
   readPollPayload,
   tallyPollVotes,
   type PollOption,
-  type PollsGate,
 } from "@repo/chat-core/polls";
 import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
@@ -66,28 +66,6 @@ import {
  * paths before choosing which one to mirror.
  */
 
-
-
-/**
- * The Polls module gate, from the member view (`useCurrentChapter`'s
- * `enabled_modules`, as `app/(tabs)/study.tsx` reads it). A missing `polls`
- * key is on. With nothing cached it fails closed and says which: still
- * loading, or failed. A disabled read (no chapter claim) is not loading
- * (design-system README §4), since nothing will ever answer it, so it fails
- * open as study's gate does; the server refuses the vote either way.
- */
-function pollsGateOf(query: {
-  data?: { enabled_modules?: Record<string, boolean> | null } | null;
-  isError: boolean;
-  fetchStatus: string;
-}): PollsGate {
-  if (query.data !== undefined) {
-    return isModuleEnabled(query.data?.enabled_modules, "polls") ? "on" : "off";
-  }
-  if (query.isError) return "error";
-  return query.fetchStatus === "idle" ? "on" : "loading";
-}
-
 export interface PollCardProps {
   message: ChatMessage;
   viewerId: string;
@@ -141,9 +119,19 @@ export function PollCard({
   const reactions = groupReactions(message, viewerId);
   // A card vote is a Polls write, and the server refuses it while Polls is off
   // (#2993). The gate is mirrored here so the member sees that before tapping
-  // (#3012).
+  // (#3012). It reads the member view (`useCurrentChapter`'s
+  // `enabled_modules`, as `app/(tabs)/study.tsx` does), never the officer-only
+  // config, and fails closed until that read answers, saying whether it is
+  // still running or needs a Retry (`pollsGateOf`, shared with web). A missing
+  // `polls` key is on.
   const chapterQuery = useCurrentChapter();
-  const pollsGate = pollsGateOf(chapterQuery);
+  const pollsGate = pollsGateOf({
+    pollsEnabled:
+      chapterQuery.data === undefined
+        ? undefined
+        : isModuleEnabled(chapterQuery.data?.enabled_modules, "polls"),
+    fetchStatus: chapterQuery.fetchStatus,
+  });
 
   const {
     byOption,
@@ -211,7 +199,7 @@ export function PollCard({
   const closesAt = parseInstant(payload.closes_at);
   const isClosed = closesAt ? closesAt.getTime() < now : false;
   const canVote = isConfirmed && !isClosed && pollsGate === "on";
-  const gateReason = pollsGateReason(pollsGate, isClosed);
+  const gateReason = pollsGateReason(pollsGate, { isClosed, isConfirmed });
 
   const cast = (option: PollOption) => {
     if (!canVote) return;
