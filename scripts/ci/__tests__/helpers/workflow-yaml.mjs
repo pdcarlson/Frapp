@@ -629,6 +629,33 @@ export function workflowSteps(workflowPath) {
 }
 
 /**
+ * A step's `run:` block script, dedented, for a test that executes it with
+ * stubs rather than grepping it. Takes a step from `workflowSteps`. Accepts the
+ * `|`, `|-` and `|+` block styles, which run identically; throws when the step
+ * has no block `run:`, because a test that ran nothing would pass.
+ *
+ * Read from the step's significant lines, so whole-line comments and blank
+ * lines are gone: right for a script, wrong for a heredoc whose body keeps a
+ * `#` line or a blank one. Three older tests keep their own text extractors
+ * (`extractStepScript`); new ones use this.
+ */
+export function stepRunScript(step) {
+  const lines = step.body.split("\n");
+  const start = lines.findIndex((line) => /^\s*(- )?run:\s*\|[-+]?\s*(#.*)?$/.test(line));
+  if (start === -1) {
+    throw new Error(`${step.workflowFile}: step "${step.name ?? step.jobId}" has no block \`run:\``);
+  }
+  const keyIndent = lines[start].match(/^\s*(- )?/)[0].length;
+  const block = [];
+  for (const line of lines.slice(start + 1)) {
+    if (indentOf(line) <= keyIndent) break;
+    block.push(line);
+  }
+  const indent = Math.min(...block.map(indentOf));
+  return block.map((line) => line.slice(indent)).join("\n");
+}
+
+/**
  * Does this raw value open a nested mapping? Empty, or only a comment
  * (`outputs: # the verdict`). `scalarValue(raw) === ""` can't be asked: a
  * quoted empty string (`key: ""`) reads as `""` too, and opens nothing.
