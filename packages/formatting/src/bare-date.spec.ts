@@ -17,8 +17,13 @@ function inZone<T>(zone: string, fn: () => T): T {
   const previous = process.env.TZ;
   process.env.TZ = zone;
   try {
+    // Compared through Intl on both sides: ICU canonicalizes some names
+    // (Asia/Kolkata resolves as Asia/Calcutta).
     const active = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (active !== zone) {
+    const asked = Intl.DateTimeFormat(undefined, {
+      timeZone: zone,
+    }).resolvedOptions().timeZone;
+    if (active !== asked) {
       throw new Error(`inZone: asked for ${zone}, the process is in ${active}`);
     }
     return fn();
