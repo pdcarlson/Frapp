@@ -15,7 +15,10 @@ name: Production backup storage freshness
 # 13:04 UTC and concluded in under a minute every time (slowest 2026-09-17,
 # 39s; latest finish 2026-09-14T13:05:01Z). The 06:30 cron is nominal —
 # GitHub's scheduled-run lag is what puts the start as late as 13:04, so the
-# margin is sized against the observed start, not the cron.
+# margin is sized against the observed start, not the cron. (Corrected
+# 2026-10-02, #3098: the job has since started as late as 14:13Z, on 09-28, so
+# on a late night this probe runs before the mirror and passes on the previous
+# night's, as a warning; a missed night still opens the next day.)
 #
 # `timeout-minutes: 60` on that job (`db-backup.yml`, double the dump job's
 # 30) is a ceiling, not a duration — do not re-derive this slot from it.
