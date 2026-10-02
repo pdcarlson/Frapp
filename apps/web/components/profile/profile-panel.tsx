@@ -481,8 +481,9 @@ export function ProfilePanel() {
      * per-call options — so a superseded mutation's `onError` never fires, and
      * if it did it would carry the *later* toggle's closure and name the wrong
      * category. That window is seconds wide, not a race: `query-provider.tsx`
-     * sets `mutations: { retry: 2 }` with backoff, so a failing PATCH takes
-     * ~6-7s to surface. Flip two switches inside that and the first would
+     * retries a transient failure (a 5xx, a lost response) twice with backoff,
+     * so such a PATCH takes ~6-7s to surface. Flip two switches inside that
+     * and the first would
      * revert silently — the exact "revert reads as the control being broken"
      * outcome this exists to prevent. `mutateAsync`'s promise belongs to the
      * call, so supersession and unmount cannot swallow it.
@@ -797,7 +798,7 @@ export function ProfilePanel() {
                        * The write is refused up front rather than attempted.
                        * Since #1754 the query client sets `networkMode:
                        * "always"`, so an offline mutation no longer parks — it
-                       * starts, exhausts `retry: 2`, and rejects in ~3s. That
+                       * starts, exhausts its two retries, and rejects in ~3s. That
                        * is a real improvement over the pause-forever it
                        * replaced, but it is still the wrong experience on a
                        * *switch*: the optimistic `onMutate` moves it, it sits

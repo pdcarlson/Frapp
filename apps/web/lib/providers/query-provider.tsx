@@ -2,6 +2,24 @@
 
 import React, { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { isRetryableFailure } from "@repo/api-sdk";
+
+/** How many times a failed mutation is retried, when it is worth retrying. */
+const MUTATION_RETRIES = 2;
+
+/**
+ * The default mutation retry: up to {@link MUTATION_RETRIES} more attempts,
+ * never for a definitive client refusal (#3100). A 400, 403, 404, 409 or the
+ * throttler's 429 is answered the same way every time, so retrying it only
+ * re-sends a write the throttler counts and delays the error toast by the
+ * backoff. `spec/ui/resilience/api-retry.md` § Retry configuration.
+ *
+ * A non-idempotent write that a lost response would turn into a refused retry
+ * (a compare-and-set) still sets `retry: false` itself (`docs/hooks/README.md`).
+ */
+export function retryMutation(failureCount: number, error: unknown): boolean {
+  return failureCount < MUTATION_RETRIES && isRetryableFailure(error);
+}
 
 function makeQueryClient() {
   return new QueryClient({
@@ -15,7 +33,7 @@ function makeQueryClient() {
         refetchOnReconnect: "always",
       },
       mutations: {
-        retry: 2,
+        retry: retryMutation,
         retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10_000),
         /*
          * Dashboard writes must FAIL offline, never hang (#1707).
@@ -43,14 +61,14 @@ function makeQueryClient() {
          * before trying" into the harder-to-diagnose "hangs after trying once".
          *
          * `"always"` lets the attempt start AND clears the second conjunct of
-         * `canContinue`, so the existing `retry: 2` runs to exhaustion and the
-         * promise rejects in ~3s instead of parking. `retry` is deliberately
+         * `canContinue`, so the retries (two, for a failure with no status)
+         * run to exhaustion and the promise rejects in ~3s instead of parking. `retry` is deliberately
          * left alone: refusing offline retries outright would reject on the
          * first failure, which sounds tidier but throws away the case where the
          * link returns mid-backoff — an AP roam or a lift lasting under 3s
          * currently lands the write invisibly, and should keep doing so. It
-         * would also falsify `retry: 2` where `packages/hooks` and
-         * `docs/hooks/README.md` cite it as the reason a non-idempotent
+         * would also falsify the retries `packages/hooks` and
+         * `docs/hooks/README.md` cite as the reason a non-idempotent
          * compare-and-set write must opt out.
          *
          * KNOWN RESIDUAL, pre-existing and not introduced here: `isFocused()`
