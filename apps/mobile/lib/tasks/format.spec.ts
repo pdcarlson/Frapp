@@ -36,7 +36,7 @@ describe("formatDueSubtitle", () => {
     expect(formatDueSubtitle("2026-08-24", NOW)).toBe("Due Aug 24");
   });
 
-  it("parses a bare date at UTC noon, so it never slips a day", () => {
+  it("parses a bare date at local noon, so it never slips a day", () => {
     // 11pm local on the 17th is already the 18th in UTC.
     expect(formatDueSubtitle("2026-08-17", at(2026, 8, 17, 23))).toBe(
       "Due today",

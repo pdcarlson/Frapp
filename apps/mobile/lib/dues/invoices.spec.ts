@@ -155,6 +155,35 @@ describe("dueChip", () => {
     expect(dueChip(row(), nextMorning).state).toBe("past-due");
   });
 
+  it("names the due date itself, and agrees with the boundary, from UTC−11 to UTC+14 (#3026)", () => {
+    // The UTC-noon render parse was already the 16th at +13 and +14, so the
+    // chip read "Due Sep 16" before the due day ended and "Past due Sep 16"
+    // after it. Each `Date` below is built inside the zone, so it is that
+    // zone's own wall clock.
+    for (const zone of [
+      "Pacific/Kiritimati",
+      "Pacific/Tongatapu",
+      "Pacific/Pago_Pago",
+    ]) {
+      const previous = process.env.TZ;
+      process.env.TZ = zone;
+      try {
+        const lateOnDueDate = dueChip(row(), new Date(2026, 8, 15, 23, 30, 0));
+        expect(lateOnDueDate, zone).toEqual({
+          state: "upcoming",
+          label: "Due Sep 15",
+        });
+        const nextMorning = dueChip(row(), new Date(2026, 8, 16, 0, 30, 0));
+        expect(nextMorning, zone).toEqual({
+          state: "past-due",
+          label: "Past due Sep 15",
+        });
+      } finally {
+        process.env.TZ = previous;
+      }
+    }
+  });
+
   it("says 'Past due', not 'Overdue', once the date has passed", () => {
     // OVERDUE is the server's flagged state and includes the chapter's
     // wf_dues_grace window, which this client cannot read — the /overdue route

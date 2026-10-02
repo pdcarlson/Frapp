@@ -22,7 +22,7 @@
 import {
   dayDelta,
   parseInstant,
-  parseInstantOrBareUtcNoon,
+  parseInstantOrBareLocalNoon,
 } from "@repo/formatting";
 
 export { isDueUrgent } from "@/components/chat/up-next-strip";
@@ -35,11 +35,11 @@ export { isDueUrgent } from "@/components/chat/up-next-strip";
  * `formatDate` in `lib/more/service-hours.ts`.
  */
 export function parseTaskDate(value: string): Date | null {
-  // A full timestamp passes through untouched: appending `T12:00:00Z` to one
+  // A full timestamp passes through untouched: appending `T12:00:00` to one
   // yields `NaN`, and the chat `kind:"task"` payload can carry either shape.
-  // Protected cluster — UTC noon for bare dates, not formatLocaleDate's
+  // Protected cluster — local noon for bare dates, not formatLocaleDate's
   // `new Date(value)` (UTC midnight).
-  return parseInstantOrBareUtcNoon(value);
+  return parseInstantOrBareLocalNoon(value);
 }
 
 /**

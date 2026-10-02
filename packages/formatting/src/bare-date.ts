@@ -11,23 +11,29 @@
  *
  * Two *parsers* stay distinct on purpose — and {@link formatBareDate} at the
  * foot of this file is the cluster's formatter over them:
- * - {@link parseBareDateUtcNoon} — `T12:00:00Z`. Stays on the submitted
- *   calendar day in every zone from UTC−12 to UTC+12. Mobile service hours,
- *   invoices, and task due dates.
+ * - {@link parseBareDateLocalNoon} — `T12:00:00` (no Z). Local noon, which is
+ *   the submitted calendar day in every zone, UTC−12 to UTC+14. Mobile
+ *   service hours, invoices, task due dates, and {@link formatBareDate}.
  * - {@link parseBareDateLocalMidnight} — `T00:00:00` (no Z). Local midnight
  *   so a chat task card matches a server-formatted local day. Web only.
  *
  * Do not fold either into `formatLocaleDate` / `new Date(value)`.
+ *
+ * Local, not UTC, because every caller reads the result in the device's zone:
+ * `toLocaleDateString`, `dayDelta`'s local Y/M/D, the Dues chip's end of the
+ * local day. Until #3026 this parsed at UTC noon (`T12:00:00Z`), which is
+ * already the next local day at UTC+12 and east: an invoice due Sep 30 read
+ * "Due Oct 1" in Auckland, and "Past due" on Oct 1 itself.
  */
 
 import { parseInstant } from "./instant";
 
 const BARE_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** `YYYY-MM-DD` at UTC noon, or `null` when the value is not a bare date. */
-export function parseBareDateUtcNoon(value: string): Date | null {
+/** `YYYY-MM-DD` at local noon, or `null` when the value is not a bare date. */
+export function parseBareDateLocalNoon(value: string): Date | null {
   if (!BARE_DATE.test(value)) return null;
-  return parseInstant(`${value}T12:00:00Z`);
+  return parseInstant(`${value}T12:00:00`);
 }
 
 /** `YYYY-MM-DD` at local midnight, or `null` when the value is not a bare date. */
@@ -37,14 +43,14 @@ export function parseBareDateLocalMidnight(value: string): Date | null {
 }
 
 /**
- * Bare `YYYY-MM-DD` at UTC noon; any other parseable instant via `new Date`.
+ * Bare `YYYY-MM-DD` at local noon; any other parseable instant via `new Date`.
  *
- * A full timestamp already carries its offset — appending `T12:00:00Z` to one
+ * A full timestamp already carries its offset — appending `T12:00:00` to one
  * yields `NaN`. Callers that accept either shape (task due dates, chat cards)
  * use this rather than forcing the noon parse.
  */
-export function parseInstantOrBareUtcNoon(value: string): Date | null {
-  return parseBareDateUtcNoon(value) ?? parseInstant(value);
+export function parseInstantOrBareLocalNoon(value: string): Date | null {
+  return parseBareDateLocalNoon(value) ?? parseInstant(value);
 }
 
 /**
@@ -55,10 +61,10 @@ export function parseInstantOrBareUtcNoon(value: string): Date | null {
  * {@link formatLocaleDate} for **bare `YYYY-MM-DD`** columns, and the reason
  * the two must not be folded together. `formatLocaleDate` reads that string
  * through `new Date(value)`, which is UTC midnight and so renders the
- * *previous* calendar day west of Greenwich; this parses at UTC noon, which
- * stays on the stored day in every zone from UTC−12 to UTC+12.
+ * *previous* calendar day west of Greenwich; this parses at local noon, which
+ * is the stored day in every zone.
  *
- * A full timestamp still formats, via {@link parseInstantOrBareUtcNoon}, so a
+ * A full timestamp still formats, via {@link parseInstantOrBareLocalNoon}, so a
  * column that changes shape degrades to the old rendering rather than to a
  * placeholder.
  */
@@ -66,6 +72,6 @@ export function formatBareDate(
   value: string | null | undefined,
 ): string {
   if (!value) return "—";
-  const parsed = parseInstantOrBareUtcNoon(value);
+  const parsed = parseInstantOrBareLocalNoon(value);
   return parsed ? parsed.toLocaleDateString() : "—";
 }
