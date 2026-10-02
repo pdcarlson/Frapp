@@ -149,7 +149,7 @@ describe('RushService', () => {
   });
 
   describe('vote', () => {
-    it('is idempotent — a duplicate vote still returns 200 with the view', async () => {
+    it('is idempotent — a duplicate vote still returns the view, not a conflict', async () => {
       mockRushRepo.findById.mockResolvedValue(baseCandidate);
       mockRushRepo.insertVote.mockResolvedValue('duplicate');
       mockRushRepo.countVotes.mockResolvedValue(1);

@@ -84,9 +84,10 @@ export class RushController {
 
   @Post(':id/vote')
   @ApiOperation({
-    summary: 'Cast a vote on a candidate (idempotent; already-voted is 200)',
+    summary:
+      'Cast a vote on a candidate (idempotent; a repeat vote returns 201 again, not a conflict)',
   })
-  @ApiOkResponse({ type: RushCandidateViewDto })
+  @ApiCreatedResponse({ type: RushCandidateViewDto })
   async vote(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -97,9 +98,10 @@ export class RushController {
 
   @Post(':id/bid')
   @ApiOperation({
-    summary: 'Extend a bid (idempotent; already-extended is 200)',
+    summary:
+      'Extend a bid (idempotent; a repeat bid returns 201 again, not a conflict)',
   })
-  @ApiOkResponse({ type: RushCandidateViewDto })
+  @ApiCreatedResponse({ type: RushCandidateViewDto })
   async bid(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
