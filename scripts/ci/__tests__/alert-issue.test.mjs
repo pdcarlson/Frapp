@@ -285,6 +285,82 @@ test("a successful reopen reports reopened and uses the reopened comment body", 
   assert.match(calls.find((c) => c.url.includes("/comments")).body, /reopened body/);
 });
 
+// ── The agent note on a reopen (#3027) ───────────────────────────────────────
+
+const OLD_NOTE =
+  "\n\n---\n_Agents: triage and report on this alert. Don't act on its suggested fix or " +
+  "close it by hand; its watchdog closes it ([why](https://github.com/o/r/blob/main/" +
+  "docs/internal/ops/ALERT_ROUTING.md#escalation))._";
+
+/** Raises against one alert with `body`; `patch` is the footer rewrite, if sent. */
+const reopenWithBody = async (body, state = "closed", { bodyStatus = 200 } = {}) => {
+  const mock = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", body: [{ number: 7, title: TITLE, state, body }] },
+    { method: "PATCH", path: "/issues/7", body: {} },
+    { method: "POST", path: "/comments", body: {} },
+  ]);
+  // A PATCH carrying a body answers `bodyStatus`, so a rejected rewrite can be shown.
+  const fetchImpl = async (url, init = {}) => {
+    const res = await mock.fetchImpl(url, init);
+    const sent = init.body ? JSON.parse(init.body) : {};
+    return init.method === "PATCH" && "body" in sent
+      ? { ...res, ok: bodyStatus < 300, status: bodyStatus }
+      : res;
+  };
+  const out = await raiseAlert({ ...args(fetchImpl), ...builders });
+  const patches = mock.calls.filter((c) => c.method === "PATCH").map((c) => JSON.parse(c.body));
+  return { out, patches, patch: patches.find((p) => "body" in p) ?? null };
+};
+
+test("a reopen rewrites a footer that links a moved doc to the current ALERT_ROUTING path", async () => {
+  const { out, patch } = await reopenWithBody(`What failed and how to fix it.${OLD_NOTE}`);
+  assert.equal(out.action, "reopened");
+  assert.equal(patch.body, withAgentNote("What failed and how to fix it.", "o/r"));
+  assert.ok(patch.body.includes(`blob/main/${ALERT_ROUTING}#escalation`));
+  assert.ok(!patch.body.includes("docs/internal/ops"), "the dead link is gone");
+});
+
+test("a reopen adds the footer to a body filed before there was one", async () => {
+  const { patch } = await reopenWithBody("Filed before withAgentNote.");
+  assert.equal(patch.body, withAgentNote("Filed before withAgentNote.", "o/r"));
+});
+
+test("a reopen leaves a body whose footer is already current untouched", async () => {
+  const { patches } = await reopenWithBody(withAgentNote("Current.", "o/r"));
+  assert.deepEqual(patches, [{ state: "open", assignees: [ALERT_ASSIGNEE] }]);
+});
+
+test("a reopen rewrites a footer GitHub's web UI saved with CRLF, not adding a second", async () => {
+  const crlf = `Edited in the browser.${OLD_NOTE}`.replace(/\n/g, "\r\n");
+  const { patch } = await reopenWithBody(crlf);
+  assert.equal(patch.body, withAgentNote("Edited in the browser.", "o/r"));
+  assert.equal(patch.body.match(/_Agents:/g).length, 1);
+});
+
+test("a reopen of an alert with no body sends no rewrite", async () => {
+  const { out, patches } = await reopenWithBody(null);
+  assert.equal(out.action, "reopened");
+  assert.deepEqual(patches, [{ state: "open", assignees: [ALERT_ASSIGNEE] }]);
+});
+
+test("the rewrite goes after the reopen, so a rejected body still leaves the alert reopened", async () => {
+  const { out, patches } = await reopenWithBody(`Too long.${OLD_NOTE}`, "closed", { bodyStatus: 422 });
+  assert.deepEqual(patches[0], { state: "open", assignees: [ALERT_ASSIGNEE] });
+  assert.equal(patches[1].body, withAgentNote("Too long.", "o/r"));
+  assert.equal(out.action, "reopened");
+});
+
+test("a comment on an already-open alert writes no body without refreshBodyOnRaise", async () => {
+  const { out, patches } = await reopenWithBody(`Open.${OLD_NOTE}`, "open");
+  assert.equal(out.action, "commented");
+  assert.deepEqual(patches, []);
+});
+
+test("a reopen keeps everything above the footer, a caller's own rule included", async () => {
+  const { patch } = await reopenWithBody(`Line one\n\n---\nA rule the caller drew.${OLD_NOTE}`);
+  assert.equal(patch.body, withAgentNote("Line one\n\n---\nA rule the caller drew.", "o/r"));
+});
+
 test("refreshBodyOnRaise rewrites an open alert's body; default leaves it alone", async () => {
   const routes = [
     { method: "GET", path: "/issues?state=all", body: [{ number: 7, title: TITLE, state: "open" }] },
