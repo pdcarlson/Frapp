@@ -74,7 +74,7 @@ type EasBuildProfile = { env?: Record<string, unknown> };
  * environment switches Ask on (`assertProductionAskDisabled`, tested in
  * `app.config.spec.ts` against this file's parse), so an on value there fails
  * the build rather than shipping. Preview and development builds may still
- * carry Ask; `eas env:list --environment <name>` is how to see whether they do.
+ * carry Ask; `npm run eas -- env:list --environment <name>` is how to see whether they do.
  */
 describe("eas.json", () => {
   const easJson = JSON.parse(
