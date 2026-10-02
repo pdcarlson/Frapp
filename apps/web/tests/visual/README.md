@@ -36,9 +36,10 @@ a route: `ChapterWizardGate` mounts it as a full-screen overlay when
 suite can. `spec/ui/web-dashboard/README.md` asserted it held the floor for
 some time on nothing at all; that claim now says what is true instead.
 
-**The second suite pays for itself in a guard.** `playwright.config.ts` warns
-that with two specs in this directory, deleting or renaming the floor spec lets
-the run pass on the survivor and exit 0 with the floor silently unmeasured.
+**The second suite pays for itself in a guard.** With more than one spec in
+this directory, deleting or renaming the floor spec lets the run pass on the
+survivors and exit 0 with the floor silently unmeasured
+([`quality-gates.md`](../../../../docs/ci-cd/quality-gates.md)).
 `pre-auth-floor.spec.ts` closes that: it reads `responsive-floor.spec.ts` off
 disk and asserts both that the file exists and that `DASHBOARD_ROUTES` still
 holds its exact entry count — the number lives in that assertion, so adding a
