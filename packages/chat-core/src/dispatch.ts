@@ -28,9 +28,14 @@ import {
   removeLocalPlaceholder,
   markLocalRecorded,
   markLocalUnconfirmed,
+  RATE_LIMITED_COPY,
   type ChatActionContext,
 } from "./chat-client";
-import { isDefinitiveClientError, randomClientId } from "@repo/api-sdk";
+import {
+  isDefinitiveClientError,
+  randomClientId,
+  serverMessageOf,
+} from "@repo/api-sdk";
 import { localIsoDate } from "@repo/formatting";
 import type { ReplayRequest } from "./types";
 
@@ -368,6 +373,7 @@ async function submitPointsAdjustment(
 
   let data: PointsAdjustResponse | undefined;
   let status: number | undefined;
+  let refusal: unknown;
   try {
     // Narrow to the network call ONLY, so a cache-layer or programmer error
     // below is not reported as a lost response.
@@ -388,6 +394,7 @@ async function submitPointsAdjustment(
     // and `if (result.error)` would narrow the whole branch — `response`
     // included — to `never`.
     status = result.response?.status;
+    refusal = result.error;
     if (result.error) status ??= 0;
   } catch {
     // Transport-level: the request may or may not have reached the server.
@@ -422,7 +429,15 @@ async function submitPointsAdjustment(
     // no dedupe, a second append-only row. Keep it retryable instead.
     if (isTerminalStatus(status) && !isReplay) {
       removeLocalPlaceholder(ctx, channelId, clientMessageId);
-      return { ok: false, error: REFUSED_ERROR };
+      // A 429 says when to try again, which a bare refusal hides: the
+      // throttler's minute, or the per-chapter cap's hour (#3061).
+      return {
+        ok: false,
+        error:
+          status === 429
+            ? `${REFUSED_ERROR} ${serverMessageOf(refusal) ?? RATE_LIMITED_COPY}`
+            : REFUSED_ERROR,
+      };
     }
 
     // 5xx, an unreadable status, or any refusal of a replay. `openapi-fetch`

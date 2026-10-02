@@ -842,6 +842,51 @@ describe("outbox analytics", () => {
     ]);
   });
 
+  it.each([
+    ["the throttler's sentence", RATE_LIMITED_COPY],
+    ["an intermediary's text", "Too Many Requests"],
+  ])(
+    "fails a throttled send (429 carrying %s) as not sent, with the rate-limit sentence, for the row's Retry (#3061)",
+    async (_label, bodyMessage) => {
+      const toast = vi.fn() as ToastFn;
+      const outbox = stubOutbox();
+      const apiClient = {
+        POST: vi.fn().mockResolvedValue({
+          data: null,
+          error: { statusCode: 429, message: bodyMessage },
+          response: { status: 429 },
+        }),
+      };
+      const ctx = buildCtx({
+        apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+        outbox,
+        toast,
+      });
+
+      await sendMessage(ctx, { channelId: "chan-1", content: "on my way" });
+
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Message not sent",
+          description: RATE_LIMITED_COPY,
+        }),
+      );
+      // Terminal, not left queued: the outbox flushes only on reconnect, so a
+      // pending row would never resend while the member stays online.
+      expect(outbox.markFailed).toHaveBeenCalledWith(
+        expect.any(String),
+        RATE_LIMITED_COPY,
+      );
+      expect(outbox.bumpAttempt).not.toHaveBeenCalled();
+      const cache = ctx.queryClient.getQueryData<ChannelCache>(
+        chatMessagesKey("chan-1"),
+      );
+      expect(
+        selectMessages(cache!).map((m) => [m._status, m._error]),
+      ).toEqual([["failed", RATE_LIMITED_COPY]]);
+    },
+  );
+
   it("emits failed-network (not failed-4xx) on a transient/network error", async () => {
     const track = vi.fn();
     const apiClient = {

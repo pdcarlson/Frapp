@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { SlashCommand } from "@repo/chat-integrations";
 import { dispatchSlashCommand, retryPointsDispatch } from "./dispatch";
-import type { ChatActionContext } from "./chat-client";
+import { RATE_LIMITED_COPY, type ChatActionContext } from "./chat-client";
 import type { KeyValueStore, OutboxStore } from "./adapters";
 import { chatMessagesKey, type ChannelCache, type ChatMessage } from "./types";
 import { selectMessages, mergeServerRow } from "./cache";
@@ -436,6 +436,33 @@ describe("dispatchPoints — replay refusals and resolution (#1733 review)", () 
     expect(result.ok).toBe(false);
     expect(placeholderCount(ctx)).toBe(0);
   });
+
+  it.each([
+    [
+      "the per-chapter cap's sentence",
+      "You've made 20 point adjustments in this chapter in the last hour, the most allowed. Try again later.",
+      "You've made 20 point adjustments in this chapter in the last hour, the most allowed. Try again later.",
+    ],
+    ["the throttler's sentence", RATE_LIMITED_COPY, RATE_LIMITED_COPY],
+    ["no message", undefined, RATE_LIMITED_COPY],
+  ])(
+    "tells the officer when to try again after a first-attempt 429 carrying %s (#3061)",
+    async (_label, message, expected) => {
+      const post = vi.fn().mockResolvedValue({
+        data: undefined,
+        error: message === undefined ? {} : { message },
+        response: { status: 429 },
+      });
+      const ctx = buildCtx(post);
+
+      const result = await dispatchGrant(ctx);
+
+      expect(result).toEqual({
+        ok: false,
+        error: `Couldn't adjust points — nothing was recorded. ${expected}`,
+      });
+    },
+  );
 
   // 409 is the one refusal that tears the row down on a replay too: the key is
   // spent on a different adjustment, so replaying can never succeed.
