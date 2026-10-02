@@ -8,7 +8,9 @@ import { expect, test } from "@playwright/test";
  * viewports are what the boards commit to, so they are what checks 1 to 5
  * measure. Check 6 is about the two chat frames rather than the fold, and
  * sweeps the widths in its own loop, 320 to 1440. The event frame is not in
- * it: its height is the phone board's, fixed on purpose.
+ * it: its height is the phone board's, fixed on purpose. Check 7 sweeps the
+ * narrow phone widths for the page's own horizontal scroll, which the board
+ * width loop (390 only) cannot see.
  *
  * **This is deliberately not a screenshot test**, and that is the repo's
  * position rather than a shortcut. The advisory snapshot suite that
@@ -54,6 +56,10 @@ import { expect, test } from "@playwright/test";
  *     which bleeds off the right edge on purpose. Before #2893 a fixed height
  *     ran the newest rows under the composer at phone width, or pushed the
  *     composer out of the frame.
+ *  7. No phone width opens a horizontal scrollbar: 320, 360, 375 and 390.
+ *     Check 1 only measures the two board widths, and 390 is the one phone
+ *     width where the event frame's 350px fits, so it could not see the events
+ *     section's grid track held at that 350px at 320 and 360 (#3079).
  *
  * **What was tried and is deliberately NOT here.** An assertion that a direct
  * `/#pricing` load never arms an already-painted block — the flash slice 2 fixed
@@ -280,6 +286,64 @@ test.describe("the landing fold holds the boards' geometry", () => {
       await context.close();
     }
   });
+
+  for (const width of [320, 360, 375, 390]) {
+    test(`at ${width} wide, the page does not scroll horizontally`, async ({
+      browser,
+    }) => {
+      const context = await browser.newContext({
+        reducedMotion: "reduce",
+        viewport: { width, height: 844 },
+      });
+      const page = await context.newPage();
+      try {
+        await page.goto("/");
+        await page.waitForLoadState("networkidle");
+
+        const measured = await page.evaluate((viewport) => {
+          const offender = [...document.querySelectorAll("body *")]
+            .map((el) => ({ el, rect: el.getBoundingClientRect() }))
+            .filter(({ el, rect }) => {
+              if (rect.right <= viewport + 0.5) return false;
+              // An element clipped by an ancestor contributes no page overflow.
+              for (
+                let node: Element | null = el;
+                node && node !== document.body;
+                node = node.parentElement
+              ) {
+                if (getComputedStyle(node).overflowX !== "visible") return false;
+              }
+              return true;
+            })
+            .sort((a, b) => b.rect.right - a.rect.right)[0];
+          return {
+            scrollWidth: document.documentElement.scrollWidth,
+            widest: offender
+              ? {
+                  right: Math.round(offender.rect.right),
+                  tag: offender.el.tagName.toLowerCase(),
+                  className: offender.el.getAttribute("class") ?? "",
+                }
+              : null,
+          };
+        }, width);
+
+        expect(
+          measured.scrollWidth,
+          `the page overflows ${width}px by ${measured.scrollWidth - width}px` +
+            (measured.widest
+              ? `. The furthest unclipped element is <${measured.widest.tag}> reaching ` +
+                `${measured.widest.right}px: class="${measured.widest.className}". A grid item ` +
+                "holding a fixed-width frame needs `min-w-0`, or the implicit track stays at the " +
+                "frame's width and everything beside it overflows with it (#3079)."
+              : ", but every element is inside it or clipped by an ancestor, so the cause is " +
+                "the shell rather than one box."),
+        ).toBeLessThanOrEqual(width);
+      } finally {
+        await context.close();
+      }
+    });
+  }
 
   for (const width of [320, 360, 390, 640, 1024, 1440]) {
     test(`at ${width} wide, neither chat frame crops a row or loses its composer`, async ({

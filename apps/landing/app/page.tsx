@@ -421,9 +421,20 @@ export default function Home() {
             frame on the left, as `Main.dc.html` draws it, through explicit grid
             placement rather than a flex `order`, so the two live in the same
             row without the source order changing.
+
+            Both grid items carry `min-w-0`. The grid has no explicit column
+            below `lg`, so its one implicit track is sized from its items, and
+            the event frame's 350px (`w-[350px] max-w-full`) is the min-content
+            that held it: at 320 and 360 the track stayed 350 wide, `max-w-full`
+            capped the frame at a track that had already grown, and the copy
+            column beside it ran to 370 and opened a horizontal scrollbar
+            (#3079). `min-w-0` lets the track shrink to the shell, and the frame
+            narrows with it, reflowing at full type size; the board's own frame
+            crops with `overflow-hidden` too. The hero's grid item did the same
+            for the chat frame (#2893).
           */}
           <div className="grid gap-10 lg:grid-cols-12 lg:gap-x-6">
-            <RevealOnView className="flex flex-col gap-6 lg:col-span-5 lg:col-start-6 lg:row-start-1">
+            <RevealOnView className="flex min-w-0 flex-col gap-6 lg:col-span-5 lg:col-start-6 lg:row-start-1">
               <p className={`${EYEBROW} reveal-item`}>Events and check-in</p>
               <h2
                 id="events"
@@ -462,7 +473,7 @@ export default function Home() {
               children, and the ring is a pseudo-element with no rest state. A
               reader who never sees the ring is missing nothing.
             */}
-            <RevealOnView className="flex justify-center lg:col-span-5 lg:col-start-1 lg:row-start-1 lg:justify-start">
+            <RevealOnView className="flex min-w-0 justify-center lg:col-span-5 lg:col-start-1 lg:row-start-1 lg:justify-start">
               <EventFrame />
             </RevealOnView>
           </div>
