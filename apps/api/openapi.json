@@ -7595,7 +7595,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -7621,7 +7621,7 @@
             "bearer": []
           }
         ],
-        "summary": "Cast a vote on a candidate (idempotent; already-voted is 200)",
+        "summary": "Cast a vote on a candidate (idempotent; a repeat vote returns 201 again, not a conflict)",
         "tags": [
           "Rush"
         ]
@@ -7641,7 +7641,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -7667,7 +7667,7 @@
             "bearer": []
           }
         ],
-        "summary": "Extend a bid (idempotent; already-extended is 200)",
+        "summary": "Extend a bid (idempotent; a repeat bid returns 201 again, not a conflict)",
         "tags": [
           "Rush"
         ]
@@ -9575,7 +9575,7 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -9731,7 +9731,7 @@
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -10083,7 +10083,7 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -10131,7 +10131,7 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -10242,7 +10242,7 @@
         "operationId": "DiscordAuthorLinkController_begin_v1",
         "parameters": [],
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -10290,7 +10290,7 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
