@@ -62,7 +62,32 @@ export class StripePriceAccountMismatchError extends Error {
     this.name = 'StripePriceAccountMismatchError';
     if (options.code !== undefined) this.code = options.code;
   }
+
+  /**
+   * A fixed, non-secret name for the fault, safe for a public response body
+   * (`/health/ready`, #2999): this error's own `code`, else the Stripe error
+   * code or API type in `cause` (`resource_missing`, `api_key_expired`,
+   * `authentication_error`), else `misconfigured`. Those tell an operator
+   * whether to fix the Price id or rotate the key. The message is never
+   * public: it holds the configured Price id and Stripe's raw text, which for
+   * a revoked key names its type and last four characters.
+   */
+  get category(): string {
+    if (this.code !== undefined) return this.code;
+    for (const field of ['code', 'rawType', 'type'] as const) {
+      const value = stripeErrorField(this.cause, field);
+      if (value && STRIPE_CATEGORY_SHAPE.test(value)) return value;
+    }
+    return 'misconfigured';
+  }
 }
+
+/**
+ * Stripe's error codes and API types are lowercase snake_case enums. Anything
+ * else (a class name, free text from a shim) falls through to `misconfigured`
+ * rather than reaching a public body.
+ */
+const STRIPE_CATEGORY_SHAPE = /^[a-z][a-z_]{0,63}$/;
 
 export function shouldSkipStripePriceConsistency(
   secret: string | undefined | null,
