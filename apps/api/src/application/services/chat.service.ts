@@ -63,6 +63,7 @@ import {
   safeObjectFilename,
 } from '#domain/constants/storage';
 import { clampListLimit } from '#domain/constants/list-query-limits';
+import { isUnsafeStoragePath } from '#domain/utils/storage-path';
 import { instantOrThrow } from './instant-bound';
 import type {
   ChatChannel,
@@ -2340,10 +2341,10 @@ export class ChatService {
           'Attachment does not belong to this channel',
         );
       }
-      // `..` cannot climb out of the prefix in object storage the way it does on
-      // a filesystem, but a stored key containing it is still a key nothing here
-      // minted, so it is rejected rather than reasoned about.
-      if (storagePath.includes('..')) {
+      // The same segment rule the mint's `assertSafeObjectPath` applies, so a
+      // key it signed is a key this accepts: `Notes..final.png` is a filename,
+      // while a `..` (or `%2e%2e`) segment is a key nothing here minted (#3059).
+      if (isUnsafeStoragePath(storagePath)) {
         throw new BadRequestException('Invalid attachment path');
       }
       if (seen.has(storagePath)) {
