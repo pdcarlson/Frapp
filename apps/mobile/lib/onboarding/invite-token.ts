@@ -24,10 +24,6 @@ export function rememberInviteToken(token: string | null): void {
   rememberedToken = token && token.length > 0 ? token : rememberedToken;
 }
 
-export function peekRememberedInviteToken(): string | null {
-  return rememberedToken;
-}
-
 export function consumeRememberedInviteToken(): string | null {
   const token = rememberedToken;
   rememberedToken = null;

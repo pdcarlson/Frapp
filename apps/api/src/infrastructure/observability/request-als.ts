@@ -29,10 +29,6 @@ export function runWithRequestLogStore<T>(
   return storage.run(store, fn);
 }
 
-export function getRequestLogStore(): RequestLogStore | undefined {
-  return storage.getStore();
-}
-
 export function getRequestId(): string | undefined {
   return storage.getStore()?.requestId;
 }
