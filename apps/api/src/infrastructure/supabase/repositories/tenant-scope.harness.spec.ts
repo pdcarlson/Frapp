@@ -705,6 +705,43 @@ describe('tenant-scope harness', () => {
       expect(data).toHaveLength(2);
     });
 
+    it('reads an in-list inside .or() as one operand, negated as Postgres negates it', async () => {
+      const harness = createTenantHarness({
+        tables: {
+          widgets: [
+            inA({ id: ROW_A, owner: 'x' }),
+            inB({ id: ROW_B, owner: 'x' }),
+            inA({ id: 'a2', owner: 'y' }),
+            inB({ id: 'b2', owner: 'y' }),
+            inA({ id: 'a3', owner: null }),
+            inB({ id: 'b3', owner: null }),
+          ],
+        },
+      });
+
+      const { data } = await (harness.client as any)
+        .from('widgets')
+        .select('*')
+        .or('owner.not.in.("x","z")');
+
+      // `NULL NOT IN (…)` is NULL, so the ownerless rows don't match either.
+      expect((data as { id: string }[]).map((r) => r.id).sort()).toEqual([
+        'a2',
+        'b2',
+      ]);
+    });
+
+    it('still refuses a nested .and() group inside .or()', () => {
+      const harness = createTenantHarness({ tables: widgets() });
+
+      expect(() =>
+        (harness.client as any)
+          .from('widgets')
+          .select('*')
+          .or('name.eq.Treasurer,and(name.eq.President,id.eq.1)'),
+      ).toThrow(/nested/);
+    });
+
     it('maybeSingle reports multiple matches instead of picking one', async () => {
       const harness = createTenantHarness({ tables: widgets() });
 

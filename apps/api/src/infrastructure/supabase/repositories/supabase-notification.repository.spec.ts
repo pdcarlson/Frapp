@@ -136,3 +136,117 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
     expect(harness.ops.length).toBe(before);
   });
 });
+
+/**
+ * `withholdChatFrom` (#2715): the caller's blocked members' chat rows, and every
+ * chat row with no recorded sender, are left out by the query itself. Each row
+ * has a twin in the other chapter, so the tenant filter is still what narrows
+ * the result to one chapter.
+ */
+describe('SupabaseNotificationRepository — withholding blocked senders', () => {
+  const BLOCKED = '0c000000-0000-4000-8000-000000000001';
+  const OTHER = '0c000000-0000-4000-8000-000000000002';
+  const chatTarget = { screen: 'chat', channelId: 'channel-1' };
+
+  const rowsFor = (
+    tag: 'a' | 'b',
+    inChapter: (row: Record<string, unknown>) => Record<string, unknown>,
+  ) => [
+    // `created_at` descending is the order the list serves.
+    inChapter({
+      id: `${tag}-from-blocked`,
+      user_id: USER_SHARED,
+      title: 'Blocked Member',
+      body: 'something unkind',
+      data: { target: chatTarget, senderId: BLOCKED },
+      read_at: null,
+      created_at: '2026-01-06T00:00:00.000Z',
+    }),
+    inChapter({
+      id: `${tag}-bundle-from-blocked`,
+      user_id: USER_SHARED,
+      title: 'Blocked Member',
+      body: '3 new messages',
+      data: { target: chatTarget, senderId: BLOCKED, bundled: true, count: 3 },
+      read_at: null,
+      created_at: '2026-01-05T00:00:00.000Z',
+    }),
+    inChapter({
+      id: `${tag}-from-other`,
+      user_id: USER_SHARED,
+      title: 'Other Member',
+      body: 'see you there',
+      data: { target: chatTarget, senderId: OTHER },
+      read_at: null,
+      created_at: '2026-01-04T00:00:00.000Z',
+    }),
+    inChapter({
+      id: `${tag}-legacy-chat`,
+      user_id: USER_SHARED,
+      title: 'New Message',
+      body: 'written before rows named a sender',
+      data: { target: chatTarget },
+      read_at: null,
+      created_at: '2026-01-03T00:00:00.000Z',
+    }),
+    inChapter({
+      id: `${tag}-task`,
+      user_id: USER_SHARED,
+      title: 'New task',
+      body: 'Set up for rush',
+      data: { target: { screen: 'tasks', taskId: 'task-1' } },
+      read_at: null,
+      created_at: '2026-01-02T00:00:00.000Z',
+    }),
+    inChapter({
+      id: `${tag}-untargeted`,
+      user_id: USER_SHARED,
+      title: 'Dues reminder',
+      body: 'Fall dues are due',
+      data: {},
+      read_at: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+    }),
+  ];
+
+  let harness: TenantHarness;
+  let repo: SupabaseNotificationRepository;
+
+  beforeEach(() => {
+    harness = createTenantHarness({
+      tables: { notifications: [...rowsFor('a', inA), ...rowsFor('b', inB)] },
+    });
+    repo = new SupabaseNotificationRepository(harness.client);
+  });
+
+  it('leaves out the blocked member chat rows and the senderless chat rows, and keeps the rest', async () => {
+    const rows = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByUser(USER_SHARED, CHAPTER_B, { withholdChatFrom: [BLOCKED] }),
+    );
+
+    expect(rows.map((n) => n.id)).toEqual([
+      'b-from-other',
+      'b-task',
+      'b-untargeted',
+    ]);
+  });
+
+  it('counts the limit over the rows it serves, not the rows it withholds', async () => {
+    const rows = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByUser(USER_SHARED, CHAPTER_B, {
+        limit: 2,
+        withholdChatFrom: [BLOCKED],
+      }),
+    );
+
+    expect(rows.map((n) => n.id)).toEqual(['b-from-other', 'b-task']);
+  });
+
+  it('withholds nothing when the caller has blocked nobody', async () => {
+    const rows = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByUser(USER_SHARED, CHAPTER_B, { withholdChatFrom: [] }),
+    );
+
+    expect(rows).toHaveLength(6);
+  });
+});

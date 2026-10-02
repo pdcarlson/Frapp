@@ -27,6 +27,7 @@ import type {
 import { clampListLimit } from '#domain/constants/list-query-limits';
 import { ID_CHUNK_SIZE, chunkIds } from '#domain/utils/chunk-ids';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { ChatBlockService } from './chat-block.service';
 
 /**
  * What a member with no `user_settings` row has, which is every member until
@@ -119,6 +120,8 @@ export class NotificationService {
     private readonly memberRepo: IMemberRepository,
     @Inject(NOTIFICATION_PROVIDER)
     private readonly pushProvider: INotificationProvider,
+    /** The caller's block list, which the in-app list masks chat rows by (#2715). */
+    private readonly chatBlocks: ChatBlockService,
   ) {}
 
   async notifyUser(
@@ -544,13 +547,31 @@ export class NotificationService {
     return fallback;
   }
 
+  /**
+   * The caller's in-app history in this chapter, without the chat rows of a
+   * member they have blocked here (#2715).
+   *
+   * The push worker writes no row for a member who had already blocked the
+   * sender (`ChatBlockService.filterOutBlockers`). This covers the rows written
+   * before the block, so the history agrees with the thread, which tombstones
+   * the same messages. It is read-time, like every other masked surface, so an
+   * unblock brings the rows back. A chat row written before the worker recorded
+   * its sender is withheld from anyone with a block in the chapter; the
+   * repository's filter says why. Non-chat rows are not chat and stay (#2498).
+   *
+   * The block list read throws on failure, and the throw is not caught: a list
+   * that can't be read is not an empty list, and serving the unfiltered history
+   * would hand back the very text the block hides.
+   */
   async listNotifications(
     userId: string,
     chapterId: string,
     options?: { limit?: number },
   ): Promise<Notification[]> {
+    const blocked = await this.chatBlocks.listBlockedUserIds(chapterId, userId);
     return this.notificationRepo.findByUser(userId, chapterId, {
       limit: clampListLimit(options?.limit),
+      ...(blocked.length > 0 ? { withholdChatFrom: blocked } : {}),
     });
   }
 
