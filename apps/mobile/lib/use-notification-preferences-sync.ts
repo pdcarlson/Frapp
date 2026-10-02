@@ -147,7 +147,12 @@ export type QuietHoursWindow = {
   tz: string;
 };
 
-export type SyncIndicator = "synced" | "pending" | "cached" | "retry";
+/**
+ * `loading` is a read in flight with no answer yet and nothing being written
+ * (the first read, or a new chapter's preferences): the screen must not call
+ * that "Saving…" (#2938). `pending` is a write.
+ */
+export type SyncIndicator = "synced" | "loading" | "pending" | "cached" | "retry";
 
 /**
  * The quiet-hour fields of `GET /v1/settings`. Picked from the contract's type
@@ -165,8 +170,15 @@ type CachedPreferences = {
   categories: Partial<CategoryState>;
 };
 
+/**
+ * What the screen shows with nothing stored and no server answer yet. Quiet
+ * hours are off because that is the server's own default: a member who never
+ * saved has no window (spec/behavior/notifications.md § Quiet Hours). Defaulting
+ * on drew the switch on and then flipped it off when the first read landed, for
+ * every new member (#2938). Categories default to the catalog's.
+ */
 const DEFAULT_CACHED: CachedPreferences = {
-  quietHoursEnabled: true,
+  quietHoursEnabled: false,
   categories: {},
 };
 
@@ -519,7 +531,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
     if (updateSettings.isError || settingsQuery.isError) return "retry";
     if (updateSettings.isPending) return "pending";
     if (settingsQuery.isSuccess) return "synced";
-    return "pending";
+    return "loading";
   }, [
     isAuthenticated,
     settingsQuery.isError,
@@ -533,7 +545,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
     if (updatePreference.isError || notifPrefsQuery.isError) return "retry";
     if (updatePreference.isPending) return "pending";
     if (notifPrefsQuery.isSuccess) return "synced";
-    return "pending";
+    return "loading";
   }, [
     chapterId,
     isAuthenticated,
