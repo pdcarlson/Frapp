@@ -53,10 +53,9 @@ import {
  * - `requireAnyOf` — shown when the caller holds at least one listed.
  * - Omitting both renders the item unconditionally.
  *
- * Status flags:
- * - `status: 'available'` — route is built and clickable.
- * - `status: 'coming-soon'` — disabled with a chip so users can see what's
- *   on the roadmap but not be frustrated by broken links.
+ * Every row links to a built route. There are no roadmap rows: a row drawn
+ * disabled with nothing behind it is a dead-end control, and the "Coming soon"
+ * branch that drew one had no producer left when it was deleted (#3089).
  *
  * Module gating:
  * - `module` — the `enabled_modules` key (see `@repo/org-archetypes`
@@ -78,18 +77,13 @@ export type NavPermissionRule =
   | { requirePermission: string; requireAnyOf?: undefined }
   | { requirePermission?: undefined; requireAnyOf: readonly string[] };
 
-export type NavStatus = "available" | "coming-soon";
-
 export type NavItem = {
   id: string;
   label: string;
   /** A Signet duotone glyph (`nav-glyphs.tsx`) — the intent → glyph map is `iconography.md` §6.2. */
   icon: NavGlyphComponent;
-  href?: string;
-  breadcrumbTitle?: string;
+  href: string;
   description?: string;
-  status: NavStatus;
-  statusLabel?: string;
   /** `enabled_modules` key that gates this item; omit for always-on items. */
   module?: string;
   /**
@@ -132,9 +126,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Chat",
         icon: ChatGlyph,
         href: "/chat",
-        breadcrumbTitle: "Chat",
         description: "Channels, DMs, announcements, realtime.",
-        status: "available",
       },
     ],
   },
@@ -147,9 +139,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Events",
         icon: EventsGlyph,
         href: "/events",
-        breadcrumbTitle: "Events",
         description: "Schedule, attendance, check-ins, calendar export.",
-        status: "available",
         module: "events",
       },
       {
@@ -157,9 +147,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Tasks",
         icon: TasksGlyph,
         href: "/tasks",
-        breadcrumbTitle: "Tasks",
         description: "Assign, track, and confirm chapter tasks.",
-        status: "available",
         module: "tasks",
       },
       {
@@ -167,9 +155,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Points",
         icon: PointsGlyph,
         href: "/points",
-        breadcrumbTitle: "Points Ledger",
         description: "Leaderboard, transactions, anomaly audit.",
-        status: "available",
         module: "points",
       },
       {
@@ -177,9 +163,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Study hours",
         icon: StudyGlyph,
         href: "/study",
-        breadcrumbTitle: "Study hours",
         description: "Start a tracked study session inside a study zone.",
-        status: "available",
         module: "hours",
       },
       {
@@ -187,9 +171,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Service hours",
         icon: ServiceGlyph,
         href: "/service",
-        breadcrumbTitle: "Service hours",
         description: "Log service hours and approve entries for points.",
-        status: "available",
         module: "hours",
       },
       {
@@ -197,9 +179,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Polls",
         icon: PollsGlyph,
         href: "/polls",
-        breadcrumbTitle: "Polls",
         description: "Chapter poll list with live results.",
-        status: "available",
         module: "polls",
         requirePermission: "polls:view_all",
       },
@@ -214,9 +194,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Documents",
         icon: DocumentsGlyph,
         href: "/documents",
-        breadcrumbTitle: "Chapter Documents",
         description: "Chapter files and organizational documents.",
-        status: "available",
         module: "documents",
       },
       {
@@ -224,9 +202,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Backwork",
         icon: BackworkGlyph,
         href: "/backwork",
-        breadcrumbTitle: "Backwork",
         description: "Academic library with rich filters.",
-        status: "available",
         module: "backwork",
       },
     ],
@@ -255,9 +231,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Directory",
         icon: DirectoryGlyph,
         href: "/members",
-        breadcrumbTitle: "Directory",
         description: "Actives and alumni, profile cards, invites, deactivation.",
-        status: "available",
         requirePermission: "members:view",
       },
       {
@@ -265,9 +239,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Billing",
         icon: BillingGlyph,
         href: "/billing",
-        breadcrumbTitle: "Billing",
         description: "Subscription, Stripe portal, member invoices, dues.",
-        status: "available",
         requirePermission: "billing:view",
       },
       {
@@ -275,10 +247,8 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Settings",
         icon: SettingsGlyph,
         href: "/settings",
-        breadcrumbTitle: "Chapter Settings",
         description:
           "Chapter setup, roles, and officer tools: chat admin, Discord import, study zones, reports.",
-        status: "available",
         // Shown to anyone Settings has something for: a tab they can use, or
         // an officer tool whose module is on (`settings-access.ts`). The
         // permission set is the coarse gate; `showWhen` drops the row when
@@ -293,37 +263,8 @@ export const DASHBOARD_NAV: NavSection[] = [
   },
 ];
 
-/**
- * Titles for routes that are reachable but deliberately absent from the nav.
- *
- * **This no longer feeds the shell.** It existed because the shell derived
- * every page's title from `DASHBOARD_NAV_BY_HREF`, so a route with no nav row
- * fell through to a bare "Dashboard" — which is what `/profile` rendered.
- * #2141 moved titles into the pages themselves (`page-header.tsx`), so a route
- * now names itself and cannot fall through to anything.
- *
- * It is kept as the record of what those off-nav routes are called, so the two
- * places that need the string agree: the page's own `PageHeader`, and the
- * route's `metadata.title`. Adding a row here does NOT make a title appear.
- */
-export const OFF_NAV_ROUTE_TITLES: Record<string, string> = {
-  "/profile": "My Profile",
-};
-
-/** Flattened list of nav items for lookup helpers. */
+/** Every nav row, flattened (the plan matrix reads their `module` keys). */
 export const DASHBOARD_NAV_ITEMS: NavItem[] = DASHBOARD_NAV.flatMap(
   (section) => section.items,
 );
 
-/**
- * Map of route → nav item. The breadcrumb and header-title resolver that used
- * to read this is gone (#2141); it survives for lookups by href, and
- * `breadcrumbTitle` survives as the canonical display name for a route.
- */
-export const DASHBOARD_NAV_BY_HREF: Record<string, NavItem> =
-  Object.fromEntries(
-    DASHBOARD_NAV_ITEMS.filter((item) => item.href).map((item) => [
-      item.href as string,
-      item,
-    ]),
-  );

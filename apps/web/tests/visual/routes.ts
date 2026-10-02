@@ -9,8 +9,8 @@
  * route here, and every suite in this directory picks it up.
  *
  * Not derived from `nav-config.ts`: that list deliberately omits `/profile` and
- * carries hrefless `coming-soon` entries, so it answers a different question
- * again.
+ * reaches the officer tools only through the Settings row, so it answers a
+ * different question again.
  */
 
 export const DASHBOARD_ROUTES = [
