@@ -1814,11 +1814,11 @@ describe("definitiveRefusalMessage", () => {
     ).toBe("You do not have access to this channel");
   });
 
-  it("is null for a 429, whose body is the throttler's framework text", () => {
+  it("is null for a 429, even with the throttler's readable sentence", () => {
     expect(
       definitiveRefusalMessage({
         statusCode: 429,
-        message: "ThrottlerException: Too Many Requests",
+        message: "Too many requests in a short time. Wait a minute, then try again.",
       }),
     ).toBeNull();
   });

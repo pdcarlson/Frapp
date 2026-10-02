@@ -476,7 +476,7 @@ describe("uploadFailureReason", () => {
   });
 
   it.each([
-    ["a 429's framework text", { statusCode: 429, message: "ThrottlerException: Too Many Requests" }],
+    ["a 429, a wait even with the throttler's readable sentence", { statusCode: 429, message: "Too many requests in a short time. Wait a minute, then try again." }],
     ["a 500's framework text", { statusCode: 500, message: "Internal server error" }],
     ["a body with no status", { message: "something" }],
     ["a native Error, which is platform jargon", new Error("NSURLErrorDomain -1009")],

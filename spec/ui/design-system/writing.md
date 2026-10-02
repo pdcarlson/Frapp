@@ -162,9 +162,10 @@ Implementation: `PermissionsOffline` (`apps/web/components/shared/async-states.t
 
 | State | Title | Description |
 |---|---|---|
-| Any API request refused with a 429 (the body's `message`) | the surface's own | `Too many requests in a short time. Wait a minute, then try again.` |
+| Any API request the throttler refuses with a 429 (the body's `message`) | the surface's own | `Too many requests in a short time. Wait a minute, then try again.` |
+| A points adjustment past the per-chapter hourly cap (429, the body's `message`) | the surface's own | `You've made {N} point adjustments in this chapter in the last hour, the most allowed. Try again later.` |
 
-The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.guard.ts`, #3142); before it, a throttled write toasted the framework's `ThrottlerException: Too Many Requests`. Both buckets reset within a minute, so "a minute" is the longest wait; `Retry-After` carries the exact seconds. Surfaces that treat a 429 as a wait rather than a refusal (chat's upload mints on web and mobile) show their own retry sentence instead, which says the same thing.
+The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.guard.ts`, #3142); before it, a throttled write toasted the framework's `ThrottlerException: Too Many Requests`. Both buckets reset within a minute, so "a minute" is the longest wait; `Retry-After` carries the exact seconds. The points cap is the one other 429 and keeps its own sentence, because its window is an hour, not a minute ([points.md § Anti-Fraud](../../behavior/points.md#anti-fraud)). Surfaces that treat a 429 as a wait rather than a refusal (chat's upload mints on web and mobile) show their own retry sentence instead, which says the same thing.
 
 ### Members (dashboard)
 
