@@ -32,6 +32,14 @@ concurrency:
 # `clean-checkout-typecheck` is the deliberate exception: it depends on nothing
 # and prebuilds nothing, so it alone exercises a clean `npm ci` with no prebuilt
 # packages.
+#
+# Every job sets `timeout-minutes` (#3129), pinned by
+# scripts/ci/__tests__/workflow-timeouts.test.mjs. On main the concurrency
+# group never cancels, so a job left at GitHub's 360-minute default holds the
+# lock for six hours if it hangs, and every push behind it loses its checks.
+# Sized from six runs on 2026-10-02 with headroom for a cold cache: 5 for jobs
+# that take seconds, 10 for those that take a minute or so, 20 for the
+# build, test and Playwright jobs that take 2 to 4.
 # ---------------------------------------------------------------------------
 
 jobs:
@@ -42,6 +50,7 @@ jobs:
   # checkout here can never fail the gate.
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
@@ -132,6 +141,7 @@ jobs:
   # ── Shared packages build (dependency for downstream jobs) ──────────────
   packages-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -151,6 +161,7 @@ jobs:
   lint-and-typecheck:
     needs: packages-build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -255,6 +266,7 @@ jobs:
   # Keep this job free of build/cache steps — adding one silently disarms it.
   clean-checkout-typecheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -302,6 +314,7 @@ jobs:
   # silently disarms it.
   web-production-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -408,6 +421,7 @@ jobs:
   api-tests:
     needs: packages-build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -439,6 +453,7 @@ jobs:
     needs: [packages-build, changes]
     if: ${{ github.event_name == 'push' || needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -485,6 +500,7 @@ jobs:
   # ── API Docker image (same path as Render native Dockerfile builds) ─────
   api-docker-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -571,6 +587,7 @@ jobs:
   api-contract-check:
     needs: packages-build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -647,6 +664,7 @@ jobs:
   dependency-cruiser:
     needs: packages-build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -685,6 +703,7 @@ jobs:
   # an advisory gate nobody can see is not advisory, it is off.
   duplicate-detection:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -717,6 +736,7 @@ jobs:
   # ── Migration safety ────────────────────────────────────────────────────
   migration-safety:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -766,6 +786,7 @@ jobs:
   # job that is also a required check is just a confusing gate.
   migration-lock-safety:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     # Reports; never blocks. Removing this line makes it a merge gate — do not
     # do that without the baseline described above.
     continue-on-error: true
@@ -804,6 +825,7 @@ jobs:
   # database is covered in `pglite-migrations` instead, the one job here with one.
   chapter-directory-seed:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
@@ -824,6 +846,7 @@ jobs:
   mobile-validate:
     needs: packages-build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -943,6 +966,7 @@ jobs:
   # ── Deploy-gate script unit tests ───────────────────────────────────────
   ci-scripts-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -965,6 +989,7 @@ jobs:
   # docs/security/security-fixes.md § npm audit sweep + CI gate.
   dependency-audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
@@ -988,6 +1013,7 @@ jobs:
   # See docs/ci-cd/secret-scanning.md.
   secret-scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
@@ -1039,6 +1065,7 @@ jobs:
     needs: changes
     if: ${{ github.event_name == 'push' || needs.changes.outputs.pglite == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -1110,6 +1137,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -1152,6 +1180,9 @@ jobs:
       # OS packages are not in ~/.cache/ms-playwright — do not skip this on
       # a browser cache hit, and do not `|| true` the install.
       - name: Install Playwright OS deps
+        # Hung for over two hours on 2026-10-01 (#3129). A slow mirror needs a
+        # few minutes; this fails the hang long before the job's own timeout.
+        timeout-minutes: 10
         run: |
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
             /etc/apt/sources.list.d/google-chrome.list.save \
@@ -1224,6 +1255,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -1257,6 +1289,9 @@ jobs:
       # for every workflow that runs install-deps. Do not skip apt hash checks
       # and do not swallow a failure with `|| true`.
       - name: Install Playwright OS deps
+        # Hung for over two hours on 2026-10-01 (#3129). A slow mirror needs a
+        # few minutes; this fails the hang long before the job's own timeout.
+        timeout-minutes: 10
         run: |
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
             /etc/apt/sources.list.d/google-chrome.list.save \
