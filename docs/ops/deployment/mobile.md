@@ -361,9 +361,11 @@ nothing is still building.
   summary says the run asked for one. Fix the tag's cause, then use **Re-run failed jobs** on this
   run rather than the Release workflow: it retries the tag without redeploying, then runs the
   store build. The Release workflow on its own tags and builds nothing; if that is how the tag
-  landed, build by hand from it (below). One exception: if the release job's log says it created
-  the tag and a later step failed, retry neither, because either would put a second tag on the
-  commit (#3126). Build by hand from the tag that landed.
+  landed, build by hand from it (below). Either retry is safe when the release job created the tag
+  and a later step failed: a commit that carries the newest `vX.Y.Z` keeps it, and only its missing
+  GitHub Release is made (#3126). (An older tag means a rollback, which takes a higher one.) Re-run
+  failed jobs replays the run's own revision of `release.yml`, so this holds for runs dispatched
+  after #3126 merged.
 
 **What a run needs outside the repo.** A non-interactive run stops without each of these. Each
 *Status* says what existed when someone last looked, and how they looked.
