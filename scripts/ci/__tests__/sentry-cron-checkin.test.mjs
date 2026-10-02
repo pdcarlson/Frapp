@@ -88,7 +88,7 @@ describe("checkInPayload", () => {
       monitor_config: {
         schedule: { type: "crontab", value: "30 6 * * *" },
         timezone: "UTC",
-        checkin_margin: 180,
+        checkin_margin: 720,
         max_runtime: 30,
         failure_issue_threshold: 1,
         recovery_threshold: 1,

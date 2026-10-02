@@ -75,10 +75,14 @@ export const MONITORS = {
     workflow: ".github/workflows/db-backup.yml",
     job: "backup-production",
     schedule: "30 6 * * *",
-    // GitHub starts scheduled runs late, sometimes by hours: #2505 measured
-    // `production-uptime.yml`'s */15 schedule at a 3.1 h median gap. A margin
-    // shorter than that pages for a backup that is merely queued.
-    checkinMarginMinutes: 180,
+    // GitHub starts scheduled runs late, sometimes by hours. This job's own
+    // starts, 2026-09-22 to 10-01, ran 5.1 to 7.7 h after 06:30 (worst
+    // 14:13Z on 09-28), so the first margin, 180, reported a missed check-in
+    // for a run that was merely queued (#3098). 720 is the worst start plus
+    // 4.3 h: a night with no run is reported missed at 18:30Z the same day,
+    // about 19 h before the 13:15Z freshness watch would see the same gap
+    // the next day. Sentry caps the margin at 40,320 (28 days).
+    checkinMarginMinutes: 720,
     maxRuntimeMinutes: 30,
   },
 };

@@ -108,7 +108,8 @@
 >
 > Once it exists, it raises an issue when a run reports `error` (the job's 30-minute
 > `timeout-minutes` included: the finish step then reports `error`), when no check-in arrives within
-> 3 hours of 06:30 UTC (the margin is wide because GitHub starts scheduled runs late), and when a
+> 12 hours of 06:30 UTC, so by 18:30Z (the margin is wide because GitHub starts this run 5 to 8 hours
+> late; [#3098](https://github.com/pdcarlson/Frapp/issues/3098)), and when a
 > run's closing check-in never arrives (Sentry marks it timed out after `max_runtime`). A check-in that
 > can't be sent never fails or skips the backup; it warns. The script's `MONITORS` entry holds the
 > schedule and limits, and a test pins them to the workflow.
