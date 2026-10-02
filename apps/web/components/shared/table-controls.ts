@@ -34,7 +34,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * that, the later sibling swallows the earlier one's clicks — the defect the
  * chat slice found under its reaction chips. So the `<label>` *is* 44x44, and
  * only where 44 is the rule: `pointer-coarse` is §2's own carve-out that
- * "compact 38px controls are web/pointer-only", read in the other direction.
+ * "compact 34px controls (§7) are web/pointer-only", read in the other direction.
  * A mouse keeps the 24px box and the 48px column; a finger gets a real 44px
  * target and the column is already wide enough to hold it.
  *
@@ -95,26 +95,30 @@ export const dashboardCheckboxHitAreaClassName = [
 ].join(" ");
 
 /**
- * The icon button that sits at the trailing edge of a **dense list row** —
- * `/documents` and `/backwork` after the greenfield lane flattened their cards
- * away (`spec/ui/web-dashboard/README.md` § Page grammar,
- * [#2144](https://github.com/pdcarlson/Frapp/issues/2144)).
+ * A compact icon control: 32px to a pointer, 44px to a finger.
  *
- * `Button`'s `size="icon"` is 44x44, which is right for a toolbar and wrong
- * inside a row the same lane pulled down to ~40px: the control would set the
- * row's height and undo the density it was flattened for. So this is the same
- * trade the checkbox hit area above makes, in the other direction — a pointer
- * gets a 32px box that fits the row, and `pointer-coarse` restores the real
- * 44px target §2 requires on touch, where the row grows to hold it.
+ * `Button`'s `size="icon"` is 44x44, which is §2's touch-target floor and right
+ * for a control that stands alone. Two places want less where a mouse can aim:
  *
- * **There is a second copy of this recipe in the tree**, `CHAT_CONTROL_CLASS`
- * in `components/chat/chip.ts`, landed by the chat lane for the same reason.
- * They are the same string and should be one; folding them together means
- * editing a chat module, which belongs to whichever lane next touches chat
- * rather than to the one that flattened these two lists. Recorded here so the
- * grep that looks for the recipe finds both.
+ * - The trailing icon button of a **dense list row**: `/documents` after the
+ *   greenfield lane flattened its cards away (`spec/ui/web-dashboard/README.md`
+ *   § Page grammar, [#2144](https://github.com/pdcarlson/Frapp/issues/2144)),
+ *   and the officer chat-admin lists. A 44px control would set the ~40px row's
+ *   height and undo the density it was flattened for.
+ * - Chat's chrome buttons, which the board puts at 32px (`1b` pin 13).
+ *
+ * Both are true at once through `pointer-coarse`: §2's own carve-out that
+ * "compact 34px controls (§7) are web/pointer-only", read in the other
+ * direction, the same trade the checkbox hit area above makes. A pointer gets a 32px box, and
+ * on touch the real 44px target returns, with the row growing to hold it.
+ *
+ * One export rather than a string per call site, because the copies drift in
+ * exactly one direction: someone shortens one to `h-8 w-8` and a touch target
+ * silently drops to 32px, which no type sees. Chat and the dense lists each
+ * held their own copy until #3042 folded them; `table-controls.spec.ts` pins
+ * the touch floor.
  */
-export const denseRowControlClassName =
+export const compactControlClassName =
   "h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11";
 
 /**

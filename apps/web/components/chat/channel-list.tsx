@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { CHAT_CONTROL_CLASS } from "./chip";
+import { compactControlClassName } from "@/components/shared/table-controls";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AuditGlyph, LockGlyph, MuteGlyph, PinGlyph } from "./chat-glyphs";
 import { Skeleton } from "@/components/shared/async-states";
@@ -708,7 +708,7 @@ export function ChannelFilters({
         <Button
           variant="ghost"
           size="icon"
-          className={cn(CHAT_CONTROL_CLASS, "relative ml-auto")}
+          className={cn(compactControlClassName, "relative ml-auto")}
           aria-label={
             active ? "Filter channels, filters on" : "Filter channels"
           }
