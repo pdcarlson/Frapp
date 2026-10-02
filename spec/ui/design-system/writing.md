@@ -393,13 +393,20 @@ the control rather than invite a retry, since only an officer can turn the
 module back on ([#2393](https://github.com/pdcarlson/Frapp/issues/2393),
 [#2718](https://github.com/pdcarlson/Frapp/issues/2718)).
 
+The two *Polls check* rows are not refusals. They are the poll card's reason
+for holding its Vote while the client's own read of whether Polls is on hasn't
+answered. Their Retry re-runs that read, never the vote. Both clients derive
+the state with `pollsGateOf` in `@repo/chat-core/polls`.
+
 | Surface | Description |
 |---|---|
 | New task (s19) | `Tasks are turned off for your chapter right now, so new tasks can't be saved. An officer can turn tasks back on.` |
 | Task status toggle (s08) | `Tasks are turned off for your chapter right now, so task updates can't be saved. An officer can turn tasks back on.` Shown on the board, like the subscription row for the same toggle ([#2710](https://github.com/pdcarlson/Frapp/issues/2710)). |
 | Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` |
 | Log service hours (s20) | `Service hours are turned off for your chapter right now, so new hours can't be logged. An officer can turn service hours back on.` |
-| Poll (chat card, web and mobile) | `Polls are turned off for your chapter right now. An officer can turn them back on.` Replaces the guard's sentence when a poll card's vote, or a `/poll` sent past a stale client gate, is refused ([#2993](https://github.com/pdcarlson/Frapp/issues/2993)). `@repo/chat-core` maps it once (`memberFacingRefusal`), so it reaches every surface that shows the server's message: the web toast, a failed poll row's inline error, and mobile's thread action-error banner. |
+| Poll (chat card, web and mobile) | `Polls are turned off for your chapter right now. An officer can turn them back on.` The withdrawn Vote's reason: while Polls is off, a poll card keeps its question, options and tally, disables its options and shows this line under them, with no Retry ([#3012](https://github.com/pdcarlson/Frapp/issues/3012)). It also replaces the guard's sentence when a vote cast past a stale client gate, or such a `/poll`, is refused ([#2993](https://github.com/pdcarlson/Frapp/issues/2993)). `@repo/chat-core` holds it once (`POLLS_OFF_COPY`; `memberFacingRefusal` maps the refusal to it), so it reaches every surface that shows the server's message: the web toast, a failed poll row's inline error, and mobile's thread action-error banner. |
+| Poll (chat card, Polls check loading) | `Checking whether polls are on for your chapter…` The Vote's reason while the chapter read the gate needs is running with nothing cached. The options stay disabled until it answers, and there is no Retry, because the read is already running. |
+| Poll (chat card, Polls check failed) | `Couldn't check whether polls are on for your chapter, so voting is paused.` · `Retry` The Vote's reason when nothing is cached and the read isn't running: it failed, it is paused offline, or it is disabled for want of a chapter. "Checking…" would never resolve there, and the Vote fails closed rather than open (README §4, "Idle with nothing cached still fails closed"). Retry re-reads it. Not the *Polls are turned off* line, because the module may well be on. A pending or failed poll row shows neither line: it takes no vote either way, and its delivery chrome already says why. |
 | Study | The *Module off* rows in *Study session (mobile, s10)* below. |
 
 ### Study session (mobile, s10)
