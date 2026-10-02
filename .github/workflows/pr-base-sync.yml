@@ -21,12 +21,20 @@ on:
 
 permissions:
   contents: read
-  # Read-only on purpose: GITHUB_TOKEN only lists/reads PRs and calls the compare
-  # API. update-branch goes through the app token exclusively — routing it
-  # through this token would push without triggering CI (recursion guard) and
-  # strand required checks at "Expected", the exact state the script refuses.
-  pull-requests: read
-  issues: write # wake comments and the alert issue go through the issues API
+  # GITHUB_TOKEN lists and reads PRs, calls the compare API, and posts the wake
+  # comments. With `pull-requests: read`, two conflict wakes failed to post
+  # while the run stayed green (#3019); the status went unlogged, and the
+  # leading cause is that a comment on a PR, though sent through the issues
+  # API, needs `pull-requests: write`. ci-wake.yml, whose PR comments do post,
+  # grants this same pair. A failed post now logs its status and GitHub's
+  # message as a warning, so the next one says whether that was the cause.
+  #
+  # Write here is not a path to update-branch: the script sends that call with
+  # the app token only (`updatePrBranch`, never `token`), because a push through
+  # this token triggers no CI (recursion guard) and would strand required checks
+  # at "Expected", the exact state the script refuses.
+  pull-requests: write
+  issues: write # the alert issue (and possibly the wake comments; see above)
 
 # Only the newest sweep matters — it re-reads every open PR against the newest
 # base tip, so cancelling a superseded in-progress or pending run loses nothing
