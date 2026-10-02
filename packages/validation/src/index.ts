@@ -9,6 +9,7 @@ import {
   POINTS_REASON_MAX_LENGTH,
   ROLE_KEY_MAX_LENGTH,
   ROLE_NAME_MAX_LENGTH,
+  YEAR_MAX,
 } from "./field-limits";
 
 // ── Legal / compliance ───────────────────────────────────────────────────────
@@ -111,7 +112,7 @@ export const ChapterBrandingSchema = z
     show_greek_letters: z.boolean().optional(),
     designation: z.string().optional(),
     school_short: z.string().optional(),
-    founded_at: z.number().int().min(1776).optional(),
+    founded_at: z.number().int().min(1776).max(YEAR_MAX).optional(),
     colors: z
       .object({
         // One seed. The legacy second colour (`dark`) fed only the
@@ -1027,6 +1028,13 @@ export {
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   CHAPTER_SHORT_NAME_MAX_LENGTH,
 };
+export {
+  INT4_MAX,
+  POLL_OPTIONS_MAX,
+  POLL_OPTIONS_MIN,
+  POSITION_MAX,
+  YEAR_MAX,
+} from "./field-limits";
 
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export {
