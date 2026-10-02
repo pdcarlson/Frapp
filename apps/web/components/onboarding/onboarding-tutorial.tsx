@@ -235,9 +235,9 @@ function OnboardingTutorialDialog({
         </DialogHeader>
 
         {/*
-          The fill is dropped, not recoloured. `--secondary` holds `--card`'s
-          value and a `DialogContent` is `--popover`, so `bg-secondary/60`
-          composited to 1.050:1 — a strip that was not there.
+          The fill is dropped, not recoloured. `--secondary` held `--card`'s
+          value (the alias is deleted, #3036) and a `DialogContent` is
+          `--popover`, so `bg-secondary/60` composited to 1.050:1 — a strip that was not there.
 
           The obvious repair is the second defect: `bg-accent-subtle` on
           `--popover` measures 1.001:1, which is `meter.ts`'s finding met in a

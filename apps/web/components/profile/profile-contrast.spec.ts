@@ -50,9 +50,9 @@ describe("the archetype card's selected state", () => {
   });
 
   it("would have caught `hover:bg-accent/50`, which was a colour over itself", () => {
-    // `--accent` holds `--popover`'s value. Inside the elevated container that
-    // *is* that token the wash is exactly 1.000:1 — the alias
-    // `components/shared/elevation-contrast.spec.ts` pins. Here the card sits
+    // `--accent` held `--popover`'s value (deleted, #3036). Inside the elevated
+    // container that *is* that token the wash is exactly 1.000:1 — the alias
+    // `components/shared/elevation-contrast.spec.ts` records. Here the card sits
     // on `--background`, so the failure is different and just as total: a
     // `--popover` wash at 50% over the app floor is a hover nobody sees as a
     // hover, because it is the same step the card already is not.
@@ -81,8 +81,8 @@ describe("the archetype card's selected state", () => {
 
 describe("the tutorial's step strip, and the fix that would have been a second defect", () => {
   it("would have caught `bg-secondary/60` inside a DialogContent", () => {
-    // `--secondary` holds `--card`'s value and a dialog is `--popover`, so the
-    // strip composited to `#211E19` — 1.050:1 against its own container.
+    // `--secondary` held `--card`'s value (deleted, #3036) and a dialog is
+    // `--popover`, so the strip composited to `#211E19` — 1.050:1 against its own container.
     const washed = applyAlpha(SURFACE.card, 0.6, SURFACE.popover);
     expect(ratio(washed, SURFACE.popover)).toBeCloseTo(1.064, 2);
     expect(ratio(washed, SURFACE.popover)).toBeLessThan(1.1);

@@ -12,8 +12,8 @@ import { Dialog, DialogContent } from "@/components/ui/dialog"
  * The command menu, built on the §9 dialog and the §2 menu tokens.
  *
  * Its selected row takes the same `--accent-subtle` / `--accent-text` recipe as
- * `select.tsx` and `dropdown-menu.tsx`, and for the same reason: `--accent` and
- * `--popover` are the same value on Signet, so the scaffold's
+ * `select.tsx` and `dropdown-menu.tsx`, and for the same reason: the scaffold's
+ * `--accent` held `--popover`'s value on Signet (deleted since, #3036), so its
  * `data-[selected=true]:bg-accent` highlighted the row in its own background —
  * on the one surface whose entire interaction model is moving a highlight with
  * the arrow keys.
