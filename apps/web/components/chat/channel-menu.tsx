@@ -17,7 +17,7 @@ import {
 import { SearchGlyph } from "@/components/layout/nav-glyphs";
 import { cn } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
-import { CHAT_CONTROL_CLASS } from "./chip";
+import { compactControlClassName } from "@/components/shared/table-controls";
 import { ChatSearchPanel, type ChatSearchHit } from "./chat-search-popover";
 import { PinsPanel, pinnedMessages, type HiddenPins } from "./pins-popover";
 import { BookmarksPanel, type BookmarkEntry } from "./bookmarks-popover";
@@ -246,7 +246,7 @@ export function ChannelMenu({
         <Button
           variant="ghost"
           size="icon"
-          className={CHAT_CONTROL_CLASS}
+          className={compactControlClassName}
           // NOT disabled without a channel. Four separate triggers collapsed
           // into this one, and two of the panels behind it are chapter-wide:
           // `BookmarksPanel` never reads a channel id, and `ChatSearchPanel`
@@ -320,7 +320,7 @@ export function ChannelMenu({
                 variant="ghost"
                 size="icon"
                 ref={backRef}
-                className={CHAT_CONTROL_CLASS}
+                className={compactControlClassName}
                 onClick={() => setView("menu")}
                 aria-label="Back to channel menu"
               >
