@@ -81,6 +81,28 @@ export type NotifyPayload = {
   category?: string;
 };
 
+/**
+ * Whether the in-app list withholds this row from a caller with `blocked`: a
+ * chat row from one of them, or a chat row that records no sender while they
+ * have blocked anyone (#2715). The list applies the same rule in its query
+ * (`notChatFrom` in the Supabase notification repository); this is the rule for
+ * a row already in hand.
+ */
+function isWithheldChatRow(
+  row: Pick<Notification, 'data'>,
+  blocked: readonly string[],
+): boolean {
+  if (blocked.length === 0) return false;
+  const target = row.data?.target;
+  const screen =
+    target !== null && typeof target === 'object'
+      ? (target as Record<string, unknown>).screen
+      : undefined;
+  if (screen !== 'chat') return false;
+  const senderId = row.data?.senderId;
+  return typeof senderId !== 'string' || blocked.includes(senderId);
+}
+
 /** In-app insert shape shared by `notifyUser` and the batched chapter path. */
 function inAppRow(
   userId: string,
@@ -584,7 +606,14 @@ export class NotificationService {
     if (!existing || existing.user_id !== userId) {
       throw new NotFoundException('Notification not found');
     }
-    return this.notificationRepo.markRead(id, userId, chapterId);
+    // A client can still hold the id of a chat row the list now withholds (it
+    // was read before the block), and marking it read must not hand its text
+    // back. Read before the write, so an unreadable list changes nothing.
+    const blocked = await this.chatBlocks.listBlockedUserIds(chapterId, userId);
+    const updated = await this.notificationRepo.markRead(id, userId, chapterId);
+    return isWithheldChatRow(updated, blocked)
+      ? { ...updated, title: '', body: '' }
+      : updated;
   }
 
   async registerPushToken(

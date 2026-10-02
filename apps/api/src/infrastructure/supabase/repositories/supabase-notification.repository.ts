@@ -9,6 +9,7 @@ import type { INotificationRepository } from '#domain/repositories/notification.
 import type { Notification } from '#domain/entities/notification.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { escapeFilterValue } from '../supabase.utils';
+import { IN_FILTER_CHAR_BUDGET } from '#domain/utils/chunk-ids';
 
 function toNotificationInsert(
   data: TablesInsert<'notifications'>,
@@ -141,10 +142,18 @@ export class SupabaseNotificationRepository implements INotificationRepository {
  * every `.or()` string in this layer is.
  */
 function notChatFrom(senderIds: readonly string[]): string {
-  const quoted = senderIds.map(escapeFilterValue).join(',');
-  return [
+  const keepNonChat = [
     'data->target->>screen.is.null',
     'data->target->>screen.neq.chat',
-    `data->>senderId.not.in.(${quoted})`,
-  ].join(',');
+  ];
+  const quoted = senderIds.map(escapeFilterValue).join(',');
+  // One ordered, limited query can't be chunked, and a list past the budget
+  // would make the URL too long and fail the whole read (`chunk-ids.ts` has the
+  // measurement). That takes a block list of about 80 members, so past it the
+  // list withholds every chat row instead: the fail-closed side, and still a
+  // history.
+  if (encodeURIComponent(quoted).length > IN_FILTER_CHAR_BUDGET) {
+    return keepNonChat.join(',');
+  }
+  return [...keepNonChat, `data->>senderId.not.in.(${quoted})`].join(',');
 }

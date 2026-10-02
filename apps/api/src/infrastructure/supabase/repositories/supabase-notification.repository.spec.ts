@@ -242,6 +242,21 @@ describe('SupabaseNotificationRepository — withholding blocked senders', () =>
     expect(rows.map((n) => n.id)).toEqual(['b-from-other', 'b-task']);
   });
 
+  it('withholds every chat row once the block list is too long for one URL', async () => {
+    // Past `IN_FILTER_CHAR_BUDGET` the list would make the request line too
+    // long and fail the whole read, so the query withholds every chat row
+    // rather than none.
+    const many = Array.from(
+      { length: 120 },
+      (_, i) => `0e000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+    );
+    const rows = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByUser(USER_SHARED, CHAPTER_B, { withholdChatFrom: many }),
+    );
+
+    expect(rows.map((n) => n.id)).toEqual(['b-task', 'b-untargeted']);
+  });
+
   it('withholds nothing when the caller has blocked nobody', async () => {
     const rows = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.findByUser(USER_SHARED, CHAPTER_B, { withholdChatFrom: [] }),

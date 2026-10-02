@@ -345,8 +345,17 @@ const HTTP_LEDGER: Record<string, Entry> = {
     status: 'not-hidden',
     why: "Chat rows are masked, including ones written before the block. The non-chat rows carrying a member's own text (a task title, an event name) are not hidden, by the spec's table row for non-chat modules.",
     proof: {
+      spec: 'infrastructure/supabase/repositories/supabase-notification.repository.spec.ts',
+      test: 'leaves out the blocked member chat rows and the senderless chat rows, and keeps the rest',
+    },
+  },
+  NotificationController_markRead_v1: {
+    // A client can hold the id of a chat row the list now withholds, read
+    // before the block. Marking it read returns the row without its text.
+    status: 'masked',
+    proof: {
       spec: 'application/services/notification.service.spec.ts',
-      test: 'withholds the chat rows of a member the caller has blocked, including ones written before the block',
+      test: 'marks a blocked member chat row read without handing its text back',
     },
   },
 };
