@@ -309,9 +309,9 @@ describe("date display goes through the right @repo/formatting member", () => {
     // …and it must stay silent on a timestamptz column, and on the bare-date
     // members that exist precisely to be reached for instead.
     const primitiveOk = `
-      import { parseInstant, parseBareDateUtcNoon } from "@repo/formatting";
+      import { parseInstant, parseBareDateLocalNoon } from "@repo/formatting";
       parseInstant(message.created_at);
-      parseBareDateUtcNoon(invoice.due_date);
+      parseBareDateLocalNoon(invoice.due_date);
     `;
     expect(wrongMemberCalls(primitiveOk)).toEqual([]);
   });
