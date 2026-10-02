@@ -102,7 +102,7 @@ import type { BookmarkEntry } from "./bookmarks-popover";
 import { ReconnectPill } from "./reconnect-pill";
 import { BlockListNotice } from "./block-list-notice";
 import { useUnblockFlow } from "./use-unblock-flow";
-import { CHAT_CONTROL_CLASS } from "./chip";
+import { compactControlClassName } from "@/components/shared/table-controls";
 import type { SlashCommand } from "@repo/chat-integrations";
 import type { ChatNotificationLevel } from "@repo/hooks";
 
@@ -1611,7 +1611,7 @@ export function ChatShell({
             <Button
               variant="ghost"
               size="icon"
-              className={cn(CHAT_CONTROL_CLASS, "shrink-0 lg:hidden")}
+              className={cn(compactControlClassName, "shrink-0 lg:hidden")}
               onClick={() => setNarrowPane("channels")}
               aria-label="Back to channels"
             >
