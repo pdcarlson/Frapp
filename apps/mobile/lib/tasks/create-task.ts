@@ -1,4 +1,4 @@
-import { parseBareDateLocalNoon } from "@repo/formatting";
+import { localIsoDate, parseBareDateLocalNoon } from "@repo/formatting";
 
 /**
  * Draft state and validation for the s19 "New task" sheet.
@@ -46,21 +46,6 @@ export interface DuePreset {
   label: string;
   /** `YYYY-MM-DD`, device-local. */
   date: string;
-}
-
-/**
- * Today as `YYYY-MM-DD` in the device's own zone.
- *
- * Deliberately not `toISOString().slice(0, 10)`, which is UTC: at 9pm PDT that
- * returns tomorrow, so a member choosing "Today" would file a task due the next
- * day. A copy of `@repo/formatting`'s `localIsoDate`, which replaces it once
- * #3168 (which rewrites this file's import) has landed.
- */
-export function localIsoDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 /** `now` plus `days`, as a local date. Month and year rollover is `Date`'s job. */

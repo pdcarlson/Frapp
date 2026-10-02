@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   duePresets,
   formatDueFieldLabel,
-  localIsoDate,
   parsePointReward,
   validateNewTask,
 } from "./create-task";
@@ -13,18 +12,6 @@ function at(year: number, month: number, day: number, hour = 12): Date {
 
 const ids = (presets: { id: string }[]) => presets.map((p) => p.id);
 const dates = (presets: { date: string }[]) => presets.map((p) => p.date);
-
-describe("localIsoDate", () => {
-  it("uses the device's own day, not UTC's", () => {
-    // 11pm local on the 17th is already the 18th in UTC — a "Today" preset must
-    // not file a task due tomorrow.
-    expect(localIsoDate(at(2026, 8, 17, 23))).toBe("2026-08-17");
-  });
-
-  it("pads single-digit months and days", () => {
-    expect(localIsoDate(at(2026, 1, 5))).toBe("2026-01-05");
-  });
-});
 
 describe("duePresets", () => {
   it("offers today, tomorrow, Friday and next week from a Monday", () => {
