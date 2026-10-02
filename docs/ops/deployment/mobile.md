@@ -1,29 +1,30 @@
 ## 6. Mobile (EAS) Setup
 
-> **Install `eas-cli` first.** It is **not** a dependency of this repo, so `npx eas …` resolves
-> nothing — npm reports "could not determine executable to run", because no npm package named
-> `eas` provides that binary. Every `eas` command in this section assumes a global install:
+> **Run `eas` as `npm run eas -- <command>`, from the repo root.** eas-cli is pinned to the
+> version CI's store build installs (`.github/workflows/_mobile-build.yml`, step "Install EAS CLI",
+> today **24.8.0**), and [`scripts/eas.mjs`](../../../scripts/eas.mjs) installs that version into
+> the gitignored `.cache/eas-cli/` on first use (about 10 seconds), with CI's flags, then runs it in
+> `apps/mobile`, where `app.json` and `eas.json` are. Nothing needs installing globally, and it works
+> the same from Windows Git Bash, PowerShell or cmd. Inside `apps/mobile` npm reads that workspace's
+> own `package.json` and answers `Missing script: "eas"`, so run it from the root (any other
+> directory in the repo works too). Add `-s` (`npm run -s eas -- …`) when you parse the output, so
+> npm's own `> node scripts/eas.mjs` banner stays off stdout. To move the version, change CI's
+> install line; this follows it.
 >
-> ```bash
-> npm install -g eas-cli
-> ```
->
-> Use **>= 21.1.0**: `eas env:set` (§ 6.3) first ships there — `21.0.0` has only the deprecated
-> `env:create` / `env:update`, verified from each release's `oclif.manifest.json`. The
-> `"cli": { "version": ">= 15.0.0" }` floor in `apps/mobile/eas.json` is a *different*
-> constraint (what EAS Build accepts) and is not sufficient for the commands here.
-> `npx eas-cli@latest <command>` works too, at the cost of re-resolving the package each run.
+> A global `npm install -g eas-cli` still works as a fallback, at whatever version you get, which may
+> not take the flags written here. `eas env:set` (§ 6.3) needs **>= 21.1.0** (`21.0.0` has only the
+> deprecated `env:create` / `env:update`, verified from each release's `oclif.manifest.json`). The
+> `"cli": { "version": ">= 15.0.0" }` floor in `apps/mobile/eas.json` is a *different* constraint
+> (what EAS Build accepts).
 
 ### 6.1 Initial Setup
 
 ```bash
-cd apps/mobile
-
-# Login to Expo
-eas login
+# From the repo root. Login to Expo
+npm run eas -- login
 
 # Inspect the linked EAS project
-eas project:info
+npm run eas -- project:info
 ```
 
 The committed [`apps/mobile/app.json`](../../../apps/mobile/app.json) links
@@ -54,7 +55,7 @@ npm start
 **Option B: Development build (better for testing native features)**
 
 ```bash
-eas build --profile development --platform ios
+npm run eas -- build --profile development --platform ios
 # or --platform android
 # Install the resulting build on your device
 ```
@@ -72,8 +73,8 @@ eas build --profile development --platform ios
 ```bash
 # One platform per command: `--platform all` starts Android, then stops on an iOS
 # failure and leaves the Android build running unreported (§ 6.6).
-eas build --profile preview --platform ios
-eas build --profile preview --platform android
+npm run eas -- build --profile preview --platform ios
+npm run eas -- build --profile preview --platform android
 # Each prints an installable link: iOS (ad-hoc) and Android (APK)
 ```
 
@@ -93,16 +94,15 @@ in eas-cli 21.1.0 (see the install note at the top of § 6).
 # Once per environment, on the EAS project app.json already links (never a new `eas init`).
 # Values are public by design (the anon key and the publishable key ship inside the
 # binary) — `--visibility plaintext` is the honest setting;
-# `sensitive` only hides them in the dashboard.
-cd apps/mobile
+# `sensitive` only hides them in the dashboard. From the repo root:
 for ENV in preview production; do
-  eas env:set --environment $ENV --scope project --visibility plaintext \
+  npm run eas -- env:set --environment $ENV --scope project --visibility plaintext \
     --name EXPO_PUBLIC_SUPABASE_URL --value "https://<ref for this env>.supabase.co"
   # The project's PUBLISHABLE key (`sb_publishable_…`), not the legacy JWT anon key:
   # a production build refuses anything else (#2526), and every EAS build refuses a
   # value that isn't a client key. Name kept for history; see ENV_REFERENCE.md
   # § apps/mobile (Expo — EAS).
-  eas env:set --environment $ENV --scope project --visibility plaintext \
+  npm run eas -- env:set --environment $ENV --scope project --visibility plaintext \
     --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "<sb_publishable_… key for this env>"
   # STOP before the production limb of this one. The App Store listing
   # (`apps/mobile/store/README.md` § Identity and § Review notes) tells Apple the app
@@ -112,11 +112,11 @@ for ENV in preview production; do
   # able to notice, falsifying the Price row, the App Review note and the
   # Financial Info → Payment Info privacy answer. `pk_test_…` in `preview` is fine.
   # See #2415 before running the production limb.
-  eas env:set --environment $ENV --scope project --visibility plaintext \
+  npm run eas -- env:set --environment $ENV --scope project --visibility plaintext \
     --name EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY --value "<pk_test_… for preview, pk_live_… for production>"
-  eas env:set --environment $ENV --scope project --visibility plaintext \
+  npm run eas -- env:set --environment $ENV --scope project --visibility plaintext \
     --name EXPO_PUBLIC_SENTRY_DSN --value "<frapp-mobile DSN>"
-  eas env:set --environment $ENV --scope project --visibility plaintext \
+  npm run eas -- env:set --environment $ENV --scope project --visibility plaintext \
     --name EXPO_PUBLIC_POSTHOG_KEY --value "<write-only phc_ project token>"
 done
 ```
@@ -142,10 +142,9 @@ remedy) are in
 row is the canonical account; this section only creates the variable.
 
 ```bash
-cd apps/mobile
-# Sentry -> Settings -> Auth Tokens, at the ORGANIZATION level (frapp-live), not a personal token.
+# From the repo root. Sentry -> Settings -> Auth Tokens, at the ORGANIZATION level (frapp-live), not a personal token.
 for ENV in preview production; do
-  eas env:set --environment $ENV --scope project --visibility secret \
+  npm run eas -- env:set --environment $ENV --scope project --visibility secret \
     --name SENTRY_AUTH_TOKEN --value "<token>"
 done
 ```
@@ -332,10 +331,10 @@ A re-run builds every platform the run asked for again, so re-run only when noth
 nothing is still building.
 
 - **A build finished but its upload failed:** fix the cause, run the summary's
-  `eas submit … --id <build id>` from `apps/mobile`, and record the build by hand.
+  `npm run eas -- submit … --id <build id>` from the repo root, and record the build by hand.
 - **A build was still running when the job stopped waiting:** it may finish on EAS. Don't start
   another. When it finishes, and its commit is still the latest `v*` tag, upload it with the same
-  `eas submit … --id` and record it.
+  `npm run eas -- submit … --id` and record it.
 - **One platform uploaded and the other didn't build:** fix the cause, then build and upload the
   other by hand from the latest `v*` tag (below), and record it.
 - **Production shipped another commit before or while EAS was building:** nothing from this run
@@ -344,7 +343,7 @@ nothing is still building.
   retries, or a top `v*` tag that isn't `vX.Y.Z`; the summary keeps both apart from a moved
   production): resolve that first. Before the builds, nothing started, so then re-run; before the
   uploads, the builds are done, so confirm the commit is the latest `v*` tag and upload them by
-  hand with the summary's `eas submit … --id`.
+  hand with the summary's `npm run eas -- submit … --id`.
 - **Nothing built:** **Re-run failed jobs** on the same run. The deploy and the tag succeeded and
   don't run again, and the builds get fresh build numbers. The re-run stops if a later ship has
   tagged another commit; dispatch Deploy production for that one instead.
@@ -368,18 +367,18 @@ nothing is still building.
   revoke the old token.
 - **iOS signing credentials in EAS.** A non-interactive build can't create the distribution
   certificate (eas-cli's `SetUpDistributionCertificate` throws `MissingCredentialsNonInteractiveError`).
-  One interactive `eas build --platform ios --profile production` creates it. *Status
+  One interactive `npm run eas -- build --platform ios --profile production` creates it. *Status
   (`eas credentials --platform ios`, 2026-10-01):* the distribution certificate and the App Store
   provisioning profile for `live.frapp.mobile`, made by the first build by hand in September 2026,
   both expire on 2027-09-17. Renew them before then with an interactive build or
-  `eas credentials --platform ios`. An expired certificate doesn't stop the run at the certificate
+  `npm run eas -- credentials --platform ios`. An expired certificate doesn't stop the run at the certificate
   step: a non-interactive build doesn't validate it, finds the profile expired, and fails trying to
   make a new profile from the old certificate (read from eas-cli 24.8.0's
   `SetUpDistributionCertificate` and `SetUpProvisioningProfile`; Apple's error itself hasn't been
   seen).
 - **An App Store Connect API key, assigned to the app for EAS Submit.** Stored on the account is
   not enough: a non-interactive submit uses only the key assigned to `live.frapp.mobile` for
-  submissions (`eas credentials --platform ios` → App Store Connect: Manage your API Key → Use an
+  submissions (`npm run eas -- credentials --platform ios` → App Store Connect: Manage your API Key → Use an
   existing API Key for EAS Submit). The table below gives the error otherwise. *Status
   (`eas credentials --platform ios`, 2026-10-01):* a key is assigned to `live.frapp.mobile` for EAS
   Submit.
@@ -395,18 +394,19 @@ nothing is still building.
 
 #### By hand
 
-Run from `apps/mobile`, after checking out the latest `v*` tag and building it on EAS
-(`eas build --platform <p> --profile production`). Both platforms read the `production` submit
+Run from the repo root, after checking out the latest `v*` tag and building it on EAS
+(`npm run eas -- build --platform <p> --profile production`). A tag cut before `npm run eas`
+existed (#3124) doesn't have it; there, use the global fallback at the top of § 6. Both platforms read the `production` submit
 profile in `apps/mobile/eas.json`; `eas submit` defaults to it, and falls back to it when the
 build's own profile has no submit profile of the same name.
 
-**Google Play:** `eas submit -p android --latest` uploads to the `internal` track, the one the
+**Google Play:** `npm run eas -- submit -p android --latest` uploads to the `internal` track, the one the
 profile sets. It authenticates with the Play service-account key held in EAS credentials, or a
 local file named by `serviceAccountKeyPath` in the profile. No key exists yet (#2556, #938); where
 it lives: [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md#appsmobile-expo--eas), the
 `eas submit` note.
 
-**App Store:** `eas submit -p ios --latest`, interactively or not:
+**App Store:** `npm run eas -- submit -p ios --latest`, interactively or not:
 
 - **App.** `submit.production.ios.ascAppId` names the App Store Connect app, `6812025642`, the
   Apple ID recorded in [`apps/mobile/store/README.md`](../../../apps/mobile/store/README.md)
@@ -442,7 +442,8 @@ eas-cli sets no request timeout on it; `eas submit --wait` exits 1 unless the su
 `FINISHED`, and `--auto-testflight-setup` defaults to on. On a version bump, re-check those
 shapes too: with a changed `build:view` shape, no build ever reads as finished, and the wait runs
 to its deadline.
-CI pins that version; a laptop isn't pinned (see the top of this section), so re-check the table
-against `eas submit --help` when a run disagrees.
+`npm run eas` runs the version CI pins (see the top of this section), so the table holds on a
+laptop too; after a bump, or when a run disagrees, re-check it against
+`npm run eas -- submit --help`.
 
 ---

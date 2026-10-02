@@ -124,7 +124,7 @@ describe("planRecord", () => {
       assert.equal(unfinished.rows[0].refused, true, status);
       assert.match(unfinished.problems[0], new RegExp(`from ${OTHER}, not the validated ${SHA}`), status);
       const text = summary({ sha: SHA, rows: unfinished.rows, entries: unfinished.entries, pr: null, problems: unfinished.problems });
-      assert.doesNotMatch(text, /eas submit/, status);
+      assert.doesNotMatch(text, /eas -- submit/, status);
     }
     // Unfinished and not yet naming a commit: still running, not refused.
     const early = plan({ platform: "ios", builds: [iosBuild({ status: "IN_QUEUE", gitCommitHash: undefined })], uploads: { ios: "skipped" } });
@@ -326,7 +326,7 @@ describe("recordShippedBuilds", () => {
     const put = JSON.parse(calls[3].body);
     const written = parseRegistry(Buffer.from(put.content, "base64").toString("utf8")).builds;
     assert.deepEqual(written.map((b) => b.platform), ["ios"]);
-    assert.match(text, /eas submit --platform android --profile production --id android-build-1/);
+    assert.match(text, /npm run eas -- submit --platform android --profile production --id android-build-1/);
   });
 
   it("records one platform when the other never started, and says so when it was asked for", async () => {
@@ -365,7 +365,7 @@ describe("recordShippedBuilds", () => {
     });
     assert.match(text, /iOS \(`ios-build-1`\) had not finished/);
     // The flag CI passes, so a hand upload creates no TestFlight group either.
-    assert.match(text, /eas submit --platform ios --profile production --id ios-build-1 --non-interactive --no-auto-testflight-setup/);
+    assert.match(text, /npm run eas -- submit --platform ios --profile production --id ios-build-1 --non-interactive --no-auto-testflight-setup/);
     assert.match(text, /Nothing was uploaded, so nothing was recorded/);
   });
 
@@ -380,7 +380,7 @@ describe("recordShippedBuilds", () => {
     assert.equal(after.code, 0);
     assert.equal(after.calls.length, 0);
     assert.match(after.text, /iOS was not uploaded: production has shipped another commit since this run/);
-    assert.doesNotMatch(after.text, /eas submit|Re-run/);
+    assert.doesNotMatch(after.text, /eas -- submit|Re-run/);
     const before = await run({
       BUILD_RESULT: "failure",
       EAS_BUILDS: "",
@@ -404,7 +404,7 @@ describe("recordShippedBuilds", () => {
       TAG_BEFORE_UPLOAD: "failure",
     });
     assert.match(upload.text, /iOS built, and was not uploaded because the latest-tag check before uploading failed without finding production moved/);
-    assert.match(upload.text, /eas submit --platform android --profile production --id android-build-1 --non-interactive`/);
+    assert.match(upload.text, /npm run eas -- submit --platform android --profile production --id android-build-1 --non-interactive`/);
     assert.doesNotMatch(upload.text, /production has shipped another commit/);
     const build = await run({
       BUILD_RESULT: "failure",
@@ -454,7 +454,7 @@ describe("recordShippedBuilds", () => {
       });
       assert.equal(code, 1, IOS_UPLOAD);
       assert.match(text, /Don't let testers install it/);
-      assert.doesNotMatch(text, /eas submit/);
+      assert.doesNotMatch(text, /eas -- submit/);
       // An upload that did happen is never reported as nothing uploaded.
       if (IOS_UPLOAD === "success") assert.doesNotMatch(text, /Nothing was uploaded/);
     }
