@@ -126,6 +126,18 @@ describe("mobile AnalyticsProvider", () => {
     expect(harness.post).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the SDK opted out with no active chapter, whose read never runs", () => {
+    harness.activeChapter = null;
+    harness.chapter.mockReturnValue({ data: undefined });
+    render(
+      <AnalyticsProvider>
+        <TrackButton eventName="logged-hours" />
+      </AnalyticsProvider>,
+    );
+    expect(harness.optOut).toHaveBeenLastCalledWith(true);
+    expect(harness.optOut).not.toHaveBeenCalledWith(false);
+  });
+
   it("is a no-op until an active chapter exists", () => {
     harness.activeChapter = null;
     mountProvider(false);

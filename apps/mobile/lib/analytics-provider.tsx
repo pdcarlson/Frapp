@@ -22,11 +22,11 @@ import {
  * not `useOrgConfig`. Fire-and-forget: a failed post never surfaces in UI.
  *
  * **Opted out until that read answers** (`isChapterAnalyticsOptedOut`, as web
- * does). While it is pending, after it fails with nothing cached, or with no
- * active chapter, the PostHog SDK stays opted out and `track` posts nothing:
- * nothing on the server stands behind what the SDK sends directly (`$identify`,
- * the `sentry-error-correlated` marker). Once a payload has loaded, only an
- * explicit `true` opts out (#3101; `spec/behavior/data-retention.md`
+ * does; #3101). While it is pending, after it fails with nothing cached, or
+ * with no active chapter, the PostHog SDK stays opted out and `track` posts
+ * nothing: nothing on the server stands behind what the SDK sends directly
+ * (`$identify`, the `sentry-error-correlated` marker). Once a payload has
+ * loaded, only an explicit `true` opts out (`spec/behavior/data-retention.md`
  * #analytics-events-pseudonymous).
  */
 type TrackFn = (name: string, properties?: AnalyticsProperties) => void;
