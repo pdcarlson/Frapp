@@ -37,10 +37,8 @@ export function isAnalyticsOptedOut(
  * SDK sends directly, so opting in is the step that needs proof (#2957). Once a
  * payload has loaded, {@link isAnalyticsOptedOut} decides.
  *
- * Web applies it (`AnalyticsProvider`); mobile still passes the flag straight
- * to `isAnalyticsOptedOut`, so it counts an unanswered read as opted in
- * (#3101). Rule: `spec/behavior/data-retention.md`
- * #analytics-events-pseudonymous.
+ * Both clients' `AnalyticsProvider` apply it (mobile since #3101). Rule:
+ * `spec/behavior/data-retention.md` #analytics-events-pseudonymous.
  */
 export function isChapterAnalyticsOptedOut(
   chapter: { analytics_opt_out?: boolean | null } | null | undefined,
