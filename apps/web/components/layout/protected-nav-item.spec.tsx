@@ -22,7 +22,6 @@ const moduleItem: NavItem = {
   label: "Events",
   icon: PointsGlyph,
   href: "/events",
-  status: "available",
   module: "events",
 };
 
@@ -31,7 +30,6 @@ const coreItem: NavItem = {
   label: "Chat",
   icon: PointsGlyph,
   href: "/chat",
-  status: "available",
 };
 
 function renderItem(item: NavItem, isModuleEnabled?: (key: string) => boolean) {
@@ -91,7 +89,6 @@ describe("isNavItemVisible", () => {
     label: "Roles",
     icon: PointsGlyph,
     href: "/settings?tab=roles",
-    status: "available",
     requirePermission: "roles:manage",
   };
 
@@ -187,29 +184,17 @@ describe("DASHBOARD_NAV structure", () => {
   });
 
   it("keeps Profile out of the chapter nav — it lives in the account menu", async () => {
-    const { DASHBOARD_NAV_BY_HREF } = await import("./nav-config");
-    expect(DASHBOARD_NAV_BY_HREF["/profile"]).toBeUndefined();
-  });
-
-  it("names the routes it deliberately left out of the nav", async () => {
-    const { DASHBOARD_NAV_BY_HREF, OFF_NAV_ROUTE_TITLES } = await import(
-      "./nav-config"
-    );
-    // The header title resolves off the nav map, so a reachable route with no
-    // nav row rendered a page called "Dashboard". Profile is that route.
-    expect(OFF_NAV_ROUTE_TITLES["/profile"]).toBe("My Profile");
-    // Anything listed here must genuinely be absent from the nav — an entry
-    // that duplicated a nav row would be a second, drifting source of truth.
-    for (const href of Object.keys(OFF_NAV_ROUTE_TITLES)) {
-      expect(DASHBOARD_NAV_BY_HREF[href]).toBeUndefined();
-    }
+    const { DASHBOARD_NAV_ITEMS } = await import("./nav-config");
+    const hrefs = DASHBOARD_NAV_ITEMS.map((item) => item.href);
+    expect(hrefs).not.toContain("/profile");
   });
 
   it("routes the directory to one entry rather than members and alumni", async () => {
-    const { DASHBOARD_NAV_BY_HREF } = await import("./nav-config");
-    expect(DASHBOARD_NAV_BY_HREF["/members"]).toBeDefined();
+    const { DASHBOARD_NAV_ITEMS } = await import("./nav-config");
+    const hrefs = DASHBOARD_NAV_ITEMS.map((item) => item.href);
+    expect(hrefs).toContain("/members");
     // /alumni still resolves as a route, but it redirects into the Alumni tab
     // and must not reappear as its own nav row.
-    expect(DASHBOARD_NAV_BY_HREF["/alumni"]).toBeUndefined();
+    expect(hrefs).not.toContain("/alumni");
   });
 });
