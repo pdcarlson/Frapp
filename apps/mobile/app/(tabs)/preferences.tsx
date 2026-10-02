@@ -114,6 +114,12 @@ type QuietHoursCardProps = {
   onEnabledChange: (value: boolean) => void;
   quietHoursWindow: QuietHoursWindow;
   onWindowChange: (next: QuietHoursWindow) => void;
+  /**
+   * False while the account's first read is in flight. An edit then would be
+   * kept only locally (quiet hours read as off until the server answers) and
+   * overwritten by the window the read returns, so it would be lost (#2938).
+   */
+  windowEditable: boolean;
   tokens: SignetTokens;
   accent: string;
   styles: ReturnType<typeof createStyles>;
@@ -124,6 +130,7 @@ function QuietHoursCard({
   onEnabledChange,
   quietHoursWindow,
   onWindowChange,
+  windowEditable,
   tokens,
   accent,
   styles,
@@ -203,6 +210,7 @@ function QuietHoursCard({
               setDraft((current) => ({ ...current, start: value }))
             }
             onBlur={commitDraft}
+            editable={windowEditable}
             placeholder="22:00"
             placeholderTextColor={tokens.color.text.muted}
             accessibilityLabel="Quiet hours start time"
@@ -220,6 +228,7 @@ function QuietHoursCard({
               setDraft((current) => ({ ...current, end: value }))
             }
             onBlur={commitDraft}
+            editable={windowEditable}
             placeholder="08:00"
             placeholderTextColor={tokens.color.text.muted}
             accessibilityLabel="Quiet hours end time"
@@ -239,6 +248,7 @@ function QuietHoursCard({
             setDraft((current) => ({ ...current, tz: value }))
           }
           onBlur={commitDraft}
+          editable={windowEditable}
           placeholder="America/New_York"
           placeholderTextColor={tokens.color.text.muted}
           accessibilityLabel="Quiet hours timezone"
@@ -392,7 +402,9 @@ export default function PreferencesScreen() {
             ? "Couldn't reach the server. Change a setting again to retry."
             : categorySync === "pending" || quietHoursSync === "pending"
               ? "Saving…"
-              : "Synced with your account.";
+              : categorySync === "loading" || quietHoursSync === "loading"
+                ? "Loading your preferences…"
+                : "Synced with your account.";
 
   async function handleSignOut() {
     await signOut();
@@ -447,6 +459,7 @@ export default function PreferencesScreen() {
         onEnabledChange={setQuietHoursEnabled}
         quietHoursWindow={quietHoursWindow}
         onWindowChange={setQuietHoursWindow}
+        windowEditable={quietHoursSync !== "loading"}
         tokens={tokens}
         accent={accent}
         styles={styles}
