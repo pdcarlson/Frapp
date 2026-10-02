@@ -102,16 +102,12 @@ describe("More hub clock (#2101)", () => {
       },
     ];
     const tree = render();
-    // The chip's date is matched loosely: east of UTC+12 the bare-date
-    // formatter prints the next day (#3026). The flip is what this pins.
-    expect(screenText(tree)).toMatch(/(^|\n)Due [A-Z][a-z]{2} \d{1,2}(\n|$)/);
+    expect(screenText(tree)).toMatch(/(^|\n)Due Sep 30(\n|$)/);
     expect(screenText(tree)).not.toContain("Past due");
 
     tick();
 
-    expect(screenText(tree)).toMatch(
-      /(^|\n)Past due [A-Z][a-z]{2} \d{1,2}(\n|$)/,
-    );
+    expect(screenText(tree)).toMatch(/(^|\n)Past due Sep 30(\n|$)/);
   });
 
   it("moves Host check-in to the next event when a check-in window closes while the screen is up", () => {
