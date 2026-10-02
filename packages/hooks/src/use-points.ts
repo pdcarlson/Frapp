@@ -3,7 +3,7 @@
 import { useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  isDefinitiveClientError,
+  isRetryableFailure,
   randomClientId,
   statusOf,
   throwUnlessOk,
@@ -135,8 +135,7 @@ class AdjustmentChapterChangedError extends Error {
  */
 function mayHaveCommitted(error: unknown): boolean {
   if (error instanceof AdjustmentChapterChangedError) return false;
-  const status = statusOf(error);
-  return status === undefined || !isDefinitiveClientError(status);
+  return isRetryableFailure(error);
 }
 
 /**

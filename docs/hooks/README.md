@@ -58,8 +58,10 @@ one should follow this shape:
   per-`mutate()` `onError`. This package has no toast and React Native has none
   at all. v5 drops the per-call callback for a superseded mutation, which is
   right for a toast and wrong for a rollback — hence the split.
-- **Set `retry: false` on a non-idempotent mutation.** `apps/web` defaults every
-  mutation to `retry: 2` (`apps/web/lib/providers/query-provider.tsx`). For a
+- **Set `retry: false` on a non-idempotent mutation.** `apps/web` retries every
+  mutation that fails transiently twice (`retryMutation` in
+  `apps/web/lib/providers/query-provider.tsx`; a definitive 4xx is never
+  retried). For a
   compare-and-set transition — the task status/confirm/reject routes — a first
   attempt whose response is merely lost leaves the retry to be answered with a
   guaranteed 400, so the rollback undoes a write that actually landed and
