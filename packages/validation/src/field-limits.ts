@@ -91,3 +91,47 @@ export const CHAT_MESSAGE_CONTENT_MAX_LENGTH = 10_000;
  * steps down to, so the cap is the tile, not the column.
  */
 export const CHAPTER_SHORT_NAME_MAX_LENGTH = 6;
+
+/**
+ * The largest value a Postgres `int` (int4) column holds (#3045).
+ *
+ * `enableImplicitConversion` lets any integer clear `@IsInt()`, and Postgres
+ * answers one past this with `22003 integer out of range`, which reaches the
+ * client as a 500 rather than a 400 naming the field. Several of those writes
+ * were also partial: a config PATCH committed its `chapters` row and skipped
+ * the audit row, and a Discord channel mapping deleted the old rows before the
+ * insert failed. So every `@IsInt()` request field that reaches an `int`
+ * column carries a `@Max`, and `dto-constraint-coverage.spec.ts` fails on one
+ * that doesn't.
+ *
+ * This is the fallback, for a field with no product ceiling (a workflow
+ * threshold whose units vary, an import's message count). Prefer a bound that
+ * means something where one exists.
+ */
+export const INT4_MAX = 2_147_483_647;
+
+/**
+ * A list position a client may set: role and category `display_order`, custom
+ * field `sort`, document folder `sort_order`, custom role `rank`.
+ *
+ * Generous, so no position a chapter has stored is refused when a form sends
+ * it back unchanged, but well below {@link INT4_MAX}: a list placed last
+ * computes `max + 1` (`CustomFieldService.nextSort`,
+ * `ChapterDocumentService.nextSortOrder`, the Discord role import, and the web
+ * chat admin for a new category), and a row stored at `INT4_MAX` itself would
+ * make every later create in that list fail. Rows already stored at
+ * `INT4_MAX` before this bound are not repaired here.
+ */
+export const POSITION_MAX = 1_000_000_000;
+
+/**
+ * A calendar year a person types: a chapter's founding year, a backwork
+ * resource's year. Four digits. The founding year's clients also refuse a year
+ * after next (`latestFoundedYear` in `@repo/hooks`); backwork's form checks
+ * only its minimum, and a static decorator can't express "after next year".
+ */
+export const YEAR_MAX = 9_999;
+
+/** Options on one poll, and the fewest a poll may have. */
+export const POLL_OPTIONS_MAX = 10;
+export const POLL_OPTIONS_MIN = 2;

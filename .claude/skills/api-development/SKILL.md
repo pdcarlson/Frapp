@@ -48,6 +48,8 @@ Use the `task` feature as the reference, since it follows every convention below
 4. Add the service. It injects the repository by token, and its spec mocks the repository.
 5. Add the DTOs. Every property needs a real class-validator constraint behind any
    `@IsOptional()`/`@ValidateIf()` gate, because `dto-constraint-coverage.spec.ts` fails otherwise.
+   The same spec fails an `@IsInt()` property with no `@Max` at or below `INT4_MAX`, unless its
+   `UNBOUNDED_INTS` entry says why it needs none.
    Zod schemas in `@repo/validation` are client UX, not enforcement, so a rule that matters
    server-side must also be on the DTO.
 6. Add the controller with the guard chain below. When spreading a DTO into a write, put
