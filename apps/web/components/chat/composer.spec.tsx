@@ -1284,14 +1284,14 @@ describe("uploadFailureDescription (#2199)", () => {
     ).toBe("File exceeds the 25 MB upload limit");
   });
 
-  it("never shows the throttler's framework text for a 429", () => {
+  it("tells a member to wait a minute after a 429, not a moment", () => {
     expect(
       uploadFailureDescription({
         statusCode: 429,
         error: "Too Many Requests",
-        message: "ThrottlerException: Too Many Requests",
+        message: "Too Many Requests",
       }),
-    ).toBe("Retry in a moment.");
+    ).toBe("Too many requests in a short time. Wait a minute, then try again.");
   });
 
   it("treats a proxy 408 and a body with no status as transient", () => {
