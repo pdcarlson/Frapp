@@ -10,9 +10,11 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  ACTION_DIR,
   WORKFLOW_DIR,
   workflowFiles,
   workflowJobs,
@@ -73,5 +75,39 @@ describe("workflow job timeouts (#3129)", () => {
       assert.ok(match, `${step.jobId}'s apt step sets timeout-minutes`);
       assert.ok(minutes(match[1]) <= 15, `${step.jobId}: ${match[1]}`);
     }
+  });
+
+  it("outlasts the migration snapshot wait in every job that can take it", () => {
+    // `download-migration-snapshot` with `on-stale: wait` polls for up to
+    // WAIT_SECONDS before it fails with a re-run hint. A job timeout shorter
+    // than that kills a required check that would have passed.
+    const action = readFileSync(
+      join(ACTION_DIR, "download-migration-snapshot", "action.yml"),
+      "utf8",
+    );
+    const wait = /^\s*WAIT_SECONDS=(\d+)\s*$/m.exec(action);
+    assert.ok(wait, "the action still sets WAIT_SECONDS");
+    const waitMinutes = Number(wait[1]) / 60;
+
+    const waiting = [];
+    for (const file of files) {
+      const path = join(WORKFLOW_DIR, file);
+      const timeouts = new Map(
+        workflowJobs(path).map((job) => [
+          job.jobId,
+          minutes(job.keys.get("timeout-minutes")),
+        ]),
+      );
+      for (const step of workflowSteps(path)) {
+        if (!/download-migration-snapshot/.test(step.body)) continue;
+        if (!/^\s+on-stale:.*\bwait\b/m.test(step.body)) continue;
+        waiting.push(`${file} ${step.jobId}`);
+        assert.ok(
+          timeouts.get(step.jobId) >= waitMinutes + 10,
+          `${file} ${step.jobId}: timeout ${timeouts.get(step.jobId)} vs a ${waitMinutes}-minute wait`,
+        );
+      }
+    }
+    assert.ok(waiting.length >= 2, `found ${waiting.join(", ")}`);
   });
 });
