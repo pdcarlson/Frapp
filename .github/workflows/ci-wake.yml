@@ -30,6 +30,7 @@ permissions:
   pull-requests: write # find the PR / comment on it
   issues: write # PR comments go through the issues API
   contents: read
+  checks: read # a job's timeout shows only in its check-run annotations
 
 # Deliberately NO concurrency group: GitHub keeps only one pending slot per
 # group and cancels the previously-pending run when a third queues, so a burst
