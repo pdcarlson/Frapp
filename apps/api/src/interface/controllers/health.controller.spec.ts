@@ -244,10 +244,65 @@ describe('HealthController', () => {
         expect(response).toMatchObject({
           code: 'DEGRADED',
         });
-        expect((response as { message: string }).message).toMatch(
-          /billing:.*STRIPE_SECRET_KEY's Stripe account and STRIPE_PRICE_ID must match/,
-        );
+        expect(response).toMatchObject({
+          message:
+            'database: connected, storage: connected, billing: misconfigured',
+        });
       }
+    });
+
+    // The route is public: Stripe's own text (a revoked key's type and last
+    // four characters) and the configured Price id stay in the log and the
+    // Sentry cause, never in the body (#2999).
+    it('keeps Stripe error text and the Price id out of the public body', async () => {
+      const mismatch = new StripePriceAccountMismatchError(
+        'price_1SecretConfiguredId',
+        'api_key_expired: Invalid API Key provided: sk_live_****abcd',
+        {
+          cause: Object.assign(
+            new Error('Invalid API Key provided: sk_live_****abcd'),
+            { code: 'api_key_expired', rawType: 'authentication_error' },
+          ),
+        },
+      );
+      stripePriceConsistency.assertConfiguredPrice.mockRejectedValue(mismatch);
+
+      const err = await controller.ready().then(
+        () => {
+          throw new Error('expected ready() to throw');
+        },
+        (thrown: unknown) => thrown,
+      );
+      expect(err).toBeInstanceOf(ServiceUnavailableException);
+      const body = JSON.stringify(
+        (err as ServiceUnavailableException).getResponse(),
+      );
+      expect(body).not.toContain('price_1SecretConfiguredId');
+      expect(body).not.toContain('sk_live');
+      expect(body).not.toContain('abcd');
+      expect(body).not.toContain('STRIPE_');
+      // The Stripe code is a fixed enum: it says "rotate the key", not which.
+      expect(body).toContain('billing: api_key_expired');
+      expect((err as Error).cause).toBe(mismatch);
+      expect(mismatch.message).toContain('sk_live_****abcd');
+    });
+
+    it("names the mismatch's own code when it has one", async () => {
+      stripePriceConsistency.assertConfiguredPrice.mockRejectedValue(
+        new StripePriceAccountMismatchError(
+          'price_inactive_one',
+          'configured Price is inactive',
+          { code: 'price_inactive' },
+        ),
+      );
+
+      await expect(controller.ready()).rejects.toMatchObject({
+        response: {
+          code: 'DEGRADED',
+          message:
+            'database: connected, storage: connected, billing: price_inactive',
+        },
+      });
     });
 
     it('throws ServiceUnavailableException when the database is unreachable', async () => {

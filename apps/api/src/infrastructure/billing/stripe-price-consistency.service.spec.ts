@@ -92,7 +92,18 @@ describe('StripePriceConsistencyService', () => {
       name: 'NonErrorThrowable',
       code: 'resource_missing',
     });
-    expect(errorLog).toHaveBeenCalled();
+    // The public /health/ready body names only this (#2999).
+    expect((thrown as StripePriceAccountMismatchError).category).toBe(
+      'resource_missing',
+    );
+    // With the body reduced to that category, this log line is where the
+    // Price id and Stripe's own reason survive, next to the request id.
+    expect(errorLog).toHaveBeenCalledWith(
+      expect.stringContaining(`STRIPE_PRICE_ID=${PRICE_ID}`),
+    );
+    expect(errorLog).toHaveBeenCalledWith(
+      expect.stringContaining('resource_missing: No such price'),
+    );
   });
 
   it('refuses boot when the configured Price is inactive', async () => {
@@ -107,7 +118,11 @@ describe('StripePriceConsistencyService', () => {
     // No Stripe error to carry, so the variant is named by `code` instead.
     expect(thrown).toMatchObject({ code: 'price_inactive' });
     expect((thrown as Error).cause).toBeUndefined();
-    expect(errorLog).toHaveBeenCalled();
+    expect(errorLog).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `configured Price is inactive; STRIPE_PRICE_ID=${PRICE_ID}`,
+      ),
+    );
   });
 
   it('does not refuse boot on a transient Stripe error', async () => {
