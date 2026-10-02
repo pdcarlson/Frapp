@@ -25,11 +25,12 @@ interface TextRendererProps {
  * here is sided or accent-filled any more; whose message it is lives on the
  * row's author line.
  *
- * **The trailing markers ride the last paragraph.** `(edited)` used to live on
+ * **The trailing markers ride the last line.** `(edited)` used to live on
  * the author line, which a grouped row does not draw, so an edited follow-on
- * said nothing (#2872). The last paragraph goes inline so the marker sits at
- * the end of its line; where the body ends in a code block the marker drops to
- * its own line under it, rather than breaking the block.
+ * said nothing (#2872). The body is one inline flow (`MessageMarkdown`), so a
+ * marker sits at the end of its last line; where the body ends in a code
+ * block, a list or a quote, the marker drops to its own line under it, rather
+ * than breaking that block.
  *
  * **An attachment-only message draws no body.** Its content is empty, and the
  * old bubble painted an empty rounded box above the image. Its trailing
@@ -62,7 +63,6 @@ export function TextRenderer({ message, trailing, muted }: TextRendererProps) {
       data-slot="message-body"
       className={cn(
         "whitespace-pre-wrap break-words text-base leading-[25px]",
-        "[&>p:last-of-type]:inline",
         muted ? "text-muted-foreground" : "text-foreground",
       )}
     >

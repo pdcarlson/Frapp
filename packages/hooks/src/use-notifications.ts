@@ -17,6 +17,8 @@ export const notificationKeys = {
   all: ["notifications"] as const,
   list: (chapterId: string | null, limit?: number) =>
     ["notifications", chapterId, limit] as const,
+  /** One chapter's in-app lists, whatever their `limit`. */
+  lists: (chapterId: string | null) => ["notifications", chapterId] as const,
   /**
    * Every chapter's preferences. Invalidating here rather than per chapter is
    * deliberate and pre-existing: it is one extra refetch on chapter switch, and
