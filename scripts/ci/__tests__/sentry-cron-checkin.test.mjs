@@ -77,6 +77,17 @@ describe("checkInQuery", () => {
   });
 });
 
+describe("MONITORS", () => {
+  it("keeps every margin under Sentry's cap and inside a day", () => {
+    // Sentry rejects a margin over 40,320 minutes (MAX_MARGIN), and a daily
+    // job's margin must end before its next expected check-in.
+    for (const [slug, monitor] of Object.entries(MONITORS)) {
+      assert.ok(monitor.checkinMarginMinutes <= 40_320, slug);
+      assert.ok(monitor.checkinMarginMinutes < 24 * 60, slug);
+    }
+  });
+});
+
 describe("checkInPayload", () => {
   it("carries the monitor's schedule as an upsert, in UTC", () => {
     const payload = checkInPayload({
@@ -88,7 +99,7 @@ describe("checkInPayload", () => {
       monitor_config: {
         schedule: { type: "crontab", value: "30 6 * * *" },
         timezone: "UTC",
-        checkin_margin: 180,
+        checkin_margin: 720,
         max_runtime: 30,
         failure_issue_threshold: 1,
         recovery_threshold: 1,
