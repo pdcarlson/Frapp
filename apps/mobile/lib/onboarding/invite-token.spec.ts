@@ -3,7 +3,6 @@ import {
   consumeRememberedInviteToken,
   extractInviteToken,
   extractInviteTokenFromQuery,
-  peekRememberedInviteToken,
   rememberInviteToken,
 } from "./invite-token";
 
@@ -34,10 +33,8 @@ describe("extractInviteToken", () => {
 describe("rememberInviteToken", () => {
   it("keeps the last non-empty token until consumed", () => {
     rememberInviteToken("first");
-    expect(peekRememberedInviteToken()).toBe("first");
     rememberInviteToken(null);
-    expect(peekRememberedInviteToken()).toBe("first");
     expect(consumeRememberedInviteToken()).toBe("first");
-    expect(peekRememberedInviteToken()).toBeNull();
+    expect(consumeRememberedInviteToken()).toBeNull();
   });
 });
