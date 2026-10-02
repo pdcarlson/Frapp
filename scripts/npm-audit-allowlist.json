@@ -16,6 +16,14 @@
       "reason": "JXL/HEIF parser infinite-loop DoS in image-size, same unavoidable Metro build-time chain as GHSA-w3rx-r6r6-pgpr, and equally unfixable — see that entry for the measurement. Expiry deliberately NOT extended past 2026-11-15: failing closed is what forces #923's decision to be made by a person.",
       "trackedBy": "#923",
       "expires": "2026-11-15"
+    },
+    {
+      "ghsa": "GHSA-86w9-cpqp-85rv",
+      "package": "node-forge",
+      "severity": "high",
+      "reason": "RSA PKCS#1 v1.5 signature verification in node-forge accepts extra nested DigestAlgorithm elements. NO UPSTREAM FIX EXISTS: the advisory covers <=1.4.0 and 1.4.0 is the newest published version (checked 2026-10-02). The only consumers are Expo tooling, @expo/cli and @expo/code-signing-certificates (both ^1.3.3), and apps/mobile configures no Expo Updates code signing. Published against an untouched lockfile; turned dependency-audit red on #3133.",
+      "trackedBy": "#3134",
+      "expires": "2026-11-01"
     }
   ]
 }

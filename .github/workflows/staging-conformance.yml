@@ -77,8 +77,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          # This is the repo's only workflow granting `issues: write` at
-          # workflow level, and a third-party action runs after checkout.
+          # This workflow grants `issues: write`, and a third-party action
+          # runs after checkout.
           persist-credentials: false
 
       - name: Setup Node

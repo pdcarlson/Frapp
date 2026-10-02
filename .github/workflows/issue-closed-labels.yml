@@ -1,0 +1,64 @@
+name: Issue closed labels
+
+# A closed issue's state is its status (docs/ci-cd/github-pm.md § States), so
+# the labels that only describe an OPEN issue are wrong the moment it closes.
+# The one that kept surviving was `in-review`: `/next` puts it on every issue a
+# PR `Fixes`, GitHub closes the issue when Paul merges, and no session is alive
+# at merge time to take the label off. Nearly every later session then removed
+# it by hand. `in-progress` is the same kind of label (the projection of a live
+# claim) and goes with it.
+#
+# Deliberately minimal action surface, matching pr-base-guard.yml: no
+# checkout, no npm, no third-party action. It reads the label names off the
+# event payload and deletes each stale one with the runner's preinstalled `gh`.
+#
+# An `issues` event fires for issues only, never for pull requests, and runs
+# the default branch's copy of this file. A close made with a workflow's own
+# GITHUB_TOKEN fires no workflow, which is why the merge (Paul, or an agent
+# through the GitHub app) is the trigger and not anything in CI.
+
+on:
+  issues:
+    types: [closed]
+
+permissions:
+  issues: write
+
+jobs:
+  drop-open-state-labels:
+    # Skips the runner entirely for the common close that carries neither.
+    if: >-
+      contains(github.event.issue.labels.*.name, 'in-review') ||
+      contains(github.event.issue.labels.*.name, 'in-progress')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Remove in-review and in-progress
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # An empty number would send the DELETE to `issues//labels/...`, whose
+          # 404 the loop below reads as success: green on every close, removing
+          # nothing.
+          if [[ ! "$ISSUE" =~ ^[0-9]+$ ]]; then
+            echo "::error::No issue number on this event (got '$ISSUE')."
+            exit 1
+          fi
+          for label in in-review in-progress; do
+            if ! jq -e --arg l "$label" 'any(.issue.labels[]; .name == $l)' "$GITHUB_EVENT_PATH" >/dev/null; then
+              continue
+            fi
+            # A 404 means someone removed it between the close and this run,
+            # which is the outcome this job wants, so it is not a failure.
+            if out=$(gh api --method DELETE "repos/$REPO/issues/$ISSUE/labels/$label" 2>&1); then
+              echo "Removed '$label' from #$ISSUE."
+            elif grep -q "HTTP 404" <<<"$out"; then
+              echo "'$label' was already gone from #$ISSUE."
+            else
+              echo "$out" >&2
+              exit 1
+            fi
+          done
