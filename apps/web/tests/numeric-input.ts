@@ -1,8 +1,8 @@
 /**
  * The entries each numeric input #2206 converted is tested against
  * (`spec/engineering.md` § Input handling), in one place so those surfaces'
- * specs state the same cases. The settings tabs that were guarded before it
- * (dues, workflows, roles rank) keep their own cases.
+ * specs state the same cases. The Dues, Workflows and Roles-rank settings
+ * inputs joined them in #3050.
  *
  * - **Refused:** a negative and a decimal reach `onChange` as typed, and the
  *   field must keep its previous value. (Service hours take a decimal, so that

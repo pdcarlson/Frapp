@@ -1,7 +1,17 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
-import { SettingsWorkflowsTab } from "./settings-workflows-tab";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import type { OrgWorkflow } from "@repo/hooks";
+import {
+  expectClearingEntriesEmpty,
+  expectRefusedEntriesKeep,
+} from "@/tests/numeric-input";
+
+const mockToast = vi.fn();
+vi.mock("@/hooks/use-toast", () => ({
+  useToast: () => ({ toast: mockToast }),
+}));
+
+import { SettingsWorkflowsTab } from "./settings-workflows-tab";
 
 const WORKFLOWS: OrgWorkflow[] = [
   {
@@ -55,23 +65,83 @@ describe("SettingsWorkflowsTab", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("guard-parses the threshold: a negative value is rejected (previous kept)", () => {
-    render(
-      <SettingsWorkflowsTab
-        workflows={WORKFLOWS}
-        canManage
-        onSave={() => {}}
-      />,
-    );
-    const input = screen.getByRole("spinbutton", {
-      name: /budget approval threshold/i,
+  describe("the threshold (#3050)", () => {
+    beforeEach(() => mockToast.mockReset());
+
+    const threshold = () =>
+      screen.getByRole("spinbutton", { name: /budget approval threshold/i });
+    const save = () =>
+      fireEvent.click(screen.getByRole("button", { name: /save workflows/i }));
+
+    it("keeps the last whole number through a negative or a decimal", () => {
+      render(
+        <SettingsWorkflowsTab
+          workflows={WORKFLOWS}
+          canManage
+          onSave={vi.fn()}
+        />,
+      );
+      expectRefusedEntriesKeep(threshold(), "750");
     });
-    fireEvent.change(input, { target: { value: "-5" } });
-    expect(input).toHaveValue(500); // unchanged — NaN/negative never committed
-    fireEvent.change(input, { target: { value: "" } });
-    expect(input).toHaveValue(500); // empty preserves previous (Number("") is 0)
-    fireEvent.change(input, { target: { value: "750" } });
-    expect(input).toHaveValue(750);
+
+    it("lets the field be emptied mid-edit, then refuses it at save by name", () => {
+      const onSave = vi.fn();
+      render(
+        <SettingsWorkflowsTab
+          workflows={WORKFLOWS}
+          canManage
+          onSave={onSave}
+        />,
+      );
+      expectClearingEntriesEmpty(threshold(), "750");
+      save();
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "The threshold for “Budget approval” needs a number",
+          variant: "destructive",
+        }),
+      );
+      expect(onSave).not.toHaveBeenCalled();
+    });
+
+    it("saves a threshold of 0, its floor", () => {
+      const onSave = vi.fn();
+      render(
+        <SettingsWorkflowsTab
+          workflows={WORKFLOWS}
+          canManage
+          onSave={onSave}
+        />,
+      );
+      fireEvent.change(threshold(), { target: { value: "0" } });
+      expect(threshold()).toHaveValue(0);
+      save();
+      expect(onSave).toHaveBeenCalledWith([
+        { key: "wf_budget_approval", enabled: true, threshold: 0 },
+        { key: "wf_task_confirm", enabled: false },
+      ]);
+    });
+
+    it("leaves a disabled workflow's emptied threshold out of the save", () => {
+      const onSave = vi.fn();
+      render(
+        <SettingsWorkflowsTab
+          workflows={WORKFLOWS}
+          canManage
+          onSave={onSave}
+        />,
+      );
+      fireEvent.change(threshold(), { target: { value: "" } });
+      fireEvent.click(
+        screen.getByRole("switch", { name: /budget approval enabled/i }),
+      );
+      save();
+      expect(mockToast).not.toHaveBeenCalled();
+      expect(onSave).toHaveBeenCalledWith([
+        { key: "wf_budget_approval", enabled: false },
+        { key: "wf_task_confirm", enabled: false },
+      ]);
+    });
   });
 
   it("saves the full workflow array with current enabled + threshold state", () => {
