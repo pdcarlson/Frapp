@@ -7,7 +7,7 @@
 // `production-backup-freshness.yml` already raises an owner-assigned P1
 // `incident` when `backup-production` failed, hung, or has no success within
 // 36 hours, checked once a day at 13:15 UTC. That watch stays; this does not
-// replace it. The monitor adds a same-morning signal in Sentry, which is
+// replace it. The monitor adds a same-day signal in Sentry, which is
 // where ADR-24's pager (Discord, being built in #2505) will read from; until
 // then an issue reaches the owner only through Sentry's email rule, and
 // alert-routing.md says what is proven of that. `error` lands the moment the job
@@ -75,10 +75,16 @@ export const MONITORS = {
     workflow: ".github/workflows/db-backup.yml",
     job: "backup-production",
     schedule: "30 6 * * *",
-    // GitHub starts scheduled runs late, sometimes by hours: #2505 measured
-    // `production-uptime.yml`'s */15 schedule at a 3.1 h median gap. A margin
-    // shorter than that pages for a backup that is merely queued.
-    checkinMarginMinutes: 180,
+    // GitHub starts scheduled runs late, sometimes by hours. This job's 35
+    // scheduled runs to 2026-10-01 started between 10:46Z and 14:46Z (08-31),
+    // except the very first, 19:12Z on 08-28, the day after the workflow was
+    // added; every run since 09-27 started after 12:00Z. So the first margin,
+    // 180 (09:30Z), reported a missed check-in for a run that was merely
+    // queued (#3098). 720 clears the latest start by 3.7 h: a night with no
+    // run is reported missed at 18:30Z the same day, about 19 h before the
+    // 13:15Z freshness watch would see the same gap the next day. Sentry caps
+    // the margin at 40,320 (28 days).
+    checkinMarginMinutes: 720,
     maxRuntimeMinutes: 30,
   },
 };
