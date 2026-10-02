@@ -63,7 +63,7 @@ import {
 } from "@/components/shared/nested-states";
 import {
   denseListClassName,
-  denseRowControlClassName,
+  compactControlClassName,
 } from "@/components/shared/table-controls";
 import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -807,7 +807,7 @@ function ChatAdminBody() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className={denseRowControlClassName}
+                    className={compactControlClassName}
                     aria-label={`Delete #${channel.name}`}
                     onClick={() => void handleDeleteChannel(channel)}
                   >
@@ -1022,7 +1022,7 @@ function ChatAdminBody() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className={denseRowControlClassName}
+                              className={compactControlClassName}
                               aria-label="Unpin message"
                               onClick={() => void handleUnpin(message.id)}
                               disabled={unpinMessage.isPending}
@@ -1131,7 +1131,7 @@ function ChatAdminBody() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className={denseRowControlClassName}
+                          className={compactControlClassName}
                           aria-label={`Rename ${category.name}`}
                           onClick={() => startEditCategory(category)}
                         >
@@ -1140,7 +1140,7 @@ function ChatAdminBody() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className={denseRowControlClassName}
+                          className={compactControlClassName}
                           aria-label={`Delete ${category.name}`}
                           onClick={() => void handleDeleteCategory(category)}
                         >
