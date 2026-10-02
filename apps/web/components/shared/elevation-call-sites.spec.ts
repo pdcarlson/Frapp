@@ -13,19 +13,26 @@ import { cn } from "@/lib/utils";
  * `family-call-sites.spec.ts` opens with the same lesson. This file reads the
  * source instead.
  *
- * **The alias ban.** `--accent` and `--secondary` hold exactly `--popover`'s and
- * `--card`'s values (`signet.css`), and the names hide it. `hover:bg-accent`
- * reads like a highlight and is the elevated step itself, so inside a dialog
- * or sheet it painted a control in its container's own colour: the Secondary
- * button (#1220), the notification drawer's rows (#1208), and before them a
- * dialog's role rows, a card's coordinate list and `/polls`' meter track, each
- * found on a screenshot rather than by a guard.
+ * **The alias ban.** `--accent` and `--secondary` were ShadCN's names for
+ * exactly `--popover`'s and `--card`'s values, and the names hid it.
+ * `hover:bg-accent` read like a highlight and was the elevated step itself, so
+ * inside a dialog or sheet it painted a control in its container's own colour:
+ * the Secondary button (#1220), the notification drawer's rows (#1208), and
+ * before them a dialog's role rows, a card's coordinate list and `/polls`'
+ * meter track, each found on a screenshot rather than by a guard.
+ *
+ * The variables, their `-foreground` pairs and the Tailwind `secondary` and
+ * `accent` keys are deleted (#3036), and the ban stays anyway. With the keys
+ * gone, `hover:bg-accent` compiles to nothing: no wrong colour any more, but
+ * the silent no-colour failure #1145 was, where a scaffold paste ships a
+ * control with no hover and no build error. The reasons below are why the
+ * names are wrong, not a claim that the aliases are live.
  *
  * A rule keyed on the container ("no `bg-accent` on a `--popover`") is what the
  * issue first asked for, and a regex cannot evaluate it. It also isn't needed:
- * the alias is never the honest spelling, because a rest fill can name the
+ * the old name is never the honest spelling, because a rest fill can name the
  * ladder step it means (`bg-popover`, `bg-card`) and a hover has state tokens
- * (`bg-card-hover`, `bg-accent-subtle`). So the four alias names are banned
+ * (`bg-card-hover`, `bg-accent-subtle`). So the four retired names are banned
  * outright, in each spelling known to reach them: a colour utility at any
  * variant and opacity (`@apply` included), a `var()` read, the `[--x]` /
  * `(--x)` / `(color:--x)` shorthands, a quoted token name handed to a call
@@ -44,7 +51,7 @@ import { cn } from "@/lib/utils";
 const WEB = join(REPO, "apps", "web");
 
 /**
- * A colour utility of one of the four alias tokens. The prefix list is every
+ * A colour utility of one of the four retired tokens. The prefix list is every
  * Tailwind utility that takes a colour; the lookarounds keep `bg-accent-subtle`,
  * `bg-accent-subtle-hover`, `border-accent-border` and `text-accent-text` (the
  * chapter-accent family, which is not an alias) out, and let any variant chain
@@ -61,8 +68,9 @@ export const ALIAS_UTILITY =
  * type-hinted `(color:--accent)` shorthands Tailwind accepts, a quoted name
  * handed to a call (`colorVar("--accent")` in a Tailwind config), and the
  * `--color-accent` variable Tailwind derives from a config key. A declaration
- * is not a read, so `--accent: …` does not match; the aliases are declared only
- * in `packages/theme/src/signet.css`, which no scan here reads.
+ * is not a read, so `--accent: …` does not match. No stylesheet declares the
+ * names any more (#3036), and `packages/theme/src/tailwind.config.spec.ts`
+ * owns the config-key half.
  */
 export const ALIAS_VAR =
   /[([](?:\s*color:)?\s*["'`]?--(?:color-)?(?:accent|secondary)(?:-foreground)?["'`]?\s*[,)\]]/g;
@@ -127,7 +135,7 @@ describe("the alias matcher", () => {
   });
 });
 
-describe("no Next surface paints the --accent or --secondary alias", () => {
+describe("no Next surface reads the retired --accent or --secondary alias", () => {
   const files = [
     ...productSourceFiles(/\.(tsx?|css)$/),
     // A config key is a second name for a token: `colorVar("--accent")` under
@@ -153,7 +161,7 @@ describe("no Next surface paints the --accent or --secondary alias", () => {
     );
     expect(
       hits,
-      "never the alias: a rest fill names its ladder step (`bg-popover`, " +
+      "never the retired alias: a rest fill names its ladder step (`bg-popover`, " +
         "`bg-card`), and a hover takes a state token above what it sits on " +
         "(`bg-card-hover`, or §2's `bg-accent-subtle` for a row in a menu or " +
         "table). Never hover to the surface the control already sits on.",
