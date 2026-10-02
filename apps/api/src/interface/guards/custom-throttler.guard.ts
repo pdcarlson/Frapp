@@ -30,6 +30,18 @@ const JWKS_VERIFIED_ALGS: ReadonlySet<string> = new Set(['ES256', 'RS256']);
 export const UNKNOWN_KID_ATTEMPT_INTERVAL_MS = 10_000;
 
 /**
+ * The `message` every 429 from the throttler carries (#3142).
+ *
+ * The base guard's default is "ThrottlerException: Too Many Requests", a
+ * framework class name, and clients show a refusal's `message`: web's
+ * `getErrorMessage` puts it in a toast. Both buckets reset within a minute
+ * (`app.module.ts`), so "a minute" is the longest a member waits; the exact
+ * seconds are in `Retry-After`. Copy: `writing.md` § Rate limited (global).
+ */
+export const THROTTLED_MESSAGE =
+  'Too many requests in a short time. Wait a minute, then try again.';
+
+/**
  * Methods counted against the `read` bucket; everything else is a `write`.
  * Exported so tests derive the expected bucket from the same set the guard
  * uses, rather than from a copy that could drift away from it.
@@ -113,6 +125,11 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     }
 
     return super.handleRequest(requestProps);
+  }
+
+  /** Every throttled request, either bucket, reads {@link THROTTLED_MESSAGE}. */
+  protected getErrorMessage(): Promise<string> {
+    return Promise.resolve(THROTTLED_MESSAGE);
   }
 
   /**
