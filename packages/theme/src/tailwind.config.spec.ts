@@ -552,22 +552,39 @@ describe("opacity modifiers survive the format-agnostic reader", () => {
     // caught a single mis-typed value. These are the semantic families the
     // shared preset is responsible for on both surfaces.
     const css = await compile(
-      "bg-card bg-card-hover text-foreground border-border bg-secondary text-muted-foreground bg-destructive bg-success bg-accent bg-popover ring-ring",
+      "bg-card bg-card-hover text-foreground border-border text-muted-foreground bg-destructive bg-success bg-popover ring-ring",
     );
     for (const [cls, token] of [
       ["bg-card", "--card"],
       ["bg-card-hover", "--card-hover"],
       ["text-foreground", "--foreground"],
       ["border-border", "--border"],
-      ["bg-secondary", "--secondary"],
       ["text-muted-foreground", "--muted-foreground"],
       ["bg-destructive", "--destructive"],
       ["bg-success", "--success"],
-      ["bg-accent", "--accent"],
       ["bg-popover", "--popover"],
     ] as const) {
       expect(css, `${cls} compiled to nothing`).toContain(`var(${token})`);
     }
+  });
+
+  it("owns no `secondary` or `accent` key, so a re-added scaffold key fails here (#3036)", () => {
+    // ShadCN's names for `--card` and `--popover`. `signet.css` no longer
+    // declares the variables, so a key bound to them would compile
+    // `hover:bg-accent` to nothing, the silent failure #1145 was. The
+    // chapter-accent family (`accent-subtle` and its siblings) is flat keys,
+    // not an `accent` object, and stays.
+    const colors = (config.theme?.extend?.colors ?? {}) as Record<
+      string,
+      unknown
+    >;
+    for (const key of ["secondary", "accent"]) {
+      expect(
+        colors,
+        `\`${key}\` is a retired ShadCN scaffold key`,
+      ).not.toHaveProperty(key);
+    }
+    expect(colors).toHaveProperty("accent-subtle");
   });
 });
 
