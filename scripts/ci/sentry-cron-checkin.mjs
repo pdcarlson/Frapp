@@ -7,7 +7,7 @@
 // `production-backup-freshness.yml` already raises an owner-assigned P1
 // `incident` when `backup-production` failed, hung, or has no success within
 // 36 hours, checked once a day at 13:15 UTC. That watch stays; this does not
-// replace it. The monitor adds a same-morning signal in Sentry, which is
+// replace it. The monitor adds a same-day signal in Sentry, which is
 // where ADR-24's pager (Discord, being built in #2505) will read from; until
 // then an issue reaches the owner only through Sentry's email rule, and
 // alert-routing.md says what is proven of that. `error` lands the moment the job

@@ -104,7 +104,9 @@
 > it after the first nightly run that follows the merge: the Sentry MCP's `find_monitors` (org
 > `frapp-live`) lists `production-db-backup`. *(Confirmed 2026-09-30: the first nightly run after
 > the merge checked in at 12:49Z, and the monitor reads `active`, its `production` environment `ok`
-> ([#2505](https://github.com/pdcarlson/Frapp/issues/2505)).)*
+> ([#2505](https://github.com/pdcarlson/Frapp/issues/2505)).)* A change to the script's schedule or
+> limits reaches the live monitor the same way, with the next check-in, so `get_monitor_details`
+> shows the old values until then; the night it lands is still judged by the old ones.
 >
 > Once it exists, it raises an issue when a run reports `error` (the job's 30-minute
 > `timeout-minutes` included: the finish step then reports `error`), when no check-in arrives within

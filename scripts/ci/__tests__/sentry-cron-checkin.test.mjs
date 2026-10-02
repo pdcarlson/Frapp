@@ -77,6 +77,17 @@ describe("checkInQuery", () => {
   });
 });
 
+describe("MONITORS", () => {
+  it("keeps every margin under Sentry's cap and inside a day", () => {
+    // Sentry rejects a margin over 40,320 minutes (MAX_MARGIN), and a daily
+    // job's margin must end before its next expected check-in.
+    for (const [slug, monitor] of Object.entries(MONITORS)) {
+      assert.ok(monitor.checkinMarginMinutes <= 40_320, slug);
+      assert.ok(monitor.checkinMarginMinutes < 24 * 60, slug);
+    }
+  });
+});
+
 describe("checkInPayload", () => {
   it("carries the monitor's schedule as an upsert, in UTC", () => {
     const payload = checkInPayload({
