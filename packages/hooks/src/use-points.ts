@@ -3,7 +3,7 @@
 import { useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  isDefinitiveClientError,
+  isRetryableFailure,
   randomClientId,
   statusOf,
   throwUnlessOk,
@@ -135,8 +135,7 @@ class AdjustmentChapterChangedError extends Error {
  */
 function mayHaveCommitted(error: unknown): boolean {
   if (error instanceof AdjustmentChapterChangedError) return false;
-  const status = statusOf(error);
-  return status === undefined || !isDefinitiveClientError(status);
+  return isRetryableFailure(error);
 }
 
 /**
@@ -168,9 +167,10 @@ function mayHaveCommitted(error: unknown): boolean {
  *   beside them under a fresh one. The reopened dialog stays on the pending
  *   adjustment instead.
  *
- * Retries go only to failures that may have committed, at most twice (the web
- * client's `retry: 2` default, made conditional): retrying a definitive 4xx
- * repeats a refusal.
+ * Retries go only to failures that may have committed, at most twice. That is
+ * the web client's default (`retryMutation`), restated here because this
+ * hook must also refuse `AdjustmentChapterChangedError`, which carries no
+ * status, and because mobile's default is no retry at all.
  */
 export function useAdjustPoints() {
   const client = useFrappClient();

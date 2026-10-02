@@ -130,3 +130,20 @@ export function isDefinitiveClientError(status: number): boolean {
     status >= 400 && status < 500 && !INCONCLUSIVE_CLIENT_ERRORS.has(status)
   );
 }
+
+/**
+ * Whether a failed call is worth repeating unchanged: anything but a
+ * definitive client refusal. A 5xx, an intermediary's 4xx
+ * ({@link isDefinitiveClientError}'s carve-out) and a failure with no status
+ * at all (a dropped connection, a timeout) may have reached the origin, or may
+ * pass next time; a definitive 4xx, the throttler's 429 included, will be
+ * refused again.
+ *
+ * It is the web client's default mutation retry (`query-provider.tsx`) and the
+ * gate on `useAdjustPoints`' retries, so "never retry a client error"
+ * (`spec/ui/resilience/api-retry.md`) is one predicate.
+ */
+export function isRetryableFailure(error: unknown): boolean {
+  const status = statusOf(error);
+  return status === undefined || !isDefinitiveClientError(status);
+}
