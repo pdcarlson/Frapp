@@ -402,8 +402,9 @@ export function useUpdateTaskStatus() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    // No retry. The web client defaults every mutation to `retry: 2`
-    // (`apps/web/lib/providers/query-provider.tsx`), and these three are
+    // No retry. The web client retries a failed mutation twice when the
+    // failure may be transient, a lost response included (`retryMutation` in
+    // `apps/web/lib/providers/query-provider.tsx`), and these three are
     // non-idempotent compare-and-set transitions: if the first attempt reaches
     // the server and only its response is lost, the retry is answered with a
     // guaranteed 400 ("Invalid status transition" / "already awarded"). The
@@ -469,8 +470,9 @@ export function useConfirmTask() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    // No retry. The web client defaults every mutation to `retry: 2`
-    // (`apps/web/lib/providers/query-provider.tsx`), and these three are
+    // No retry. The web client retries a failed mutation twice when the
+    // failure may be transient, a lost response included (`retryMutation` in
+    // `apps/web/lib/providers/query-provider.tsx`), and these three are
     // non-idempotent compare-and-set transitions: if the first attempt reaches
     // the server and only its response is lost, the retry is answered with a
     // guaranteed 400 ("Invalid status transition" / "already awarded"). The
@@ -517,8 +519,9 @@ export function useRejectTask() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    // No retry. The web client defaults every mutation to `retry: 2`
-    // (`apps/web/lib/providers/query-provider.tsx`), and these three are
+    // No retry. The web client retries a failed mutation twice when the
+    // failure may be transient, a lost response included (`retryMutation` in
+    // `apps/web/lib/providers/query-provider.tsx`), and these three are
     // non-idempotent compare-and-set transitions: if the first attempt reaches
     // the server and only its response is lost, the retry is answered with a
     // guaranteed 400 ("Invalid status transition" / "already awarded"). The
