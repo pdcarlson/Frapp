@@ -9,12 +9,13 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
-import { ROLE_NAME_MAX_LENGTH } from '@repo/validation';
+import { INT4_MAX, ROLE_NAME_MAX_LENGTH } from '@repo/validation';
 import { MAX_UPLOAD_URL_BATCH } from '../../application/services/discord-import.service';
 import {
   DISCORD_IMPORT_PROGRESS_LIMITS,
@@ -126,10 +127,12 @@ export class DiscordImportUploadFileDto {
   @ApiPropertyOptional({
     type: Number,
     description: 'Order of this JSON partition. Ignored for media.',
+    maximum: INT4_MAX,
   })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   part_index?: number;
 }
 
@@ -215,10 +218,11 @@ export class DiscordChannelMappingDto {
   @MaxLength(100, { each: true })
   new_channel_required_permissions?: string[];
 
-  @ApiPropertyOptional({ type: Number })
+  @ApiPropertyOptional({ type: Number, maximum: INT4_MAX })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   message_count?: number;
 }
 

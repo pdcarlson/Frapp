@@ -17,7 +17,10 @@ import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CHAPTER_SHORT_NAME_MAX_LENGTH,
+  INT4_MAX,
+  INVOICE_AMOUNT_MAX_CENTS,
   POINTS_ADJUSTMENT_MAX,
+  YEAR_MAX,
 } from '@repo/validation';
 import { Type } from 'class-transformer';
 import type { DuesCadence } from '#domain/entities/chapter-dues-config.entity';
@@ -93,10 +96,11 @@ export class BrandingDto {
   @IsString()
   school_short?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maximum: YEAR_MAX })
   @IsOptional()
   @IsInt()
   @Min(1776)
+  @Max(YEAR_MAX)
   founded_at?: number;
 
   @ApiPropertyOptional({ type: () => BrandingColorsDto })
@@ -132,10 +136,12 @@ export class WorkflowConfigDto {
   @ApiPropertyOptional({
     description:
       'Optional numeric threshold (guard-parsed; NaN/negative rejected)',
+    maximum: INT4_MAX,
   })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   threshold?: number;
 }
 
@@ -145,22 +151,34 @@ export class DuesConfigDto {
   @IsEnum(['monthly', 'per_semester', 'per_quarter'])
   cadence?: DuesCadence;
 
-  @ApiPropertyOptional({ description: 'Active member dues in cents' })
+  @ApiPropertyOptional({
+    description: 'Active member dues in cents',
+    maximum: INVOICE_AMOUNT_MAX_CENTS,
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INVOICE_AMOUNT_MAX_CENTS)
   active_amount_cents?: number;
 
-  @ApiPropertyOptional({ description: 'New member dues in cents' })
+  @ApiPropertyOptional({
+    description: 'New member dues in cents',
+    maximum: INVOICE_AMOUNT_MAX_CENTS,
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INVOICE_AMOUNT_MAX_CENTS)
   new_member_amount_cents?: number;
 
-  @ApiPropertyOptional({ description: 'Alumni dues in cents' })
+  @ApiPropertyOptional({
+    description: 'Alumni dues in cents',
+    maximum: INVOICE_AMOUNT_MAX_CENTS,
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INVOICE_AMOUNT_MAX_CENTS)
   alumni_amount_cents?: number;
 
   @ApiPropertyOptional()
@@ -168,28 +186,41 @@ export class DuesConfigDto {
   @IsStrictBoolean()
   installments_allowed?: boolean;
 
-  @ApiPropertyOptional({ description: 'Number of installments (>= 1)' })
+  @ApiPropertyOptional({
+    description: 'Number of installments (>= 1)',
+    maximum: INT4_MAX,
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(INT4_MAX)
   installment_count?: number;
 
-  @ApiPropertyOptional({ description: 'Late fee in cents' })
+  @ApiPropertyOptional({
+    description: 'Late fee in cents',
+    maximum: INVOICE_AMOUNT_MAX_CENTS,
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INVOICE_AMOUNT_MAX_CENTS)
   late_fee_cents?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maximum: INT4_MAX })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   grace_days?: number;
 
-  @ApiPropertyOptional({ description: 'Scholarship pool in cents' })
+  @ApiPropertyOptional({
+    description: 'Scholarship pool in cents',
+    maximum: INT4_MAX,
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(INT4_MAX)
   scholarship_pool_cents?: number;
 }
 
@@ -199,10 +230,14 @@ export class ServiceConfigDto {
       'Minutes of approved service that earn one SERVICE point (default 60). Must be at least 1 — a rate of 0 would divide by zero when awarding.',
     minimum: 1,
     example: 60,
+    maximum: POINTS_ADJUSTMENT_MAX,
   })
   @IsOptional()
   @IsInt()
   @Min(1)
+  // A service entry's `duration_minutes` is capped at POINTS_ADJUSTMENT_MAX,
+  // so a rate above it could never award a point.
+  @Max(POINTS_ADJUSTMENT_MAX)
   minutes_per_point?: number;
 }
 
