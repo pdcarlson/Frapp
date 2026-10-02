@@ -517,6 +517,9 @@ describe("TextRenderer line breaks", () => {
     ["a quote inside a list item one line", "- > q\n- x", "q\nx"],
     ["a blank line after a heading as one blank line", "# Title\n\nbody", "Title\n\nbody"],
     ["a mention in a tight list one item a line", "- hi @jane\n- b", "hi @jane\nb"],
+    // micromark's offsets skip a leading byte-order mark.
+    ["a blank line behind a byte-order mark", "\uFEFFa\n\nb", "a\n\nb"],
+    ["CRLF line endings as typed", "x\r\n\r\n- a\r\n- b", "x\n\na\nb"],
   ])("draws %s", (_, content, expected) => {
     expect(lines(content)).toBe(expected);
   });

@@ -216,8 +216,10 @@ export function layOutMessageBody(
   { allowed, source }: { allowed: ReadonlySet<string>; source: string },
 ): MessageBodyLayout {
   const endsOnOwnLine = endsInOwnLineBlock(nodes);
+  // micromark drops a leading byte-order mark before it counts offsets.
+  const parsed = source.startsWith("\uFEFF") ? source.slice(1) : source;
   return {
-    children: layOutMessageFlow(applyMessageAllowlist(nodes, allowed), source),
+    children: layOutMessageFlow(applyMessageAllowlist(nodes, allowed), parsed),
     endsOnOwnLine,
   };
 }
