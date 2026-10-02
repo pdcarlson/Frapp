@@ -35,8 +35,9 @@ import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
  * it is exported from `ChatBlockModule` and not owned by `ChatModule`:
  *
  * - {@link listBlockedUserIds}, the masking set, read by the surfaces that
- *   serve message content to a named viewer, and served to clients by
- *   `GET /v1/chat/blocks` so they can mask the Realtime echo themselves.
+ *   serve message content to a named viewer (the in-app notification list
+ *   among them, #2715), and served to clients by `GET /v1/chat/blocks` so they
+ *   can mask the Realtime echo themselves.
  * - {@link filterOutBlockers}, the audience filter, read by whatever notifies
  *   with chat content: today only the chat push worker, which has been the
  *   only chat push path since #2771.
@@ -64,8 +65,9 @@ export class ChatBlockService {
    * delivers the raw row with no viewer attached and therefore cannot be
    * server-masked. Every server read surface that masks at read time uses the
    * same method, and every one of them depends on the throw below. (The
-   * notification list's chat rows are masked at write time instead, by
-   * {@link filterOutBlockers}.)
+   * notification list's chat rows are masked twice: at write time by
+   * {@link filterOutBlockers}, and on read by this list, for the rows written
+   * before the block, #2715.)
    *
    * **Never takes a user id from the caller.** The owner is always
    * `@CurrentUser('id')`, so there is no parameter through which one member

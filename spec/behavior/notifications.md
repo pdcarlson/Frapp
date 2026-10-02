@@ -45,8 +45,11 @@ its emitter sets: `chat` sends `channelId`, `events` sends `eventId`, `tasks` se
 `screen`. `chat_reports` names the officer report queue (the new-report notification,
 [`chat/README.md`](./chat/README.md#report)); web resolves it to `/chat-admin`, and
 mobile, which has no queue, falls through to the notification list like any screen it
-does not route. A bundled chat burst adds `bundled: true` and `count`
-(`chat-push-worker.service.ts` `buildPayload`). This example previously showed a
+does not route. Every chat row and push also carries `senderId`, the sending member's
+`users.id`, which the in-app list uses to withhold a blocked member's rows
+([`chat/README.md`](./chat/README.md#what-a-block-does-and-does-not-hide), #2715). A
+bundled chat burst adds `bundled: true` and `count` (`chat-push-worker.service.ts`
+`buildPayload`). This example previously showed a
 `messageId` the chat push worker has never emitted; clients MUST NOT read one.
 
 Tapping the notification opens the app directly to the relevant content. If the user is not authenticated, the app shows the login screen first, then navigates to the target after authentication.
