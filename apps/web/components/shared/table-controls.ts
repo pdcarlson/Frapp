@@ -34,7 +34,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * that, the later sibling swallows the earlier one's clicks — the defect the
  * chat slice found under its reaction chips. So the `<label>` *is* 44x44, and
  * only where 44 is the rule: `pointer-coarse` is §2's own carve-out that
- * "compact 38px controls are web/pointer-only", read in the other direction.
+ * "compact 34px controls (§7) are web/pointer-only", read in the other direction.
  * A mouse keeps the 24px box and the 48px column; a finger gets a real 44px
  * target and the column is already wide enough to hold it.
  *
@@ -100,11 +100,11 @@ export const dashboardCheckboxHitAreaClassName = [
  * `Button`'s `size="icon"` is 44x44, which is §2's touch-target floor and right
  * for a control that stands alone. Two places want less where a mouse can aim:
  *
- * - The trailing icon button of a **dense list row**, `/documents` and
- *   `/backwork` after the greenfield lane flattened their cards away
- *   (`spec/ui/web-dashboard/README.md` § Page grammar,
- *   [#2144](https://github.com/pdcarlson/Frapp/issues/2144)). A 44px control
- *   would set the ~40px row's height and undo the density it was flattened for.
+ * - The trailing icon button of a **dense list row**: `/documents` after the
+ *   greenfield lane flattened its cards away (`spec/ui/web-dashboard/README.md`
+ *   § Page grammar, [#2144](https://github.com/pdcarlson/Frapp/issues/2144)),
+ *   and the officer chat-admin lists. A 44px control would set the ~40px row's
+ *   height and undo the density it was flattened for.
  * - Chat's chrome buttons, which the board puts at 32px (`1b` pin 13).
  *
  * Both are true at once through `pointer-coarse`: §2's own carve-out that
