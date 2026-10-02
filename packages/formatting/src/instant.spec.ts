@@ -19,7 +19,10 @@
  */
 import { describe, expect, it } from "vitest";
 import { parseInstant } from "./instant";
-import { parseBareDateUtcNoon, parseInstantOrBareUtcNoon } from "./bare-date";
+import {
+  parseBareDateLocalNoon,
+  parseInstantOrBareLocalNoon,
+} from "./bare-date";
 
 describe("parseInstant", () => {
   it("returns the parsed instant for a full ISO timestamp", () => {
@@ -61,19 +64,19 @@ describe("parseInstant", () => {
   it("does not narrow a bare YYYY-MM-DD to the stored calendar day", () => {
     // The line between this primitive and the bare-date cluster: a date-only
     // string is UTC midnight here, which is the previous local day west of
-    // Greenwich. `parseBareDateUtcNoon` is the member that fixes that, and
+    // Greenwich. `parseBareDateLocalNoon` is the member that fixes that, and
     // folding the two would silently re-break it.
     const bare = "2026-08-12";
     expect(parseInstant(bare)!.getDate()).toBe(11);
-    expect(parseBareDateUtcNoon(bare)!.getDate()).toBe(12);
+    expect(parseBareDateLocalNoon(bare)!.getDate()).toBe(12);
   });
 
   it("is the fallback that rejects a bare-date-shaped string that is not a date", () => {
     // `2026-13-45` matches BARE_DATE's `^\d{4}-\d{2}-\d{2}$`, so the noon
     // parse is attempted and yields null; only this primitive turns the
     // fall-through into a null too, and nothing else in the package covers it.
-    expect(parseBareDateUtcNoon("2026-13-45")).toBeNull();
+    expect(parseBareDateLocalNoon("2026-13-45")).toBeNull();
     expect(parseInstant("2026-13-45")).toBeNull();
-    expect(parseInstantOrBareUtcNoon("2026-13-45")).toBeNull();
+    expect(parseInstantOrBareLocalNoon("2026-13-45")).toBeNull();
   });
 });
