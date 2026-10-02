@@ -7,6 +7,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
@@ -133,7 +134,9 @@ export class RequestProofUploadUrlDto {
     description:
       'File size in bytes, if known. Rejected server-side against the upload size ceiling when present.',
   })
-  @IsOptional()
+  // Omitted is "size unknown"; `null` is not a size. `@IsOptional` would
+  // let it through to the ceiling check, which then called it too large (#2913).
+  @ValidateIf((_object, value) => value !== undefined)
   @IsInt()
   @Min(0)
   size_bytes?: number;
