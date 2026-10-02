@@ -90,6 +90,12 @@ export class HealthController {
     // through a Stripe blip. Deploy smoke and production uptime poll this path,
     // so a Price/account mismatch (resource_missing / inactive) 503s here —
     // and `StripePriceConsistencyService.onModuleInit` already refused boot.
+    //
+    // This route is public, so the body names only a fixed category: the
+    // error's own `code` when it set one, else `misconfigured`. Its message
+    // holds the configured STRIPE_PRICE_ID and Stripe's raw error text, which
+    // for a revoked key includes the key's type and last four characters
+    // (#2999). The service's error log and the Sentry `cause` keep all of it.
     try {
       await this.stripePriceConsistency.assertConfiguredPrice();
     } catch (err) {
@@ -97,7 +103,7 @@ export class HealthController {
         throw new ServiceUnavailableException(
           {
             code: 'DEGRADED',
-            message: `database: ${payload.database}, storage: ${payload.storage}, billing: ${err.message}`,
+            message: `database: ${payload.database}, storage: ${payload.storage}, billing: ${err.code ?? 'misconfigured'}`,
           },
           { cause: toReportableError(err) },
         );
