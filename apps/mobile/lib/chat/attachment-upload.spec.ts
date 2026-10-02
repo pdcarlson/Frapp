@@ -476,7 +476,6 @@ describe("uploadFailureReason", () => {
   });
 
   it.each([
-    ["a 429's framework text", { statusCode: 429, message: "ThrottlerException: Too Many Requests" }],
     ["a 500's framework text", { statusCode: 500, message: "Internal server error" }],
     ["a body with no status", { message: "something" }],
     ["a native Error, which is platform jargon", new Error("NSURLErrorDomain -1009")],
@@ -484,6 +483,12 @@ describe("uploadFailureReason", () => {
   ])("shows the generic sentence for %s", (_label, err) => {
     expect(uploadFailureReason(err)).toBe(
       "Couldn't upload that photo. Try again in a moment.",
+    );
+  });
+
+  it("tells a member to wait a minute after a 429, whatever its body says", () => {
+    expect(uploadFailureReason({ statusCode: 429, message: "Too Many Requests" })).toBe(
+      "Too many requests in a short time. Wait a minute, then try again.",
     );
   });
 
