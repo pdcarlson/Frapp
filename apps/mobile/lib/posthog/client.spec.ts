@@ -3,6 +3,7 @@ import PostHog from "posthog-react-native";
 import {
   applyAnalyticsIdentity,
   bindPostHogAdapterForTests,
+  isAnalyticsCaptureOptedOut,
   isPostHogReady,
 } from "@repo/observability/identified-posthog";
 import { initMobilePostHog } from "./client";
@@ -26,6 +27,18 @@ describe("initMobilePostHog", () => {
     expect(isPostHogReady()).toBe(true);
     initMobilePostHog();
     expect(isPostHogReady()).toBe(true);
+  });
+
+  it("starts opted out until the chapter's answer arrives (#3101)", () => {
+    const optOut = vi.spyOn(PostHog.prototype, "optOut");
+    try {
+      vi.stubEnv("EXPO_PUBLIC_POSTHOG_KEY", "phc_test_write_only");
+      initMobilePostHog();
+      expect(optOut).toHaveBeenCalledTimes(1);
+      expect(isAnalyticsCaptureOptedOut()).toBe(true);
+    } finally {
+      optOut.mockRestore();
+    }
   });
 
   it("reloads vendor flags after a hex identify", () => {
