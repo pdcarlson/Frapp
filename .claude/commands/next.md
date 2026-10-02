@@ -476,8 +476,8 @@ Release every `Part of` member now, at PR open, not after the merge:
 
 Babysit the PR to merge-ready per [`AGENTS.md`](../../AGENTS.md) § Autonomous PR lifecycle. On merge, GitHub closes
 each `Fixes`-named issue as `completed`; where it didn't, close it yourself (`issue_write` state
-closed + `completed`). Either way, `issue-closed-labels.yml` removes `in-review` and `in-progress`
-when the issue closes. The issue's state is the status; there are no manual board moves.
+closed + `completed`). Either close fires `issue-closed-labels.yml`, which removes `in-review` and
+`in-progress`. The issue's state is the status; there are no manual board moves.
 
 **After a merge, the run may loop.** When a PR merges, or the whole unit exits as `superseded` or
 `blocked-discovered`, and your context is still healthy (roughly under two-thirds spent, no

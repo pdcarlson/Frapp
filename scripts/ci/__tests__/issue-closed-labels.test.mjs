@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WORKFLOW_DIR, workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { WORKFLOW_DIR, stepRunScript, workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 // .github/workflows/issue-closed-labels.yml: takes `in-review` and
 // `in-progress` off an issue when it closes, so no session has to do it by
@@ -21,22 +21,12 @@ const uncommented = text
 
 const [step] = workflowSteps(WORKFLOW);
 
-/** The step's `run: |` block, dedented, as bash will see it. */
-function runScript(body) {
-  const lines = body.split("\n");
-  const start = lines.findIndex((l) => /^\s*run:\s*\|\s*$/.test(l));
-  assert.notEqual(start, -1, "the step has no `run: |` block");
-  const block = lines.slice(start + 1);
-  const indent = Math.min(...block.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length));
-  return block.map((l) => l.slice(indent)).join("\n");
-}
-
 /**
  * Runs the step with the issue carrying `labels`. `ghExit` / `ghOut` set what
  * the stub `gh` does for every call. Returns the exit status, output, and the
  * `gh` argument lists in call order.
  */
-function run(labels, { ghExit = 0, ghOut = "" } = {}) {
+function run(labels, { ghExit = 0, ghOut = "", issue = "42" } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "issue-closed-labels-"));
   try {
     const event = join(dir, "event.json");
@@ -48,13 +38,13 @@ function run(labels, { ghExit = 0, ghOut = "" } = {}) {
       `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nprintf '%s\\n' ${JSON.stringify(ghOut)}\nexit ${ghExit}\n`,
     );
     chmodSync(gh, 0o755);
-    const result = spawnSync("bash", ["-c", runScript(step.body)], {
+    const result = spawnSync("bash", ["-c", stepRunScript(step)], {
       encoding: "utf8",
       env: {
         PATH: `${dir}:${process.env.PATH}`,
         GITHUB_EVENT_PATH: event,
         GH_TOKEN: "test-token",
-        ISSUE: "42",
+        ISSUE: issue,
         REPO: "pdcarlson/Frapp",
       },
     });
@@ -82,10 +72,18 @@ describe("issue-closed-labels.yml", () => {
     assert.match(uncommented, /^permissions:\n {2}issues: write\n\n/m);
   });
 
-  it("skips the runner unless the issue carries one of the two labels", () => {
+  it("skips the runner unless the issue carries either label, not only both", () => {
     const [job] = workflowJobs(WORKFLOW);
-    assert.match(job.if, /contains\(github\.event\.issue\.labels\.\*\.name, 'in-review'\)/);
-    assert.match(job.if, /contains\(github\.event\.issue\.labels\.\*\.name, 'in-progress'\)/);
+    assert.equal(
+      job.if.replace(/\s+/g, " ").trim(),
+      "contains(github.event.issue.labels.*.name, 'in-review') || contains(github.event.issue.labels.*.name, 'in-progress')",
+    );
+  });
+
+  it("hands the script this issue's number, this repo and the job's own token", () => {
+    assert.equal(step.env.get("ISSUE"), "${{ github.event.issue.number }}");
+    assert.equal(step.env.get("REPO"), "${{ github.repository }}");
+    assert.equal(step.env.get("GH_TOKEN"), "${{ secrets.GITHUB_TOKEN }}");
   });
 
   it("removes in-review from a closed issue and leaves its other labels alone", () => {
@@ -121,5 +119,11 @@ describe("issue-closed-labels.yml", () => {
     const { status, out } = run(["in-review"], { ghExit: 1, ghOut: "gh: Resource not accessible by integration (HTTP 403)" });
     assert.equal(status, 1);
     assert.match(out, /HTTP 403/);
+  });
+
+  it("fails rather than calling the API when the event carries no issue number", () => {
+    const { status, calls } = run(["in-review"], { issue: "" });
+    assert.equal(status, 1);
+    assert.deepEqual(calls, []);
   });
 });

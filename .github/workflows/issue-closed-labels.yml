@@ -40,6 +40,13 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # An empty number would send the DELETE to `issues//labels/...`, whose
+          # 404 the loop below reads as success: green on every close, removing
+          # nothing.
+          if [[ ! "$ISSUE" =~ ^[0-9]+$ ]]; then
+            echo "::error::No issue number on this event (got '$ISSUE')."
+            exit 1
+          fi
           for label in in-review in-progress; do
             if ! jq -e --arg l "$label" 'any(.issue.labels[]; .name == $l)' "$GITHUB_EVENT_PATH" >/dev/null; then
               continue
