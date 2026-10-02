@@ -260,6 +260,110 @@ describe("useNotificationPreferencesSync", () => {
     expect(result.current.categorySync).toBe("synced");
   });
 
+  describe("a fresh install while the first read is in flight (#2938)", () => {
+    /** Every GET held open until the test releases it, answered as a new member. */
+    function heldReads() {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const GET = vi.fn(async (path: string) => {
+        await gate;
+        if (path === "/v1/settings") {
+          return {
+            data: {
+              quiet_hours_start: null,
+              quiet_hours_end: null,
+              quiet_hours_tz: null,
+            },
+            error: null,
+          };
+        }
+        if (path === "/v1/notifications/preferences") {
+          return { data: [], error: null };
+        }
+        return { data: null, error: null };
+      });
+      return { client: createMockClient({ GET }), release: () => release() };
+    }
+
+    it("shows quiet hours off, the server's default, and calls the read loading, not saving", async () => {
+      mockState.secureStoreToken = "test-token";
+      const { client, release } = heldReads();
+
+      const { result } = renderHook(() => useNotificationPreferencesSync(), {
+        wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
+      });
+
+      await waitFor(() => {
+        expect(result.current.isHydrated).toBe(true);
+        expect(result.current.isAuthenticated).toBe(true);
+      });
+      expect(result.current.quietHoursEnabled).toBe(false);
+      expect(result.current.quietHoursSync).toBe("loading");
+      expect(result.current.categorySync).toBe("loading");
+
+      act(() => release());
+
+      await waitFor(() => {
+        expect(result.current.quietHoursSync).toBe("synced");
+        expect(result.current.categorySync).toBe("synced");
+      });
+      // The answer agrees with what was drawn, so nothing flipped.
+      expect(result.current.quietHoursEnabled).toBe(false);
+    });
+
+    it("still lets a cached blob win until the server answers", async () => {
+      mockState.secureStoreToken = "test-token";
+      mockState.asyncStorageMap.set(
+        PREFERENCE_STORAGE_KEY,
+        JSON.stringify({ quietHoursEnabled: true, categories: {} }),
+      );
+      const { client, release } = heldReads();
+
+      const { result } = renderHook(() => useNotificationPreferencesSync(), {
+        wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
+      });
+
+      await waitFor(() => {
+        expect(result.current.isHydrated).toBe(true);
+        expect(result.current.quietHoursEnabled).toBe(true);
+      });
+      expect(result.current.quietHoursSync).toBe("loading");
+
+      act(() => release());
+
+      await waitFor(() => {
+        expect(result.current.quietHoursEnabled).toBe(false);
+      });
+    });
+
+    it("says pending, not loading, once a write is in flight before the read lands", async () => {
+      mockState.secureStoreToken = "test-token";
+      const { client } = heldReads();
+      const { patch } = deferredPatch("success");
+      client.PATCH = patch;
+
+      const { result } = renderHook(() => useNotificationPreferencesSync(), {
+        wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
+      });
+
+      await waitFor(() => {
+        expect(result.current.isAuthenticated).toBe(true);
+      });
+
+      act(() => {
+        result.current.setQuietHoursEnabled(true);
+        result.current.setCategory("chat", false);
+      });
+
+      await waitFor(() => {
+        expect(result.current.quietHoursSync).toBe("pending");
+        expect(result.current.categorySync).toBe("pending");
+      });
+    });
+  });
+
   // #2885: what s16 shows a member who has never saved settings, which is
   // every new member. The API answers them with the column defaults. It used
   // to send an empty body, the settings query failed, and the screen fell back

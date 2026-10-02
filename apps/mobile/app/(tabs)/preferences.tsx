@@ -392,7 +392,9 @@ export default function PreferencesScreen() {
             ? "Couldn't reach the server. Change a setting again to retry."
             : categorySync === "pending" || quietHoursSync === "pending"
               ? "Saving…"
-              : "Synced with your account.";
+              : categorySync === "loading" || quietHoursSync === "loading"
+                ? "Loading your account's settings…"
+                : "Synced with your account.";
 
   async function handleSignOut() {
     await signOut();
