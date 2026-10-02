@@ -377,7 +377,8 @@ renumber. Whether GitHub accepts the name for a new Release, and so how GA leave
 open ([#3015](https://github.com/pdcarlson/Frapp/issues/3015)).
 
 The **Deploy production** dispatch also accepts an explicit `bump` input that overrides
-the scan. The tag is created *after* Render and Vercel report healthy, so a `v*` tag
+the scan, except for a commit that already carries the newest release: that run reuses
+its tag and warns that the bump was ignored (#3126). The tag is created *after* Render and Vercel report healthy, so a `v*` tag
 names a commit that is live.
 
 ---
