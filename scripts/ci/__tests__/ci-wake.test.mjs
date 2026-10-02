@@ -335,6 +335,31 @@ test("upsert deletes only this workflow's stale markers, then creates", async ()
   assert.equal(creates.length, 1);
 });
 
+test("a refused upsert reports GitHub's message beside the status", async () => {
+  const { fetchImpl } = makeFetchMock([
+    { method: "GET", path: "/issues/659/comments", body: [] },
+    {
+      method: "POST",
+      path: "/issues/659/comments",
+      status: 403,
+      body: { message: "Resource not accessible by integration" },
+    },
+  ]);
+  const result = await upsertWakeComment({
+    token: "t",
+    repo: "o/r",
+    prNumber: 659,
+    marker: wakeMarkerFor("CI"),
+    body: "new",
+    fetchImpl,
+  });
+  assert.deepEqual(result, {
+    posted: false,
+    status: 403,
+    error: "Resource not accessible by integration",
+  });
+});
+
 test("upsert collects stale ids across pages before deleting (no shift-skip)", async () => {
   const page1 = Array.from({ length: 100 }, (_, i) => ({ id: i + 1, body: "human" }));
   page1[94] = { id: 95, body: `${wakeMarkerFor("CI")}\nstale A` };

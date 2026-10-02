@@ -423,6 +423,10 @@ export async function clearMarkedComments({
 /**
  * Delete-then-create upsert scoped to one workflow's marker. Creating (not
  * editing) is what makes the webhook deliver action=created to the wake path.
+ *
+ * A failed post returns GitHub's own `message` as `error` beside the status,
+ * because the status alone can't tell a missing token permission ("Resource
+ * not accessible by integration") from a locked thread or an abuse limit.
  */
 export async function upsertWakeComment({
   token,
@@ -434,14 +438,16 @@ export async function upsertWakeComment({
 }) {
   await clearMarkedComments({ token, repo, prNumber, marker, fetchImpl });
 
-  const { ok, status } = await ghRequest({
+  const { ok, status, data } = await ghRequest({
     token,
     fetchImpl,
     method: "POST",
     path: `/repos/${repo}/issues/${prNumber}/comments`,
     body: { body },
   });
-  return { posted: ok, status };
+  let error = null;
+  if (!ok) error = typeof data === "string" ? data : (data?.message ?? null);
+  return { posted: ok, status, error };
 }
 
 // ── Orchestration ───────────────────────────────────────────────────────────
@@ -547,7 +553,7 @@ export async function processCompletedRun({
     reason: classification.reason,
     rerunResult,
   });
-  const { posted, status } = await upsertWakeComment({
+  const { posted, status, error } = await upsertWakeComment({
     token,
     repo,
     prNumber,
@@ -558,7 +564,7 @@ export async function processCompletedRun({
   logger.log?.(
     posted
       ? `[ci-wake] wake comment posted on #${prNumber}`
-      : `[ci-wake] comment post failed on #${prNumber}: HTTP ${status}`,
+      : `[ci-wake] comment post failed on #${prNumber}: HTTP ${status}${error ? ` (${error})` : ""}`,
   );
   return {
     ...classification,

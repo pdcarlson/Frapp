@@ -176,6 +176,79 @@ test("conflicted PR gets a wake comment and never an update attempt", async () =
   );
 });
 
+// A wake comment that fails to post is the one signal a conflicted PR's session
+// gets, so the failure must not read as success (#3019).
+function capture() {
+  const lines = [];
+  return { logger: { log: (line) => lines.push(line) }, lines };
+}
+const refusedCommentRoute = (number) => ({
+  method: "POST",
+  path: `/issues/${number}/comments`,
+  status: 403,
+  body: { message: "Resource not accessible by integration" },
+});
+
+test("a conflict wake that fails to post says so, with GitHub's status and message", async () => {
+  const pr = makePr(31, { mergeable: false, mergeable_state: "dirty" });
+  const { logger, lines } = capture();
+  const { results } = await sweep({
+    routes: [listRoute([pr]), detailRoute(pr), emptyCommentsRoute, refusedCommentRoute(31)],
+    updateToken: "pat",
+    logger,
+  });
+  assert.deepEqual(results, [
+    { number: 31, verdict: "conflict", action: "comment-failed", status: 403 },
+  ]);
+  const warning = lines.find((line) => line.startsWith("::warning::"));
+  assert.ok(warning, "a failed wake must be a workflow warning, not a plain log line");
+  assert.match(warning, /#31: CONFLICTS with main/);
+  assert.match(warning, /HTTP 403: Resource not accessible by integration/);
+});
+
+test("a behind wake that fails to post says so too", async () => {
+  const pr = makePr(32, {
+    head: {
+      ref: "feature",
+      sha: "32".padStart(40, "0"),
+      repo: { full_name: "someone-else/Frapp" },
+    },
+  });
+  const { logger, lines } = capture();
+  const { results } = await sweep({
+    routes: [
+      listRoute([pr]),
+      detailRoute(pr),
+      compareRoute(pr.head.sha, 1),
+      emptyCommentsRoute,
+      refusedCommentRoute(32),
+    ],
+    updateToken: "pat",
+    logger,
+  });
+  assert.deepEqual(results, [
+    { number: 32, verdict: "behind", action: "comment-failed", status: 403 },
+  ]);
+  assert.ok(lines.some((line) => /^::warning::.*#32: behind by 1.*FAILED \(HTTP 403/.test(line)));
+});
+
+test("a wake that gets no response names that instead of a status", async () => {
+  const pr = makePr(33, { mergeable: false, mergeable_state: "dirty" });
+  const { logger, lines } = capture();
+  const { results } = await sweep({
+    routes: [listRoute([pr]), detailRoute(pr), emptyCommentsRoute],
+    logger,
+    fetchWrapper: (fetchImpl) => (url, init) => {
+      if (init?.method === "POST" && url.includes("/issues/33/comments")) {
+        return Promise.reject(new Error("ECONNRESET"));
+      }
+      return fetchImpl(url, init);
+    },
+  });
+  assert.equal(results[0].action, "comment-failed");
+  assert.ok(lines.some((line) => /^::warning::.*#33.*FAILED \(no response/.test(line)));
+});
+
 // ── Sweep: behind PR, with and without the PAT ──────────────────────────────
 
 test("behind + PAT: updates via update-branch with expected_head_sha, no comment", async () => {

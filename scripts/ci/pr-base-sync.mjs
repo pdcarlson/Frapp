@@ -36,7 +36,8 @@
 // the same reason.
 //
 // Env inputs:
-//   GITHUB_TOKEN        — required (pull-requests/issues: write); reads + comments
+//   GITHUB_TOKEN        — required (pull-requests + issues: write); reads,
+//                         wake comments and the alert issue, never update-branch
 //   PR_BASE_SYNC_TOKEN  — optional GitHub App installation token (contents +
 //                         pull-requests write), minted in the workflow by
 //                         actions/create-github-app-token; update-branch only
@@ -537,18 +538,16 @@ async function processOnePr({
   }
 
   const postConflictComment = async () => {
-    const { posted } = await upsertWakeComment({
+    const wake = await postWakeComment({
       token,
       repo,
-      prNumber: number,
-      marker: BASE_SYNC_MARKER,
+      number,
       body: buildConflictComment({ baseRef, baseSha, pr }),
+      what: `CONFLICTS with ${baseRef}`,
       fetchImpl,
+      logger,
     });
-    logger.log?.(
-      `[pr-base-sync] #${number}: CONFLICTS with ${baseRef} — wake comment ${posted ? "posted" : "FAILED"}`,
-    );
-    return { number, verdict: "conflict", action: "commented" };
+    return { number, verdict: "conflict", ...wake };
   };
 
   if (pr.mergeable === false) return postConflictComment();
@@ -670,23 +669,57 @@ async function processOnePr({
     }
   }
 
-  const { posted } = await upsertWakeComment({
+  const wake = await postWakeComment({
+    token,
+    repo,
+    number,
+    body: buildBehindComment({ baseRef, baseSha, pr, reason }),
+    what: `behind by ${behindBy}, not auto-updated (${reason})`,
+    fetchImpl,
+    logger,
+  });
+  return {
+    number,
+    verdict: "behind",
+    ...wake,
+    ...(blockedDetail ? { blockedDetail } : {}),
+  };
+}
+
+/**
+ * Posts one PR's wake comment and says whether it landed.
+ *
+ * The comment is the only signal that reaches the session watching a conflicted
+ * PR (the PR-activity webhook is silent on merge conflicts), so a failed post
+ * is loud: a `::warning::` annotation on the run, carrying GitHub's status and
+ * message, and `action: "comment-failed"` instead of `"commented"` (#3019).
+ *
+ * Deliberately not a red run. This workflow runs on every push to `main`, and
+ * a failed check on `main`'s commit reads to everything that consumes its
+ * check state (the production deploy's green-CI gate, the base-recovered
+ * notices) as `main` being broken. The annotation is on the run's summary,
+ * and the next push to `main` retries the post.
+ */
+async function postWakeComment({ token, repo, number, body, what, fetchImpl, logger }) {
+  const { posted, status, error } = await upsertWakeComment({
     token,
     repo,
     prNumber: number,
     marker: BASE_SYNC_MARKER,
-    body: buildBehindComment({ baseRef, baseSha, pr, reason }),
+    body,
     fetchImpl,
   });
+  if (posted) {
+    logger.log?.(`[pr-base-sync] #${number}: ${what} — wake comment posted`);
+    return { action: "commented" };
+  }
+  const detail = error ? `: ${error}` : "";
+  const why = status ? `HTTP ${status}${detail}` : `no response${detail}`;
   logger.log?.(
-    `[pr-base-sync] #${number}: behind by ${behindBy}, not auto-updated (${reason}) — wake comment ${posted ? "posted" : "FAILED"}`,
+    `::warning::[pr-base-sync] #${number}: ${what} — wake comment FAILED (${why}); ` +
+      "the session watching this PR was not woken",
   );
-  return {
-    number,
-    verdict: "behind",
-    action: "commented",
-    ...(blockedDetail ? { blockedDetail } : {}),
-  };
+  return { action: "comment-failed", status };
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
