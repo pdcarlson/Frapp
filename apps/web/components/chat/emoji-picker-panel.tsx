@@ -101,12 +101,12 @@ function Row({ children, ...rest }: EmojiPickerListRowProps) {
  *    active paint. (Emission order is the durable fact; byte offsets differ
  *    between the dev and production builds and neither is committed, so do not
  *    cite one.)
- * 2. `bg-secondary` and `bg-accent` are the *card* and *popover* values, and
- *    this panel is `bg-popover` — so "active" was painting the cell in its own
- *    background. components.md §2 spells the rule out: a highlighted row inside
- *    a popover-surfaced primitive takes the accent tint, never a surface step,
- *    because the ladder's steps are ~1.1:1 apart and cannot carry "this one" on
- *    luminance alone.
+ * 2. `bg-secondary` and `bg-accent` were the *card* and *popover* values (both
+ *    aliases are deleted, #3036), and this panel is `bg-popover` — so "active"
+ *    was painting the cell in its own background. components.md §2 spells the
+ *    rule out: a highlighted row inside a popover-surfaced primitive takes the
+ *    accent tint, never a surface step, because the ladder's steps are ~1.1:1
+ *    apart and cannot carry "this one" on luminance alone.
  *
  * 38px is the §3 Compact size — pointer-only, which an emoji grid in a popover
  * is. A 44px cell would make the picker a third wider than the panel it lives

@@ -656,10 +656,11 @@ function ArchetypeStep({
                 sits on `--card` and this overlay is `--background`, so
                 `profile-contrast.spec.ts` measures the pair again here.
 
-                **The hover was a colour washed over itself.** `--accent` holds
-                `--popover`'s value, so `hover:bg-accent/50` was 1.000:1 —
-                invisible rather than dim, the alias
-                `components/shared/elevation-contrast.spec.ts` exists to catch.
+                **The hover was a colour washed over itself.** `--accent` held
+                `--popover`'s value (the alias is deleted, #3036), so
+                `hover:bg-accent/50` was 1.000:1 — invisible rather than dim,
+                the defect `components/shared/elevation-contrast.spec.ts`
+                records.
 
                 **There was no visible focus indicator**, which is a §6
                 release-gate failure rather than a repaint nit. `focus.ts`
