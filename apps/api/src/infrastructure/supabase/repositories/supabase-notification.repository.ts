@@ -8,6 +8,8 @@ import type {
 import type { INotificationRepository } from '#domain/repositories/notification.repository.interface';
 import type { Notification } from '#domain/entities/notification.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { escapeFilterValue } from '../supabase.utils';
+import { IN_FILTER_CHAR_BUDGET } from '#domain/utils/chunk-ids';
 
 function toNotificationInsert(
   data: TablesInsert<'notifications'>,
@@ -60,7 +62,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
   async findByUser(
     userId: string,
     chapterId: string,
-    options?: { limit?: number },
+    options?: { limit?: number; withholdChatFrom?: readonly string[] },
   ): Promise<Notification[]> {
     let query = this.supabase
       .from('notifications')
@@ -68,6 +70,11 @@ export class SupabaseNotificationRepository implements INotificationRepository {
       .eq('user_id', userId)
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
+
+    const withheld = options?.withholdChatFrom ?? [];
+    if (withheld.length > 0) {
+      query = query.or(notChatFrom(withheld));
+    }
 
     if (
       typeof options?.limit === 'number' &&
@@ -114,4 +121,39 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     if (error) throw new SupabaseQueryError(error);
     return data;
   }
+}
+
+/**
+ * The PostgREST `.or()` filter that keeps a row unless it is a chat row from one
+ * of `senderIds` or a chat row with no recorded sender (#2715).
+ *
+ * Three-valued logic does the work, so read it before simplifying it:
+ * - a row with no `target`, or no `screen`, is kept by `is.null`: a bare
+ *   `neq.chat` is NULL on it, and NULL does not match;
+ * - a non-chat row is kept by `neq.chat`;
+ * - a chat row is kept only by the `not.in`, which is true for a sender outside
+ *   the list and NULL, so not a match, for a row with no `senderId`. Every chat
+ *   row written before the worker recorded senders is therefore withheld from a
+ *   member who has blocked anyone in the chapter. Its sender can't be resolved
+ *   (the row names the channel, not the message), and a list that can't be
+ *   evaluated is not an empty one.
+ *
+ * The ids are block-list rows, never client input; they are quoted anyway, as
+ * every `.or()` string in this layer is.
+ */
+function notChatFrom(senderIds: readonly string[]): string {
+  const keepNonChat = [
+    'data->target->>screen.is.null',
+    'data->target->>screen.neq.chat',
+  ];
+  const quoted = senderIds.map(escapeFilterValue).join(',');
+  // One ordered, limited query can't be chunked, and a list past the budget
+  // would make the URL too long and fail the whole read (`chunk-ids.ts` has the
+  // measurement). That takes a block list of about 80 members, so past it the
+  // list withholds every chat row instead: the fail-closed side, and still a
+  // history.
+  if (encodeURIComponent(quoted).length > IN_FILTER_CHAR_BUDGET) {
+    return keepNonChat.join(',');
+  }
+  return [...keepNonChat, `data->>senderId.not.in.(${quoted})`].join(',');
 }
