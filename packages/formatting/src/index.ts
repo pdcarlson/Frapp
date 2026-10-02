@@ -10,8 +10,8 @@ export { parseInstant } from "./instant";
 export {
   formatBareDate,
   parseBareDateLocalMidnight,
-  parseBareDateUtcNoon,
-  parseInstantOrBareUtcNoon,
+  parseBareDateLocalNoon,
+  parseInstantOrBareLocalNoon,
 } from "./bare-date";
 export { dayDelta } from "./calendar-days";
 export { formatMinutesExact, formatMinutesRounded } from "./minutes";
