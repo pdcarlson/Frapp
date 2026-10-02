@@ -27,6 +27,7 @@ import type {
 import { clampListLimit } from '#domain/constants/list-query-limits';
 import { ID_CHUNK_SIZE, chunkIds } from '#domain/utils/chunk-ids';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { ChatBlockService } from './chat-block.service';
 
 /**
  * What a member with no `user_settings` row has, which is every member until
@@ -80,6 +81,28 @@ export type NotifyPayload = {
   category?: string;
 };
 
+/**
+ * Whether the in-app list withholds this row from a caller with `blocked`: a
+ * chat row from one of them, or a chat row that records no sender while they
+ * have blocked anyone (#2715). The list applies the same rule in its query
+ * (`notChatFrom` in the Supabase notification repository); this is the rule for
+ * a row already in hand.
+ */
+function isWithheldChatRow(
+  row: Pick<Notification, 'data'>,
+  blocked: readonly string[],
+): boolean {
+  if (blocked.length === 0) return false;
+  const target = row.data?.target;
+  const screen =
+    target !== null && typeof target === 'object'
+      ? (target as Record<string, unknown>).screen
+      : undefined;
+  if (screen !== 'chat') return false;
+  const senderId = row.data?.senderId;
+  return typeof senderId !== 'string' || blocked.includes(senderId);
+}
+
 /** In-app insert shape shared by `notifyUser` and the batched chapter path. */
 function inAppRow(
   userId: string,
@@ -119,6 +142,8 @@ export class NotificationService {
     private readonly memberRepo: IMemberRepository,
     @Inject(NOTIFICATION_PROVIDER)
     private readonly pushProvider: INotificationProvider,
+    /** The caller's block list, which the in-app list masks chat rows by (#2715). */
+    private readonly chatBlocks: ChatBlockService,
   ) {}
 
   async notifyUser(
@@ -544,13 +569,31 @@ export class NotificationService {
     return fallback;
   }
 
+  /**
+   * The caller's in-app history in this chapter, without the chat rows of a
+   * member they have blocked here (#2715).
+   *
+   * The push worker writes no row for a member who had already blocked the
+   * sender (`ChatBlockService.filterOutBlockers`). This covers the rows written
+   * before the block, so the history agrees with the thread, which tombstones
+   * the same messages. It is read-time, like every other masked surface, so an
+   * unblock brings the rows back. A chat row written before the worker recorded
+   * its sender is withheld from anyone with a block in the chapter; the
+   * repository's filter says why. Non-chat rows are not chat and stay (#2498).
+   *
+   * The block list read throws on failure, and the throw is not caught: a list
+   * that can't be read is not an empty list, and serving the unfiltered history
+   * would hand back the very text the block hides.
+   */
   async listNotifications(
     userId: string,
     chapterId: string,
     options?: { limit?: number },
   ): Promise<Notification[]> {
+    const blocked = await this.chatBlocks.listBlockedUserIds(chapterId, userId);
     return this.notificationRepo.findByUser(userId, chapterId, {
       limit: clampListLimit(options?.limit),
+      ...(blocked.length > 0 ? { withholdChatFrom: blocked } : {}),
     });
   }
 
@@ -563,7 +606,14 @@ export class NotificationService {
     if (!existing || existing.user_id !== userId) {
       throw new NotFoundException('Notification not found');
     }
-    return this.notificationRepo.markRead(id, userId, chapterId);
+    // A client can still hold the id of a chat row the list now withholds (it
+    // was read before the block), and marking it read must not hand its text
+    // back. Read before the write, so an unreadable list changes nothing.
+    const blocked = await this.chatBlocks.listBlockedUserIds(chapterId, userId);
+    const updated = await this.notificationRepo.markRead(id, userId, chapterId);
+    return isWithheldChatRow(updated, blocked)
+      ? { ...updated, title: '', body: '' }
+      : updated;
   }
 
   async registerPushToken(
