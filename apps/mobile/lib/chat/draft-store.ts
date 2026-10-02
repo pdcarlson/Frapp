@@ -104,11 +104,6 @@ export function createAsyncStorageDraftStore(
  */
 const stores = new Map<string, DraftStore>();
 
-/** Test seam — module state outlives a `renderHook`, so specs must reset it. */
-export function resetDraftStoresForTests(): void {
-  stores.clear();
-}
-
 /** Inert rather than throwing: a draft that does not persist loses at most the
  * keystrokes since the last save, and the composer keeps its in-memory value. */
 const INERT_DRAFTS: DraftStore = {
