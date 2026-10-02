@@ -28,6 +28,7 @@ import {
   workflowSteps,
 } from "./helpers/workflow-yaml.mjs";
 import { latestReleaseTag } from "../lib/release-tag.mjs";
+import { parseEasCliPin } from "../../eas.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const CALLER = join(REPO_ROOT, ".github", "workflows", "deploy-production.yml");
@@ -689,10 +690,10 @@ describe("the eas commands", () => {
 
   it("installs an exact eas-cli, running no install script, with its dependencies held to a past date", () => {
     const install = scriptOf(stepNamed(CALLED, "build", "Install EAS CLI"));
-    // `--ignore-scripts`: the step's comment lists the install scripts in the tree.
-    const m = install.match(/^npm install --global --ignore-scripts --before=(\d{4}-\d{2}-\d{2}) eas-cli@(\d+\.\d+\.\d+)$/);
-    assert.ok(m, install);
-    const [, before, version] = m;
+    // `--ignore-scripts`: the step's comment lists the install scripts in the tree. The parse is
+    // the one `npm run eas` uses (scripts/eas.mjs), so a laptop installs exactly this.
+    assert.match(install, /^npm install --global --ignore-scripts --before=\S+ eas-cli@\S+$/, install);
+    const { before, version } = parseEasCliPin(`        run: ${install}\n`);
     assert.ok(PUBLISHED[version], `add eas-cli ${version}'s publish date to PUBLISHED`);
     assert.ok(before > PUBLISHED[version], `--before=${before} excludes eas-cli ${version} itself`);
     assert.ok(new Date(`${before}T00:00:00Z`) <= new Date(), `--before=${before} is in the future, so it freezes nothing`);
