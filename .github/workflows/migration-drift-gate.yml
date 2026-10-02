@@ -106,6 +106,7 @@ concurrency:
 jobs:
   migration-drift:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       # Reads the published migration snapshot (the download step below).
@@ -172,6 +173,11 @@ jobs:
   # touches neither passes in seconds without starting Docker.
   migration-replay:
     runs-on: ubuntu-latest
+    # Off main this job can wait up to 25 minutes for the migration snapshot
+    # (`download-migration-snapshot`, `on-stale: wait`), then start a Supabase
+    # stack whose ghcr.io pulls retry with 6 minutes of backoff. 50 covers
+    # both with headroom; workflow-timeouts.test.mjs pins the wait (#3129).
+    timeout-minutes: 50
     permissions:
       contents: read
       # Reads the published migration snapshot.
@@ -348,6 +354,9 @@ jobs:
   # #1373 replay from a recorded state): scripts/ci/__tests__/.
   migration-order:
     runs-on: ubuntu-latest
+    # Off main this job can wait up to 25 minutes for the migration snapshot
+    # (`on-stale: wait`); the check itself takes seconds (#3129).
+    timeout-minutes: 35
     permissions:
       contents: read
       # Reads the published migration snapshot.
