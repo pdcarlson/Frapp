@@ -57,7 +57,8 @@ describe("TextRenderer formatting", () => {
     );
     const code = container.querySelector("code");
     expect(code).not.toBeNull();
-    expect(code).toHaveClass("block");
+    // A full-width inline-block: its own box, inside the body's inline flow.
+    expect(code).toHaveClass("inline-block", "w-full");
     expect(code).toHaveTextContent("const x = 1;");
   });
 
@@ -316,7 +317,7 @@ describe("TextRenderer over-nested bodies", () => {
     const { container } = render(<TextRenderer message={message(body)} />);
 
     expect(container.querySelector("strong, em")).toBeNull();
-    expect(container.querySelector('[data-slot="message-body"]')?.textContent).toBe(body);
+    expect(drawn(container.querySelector('[data-slot="message-body"]')!)).toBe(body);
   });
 
   it("formats a body nested exactly to the cap, and flattens one level past it", () => {
@@ -380,7 +381,7 @@ describe("TextRenderer bodies too costly to parse", () => {
       expect(container.querySelector("strong, em, a")).toBeNull();
       // The raw-text path keeps every character but a line's leading
       // indentation, which `remark-breaks` drops at each break.
-      expect(container.querySelector('[data-slot="message-body"]')?.textContent).toBe(
+      expect(drawn(container.querySelector('[data-slot="message-body"]')!)).toBe(
         body.replace(/\n[ \t]+/g, "\n"),
       );
     },
@@ -396,7 +397,7 @@ describe("TextRenderer bodies too costly to parse", () => {
     const { container } = render(<TextRenderer message={message(body)} />);
     expect(performance.now() - started).toBeLessThan(1_000);
     // Deeper than the cap, so it renders as its raw text after the parse.
-    expect(container.querySelector('[data-slot="message-body"]')?.textContent).toBe(body);
+    expect(drawn(container.querySelector('[data-slot="message-body"]')!)).toBe(body);
   });
 });
 
@@ -434,8 +435,23 @@ describe("TextRenderer compact body", () => {
     );
     const body = container.querySelector('[data-slot="message-body"]')!;
     expect(body.lastElementChild?.textContent).toBe("(edited)");
-    // The last paragraph goes inline, so the marker sits on its line.
-    expect(body.className).toContain("[&>p:last-of-type]:inline");
+    // The body is one inline flow, so the marker sits on its last line.
+    expect(drawn(body)).toBe("first\n\nsecond(edited)");
+  });
+
+  it.each([
+    ["a list", "Items:\n\n- one\n- two"],
+    ["a quote", "> quoted"],
+    ["a code block", "```\nx = 1\n```"],
+  ])("drops the trailing marker to its own line under %s", (_, content) => {
+    const { container } = render(
+      <TextRenderer message={message(content)} trailing={<span>(edited)</span>} />,
+    );
+    const body = container.querySelector('[data-slot="message-body"]')!;
+    expect(drawn(body)).toMatch(/\n\(edited\)$/);
+    // The break is the body's own, not the newline at the end of a code
+    // block's text, which breaks no line outside the block's box.
+    expect(body.lastElementChild?.previousSibling?.nodeValue).toBe("\n");
   });
 
   it("mutes a body still sending", () => {
@@ -443,5 +459,92 @@ describe("TextRenderer compact body", () => {
     const body = container.querySelector('[data-slot="message-body"]');
     expect(body?.className).toContain("text-muted-foreground");
     expect(body?.className.split(" ")).not.toContain("text-foreground");
+  });
+});
+
+/**
+ * The body as `pre-wrap` draws it: its text, with each `<br>` as the line
+ * break it is. Everything in the body is inline (paragraphs, and code blocks
+ * as inline-blocks), so this string is the drawn line structure. jsdom has no
+ * layout, so the specs assert on it rather than on measured lines.
+ */
+function drawn(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.nodeValue ?? "";
+  if (node.nodeName === "BR") return "\n";
+  const text = Array.from(node.childNodes).map(drawn).join("");
+  // A code block is its own box: the newline hast ends its text with breaks
+  // no line in the body around it.
+  if (node.nodeName === "CODE" && (node as Element).classList.contains("inline-block")) {
+    return text.replace(/\n$/, "");
+  }
+  return text;
+}
+
+/**
+ * Each line break in a body draws once (#2934). hast follows every `<br>` with
+ * a `"\n"`, and wraps an unwrapped list or quote in `"\n"` separators; under
+ * the body's `pre-wrap` those used to draw a second break and an opening
+ * empty line.
+ */
+describe("TextRenderer line breaks", () => {
+  // A body that ends in a list or a quote ends with a newline, for the
+  // trailing markers (see the compact-body specs); with nothing after it,
+  // that newline draws no line, so it is left out of the expected text.
+  function lines(content: string): string {
+    return drawn(body(content)).replace(/\n$/, "");
+  }
+
+  function body(content: string): Element {
+    const { container } = render(<TextRenderer message={message(content)} />);
+    return container.querySelector('[data-slot="message-body"]')!;
+  }
+
+  it.each([
+    ["a single newline as one break", "line one\nline two", "line one\nline two"],
+    ["a blank line as one blank line", "Hey\n\nSee you", "Hey\n\nSee you"],
+    ["two trailing spaces as one break", "line one  \nline two", "line one\nline two"],
+    ["a trailing backslash as one break", "line one\\\nline two", "line one\nline two"],
+    ["an opening list without an empty first line", "- a\n- b", "a\nb"],
+    ["an opening quote without an empty first line", "> quoted\nafter", "quoted\nafter"],
+    ["a paragraph then a list with one blank line", "Items:\n\n- a\n- b", "Items:\n\na\nb"],
+    ["a list then a paragraph with one blank line", "- a\n- b\n\nAfter", "a\nb\n\nAfter"],
+    // The breaks come from what was typed, not from hast's separators, which
+    // put a blank line before a list typed on the next line and between a
+    // nested list's items.
+    ["a list typed on the next line with no blank line", "Items:\n- a\n- b", "Items:\na\nb"],
+    ["a quote typed on the next line with no blank line", "text\n> quoted", "text\nquoted"],
+    ["a nested list one item a line", "- a\n  - b\n- c", "a\nb\nc"],
+    ["a quote inside a list item one line", "- > q\n- x", "q\nx"],
+    ["a blank line after a heading as one blank line", "# Title\n\nbody", "Title\n\nbody"],
+    ["a mention in a tight list one item a line", "- hi @jane\n- b", "hi @jane\nb"],
+    // micromark's offsets skip a leading byte-order mark.
+    ["a blank line behind a byte-order mark", "\uFEFFa\n\nb", "a\n\nb"],
+    ["CRLF line endings as typed", "x\r\n\r\n- a\r\n- b", "x\n\na\nb"],
+  ])("draws %s", (_, content, expected) => {
+    expect(lines(content)).toBe(expected);
+  });
+
+  it("never follows a <br> with a newline the pre-wrap body would draw again", () => {
+    const el = body("one\ntwo  \nthree\\\nfour");
+    const brs = el.querySelectorAll("br");
+    expect(brs).toHaveLength(3);
+    for (const br of brs) {
+      expect(br.nextSibling?.nodeValue ?? "").not.toMatch(/^\n/);
+    }
+  });
+
+  it("keeps a fenced code block's own lines, a blank line from the text around it", () => {
+    const el = body("before\n\n```\nx = 1\ny = 2\n```\n\nafter");
+    const code = el.querySelector("code")!;
+    expect(code.textContent).toBe("x = 1\ny = 2\n");
+    expect(code.className).toContain("whitespace-pre");
+    expect(drawn(el)).toBe("before\n\nx = 1\ny = 2\n\nafter");
+  });
+
+  it("draws paragraphs inline, so pre-wrap's newlines are the only breaks", () => {
+    const el = body("first\n\nsecond");
+    for (const p of el.querySelectorAll("p")) {
+      expect(p.className.split(" ")).toContain("inline");
+    }
   });
 });
