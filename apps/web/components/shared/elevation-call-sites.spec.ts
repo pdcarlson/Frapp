@@ -1,7 +1,13 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { describe, expect, it } from "vitest";
-import { productSourceFiles, REPO, withoutComments } from "@/tests/source-scan";
+import { afterAll, describe, expect, it } from "vitest";
+import {
+  classLiterals,
+  codeWithoutComments,
+  productSourceFiles,
+  REPO,
+} from "@/tests/source-scan";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -40,8 +46,12 @@ import { cn } from "@/lib/utils";
  * `theme(colors.accent)`. The fixtures below are that list. The scan covers
  * both Next surfaces' TS and CSS (`tests/source-scan.ts`, shared with
  * `status-tint-call-sites.spec.ts`) and both apps' Tailwind configs, where a
- * key could re-export the alias under a new name. Comments are stripped first,
- * since the docstrings explaining a rule quote the very classes it bans.
+ * key could re-export the alias under a new name. A script file is read as its
+ * string and template text only (`classLiterals`), since the docstrings
+ * explaining a rule quote the very classes it bans, and a regex comment
+ * stripper let a `"image/*"` hide everything up to the next `*\/` (#3088).
+ * Reading literals alone loses the call around a quoted name, so a literal
+ * that is exactly a retired name is a hit by itself.
  *
  * A ban on a name cannot stop the same defect spelled with an honest name
  * (`hover:bg-popover` on a row in a sheet), so the hovers this change chose are
@@ -84,6 +94,28 @@ const aliasHits = (source: string) => [
   ...(source.match(ALIAS_VAR) ?? []),
   ...(source.match(ALIAS_THEME) ?? []),
 ];
+
+/**
+ * A string literal that is a retired variable's name and nothing else: what
+ * `colorVar("--accent")` or `getPropertyValue("--secondary")` hands over, once
+ * the call around it is no longer in the text being read. Unlike
+ * {@link ALIAS_VAR} it can't tell a read from a declaration, so an inline
+ * `style={{ "--accent": … }}` is flagged too. That is the wanted answer: the
+ * variables are deleted (#3036), and declaring one would bring the alias back.
+ */
+export const ALIAS_NAME = /^--(?:color-)?(?:accent|secondary)(?:-foreground)?$/;
+
+/** A `theme()` path handed over as a literal, as {@link ALIAS_NAME} is. */
+export const ALIAS_THEME_PATH = /^colors\.(?:accent|secondary)(?![\w-])/;
+
+/** Every alias read in a file: its class text, and its bare quoted names. */
+export const aliasHitsIn = (path: string) =>
+  classLiterals(path).flatMap((literal) => [
+    ...aliasHits(literal),
+    ...(ALIAS_NAME.test(literal) || ALIAS_THEME_PATH.test(literal)
+      ? [literal]
+      : []),
+  ]);
 
 describe("the alias matcher", () => {
   // Proved on fixtures, so a regex edit that stops matching fails here rather
@@ -155,9 +187,7 @@ describe("no Next surface reads the retired --accent or --secondary alias", () =
 
   it("finds none", () => {
     const hits = files.flatMap((file) =>
-      aliasHits(withoutComments(readFileSync(file, "utf8"))).map(
-        (hit) => `${relative(REPO, file)}: ${hit}`,
-      ),
+      aliasHitsIn(file).map((hit) => `${relative(REPO, file)}: ${hit}`),
     );
     expect(
       hits,
@@ -166,6 +196,115 @@ describe("no Next surface reads the retired --accent or --secondary alias", () =
         "(`bg-card-hover`, or §2's `bg-accent-subtle` for a row in a menu or " +
         "table). Never hover to the surface the control already sits on.",
     ).toEqual([]);
+  });
+});
+
+describe("the alias scan reads class strings, not comments (#3088)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "elevation-"));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const write = (name: string, body: string) => {
+    const path = join(dir, name);
+    writeFileSync(path, body);
+    return path;
+  };
+
+  it("sees an alias after a string holding a comment opener", () => {
+    const path = write(
+      "after-glob.tsx",
+      [
+        'export const A = <input accept="image/*" />;',
+        'export const B = <li className="hover:bg-accent">x</li>;',
+        "/** end */",
+      ].join("\n"),
+    );
+    expect(aliasHitsIn(path)).toEqual(["bg-accent"]);
+  });
+
+  it("sees an alias after a `//` inside a template", () => {
+    const path = write(
+      "template.ts",
+      'export const A = `${base}//x bg-secondary`;\nexport const B = { background: "var(--accent)" };',
+    );
+    expect(aliasHitsIn(path).sort()).toEqual(["(--accent)", "bg-secondary"]);
+  });
+
+  it("sees a retired name or theme path handed to a call", () => {
+    const path = write(
+      "config.ts",
+      [
+        'export default { colors: { "row-hover": colorVar("--accent") } };',
+        'export const row = ({ theme }) => theme("colors.secondary.DEFAULT");',
+      ].join("\n"),
+    );
+    expect(aliasHitsIn(path)).toEqual(["--accent", "colors.secondary.DEFAULT"]);
+  });
+
+  it("skips prose that names the alias, and the chapter-accent family", () => {
+    const path = write(
+      "prose.tsx",
+      [
+        "// hover:bg-accent was the elevated step itself",
+        "/* var(--secondary) */",
+        'export const A = <li className="hover:bg-accent-subtle">x</li>;',
+        'export const B = colorVar("--accent-subtle");',
+      ].join("\n"),
+    );
+    expect(aliasHitsIn(path)).toEqual([]);
+  });
+
+  it("strips CSS comments and reads the rest", () => {
+    const path = write(
+      "sheet.css",
+      '.a { content: "x"; /* var(--accent) */ }\n.b { background: var(--secondary); }',
+    );
+    expect(aliasHitsIn(path)).toEqual(["(--secondary)"]);
+  });
+});
+
+describe("codeWithoutComments", () => {
+  // The pins below read structure, which literals alone can't show, so they
+  // strip comments with the parser instead of a regex that can't see strings.
+  const dir = mkdtempSync(join(tmpdir(), "elevation-code-"));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("drops comments and nothing that only looks like one", () => {
+    const path = join(dir, "strip.tsx");
+    writeFileSync(
+      path,
+      [
+        "// gone",
+        'export const A = <input accept="image/*" />;',
+        "export const B = `${base}//kept`; /* gone too */",
+        "export const C = <p>// kept as JSX text {/* gone */}</p>;",
+        'export const D = <li className="hover:bg-card-hover" />;',
+      ].join("\n"),
+    );
+    const code = codeWithoutComments(path);
+    expect(code).not.toMatch(/gone/);
+    expect(code).toContain('accept="image/*"');
+    expect(code).toContain("${base}//kept");
+    expect(code).toContain("// kept as JSX text");
+    expect(code).toContain('className="hover:bg-card-hover"');
+  });
+
+  it("keeps the code after a JSDoc block holding a nested comment", () => {
+    // The walk reports a `// …` or `{@link}` inside a JSDoc as a second range
+    // within the block's own; cutting both used to eat the code after it.
+    const path = join(dir, "jsdoc.ts");
+    writeFileSync(
+      path,
+      [
+        "/** Reads {@link X} // not a comment */",
+        "export const KEEP = 1;",
+        "/**",
+        " * @param {number} n // count",
+        " */",
+        "export function keep(n: number) {}",
+      ].join("\n"),
+    );
+    expect(codeWithoutComments(path)).toBe(
+      "\nexport const KEEP = 1;\n\nexport function keep(n: number) {}",
+    );
   });
 });
 
@@ -193,11 +332,8 @@ describe("the notification drawer's row hovers (#1208)", () => {
    * here because a hover rewritten to the sheet's own colour (`hover:bg-popover`)
    * or to the row's own rest fill uses no alias and passes the ban above.
    */
-  const drawer = withoutComments(
-    readFileSync(
-      join(WEB, "components", "layout", "dashboard-notification-drawer.tsx"),
-      "utf8",
-    ),
+  const drawer = codeWithoutComments(
+    join(WEB, "components", "layout", "dashboard-notification-drawer.tsx"),
   );
 
   it("lifts a read row, which rests on --card, to --card-hover", () => {
@@ -232,8 +368,8 @@ describe("a tinted row hover stays inside its rounded list", () => {
    * painting square corners past the card's curve. The list doesn't clip with
    * `overflow-hidden`, which would clip the rows' focus ring too.
    */
-  const settings = withoutComments(
-    readFileSync(join(WEB, "components", "settings", "settings-page.tsx"), "utf8"),
+  const settings = codeWithoutComments(
+    join(WEB, "components", "settings", "settings-page.tsx"),
   );
   const tools = /function SettingsToolsOnly[\s\S]*?\n}\n/.exec(settings)?.[0] ?? "";
 
@@ -297,9 +433,7 @@ describe("the overlay close controls are text-toned and named (#1208)", () => {
   // `--popover` misses the text gate, `--muted-foreground` clears it. All three
   // draw an X glyph on `--popover` (the toast's default variant included).
   it.each(["dialog.tsx", "sheet.tsx", "toast.tsx"])("%s", (file) => {
-    const source = withoutComments(
-      readFileSync(join(WEB, "components", "ui", file), "utf8"),
-    );
+    const source = codeWithoutComments(join(WEB, "components", "ui", file));
     const close = /<\w+\.Close\b[\s\S]*?<\/\w+\.Close>/.exec(source)?.[0];
     expect(close, `${file} no longer renders a Close control`).toBeDefined();
     const classes = /className=\{cn\(\s*"([^"]+)"/.exec(close!)?.[1] ?? "";
