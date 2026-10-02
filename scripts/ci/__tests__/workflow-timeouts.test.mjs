@@ -5,8 +5,10 @@
 // hung job holds the lock for six hours and every later push's run is
 // replaced while it waits: on 2026-10-01 a Playwright apt step hung `ci.yml`
 // from 15:52 until it was cancelled by hand at ~18:20, and the three merges
-// behind it never got required checks. A timed-out job fails red, which is
-// visible and re-runnable; a hung one starves the queue silently.
+// behind it never got required checks. A job stopped by its timeout ends
+// `cancelled` (GitHub has no separate job conclusion for it), which frees the
+// lock and can be re-run; a hung one starves the queue silently. CI wake does
+// not yet tell that cancel from a deliberate one (#3162).
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
