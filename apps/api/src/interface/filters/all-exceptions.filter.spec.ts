@@ -11,7 +11,9 @@ import {
 import type { ArgumentsHost } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 import Stripe from 'stripe';
+import { ThrottlerException } from '@nestjs/throttler';
 import { AllExceptionsFilter } from './all-exceptions.filter';
+import { THROTTLED_MESSAGE } from '../guards/custom-throttler.guard';
 import { AuthFailureSpikeDetector } from '../../infrastructure/observability/auth-failure-spike';
 import { runWithRequestLogStore } from '../../infrastructure/observability/request-als';
 import {
@@ -558,6 +560,18 @@ describe('AllExceptionsFilter', () => {
   });
 
   describe('response body contract (#1020)', () => {
+    it("serves a throttled request the guard's sentence, not the framework text (#3142)", () => {
+      new AllExceptionsFilter().catch(
+        new ThrottlerException(THROTTLED_MESSAGE),
+        host(),
+      );
+
+      expect(captured.status).toBe(429);
+      expect((captured.json as { message: string }).message).toBe(
+        THROTTLED_MESSAGE,
+      );
+    });
+
     it('passes a structured `code` through beside the four envelope keys', () => {
       new AllExceptionsFilter().catch(
         new ForbiddenException({
