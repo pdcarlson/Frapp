@@ -84,9 +84,12 @@ export const MAX_RUN_ATTEMPTS = 3;
 // check-run annotation is what says which. Verified on run 36572961883
 // (2026-09-29), whose `backup-staging-storage` ran 13:08:37–14:08:56 against a
 // 60-minute timeout: "The job has exceeded the maximum execution time of
-// 1h0m0s".
+// 1h0m0s". Matched loosely, because GitHub has also worded it "The job
+// running on runner <name> has exceeded the maximum execution time of 360
+// minutes." (the default limit, never observed in this repo), and a missed
+// match reads as a deliberate cancel.
 export const JOB_TIMEOUT_ANNOTATION =
-  /The job has exceeded the maximum execution time of (\S+)/;
+  /has exceeded the maximum execution time of (.+?)\.?$/;
 
 // Per-workflow marker: each watched workflow owns exactly one live comment,
 // so verdicts from different workflows never overwrite each other.
@@ -181,6 +184,21 @@ export function classifyRun({
           "At least one job failed in a repo-defined step — a re-run cannot fix this.",
       };
     }
+    // A re-run would re-run a sibling that hung to its timeout too, so a
+    // timeout beside the outage signature wins, and so does not knowing.
+    if (timedOut?.length) return timedOutVerdict(timedOut);
+    if (timedOut === null) {
+      return {
+        verdict: "unclassified-failure",
+        shouldRerun: false,
+        shouldComment: true,
+        reason:
+          "Every failed job died before its first repo step, but a job that " +
+          "was cancelled after starting could not be checked for a timeout, " +
+          "so a hang can't be ruled out — not auto-requeued. Check the " +
+          "cancelled job, then re-run.",
+      };
+    }
     return {
       verdict: "infra-failure",
       shouldRerun: attemptsLeft,
@@ -213,25 +231,7 @@ export function classifyRun({
       };
     }
     const anyJobStarted = jobs.some((job) => (job.steps ?? []).length > 0);
-    if (anyJobStarted && timedOut?.length) {
-      const which = timedOut
-        .map(({ name, limit }) => `\`${name}\` (limit ${limit})`)
-        .join(", ");
-      return {
-        verdict: "timed-out",
-        // Not requeued: a job that runs to its limit usually hung on
-        // something a re-run meets again, and every attempt holds the
-        // workflow's concurrency lock for the full limit.
-        shouldRerun: false,
-        shouldComment: true,
-        reason:
-          `${which} ran to ${timedOut.length === 1 ? "its" : "their"} ` +
-          "`timeout-minutes`, which GitHub concludes `cancelled` — a hang " +
-          "inside the job, not a deliberate cancel and not Actions infra, so " +
-          "not auto-requeued. Find what hung in the job log; re-run once only " +
-          "if it was transient (a package mirror or registry that stalled).",
-      };
-    }
+    if (anyJobStarted && timedOut?.length) return timedOutVerdict(timedOut);
     if (anyJobStarted) {
       return {
         verdict: "cancelled",
@@ -279,6 +279,29 @@ export function classifyRun({
     shouldRerun: false,
     shouldComment: false,
     reason: `Unrecognized conclusion "${run.conclusion}" — staying silent.`,
+  };
+}
+
+/**
+ * The verdict for a run in which a started job ran to its `timeout-minutes`.
+ * Not requeued: a job that runs to its limit usually hung on something a
+ * re-run meets again, and every attempt holds the workflow's concurrency lock
+ * for the full limit.
+ */
+function timedOutVerdict(timedOut) {
+  const which = timedOut
+    .map(({ name, limit }) => `\`${name}\` (limit ${limit})`)
+    .join(", ");
+  return {
+    verdict: "timed-out",
+    shouldRerun: false,
+    shouldComment: true,
+    reason:
+      `${which} ran to ${timedOut.length === 1 ? "its" : "their"} ` +
+      "`timeout-minutes`, which GitHub concludes `cancelled` — a hang " +
+      "inside the job, not a deliberate cancel and not Actions infra, so " +
+      "not auto-requeued. Find what hung in the job log; re-run once only " +
+      "if it was transient (a package mirror or registry that stalled).",
   };
 }
 
@@ -580,12 +603,20 @@ export async function processCompletedRun({
     run.conclusion === "failure" || run.conclusion === "cancelled"
       ? await fetchLatestJobs({ token, repo, run, fetchImpl })
       : [];
-  // Only a cancelled run whose freshness and jobs are known gets this far in
-  // classifyRun, so only then are the annotations worth reading.
-  const timedOut =
-    run.conclusion === "cancelled" && newer === false && jobs !== null
-      ? await fetchTimedOutJobs({ token, repo, jobs, fetchImpl })
-      : [];
+  // Read only where classifyRun consults them: a cancelled run whose
+  // freshness and jobs are known, or a failed one whose failures are all the
+  // runner-setup signature (it would be requeued, and a re-run re-runs a hung
+  // sibling too).
+  const consultsTimeouts =
+    jobs !== null &&
+    ((run.conclusion === "cancelled" && newer === false) ||
+      (run.conclusion === "failure" &&
+        !jobs.some(
+          (job) => job.conclusion === "failure" && jobFailedInRealStep(job),
+        )));
+  const timedOut = consultsTimeouts
+    ? await fetchTimedOutJobs({ token, repo, jobs, fetchImpl })
+    : [];
   const classification = classifyRun({
     run,
     jobs,

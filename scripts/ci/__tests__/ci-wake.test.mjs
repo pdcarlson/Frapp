@@ -785,3 +785,143 @@ test("a PR run cancelled by a job timeout posts a timeout wake, not a cancel, an
   assert.match(JSON.parse(post.body).body, /\*\*cancelled\*\* \(timed-out\)/);
   assert.match(JSON.parse(post.body).body, /`backup-staging-storage` \(limit 1h0m0s\)/);
 });
+
+test("the timeout annotation matches GitHub's default-limit wording too", async () => {
+  const { fetchImpl } = makeFetchMock([
+    {
+      method: "GET",
+      path: "/check-runs/109421245409/annotations",
+      body: [
+        {
+          message:
+            "The job running on runner GitHub Actions 2 has exceeded the maximum execution time of 360 minutes.",
+        },
+      ],
+    },
+  ]);
+  const timedOut = await fetchTimedOutJobs({
+    token: "t",
+    repo: "o/r",
+    jobs: [timedOutJob],
+    fetchImpl,
+  });
+  assert.deepEqual(timedOut, [{ name: "backup-staging-storage", limit: "360 minutes" }]);
+});
+
+test("a timeout beside a runner-setup failure is not requeued with it", () => {
+  const run = makeRun({ conclusion: "failure" });
+  const jobs = [outageSecretScanJob, timedOutJob];
+  const plain = classifyRun({ run, jobs });
+  assert.equal(plain.shouldRerun, true, "without the timeout it is infra and re-runs");
+
+  const timed = classifyRun({
+    run,
+    jobs,
+    timedOut: [{ name: "backup-staging-storage", limit: "1h0m0s" }],
+  });
+  assert.equal(timed.verdict, "timed-out");
+  assert.equal(timed.shouldRerun, false);
+
+  const unknown = classifyRun({ run, jobs, timedOut: null });
+  assert.equal(unknown.verdict, "unclassified-failure");
+  assert.equal(unknown.shouldRerun, false);
+  assert.equal(unknown.shouldComment, true);
+});
+
+/** Freshness known (no newer run), PR #659 open with no wake yet. */
+function cancelledRunRoutes(extra) {
+  return [
+    {
+      method: "GET",
+      path: "/actions/workflows/241114608/runs",
+      body: { workflow_runs: [{ id: 31119232391, created_at: "2026-08-06T16:16:24Z" }] },
+    },
+    ...extra,
+    { method: "GET", path: "/pulls?head=", body: [{ number: 659 }] },
+    { method: "GET", path: "/issues/659/comments", body: [] },
+    { method: "POST", path: "/issues/659/comments", status: 201, body: {} },
+  ];
+}
+
+test("a deliberate cancel whose annotations carry no timeout keeps the cancel wake", async () => {
+  const { fetchImpl } = makeFetchMock(
+    cancelledRunRoutes([
+      { method: "GET", path: "/actions/runs/31119232391/jobs", body: { jobs: [timedOutJob] } },
+      {
+        method: "GET",
+        path: "/check-runs/109421245409/annotations",
+        body: [{ message: "The operation was canceled." }],
+      },
+    ]),
+  );
+  const result = await processCompletedRun({
+    token: "t",
+    repo: "pdcarlson/Frapp",
+    run: makeRun({ conclusion: "cancelled" }),
+    fetchImpl,
+    logger: quiet,
+  });
+  assert.equal(result.verdict, "cancelled");
+  assert.match(result.reason, /deliberate or mid-run cancellation/);
+  assert.equal(result.commented, true);
+});
+
+test("unreadable annotations keep the cancel wake and say a timeout can't be ruled out", async () => {
+  const { fetchImpl } = makeFetchMock(
+    cancelledRunRoutes([
+      { method: "GET", path: "/actions/runs/31119232391/jobs", body: { jobs: [timedOutJob] } },
+      { method: "GET", path: "/check-runs/109421245409/annotations", status: 403, body: {} },
+    ]),
+  );
+  const result = await processCompletedRun({
+    token: "t",
+    repo: "pdcarlson/Frapp",
+    run: makeRun({ conclusion: "cancelled" }),
+    fetchImpl,
+    logger: quiet,
+  });
+  assert.equal(result.verdict, "cancelled");
+  assert.match(result.reason, /cannot be told from a deliberate cancel/);
+  assert.equal(result.commented, true);
+});
+
+test("a cancelled run whose jobs can't be read still wakes, without reading annotations", async () => {
+  const { fetchImpl, calls } = makeFetchMock(
+    cancelledRunRoutes([
+      { method: "GET", path: "/actions/runs/31119232391/jobs", status: 502, body: {} },
+    ]),
+  );
+  const result = await processCompletedRun({
+    token: "t",
+    repo: "pdcarlson/Frapp",
+    run: makeRun({ conclusion: "cancelled" }),
+    fetchImpl,
+    logger: quiet,
+  });
+  assert.equal(result.verdict, "cancelled");
+  assert.equal(result.commented, true);
+  assert.ok(!calls.some((c) => c.url.includes("/annotations")));
+});
+
+test("a runner-setup failure beside a hung job is woken, not requeued", async () => {
+  const { fetchImpl, calls } = makeFetchMock(
+    cancelledRunRoutes([
+      {
+        method: "GET",
+        path: "/actions/runs/31119232391/jobs",
+        body: { jobs: [outageSecretScanJob, timedOutJob] },
+      },
+      { method: "GET", path: "/check-runs/109421245409/annotations", body: timeoutAnnotations },
+    ]),
+  );
+  const result = await processCompletedRun({
+    token: "t",
+    repo: "pdcarlson/Frapp",
+    run: makeRun({ conclusion: "failure" }),
+    fetchImpl,
+    logger: quiet,
+  });
+  assert.equal(result.verdict, "timed-out");
+  assert.equal(result.commented, true);
+  assert.ok(!calls.some((c) => c.url.includes("/rerun")));
+});
