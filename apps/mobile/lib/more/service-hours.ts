@@ -124,11 +124,3 @@ export function parseDurationInput(value: string): number | null {
 
   return null;
 }
-
-/** Today as `YYYY-MM-DD` in the device's own zone — what the API's `date` wants. */
-export function todayIsoDate(now: Date): string {
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}

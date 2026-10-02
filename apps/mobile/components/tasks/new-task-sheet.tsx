@@ -6,6 +6,7 @@ import {
   BottomSheetTextInput,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
+import { localIsoDate } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   memberFallbackLabel,
@@ -31,7 +32,6 @@ import {
   parsePointReward,
   validateNewTask,
 } from "@/lib/tasks/create-task";
-import { todayIsoDate } from "@/lib/more/service-hours";
 import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import {
   SUBSCRIPTION_REFUSAL_COPY,
@@ -116,7 +116,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
 
     const [title, setTitle] = useState("");
     const [pointsInput, setPointsInput] = useState("");
-    const [dueDate, setDueDate] = useState(() => todayIsoDate(at));
+    const [dueDate, setDueDate] = useState(() => localIsoDate(at));
     // Defaults to the viewer, so the common case needs no picker interaction.
     const [assigneeId, setAssigneeId] = useState<string | null>(null);
     const [titleFocused, setTitleFocused] = useState(false);
@@ -175,7 +175,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const reset = useCallback(() => {
       setTitle("");
       setPointsInput("");
-      setDueDate(todayIsoDate(at));
+      setDueDate(localIsoDate(at));
       setAssigneeId(null);
       setSearch("");
       setSubmitFailed(false);

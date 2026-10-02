@@ -4,7 +4,6 @@ import {
   parseDurationInput,
   selectServiceEntryRows,
   summarizeServiceEntries,
-  todayIsoDate,
 } from "./service-hours";
 
 function entry(overrides: Record<string, unknown> = {}) {
@@ -138,18 +137,5 @@ describe("parseDurationInput", () => {
   it("rejects zero", () => {
     expect(parseDurationInput("0")).toBeNull();
     expect(parseDurationInput("0:00")).toBeNull();
-  });
-});
-
-describe("todayIsoDate", () => {
-  // The device's own calendar day, not UTC's: a member logging at 8pm Eastern
-  // must not have their entry dated tomorrow.
-  it("formats the local calendar day", () => {
-    const local = new Date(2026, 7, 12, 20, 30);
-    expect(todayIsoDate(local)).toBe("2026-08-12");
-  });
-
-  it("zero-pads single-digit months and days", () => {
-    expect(todayIsoDate(new Date(2026, 0, 5, 12))).toBe("2026-01-05");
   });
 });

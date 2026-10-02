@@ -12,7 +12,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { formatMinutesRounded } from "@repo/formatting";
+import { formatMinutesRounded, localIsoDate } from "@repo/formatting";
 import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import {
@@ -25,7 +25,6 @@ import {
   parseDurationInput,
   selectServiceEntryRows,
   summarizeServiceEntries,
-  todayIsoDate,
 } from "@/lib/more/service-hours";
 import { useConnection } from "@/lib/connection/use-connection";
 import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
@@ -144,7 +143,7 @@ export default function ServiceHoursScreen() {
     setSubmitFailed(false);
     createEntry.mutate(
       {
-        date: todayIsoDate(new Date()),
+        date: localIsoDate(new Date()),
         duration_minutes: durationMinutes,
         description: description.trim(),
       },
