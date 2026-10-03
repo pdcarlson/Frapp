@@ -295,17 +295,8 @@ export function isWithinArchiveUploadSizeLimit(byteLength: number): boolean {
   );
 }
 
-export function uploadMimeTypes(kind: UploadKind): ReadonlySet<string> {
-  return KINDS[kind].mimes;
-}
-
 export function uploadMimeList(kind: UploadKind): readonly string[] {
   return KINDS[kind].mimeList;
-}
-
-/** Extensions without a leading dot, lowercase. */
-export function uploadExtensions(kind: UploadKind): ReadonlySet<string> {
-  return KINDS[kind].extensions;
 }
 
 export function contentTypeByExtension(
