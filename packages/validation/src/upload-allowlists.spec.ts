@@ -11,9 +11,7 @@ import {
   isAllowedUploadMime,
   isWithinUploadSizeLimit,
   mimeForUploadFile,
-  uploadExtensions,
   uploadMimeList,
-  uploadMimeTypes,
 } from "./upload-allowlists";
 
 describe("upload kinds", () => {
@@ -24,9 +22,13 @@ describe("upload kinds", () => {
       "image/gif",
       "image/webp",
     ]);
-    expect(uploadExtensions("image")).toEqual(
-      new Set(["jpg", "jpeg", "png", "gif", "webp"]),
-    );
+    expect(contentTypeByExtension("image")).toEqual({
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      gif: "image/gif",
+      webp: "image/webp",
+    });
   });
 
   it("proof is images plus PDF", () => {
@@ -136,12 +138,6 @@ describe("inspectUploadFile", () => {
         type: "application/octet-stream",
       }),
     ).toBe("image/gif");
-  });
-});
-
-describe("uploadMimeTypes identity", () => {
-  it("returns the same Set instance across calls so services can hold a reference", () => {
-    expect(uploadMimeTypes("document")).toBe(uploadMimeTypes("document"));
   });
 });
 

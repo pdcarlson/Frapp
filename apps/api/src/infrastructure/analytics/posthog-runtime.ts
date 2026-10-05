@@ -337,10 +337,6 @@ export type ActivePosthogRuntime = PosthogRuntime | DisabledPosthogRuntime;
 
 let singleton: ActivePosthogRuntime | null = null;
 
-export function getPosthogRuntime(): ActivePosthogRuntime | null {
-  return singleton;
-}
-
 export async function resetPosthogRuntimeForTests(): Promise<void> {
   const current = singleton;
   singleton = null;
