@@ -4,6 +4,8 @@ import { ExecutionContext, InternalServerErrorException } from '@nestjs/common';
 import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
 import { ChatController } from './chat.controller';
 import { ChatService } from '../../application/services/chat.service';
+import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
+import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
 import type { MaskedChatMessage } from '../../application/services/chat-block-mask';
 import { RbacService } from '../../application/services/rbac.service';
 import { SystemPermissions } from '#domain/constants/permissions';
@@ -24,17 +26,20 @@ describe('ChatController', () => {
       | 'getChannel'
       | 'createChannel'
       | 'getMessages'
-      | 'requestChatUploadUrl'
       | 'addPrivateChannelMember'
       | 'removePrivateChannelMember'
       | 'sendMessage'
       | 'recordMessageAction'
     >
   >;
+  let attachments: jest.Mocked<
+    Pick<ChatAttachmentService, 'requestChatUploadUrl'>
+  >;
   let rbacService: jest.Mocked<Pick<RbacService, 'memberHasAnyPermission'>>;
 
   beforeEach(async () => {
     rbacService = { memberHasAnyPermission: jest.fn() };
+    attachments = { requestChatUploadUrl: jest.fn() };
     service = {
       deleteMessage: jest.fn(),
       editMessage: jest.fn(),
@@ -46,7 +51,6 @@ describe('ChatController', () => {
       getChannel: jest.fn(),
       createChannel: jest.fn(),
       getMessages: jest.fn(),
-      requestChatUploadUrl: jest.fn(),
       addPrivateChannelMember: jest.fn(),
       removePrivateChannelMember: jest.fn(),
       sendMessage: jest.fn(),
@@ -57,6 +61,8 @@ describe('ChatController', () => {
       controllers: [ChatController],
       providers: [
         { provide: ChatService, useValue: service },
+        { provide: ChatAttachmentService, useValue: attachments },
+        { provide: ChatNotificationPreferenceService, useValue: {} },
         { provide: RbacService, useValue: rbacService },
       ],
     }).compile();
@@ -313,7 +319,7 @@ describe('ChatController', () => {
     const dto = { filename: 'photo.png', content_type: 'image/png' };
 
     it('maps the camelCase service ticket onto the snake_case wire contract', async () => {
-      (service.requestChatUploadUrl as jest.Mock).mockResolvedValue({
+      (attachments.requestChatUploadUrl as jest.Mock).mockResolvedValue({
         signedUrl: 'https://storage.example/put',
         storagePath: 'chapters/ch-1/chat/chan-1/msg-1/photo.png',
         messageId: 'msg-1',
@@ -326,7 +332,7 @@ describe('ChatController', () => {
         dto,
       );
 
-      expect(service.requestChatUploadUrl).toHaveBeenCalledWith(
+      expect(attachments.requestChatUploadUrl).toHaveBeenCalledWith(
         'chan-1',
         'ch-1',
         'user-1',
@@ -342,7 +348,7 @@ describe('ChatController', () => {
     });
 
     it('fails closed when the service omits the signed URL', async () => {
-      (service.requestChatUploadUrl as jest.Mock).mockResolvedValue({
+      (attachments.requestChatUploadUrl as jest.Mock).mockResolvedValue({
         signedUrl: '',
         storagePath: 'chapters/ch-1/chat/chan-1/msg-1/photo.png',
         messageId: 'msg-1',
@@ -354,7 +360,7 @@ describe('ChatController', () => {
     });
 
     it('fails closed when the service omits the storage path', async () => {
-      (service.requestChatUploadUrl as jest.Mock).mockResolvedValue({
+      (attachments.requestChatUploadUrl as jest.Mock).mockResolvedValue({
         signedUrl: 'https://storage.example/put',
         storagePath: '',
         messageId: 'msg-1',

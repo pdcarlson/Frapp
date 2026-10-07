@@ -200,7 +200,7 @@ export interface IChatMessageRepository {
    * on the caller having checked first (#1231).
    *
    * This is the ONLY legitimate source of an avatar path for
-   * `ChatService.resolveAuthorAvatars`: avatars and message attachments are
+   * `ChatAttachmentService.resolveAuthorAvatars`: avatars and message attachments are
    * both written under the same undifferentiated `chat-archive` object
    * layout (`archiveMediaObjectPath` — no `authors/`-vs-`attachments/`
    * distinction exists in the path shape), so a caller-supplied raw path

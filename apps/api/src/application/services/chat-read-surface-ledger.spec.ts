@@ -100,6 +100,8 @@ const PGLITE_HARNESS = join(
 );
 
 const CHAT_SERVICE_SPEC = 'application/services/chat.service.spec.ts';
+const CHAT_ATTACHMENT_SERVICE_SPEC =
+  'application/services/chat-attachment.service.spec.ts';
 const POLL_SERVICE_SPEC = 'application/services/poll.service.spec.ts';
 
 const OWN_PREFERENCES: Entry = {
@@ -185,7 +187,7 @@ const HTTP_LEDGER: Record<string, Entry> = {
   ChatController_listMessageAttachments_v1: {
     status: 'masked',
     proof: {
-      spec: CHAT_SERVICE_SPEC,
+      spec: CHAT_ATTACHMENT_SERVICE_SPEC,
       test: 'refuses to hand out URLs for a message whose sender the caller has blocked',
     },
   },

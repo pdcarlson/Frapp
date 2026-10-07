@@ -1,13 +1,13 @@
 // A reported attachment survives its sender's delete (#2481), against a real
 // PostgREST and a real storage-api.
 //
-// The unit suites prove what `ChatService` and the report repository *ask*
+// The unit suites prove what `ChatAttachmentService` and the report repository *ask*
 // for. What only a live stack answers is that the questions work: that the
 // `reported_attachments` jsonb round-trips, that the hold read (`neq.[]` on a
 // jsonb column) finds the object an open report names, that the purge then
 // really leaves the bytes in the bucket and the officer's signed URL serves
 // them, and that the release deletes them once the report resolves. So this
-// drives the real `ChatService` evidence methods over the real repositories
+// drives the real `ChatAttachmentService` evidence methods over the real repositories
 // and `SupabaseStorageService`, and applies the same soft-delete write
 // `ChatService.softDeleteMessage` makes.
 //
@@ -16,7 +16,7 @@
 // integration suites.
 
 import { randomUUID } from 'node:crypto';
-import { ChatService } from '../../src/application/services/chat.service';
+import { ChatAttachmentService } from '../../src/application/services/chat-attachment.service';
 import { SupabaseChatMessageAttachmentRepository } from '../../src/infrastructure/supabase/repositories/supabase-chat-message-attachment.repository';
 import { SupabaseChatMessageReportRepository } from '../../src/infrastructure/supabase/repositories/supabase-chat-message-report.repository';
 import { SupabaseChatMessageRepository } from '../../src/infrastructure/supabase/repositories/supabase-chat-message.repository';
@@ -31,7 +31,7 @@ describeIntegration('Reported attachments against live storage', () => {
   let storage: SupabaseStorageService;
   let messages: SupabaseChatMessageRepository;
   let reports: SupabaseChatMessageReportRepository;
-  let chat: ChatService;
+  let chat: ChatAttachmentService;
 
   const chapterId = randomUUID();
   const authorId = randomUUID();
@@ -97,22 +97,13 @@ describeIntegration('Reported attachments against live storage', () => {
     messages = new SupabaseChatMessageRepository(supabase);
     reports = new SupabaseChatMessageReportRepository(supabase);
     const unused = {} as never;
-    chat = new ChatService(
-      unused,
-      unused,
-      messages,
-      unused,
+    chat = new ChatAttachmentService(
       new SupabaseChatMessageAttachmentRepository(supabase),
-      unused,
-      unused,
-      unused,
+      messages,
       storage,
-      unused,
-      unused,
-      unused,
-      unused,
-      unused,
       reports,
+      unused,
+      unused,
     );
 
     assertOk(
