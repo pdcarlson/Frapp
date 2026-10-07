@@ -70,7 +70,7 @@ export const CI_CHECKS = [
   "mobile-validate",
   // `node --test` over `scripts/ci/__tests__/` (`npm run test:ci-scripts`),
   // covering the gate and deploy scripts under both `scripts/` and
-  // `scripts/ci/`.
+  // `scripts/ci/`, plus every `*.test.sh` shell suite (#802).
   "ci-scripts-tests",
   // Secret scanning (gitleaks; ADR-13 push-protection replacement). ROLLOUT: this is
   // required only once the secret-scan job exists on the target branch and has run
