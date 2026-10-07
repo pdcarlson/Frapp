@@ -6,6 +6,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import type { ChannelOperation } from '@repo/validation';
 import {
   isPollClosed,
   POLL_OPTIONS_MAX,
@@ -98,25 +99,16 @@ export class PollService {
     chapterId: string,
     optionIndexes: number[],
   ): Promise<void> {
-    const message = await this.messageRepo.findById(messageId);
-    if (!message) {
-      throw new NotFoundException('Poll not found');
-    }
-
     // Voting writes into the poll's channel — authorize before revealing
     // anything about the poll (type, expiry, options). "vote" clears the same
     // read-only gate as posting but is exempt from the Alumni lifecycle rule:
     // participating in a poll they can read is not posting.
-    await this.channelAccess.assertChannelAccess(
-      message.channel_id,
+    const message = await this.loadPollForOperation(
+      messageId,
       chapterId,
       userId,
       'vote',
     );
-
-    if (message.type !== 'POLL') {
-      throw new BadRequestException('Message is not a poll');
-    }
 
     const metadata = message.metadata as PollMetadata;
     const options = metadata.options ?? [];
@@ -183,24 +175,15 @@ export class PollService {
     userId: string,
     chapterId: string,
   ): Promise<void> {
-    const message = await this.messageRepo.findById(messageId);
-    if (!message) {
-      throw new NotFoundException('Poll not found');
-    }
-
     // Removing a vote mutates the poll's channel — authorize as a "vote"
     // (same gates as posting, minus the Alumni lifecycle rule) so a vote that
     // was allowed can always be retracted.
-    await this.channelAccess.assertChannelAccess(
-      message.channel_id,
+    const message = await this.loadPollForOperation(
+      messageId,
       chapterId,
       userId,
       'vote',
     );
-
-    if (message.type !== 'POLL') {
-      throw new BadRequestException('Message is not a poll');
-    }
 
     const metadata = message.metadata as PollMetadata;
     if (this.isPollExpired(metadata)) {
@@ -215,23 +198,14 @@ export class PollService {
     chapterId: string,
     userId: string,
   ): Promise<PollWithResults> {
-    const message = await this.messageRepo.findById(messageId);
-    if (!message) {
-      throw new NotFoundException('Poll not found');
-    }
-
     // Reading a poll exposes its question, options, and tallies — authorize a
     // "read" against the channel before returning any of it.
-    await this.channelAccess.assertChannelAccess(
-      message.channel_id,
+    const message = await this.loadPollForOperation(
+      messageId,
       chapterId,
       userId,
       'read',
     );
-
-    if (message.type !== 'POLL') {
-      throw new BadRequestException('Message is not a poll');
-    }
 
     const metadata = message.metadata as PollMetadata;
     const options = metadata.options ?? [];
@@ -322,6 +296,37 @@ export class PollService {
   }
 
   /**
+   * Loads the poll message behind `messageId` for one operation: 404 when it is
+   * absent, then channel authorization BEFORE the type check so nothing about
+   * the message (type, expiry, options) is revealed to a caller who cannot
+   * reach its channel, then 400 when it is not a poll.
+   */
+  private async loadPollForOperation(
+    messageId: string,
+    chapterId: string,
+    userId: string,
+    operation: ChannelOperation,
+  ): Promise<ChatMessage> {
+    const message = await this.messageRepo.findById(messageId);
+    if (!message) {
+      throw new NotFoundException('Poll not found');
+    }
+
+    await this.channelAccess.assertChannelAccess(
+      message.channel_id,
+      chapterId,
+      userId,
+      operation,
+    );
+
+    if (message.type !== 'POLL') {
+      throw new BadRequestException('Message is not a poll');
+    }
+
+    return message;
+  }
+
+  /**
    * A poll is closed by its deadline passing OR the creator manually closing it
    * early (`close`). Thin wrapper so every read/write path shares one notion of
    * "closed" rather than each re-deriving it from the two metadata fields.
@@ -345,21 +350,12 @@ export class PollService {
     userId: string,
     chapterId: string,
   ): Promise<ChatMessage> {
-    const message = await this.messageRepo.findById(messageId);
-    if (!message) {
-      throw new NotFoundException('Poll not found');
-    }
-
-    await this.channelAccess.assertChannelAccess(
-      message.channel_id,
+    const message = await this.loadPollForOperation(
+      messageId,
       chapterId,
       userId,
       'vote',
     );
-
-    if (message.type !== 'POLL') {
-      throw new BadRequestException('Message is not a poll');
-    }
 
     // Mirrors `editMessage`'s guard (chat.service.ts) — deletion is soft, so
     // the row is still reachable by id, and a close must not resurrect a
