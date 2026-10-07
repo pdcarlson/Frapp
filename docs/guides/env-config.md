@@ -7,7 +7,7 @@ This guide explains how Frapp is configured across local, staging, and productio
 We maintain three main environments:
 
 - **Local** — developer machine, Supabase CLI + Docker, `.env.local` files
-- **Staging** — Supabase Cloud (staging project), the API on Render, web and landing on Vercel. Every merge to `main` whose CI passes deploys it.
+- **Staging** — Supabase Cloud (staging project), the API on Render, web and landing on Vercel. A merge to `main` whose CI passes runs its deploy, which ships what the merge changed.
 - **Production** — Supabase Cloud (prod project), the API on Render, web and landing on Vercel. Deployed only from a named commit, by the **Deploy production** workflow.
 
 How each deploy runs, in order: [`docs/ops/deployment/ci-cd.md` § How Deployments Are Gated](../ops/deployment/ci-cd.md#how-deployments-are-gated). Why it is shaped that way: [`spec/environments/README.md` § 6](../../spec/environments/README.md#6-continuous-deployment-cd).
@@ -22,7 +22,7 @@ Key principles:
 
 - **Infisical is the single source of truth** for all non-local secrets.
 - **No `.env.example` files** — the centralized `ENV_REFERENCE.md` replaces them.
-- **No placeholder secrets in CI** — CI (`ci.yml`) reads no runtime secrets, so it needs none; only the deploy workflows read Infisical ([`ci-cd.md` § Secrets in CI vs CD](../ops/deployment/ci-cd.md#secrets-in-ci-vs-cd)).
+- **No placeholder secrets in CI** — CI (`ci.yml`) reads no runtime secrets. Where a job needs a value only to exist, it sets a deliberately fake stand-in that ships nowhere; every build that ships gets real values from Infisical at deploy time ([`ci-cd.md` § Secrets in CI vs CD](../ops/deployment/ci-cd.md#secrets-in-ci-vs-cd)).
 - **Provider-native syncs** — Infisical pushes secrets to its sync destinations automatically (inventory linked above). Mobile EAS credentials are managed in Expo/EAS.
 
 ## 3. Local development setup
@@ -45,7 +45,7 @@ npm run supabase -- start
 npm run -s supabase -- status -o env
 ```
 
-Create `.env.local` per app from that output, then add remaining variables (for the API, include `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` with the real test-mode values Infisical `dev` holds, never placeholders; [`ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md) says where each comes from). Treat `.env.local` as a **fallback**; prefer Infisical when possible.
+Create `.env.local` per app from that output, then add remaining variables (for the API, include `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` — real test-mode values to exercise billing: [`ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md) says where each comes from, including the webhook secret `stripe listen` prints. Without billing, a value containing `placeholder` (as `scripts/cloud-sandbox-up.sh` writes, e.g. `sk_test_placeholder_cloud_sandbox`) boots; any other `sk_test_` is checked against Stripe at boot). Treat `.env.local` as a **fallback**; prefer Infisical when possible.
 
 ## 4. Config module in the API
 

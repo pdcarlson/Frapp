@@ -13,7 +13,7 @@ feature/xyz ──PR──▶ main (staging) ──manual dispatch──▶ prod
 
 | Branch      | Purpose                    | Deployment                                                     |
 | ----------- | -------------------------- | -------------------------------------------------------------- |
-| `main`      | Integration + staging      | Every merge whose CI passes deploys staging: migrations, the Render API, then web and landing on Vercel. The order: [`ci-cd.md` § How Deployments Are Gated](docs/ops/deployment/ci-cd.md#how-deployments-are-gated) |
+| `main`      | Integration + staging      | A merge whose CI passes runs the staging deploy, which ships what the merge changed. What runs, in what order: [`ci-cd.md` § How Deployments Are Gated](docs/ops/deployment/ci-cd.md#how-deployments-are-gated) |
 | `feature/*` | Short-lived feature work   | Never deployed; merged into `main`                             |
 | `hotfix/*`  | Emergency production fixes | Branch from `main`, PR to `main`, then deploy that commit       |
 
