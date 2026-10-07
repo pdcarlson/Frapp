@@ -1,4 +1,4 @@
-// Pins ../lib/copy-lines.mjs, the rule frapp-naming reads copy by: which lines
+// Pins ./helpers/copy-lines.mjs, the rule frapp-naming reads copy by: which lines
 // of a source file are copy, and what a download name looks like.
 //
 // Every input in "nothing on an earlier line" hid real copy from the scanner
@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { copyMatches, SIGNET_DOWNLOAD_NAME } from "../lib/copy-lines.mjs";
+import { copyMatches, SIGNET_DOWNLOAD_NAME } from "./helpers/copy-lines.mjs";
 
 const hits = (files, pattern = /\bSignet\b/g) => copyMatches(files, pattern).map(({ rel, line }) => `${rel}:${line}`);
 const downloads = (files) => hits(files, SIGNET_DOWNLOAD_NAME);

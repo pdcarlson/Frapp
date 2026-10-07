@@ -11,7 +11,7 @@
 //
 // HOW TO READ IT. Six tables, each checked by one loop:
 // - COPY_WALKS: every copy line under a surface's roots (the rule is
-//   ../lib/copy-lines.mjs, which ignores only the comment a line starts with)
+//   ./helpers/copy-lines.mjs, which ignores only the comment a line starts with)
 //   must not say Signet or ship a signet- download name. The walks are what
 //   make the pins below not the whole story: a new screen that says Signet
 //   fails without anyone listing it.
@@ -48,7 +48,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { copyMatches, inLeadingComment, LINE_BREAK, SIGNET_DOWNLOAD_NAME } from "../lib/copy-lines.mjs";
+import { copyMatches, inLeadingComment, LINE_BREAK, SIGNET_DOWNLOAD_NAME } from "./helpers/copy-lines.mjs";
 import { ROLLBACK_PLAYBOOK } from "../lib/ops-docs.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -874,7 +874,7 @@ test("the table keeps its floors and roots", () => {
 
 // ---------------------------------------------------------------------------
 // The rules, on fixtures. Each pins a way a predicate above was once fooled
-// or narrowed; the line rule itself is ../lib/copy-lines.mjs's, tested in
+// or narrowed; the line rule itself is ./helpers/copy-lines.mjs's, tested in
 // copy-lines.test.mjs.
 
 test("the API lets the design-system accent phrase through, and nothing after it", () => {
