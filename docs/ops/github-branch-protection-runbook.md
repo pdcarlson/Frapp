@@ -63,7 +63,7 @@ echo 'GITHUB_PAT=<token>' >> .env
 > `curl --noproxy '*'` go direct and return **200** from GitHub itself. Requests that honour
 > `HTTPS_PROXY` take the agent proxy route instead, whose results say nothing about the PAT. The
 > rule and its measurements live in
-> [`agent-infra.md` — the `api.github.com` route rule](../ci-cd/agent-infra.md#work-status); this
+> [`agent-infra.md` — the `api.github.com` route rule](../ci-cd/agent-infra.md#the-apigithubcom-route-rule); this
 > runbook only consumes the rule. The 2026-08-27 403 once recorded here — against
 > `GET /repos/pdcarlson/Frapp/branches/main/protection` — was a `curl` probe, so it measured the
 > proxy route, not the PAT. [#680](https://github.com/pdcarlson/Frapp/issues/680)'s evidence table
@@ -77,7 +77,7 @@ echo 'GITHUB_PAT=<token>' >> .env
 > PAT. It looked like one because `GET /user` *through* the proxy returns 200, so the token
 > appeared to work everywhere except the paths that mattered. Judge a 403 by its route, not its
 > headers: only a 403 on the direct route is a permission answer about the PAT (why:
-> [`agent-infra.md` → Work status](../ci-cd/agent-infra.md#work-status)). And **do not set
+> [`agent-infra.md` → The `api.github.com` route rule](../ci-cd/agent-infra.md#the-apigithubcom-route-rule)). And **do not set
 > `NODE_USE_ENV_PROXY=1`** for these scripts: that puts node back on the proxy route. Check with
 > `npm run configure:branch-protection:verify`, which **fails loudly** rather than passing when a
 > read is refused — see `--verify` below for the dated result.
