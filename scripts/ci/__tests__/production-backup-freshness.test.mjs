@@ -93,9 +93,13 @@ const EXPECTED = [
 
 const HOUR = 60 * 60 * 1000;
 
-/** A `cron: "<expr>"` line, tolerant of the spacing YAML allows. */
+/**
+ * A `cron:` line for this schedule however YAML lets it be written: quoted or
+ * not, any spacing around the colon and between the fields.
+ */
 function cronPattern(cron) {
-  return new RegExp(`cron:\\s*["']${cron.replaceAll("*", "\\*")}["']`);
+  const fields = cron.split(" ").map((field) => field.replaceAll("*", "\\*")).join("\\s+");
+  return new RegExp(`cron:\\s*["']?${fields}["']?\\s*(#.*)?$`, "m");
 }
 
 /**
