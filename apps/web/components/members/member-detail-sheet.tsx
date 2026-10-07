@@ -16,7 +16,7 @@ import {
 import { can } from "@repo/validation";
 import { formatLocaleDate as formatDate } from "@repo/formatting";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

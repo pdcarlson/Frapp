@@ -39,7 +39,7 @@ vi.mock("@/components/shared/confirm-dialog", () => ({
   useConfirmDialog: () => ({ confirm: mocks.confirm, confirmDialog: null }),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({
+vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mocks.toast }),
 }));
 

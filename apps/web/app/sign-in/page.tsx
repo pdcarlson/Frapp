@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { SkeletonText } from "@/components/shared/async-states";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getErrorMessage } from "@/lib/utils";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import {
   buildAuthCallbackUrl,
   describeAuthError,
