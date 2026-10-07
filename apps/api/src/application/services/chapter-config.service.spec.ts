@@ -65,7 +65,9 @@ import {
 } from './chapter-config.service';
 import { SERVICE_CONFIG_DEFAULTS } from './chapter-service-config.service';
 import { POINTS_CONFIG_DEFAULTS } from './chapter-points-config.service';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import { CHAPTER_CONFIG_REPOSITORY } from '#domain/repositories/chapter-config.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import { ActivationService } from './activation.service';
 import {
   ChapterAuditLogService,
@@ -86,12 +88,13 @@ const CHAPTER_ID = 'ch-1';
 type WorkflowRow = { key: string; enabled: boolean; threshold: number | null };
 
 /**
- * Builds a Supabase client stub. `chapters` resolves the given row through
- * `maybeSingle()` (and `{error:null}` when an update is awaited); the other
- * tables resolve their awaited value directly. Mutating calls are captured so
+ * Builds the three repositories `ChapterConfigService` reads and writes through
+ * (`CHAPTER_REPOSITORY`, `CHAPTER_CONFIG_REPOSITORY`, `ROLE_REPOSITORY`). Reads
+ * resolve the given rows, or reject with the `SupabaseQueryError` the real
+ * repositories throw when a read error is injected. Writes are captured so
  * tests can assert on them.
  */
-function makeSupabase(
+function makeRepos(
   workflowRows: WorkflowRow[],
   duesRow: Record<string, unknown> | null = null,
   enabledModules: Record<string, boolean> = {},
@@ -129,7 +132,7 @@ function makeSupabase(
       // error log, no security event and no Sentry capture.
       chapters?: { message: string } | null;
     };
-    // 1-based select index that should fail. Static `readErrors` cannot
+    // 1-based read index that should fail. Static `readErrors` cannot
     // express "leading getConfig ok, trailing getConfig fail" (#1670).
     readErrorOnCall?: {
       chapters?: number;
@@ -144,9 +147,10 @@ function makeSupabase(
     chapterRowOverride?: null;
     // The branding a chapters read returns (default `{}`).
     chapterBranding?: Record<string, unknown>;
-    // What the seed-guarded palette write resolves to (#1165). `data: []` is a
-    // lost compare-and-set: the accent changed after it was read.
-    paletteWrite?: { data: unknown[] | null; error: unknown };
+    // Whether the seed-guarded palette write lands (#1165). `false` is a lost
+    // compare-and-set: the accent changed after it was read.
+    paletteWritten?: boolean;
+    paletteWriteError?: { message: string };
   } = {},
 ) {
   const readErrors = options.readErrors ?? {};
@@ -161,20 +165,20 @@ function makeSupabase(
     message: 'trailing read failed',
   };
 
-  const resolveSelect = (
+  const resolveRead = <T>(
     table: keyof typeof readCallCount,
-    data: unknown,
-  ): { data: unknown; error: { message: string } | null } => {
+    data: T,
+  ): Promise<T> => {
     readCallCount[table] += 1;
     const staticError = readErrors[table];
     if (staticError) {
-      return { data: null, error: staticError };
+      return Promise.reject(new SupabaseQueryError(staticError));
     }
     const nth = options.readErrorOnCall?.[table];
     if (nth != null && readCallCount[table] === nth) {
-      return { data: null, error: trailingReadError };
+      return Promise.reject(new SupabaseQueryError(trailingReadError));
     }
-    return { data, error: null };
+    return Promise.resolve(data);
   };
   const chapterRow = {
     id: CHAPTER_ID,
@@ -188,166 +192,73 @@ function makeSupabase(
     default_invite_role_id: options.defaultInviteRoleId ?? null,
   };
 
-  const workflowUpsert = jest.fn().mockReturnValue({ error: null });
-  const duesUpsert = jest.fn().mockReturnValue({ error: null });
-  const serviceUpsert = jest.fn().mockReturnValue({ error: null });
-  const pointsUpsert = jest.fn().mockReturnValue({ error: null });
-  const chapterUpdate = jest.fn();
-  // Filters chained after `.eq('id', …)`: the palette write's seed guard.
-  const chapterGuards: Array<
-    [op: 'eq' | 'is', column: string, value: unknown]
-  > = [];
-  const paletteWrite = options.paletteWrite ?? {
-    data: [{ id: CHAPTER_ID }],
-    error: null,
+  const workflowUpsert = jest.fn().mockResolvedValue(undefined);
+  const duesUpsert = jest.fn().mockResolvedValue(undefined);
+  const serviceUpsert = jest.fn().mockResolvedValue(undefined);
+  const pointsUpsert = jest.fn().mockResolvedValue(undefined);
+  const chapterUpdate = jest.fn().mockResolvedValue(chapterRow);
+  const paletteWrite = options.paletteWriteError
+    ? jest
+        .fn()
+        .mockRejectedValue(new SupabaseQueryError(options.paletteWriteError))
+    : jest.fn().mockResolvedValue(options.paletteWritten ?? true);
+
+  const chapterRepo = {
+    findById: jest.fn(() =>
+      resolveRead(
+        'chapters',
+        options.chapterRowOverride === null ? null : chapterRow,
+      ),
+    ),
+    update: chapterUpdate,
+    updatePaletteIfSeedUnchanged: paletteWrite,
+  };
+  const configRepo = {
+    findWorkflows: jest.fn(() => resolveRead('workflows', workflowRows)),
+    findDuesConfig: jest.fn(() => resolveRead('dues', duesRow)),
+    findServiceConfig: jest.fn(() => resolveRead('service', serviceRow)),
+    findPointsConfig: jest.fn(() => resolveRead('points', pointsRow)),
+    upsertWorkflows: workflowUpsert,
+    upsertDuesConfig: duesUpsert,
+    upsertServiceConfig: serviceUpsert,
+    upsertPointsConfig: pointsUpsert,
+  };
+  /*
+   * Returns the role only when the lookup was scoped to this chapter.
+   *
+   * The obvious version — resolving a fixture picked up front whatever the
+   * arguments — cannot tell a chapter-scoped lookup from an unscoped one, so
+   * the cross-chapter test below passes even with the chapter argument
+   * deleted from the service. That was verified by mutation, not assumed:
+   * with the naive mock, removing the filter left 33/33 green. A test that
+   * cannot fail for the reason it exists is worse than no test, because it
+   * reports coverage of the one invariant RLS is not enforcing for us.
+   */
+  const roleRepo = {
+    findByIds: jest.fn((ids: string[], chapterId?: string) => {
+      if (options.roleLookupError) {
+        return Promise.reject(new SupabaseQueryError(options.roleLookupError));
+      }
+      const row = options.roleLookupRow ?? null;
+      const scoped = chapterId === CHAPTER_ID && ids.length > 0;
+      return Promise.resolve(scoped && row ? [row] : []);
+    }),
   };
 
-  const from = jest.fn((table: string) => {
-    if (table === 'chapters') {
-      const builder: Record<string, jest.Mock> = {};
-      builder.select = jest.fn().mockReturnValue(builder);
-      builder.update = jest.fn((payload: unknown) => {
-        chapterUpdate(payload);
-        return builder;
-      });
-      // `eq('id', …)` is the terminal for the config update (awaited), a
-      // passthrough for selects (`maybeSingle`), and the start of the palette
-      // write's seed guard (`eq`/`is` on the accent path, then `select('id')`).
-      const terminal: Promise<{ error: null }> &
-        Record<'maybeSingle' | 'eq' | 'is' | 'select', jest.Mock> =
-        Object.assign(Promise.resolve({ error: null }), {
-          maybeSingle: jest
-            .fn()
-            .mockImplementation(() =>
-              Promise.resolve(
-                resolveSelect(
-                  'chapters',
-                  options.chapterRowOverride === null ? null : chapterRow,
-                ),
-              ),
-            ),
-          eq: jest.fn((column: string, value: unknown) => {
-            chapterGuards.push(['eq', column, value]);
-            return terminal;
-          }),
-          is: jest.fn((column: string, value: unknown) => {
-            chapterGuards.push(['is', column, value]);
-            return terminal;
-          }),
-          select: jest.fn(() => Promise.resolve(paletteWrite)),
-        });
-      builder.eq = jest.fn().mockReturnValue(terminal);
-      return builder;
-    }
-    if (table === 'chapter_workflows') {
-      const builder: Record<string, jest.Mock> = {};
-      builder.select = jest.fn().mockReturnValue(builder);
-      builder.eq = jest
-        .fn()
-        .mockImplementation(() =>
-          Promise.resolve(resolveSelect('workflows', workflowRows)),
-        );
-      builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
-        workflowUpsert(rows, opts),
-      );
-      return builder;
-    }
-    if (table === 'chapter_dues_config') {
-      const builder: Record<string, jest.Mock> = {};
-      builder.select = jest.fn().mockReturnValue(builder);
-      builder.eq = jest.fn().mockReturnValue({
-        maybeSingle: jest
-          .fn()
-          .mockImplementation(() =>
-            Promise.resolve(resolveSelect('dues', duesRow)),
-          ),
-      });
-      builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
-        duesUpsert(rows, opts),
-      );
-      return builder;
-    }
-    if (table === 'chapter_service_config') {
-      const builder: Record<string, jest.Mock> = {};
-      builder.select = jest.fn().mockReturnValue(builder);
-      builder.eq = jest.fn().mockReturnValue({
-        maybeSingle: jest
-          .fn()
-          .mockImplementation(() =>
-            Promise.resolve(resolveSelect('service', serviceRow)),
-          ),
-      });
-      builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
-        serviceUpsert(rows, opts),
-      );
-      return builder;
-    }
-    if (table === 'chapter_points_config') {
-      const builder: Record<string, jest.Mock> = {};
-      builder.select = jest.fn().mockReturnValue(builder);
-      builder.eq = jest.fn().mockReturnValue({
-        maybeSingle: jest
-          .fn()
-          .mockImplementation(() =>
-            Promise.resolve(resolveSelect('points', pointsRow)),
-          ),
-      });
-      builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
-        pointsUpsert(rows, opts),
-      );
-      return builder;
-    }
-    if (table === 'roles') {
-      /*
-       * This mock RECORDS the filters and only returns the row when the query
-       * actually scoped by both `id` and `chapter_id`.
-       *
-       * The obvious version — `eq` returning `builder` unconditionally and
-       * `maybeSingle` resolving a fixture picked up front — cannot tell a
-       * chapter-scoped query from an unscoped one, so the cross-chapter test
-       * below passes even with `.eq('chapter_id', chapterId)` deleted from
-       * the service. That was verified by mutation, not assumed: with the
-       * naive mock, removing the filter left 33/33 green. A test that cannot
-       * fail for the reason it exists is worse than no test, because it
-       * reports coverage of the one invariant RLS is not enforcing for us.
-       */
-      const filters: Record<string, unknown> = {};
-      const builder: Record<string, jest.Mock> = {};
-      builder.select = jest.fn().mockReturnValue(builder);
-      builder.eq = jest.fn((column: string, value: unknown) => {
-        filters[column] = value;
-        return builder;
-      });
-      builder.maybeSingle = jest.fn(() => {
-        if (options.roleLookupError) {
-          return Promise.resolve({
-            data: null,
-            error: options.roleLookupError,
-          });
-        }
-        const row = options.roleLookupRow ?? null;
-        const scoped =
-          filters.chapter_id === CHAPTER_ID && filters.id !== undefined;
-        return Promise.resolve({
-          data: scoped ? row : null,
-          error: null,
-        });
-      });
-      return builder;
-    }
-    return {};
-  });
-
   return {
-    from,
+    chapterRepo,
+    configRepo,
+    roleRepo,
     workflowUpsert,
     duesUpsert,
     serviceUpsert,
     pointsUpsert,
     chapterUpdate,
-    chapterGuards,
+    paletteWrite,
   };
 }
+
+type Repos = ReturnType<typeof makeRepos>;
 
 /**
  * Shared across the file: `buildService` is module-scope, so the activation
@@ -371,16 +282,19 @@ beforeEach(() => {
   mockAuditLog.record.mockClear();
 });
 
-async function buildService(supabase: { from: jest.Mock }) {
+async function buildService(repos: Repos) {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       ChapterConfigService,
-      // The real service, not a double: it only needs SUPABASE_CLIENT, which
-      // the stub above already provides, and wiring it for real means these
-      // specs exercise the per-field clamp the config endpoint now shares with
-      // enforcement rather than asserting against a mock that cannot drift.
+      // The real service, not a double: it only needs the config repository,
+      // which the stub above already provides, and wiring it for real means
+      // these specs exercise the per-field clamp the config endpoint now
+      // shares with enforcement rather than asserting against a mock that
+      // cannot drift.
       ChapterPointsConfigService,
-      { provide: SUPABASE_CLIENT, useValue: supabase },
+      { provide: CHAPTER_REPOSITORY, useValue: repos.chapterRepo },
+      { provide: CHAPTER_CONFIG_REPOSITORY, useValue: repos.configRepo },
+      { provide: ROLE_REPOSITORY, useValue: repos.roleRepo },
       { provide: ActivationService, useValue: mockActivation },
       { provide: ChapterAuditLogService, useValue: mockAuditLog },
     ],
@@ -391,8 +305,8 @@ async function buildService(supabase: { from: jest.Mock }) {
 describe('ChapterConfigService — workflows', () => {
   describe('getConfig', () => {
     it('returns the seed catalog when the chapter has no overrides', async () => {
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       const config = await service.getConfig(CHAPTER_ID);
 
@@ -422,11 +336,11 @@ describe('ChapterConfigService — workflows', () => {
     });
 
     it('overlays chapter overrides (enabled + threshold) onto the catalog', async () => {
-      const supabase = makeSupabase([
+      const repos = makeRepos([
         { key: 'wf_budget_approval', enabled: true, threshold: 1000 },
         { key: 'wf_advisor_digest', enabled: true, threshold: null },
       ]);
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       const config = await service.getConfig(CHAPTER_ID);
       const byKey = Object.fromEntries(config.workflows.map((w) => [w.key, w]));
@@ -443,8 +357,8 @@ describe('ChapterConfigService — workflows', () => {
 
   describe('patchConfig', () => {
     it('upserts only changed workflows and audits them on a workflows-only PATCH', async () => {
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         workflows: [
@@ -454,8 +368,8 @@ describe('ChapterConfigService — workflows', () => {
       });
 
       // Only the changed workflow is upserted.
-      expect(supabase.workflowUpsert).toHaveBeenCalledTimes(1);
-      const [rows, opts] = supabase.workflowUpsert.mock.calls[0];
+      expect(repos.workflowUpsert).toHaveBeenCalledTimes(1);
+      const [rows] = repos.workflowUpsert.mock.calls[0];
       expect(rows).toEqual([
         {
           chapter_id: CHAPTER_ID,
@@ -464,10 +378,9 @@ describe('ChapterConfigService — workflows', () => {
           threshold: null,
         },
       ]);
-      expect(opts).toEqual({ onConflict: 'chapter_id,key' });
 
       // No chapters-table column changed, so it is never updated...
-      expect(supabase.chapterUpdate).not.toHaveBeenCalled();
+      expect(repos.chapterUpdate).not.toHaveBeenCalled();
       // ...but the audit row still fires, carrying the workflows diff.
       expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
       const auditRow = mockAuditLog.record.mock.calls[0][0];
@@ -481,15 +394,15 @@ describe('ChapterConfigService — workflows', () => {
     });
 
     it('ignores unknown workflow keys (no bare write)', async () => {
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
         workflows: [{ key: 'wf_not_in_catalog', enabled: true }],
       });
 
       // Nothing changed → no upsert, no audit, returns existing config.
-      expect(supabase.workflowUpsert).not.toHaveBeenCalled();
+      expect(repos.workflowUpsert).not.toHaveBeenCalled();
       expect(mockAuditLog.record).not.toHaveBeenCalled();
       expect(result.id).toBe(CHAPTER_ID);
     });
@@ -499,8 +412,8 @@ describe('ChapterConfigService — workflows', () => {
 describe('ChapterConfigService — dues', () => {
   describe('getConfig', () => {
     it('returns the table defaults when the chapter has no dues row', async () => {
-      const supabase = makeSupabase([], null);
-      const service = await buildService(supabase);
+      const repos = makeRepos([], null);
+      const service = await buildService(repos);
 
       const config = await service.getConfig(CHAPTER_ID);
 
@@ -518,7 +431,7 @@ describe('ChapterConfigService — dues', () => {
     });
 
     it('returns the persisted dues row when one exists', async () => {
-      const supabase = makeSupabase([], {
+      const repos = makeRepos([], {
         cadence: 'monthly',
         active_amount_cents: 85000,
         new_member_amount_cents: 42500,
@@ -529,7 +442,7 @@ describe('ChapterConfigService — dues', () => {
         grace_days: 10,
         scholarship_pool_cents: 120000,
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       const config = await service.getConfig(CHAPTER_ID);
 
@@ -544,26 +457,25 @@ describe('ChapterConfigService — dues', () => {
 
   describe('patchConfig', () => {
     it('upserts the singleton dues row and audits the change', async () => {
-      const supabase = makeSupabase([], null);
-      const service = await buildService(supabase);
+      const repos = makeRepos([], null);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         dues: { cadence: 'monthly', active_amount_cents: 50000 },
       });
 
-      expect(supabase.duesUpsert).toHaveBeenCalledTimes(1);
-      const [row, opts] = supabase.duesUpsert.mock.calls[0];
+      expect(repos.duesUpsert).toHaveBeenCalledTimes(1);
+      const [chapterId, row] = repos.duesUpsert.mock.calls[0];
       // Provided fields applied; untouched fields fall back to the defaults.
+      expect(chapterId).toBe(CHAPTER_ID);
       expect(row).toMatchObject({
-        chapter_id: CHAPTER_ID,
         cadence: 'monthly',
         active_amount_cents: 50000,
         installment_count: 1,
       });
-      expect(opts).toEqual({ onConflict: 'chapter_id' });
 
       // No chapters-table column changed, but the audit row still fires.
-      expect(supabase.chapterUpdate).not.toHaveBeenCalled();
+      expect(repos.chapterUpdate).not.toHaveBeenCalled();
       expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
       const auditRow = mockAuditLog.record.mock.calls[0][0];
       expect((auditRow.diff as AuditDiff).dues.to).toMatchObject({
@@ -572,7 +484,7 @@ describe('ChapterConfigService — dues', () => {
     });
 
     it('is a no-op when the dues payload matches the current row', async () => {
-      const supabase = makeSupabase([], {
+      const repos = makeRepos([], {
         cadence: 'monthly',
         active_amount_cents: 50000,
         new_member_amount_cents: 0,
@@ -583,13 +495,13 @@ describe('ChapterConfigService — dues', () => {
         grace_days: 7,
         scholarship_pool_cents: 0,
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
         dues: { cadence: 'monthly', active_amount_cents: 50000 },
       });
 
-      expect(supabase.duesUpsert).not.toHaveBeenCalled();
+      expect(repos.duesUpsert).not.toHaveBeenCalled();
       expect(mockAuditLog.record).not.toHaveBeenCalled();
       expect(result.id).toBe(CHAPTER_ID);
     });
@@ -599,8 +511,8 @@ describe('ChapterConfigService — dues', () => {
 describe('ChapterConfigService — branding accent (#795)', () => {
   describe('patchConfig', () => {
     it('mirrors the branding accent into the legacy accent_color column', async () => {
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         branding: { colors: { accent: '#8B0000' } },
@@ -609,8 +521,10 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // Two writes, not one: the config update, then a second from
       // `recomputePalette` persisting `theme_palette`. Any branding change
       // triggers that recompute, so the mirror has to ride on the first call.
-      expect(supabase.chapterUpdate).toHaveBeenCalledTimes(2);
-      const update = supabase.chapterUpdate.mock.calls[0][0];
+      expect(repos.chapterUpdate).toHaveBeenCalledTimes(1);
+      expect(repos.paletteWrite).toHaveBeenCalledTimes(1);
+      const [chapterId, update] = repos.chapterUpdate.mock.calls[0];
+      expect(chapterId).toBe(CHAPTER_ID);
       expect(update.accent_color).toBe('#8B0000');
       expect(update.branding).toMatchObject({ colors: { accent: '#8B0000' } });
 
@@ -628,8 +542,8 @@ describe('ChapterConfigService — branding accent (#795)', () => {
     });
 
     it('persists the Signet map alone in theme_palette', async () => {
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         branding: { colors: { accent: '#8B0000' } },
@@ -638,7 +552,7 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // The recompute is the second write. Since the #920 slice-9 cutover the
       // column holds one map: `derivePalette` is gone, so there is no second
       // half that could go stale against this one.
-      const paletteUpdate = supabase.chapterUpdate.mock.calls[1][0];
+      const [, paletteUpdate] = repos.paletteWrite.mock.calls[0];
       expect(paletteUpdate.theme_palette).toMatchObject({
         '--signet-accent-primary': '#C49A3A',
       });
@@ -650,8 +564,8 @@ describe('ChapterConfigService — branding accent (#795)', () => {
     });
 
     it('clears the engine stamp in the same write as a new branding seed (#1165)', async () => {
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         branding: { colors: { accent: '#8B0000' } },
@@ -661,7 +575,8 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // second can fail on its own. Nulling the stamp with the seed means a
       // failed recompute leaves the row for the stale-palette sweep instead of
       // under a current stamp the sweep never looks at.
-      const [brandingWrite] = supabase.chapterUpdate.mock.calls[0] as [
+      const [, brandingWrite] = repos.chapterUpdate.mock.calls[0] as [
+        string,
         Record<string, unknown>,
       ];
       expect(brandingWrite.branding).toBeDefined();
@@ -672,10 +587,10 @@ describe('ChapterConfigService — branding accent (#795)', () => {
     });
 
     it('re-derives the palette on a branding PATCH that carries no colours too', async () => {
-      const supabase = makeSupabase([], null, {}, null, null, {
+      const repos = makeRepos([], null, {}, null, null, {
         chapterBranding: { colors: { accent: '#2F6B4F' } },
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         branding: { greek_letters: 'ΑΒ' },
@@ -685,34 +600,38 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // so it can put an older seed back under a palette an accent save
       // stamped in between. It clears the stamp with that seed, and the
       // recompute re-derives from the seed it stored, guarded on it.
-      const [write] = supabase.chapterUpdate.mock.calls[0] as [
+      const [, write] = repos.chapterUpdate.mock.calls[0] as [
+        string,
         Record<string, unknown>,
       ];
       expect(write.branding).toBeDefined();
       expect(write).toHaveProperty('theme_palette_engine_version', null);
-      expect(supabase.chapterUpdate).toHaveBeenCalledTimes(2);
-      expect(supabase.chapterGuards).toEqual([
-        ['eq', 'branding->colors->>accent', '#2F6B4F'],
-      ]);
+      expect(repos.paletteWrite).toHaveBeenCalledTimes(1);
+      expect(repos.paletteWrite).toHaveBeenCalledWith(
+        CHAPTER_ID,
+        expect.anything(),
+        '#2F6B4F',
+      );
     });
 
     it('leaves the engine stamp alone on a PATCH that writes no branding', async () => {
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         vocabulary: { member: 'Brother' },
       });
 
-      const [write] = supabase.chapterUpdate.mock.calls[0] as [
+      const [, write] = repos.chapterUpdate.mock.calls[0] as [
+        string,
         Record<string, unknown>,
       ];
       expect(write).not.toHaveProperty('theme_palette_engine_version');
     });
 
     it('writes the palette only while the seed it was derived from is still stored', async () => {
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         branding: { colors: { accent: '#8B0000' } },
@@ -720,31 +639,36 @@ describe('ChapterConfigService — branding accent (#795)', () => {
 
       // The same compare-and-set the stale-palette sweep uses: a Settings save
       // landing between the read and this write must not be overwritten.
-      expect(supabase.chapterGuards).toEqual([
-        ['eq', 'branding->colors->>accent', '#8B0000'],
-      ]);
+      expect(repos.paletteWrite).toHaveBeenCalledWith(
+        CHAPTER_ID,
+        expect.anything(),
+        '#8B0000',
+      );
     });
 
     it('guards a chapter with no accent on the accent still being absent', async () => {
-      const supabase = makeSupabase([], null, {}, null, null, {
+      const repos = makeRepos([], null, {}, null, null, {
         chapterBranding: {},
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       await service.recomputeAndPersistPalette(CHAPTER_ID);
 
-      // `eq(null)` would compile to `= null`, which matches nothing.
-      expect(supabase.chapterGuards).toEqual([
-        ['is', 'branding->colors->>accent', null],
-      ]);
+      // The repository guards on `is null` for an absent seed; `eq(null)`
+      // would compile to `= null`, which matches nothing.
+      expect(repos.paletteWrite).toHaveBeenCalledWith(
+        CHAPTER_ID,
+        expect.anything(),
+        undefined,
+      );
     });
 
     it('treats a lost compare-and-set as superseded, not as a failure', async () => {
-      const supabase = makeSupabase([], null, {}, null, null, {
+      const repos = makeRepos([], null, {}, null, null, {
         chapterBranding: { colors: { accent: '#8B0000' } },
-        paletteWrite: { data: [], error: null },
+        paletteWritten: false,
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
       const warn = jest
         .spyOn(service['logger'], 'warn')
         .mockImplementation(() => undefined);
@@ -760,8 +684,8 @@ describe('ChapterConfigService — branding accent (#795)', () => {
     });
 
     it('stamps the palette with the engine that wrote it, through both doors (#1165)', async () => {
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         branding: { colors: { accent: '#8B0000' } },
@@ -773,10 +697,10 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // stamp without its palette would hide a stale fill from it for good, so
       // the two go in the same write.
       const paletteWrites = (
-        supabase.chapterUpdate.mock.calls as Array<[Record<string, unknown>]>
-      )
-        .map(([patch]) => patch)
-        .filter((patch) => 'theme_palette' in patch);
+        repos.paletteWrite.mock.calls as Array<
+          [string, Record<string, unknown>, string | undefined]
+        >
+      ).map(([, patch]) => patch);
       expect(paletteWrites).toHaveLength(2);
       for (const patch of paletteWrites) {
         expect(patch.theme_palette_engine_version).toBe(SIGNET_ENGINE_VERSION);
@@ -804,8 +728,8 @@ describe('ChapterConfigService — branding accent (#795)', () => {
         ],
         contrastChecks: [],
       });
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
       const warn = jest
         .spyOn(service['logger'], 'warn')
         .mockImplementation(() => undefined);
@@ -856,8 +780,8 @@ describe('ChapterConfigService — branding accent (#795)', () => {
             fillCheck('--popover', 3.01),
           ],
         });
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
       const warn = jest
         .spyOn(service['logger'], 'warn')
         .mockImplementation(() => undefined);
@@ -901,8 +825,8 @@ describe('ChapterConfigService — branding accent (#795)', () => {
           },
         ],
       });
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
       const warn = jest
         .spyOn(service['logger'], 'warn')
         .mockImplementation(() => undefined);
@@ -918,8 +842,8 @@ describe('ChapterConfigService — branding accent (#795)', () => {
     });
 
     it('feeds the engine the branding accent, not a third read path', async () => {
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         branding: { colors: { accent: '#8B0000' } },
@@ -935,14 +859,14 @@ describe('ChapterConfigService — branding accent (#795)', () => {
     });
 
     it('does not write the column for a branding PATCH that leaves the accent alone', async () => {
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         branding: { greek_letters: 'ΦΓΔ' },
       });
 
-      const update = supabase.chapterUpdate.mock.calls[0]?.[0] ?? {};
+      const update = repos.chapterUpdate.mock.calls[0]?.[1] ?? {};
       expect(update).not.toHaveProperty('accent_color');
     });
   });
@@ -951,8 +875,8 @@ describe('ChapterConfigService — branding accent (#795)', () => {
 describe('ChapterConfigService — analytics opt-out', () => {
   describe('getConfig', () => {
     it('returns the chapter analytics_opt_out flag (defaulting off)', async () => {
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       const config = await service.getConfig(CHAPTER_ID);
 
@@ -962,15 +886,15 @@ describe('ChapterConfigService — analytics opt-out', () => {
 
   describe('patchConfig', () => {
     it('updates the chapters column and audits the change', async () => {
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         analytics_opt_out: true,
       });
 
-      expect(supabase.chapterUpdate).toHaveBeenCalledTimes(1);
-      expect(supabase.chapterUpdate).toHaveBeenCalledWith({
+      expect(repos.chapterUpdate).toHaveBeenCalledTimes(1);
+      expect(repos.chapterUpdate).toHaveBeenCalledWith(CHAPTER_ID, {
         analytics_opt_out: true,
       });
       expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
@@ -986,14 +910,14 @@ describe('ChapterConfigService — analytics opt-out', () => {
     });
 
     it('is a no-op when the flag already matches', async () => {
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
         analytics_opt_out: false,
       });
 
-      expect(supabase.chapterUpdate).not.toHaveBeenCalled();
+      expect(repos.chapterUpdate).not.toHaveBeenCalled();
       expect(mockAuditLog.record).not.toHaveBeenCalled();
       expect(result.id).toBe(CHAPTER_ID);
     });
@@ -1005,8 +929,8 @@ describe('ChapterConfigService — service hours', () => {
     it('falls back to the 60 min/point default when the chapter has no row', async () => {
       // An absent row is the unconfigured state, not an error: it must report
       // the same rate the API awarded before the rate became configurable.
-      const supabase = makeSupabase([], null, {}, null);
-      const service = await buildService(supabase);
+      const repos = makeRepos([], null, {}, null);
+      const service = await buildService(repos);
 
       const config = await service.getConfig(CHAPTER_ID);
 
@@ -1014,8 +938,8 @@ describe('ChapterConfigService — service hours', () => {
     });
 
     it('returns the chapter override when a row exists', async () => {
-      const supabase = makeSupabase([], null, {}, { minutes_per_point: 30 });
-      const service = await buildService(supabase);
+      const repos = makeRepos([], null, {}, { minutes_per_point: 30 });
+      const service = await buildService(repos);
 
       const config = await service.getConfig(CHAPTER_ID);
 
@@ -1025,18 +949,17 @@ describe('ChapterConfigService — service hours', () => {
 
   describe('patchConfig', () => {
     it('upserts the rate and audits the change', async () => {
-      const supabase = makeSupabase([], null, {}, null);
-      const service = await buildService(supabase);
+      const repos = makeRepos([], null, {}, null);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         service: { minutes_per_point: 45 },
       });
 
-      expect(supabase.serviceUpsert).toHaveBeenCalledTimes(1);
-      expect(supabase.serviceUpsert).toHaveBeenCalledWith(
-        { chapter_id: CHAPTER_ID, minutes_per_point: 45 },
-        { onConflict: 'chapter_id' },
-      );
+      expect(repos.serviceUpsert).toHaveBeenCalledTimes(1);
+      expect(repos.serviceUpsert).toHaveBeenCalledWith(CHAPTER_ID, {
+        minutes_per_point: 45,
+      });
       const auditRow = mockAuditLog.record.mock.calls[0][0];
       expect((auditRow.diff as AuditDiff).service).toEqual({
         from: { minutes_per_point: 60 },
@@ -1045,14 +968,14 @@ describe('ChapterConfigService — service hours', () => {
     });
 
     it('is a no-op when the rate already matches', async () => {
-      const supabase = makeSupabase([], null, {}, { minutes_per_point: 30 });
-      const service = await buildService(supabase);
+      const repos = makeRepos([], null, {}, { minutes_per_point: 30 });
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         service: { minutes_per_point: 30 },
       });
 
-      expect(supabase.serviceUpsert).not.toHaveBeenCalled();
+      expect(repos.serviceUpsert).not.toHaveBeenCalled();
       expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
   });
@@ -1069,8 +992,8 @@ describe('ChapterConfigService — points anti-fraud limits (#394)', () => {
       // An absent row is the unconfigured state, not an error: it must report
       // the same limits PointsService enforced before they became
       // configurable, which is what makes this migration backfill-free.
-      const supabase = makeSupabase([], null, {}, null, null);
-      const service = await buildService(supabase);
+      const repos = makeRepos([], null, {}, null, null);
+      const service = await buildService(repos);
 
       const config = await service.getConfig(CHAPTER_ID);
 
@@ -1078,11 +1001,11 @@ describe('ChapterConfigService — points anti-fraud limits (#394)', () => {
     });
 
     it('returns the chapter override when a row exists', async () => {
-      const supabase = makeSupabase([], null, {}, null, {
+      const repos = makeRepos([], null, {}, null, {
         adjustment_rate_limit_per_hour: 10,
         anomaly_threshold: 250,
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       const config = await service.getConfig(CHAPTER_ID);
 
@@ -1095,22 +1018,18 @@ describe('ChapterConfigService — points anti-fraud limits (#394)', () => {
 
   describe('patchConfig', () => {
     it('upserts both limits and audits the change', async () => {
-      const supabase = makeSupabase([], null, {}, null, null);
-      const service = await buildService(supabase);
+      const repos = makeRepos([], null, {}, null, null);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         points: { adjustment_rate_limit_per_hour: 10, anomaly_threshold: 250 },
       });
 
-      expect(supabase.pointsUpsert).toHaveBeenCalledTimes(1);
-      expect(supabase.pointsUpsert).toHaveBeenCalledWith(
-        {
-          chapter_id: CHAPTER_ID,
-          adjustment_rate_limit_per_hour: 10,
-          anomaly_threshold: 250,
-        },
-        { onConflict: 'chapter_id' },
-      );
+      expect(repos.pointsUpsert).toHaveBeenCalledTimes(1);
+      expect(repos.pointsUpsert).toHaveBeenCalledWith(CHAPTER_ID, {
+        adjustment_rate_limit_per_hour: 10,
+        anomaly_threshold: 250,
+      });
       const auditRow = mockAuditLog.record.mock.calls[0][0];
       expect((auditRow.diff as AuditDiff).points).toEqual({
         from: DEFAULTS,
@@ -1121,38 +1040,34 @@ describe('ChapterConfigService — points anti-fraud limits (#394)', () => {
     // A partial PATCH must not silently reset the limit it did not mention —
     // the merge is what makes each dial independently settable.
     it('merges a partial patch onto the untouched limit', async () => {
-      const supabase = makeSupabase([], null, {}, null, {
+      const repos = makeRepos([], null, {}, null, {
         adjustment_rate_limit_per_hour: 10,
         anomaly_threshold: 250,
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         points: { anomaly_threshold: 500 },
       });
 
-      expect(supabase.pointsUpsert).toHaveBeenCalledWith(
-        {
-          chapter_id: CHAPTER_ID,
-          adjustment_rate_limit_per_hour: 10,
-          anomaly_threshold: 500,
-        },
-        { onConflict: 'chapter_id' },
-      );
+      expect(repos.pointsUpsert).toHaveBeenCalledWith(CHAPTER_ID, {
+        adjustment_rate_limit_per_hour: 10,
+        anomaly_threshold: 500,
+      });
     });
 
     it('is a no-op when both limits already match', async () => {
-      const supabase = makeSupabase([], null, {}, null, {
+      const repos = makeRepos([], null, {}, null, {
         adjustment_rate_limit_per_hour: 10,
         anomaly_threshold: 250,
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         points: { adjustment_rate_limit_per_hour: 10, anomaly_threshold: 250 },
       });
 
-      expect(supabase.pointsUpsert).not.toHaveBeenCalled();
+      expect(repos.pointsUpsert).not.toHaveBeenCalled();
       expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
   });
@@ -1160,8 +1075,8 @@ describe('ChapterConfigService — points anti-fraud limits (#394)', () => {
 
 describe('ChapterConfigService — activation funnel (#267)', () => {
   it('records the milestone when a paid module flips off -> on', async () => {
-    const supabase = makeSupabase([], null, { events: false });
-    const service = await buildService(supabase);
+    const repos = makeRepos([], null, { events: false });
+    const service = await buildService(repos);
 
     await service.patchConfig(CHAPTER_ID, 'user-1', {
       enabled_modules: { events: true },
@@ -1175,8 +1090,8 @@ describe('ChapterConfigService — activation funnel (#267)', () => {
   });
 
   it('names the alphabetically-first module when a patch enables several', async () => {
-    const supabase = makeSupabase([], null, { events: false, dues: false });
-    const service = await buildService(supabase);
+    const repos = makeRepos([], null, { events: false, dues: false });
+    const service = await buildService(repos);
 
     await service.patchConfig(CHAPTER_ID, 'user-1', {
       enabled_modules: { events: true, dues: true },
@@ -1190,8 +1105,8 @@ describe('ChapterConfigService — activation funnel (#267)', () => {
   });
 
   it('ignores a free module being toggled', async () => {
-    const supabase = makeSupabase([], null, { chat: false });
-    const service = await buildService(supabase);
+    const repos = makeRepos([], null, { chat: false });
+    const service = await buildService(repos);
 
     await service.patchConfig(CHAPTER_ID, 'user-1', {
       enabled_modules: { chat: true },
@@ -1201,8 +1116,8 @@ describe('ChapterConfigService — activation funnel (#267)', () => {
   });
 
   it('ignores a paid module that was already on', async () => {
-    const supabase = makeSupabase([], null, { events: true });
-    const service = await buildService(supabase);
+    const repos = makeRepos([], null, { events: true });
+    const service = await buildService(repos);
 
     await service.patchConfig(CHAPTER_ID, 'user-1', {
       enabled_modules: { events: true },
@@ -1214,8 +1129,8 @@ describe('ChapterConfigService — activation funnel (#267)', () => {
   // `isModuleEnabled` treats an absent key as enabled, so a chapter created
   // before a module existed must not look like it just turned it on.
   it('ignores a paid module with no prior key', async () => {
-    const supabase = makeSupabase([], null, {});
-    const service = await buildService(supabase);
+    const repos = makeRepos([], null, {});
+    const service = await buildService(repos);
 
     await service.patchConfig(CHAPTER_ID, 'user-1', {
       enabled_modules: { events: true },
@@ -1225,8 +1140,8 @@ describe('ChapterConfigService — activation funnel (#267)', () => {
   });
 
   it('does not record when a paid module is turned off', async () => {
-    const supabase = makeSupabase([], null, { events: true });
-    const service = await buildService(supabase);
+    const repos = makeRepos([], null, { events: true });
+    const service = await buildService(repos);
 
     await service.patchConfig(CHAPTER_ID, 'user-1', {
       enabled_modules: { events: false },
@@ -1243,10 +1158,10 @@ describe('ChapterConfigService — activation funnel (#267)', () => {
  */
 describe('ChapterConfigService default invite role (#422)', () => {
   it('returns the persisted default from getConfig', async () => {
-    const supabase = makeSupabase([], null, {}, null, null, {
+    const repos = makeRepos([], null, {}, null, null, {
       defaultInviteRoleId: 'role-pledge',
     });
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     const config = await service.getConfig(CHAPTER_ID);
 
@@ -1254,8 +1169,8 @@ describe('ChapterConfigService default invite role (#422)', () => {
   });
 
   it('reports null when no default is configured', async () => {
-    const supabase = makeSupabase([], null, {}, null, null, {});
-    const service = await buildService(supabase);
+    const repos = makeRepos([], null, {}, null, null, {});
+    const service = await buildService(repos);
 
     const config = await service.getConfig(CHAPTER_ID);
 
@@ -1263,16 +1178,17 @@ describe('ChapterConfigService default invite role (#422)', () => {
   });
 
   it('persists a role that belongs to the chapter', async () => {
-    const supabase = makeSupabase([], null, {}, null, null, {
+    const repos = makeRepos([], null, {}, null, null, {
       roleLookupRow: { id: 'role-pledge' },
     });
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     await service.patchConfig(CHAPTER_ID, 'user-1', {
       default_invite_role_id: 'role-pledge',
     });
 
-    expect(supabase.chapterUpdate).toHaveBeenCalledWith(
+    expect(repos.chapterUpdate).toHaveBeenCalledWith(
+      CHAPTER_ID,
       expect.objectContaining({ default_invite_role_id: 'role-pledge' }),
     );
   });
@@ -1284,47 +1200,46 @@ describe('ChapterConfigService default invite role (#422)', () => {
    * subsequent invite.
    */
   it('rejects a role from another chapter with 400', async () => {
-    const supabase = makeSupabase([], null, {}, null, null, {
+    const repos = makeRepos([], null, {}, null, null, {
       roleLookupRow: null,
     });
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     await expect(
       service.patchConfig(CHAPTER_ID, 'user-1', {
         default_invite_role_id: 'role-elsewhere',
       }),
     ).rejects.toThrow(BadRequestException);
-    expect(supabase.chapterUpdate).not.toHaveBeenCalled();
+    expect(repos.chapterUpdate).not.toHaveBeenCalled();
   });
 
   /*
-   * Guards the guard. If `assertRoleBelongsToChapter` ever stops filtering by
-   * `chapter_id`, this fails immediately and by name — rather than the
+   * Guards the guard. If `assertRoleBelongsToChapter` ever stops passing the
+   * chapter, this fails immediately and by name — rather than the
    * cross-chapter test above silently continuing to pass, which is what it did
-   * before the mock recorded its filters.
+   * before the mock checked its scope.
    */
   it('scopes the role lookup by chapter_id, not just by id', async () => {
-    const supabase = makeSupabase([], null, {}, null, null, {
+    const repos = makeRepos([], null, {}, null, null, {
       roleLookupRow: { id: 'role-pledge' },
     });
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     await service.patchConfig(CHAPTER_ID, 'user-1', {
       default_invite_role_id: 'role-pledge',
     });
 
-    const rolesBuilder = supabase.from.mock.results.find(
-      (result, index) => supabase.from.mock.calls[index][0] === 'roles',
-    )?.value as { eq: jest.Mock };
-    expect(rolesBuilder.eq).toHaveBeenCalledWith('id', 'role-pledge');
-    expect(rolesBuilder.eq).toHaveBeenCalledWith('chapter_id', CHAPTER_ID);
+    expect(repos.roleRepo.findByIds).toHaveBeenCalledWith(
+      ['role-pledge'],
+      CHAPTER_ID,
+    );
   });
 
   it('rejects a role id that does not exist with 400', async () => {
-    const supabase = makeSupabase([], null, {}, null, null, {
+    const repos = makeRepos([], null, {}, null, null, {
       roleLookupRow: null,
     });
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     await expect(
       service.patchConfig(CHAPTER_ID, 'user-1', {
@@ -1340,26 +1255,27 @@ describe('ChapterConfigService default invite role (#422)', () => {
    * keys this branch on `!== undefined` rather than truthiness.
    */
   it('clears the default without validating, when passed null', async () => {
-    const supabase = makeSupabase([], null, {}, null, null, {
+    const repos = makeRepos([], null, {}, null, null, {
       defaultInviteRoleId: 'role-pledge',
       roleLookupRow: null,
     });
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     await service.patchConfig(CHAPTER_ID, 'user-1', {
       default_invite_role_id: null,
     });
 
-    expect(supabase.chapterUpdate).toHaveBeenCalledWith(
+    expect(repos.chapterUpdate).toHaveBeenCalledWith(
+      CHAPTER_ID,
       expect.objectContaining({ default_invite_role_id: null }),
     );
   });
 
   it('audits the change like every other config write', async () => {
-    const supabase = makeSupabase([], null, {}, null, null, {
+    const repos = makeRepos([], null, {}, null, null, {
       roleLookupRow: { id: 'role-pledge' },
     });
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     await service.patchConfig(CHAPTER_ID, 'user-1', {
       default_invite_role_id: 'role-pledge',
@@ -1369,17 +1285,17 @@ describe('ChapterConfigService default invite role (#422)', () => {
   });
 
   it('is a no-op when the value is unchanged', async () => {
-    const supabase = makeSupabase([], null, {}, null, null, {
+    const repos = makeRepos([], null, {}, null, null, {
       defaultInviteRoleId: 'role-pledge',
       roleLookupRow: { id: 'role-pledge' },
     });
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     await service.patchConfig(CHAPTER_ID, 'user-1', {
       default_invite_role_id: 'role-pledge',
     });
 
-    expect(supabase.chapterUpdate).not.toHaveBeenCalled();
+    expect(repos.chapterUpdate).not.toHaveBeenCalled();
   });
 
   it('does not log PostgREST details when the default-invite-role lookup fails (#1669)', async () => {
@@ -1388,7 +1304,7 @@ describe('ChapterConfigService default invite role (#422)', () => {
     const errorSpy = jest
       .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => undefined);
-    const supabase = makeSupabase([], null, {}, null, null, {
+    const repos = makeRepos([], null, {}, null, null, {
       roleLookupError: {
         code: 'PGRST116',
         message: 'JSON object requested, multiple (or no) rows returned',
@@ -1396,7 +1312,7 @@ describe('ChapterConfigService default invite role (#422)', () => {
         hint: 'Check the role id.',
       },
     });
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     try {
       const thrown: unknown = await service
@@ -1422,7 +1338,14 @@ describe('ChapterConfigService default invite role (#422)', () => {
       expect(printed).toContain('Failed to validate default invite role');
       expect(printed).toContain('PGRST116');
       expect(printed).not.toContain('alice@example.com');
-      expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(true);
+      // The thrown value is a real `SupabaseQueryError` now (the repository
+      // wraps it), so `logThrowable` may hand Nest its stack string as the
+      // second argument. Never an object: that is what would be inspected.
+      expect(
+        errorSpy.mock.calls.every((args) =>
+          args.slice(1).every((arg) => typeof arg === 'string'),
+        ),
+      ).toBe(true);
     } finally {
       errorSpy.mockRestore();
     }
@@ -1469,10 +1392,10 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
       ['dues', { dues: READ_ERROR }],
       ['service', { service: READ_ERROR }],
     ])('throws when the %s read fails', async (_label, readErrors) => {
-      const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+      const repos = makeRepos([], CONFIGURED_DUES, {}, null, null, {
         readErrors,
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       await expect(service.getConfig(CHAPTER_ID)).rejects.toMatchObject({
         message: READ_ERROR.message,
@@ -1492,8 +1415,8 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
       // its literal test is the drift detector, and a second copy would just be
       // another thing to update. What this adds is that service, points and
       // workflows all survive the SAME call rather than each in isolation.
-      const supabase = makeSupabase([]);
-      const service = await buildService(supabase);
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
 
       const config = await service.getConfig(CHAPTER_ID);
 
@@ -1508,10 +1431,10 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
       // goes to recordSecurityEvent, which only knows 401/403/429, so a
       // PostgREST schema-cache reload would have turned every config read into
       // a silent 404 on a live chapter with nothing in Sentry.
-      const supabase = makeSupabase([], null, {}, null, null, {
+      const repos = makeRepos([], null, {}, null, null, {
         readErrors: { chapters: READ_ERROR },
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       const err: unknown = await service.getConfig(CHAPTER_ID).catch((e) => e);
       expect(err).toMatchObject({ message: READ_ERROR.message });
@@ -1519,10 +1442,10 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
     });
 
     it('still reports a genuinely missing chapter as 404', async () => {
-      const supabase = makeSupabase([], null, {}, null, null, {
+      const repos = makeRepos([], null, {}, null, null, {
         chapterRowOverride: null,
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       await expect(service.getConfig(CHAPTER_ID)).rejects.toBeInstanceOf(
         NotFoundException,
@@ -1533,10 +1456,10 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
       // Same controller, same `chapter-config:manage`, same collapse. Fixing
       // only getConfig would have left Save-accent with the identical
       // invisible 404 the comment above declares a bug.
-      const supabase = makeSupabase([], null, {}, null, null, {
+      const repos = makeRepos([], null, {}, null, null, {
         readErrors: { chapters: READ_ERROR },
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       const err: unknown = await service
         .recomputeAndPersistPalette(CHAPTER_ID)
@@ -1549,10 +1472,10 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
       // The palette twin of the 404 branch. Without this, deleting its
       // NotFoundException leaves the method dying on the `branding` read as a
       // 500 instead — a worse status with no test to notice.
-      const supabase = makeSupabase([], null, {}, null, null, {
+      const repos = makeRepos([], null, {}, null, null, {
         chapterRowOverride: null,
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       await expect(
         service.recomputeAndPersistPalette(CHAPTER_ID),
@@ -1562,10 +1485,10 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
     it('throws when the points read fails, via getConfigOrThrow', async () => {
       // The precedent read. It is not one of the three this issue names, but it
       // is the one the fix is modelled on, and nothing pinned it.
-      const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+      const repos = makeRepos([], CONFIGURED_DUES, {}, null, null, {
         readErrors: { points: READ_ERROR },
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       await expect(service.getConfig(CHAPTER_ID)).rejects.toMatchObject({
         message: READ_ERROR.message,
@@ -1575,10 +1498,10 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
 
   describe('patchConfig', () => {
     it('cannot zero a configured chapter through a swallowed dues read error', async () => {
-      const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+      const repos = makeRepos([], CONFIGURED_DUES, {}, null, null, {
         readErrors: { dues: READ_ERROR },
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       await expect(
         service.patchConfig(CHAPTER_ID, 'user-1', {
@@ -1588,12 +1511,12 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
 
       // The point of the test: nothing was written, so nothing was lost, and
       // no audit row claims a `from` the chapter never held.
-      expect(supabase.duesUpsert).not.toHaveBeenCalled();
+      expect(repos.duesUpsert).not.toHaveBeenCalled();
       expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
 
     it('cannot reset minutes_per_point through a swallowed service read error', async () => {
-      const supabase = makeSupabase(
+      const repos = makeRepos(
         [],
         CONFIGURED_DUES,
         {},
@@ -1601,7 +1524,7 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
         null,
         { readErrors: { service: READ_ERROR } },
       );
-      const service = await buildService(supabase);
+      const service = await buildService(repos);
 
       await expect(
         service.patchConfig(CHAPTER_ID, 'user-1', {
@@ -1609,22 +1532,22 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
         }),
       ).rejects.toMatchObject({ message: READ_ERROR.message });
 
-      expect(supabase.serviceUpsert).not.toHaveBeenCalled();
+      expect(repos.serviceUpsert).not.toHaveBeenCalled();
       expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
 
     it('still applies a partial dues PATCH when the read succeeds', async () => {
       // Non-vacuity guard: proves the two tests above fail for the read error,
       // not because this harness cannot write at all.
-      const supabase = makeSupabase([], CONFIGURED_DUES);
-      const service = await buildService(supabase);
+      const repos = makeRepos([], CONFIGURED_DUES);
+      const service = await buildService(repos);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
         dues: { cadence: 'monthly' },
       });
 
-      expect(supabase.duesUpsert).toHaveBeenCalledTimes(1);
-      const [row] = supabase.duesUpsert.mock.calls[0];
+      expect(repos.duesUpsert).toHaveBeenCalledTimes(1);
+      const [, row] = repos.duesUpsert.mock.calls[0];
       // The five amounts survive; only cadence changed.
       expect(row).toMatchObject({
         cadence: 'monthly',
@@ -1663,17 +1586,17 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
   };
 
   it('returns the merged dues row when only the trailing dues read fails', async () => {
-    const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+    const repos = makeRepos([], CONFIGURED_DUES, {}, null, null, {
       readErrorOnCall: { dues: 2 },
       trailingReadError: TRAILING,
     });
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
       dues: { cadence: 'monthly' },
     });
 
-    expect(supabase.duesUpsert).toHaveBeenCalledTimes(1);
+    expect(repos.duesUpsert).toHaveBeenCalledTimes(1);
     expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
     expect(result.dues).toMatchObject({
       cadence: 'monthly',
@@ -1686,7 +1609,7 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
   });
 
   it('returns the merged service row when only the trailing service read fails', async () => {
-    const supabase = makeSupabase(
+    const repos = makeRepos(
       [],
       CONFIGURED_DUES,
       {},
@@ -1697,19 +1620,19 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
         trailingReadError: TRAILING,
       },
     );
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
       service: { minutes_per_point: 30 },
     });
 
-    expect(supabase.serviceUpsert).toHaveBeenCalledTimes(1);
+    expect(repos.serviceUpsert).toHaveBeenCalledTimes(1);
     expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
     expect(result.service).toMatchObject({ minutes_per_point: 30 });
   });
 
   it('returns the merged points row when only the trailing points read fails', async () => {
-    const supabase = makeSupabase(
+    const repos = makeRepos(
       [],
       CONFIGURED_DUES,
       {},
@@ -1720,13 +1643,13 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
         trailingReadError: TRAILING,
       },
     );
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
       points: { anomaly_threshold: 250 },
     });
 
-    expect(supabase.pointsUpsert).toHaveBeenCalledTimes(1);
+    expect(repos.pointsUpsert).toHaveBeenCalledTimes(1);
     expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
     expect(result.points).toEqual({
       adjustment_rate_limit_per_hour: 20,
@@ -1735,17 +1658,17 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
   });
 
   it('returns the overlayed workflow when only the trailing workflows read fails', async () => {
-    const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+    const repos = makeRepos([], CONFIGURED_DUES, {}, null, null, {
       readErrorOnCall: { workflows: 2 },
       trailingReadError: TRAILING,
     });
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
       workflows: [{ key: 'wf_budget_approval', enabled: false }],
     });
 
-    expect(supabase.workflowUpsert).toHaveBeenCalledTimes(1);
+    expect(repos.workflowUpsert).toHaveBeenCalledTimes(1);
     expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
     expect(result.workflows).toEqual(
       expect.arrayContaining([
@@ -1760,17 +1683,17 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
   });
 
   it('returns the persisted theme palette when the trailing chapters read fails', async () => {
-    const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+    const repos = makeRepos([], CONFIGURED_DUES, {}, null, null, {
       readErrorOnCall: { chapters: 2 },
       trailingReadError: TRAILING,
     });
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
       branding: { colors: { accent: '#8B0000' } },
     });
 
-    expect(supabase.chapterUpdate).toHaveBeenCalled();
+    expect(repos.chapterUpdate).toHaveBeenCalled();
     expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
     expect(result.branding).toMatchObject({ colors: { accent: '#8B0000' } });
     expect(result.theme_palette).toMatchObject({
@@ -1779,11 +1702,11 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
   });
 
   it('still fails closed when the first dues read fails (call 1)', async () => {
-    const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+    const repos = makeRepos([], CONFIGURED_DUES, {}, null, null, {
       readErrorOnCall: { dues: 1 },
       trailingReadError: TRAILING,
     });
-    const service = await buildService(supabase);
+    const service = await buildService(repos);
 
     await expect(
       service.patchConfig(CHAPTER_ID, 'user-1', {
@@ -1791,7 +1714,7 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
       }),
     ).rejects.toMatchObject({ message: TRAILING.message });
 
-    expect(supabase.duesUpsert).not.toHaveBeenCalled();
+    expect(repos.duesUpsert).not.toHaveBeenCalled();
     expect(mockAuditLog.record).not.toHaveBeenCalled();
   });
 });

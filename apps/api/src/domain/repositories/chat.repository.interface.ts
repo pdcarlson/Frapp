@@ -100,7 +100,15 @@ export interface IChatChannelRepository {
    * racing calls for one pair resolve to the same channel.
    */
   createDm(chapterId: string, memberIds: string[]): Promise<ChatChannel>;
+  /**
+   * The chapter's channel with this exact name, or `null`. Only for a name
+   * the chapter cannot have twice (a seeded default such as `general`): more
+   * than one match is a query error, not a pick.
+   */
+  findByName(chapterId: string, name: string): Promise<ChatChannel | null>;
   create(data: Partial<ChatChannel>): Promise<ChatChannel>;
+  /** Insert several channels in one statement, all or none. */
+  createMany(data: Partial<ChatChannel>[]): Promise<void>;
   update(
     id: string,
     chapterId: string,

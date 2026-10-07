@@ -5,13 +5,32 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type {
-  FrappSupabaseClient,
-  TablesInsert,
-  TablesUpdate,
-} from '../../infrastructure/supabase/database.types';
-import type { DuesCadence } from '#domain/entities/chapter-dues-config.entity';
+import type { Chapter } from '#domain/entities/chapter.entity';
+import {
+  DUES_CONFIG_FIELDS,
+  type DuesConfig,
+} from '#domain/entities/chapter-dues-config.entity';
+import {
+  SERVICE_CONFIG_FIELDS,
+  type ServiceConfig,
+} from '#domain/entities/chapter-service-config.entity';
+import {
+  POINTS_CONFIG_FIELDS,
+  type PointsConfig,
+} from '#domain/entities/chapter-points-config.entity';
+import {
+  CHAPTER_REPOSITORY,
+  type IChapterRepository,
+} from '#domain/repositories/chapter.repository.interface';
+import {
+  ROLE_REPOSITORY,
+  type IRoleRepository,
+} from '#domain/repositories/role.repository.interface';
+import {
+  CHAPTER_CONFIG_REPOSITORY,
+  type ChapterWorkflowUpsert,
+  type IChapterConfigRepository,
+} from '#domain/repositories/chapter-config.repository.interface';
 import {
   buildChapterConfigFromArchetype,
   getArchetype,
@@ -25,24 +44,14 @@ import {
   type ChapterBrandingInput,
   type ChapterPaletteBuild,
 } from './chapter-palette';
-import {
-  SERVICE_CONFIG_DEFAULTS,
-  SERVICE_CONFIG_FIELDS,
-  SERVICE_CONFIG_SELECT,
-  type ServiceConfig,
-} from './chapter-service-config.service';
-import {
-  ChapterPointsConfigService,
-  POINTS_CONFIG_FIELDS,
-  type PointsConfig,
-} from './chapter-points-config.service';
+import { SERVICE_CONFIG_DEFAULTS } from './chapter-service-config.service';
+import { ChapterPointsConfigService } from './chapter-points-config.service';
 import { ActivationService } from './activation.service';
 import {
   ChapterAuditLogService,
   type AuditDiff,
 } from './chapter-audit-log.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
-import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 /**
  * Paid module keys, read from the catalog rather than a second hand-kept list —
@@ -82,38 +91,9 @@ function deepMerge(base: unknown, patch: unknown): unknown {
   return result;
 }
 
-/**
- * Dues config returned by `getConfig` and persisted by `patchConfig`.
- *
- * API-facing subset of `chapter_dues_config` (no timestamps). Writes use
- * `TablesInsert<'chapter_dues_config'>`; `cadence` is `DuesCadence` so the
- * upsert is assignable without `as never`.
- */
-export type DuesConfig = {
-  cadence: DuesCadence;
-  active_amount_cents: number;
-  new_member_amount_cents: number;
-  alumni_amount_cents: number;
-  installments_allowed: boolean;
-  installment_count: number;
-  late_fee_cents: number;
-  grace_days: number;
-  scholarship_pool_cents: number;
-};
-
-const DUES_FIELDS = [
-  'cadence',
-  'active_amount_cents',
-  'new_member_amount_cents',
-  'alumni_amount_cents',
-  'installments_allowed',
-  'installment_count',
-  'late_fee_cents',
-  'grace_days',
-  'scholarship_pool_cents',
-] as const satisfies ReadonlyArray<keyof DuesConfig>;
-
-const DUES_SELECT = DUES_FIELDS.join(', ');
+/** Why a failed settings read throws instead of falling back to defaults. */
+const FABRICATED_PRIOR_STATE =
+  'refusing to report or write against a fabricated prior state';
 
 /**
  * Returned when a chapter has no `chapter_dues_config` row yet. Mirrors the
@@ -213,35 +193,31 @@ export class ChapterConfigService {
   private readonly logger = new Logger(ChapterConfigService.name);
 
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    @Inject(CHAPTER_REPOSITORY)
+    private readonly chapterRepo: IChapterRepository,
+    @Inject(CHAPTER_CONFIG_REPOSITORY)
+    private readonly configRepo: IChapterConfigRepository,
+    @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
     private readonly activation: ActivationService,
     private readonly pointsConfig: ChapterPointsConfigService,
     private readonly auditLog: ChapterAuditLogService,
   ) {}
 
   async getConfig(chapterId: string) {
-    const { data: chapter, error } = await this.supabase
-      .from('chapters')
-      .select(
-        'id, name, university, org_archetype, enabled_modules, vocabulary, branding, theme_palette, beta_config, analytics_opt_out, default_invite_role_id',
-      )
-      .eq('id', chapterId)
-      .maybeSingle();
+    const chapter = await this.readOrThrow(
+      'chapters',
+      chapterId,
+      'refusing to report a read failure as a missing chapter',
+      () => this.chapterRepo.findById(chapterId),
+    );
 
-    // Split, not `error || !chapter`. Collapsing them reports a failed read as
+    // A thrown read, not `null`. Collapsing them reports a failed read as
     // "this chapter does not exist" — the same error-is-indistinguishable-from-
     // absence bug as the three reads below (#1626), and its most invisible
     // instance: AllExceptionsFilter routes <500 to recordSecurityEvent, whose
     // SECURITY_EVENT_KINDS covers only 401/403/429, so a 404 emits no error
     // log, no security event and no Sentry capture. A PostgREST schema-cache
     // reload would turn every config read into a silent 404 on a live chapter.
-    if (error) {
-      this.logger.error(
-        `chapters read failed for chapter ${chapterId}; refusing to report a ` +
-          `read failure as a missing chapter: ${error.message}`,
-      );
-      throw new SupabaseQueryError(error);
-    }
     if (!chapter) {
       throw new NotFoundException('Chapter not found');
     }
@@ -259,27 +235,16 @@ export class ChapterConfigService {
     // Fails *closed* on a read error, for the reason spelled out at the points
     // read below: `patchConfig` merges a PATCH onto whatever this returns, so a
     // swallowed error would substitute the archetype seed for the chapter's
-    // real overrides. `data` is null on both "no rows" and "read failed", so
-    // discarding `error` makes those two indistinguishable.
-    const { data: workflowRows, error: workflowError } = await this.supabase
-      .from('chapter_workflows')
-      .select('key, enabled, threshold')
-      .eq('chapter_id', chapterId);
-    if (workflowError) {
-      this.logger.error(
-        `chapter_workflows read failed for chapter ${chapterId}; refusing to ` +
-          `report or write against a fabricated prior state: ${workflowError.message}`,
-      );
-      throw new SupabaseQueryError(workflowError);
-    }
+    // real overrides. An empty list means "no overrides", so a read failure
+    // must not be allowed to look like one.
+    const workflowRows = await this.readOrThrow(
+      'chapter_workflows',
+      chapterId,
+      FABRICATED_PRIOR_STATE,
+      () => this.configRepo.findWorkflows(chapterId),
+    );
     const workflowOverrides = new Map(
-      (
-        (workflowRows ?? []) as Array<{
-          key: string;
-          enabled: boolean;
-          threshold: number | null;
-        }>
-      ).map((row) => [row.key, row]),
+      workflowRows.map((row) => [row.key, row]),
     );
     const workflows = seed.workflows.map((wf) => {
       const override = workflowOverrides.get(wf.key);
@@ -301,43 +266,28 @@ export class ChapterConfigService {
     // one: `patchConfig` merges onto this value and upserts the whole row, so
     // defaulting here lets an officer editing `cadence` write every amount back
     // to 0 and record a `from` the chapter never held.
-    const { data: duesRow, error: duesReadError } = await this.supabase
-      .from('chapter_dues_config')
-      .select(DUES_SELECT)
-      .eq('chapter_id', chapterId)
-      .maybeSingle();
-    if (duesReadError) {
-      this.logger.error(
-        `chapter_dues_config read failed for chapter ${chapterId}; refusing to ` +
-          `report or write against a fabricated prior state: ${duesReadError.message}`,
-      );
-      throw new SupabaseQueryError(duesReadError);
-    }
-    const dues: DuesConfig = {
-      ...DUES_DEFAULTS,
-      ...((duesRow as Partial<DuesConfig> | null) ?? {}),
-    };
+    const duesRow = await this.readOrThrow(
+      'chapter_dues_config',
+      chapterId,
+      FABRICATED_PRIOR_STATE,
+      () => this.configRepo.findDuesConfig(chapterId),
+    );
+    const dues: DuesConfig = { ...DUES_DEFAULTS, ...(duesRow ?? {}) };
 
     // Service-hours policy is the same singleton shape (chapter_service_config,
     // PK = chapter_id); an unconfigured chapter falls back to the table default.
     // Same fail-closed rule as dues: resetting `minutes_per_point` to the
     // default silently changes how many points every subsequently-approved
     // service entry awards.
-    const { data: serviceRow, error: serviceReadError } = await this.supabase
-      .from('chapter_service_config')
-      .select(SERVICE_CONFIG_SELECT)
-      .eq('chapter_id', chapterId)
-      .maybeSingle();
-    if (serviceReadError) {
-      this.logger.error(
-        `chapter_service_config read failed for chapter ${chapterId}; refusing to ` +
-          `report or write against a fabricated prior state: ${serviceReadError.message}`,
-      );
-      throw new SupabaseQueryError(serviceReadError);
-    }
+    const serviceRow = await this.readOrThrow(
+      'chapter_service_config',
+      chapterId,
+      FABRICATED_PRIOR_STATE,
+      () => this.configRepo.findServiceConfig(chapterId),
+    );
     const service: ServiceConfig = {
       ...SERVICE_CONFIG_DEFAULTS,
-      ...((serviceRow as Partial<ServiceConfig> | null) ?? {}),
+      ...(serviceRow ?? {}),
     };
 
     // Points anti-fraud limits are the same singleton shape
@@ -409,23 +359,11 @@ export class ChapterConfigService {
     chapterId: string,
     roleId: string,
   ): Promise<void> {
-    const { data, error } = await this.supabase
-      .from('roles')
-      .select('id')
-      .eq('id', roleId)
-      .eq('chapter_id', chapterId)
-      .maybeSingle();
-
-    if (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        'Failed to validate default invite role',
-        error,
-      );
-      throw new SupabaseQueryError(error);
-    }
-    if (!data) {
+    const matches = await this.callOrThrow(
+      'Failed to validate default invite role',
+      () => this.roleRepo.findByIds([roleId], chapterId),
+    );
+    if (matches.length === 0) {
       throw new BadRequestException({
         code: 'chapter.config.invalid_default_invite_role',
         message:
@@ -443,7 +381,7 @@ export class ChapterConfigService {
 
     // Build the diff for the audit log
     const diff: AuditDiff = {};
-    const update: TablesUpdate<'chapters'> = {};
+    const update: Partial<Chapter> = {};
 
     if (
       dto.org_archetype !== undefined &&
@@ -560,7 +498,7 @@ export class ChapterConfigService {
     // Workflows are persisted to their own table (chapter_workflows). Incoming
     // keys are validated against the chapter catalog (from getConfig) so an
     // unknown key can never write a row, and only changed rows are upserted.
-    const workflowUpserts: TablesInsert<'chapter_workflows'>[] = [];
+    const workflowUpserts: ChapterWorkflowUpsert[] = [];
     if (dto.workflows !== undefined) {
       const catalog = new Map(
         (
@@ -609,22 +547,19 @@ export class ChapterConfigService {
     // guards are enforced by the DTO, and the points floors a second time by
     // the column CHECK, so the merge only has to decide what changed.
     //
-    // `chapter_id` goes last in each upsert, not first: `next` is built from a
-    // client-supplied `Partial<…Config>`, so spreading it over the scoped key
-    // would let any future `chapter_id`-shaped addition to that config type
-    // upsert onto another chapter's row. No such key exists today; the order
-    // is what keeps it from mattering if one is ever added.
-    let duesUpsert: TablesInsert<'chapter_dues_config'> | null = null;
+    // The repository writes `chapter_id` over each merged config, never under
+    // it, so nothing client-shaped can retarget the row.
+    let duesUpsert: DuesConfig | null = null;
     if (dto.dues !== undefined) {
       const current = existing.dues;
-      const next = mergeDefinedFields(current, dto.dues, DUES_FIELDS);
-      if (fieldsChanged(current, next, DUES_FIELDS)) {
-        duesUpsert = { ...next, chapter_id: chapterId };
+      const next = mergeDefinedFields(current, dto.dues, DUES_CONFIG_FIELDS);
+      if (fieldsChanged(current, next, DUES_CONFIG_FIELDS)) {
+        duesUpsert = next;
         diff['dues'] = { from: current, to: next };
       }
     }
 
-    let serviceUpsert: TablesInsert<'chapter_service_config'> | null = null;
+    let serviceUpsert: ServiceConfig | null = null;
     if (dto.service !== undefined) {
       const current = existing.service;
       const next = mergeDefinedFields(
@@ -633,12 +568,12 @@ export class ChapterConfigService {
         SERVICE_CONFIG_FIELDS,
       );
       if (fieldsChanged(current, next, SERVICE_CONFIG_FIELDS)) {
-        serviceUpsert = { ...next, chapter_id: chapterId };
+        serviceUpsert = next;
         diff['service'] = { from: current, to: next };
       }
     }
 
-    let pointsUpsert: TablesInsert<'chapter_points_config'> | null = null;
+    let pointsUpsert: PointsConfig | null = null;
     if (dto.points !== undefined) {
       const current = existing.points;
       const next = mergeDefinedFields(
@@ -647,7 +582,7 @@ export class ChapterConfigService {
         POINTS_CONFIG_FIELDS,
       );
       if (fieldsChanged(current, next, POINTS_CONFIG_FIELDS)) {
-        pointsUpsert = { ...next, chapter_id: chapterId };
+        pointsUpsert = next;
         diff['points'] = { from: current, to: next };
       }
     }
@@ -663,84 +598,36 @@ export class ChapterConfigService {
     }
 
     if (Object.keys(update).length > 0) {
-      const { error: updateError } = await this.supabase
-        .from('chapters')
-        .update(update)
-        .eq('id', chapterId);
-
-      if (updateError) {
-        logThrowable(
-          this.logger,
-          'error',
-          'Failed to update chapter config',
-          updateError,
-        );
-        throw new SupabaseQueryError(updateError);
-      }
+      await this.callOrThrow('Failed to update chapter config', () =>
+        this.chapterRepo.update(chapterId, update),
+      );
     }
 
     if (workflowUpserts.length > 0) {
-      const { error: workflowError } = await this.supabase
-        .from('chapter_workflows')
-        .upsert(workflowUpserts, { onConflict: 'chapter_id,key' });
-
-      if (workflowError) {
-        logThrowable(
-          this.logger,
-          'error',
-          'Failed to update chapter workflows',
-          workflowError,
-        );
-        throw new SupabaseQueryError(workflowError);
-      }
+      await this.callOrThrow('Failed to update chapter workflows', () =>
+        this.configRepo.upsertWorkflows(workflowUpserts),
+      );
     }
 
     if (duesUpsert) {
-      const { error: duesError } = await this.supabase
-        .from('chapter_dues_config')
-        .upsert(duesUpsert, { onConflict: 'chapter_id' });
-
-      if (duesError) {
-        logThrowable(
-          this.logger,
-          'error',
-          'Failed to update chapter dues config',
-          duesError,
-        );
-        throw new SupabaseQueryError(duesError);
-      }
+      const dues = duesUpsert;
+      await this.callOrThrow('Failed to update chapter dues config', () =>
+        this.configRepo.upsertDuesConfig(chapterId, dues),
+      );
     }
 
     if (serviceUpsert) {
-      const { error: serviceError } = await this.supabase
-        .from('chapter_service_config')
-        .upsert(serviceUpsert, { onConflict: 'chapter_id' });
-
-      if (serviceError) {
-        logThrowable(
-          this.logger,
-          'error',
-          'Failed to update chapter service config',
-          serviceError,
-        );
-        throw new SupabaseQueryError(serviceError);
-      }
+      const service = serviceUpsert;
+      await this.callOrThrow('Failed to update chapter service config', () =>
+        this.configRepo.upsertServiceConfig(chapterId, service),
+      );
     }
 
     if (pointsUpsert) {
-      const { error: pointsError } = await this.supabase
-        .from('chapter_points_config')
-        .upsert(pointsUpsert, { onConflict: 'chapter_id' });
-
-      if (pointsError) {
-        logThrowable(
-          this.logger,
-          'error',
-          'Failed to update chapter points config',
-          pointsError,
-        );
-        throw new SupabaseQueryError(pointsError);
-      }
+      const points = pointsUpsert;
+      await this.callOrThrow('Failed to update chapter points config', () =>
+        this.configRepo.upsertPointsConfig(chapterId, points),
+      );
     }
 
     // Write audit log entry, after the config writes above and before the
@@ -836,11 +723,11 @@ export class ChapterConfigService {
   private configAfterCommittedPatch(
     existing: Awaited<ReturnType<ChapterConfigService['getConfig']>>,
     committed: {
-      update: TablesUpdate<'chapters'>;
-      workflowUpserts: TablesInsert<'chapter_workflows'>[];
-      duesUpsert: TablesInsert<'chapter_dues_config'> | null;
-      serviceUpsert: TablesInsert<'chapter_service_config'> | null;
-      pointsUpsert: TablesInsert<'chapter_points_config'> | null;
+      update: Partial<Chapter>;
+      workflowUpserts: ChapterWorkflowUpsert[];
+      duesUpsert: DuesConfig | null;
+      serviceUpsert: ServiceConfig | null;
+      pointsUpsert: PointsConfig | null;
       themePalette?: Awaited<
         ReturnType<ChapterConfigService['getConfig']>
       >['theme_palette'];
@@ -919,51 +806,29 @@ export class ChapterConfigService {
           ? (update.default_invite_role_id ?? null)
           : existing.default_invite_role_id,
       workflows,
-      dues: duesUpsert
-        ? mergeDefinedFields(existing.dues, duesUpsert, DUES_FIELDS)
-        : existing.dues,
-      service: serviceUpsert
-        ? mergeDefinedFields(
-            existing.service,
-            serviceUpsert,
-            SERVICE_CONFIG_FIELDS,
-          )
-        : existing.service,
-      points: pointsUpsert
-        ? mergeDefinedFields(
-            existing.points,
-            pointsUpsert,
-            POINTS_CONFIG_FIELDS,
-          )
-        : existing.points,
+      dues: duesUpsert ?? existing.dues,
+      service: serviceUpsert ?? existing.service,
+      points: pointsUpsert ?? existing.points,
     };
   }
 
   async recomputeAndPersistPalette(chapterId: string) {
-    const { data: chapter, error } = await this.supabase
-      .from('chapters')
-      .select('branding')
-      .eq('id', chapterId)
-      .maybeSingle();
-
-    // Split for the same reason as getConfig's chapters read: this route sits
-    // on the same controller behind the same `chapter-config:manage`, so
-    // collapsing a failed read into 404 gives Save-accent the identical
-    // invisible failure — no error log, no security event, no Sentry capture.
-    if (error) {
-      this.logger.error(
-        `chapters read failed for chapter ${chapterId} during palette ` +
-          `recompute; refusing to report a read failure as a missing ` +
-          `chapter: ${error.message}`,
-      );
-      throw new SupabaseQueryError(error);
-    }
+    // Thrown, not `null`, for the same reason as getConfig's chapters read:
+    // this route sits on the same controller behind the same
+    // `chapter-config:manage`, so collapsing a failed read into 404 gives
+    // Save-accent the identical invisible failure — no error log, no security
+    // event, no Sentry capture.
+    const chapter = await this.readOrThrow(
+      'chapters',
+      chapterId,
+      'refusing to report a read failure as a missing chapter during palette recompute',
+      () => this.chapterRepo.findById(chapterId),
+    );
     if (!chapter) {
       throw new NotFoundException('Chapter not found');
     }
 
-    const branding = ((chapter as Record<string, unknown>)['branding'] ??
-      {}) as {
+    const branding = (chapter.branding ?? {}) as {
       colors?: { accent?: string };
     };
     const colors = branding.colors ?? {};
@@ -1015,33 +880,57 @@ export class ChapterConfigService {
       colors.accent,
       build,
     );
-    const patch: TablesUpdate<'chapters'> = chapterPaletteColumns(build);
-    const update = this.supabase
-      .from('chapters')
-      .update(patch)
-      .eq('id', chapterId);
-    const guarded =
-      typeof colors.accent === 'string'
-        ? update.eq('branding->colors->>accent', colors.accent)
-        : update.is('branding->colors->>accent', null);
-    const { data, error } = await guarded.select('id');
-
-    if (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        'Failed to persist theme palette',
-        error,
-      );
-      throw new SupabaseQueryError(error);
-    }
-
-    const written = (data?.length ?? 0) > 0;
+    const written = await this.callOrThrow(
+      'Failed to persist theme palette',
+      () =>
+        this.chapterRepo.updatePaletteIfSeedUnchanged(
+          chapterId,
+          chapterPaletteColumns(build),
+          colors.accent,
+        ),
+    );
     if (!written) {
       this.logger.warn(
         `Theme palette for chapter ${chapterId} not written: its accent changed after it was read, and the newer write stands`,
       );
     }
     return { build, written };
+  }
+
+  /**
+   * Run a read whose failure must surface rather than pass for absence, and
+   * log which table failed and why this service refuses to guess. The thrown
+   * `SupabaseQueryError` carries the cause.
+   */
+  private async readOrThrow<T>(
+    table: string,
+    chapterId: string,
+    refusal: string,
+    read: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await read();
+    } catch (err) {
+      logThrowable(
+        this.logger,
+        'error',
+        `${table} read failed for chapter ${chapterId}; ${refusal}`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /** Run a repository call, logging `message` with the cause before rethrowing. */
+  private async callOrThrow<T>(
+    message: string,
+    call: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await call();
+    } catch (err) {
+      logThrowable(this.logger, 'error', message, err);
+      throw err;
+    }
   }
 }

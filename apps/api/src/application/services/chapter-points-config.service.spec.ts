@@ -4,18 +4,23 @@ import {
   ChapterPointsConfigService,
   POINTS_CONFIG_DEFAULTS,
 } from './chapter-points-config.service';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { CHAPTER_CONFIG_REPOSITORY } from '#domain/repositories/chapter-config.repository.interface';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 /**
- * Minimal stand-in for the one query shape this service issues:
- * `.from(...).select(...).eq(...).maybeSingle()`.
+ * Repository stand-in for the one read this service issues. A result with an
+ * `error` rejects the way the repository does on a query error; otherwise the
+ * row (or `null`) resolves.
  */
-function supabaseReturning(result: { data: unknown; error: unknown }) {
-  const maybeSingle = jest.fn().mockResolvedValue(result);
-  const eq = jest.fn(() => ({ maybeSingle }));
-  const select = jest.fn(() => ({ eq }));
-  const from = jest.fn(() => ({ select }));
-  return { client: { from }, from, select, eq, maybeSingle };
+function configRepoReturning(result: {
+  data: unknown;
+  error: { message: string } | null;
+}) {
+  return {
+    findPointsConfig: result.error
+      ? jest.fn().mockRejectedValue(new SupabaseQueryError(result.error))
+      : jest.fn().mockResolvedValue(result.data),
+  };
 }
 
 describe('ChapterPointsConfigService', () => {
@@ -29,22 +34,25 @@ describe('ChapterPointsConfigService', () => {
     jest.restoreAllMocks();
   });
 
-  async function build(result: { data: unknown; error: unknown }) {
-    const supabase = supabaseReturning(result);
+  async function build(result: {
+    data: unknown;
+    error: { message: string } | null;
+  }) {
+    const configRepo = configRepoReturning(result);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChapterPointsConfigService,
-        { provide: SUPABASE_CLIENT, useValue: supabase.client },
+        { provide: CHAPTER_CONFIG_REPOSITORY, useValue: configRepo },
       ],
     }).compile();
     return {
       service: module.get(ChapterPointsConfigService),
-      supabase,
+      configRepo,
     };
   }
 
   it('returns the configured limits when a row exists', async () => {
-    const { service, supabase } = await build({
+    const { service, configRepo } = await build({
       data: { adjustment_rate_limit_per_hour: 10, anomaly_threshold: 250 },
       error: null,
     });
@@ -53,8 +61,7 @@ describe('ChapterPointsConfigService', () => {
       adjustment_rate_limit_per_hour: 10,
       anomaly_threshold: 250,
     });
-    expect(supabase.from).toHaveBeenCalledWith('chapter_points_config');
-    expect(supabase.eq).toHaveBeenCalledWith('chapter_id', 'ch-1');
+    expect(configRepo.findPointsConfig).toHaveBeenCalledWith('ch-1');
     expect(warn).not.toHaveBeenCalled();
   });
 
