@@ -383,9 +383,6 @@ export class AnalyticsService {
       return false; // fail closed: do not emit when opt-out state is unknown
     }
 
-    const optedOut =
-      ((data as Record<string, unknown> | null)?.['analytics_opt_out'] as
-        boolean | null) ?? false;
-    return !optedOut;
+    return !(data?.analytics_opt_out ?? false);
   }
 }

@@ -40,7 +40,7 @@ import {
   meterTrackClassName,
 } from "@/components/shared/meter";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import { ImportWizard, type WizardStep } from "./import-wizard";
 import { ImportWatchPanel } from "./import-watch-panel";
