@@ -45,7 +45,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { copyMatches, inLeadingComment, LINE_BREAK, SIGNET_DOWNLOAD_NAME } from "./helpers/copy-lines.mjs";
@@ -69,14 +69,18 @@ function read(rel) {
 }
 
 // ---------------------------------------------------------------------------
-// Walks. Dot entries are skipped everywhere (`.expo`, `.next`, `.turbo`).
+// Walks. Dot entries and BUILD_DIRS are skipped unless a walk sets `all`. A
+// `skip` entry with a slash is a repo path, skipped there only; one without is
+// a directory name, skipped at any depth.
 
 const BUILD_DIRS = ["node_modules", "dist", ".next", ".turbo", ".expo", "coverage"];
+const NATIVE_PREBUILD = ["apps/mobile/ios", "apps/mobile/android"];
 
 export const WALKS = {
-  // `ios` and `android` are prebuild output, gitignored.
-  mobile: { roots: ["apps/mobile"], ext: /\.(?:json|js|ts|tsx)$/, skip: ["ios", "android"], exclude: /\.spec\./ },
-  mobileSpecs: { roots: ["apps/mobile"], ext: /\.(?:json|js|ts|tsx)$/, skip: ["ios", "android"], only: /\.spec\./ },
+  // The top-level `ios` and `android` are prebuild output, gitignored; a
+  // tracked config plugin under a nested `android/` is still walked.
+  mobile: { roots: ["apps/mobile"], ext: /\.(?:json|js|ts|tsx)$/, skip: NATIVE_PREBUILD, exclude: /\.spec\./ },
+  mobileSpecs: { roots: ["apps/mobile"], ext: /\.(?:json|js|ts|tsx)$/, skip: NATIVE_PREBUILD, only: /\.spec\./ },
   api: { roots: ["apps/api/src"], ext: /\.ts$/, exclude: /\.spec\.ts$/ },
   // The dashboard renders copy from every package, so every `packages/*/src`
   // is walked, one added later included. A package's manifest and assets are
@@ -87,7 +91,8 @@ export const WALKS = {
     skip: ["tests"],
     exclude: /\.(?:spec|test)\./,
   },
-  webApp: { roots: ["apps/web/app"], ext: /\.(?:ts|tsx)$/, exclude: /\.spec\./ },
+  // Every directory under app/ is a route segment, `coverage` and `.well-known` included.
+  webApp: { roots: ["apps/web/app"], ext: /\.(?:ts|tsx)$/, exclude: /\.spec\./, all: true },
   landing: { roots: ["apps/landing"], ext: /\.(?:ts|tsx)$/, skip: ["public"], exclude: /\.(?:spec|test)\.|\.d\.ts$/ },
   // Every product source, specs included: `Signet System` is never a note.
   product: { roots: ["apps/web", "apps/api", "apps/mobile", "packages"], ext: /\.(?:ts|tsx|js|mjs)$/ },
@@ -102,10 +107,11 @@ function packageSources() {
 
 function walkDir(rel, spec, out) {
   for (const entry of readdirSync(join(REPO_ROOT, rel), { withFileTypes: true })) {
-    if (entry.name.startsWith(".")) continue;
+    if (!spec.all && entry.name.startsWith(".")) continue;
     const child = `${rel}/${entry.name}`;
     if (entry.isDirectory()) {
-      if (!BUILD_DIRS.includes(entry.name) && !(spec.skip ?? []).includes(entry.name)) walkDir(child, spec, out);
+      const skipped = (spec.skip ?? []).some((name) => (name.includes("/") ? name === child : name === entry.name));
+      if ((spec.all || !BUILD_DIRS.includes(entry.name)) && !skipped) walkDir(child, spec, out);
       continue;
     }
     if (!entry.isFile() || !spec.ext.test(entry.name)) continue;
@@ -562,8 +568,10 @@ export const PINS = [
     lacks: [/headline:\s*"[^"]*\bSignet\b/, /description:\s*"[^"]*\bSignet\b/],
   },
   {
-    // The `.ics` of the event fallback is on the next line, out of the walk's
-    // sight, which is why these are pinned by value.
+    // A rename that drops the brand altogether passes the walk. Only the CSV
+    // name also has a unit spec (apps/web/lib/utils.spec.ts), so for the .ics
+    // fallback and the invite header these pins are the only check. The
+    // fallback's `.ics` is also on the next line, out of the download-name ban's sight.
     file: "apps/web/lib/utils.ts",
     why: "the CSV download name",
     has: ["`frapp-${filenamePrefix}-"],
@@ -995,6 +1003,36 @@ test("both Settings paths must be in code and name expo.name", () => {
     assert.deepEqual(settingsPathProblems([recovery(STUDY), { rel: PRIMER, source }], "Frapp"), [], source);
   }
   assert.deepEqual(settingsPathProblems([recovery(STUDY), recovery(PRIMER, "Signet")], "Frapp"), [lost]);
+});
+
+// One planted leftover per row, so emptying a row's bans or neutering its
+// predicate fails here even while the live tree is clean.
+test("every row reports its own planted leftover", () => {
+  const signetLine = 'const t = "Signet";\n';
+  for (const row of COPY_WALKS) {
+    assert.deepEqual(copyProblems(row, [{ rel: "x.tsx", source: signetLine }]), ["x.tsx:1"], row.surface);
+  }
+  const textSamples = ["// Signet System\n", 'merchantDisplayName: "Signet"\n', "installed Signet build\n"];
+  assert.equal(textSamples.length, TEXT_BANS.length);
+  TEXT_BANS.forEach((row, i) => assert.equal(textBanProblems(row, [{ rel: "x", source: textSamples[i] }]).length, 1, String(row.ban)));
+  const collectedSamples = {
+    "mobile *Permission prompt": 'module.exports = { cameraPermission: "Allow the app to use the camera." };',
+    "web auth title": "<AuthScreen title={'Signet'} />",
+    "web auth subtitle": '<AuthScreen subtitle="Ask Signet anything." />',
+    "web metadata title": "export const metadata = {\n  title: 'Tasks · Frapp'\n}",
+    "landing metadata title": "export const metadata = {\n  title: 'Signet — Privacy',\n};",
+  };
+  for (const row of COLLECTED) {
+    assert.ok(row.what in collectedSamples, `no planted sample for ${row.what}`);
+    const found = collectedProblems(row, [{ rel: "x", source: collectedSamples[row.what] }]).filter((problem) => problem.startsWith("x:"));
+    assert.equal(found.length, 1, row.what);
+  }
+});
+
+// The binary's EAS project id is mobile-permanent-identifiers' and
+// eas-production-profile's; this lock must not come to require it.
+test("never requires extra.eas.projectId", () => {
+  assert.doesNotMatch(readFileSync(fileURLToPath(import.meta.url), "utf8"), /assert\.[^\n]*extra\.eas\.projectId/);
 });
 
 test("refuses a GitHub closer next to an issue number", () => {
