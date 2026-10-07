@@ -443,7 +443,7 @@ describe('SupabaseSearchRepository — query shape', () => {
    * were there while `event-editor-dialog.tsx` — which reads `check_in_zone`
    * to populate the geofence editor — would have received `undefined`.
    *
-   * `check-pglite-migrations.mjs` asserts the full list against the real
+   * `scripts/pglite/landmarks.mjs` asserts the full list against the real
    * schema; this pins the specific columns whose loss is most damaging, so
    * the failure is legible without a database.
    */

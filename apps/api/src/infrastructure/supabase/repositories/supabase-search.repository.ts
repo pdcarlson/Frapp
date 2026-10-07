@@ -58,7 +58,7 @@ const TEXT_SEARCH = {
  * which `apps/web/components/events/event-editor-dialog.tsx` reads to populate
  * the geofence editor.
  *
- * So these lists are exported and `scripts/check-pglite-migrations.mjs` asserts
+ * So these lists are exported and `scripts/pglite/landmarks.mjs` asserts
  * each one equals its table's real columns minus the tsvector. Add a column to
  * `events` or `backwork_resources` and that gate fails until it is added here
  * too. Keep them exported, and keep them as plain string literals — the gate

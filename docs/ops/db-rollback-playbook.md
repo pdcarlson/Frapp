@@ -180,7 +180,7 @@ The rollback migration replays in CI like any other. Where
 `check:pglite-migrations` asserts what the original added (a landmark or a smoke
 tier), the rollback fails that job until the same PR relaxes the assertion, and
 relaxing it is part of the rollback. Recipes don't name every such assertion, so
-before opening the PR, search `scripts/check-pglite-migrations.mjs` for each
+before opening the PR, search `scripts/pglite/` for each
 object the rollback drops or changes.
 
 **Restore the current definition, not an older file's.** Where a recipe says to
@@ -874,7 +874,7 @@ After any rollback event:
   resolving, and no API revision can observe the difference. There is no window in which
   a running API sees a shape it does not expect, in either direction.
 * **Data caveat**: none. Nothing is written, dropped, or backfilled.
-* **CI will stop you.** `scripts/check-pglite-migrations.mjs` asserts every
+* **CI will stop you.** `scripts/pglite/tiers/security-definer-search-path.mjs` asserts every
   `security definer` function in `public` pins `pg_temp` **last** (the
   `=== security definer search_path ===` tier), so a rollback committed as a *migration*
   fails the `pglite-migrations` job by design. That job is on the required roster (#2538):
@@ -1428,7 +1428,7 @@ After any rollback event:
   again.
 * **If you forward-revert the queries but keep the schema**, also revert
   `EVENT_SEARCH_COLUMNS` / `BACKWORK_SEARCH_COLUMNS` (in `supabase-search.repository.ts`) together with them: the
-  `check-pglite-migrations.mjs` landmark asserts those lists match their table's
+  `scripts/pglite/landmarks.mjs` landmark asserts those lists match their table's
   columns minus the tsvector, so a half-revert fails that gate.
 
 ## Rollback the imported-kind semantics
@@ -1571,7 +1571,7 @@ After any rollback event:
   difference either way.
 * **Data caveat**: none. Nothing is written, dropped, or backfilled; `raise warning` does not
   affect the surrounding transaction.
-* **CI will stop you.** `scripts/check-pglite-migrations.mjs`'s "Functional smoke" tier asserts
+* **CI will stop you.** `scripts/pglite/tiers/anonymize-user.mjs`'s "Functional smoke" tier asserts
   each of the three ping tables raises an observable `WARNING` when `realtime.send` fails (PGlite
   has no `realtime` schema, so every write there already exercises the swallow) — a rollback
   committed as a *migration* fails the `pglite-migrations` job by design. That job is on the
@@ -2393,7 +2393,7 @@ $$;
 drop function if exists public.chat_viewer_has_blocked(uuid, uuid);
 ```
 
-That migration re-creates a policy, so the same PR bumps the entry's `creates` count in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` and sets the entry back to `open`. It also removes the PGlite block-enforcement tier and the two `chat_viewer_has_blocked` landmarks from `scripts/check-pglite-migrations.mjs`, which would fail against the old policy.
+That migration re-creates a policy, so the same PR bumps the entry's `creates` count in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` and sets the entry back to `open`. It also removes the PGlite block-enforcement tier from `scripts/pglite/tiers/chat-black-box.mjs` and the two `chat_viewer_has_blocked` landmarks from `scripts/pglite/rls-smoke.mjs`, which would fail against the old policy.
 
 **This is a safety regression, not a neutral rollback.** Afterwards a blocker's clients again receive every reaction the blocked member leaves, live as well. Both clients still hide them in every list state (`visibleReactions` in `@repo/chat-core/blocks`, #2313), but against their own list, so a ready list that predates a block made on another device shows them until it is re-read. Guideline 1.2 expects the block to hold, so don't roll back on a build that is under review or live in a store unless the same deploy puts something in its place.
 
@@ -2420,7 +2420,7 @@ A function body (#2521). It re-creates `get_channel_unread_counts` with one more
 
 **Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). Put the whole of section 1 of `20260823123000_chat_imported_kind_semantics.sql` (the `create or replace function public.get_channel_unread_counts` statement and the grant block after it) in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). Copy that body rather than retyping it: the rollback must keep `kind <> 'imported'`, `is distinct from` and `set search_path = public, pg_temp`, and dropping any of them is a different regression.
 
-The same PR removes the `#2521` landmark and the "Unread and mention counts skip a blocked sender" tier from `scripts/check-pglite-migrations.mjs`, which would fail against the old body, and sets `ChatController_getUnreadCounts_v1` in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` back to `open` against #2521, since its proof names a scenario that tier holds.
+The same PR removes the `#2521` landmark from `scripts/pglite/landmarks.mjs` and the "Unread and mention counts skip a blocked sender" tier, `scripts/pglite/tiers/unread-counts-blocked-sender.mjs` (with its `await import` line in `scripts/pglite/run.mjs`), which would fail against the old body, and sets `ChatController_getUnreadCounts_v1` in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` back to `open` against #2521, since its proof names a scenario that tier holds.
 
 **This is a safety regression, not a neutral rollback.** Afterwards a blocked member's messages and @-mentions raise the blocker's channel-row, mention and mobile app-icon badges again, onto threads that show only tombstones. Guideline 1.2 expects the block to hold, so don't roll back on a build that is under review or live in a store unless the same deploy puts something in its place.
 
@@ -2440,7 +2440,7 @@ drop function if exists public.remove_private_channel_member(uuid, uuid, uuid);
 drop function if exists public.remove_user_from_private_channels(uuid, uuid);
 ```
 
-The same PR removes the "Add and remove a PRIVATE channel's members (#1302)" block from `scripts/check-pglite-migrations.mjs`, which would fail without the functions.
+The same PR removes the "Add and remove a PRIVATE channel's members (#1302)" tier, `scripts/pglite/tiers/private-channel-members.mjs` (with its `await import` line in `scripts/pglite/run.mjs`), which would fail without the functions.
 
 **Membership written while the functions were live stays.** A rollback removes the way to change a PRIVATE channel's `member_ids`, not the members already added. They keep reading the channel, since every read goes through `canAccessChannel`'s `member_ids` check. Removing them afterwards would need a hand-written data migration, and nothing requires it. After the rollback, removing a member from the chapter no longer takes them off PRIVATE lists, so a re-invited member regains the channels they were in.
 
