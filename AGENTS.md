@@ -77,7 +77,7 @@ Turborepo + npm workspaces: 4 apps, 13 shared packages. Product and architecture
 | Step | Command |
 | ---- | ------- |
 | Lint | `npm run lint` / `npm run lint:api` (read-only) |
-| Lint autofix | `npm run lint:api:fix`, the only lint script that writes; see [contributing.md §5](docs/guides/contributing.md#5-linting-types-and-tests) |
+| Lint autofix | `npm run lint:api:fix`, the only lint script that writes; see [`CONTRIBUTING.md` § Linting, types, and tests](CONTRIBUTING.md#linting-types-and-tests) |
 | Tests | `npm run test -w apps/api` |
 | Build | `npm run build` |
 | Types | `npm run check-types` (for the API, specs included: [what it runs](docs/ci-cd/agent-infra.md#typescript-7-is-native-tsc-plus-a-typescript-6-compiler-api)) |

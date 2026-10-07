@@ -99,7 +99,7 @@ All product decisions, behavior rules, and architecture are documented in the `s
 - **[spec/product/](spec/product/README.md)** — Features, user flows, surfaces, onboarding.
 - **[spec/behavior/](spec/behavior/README.md)** — Rules, edge cases, invariants, error handling.
 - **[spec/architecture/README.md](spec/architecture/README.md)** — Stack, data model, auth, storage, API contracts.
-- **[spec/environments/README.md](spec/environments/README.md)** — Local, staging, production setup; CI/CD.
+- **[spec/environments/README.md](spec/environments/README.md)** — Environment model (local, staging, production); CI/CD.
 
 How `spec/` relates to code, and what to do when they disagree: [`AGENTS.md` § Spec vs code](AGENTS.md#spec-vs-code).
 
@@ -107,20 +107,7 @@ How `spec/` relates to code, and what to do when they disagree: [`AGENTS.md` § 
 
 ## Quick Start
 
-**Bootstrap Supabase + deps (WSL/Linux, Docker running):**
-
-```bash
-bash scripts/local-dev-setup.sh
-```
-
-If local Supabase containers are stuck or exited: `bash scripts/local-dev-setup.sh --reset-supabase`. If Postgres fails with **incompatible data directory** (e.g. after a CLI / `major_version` bump), wipe local volumes once: `bash scripts/local-dev-setup.sh --reset-supabase-data`. Full walkthrough: [docs/guides/getting-started.md](docs/guides/getting-started.md) and `bash scripts/local-dev-setup.sh --help`.
-
-**Run all app dev servers (default):** from the repo root, after `npx infisical login` once — see [docs/internal/environment/SECRETS_MANAGEMENT.md](docs/internal/environment/SECRETS_MANAGEMENT.md):
-
-```bash
-npm run dev:stack
-```
-
-Per-app commands, no-Infisical fallback, mobile, and URLs: **[docs/internal/environment/LOCAL_DEV.md](docs/internal/environment/LOCAL_DEV.md)** (single reference for anything beyond `dev:stack`).
-
-See [spec/environments/README.md](spec/environments/README.md) for environment model and variables.
+- **Set up a machine and run the stack:** [docs/guides/getting-started.md](docs/guides/getting-started.md), the one step-by-step setup, from clone to a healthy API.
+- **Per-app commands, no-Infisical fallback, mobile, and URLs:** [docs/internal/environment/LOCAL_DEV.md](docs/internal/environment/LOCAL_DEV.md).
+- **Working on a change:** [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Environment model:** [spec/environments/README.md](spec/environments/README.md). Every variable, per app and environment: [ENV_REFERENCE.md](docs/internal/environment/ENV_REFERENCE.md).

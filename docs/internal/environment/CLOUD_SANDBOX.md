@@ -153,7 +153,7 @@ turn a merely incomplete tree into a destroyed one whenever the repair itself fa
 **It does build the workspace packages**, first, before any Docker step, because the
 packages that publish their types through a gitignored `dist/` are otherwise unbuilt on a fresh
 checkout ([#2516](https://github.com/pdcarlson/Frapp/issues/2516)); which consumers read that
-`dist/` is in [`contributing.md` § 5](../../guides/contributing.md#5-linting-types-and-tests).
+`dist/` is in [`CONTRIBUTING.md` § Linting, types, and tests](../../../CONTRIBUTING.md#linting-types-and-tests).
 Without it `npm run start:dev -w apps/api` fails on unresolved imports, and
 `check:dep-cruiser`, which resolves the `types` condition with no fallback, fails in every
 workspace that imports those packages, `apps/web` included: it reports those imports apart, as
