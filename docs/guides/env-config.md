@@ -6,7 +6,7 @@ This guide explains how Frapp is configured across local, staging, and productio
 
 We maintain three main environments:
 
-- **Local** — developer machine, Supabase CLI + Docker, `.env.local` files
+- **Local** — developer machine, Supabase CLI + Docker, secrets from Infisical `dev` (`.env.local` as fallback; see §3)
 - **Staging** — Supabase Cloud (staging project), the API on Render, web and landing on Vercel. A merge to `main` whose CI passes runs its deploy, which ships what the merge changed.
 - **Production** — Supabase Cloud (prod project), the API on Render, web and landing on Vercel. Deployed only from a named commit, by the **Deploy production** workflow.
 
@@ -27,25 +27,7 @@ Key principles:
 
 ## 3. Local development setup
 
-**Recommended:** use the **Infisical CLI** as the primary local flow so secrets stay centralized (same source as staging/prod). Authenticate once with `npx infisical login`, then run apps with secrets injected:
-
-```bash
-npx infisical run --env=dev -- npm run start:dev -w apps/api
-npx infisical run --env=dev -- npm run dev -w apps/web
-```
-
-For all three apps in one terminal, use `npm run dev:stack` from the repo root (it wraps the same Infisical pattern). Populate the Infisical **`dev`** environment using values from `npm run -s supabase -- status -o env` plus the app-specific keys listed in [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md).
-
-### Fallback: Supabase CLI + `.env.local`
-
-If Infisical is unavailable, generate local env files from Supabase and merge in app vars from `ENV_REFERENCE.md`:
-
-```bash
-npm run supabase -- start
-npm run -s supabase -- status -o env
-```
-
-Create `.env.local` per app from that output, then add remaining variables (for the API, include `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` — real test-mode values to exercise billing: [`ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md) says where each comes from, including the webhook secret `stripe listen` prints. Without billing, a value containing `placeholder` (as `scripts/cloud-sandbox-up.sh` writes, e.g. `sk_test_placeholder_cloud_sandbox`) boots; any other `sk_test_` is checked against Stripe at boot). Treat `.env.local` as a **fallback**; prefer Infisical when possible.
+How local runs get their secrets (Infisical `dev`, a `.env.local` fallback, and the mobile exception) is in [`spec/environments/README.md` § 2](../../spec/environments/README.md#2-local-development). The steps are in [`getting-started.md` § 4](getting-started.md#4-configure-environment-variables); per-app commands and the no-Infisical fallback are in [`LOCAL_DEV.md`](../internal/environment/LOCAL_DEV.md).
 
 ## 4. Config module in the API
 
