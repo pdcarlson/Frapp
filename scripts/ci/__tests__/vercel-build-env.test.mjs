@@ -84,9 +84,9 @@ const runtimeDeps = (dir) =>
 /**
  * The directories whose source an app's bundle can contain: the app, and every
  * workspace package it reaches through runtime `dependencies`, transitively.
- * Direct deps alone are not enough: landing gets `@repo/color` only through
- * `@repo/theme`, and a read there would be checked against web's list and not
- * landing's.
+ * Direct deps alone are not enough: a package an app reaches only through
+ * another one (landing reached `@repo/color` through `@repo/theme` until #3227)
+ * would have its reads checked against nobody's list.
  */
 function bundledRoots(appDir) {
   const packages = workspacePackages();
@@ -189,11 +189,21 @@ describe("APP_CONFIG_KEYS matches what each app reads", () => {
     });
 
     it(`${label}: scans every workspace package its bundle can contain`, () => {
-      // Pinned with the one transitive case that exists today, so a return to
-      // direct-deps-only fails here rather than by missing a future read.
+      // Closed under runtime `dependencies`: every workspace package a scanned
+      // root depends on is scanned too. No app has a transitive-only package
+      // today (#3227 removed the last), so this is pinned as a property rather
+      // than a case: a return to direct-deps-only fails here the day one
+      // appears, rather than by missing its reads.
       const { roots } = envReadsOf(entry.appDir);
       assert.ok(roots.includes("packages/theme"), `${label} should reach packages/theme`);
-      assert.ok(roots.includes("packages/color"), `${label} reaches packages/color through @repo/theme`);
+      const packages = workspacePackages();
+      for (const root of roots) {
+        for (const dep of runtimeDeps(join(REPO, root))) {
+          if (!packages.has(dep)) continue;
+          const depRoot = relative(REPO, packages.get(dep));
+          assert.ok(roots.includes(depRoot), `${label} reaches ${depRoot} through ${root} but does not scan it`);
+        }
+      }
     });
 
     it(`${label}: reads env by name only, so every read is visible to this guard`, () => {

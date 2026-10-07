@@ -5,8 +5,8 @@
  * tokens, with `apps/mobile` its first consumer. It is now the ONLY token set
  * the package ships for a surface: `apps/web` cut over with the #920 shell
  * slice and `apps/landing` with #2366, which also deleted the legacy stylesheet.
- * `tokens.ts` survives as an internal dependency — the accent engine's bronze
- * fallback and the motion scale — never as a surface's token source.
+ * The legacy bone/bronze/ink `tokens.ts` is deleted (#3227); only its motion
+ * scale survived, in `./motion.ts`.
  *
  * Values are transcribed from `spec/ui/design-system/foundations.md`, which is
  * canonical, and which in turn transcribes panel 4h of the committed design
@@ -20,7 +20,7 @@
  * color, fixed across every chapter, so it does live here.
  */
 
-import { frappTokens } from "./tokens";
+import { motionTokens, type MotionTokens } from "./motion";
 
 /** Signet is dark-first. The parameter exists so a future light mode widens rather than breaks. */
 export type SignetAppearance = "dark";
@@ -129,7 +129,7 @@ export type SignetTokens = {
     track: string;
   };
   /** Carried over from the legacy system. Provisional, not Signet canon — foundations.md §11. */
-  motion: (typeof frappTokens)["motion"];
+  motion: MotionTokens;
 };
 
 const SIGNET_DARK: SignetTokens = {
@@ -200,7 +200,7 @@ const SIGNET_DARK: SignetTokens = {
     thumbHover: "#F0CD5E",
     track: "#1A1A1A",
   },
-  motion: frappTokens.motion,
+  motion: motionTokens,
 };
 
 export const signetDarkTokens: SignetTokens = SIGNET_DARK;
