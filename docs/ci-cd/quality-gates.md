@@ -14,7 +14,7 @@ baseline story actually supports.
 
 | Gate | Command | CI job | Posture | Why that posture |
 |---|---|---|---|---|
-| dependency-cruiser | `npm run check:dep-cruiser` | `dependency-cruiser` | **Required** | Has a real baseline, and it is **empty** as of 2026-09-07 (7 grandfathered when the gate landed, 5 until then), so every violation now fails |
+| dependency-cruiser | `npm run check:dep-cruiser`, then `npm run check:dep-cruiser:rules` | `dependency-cruiser` | **Required** | Has a real baseline, and it is **empty** as of 2026-09-07 (7 grandfathered when the gate landed, 5 until then), so every violation now fails |
 | oasdiff against shipped mobile builds | `npm run check:api-breaking:shipped` | step in `api-contract-check` | **Required** | A store binary keeps the calls it was built with until its owner updates, so a break merged against it breaks every install. Passes, and says so, while no build is listed |
 | oasdiff against the PR base | `npm run check:api-breaking` | step in `api-contract-check` | **Advisory** | `apps/web` regenerates from this repo and deploys with the change |
 | `nestjs-typed` response schema | `npm run lint -w apps/api` | step in `lint-and-typecheck` | **`warn`** | A large undecorated-route backlog (count it, see below) and no ESLint baseline mechanism |

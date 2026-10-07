@@ -6,6 +6,7 @@ import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
 } from '#domain/repositories/chat.repository.interface';
+import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 import {
   auditMirrorClientId,
   ChatBridgeWorkerService,
@@ -91,6 +92,8 @@ describe('ChatBridgeWorkerService.handleAuditRow', () => {
     expect(insertCalls).toHaveLength(1);
     expect(insertCalls[0]).toMatchObject({
       channel_id: 'ch-audit',
+      // Part of the dedupe key, and the author the table's CHECK requires.
+      sender_id: SYSTEM_SENDER_ID,
       kind: 'system_audit',
       client_message_id: 'audit:audit-1',
       payload: {

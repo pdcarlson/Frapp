@@ -396,6 +396,21 @@ describe('SupabaseChatMessageRepository — insertIdempotent', () => {
     ).rejects.toBeInstanceOf(SupabaseQueryError);
   });
 
+  it('treats a null sender as part of the dedupe key, and a missing one as not', async () => {
+    // The index is NULLS NOT DISTINCT, so a null-sender row collides on the
+    // triple like any other; only an absent `sender_id` leaves the key unknown.
+    const { client } = clientAnswering({ code: '23505', message: 'dup' });
+    const repo = new SupabaseChatMessageRepository(client);
+    const { sender_id: _omitted, ...withoutSender } = row;
+
+    await expect(
+      repo.insertIdempotent({ ...row, sender_id: null }),
+    ).resolves.toBe('duplicate');
+    await expect(repo.insertIdempotent(withoutSender)).rejects.toBeInstanceOf(
+      SupabaseQueryError,
+    );
+  });
+
   it('throws any other error as a SupabaseQueryError', async () => {
     const { client } = clientAnswering({ code: '42501', message: 'denied' });
 
