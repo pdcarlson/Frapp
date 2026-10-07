@@ -7,10 +7,6 @@ import {
   ANALYTICS_PROVIDER,
   type IAnalyticsProvider,
 } from '#domain/adapters/analytics.interface';
-import {
-  FEATURE_FLAG_PROVIDER,
-  type IFeatureFlagProvider,
-} from '#domain/adapters/feature-flag.interface';
 import { parsePosthogConfig } from '../../infrastructure/analytics/posthog-config';
 import {
   ensurePosthogRuntime,
@@ -84,12 +80,6 @@ export function selectAnalyticsProvider(
   return runtime.analytics;
 }
 
-export function selectFeatureFlagProvider(
-  config: ConfigService,
-): IFeatureFlagProvider {
-  return ensurePosthogRuntime(config).flags;
-}
-
 @Module({
   // MEMBER_REPOSITORY is provided directly rather than by importing
   // ChapterModule (which also exports it, and which this module used to
@@ -111,11 +101,6 @@ export function selectFeatureFlagProvider(
       provide: ANALYTICS_PROVIDER,
       inject: [ConfigService],
       useFactory: selectAnalyticsProvider,
-    },
-    {
-      provide: FEATURE_FLAG_PROVIDER,
-      inject: [ConfigService],
-      useFactory: selectFeatureFlagProvider,
     },
   ],
   exports: [AnalyticsService],
