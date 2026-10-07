@@ -298,7 +298,7 @@ export class ScheduledJobsRepository {
         // `TableDefinition` shim, not full `supabase gen types` output), so
         // supabase-js can't confirm the `chat_channels` embed and infers it
         // as a `SelectQueryError` instead of the real shape. Same fix
-        // `search.service.ts` and `supabase-member.repository.ts` use for
+        // `supabase-search.repository.ts` and `supabase-member.repository.ts` use for
         // the same embed-inference gap.
         this.supabase
           .from('chat_messages')

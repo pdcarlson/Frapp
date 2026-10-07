@@ -13,6 +13,8 @@ import {
   shutdownPosthogRuntime,
 } from '../../infrastructure/analytics/posthog-runtime';
 import { AuthModule } from '../auth/auth.module';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 
@@ -93,6 +95,8 @@ export function selectAnalyticsProvider(
     AuthSyncInterceptor,
     AnalyticsService,
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
+    // The per-chapter opt-out read; provided directly for the same reason.
+    { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
     {
       provide: ANALYTICS_PROVIDER,
       inject: [ConfigService],

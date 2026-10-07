@@ -37,6 +37,12 @@ export interface IChapterRepository {
    * (`ChapterService.listForUser`).
    */
   findByIds(ids: string[]): Promise<Chapter[]>;
+  /**
+   * Whether the chapter has opted out of product analytics
+   * (`chapters.analytics_opt_out`). Reads that one column, because analytics
+   * asks on every event. A chapter with no row reads as not opted out.
+   */
+  isAnalyticsOptedOut(id: string): Promise<boolean>;
   findBySubscriptionId(subscriptionId: string): Promise<Chapter | null>;
   /**
    * Resolve a chapter by its Stripe customer. `chapters.stripe_customer_id` is
