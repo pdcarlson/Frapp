@@ -72,6 +72,8 @@ lists them and says what a phone needs instead of `127.0.0.1`.
 
 Build `.env.local` per app using `npm run -s supabase -- status -o env` and [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Then run the “Without Infisical” commands in the table above. NestJS reads `.env.local` then `.env`.
 
+The API's `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `STRIPE_PRICE_ID` are required to boot. Use real test-mode values to exercise billing; where each comes from (including the webhook secret `stripe listen` prints), and which placeholder values skip the boot-time Stripe check, is in [`ENV_REFERENCE.md` § Core App Secrets](./ENV_REFERENCE.md#core-app-secrets).
+
 ## Cloud sandbox (Claude Code web)
 
 Claude Code web is the cloud agent environment; its bringup is
