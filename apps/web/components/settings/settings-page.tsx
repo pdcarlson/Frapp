@@ -22,7 +22,7 @@ import {
   type SemesterArchive,
 } from "@repo/hooks";
 import { type PatchChapterConfig } from "@repo/validation";
-import { resolveChapterAccentColor } from "@repo/theme/accent";
+import { resolveChapterAccentColor } from "@/components/settings/resolve-chapter-accent";
 import { AA_NORMAL, normalizeHex } from "@repo/color";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { titleCase, vocab } from "@/lib/vocabulary";

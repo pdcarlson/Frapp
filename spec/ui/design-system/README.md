@@ -248,7 +248,7 @@ Discipline, not palette — these rules bind **every** surface, and they govern 
 | Hover | Color and border transitions only. Avoid scale transforms on primary chrome (buttons, nav) unless a component spec calls for one explicitly |
 | Duration | Prefer the standard duration for UI chrome; the context duration is the ceiling for section entrances |
 
-Token source: `packages/theme/src/tokens.ts` (`motion.duration`, `motion.easing`).
+Token source: `packages/theme/src/motion.ts` (`duration`, `easing`), served as `SignetTokens.motion`.
 
 ---
 
