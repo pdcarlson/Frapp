@@ -53,6 +53,18 @@ describe("resolveChapterAccentColor — the Settings preview's surface", () => {
     }
   });
 
+  it("passes an accent that clears AA only after 2dp rounding", () => {
+    // #FF3100 scores 4.498 on the dark card: below 4.5 exactly, 4.50 rounded.
+    // Chapters already use colours in that band (see `ratioOn`), so exact
+    // comparison would quietly flip the preview's verdict on them.
+    expect(resolveChapterAccentColor("#FF3100", DARK)).toMatchObject({
+      resolvedAccent: "#FF3100",
+      fallbackApplied: false,
+      contrastOnBackground: 4.5,
+      reason: "ok",
+    });
+  });
+
   it("expands and upper-cases shorthand hex", () => {
     expect(resolveChapterAccentColor("#ff0", DARK).resolvedAccent).toBe(
       "#FFFF00",
@@ -82,6 +94,15 @@ describe("resolveChapterAccentColor — per-surface resolution", () => {
     expect(onDark).toMatchObject({ fallbackApplied: false });
     expect(onDark.contrastOnBackground).toBeGreaterThanOrEqual(4.5);
     expect(onWhite.fallbackApplied).toBe(true);
+  });
+
+  it("tries the caller's own fallback before the ladder", () => {
+    // Bronze is legible on white, so it is what comes back, not a ladder rung.
+    expect(resolveChapterAccentColor("#FFFF00", LIGHT)).toMatchObject({
+      resolvedAccent: LIGHT.fallbackAccent,
+      fallbackApplied: true,
+      reason: "insufficient_contrast",
+    });
   });
 
   it("escalates past a fallback that is illegible on the surface (#797)", () => {
