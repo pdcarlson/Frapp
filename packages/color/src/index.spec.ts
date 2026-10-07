@@ -69,12 +69,15 @@ describe("meetsContrast", () => {
    * The regression lock for the rounding contract.
    *
    * `#006FFB` scores 4.499888 against white — below AA, but it rounds to 4.50.
-   * The web Settings accent resolver (`resolve-chapter-accent.ts`, formerly in
-   * `packages/theme`) has always compared the rounded value, so this color and
-   * the ~9,000 others in the `[4.495, 4.5)` band pass its check today. Extracting the math here must not
-   * quietly tighten that, so rounding is an explicit per-caller option.
+   * It pins the contract, not a live colour: rounding is an explicit per-caller
+   * option, so extracting the math here must not quietly tighten a caller that
+   * relies on it. The live one is the web Settings accent resolver
+   * (`apps/web/components/settings/resolve-chapter-accent.ts`), which rounds
+   * against the dark card; its own `ratioOn` comment counts the 9,686 colours in
+   * that surface's `[4.495, 4.5)` band.
    *
-   * If either expectation below flips, live chapter accents repaint.
+   * If either expectation below flips, that resolver's verdict on those colours
+   * flips with it.
    */
   it("honors the rounding policy at the AA boundary", () => {
     const accent = rgb("#006FFB");
@@ -97,7 +100,7 @@ describe("meetsContrast", () => {
 });
 
 describe("pickAccessibleColor", () => {
-  // The bronze/lighter-bronze/bone ladder `packages/chapter-theme` walks.
+  // A fixture ladder (legacy bronze / lighter bronze / bone), not a live one.
   const LADDER = ["#7A5A2F", "#C8A062", "#F7F3EC"] as const;
 
   it("returns the first candidate that clears the threshold", () => {
