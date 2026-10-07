@@ -678,11 +678,11 @@ It runs per session, never in `cloud-sandbox-setup.sh`: that script's filesystem
 for ~7 days, and a week-old cached answer about a policy that can change between sessions
 is worse than no answer.
 
-### Blocked tooling — known list
+## Blocked tooling — known list
 
-What a session can't run, beyond the egress rules above. Add a new block here in the PR that finds it.
+What a session can't run, beyond the egress rules in [Live staging egress](#live-staging-egress). Add a new block here in the PR that finds it.
 
-- **Docker and local Supabase** run only where bringup's wiring is present ([Auto-bringup](#auto-bringup-and-how-the-agent-waits)). Without it (an unconfigured environment, plain CI) there is no daemon, so validate migrations with the PGlite harness, `npm run check:pglite-migrations`, which needs no database ([ADR-12](../../../spec/architecture/adr/adr-12.md)).
+- **Docker and local Supabase** run only where bringup's wiring is present ([Auto-bringup](#auto-bringup-and-how-the-agent-waits)). Without it (an environment not configured for bringup) the session has no daemon, so validate migrations with the PGlite harness, `npm run check:pglite-migrations`, which needs no database ([ADR-12](../../../spec/architecture/adr/adr-12.md)).
 - **Supabase MCP tools.** `.claude/settings.json` allows only the Workflow tool and the GitHub MCP tools ([`agent-infra.md` § Applied permission allows](../../ci-cd/agent-infra.md#applied-permission-allows)), so the write tools (`create_branch`, `apply_migration`, `delete_branch`) and most read tools (`list_branches`, `get_project`, `get_cost`) prompt, which an unattended session can't approve. The committed file has never carried a deny rule; the prompt is the enforcement. `list_projects` has been observed to go through. Don't assume any MCP tool works until you've tried it. Local Supabase covers the database and migrations without them.
 - **System packages.** The session runs as root and `apt-get` is installed, but `apt-get update` hung for 40s with no output on 2026-10-07, so budget a system package as unavailable. Nothing here needs one: the PGlite WASM bundle installs from npm.
 
