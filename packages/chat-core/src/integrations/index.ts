@@ -5,8 +5,9 @@
  * Framework-free. `./dispatch` and `apps/web` read it; the rich renderers live
  * in the apps (React on web, React Native on mobile). Until #3228 this was its
  * own package, `@repo/chat-integrations`, whose `types` and `require` export
- * conditions pointed at a `dist/` nothing built (#989, #918), so mobile and
- * `chat-core/polls` redeclared the poll shapes instead of importing them. As a
+ * conditions pointed at a `dist/` nothing built (#989, #918), so
+ * `chat-core/polls` redeclared the poll shapes instead of importing them (and
+ * mobile read them from there). As a
  * source-only chat-core subpath it has no such conditions, and `./polls`
  * re-exports the poll shapes from `./payloads`.
  *
