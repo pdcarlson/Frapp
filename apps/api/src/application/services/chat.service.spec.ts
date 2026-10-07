@@ -2656,7 +2656,7 @@ describe('ChatService', () => {
       });
 
       it('purges only after the message is flagged deleted', async () => {
-        // Ordering is load-bearing: `getMessageAttachments` 404s an
+        // Ordering is load-bearing: `listMessageAttachments` 404s an
         // `is_deleted` message, so once the flag lands the files are
         // unreachable whatever Storage does next. Purging first and then
         // failing the update would leave a visible message with dead

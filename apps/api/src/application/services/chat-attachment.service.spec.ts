@@ -56,6 +56,30 @@ describe('ChatAttachmentService', () => {
       created_at: '2026-01-01T00:00:00.000Z',
     };
 
+    it('refuses a caller who cannot read the channel before reading the message or signing anything', async () => {
+      // This route is the only way to a chat file (see the method's docblock),
+      // so the channel check is the whole of who may download one. A PRIVATE
+      // channel the caller is not a member of must refuse before any lookup.
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'PRIVATE',
+        member_ids: ['someone-else'],
+      });
+      mockAttachmentRepo.findByMessage.mockResolvedValue([attachmentRow]);
+
+      await expect(
+        attachments.listMessageAttachments(
+          'ch-chan-1',
+          'ch-1',
+          'user-1',
+          'msg-1',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.findById).not.toHaveBeenCalled();
+      expect(mockAttachmentRepo.findByMessage).not.toHaveBeenCalled();
+      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
+    });
+
     it('refuses to hand out URLs for a deleted message', async () => {
       // Deletion is soft, so the ON DELETE CASCADE never fires and the rows are
       // still there. Without this the API keeps minting fresh download URLs for
