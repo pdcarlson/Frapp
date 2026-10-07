@@ -10,12 +10,17 @@ import type {
   RealtimePostgresInsertPayload,
 } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type {
-  FrappSupabaseClient,
-  TablesInsert,
-} from '../../infrastructure/supabase/database.types';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
-import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
+import type { ChatMessage } from '#domain/entities/chat.entity';
+import {
+  CHAT_CHANNEL_REPOSITORY,
+  CHAT_MESSAGE_REPOSITORY,
+} from '#domain/repositories/chat.repository.interface';
+import type {
+  IChatChannelRepository,
+  IChatMessageRepository,
+} from '#domain/repositories/chat.repository.interface';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
@@ -74,7 +79,13 @@ export class ChatBridgeWorkerService
   private channel: RealtimeChannel | null = null;
 
   constructor(
+    // The client carries only the Realtime subscription; every query goes
+    // through a repository.
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    @Inject(CHAT_CHANNEL_REPOSITORY)
+    private readonly channels: IChatChannelRepository,
+    @Inject(CHAT_MESSAGE_REPOSITORY)
+    private readonly messages: IChatMessageRepository,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -137,13 +148,13 @@ export class ChatBridgeWorkerService
     if (row.member_visible === false) return;
 
     try {
-      const { data: channel, error: channelError } = await this.supabase
-        .from('chat_channels')
-        .select('id')
-        .eq('chapter_id', row.chapter_id)
-        .eq('name', 'chapter-audit')
-        .maybeSingle();
-      if (channelError) {
+      let channelId: string | null;
+      try {
+        channelId = await this.channels.findIdByName(
+          row.chapter_id,
+          'chapter-audit',
+        );
+      } catch (channelError) {
         logThrowable(
           this.logger,
           'warn',
@@ -152,7 +163,7 @@ export class ChatBridgeWorkerService
         );
         return;
       }
-      if (!channel) {
+      if (!channelId) {
         // Older chapters may pre-date the chapter-audit channel — log and
         // move on; the audit row itself is the source of truth.
         this.logger.debug(
@@ -161,8 +172,8 @@ export class ChatBridgeWorkerService
         return;
       }
 
-      const message: TablesInsert<'chat_messages'> = {
-        channel_id: channel.id,
+      const message: Partial<ChatMessage> = {
+        channel_id: channelId,
         sender_id: SYSTEM_SENDER_ID,
         content: this.summarize(row),
         kind: 'system_audit',
@@ -173,21 +184,21 @@ export class ChatBridgeWorkerService
           diff: row.diff ?? {},
         },
       };
-      const { error: insertError } = await this.supabase
-        .from('chat_messages')
-        .insert(message);
-      if (insertError?.code === PG_UNIQUE_VIOLATION) {
-        // Another instance mirrored this audit row first.
-        this.logger.debug(`chat-bridge: audit ${row.id} already mirrored`);
-        return;
-      }
-      if (insertError) {
+      let outcome: 'inserted' | 'duplicate';
+      try {
+        outcome = await this.messages.insertIdempotent(message);
+      } catch (insertError) {
         logThrowable(
           this.logger,
           'warn',
           `chat-bridge: system_audit insert failed for audit ${row.id}`,
           insertError,
         );
+        return;
+      }
+      if (outcome === 'duplicate') {
+        // Another instance mirrored this audit row first.
+        this.logger.debug(`chat-bridge: audit ${row.id} already mirrored`);
       }
     } catch (err) {
       logThrowable(

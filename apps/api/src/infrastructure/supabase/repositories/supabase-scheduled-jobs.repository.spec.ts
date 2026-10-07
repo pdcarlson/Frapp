@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import { ScheduledJobsRepository } from './scheduled-jobs.repository';
+import { SUPABASE_CLIENT } from '../supabase.provider';
+import { SupabaseScheduledJobsRepository } from './supabase-scheduled-jobs.repository';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -80,11 +80,11 @@ async function buildRepo(pages: Page[]) {
   const supabase = makeSupabase(pages);
   const mod = await Test.createTestingModule({
     providers: [
-      ScheduledJobsRepository,
+      SupabaseScheduledJobsRepository,
       { provide: SUPABASE_CLIENT, useValue: supabase.client },
     ],
   }).compile();
-  return { repo: mod.get(ScheduledJobsRepository), supabase };
+  return { repo: mod.get(SupabaseScheduledJobsRepository), supabase };
 }
 
 function rows(count: number, base: Record<string, unknown> = {}) {
@@ -95,7 +95,7 @@ function rows(count: number, base: Record<string, unknown> = {}) {
   }));
 }
 
-describe('ScheduledJobsRepository', () => {
+describe('SupabaseScheduledJobsRepository', () => {
   describe('paging', () => {
     // PostgREST caps responses at max_rows and reports truncation as a plain
     // 200 with a null error, so an unpaged read drops rows silently.
@@ -729,9 +729,9 @@ const tenantSeed = () => ({
   ],
 });
 
-describe('ScheduledJobsRepository — tenant scope', () => {
+describe('SupabaseScheduledJobsRepository — tenant scope', () => {
   let harness: TenantHarness;
-  let repo: ScheduledJobsRepository;
+  let repo: SupabaseScheduledJobsRepository;
 
   beforeEach(() => {
     harness = createTenantHarness({
@@ -744,7 +744,7 @@ describe('ScheduledJobsRepository — tenant scope', () => {
         chat_messages: { column: 'channel_id', table: 'chat_channels' },
       },
     });
-    repo = new ScheduledJobsRepository(harness.client);
+    repo = new SupabaseScheduledJobsRepository(harness.client);
   });
 
   it('findEventsPendingAutoAbsent is a cross-chapter sweep (characterised)', async () => {

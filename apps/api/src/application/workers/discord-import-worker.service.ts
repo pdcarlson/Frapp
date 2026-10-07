@@ -40,7 +40,7 @@ import {
   wholeChapterTargets,
 } from '#domain/utils/discord-mentions';
 import { parseRoleMapping } from '#domain/utils/discord-role-gates';
-import { RbacService } from '../../application/services/rbac.service';
+import { RbacService } from '../services/rbac.service';
 import type {
   DiscordImport,
   DiscordImportChannel,
@@ -50,7 +50,7 @@ import type {
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
 import type { IChatMessageReportRepository } from '#domain/repositories/chat-moderation.repository.interface';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
-import { ChannelCacheService } from '../chat-push-worker/channel-cache.service';
+import { ChannelCacheService } from '../services/channel-cache.service';
 import {
   channelServesMergeKey,
   newChannelMergeKey,

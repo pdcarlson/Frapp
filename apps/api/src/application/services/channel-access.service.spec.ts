@@ -79,6 +79,8 @@ describe('ChannelAccessService', () => {
       findByChapter: jest.fn(),
       findByIds: jest.fn(),
       findDm: jest.fn(),
+      findIdByName: jest.fn(),
+      findPushRouting: jest.fn(),
       createDm: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -97,6 +99,7 @@ describe('ChannelAccessService', () => {
       findPollsByChapter: jest.fn(),
       findByClientMessageId: jest.fn(),
       findAuthorAvatarPaths: jest.fn(),
+      insertIdempotent: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };

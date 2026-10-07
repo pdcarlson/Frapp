@@ -443,7 +443,7 @@ const PUSH_LEDGER: Record<string, Entry> = {
   'chat-push-worker (chat_messages INSERT)': {
     status: 'masked',
     proof: {
-      spec: 'modules/chat-push-worker/chat-push-worker.service.spec.ts',
+      spec: 'application/workers/chat-push-worker.service.spec.ts',
       test: 'does not notify a recipient who has blocked the sender',
     },
   },
@@ -481,7 +481,7 @@ const MEMBER_TEXT: Entry = {
  * tree, so a mention in a comment or a string does not count.
  */
 const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
-  'modules/chat-push-worker/chat-push-worker.service.ts': {
+  'application/workers/chat-push-worker.service.ts': {
     calls: 1,
     entries: [PUSH_LEDGER['chat-push-worker (chat_messages INSERT)']],
   },
@@ -532,7 +532,7 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     entries: [MEMBER_TEXT],
   },
   'application/services/task.service.ts': { calls: 6, entries: [MEMBER_TEXT] },
-  'modules/scheduled-jobs/scheduled-jobs.service.ts': {
+  'application/workers/scheduled-jobs.service.ts': {
     calls: 12,
     entries: [MEMBER_TEXT],
   },

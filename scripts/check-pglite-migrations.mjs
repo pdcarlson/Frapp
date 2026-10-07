@@ -175,7 +175,7 @@ if (failed.length > 0) {
 
 const LANDMARKS = [
   {
-    // Every claiming sweep in `modules/scheduled-jobs` dedups by inserting
+    // Every claiming sweep in `ScheduledJobsService` dedups by inserting
     // here (report retention and the stale-palette sweep take no claim), so a
     // threshold missing from this CHECK is not a validation nicety — the claim
     // raises 23505's cousin (23514), `claimDispatch` reads it as "not a unique

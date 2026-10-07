@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
-import { ScheduledJobsService } from './scheduled-jobs.service';
-import { ScheduledJobsRepository } from './scheduled-jobs.repository';
+import { ScheduledJobsService } from '../../application/workers/scheduled-jobs.service';
+import { SupabaseScheduledJobsRepository } from '../../infrastructure/supabase/repositories/supabase-scheduled-jobs.repository';
+import { SCHEDULED_JOBS_REPOSITORY } from '#domain/repositories/scheduled-jobs.repository.interface';
 import { AttendanceModule } from '../attendance/attendance.module';
 import { NotificationModule } from '../notification/notification.module';
 import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
@@ -42,6 +43,12 @@ import { ChatModule } from '../chat/chat.module';
     PollModule,
     ChatModule,
   ],
-  providers: [ScheduledJobsService, ScheduledJobsRepository],
+  providers: [
+    ScheduledJobsService,
+    {
+      provide: SCHEDULED_JOBS_REPOSITORY,
+      useClass: SupabaseScheduledJobsRepository,
+    },
+  ],
 })
 export class ScheduledJobsModule {}

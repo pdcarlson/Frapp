@@ -1,16 +1,16 @@
 import { Test } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
-import { AttendanceService } from '../../application/services/attendance.service';
-import { NotificationService } from '../../application/services/notification.service';
-import { ChapterWorkflowsService } from '../../application/services/chapter-workflows.service';
-import { ReportRetentionService } from '../../application/services/report-retention.service';
-import { PollService } from '../../application/services/poll.service';
-import { ChatReportService } from '../../application/services/chat-report.service';
+import { AttendanceService } from '../services/attendance.service';
+import { NotificationService } from '../services/notification.service';
+import { ChapterWorkflowsService } from '../services/chapter-workflows.service';
+import { ReportRetentionService } from '../services/report-retention.service';
+import { PollService } from '../services/poll.service';
+import { ChatReportService } from '../services/chat-report.service';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { ScheduledJobsService } from './scheduled-jobs.service';
-import { ScheduledJobsRepository } from './scheduled-jobs.repository';
+import { SCHEDULED_JOBS_REPOSITORY } from '#domain/repositories/scheduled-jobs.repository.interface';
 import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
-import { buildChapterPalette } from '../../application/services/chapter-palette';
+import { buildChapterPalette } from '../services/chapter-palette';
 
 /**
  * Fixed clock for every sweep. The sweeps take `now` as a parameter precisely
@@ -90,7 +90,7 @@ describe('ScheduledJobsService', () => {
       providers: [
         ScheduledJobsService,
         {
-          provide: ScheduledJobsRepository,
+          provide: SCHEDULED_JOBS_REPOSITORY,
           useValue: {
             findEventsPendingAutoAbsent,
             findOpenInvoicesDueBetween,

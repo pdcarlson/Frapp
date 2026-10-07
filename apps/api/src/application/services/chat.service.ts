@@ -96,10 +96,11 @@ import {
   type MaskedChatMessage,
 } from './chat-block-mask';
 import { ActivationService } from './activation.service';
-import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
-import type { ChatNotificationLevel } from '../../modules/chat-push-worker/chat-notification-preference.repository';
-import { resolveLevel } from '../../modules/chat-push-worker/push-rules';
-import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
+import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
+import type { IChatNotificationPreferenceRepository } from '#domain/repositories/chat-notification-preference.repository.interface';
+import type { ChatNotificationLevel } from '#domain/entities/chat-notification-preference.entity';
+import { resolveLevel } from './push-rules';
+import { ChannelCacheService } from './channel-cache.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 const MAX_PINNED_MESSAGES = 50;
@@ -333,7 +334,8 @@ export class ChatService {
     private readonly storageProvider: IStorageProvider,
     private readonly channelAccess: ChannelAccessService,
     private readonly activation: ActivationService,
-    private readonly chatNotificationPrefs: ChatNotificationPreferenceRepository,
+    @Inject(CHAT_NOTIFICATION_PREFERENCE_REPOSITORY)
+    private readonly chatNotificationPrefs: IChatNotificationPreferenceRepository,
     private readonly channelCache: ChannelCacheService,
     // Report and block (#2257) live in their own services; the hot path needs
     // only the block list, to mask what it serves.

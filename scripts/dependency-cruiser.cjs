@@ -46,7 +46,7 @@
  *
  * Hard failure rather than a default, because the failure mode of a default is
  * a clean run that checked almost nothing: with this unset, `isApi`,
- * `isPackage` and `isApp` are all false and the three API layer rules plus both
+ * `isPackage` and `isApp` are all false and the API layer rules plus both
  * boundary rules silently disappear. Someone running `npx depcruise` by hand to
  * check a layering import would get a green result and push.
  */
@@ -148,6 +148,31 @@ const apiLayerRules = [
       "subpath at all, which is its own consistent convention.",
     from: { path: "^src/", pathNot: "^src/domain/" },
     to: { path: "^src/domain/", dependencyTypesNot: ["aliased-subpath-import"] },
+  },
+  {
+    name: "api-modules-wiring-only",
+    severity: "error",
+    comment:
+      "modules/ is Nest wiring: `*.module.ts` files (and their `*.module.spec.ts`) that register " +
+      "providers and controllers. Any other file there is code no layer rule covers, since the " +
+      "four layer rules above are anchored to domain/, infrastructure/ and application/: a " +
+      "service or repository parked under modules/ may import anything and be imported by " +
+      "anything. Workers and services go in application/, repositories in " +
+      "infrastructure/supabase/repositories/ behind a domain/repositories/ interface (#3219). " +
+      "This catches the file through its outgoing edges; the rule below catches one that " +
+      "imports nothing but is imported.",
+    from: { path: "^src/modules/", pathNot: "\\.module(\\.spec)?\\.ts$" },
+    to: {},
+  },
+  {
+    name: "api-modules-wiring-only-target",
+    severity: "error",
+    comment:
+      "The other half of api-modules-wiring-only: an import of a non-module file under " +
+      "modules/, such as a constants file with no imports of its own, which the outgoing-edge " +
+      "rule cannot see.",
+    from: {},
+    to: { path: "^src/modules/", pathNot: "\\.module\\.ts$" },
   },
   {
     name: "api-application-not-to-interface",

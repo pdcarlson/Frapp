@@ -58,8 +58,8 @@ import type {
 import { ChatBlockService } from './chat-block.service';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
 import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
-import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
-import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
+import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
+import { ChannelCacheService } from './channel-cache.service';
 
 describe('ChatService', () => {
   let service: ChatService;
@@ -151,6 +151,8 @@ describe('ChatService', () => {
       findByChapter: jest.fn(),
       findByIds: jest.fn(),
       findDm: jest.fn(),
+      findIdByName: jest.fn(),
+      findPushRouting: jest.fn(),
       createDm: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -178,6 +180,7 @@ describe('ChatService', () => {
       findPollsByChapter: jest.fn(),
       findByClientMessageId: jest.fn(),
       findAuthorAvatarPaths: jest.fn().mockResolvedValue([]),
+      insertIdempotent: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };
@@ -310,7 +313,7 @@ describe('ChatService', () => {
         // predicate end-to-end.
         ChannelAccessService,
         {
-          provide: ChatNotificationPreferenceRepository,
+          provide: CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
           useValue: mockChatNotificationPrefs,
         },
         { provide: ChannelCacheService, useValue: mockChannelCache },

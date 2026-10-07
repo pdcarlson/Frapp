@@ -26,7 +26,7 @@ failures. `scripts/ci/lib/required-checks.mjs` is the canonical list of required
 | Build `packages/*` (what CI's `packages-build` job runs) | `npx turbo run build --filter='./packages/*'` |
 
 Jest 30 takes the plural `--testPathPatterns`. The singular `--testPathPattern` no longer
-exists. The tenant-scope pattern keys on the filename so module-local repositories are included,
+exists. The tenant-scope pattern keys on the filename so a repository is included wherever it lives,
 and the `repositories/` half picks up the meta-specs that enforce the ledgers
 (`tenant-scope-coverage`, `tenant-scope.harness`, `no-as-never`).
 
@@ -147,7 +147,7 @@ was applied and no foreign row was read or written. Follow
 `supabase-task.repository.spec.ts` as the example.
 
 - `tenant-scope-coverage.spec.ts` fails if a `*.repository.ts` anywhere under `apps/api/src`
-  (module-local ones included, found through `#test/helpers/repository-corpus`) has no harness
+  (wherever it lives, found through `#test/helpers/repository-corpus`) has no harness
   spec and no reason in `TENANT_SCOPE_BACKLOG`.
 - When you extend the harness, also extend `tenant-scope.harness.spec.ts`, which proves each guard
   still fails against a deliberately broken repository. A harness that can't fail looks identical

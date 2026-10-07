@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
-import { ChatPushDispatchRepository } from './chat-push-dispatch.repository';
+import type { FrappSupabaseClient } from '../database.types';
+import { SupabaseChatPushDispatchRepository } from './supabase-chat-push-dispatch.repository';
 
 /**
  * The claim's half that lives in the repository: how an insert's outcome maps
@@ -53,7 +53,7 @@ function fakeClient(result: {
   return { client, inserts, deletes };
 }
 
-describe('ChatPushDispatchRepository', () => {
+describe('SupabaseChatPushDispatchRepository', () => {
   beforeEach(() => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
   });
@@ -65,7 +65,7 @@ describe('ChatPushDispatchRepository', () => {
   describe('claim', () => {
     it('claims the message when the insert succeeds', async () => {
       const { client, inserts } = fakeClient({ insert: { error: null } });
-      const repo = new ChatPushDispatchRepository(client);
+      const repo = new SupabaseChatPushDispatchRepository(client);
 
       await expect(repo.claim('m-1')).resolves.toBe('claimed');
       expect(inserts).toEqual([
@@ -77,7 +77,7 @@ describe('ChatPushDispatchRepository', () => {
       const { client } = fakeClient({
         insert: { error: { code: '23505', message: 'duplicate key' } },
       });
-      const repo = new ChatPushDispatchRepository(client);
+      const repo = new SupabaseChatPushDispatchRepository(client);
 
       await expect(repo.claim('m-1')).resolves.toBe('taken');
       expect(Logger.prototype.error).not.toHaveBeenCalled();
@@ -87,7 +87,7 @@ describe('ChatPushDispatchRepository', () => {
       const { client } = fakeClient({
         insert: { error: { code: '23503', message: 'violates foreign key' } },
       });
-      const repo = new ChatPushDispatchRepository(client);
+      const repo = new SupabaseChatPushDispatchRepository(client);
 
       await expect(repo.claim('m-1')).resolves.toBe('gone');
       expect(Logger.prototype.error).not.toHaveBeenCalled();
@@ -99,7 +99,7 @@ describe('ChatPushDispatchRepository', () => {
       const { client } = fakeClient({
         insert: { error: { code: '08006', message: 'connection failure' } },
       });
-      const repo = new ChatPushDispatchRepository(client);
+      const repo = new SupabaseChatPushDispatchRepository(client);
 
       await expect(repo.claim('m-1')).resolves.toBe('failed');
       expect(Logger.prototype.error).toHaveBeenCalledTimes(1);
@@ -111,7 +111,7 @@ describe('ChatPushDispatchRepository', () => {
       const { client, deletes } = fakeClient({
         delete: { count: 7, error: null },
       });
-      const repo = new ChatPushDispatchRepository(client);
+      const repo = new SupabaseChatPushDispatchRepository(client);
       const cutoff = new Date('2026-09-29T12:00:00.000Z');
 
       await expect(repo.purgeBefore(cutoff)).resolves.toBe(7);
@@ -127,7 +127,7 @@ describe('ChatPushDispatchRepository', () => {
 
     it('reads a missing count as nothing deleted', async () => {
       const { client } = fakeClient({ delete: { count: null, error: null } });
-      const repo = new ChatPushDispatchRepository(client);
+      const repo = new SupabaseChatPushDispatchRepository(client);
 
       await expect(repo.purgeBefore(new Date())).resolves.toBe(0);
     });
@@ -135,7 +135,7 @@ describe('ChatPushDispatchRepository', () => {
     it('throws a failed delete for the caller to log', async () => {
       const error = { code: '57014', message: 'canceling statement' };
       const { client } = fakeClient({ delete: { count: null, error } });
-      const repo = new ChatPushDispatchRepository(client);
+      const repo = new SupabaseChatPushDispatchRepository(client);
 
       // Wrapped (#1264): the caller logs a real Error with its code.
       await expect(repo.purgeBefore(new Date())).rejects.toMatchObject({

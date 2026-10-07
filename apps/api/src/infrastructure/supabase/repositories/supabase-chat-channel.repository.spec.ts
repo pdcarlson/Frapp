@@ -144,6 +144,41 @@ describe('SupabaseChatChannelRepository — tenant scope', () => {
     expect(foreign).toBeNull();
   });
 
+  it("findIdByName does not answer with another chapter's channel of the same name", async () => {
+    // Both chapters have a `general`. The audit bridge posts into whatever id
+    // this returns, so a missing chapter filter would mirror one chapter's
+    // audit trail into another's channel.
+    const id = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findIdByName(CHAPTER_B, 'general'),
+    );
+
+    expect(id).toBe(CHANNEL_B);
+  });
+
+  it('findIdByName returns null when the chapter has no channel of that name', async () => {
+    await expect(
+      repo.findIdByName(CHAPTER_B, 'chapter-audit'),
+    ).resolves.toBeNull();
+  });
+
+  it('findPushRouting reads the routing columns by id, with the row carrying its chapter', async () => {
+    // Keyed by id alone by design (the Realtime INSERT that triggers it has no
+    // chapter); the worker scopes everything after it by `chapter_id`, so
+    // that column has to come back.
+    const row = await repo.findPushRouting(CHANNEL_A);
+
+    expect(row).toMatchObject({ id: CHANNEL_A, chapter_id: CHAPTER_A });
+    expect(harness.ops[0].filters.map((f) => [f.column, f.value])).toEqual([
+      ['id', CHANNEL_A],
+    ]);
+  });
+
+  it('findPushRouting returns null for a channel that is gone', async () => {
+    await expect(
+      repo.findPushRouting('0c000000-0000-4000-8000-000000000080'),
+    ).resolves.toBeNull();
+  });
+
   it('delete leaves another chapter channel in place', async () => {
     await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.delete(CHANNEL_A, CHAPTER_B),

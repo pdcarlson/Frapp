@@ -67,8 +67,8 @@ const MAX_PAGED_ROWS = 1_000_000;
  * Errors are **thrown**, never swallowed, so partial reads cannot be mistaken
  * for complete ones. A failed page throws a `SupabaseQueryError`. A caller that
  * wants a different policy expresses it at its own call site
- * (`scheduled-jobs.repository.ts` catches and returns `[]`;
- * `chat-notification-preference.repository.ts` degrades one chunk).
+ * (`supabase-scheduled-jobs.repository.ts` catches and returns `[]`;
+ * `supabase-chat-notification-preference.repository.ts` degrades one chunk).
  *
  * @param limit Optional ceiling on rows read. Callers that need to distinguish
  * "complete" from "stopped early" pass `limit + 1` and compare the row count

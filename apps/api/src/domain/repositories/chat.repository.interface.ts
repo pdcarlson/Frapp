@@ -1,6 +1,7 @@
 import {
   ChatChannel,
   ChatChannelCategory,
+  ChatChannelPushRouting,
   ChatMessage,
   ChatMessageAction,
   ChatMessageAttachment,
@@ -94,6 +95,15 @@ export interface IChatChannelRepository {
     chapterId: string,
   ): Promise<{ id: string; required_permissions: string[] }[]>;
   findDm(chapterId: string, memberIds: string[]): Promise<ChatChannel | null>;
+  /** The id of the chapter's channel with this exact name, or null. */
+  findIdByName(chapterId: string, name: string): Promise<string | null>;
+  /**
+   * The push worker's routing columns for one channel, or null when it is
+   * gone. Keyed by id alone, because the Realtime `chat_messages` INSERT that
+   * triggers the read carries no chapter; the worker scopes everything after
+   * it by the returned `chapter_id`.
+   */
+  findPushRouting(channelId: string): Promise<ChatChannelPushRouting | null>;
   /**
    * Insert the 1:1 DM for a pair, or return the one a concurrent call inserted
    * first. The database holds one DM per chapter and pair (#2788), so two
@@ -220,6 +230,14 @@ export interface IChatMessageRepository {
    * of a 5xx.
    */
   create(data: Partial<ChatMessage>): Promise<ChatMessage>;
+  /**
+   * Insert a row whose `client_message_id` makes it idempotent, without
+   * reading it back. A unique violation is `'duplicate'` (another writer got
+   * there first); any other error throws.
+   */
+  insertIdempotent(
+    data: Partial<ChatMessage>,
+  ): Promise<'inserted' | 'duplicate'>;
   update(id: string, data: Partial<ChatMessage>): Promise<ChatMessage>;
 }
 

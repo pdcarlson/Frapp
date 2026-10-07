@@ -12,10 +12,8 @@
  */
 
 import { builtInChannelDefault, isDirectChannel } from '@repo/validation';
-import type {
-  ChatNotificationLevel,
-  ChatNotificationPreferenceRow,
-} from './chat-notification-preference.repository';
+import type { ChatNotificationLevel } from '#domain/entities/chat-notification-preference.entity';
+import type { ChatNotificationPreferenceRow } from '#domain/repositories/chat-notification-preference.repository.interface';
 
 /**
  * The parts of a `chat_channels` row the rules read. Structural, so both the

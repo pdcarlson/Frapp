@@ -347,3 +347,45 @@ describe('SupabaseChatMessageRepository — findByChannel since, a failed pivot 
     expect(failure).not.toBeInstanceOf(ChatMessageCursorNotFoundError);
   });
 });
+
+describe('SupabaseChatMessageRepository — insertIdempotent', () => {
+  function clientAnswering(error: unknown) {
+    const insert = jest.fn(() => Promise.resolve({ error }));
+    const client = {
+      from: jest.fn(() => ({ insert })),
+    } as unknown as FrappSupabaseClient;
+    return { client, insert };
+  }
+
+  const row = {
+    channel_id: 'channel-1',
+    sender_id: 'sender-1',
+    content: 'mirrored',
+    client_message_id: 'audit:audit-1',
+  };
+
+  it('inserts without reading the row back', async () => {
+    const { client, insert } = clientAnswering(null);
+
+    await expect(
+      new SupabaseChatMessageRepository(client).insertIdempotent(row),
+    ).resolves.toBe('inserted');
+    expect(insert).toHaveBeenCalledWith(row);
+  });
+
+  it('reports a unique violation as a duplicate rather than throwing', async () => {
+    const { client } = clientAnswering({ code: '23505', message: 'dup' });
+
+    await expect(
+      new SupabaseChatMessageRepository(client).insertIdempotent(row),
+    ).resolves.toBe('duplicate');
+  });
+
+  it('throws any other error as a SupabaseQueryError', async () => {
+    const { client } = clientAnswering({ code: '42501', message: 'denied' });
+
+    await expect(
+      new SupabaseChatMessageRepository(client).insertIdempotent(row),
+    ).rejects.toBeInstanceOf(SupabaseQueryError);
+  });
+});

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { ChatNotificationLevel } from './chat-notification-preference.repository';
+import type { ChatNotificationLevel } from '#domain/entities/chat-notification-preference.entity';
 
 /** How long a cached channel row may inform an authorization decision, absent an explicit invalidation. */
 const CHANNEL_CACHE_TTL_MS = 30_000;
@@ -23,7 +23,7 @@ export interface CachedChannelRow {
  * its own) specifically so it can be imported by both `ChatPushWorkerModule`
  * and `ChatModule` without pulling the push worker's Realtime subscription
  * into the request path — the same reason `ChatModule` provides
- * `ChatNotificationPreferenceRepository` directly instead of importing
+ * `SupabaseChatNotificationPreferenceRepository` directly instead of importing
  * `ChatPushWorkerModule` wholesale.
  *
  * `member_ids` and `required_permissions` are authorization inputs, not

@@ -283,6 +283,15 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     return created;
   }
 
+  async insertIdempotent(
+    data: TablesInsert<'chat_messages'>,
+  ): Promise<'inserted' | 'duplicate'> {
+    const { error } = await this.supabase.from('chat_messages').insert(data);
+    if (error?.code === PG_UNIQUE_VIOLATION) return 'duplicate';
+    if (error) throw new SupabaseQueryError(error);
+    return 'inserted';
+  }
+
   async update(
     id: string,
     data: TablesUpdate<'chat_messages'>,
