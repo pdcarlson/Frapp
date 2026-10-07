@@ -426,8 +426,9 @@ export class EventService {
   ): Promise<void> {
     const payloads = this.buildOccurrencePayloads(parent, skipBefore);
     // Concurrent rather than one awaited create per date, so a long series is
-    // not N sequential round-trips. `Promise.all`, not `allSettled`: a failed
-    // insert must reject the request, not leave a silently short series.
+    // not N sequential round-trips. `Promise.all`, not `allSettled`, so a failed
+    // insert fails the request instead of reporting success. It is not atomic:
+    // the parent and the inserts that landed stay written (#3235).
     await Promise.all(
       payloads.map((payload) => this.eventRepo.create(payload)),
     );
