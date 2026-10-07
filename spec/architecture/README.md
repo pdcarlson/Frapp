@@ -11,7 +11,7 @@
 | Web App        | Next.js (App Router), Tailwind, ShadCN UI    | `apps/web` at app.frapp.live. Admin dashboard.                                                                        |
 | Mobile App     | Expo (React Native), Expo Router             | `apps/mobile`. Signet StyleSheet tokens; NativeWind removed. iOS + Android.                                           |
 | Developer docs | Markdown in-repo                             | [`docs/guides/`](../../docs/guides/README.md) + `spec/`. No deployed docs web app; a public site may return post-launch. |
-| API            | NestJS 11, TypeScript (strict)               | `apps/api`. REST + WebSocket gateway.                                                                                 |
+| API            | NestJS 11, TypeScript (strict)               | `apps/api`. REST only; realtime is Supabase Realtime.                                                                 |
 | Database       | PostgreSQL (via Supabase)                    | Supabase-hosted Postgres. Migrations via Supabase CLI.                                                                |
 | Auth           | Supabase Auth                                | Email/password, magic link, Google, Apple.                                                                            |
 | Storage        | Supabase Storage                             | Private buckets ([§7](#7-storage-supabase-storage)), all declared in migrations. Signed URLs only — no public access.                          |
@@ -28,7 +28,7 @@
 ```
 Frapp/
   apps/
-    api/            # NestJS backend (REST + WebSockets)
+    api/            # NestJS REST API (realtime is Supabase Realtime)
     web/            # Next.js admin dashboard (app.frapp.live)
     mobile/         # Expo mobile app (iOS + Android)
     landing/        # Next.js marketing site (frapp.live)
@@ -58,7 +58,7 @@ Frapp/
 ### 3.1 API (`apps/api`)
 
 - **Framework:** NestJS 11 (Node.js, TypeScript — `apps/api` is not full `strict`; see §11).
-- **Role:** REST API + WebSocket gateway. All business logic lives here.
+- **Role:** REST API. All business logic lives here. Realtime goes through Supabase Realtime, not the API.
 - **Architecture pattern:** Layered — Interface (controllers, DTOs, guards) -> Application (services/use-cases) -> Infrastructure (repositories, Supabase client, external adapters) -> Domain (entities, interfaces, business rules).
 - **Database access:** Supabase JS client (`@supabase/supabase-js`) for Postgres queries, storage operations, and auth admin operations. No ORM; raw SQL or query builder via Supabase.
 - **Security:**
