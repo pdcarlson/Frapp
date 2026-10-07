@@ -57,7 +57,7 @@ mechanism, and how the mock deliberately differs from the real contract:
 
 ```
 apps/
-  api/        — NestJS backend (REST + WebSockets)
+  api/        — NestJS REST API (realtime is Supabase Realtime)
   web/        — Next.js admin dashboard (app.frapp.live)
   mobile/     — Expo mobile app (iOS + Android)
   landing/    — Next.js marketing site (frapp.live)
