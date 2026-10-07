@@ -1,8 +1,8 @@
 import type { Config } from "tailwindcss";
-import { frappTokens } from "./tokens";
+import { motionTokens } from "./motion";
 
-const motionDuration = frappTokens.motion.duration;
-const motionEasing = frappTokens.motion.easing;
+const motionDuration = motionTokens.duration;
+const motionEasing = motionTokens.easing;
 
 /**
  * Reads a color token straight out of its custom property, whatever format the
@@ -99,10 +99,8 @@ const config: Partial<Config> = {
          * is the same pass that took `royal-blue`, the `side-*` family and the
          * `primary` 50–950 ramp — see git history for the values.
          *
-         * `tokens.ts` still carries the honest bone/bronze/ink names and stays:
-         * `accent.ts` reads `frappTokens.color.brand.bronze` as the accent
-         * engine's fallback, and both this file and `signet.ts` read its motion
-         * scale. What went is the Tailwind SCALE, not the token module.
+         * The bone/bronze/ink token module behind these scales, `tokens.ts`,
+         * went later (#3227). Its motion scale lives on in `./motion.ts`.
          */
 
         /* ── Semantic tokens (mapped to CSS variables for ShadCN compatibility) ── */
