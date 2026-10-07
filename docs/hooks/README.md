@@ -124,18 +124,11 @@ Core expectations for mutation hooks:
 - propagating API errors to the hook consumer
 - preventing immediate remount refetches to guard stale-time behavior
 
-Current targeted specs include:
-
-- `use-documents.spec.tsx` — query + mutation request-shape and error behavior
-- `use-roles.spec.tsx` — query success/error behavior for `GET /v1/roles`
-- `use-attendance.spec.tsx` — query success/error/disabled behavior for attendance
-- `use-members.spec.tsx` — query success/error behavior for `GET /v1/members`
-
 ## Running hook tests
 
 From `packages/hooks` run:
 
-- `npx vitest run --config packages/hooks/vitest.config.ts packages/hooks/src/use-roles.spec.tsx` for focused `useRoles` coverage
+- `npx vitest run src/use-roles.spec.tsx` for focused `useRoles` coverage
 - `npm exec --workspace packages/hooks vitest run src/use-documents.spec.tsx` for focused `useDocuments` coverage
 - `npx vitest run src/use-invoices.spec.tsx` for the focused invoice hook tests
 - `npm exec --workspace packages/hooks vitest run src/use-attendance.spec.tsx` for focused `useAttendance` coverage
