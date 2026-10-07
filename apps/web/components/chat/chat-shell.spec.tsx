@@ -369,7 +369,7 @@ vi.mock("@repo/hooks", async () => ({
 
 // Captured so the hide failure (#2303) is observable; no other case here
 // asserts on a toast.
-vi.mock("@/hooks/use-toast", () => ({
+vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
