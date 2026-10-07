@@ -103,7 +103,7 @@ import { ReconnectPill } from "./reconnect-pill";
 import { BlockListNotice } from "./block-list-notice";
 import { useUnblockFlow } from "./use-unblock-flow";
 import { compactControlClassName } from "@/components/shared/table-controls";
-import type { SlashCommand } from "@repo/chat-integrations";
+import type { SlashCommand } from "@repo/chat-core/integrations";
 import type { ChatNotificationLevel } from "@repo/hooks";
 
 interface DirectoryMember {

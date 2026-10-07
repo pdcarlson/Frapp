@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ChatService } from '../../application/services/chat.service';
+import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
+import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
 import { ChatBookmarkService } from '../../application/services/chat-bookmark.service';
 import { ChatReportService } from '../../application/services/chat-report.service';
 import { ChatSidebarService } from '../../application/services/chat-sidebar.service';
@@ -92,6 +94,11 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
       useClass: SupabaseChatNotificationPreferenceRepository,
     },
     ChatService,
+    // Split out of `ChatService` (#1380): the chat buckets' objects, and a
+    // member's own notification levels. Neither touches the send hot path's
+    // ordering; `ChatService.sendMessage` calls into the first.
+    ChatAttachmentService,
+    ChatNotificationPreferenceService,
     // Bookmarks (#462) share this module's wiring but not `ChatService` — see
     // the service's own docblock for why they are a separate class.
     ChatBookmarkService,

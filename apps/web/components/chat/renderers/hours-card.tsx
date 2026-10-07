@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatMinutesExact } from "@repo/formatting";
 import type { ChatMessage } from "@repo/chat-core/types";
-import type { HoursPayload } from "@repo/chat-integrations";
+import type { HoursPayload } from "@repo/chat-core/integrations";
 
 interface HoursCardProps {
   message: ChatMessage;

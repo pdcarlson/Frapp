@@ -1,31 +1,21 @@
 /**
- * Chat-integrations registry.
+ * Chat integrations: the slash-command catalog, the input parsers, and the
+ * rich-message payload shapes (`@repo/chat-core/integrations`).
  *
- * This package holds the slash-command catalog, the input parsers, and the
- * payload shapes. `apps/web` and `@repo/chat-core` are the dependents. Rich
- * renderers themselves live in the apps (they're framework-bound — React for
- * web, Expo for mobile). Only web's read the contract declared here: mobile
- * cannot depend on this package at all (its `require` condition points at an
- * unbuilt `dist/`, #989), so its card components redeclare the wire shapes off
- * `@repo/chat-core`. A wire change therefore has to be carried to both.
+ * Framework-free. `./dispatch` and `apps/web` read it; the rich renderers live
+ * in the apps (React on web, React Native on mobile). Until #3228 this was its
+ * own package, `@repo/chat-integrations`, whose `types` and `require` export
+ * conditions pointed at a `dist/` nothing built (#989, #918), so
+ * `chat-core/polls` redeclared the poll shapes instead of importing them (and
+ * mobile read them from there). As a
+ * source-only chat-core subpath it has no such conditions, and `./polls`
+ * re-exports the poll shapes from `./payloads`.
  *
  * Chunk 04 shipped the catalog scaffold (all commands `implemented: false`);
  * Chunk 05 flips `/poll` and `/announce` to `implemented: true` and adds the
  * dispatch + parsers below.
  */
 
-// Re-exports without the `.js` extension because the package is consumed via
-// bundler (Turbopack in dev, tsc in build) and the dev path resolves
-// extensionless TS imports. The tsconfig sets `moduleResolution: "Bundler"`
-// so the build matches.
-//
-// #236 moved the other built packages to NodeNext so their `require` condition
-// serves real CommonJS. This one is deliberately left behind: switching it
-// means `.js` specifiers, and Turbopack cannot resolve `./parsers.js` against
-// `parsers.ts`, so `npm run build -w apps/web` fails outright. Its emitted dist
-// is not loadable by Node — but nothing loads it that way, since `apps/api`
-// does not depend on this package at all. Fixing that properly means a dual
-// build, which is its own change.
 export * from "./parsers";
 export * from "./payloads";
 
@@ -255,19 +245,4 @@ export function parseSlashInput(raw: string): ParsedSlashInput {
   }
   const command = match[1] ? match[1].toLowerCase() : null;
   return { isSlash: true, command, args: (match[2] ?? "").trim(), raw };
-}
-
-/**
- * Guard-parses a numeric slash argument. Returns `null` for anything that
- * isn't a finite number so callers never propagate `NaN` (master-plan
- * input-handling rule). Chunk 05 commands that take counts/amounts use this.
- */
-export function parseNumericArg(
-  token: string | undefined | null,
-): number | null {
-  if (token == null) return null;
-  const trimmed = token.trim();
-  if (trimmed.length === 0) return null;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
 }

@@ -170,7 +170,7 @@ export const COPY_WALKS = [
       "apps/web/components/discord-import/connect-step.tsx",
       "packages/hooks/src/use-discord-connection.ts",
       "packages/validation/src/ops-nudges.ts",
-      "packages/chat-core/src/index.ts",
+      "packages/chat-core/src/integrations/index.ts",
       "packages/org-archetypes/src/index.ts",
     ],
     unreached: /^apps\/web\/tests\//,

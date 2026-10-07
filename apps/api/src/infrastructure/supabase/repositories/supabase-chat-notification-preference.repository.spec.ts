@@ -550,8 +550,8 @@ describe('SupabaseChatNotificationPreferenceRepository — tenant scope', () => 
    * so these `.eq()` calls are the entire tenant boundary. A member of two
    * chapters clearing an override in one must not lose it in the other.
    *
-   * Pinned here rather than in `chat.service.spec.ts`, where the repository is
-   * mocked and the filter chain is therefore invisible.
+   * Pinned here rather than in `chat-notification-preference.service.spec.ts`,
+   * where the repository is mocked and the filter chain is therefore invisible.
    */
   it('deleteKindLevel binds user, chapter and scope', async () => {
     await harness.expectTenantScoped(CHAPTER_B, () =>

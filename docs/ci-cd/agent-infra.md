@@ -308,7 +308,7 @@ packages set `"rootDir": "src"` in their own `tsconfig.json` (not in
 `@repo/typescript-config/base.json`: TypeScript resolves `rootDir` relative to the file that
 declares it, so a shared `./src` would point at `packages/typescript-config/src`). The emitting
 set is `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/observability`, `@repo/chapter-theme`,
-`@repo/org-archetypes`, `@repo/chat-integrations` (each `"build": "tsc"`), and `@repo/api-sdk`
+`@repo/org-archetypes` (each `"build": "tsc"`), and `@repo/api-sdk`
 (`outDir` is set even though `check-types` passes `--noEmit` and there is no `build` script —
 do not add a build as a side effect of this pin). Non-emitting packages (`@repo/theme`,
 `@repo/hooks`, `@repo/chat-core`, which the apps consume as source) and the Next / Expo apps stay `noEmit`. `apps/api` sets `"rootDir": "./src"`

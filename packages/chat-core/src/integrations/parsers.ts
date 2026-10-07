@@ -615,10 +615,10 @@ export function parseRushArgs(args: string): ParseResult<RushArgs> {
 /**
  * Guard-parses a numeric slash argument. Returns `null` for anything that
  * isn't a finite number so callers never propagate `NaN` (master-plan
- * input-handling rule). Re-exported here for parser internals; the public
- * entry point lives in `./index.ts`.
+ * input-handling rule). Commands that take counts or amounts use this;
+ * `./index` re-exports it with the rest of this module.
  */
-function parseNumericArg(token: string | undefined | null): number | null {
+export function parseNumericArg(token: string | undefined | null): number | null {
   if (token == null) return null;
   const trimmed = token.trim();
   if (trimmed.length === 0) return null;

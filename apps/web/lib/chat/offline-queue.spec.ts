@@ -100,7 +100,7 @@ function flushContext(scope: ChatScope, outbox: OutboxStore) {
 }
 
 describe("dexieOutboxStore", () => {
-  it("is an OutboxStore imported from the adapters subpath, not the package barrel", () => {
+  it("is an OutboxStore imported from the adapters subpath", () => {
     const store: OutboxStore = createDexieOutboxStore(ALICE);
     expect(Object.keys(store).sort()).toEqual(
       [
