@@ -490,9 +490,9 @@ function SettingsPageContent() {
   const workflows = config?.workflows ?? [];
   const dues = config?.dues ?? DEFAULT_DUES;
 
-  // #1157: the preview swatch sits on a Signet card, so the WCAG check must
-  // run against that dark surface (with a dark-legible fallback), not the
-  // resolver's white default.
+  // #1157: the preview swatch sits on a Signet card, so the WCAG check runs
+  // against that dark surface, with a fallback legible on it. The resolver
+  // requires both and throws on a non-hex value, so these stay constants.
   const accent = resolveChapterAccentColor(accentDraft || undefined, {
     background: signetDarkTokens.color.surface.card,
     fallbackAccent: signetDarkTokens.color.gold.house,

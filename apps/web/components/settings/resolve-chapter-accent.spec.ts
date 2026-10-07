@@ -96,6 +96,22 @@ describe("resolveChapterAccentColor — per-surface resolution", () => {
     expect(result.resolvedAccent).not.toBe("#7A5A2F");
     expect(result.contrastOnBackground).toBeGreaterThanOrEqual(4.5);
   });
+
+  it("keeps the requested fallback when nothing clears AA on the surface", () => {
+    // A mid-tone grey defeats both ends of the ladder; the resolver then
+    // emits what the caller asked for and says so, rather than inventing one.
+    const result = resolveChapterAccentColor("#777777", {
+      background: "#767676",
+      fallbackAccent: "#7A5A2F",
+    });
+
+    expect(result).toMatchObject({
+      resolvedAccent: "#7A5A2F",
+      fallbackApplied: true,
+      reason: "insufficient_contrast",
+    });
+    expect(result.contrastOnBackground).toBeLessThan(4.5);
+  });
 });
 
 describe("resolveChapterAccentColor — caller contract", () => {

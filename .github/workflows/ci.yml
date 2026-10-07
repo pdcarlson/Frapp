@@ -196,10 +196,10 @@ jobs:
       - name: Shared validation package tests
         run: npm run test -w @repo/validation
 
-      # Same reasoning as above. The contrast math here is imported by both
-      # `packages/theme` and `packages/chapter-theme`; each now has a suite of
-      # its own (below), but those pin their callers' behaviour, not this
-      # package's, so it still needs its own step.
+      # Same reasoning as above. The contrast math here is imported by
+      # `packages/chapter-theme` and the web Settings accent resolver; their
+      # suites pin their callers' behaviour, not this package's, so it still
+      # needs its own step.
       - name: Shared color package tests
         run: npm run test -w @repo/color
 
