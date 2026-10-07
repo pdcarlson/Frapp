@@ -45,7 +45,7 @@ export const F = {
   msgRoleGatedOpen: "10000005-0000-0000-0000-000000000001",
   msgGroupDM: "10000006-0000-0000-0000-000000000001",
   msgPublicB: "10000007-0000-0000-0000-000000000001",
-  // One invoice per chapter, so the default-deny tier below has both a
+  // One invoice per chapter, so the default-deny tier in `tiers/chat-black-box.mjs` has both a
   // same-chapter row (the one a naive "scope by tenant" policy would expose)
   // and a cross-chapter row to deny.
   invA: "20000001-0000-0000-0000-000000000001",

@@ -5,17 +5,17 @@ import { canReadAs } from "../probe.mjs";
 // ─── chat_message_actions read enforcement (FRA-38) ─────────────────────────
 //
 // The membership-scoped SELECT policy delegates to can_read_chat_message(). The
-// black-box tiers below stand up an `rls_probe` role because RLS does not apply
-// to superusers or table owners — a non-owner is required to be subject to a
-// policy at all. That role is deliberately GRANTED `authenticated` (see the
-// grant below); without that membership every `TO authenticated` policy stops
+// black-box tiers (`chat-black-box.mjs`) stand up an `rls_probe` role because
+// RLS does not apply to superusers or table owners — a non-owner is required to
+// be subject to a policy at all. That role is deliberately GRANTED `authenticated` (see the
+// grant in `chat-black-box.mjs`); without that membership every `TO authenticated` policy stops
 // applying to it and every read silently falls back to default-deny, so the
 // visibility-set assertions would pass on empty results for the wrong reason.
 // Real-JWT enforcement (claims beyond `sub`/`role`) still lives in the NestJS
 // Jest tier. This tier is the layer under that: it tests the SECURITY DEFINER
 // predicate directly —
 // seeding two chapters with one channel per type — and drive it by swapping the
-// auth.uid() stub per scenario. Combined with the shape assertion above (the policy
+// auth.uid() stub per scenario. Combined with the shape assertion in `rls-smoke.mjs` (the policy
 // wires `auth.role()='authenticated' AND can_read_chat_message(message_id)`), a
 // correct predicate closes the cross-tenant / private / DM / role-gated read leak.
 

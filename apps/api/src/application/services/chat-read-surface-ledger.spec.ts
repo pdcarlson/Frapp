@@ -50,7 +50,9 @@ import * as ts from 'typescript';
  * present, not commented out, in a spec that skips and focuses nothing. A
  * policy's proof can instead be a scenario in the PGlite harness, which reads
  * the table as a non-owner role and is the only tier that runs RLS; it must
- * still be a `name:` in that file. A surface only a client can mask (a
+ * still be a `name:` in one of its modules under `scripts/pglite/`, every one
+ * of which `pglite-tiers-registered.test.mjs` holds reachable from the
+ * entry, `run.mjs`, so a name found there is a scenario that runs. A surface only a client can mask (a
  * Broadcast the server relays as sent) names the shared client rule's test in
  * `packages/`; that proves the rule, not that every client applies it, which
  * each client's own tests cover. That cannot prove the test asserts the

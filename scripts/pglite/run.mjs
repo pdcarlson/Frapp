@@ -32,7 +32,7 @@
 // Extensions: a migration may only use what is registered on the PGlite
 // constructor in `harness.mjs` — `pgcrypto` and `vector` (pgvector) today. An unregistered
 // extension fails with `extension "X" is not available`, which reads like a
-// PGlite limitation but is a one-line fix here. Registering the extension is
+// PGlite limitation but is a one-line fix there. Registering the extension is
 // the preferred answer; carving migrations out of this gate is not. Since
 // PGlite 0.5 that can also mean adding a dependency: only `contrib/*` still
 // ships inside the main package, and everything else lives in its own

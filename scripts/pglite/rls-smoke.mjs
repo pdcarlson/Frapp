@@ -2,16 +2,23 @@
 //
 // Frapp's data model is default-deny RLS + service-role bypass: the API holds
 // the service-role key and enforces access control in NestJS, while direct
-// Supabase-client access is denied unless a policy explicitly opens it. This
-// tier guards that invariant by asserting policy *presence* and shape. The
-// black-box tier further down then reads the tables as a non-owner role to
-// check that the policies actually behave; what neither can do is mint a real
-// GoTrue JWT, which stays with the NestJS Jest tier.
+// Supabase-client access is denied unless a policy explicitly opens it. These
+// assertions guard that invariant by asserting policy *presence* and shape. The
+// black-box tier (`tiers/chat-black-box.mjs`) then reads the tables as a
+// non-owner role to check that the policies actually behave; what neither can
+// do is mint a real GoTrue JWT, which stays with the NestJS Jest tier.
 
 // Tables intentionally exempt from the "RLS enabled" invariant. Empty today —
 // all 48 tables enable RLS. Add a table here ONLY with a reviewed justification
 // (e.g. a stateless lookup view), and prefer keeping RLS on with a deny policy.
 export const RLS_EXEMPT_TABLES = new Set([]);
+
+// A policy whose `roles` is exactly this binds no client: `supabase_auth_admin`
+// is the role Supabase Auth runs the custom-access-token hook as. Every other
+// role list counts as client-reachable, `{public}` above all. Shared by the
+// policy inventory's tautology tripwire (`tiers/policy-inventory.mjs`) and the
+// default-deny tier's catalog check (`tiers/chat-black-box.mjs`).
+export const AUTH_ADMIN_ONLY = "{supabase_auth_admin}";
 
 export const RLS_SMOKE = [
   {
@@ -90,8 +97,9 @@ export const RLS_SMOKE = [
     // can_read_chat_message(message_id) IS NOT NULL` is constant-true (the helper
     // is an `exists`, never null), and De Morgan spells an OR using only `AND`
     // and `NOT`. The real enforcement guarantee comes from the black-box tier
-    // below, which reads the table as an unprivileged role; treat this assertion
-    // as "the policy still looks like what we wrote", nothing stronger.
+    // (`tiers/chat-black-box.mjs`), which reads the table as an unprivileged
+    // role; treat this assertion as "the policy still looks like what we
+    // wrote", nothing stronger.
     //
     // `message_id` is matched with an optional table qualifier because hoisting
     // the helper into an initplan — `(select can_read_chat_message(message_id))`,
@@ -113,9 +121,10 @@ export const RLS_SMOKE = [
   {
     name: "chat_message_actions SELECT withholds a blocked member's reactions via chat_viewer_has_blocked (#2494)",
     // The same smoke-test caveat as the assertion above: this says the policy
-    // still carries the block clause, and the block-enforcement tier below is
-    // what proves the clause hides the right rows. Kept separate from the
-    // FRA-38 assertion so a lost block clause fails with its own name.
+    // still carries the block clause, and the block-enforcement tier in
+    // `tiers/chat-black-box.mjs` is what proves the clause hides the right
+    // rows. Kept separate from the FRA-38 assertion so a lost block clause
+    // fails with its own name.
     sql: `select pg_get_expr(polqual, polrelid) as using_expr
             from pg_policy p join pg_class c on c.oid = p.polrelid
            where c.relname = 'chat_message_actions'
@@ -209,7 +218,7 @@ export const RLS_SMOKE = [
     //
     // Order is asserted, not just membership: `pg_temp, public` would reinstate the
     // exact shadowing this exists to prevent. The repo-wide version of this check
-    // lives in the `security definer search_path` tier below and covers every such
+    // lives in `tiers/security-definer-search-path.mjs` and covers every such
     // function; this landmark stays because this one backs chat RLS and deserves its
     // own named assertion.
     ok: (rows) => {

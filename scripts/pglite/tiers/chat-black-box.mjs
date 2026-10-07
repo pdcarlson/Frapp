@@ -9,7 +9,7 @@ import {
   setAuth,
   signedIn,
 } from "../probe.mjs";
-import { AUTH_ADMIN_ONLY } from "./policy-inventory.mjs";
+import { AUTH_ADMIN_ONLY } from "../rls-smoke.mjs";
 import { readSeeded } from "./chat-read-enforcement.mjs";
 
 // ─── BLACK-BOX policy enforcement (FRA-38) ──────────────────────────────────
@@ -547,7 +547,7 @@ if (readSeeded) {
     // Scope, stated so nobody reads more into it than it proves: this covers
     // THESE TWO TABLES. A permissive policy added to any of the other ~46
     // RLS-enabled tables changes no assertion here — the every-public-table
-    // invariant further up checks `relrowsecurity`, not what the policies do.
+    // invariant (`schema-and-rls-smoke.mjs`) checks `relrowsecurity`, not what the policies do.
     // `chat_notification_preferences` is the known uncovered one: it carries a
     // client-reachable SELECT policy and only a name-set + tautology tripwire.
     //

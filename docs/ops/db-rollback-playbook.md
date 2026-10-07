@@ -2420,7 +2420,7 @@ A function body (#2521). It re-creates `get_channel_unread_counts` with one more
 
 **Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). Put the whole of section 1 of `20260823123000_chat_imported_kind_semantics.sql` (the `create or replace function public.get_channel_unread_counts` statement and the grant block after it) in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). Copy that body rather than retyping it: the rollback must keep `kind <> 'imported'`, `is distinct from` and `set search_path = public, pg_temp`, and dropping any of them is a different regression.
 
-The same PR removes the `#2521` landmark from `scripts/pglite/landmarks.mjs` and the "Unread and mention counts skip a blocked sender" tier, `scripts/pglite/tiers/unread-counts-blocked-sender.mjs`, which would fail against the old body, and sets `ChatController_getUnreadCounts_v1` in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` back to `open` against #2521, since its proof names a scenario that tier holds.
+The same PR removes the `#2521` landmark from `scripts/pglite/landmarks.mjs` and the "Unread and mention counts skip a blocked sender" tier, `scripts/pglite/tiers/unread-counts-blocked-sender.mjs` (with its `await import` line in `scripts/pglite/run.mjs`), which would fail against the old body, and sets `ChatController_getUnreadCounts_v1` in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` back to `open` against #2521, since its proof names a scenario that tier holds.
 
 **This is a safety regression, not a neutral rollback.** Afterwards a blocked member's messages and @-mentions raise the blocker's channel-row, mention and mobile app-icon badges again, onto threads that show only tombstones. Guideline 1.2 expects the block to hold, so don't roll back on a build that is under review or live in a store unless the same deploy puts something in its place.
 
@@ -2440,7 +2440,7 @@ drop function if exists public.remove_private_channel_member(uuid, uuid, uuid);
 drop function if exists public.remove_user_from_private_channels(uuid, uuid);
 ```
 
-The same PR removes the "Add and remove a PRIVATE channel's members (#1302)" tier, `scripts/pglite/tiers/private-channel-members.mjs`, which would fail without the functions.
+The same PR removes the "Add and remove a PRIVATE channel's members (#1302)" tier, `scripts/pglite/tiers/private-channel-members.mjs` (with its `await import` line in `scripts/pglite/run.mjs`), which would fail without the functions.
 
 **Membership written while the functions were live stays.** A rollback removes the way to change a PRIVATE channel's `member_ids`, not the members already added. They keep reading the channel, since every read goes through `canAccessChannel`'s `member_ids` check. Removing them afterwards would need a hand-written data migration, and nothing requires it. After the rollback, removing a member from the chapter no longer takes them off PRIVATE lists, so a re-invited member regains the channels they were in.
 

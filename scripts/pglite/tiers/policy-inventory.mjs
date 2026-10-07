@@ -1,4 +1,5 @@
 import { db, miss } from "../harness.mjs";
+import { AUTH_ADMIN_ONLY } from "../rls-smoke.mjs";
 
 // ─── Policy inventory (#977) ────────────────────────────────────────────────
 //
@@ -26,11 +27,6 @@ import { db, miss } from "../harness.mjs";
 // Asserted as an exact SET rather than a count: a bare count lets a dropped
 // policy be masked by an added one, which is the failure mode that matters — a
 // silently removed policy widens access without changing the total.
-// A policy whose `roles` is exactly this binds no client: `supabase_auth_admin`
-// is the role Supabase Auth runs the custom-access-token hook as. Every other
-// role list counts as client-reachable, `{public}` above all. Shared by the
-// tautology tripwire below and the default-deny tier's catalog check.
-export const AUTH_ADMIN_ONLY = "{supabase_auth_admin}";
 
 {
   const HOSTED_ONLY_POLICIES = 2;
