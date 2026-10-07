@@ -287,7 +287,18 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     data: TablesInsert<'chat_messages'>,
   ): Promise<'inserted' | 'duplicate'> {
     const { error } = await this.supabase.from('chat_messages').insert(data);
-    if (error?.code === PG_UNIQUE_VIOLATION) return 'duplicate';
+    // The same guard as `create`: a 23505 is the idempotency key only when
+    // the row carries the whole `idx_chat_messages_dedupe` triple. Any other
+    // unique violation (the import's external-id index, a supplied `id`) is
+    // an error, not a row that already landed.
+    if (
+      error?.code === PG_UNIQUE_VIOLATION &&
+      data.channel_id &&
+      data.sender_id !== undefined &&
+      data.client_message_id
+    ) {
+      return 'duplicate';
+    }
     if (error) throw new SupabaseQueryError(error);
     return 'inserted';
   }

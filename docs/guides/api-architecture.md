@@ -170,7 +170,7 @@ Example: adding a `polls` module.
 
 5. **Module wiring**
    - Create `PollModule` in `src/modules/poll/poll.module.ts`, providing controller, service, and repository implementation.
-   - Put nothing else under `src/modules/`. A worker belongs in `src/application/workers/` and its queries in a repository, like any service's; the `api-modules-wiring-only` dependency-cruiser rules fail any other file there.
+   - Put nothing else under `src/modules/`. A worker belongs in `src/application/workers/`, with its queries in a repository; the `api-modules-wiring-only` dependency-cruiser rules fail any other file there.
    - Import `PollModule` into `AppModule`.
 
 > **Tip:** Always start new features by updating the **specs** (`spec/product/`, `spec/behavior/`, `spec/architecture/README.md`). The API implementation should follow, not lead, the spec.

@@ -22,7 +22,11 @@ type Insert = (
  */
 function buildRepos(lookup: Lookup, insert?: Insert) {
   const insertCalls: Array<Record<string, unknown>> = [];
-  const findIdByName = jest.fn(lookup);
+  // The bridge reads only the id off `findByName`'s row.
+  const findByName = jest.fn(async () => {
+    const id = await lookup();
+    return id === null ? null : { id };
+  });
   const insertIdempotent = jest.fn(
     insert ??
       ((row: Record<string, unknown>) => {
@@ -31,7 +35,7 @@ function buildRepos(lookup: Lookup, insert?: Insert) {
       }),
   );
   return {
-    channels: { findIdByName },
+    channels: { findByName },
     messages: { insertIdempotent },
     insertCalls,
   };
@@ -80,7 +84,7 @@ describe('ChatBridgeWorkerService.handleAuditRow', () => {
     const { insertCalls } = repos;
     const service = await instantiate(repos);
     await service.handleAuditRow(baseRow);
-    expect(repos.channels.findIdByName).toHaveBeenCalledWith(
+    expect(repos.channels.findByName).toHaveBeenCalledWith(
       'chap-1',
       'chapter-audit',
     );

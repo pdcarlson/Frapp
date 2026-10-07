@@ -79,7 +79,6 @@ describe('ChannelAccessService', () => {
       findByChapter: jest.fn(),
       findByIds: jest.fn(),
       findDm: jest.fn(),
-      findIdByName: jest.fn(),
       findPushRouting: jest.fn(),
       createDm: jest.fn(),
       findByName: jest.fn(),

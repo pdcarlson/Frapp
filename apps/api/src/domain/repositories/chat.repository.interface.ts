@@ -95,8 +95,6 @@ export interface IChatChannelRepository {
     chapterId: string,
   ): Promise<{ id: string; required_permissions: string[] }[]>;
   findDm(chapterId: string, memberIds: string[]): Promise<ChatChannel | null>;
-  /** The id of the chapter's channel with this exact name, or null. */
-  findIdByName(chapterId: string, name: string): Promise<string | null>;
   /**
    * The push worker's routing columns for one channel, or null when it is
    * gone. Keyed by id alone, because the Realtime `chat_messages` INSERT that
@@ -113,8 +111,10 @@ export interface IChatChannelRepository {
   /**
    * The chapter's channel with this exact name, or `null`. Nothing makes a
    * name unique within a chapter, so more than one match is a query error,
-   * not a pick: call it only where a duplicate cannot exist yet, as
-   * onboarding does for the `general` channel it seeded moments earlier.
+   * not a pick. Onboarding calls it where a duplicate cannot exist yet, for
+   * the `general` channel it seeded moments earlier. The audit bridge calls it
+   * for `#chapter-audit` and treats that error as a skipped mirror (logged),
+   * which is how a duplicate `chapter-audit` channel stops the feed.
    */
   findByName(chapterId: string, name: string): Promise<ChatChannel | null>;
   create(data: Partial<ChatChannel>): Promise<ChatChannel>;
@@ -241,8 +241,9 @@ export interface IChatMessageRepository {
   create(data: Partial<ChatMessage>): Promise<ChatMessage>;
   /**
    * Insert a row whose `client_message_id` makes it idempotent, without
-   * reading it back. A unique violation is `'duplicate'` (another writer got
-   * there first); any other error throws.
+   * reading it back. A unique violation on the `(channel_id, sender_id,
+   * client_message_id)` dedupe index is `'duplicate'` (another writer got
+   * there first); any other error, another unique index's included, throws.
    */
   insertIdempotent(
     data: Partial<ChatMessage>,

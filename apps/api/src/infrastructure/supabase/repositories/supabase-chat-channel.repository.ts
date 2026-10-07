@@ -90,17 +90,6 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
     return data || [];
   }
 
-  async findIdByName(chapterId: string, name: string): Promise<string | null> {
-    const { data, error } = await this.supabase
-      .from('chat_channels')
-      .select('id')
-      .eq('chapter_id', chapterId)
-      .eq('name', name)
-      .maybeSingle();
-    if (error) throw new SupabaseQueryError(error);
-    return data?.id ?? null;
-  }
-
   async findPushRouting(
     channelId: string,
   ): Promise<ChatChannelPushRouting | null> {

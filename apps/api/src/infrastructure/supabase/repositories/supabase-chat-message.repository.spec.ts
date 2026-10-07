@@ -381,6 +381,21 @@ describe('SupabaseChatMessageRepository — insertIdempotent', () => {
     ).resolves.toBe('duplicate');
   });
 
+  it('throws a unique violation on a row without the dedupe key', async () => {
+    // Only the dedupe triple makes a 23505 mean "already landed"; without a
+    // `client_message_id` it is some other unique index, and the row is lost.
+    const { client } = clientAnswering({ code: '23505', message: 'dup' });
+    const withoutKey = {
+      channel_id: row.channel_id,
+      sender_id: row.sender_id,
+      content: row.content,
+    };
+
+    await expect(
+      new SupabaseChatMessageRepository(client).insertIdempotent(withoutKey),
+    ).rejects.toBeInstanceOf(SupabaseQueryError);
+  });
+
   it('throws any other error as a SupabaseQueryError', async () => {
     const { client } = clientAnswering({ code: '42501', message: 'denied' });
 

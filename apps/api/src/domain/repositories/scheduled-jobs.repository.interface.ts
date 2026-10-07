@@ -68,10 +68,12 @@ export interface StalePaletteRow {
 /**
  * Data access for the scheduled sweeps (`ScheduledJobsService`).
  *
- * Unlike every other repository here, these reads are cross-chapter: a sweep
- * runs across every chapter at once. Rather than add a cross-chapter variant to
- * three separate chapter-scoped repositories, the queries that only the
- * scheduler needs live behind this one port.
+ * These reads are cross-chapter: a sweep runs across every chapter at once.
+ * Rather than add a cross-chapter variant to three separate chapter-scoped
+ * repositories (events, invoices, tasks), the queries that only the scheduler
+ * needs live behind this one port. It is not the only unscoped port here:
+ * `IChapterDirectoryRepository`, `IChatPushDispatchRepository` and
+ * `IChatChannelRepository.findPushRouting` are too.
  *
  * Every `find*` returns `[]` on a read failure (logged): a sweep that cannot
  * read its candidates must not send a partial batch, and the next tick

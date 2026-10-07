@@ -150,10 +150,9 @@ export class ChatBridgeWorkerService
     try {
       let channelId: string | null;
       try {
-        channelId = await this.channels.findIdByName(
-          row.chapter_id,
-          'chapter-audit',
-        );
+        channelId =
+          (await this.channels.findByName(row.chapter_id, 'chapter-audit'))
+            ?.id ?? null;
       } catch (channelError) {
         logThrowable(
           this.logger,

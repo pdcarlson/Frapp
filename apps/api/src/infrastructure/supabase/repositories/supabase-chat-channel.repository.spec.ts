@@ -172,23 +172,6 @@ describe('SupabaseChatChannelRepository — tenant scope', () => {
     expect(foreign).toBeNull();
   });
 
-  it("findIdByName does not answer with another chapter's channel of the same name", async () => {
-    // Both chapters have a `general`. The audit bridge posts into whatever id
-    // this returns, so a missing chapter filter would mirror one chapter's
-    // audit trail into another's channel.
-    const id = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.findIdByName(CHAPTER_B, 'general'),
-    );
-
-    expect(id).toBe(CHANNEL_B);
-  });
-
-  it('findIdByName returns null when the chapter has no channel of that name', async () => {
-    await expect(
-      repo.findIdByName(CHAPTER_B, 'chapter-audit'),
-    ).resolves.toBeNull();
-  });
-
   it('findPushRouting reads the routing columns by id, with the row carrying its chapter', async () => {
     // Keyed by id alone by design (the Realtime INSERT that triggers it has no
     // chapter); the worker scopes everything after it by `chapter_id`, so

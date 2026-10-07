@@ -28,8 +28,9 @@ Interface → Application → Infrastructure → Domain.
 
 dependency-cruiser enforces this (`npm run check:dep-cruiser -- --workspace apps/api`, rules in
 `scripts/dependency-cruiser.cjs`, required CI check `dependency-cruiser`), including that nothing but
-a module file sits under `modules/` (`api-modules-wiring-only`), so a worker's queries go through a
-repository like any service's. It also requires code
+a module file sits under `modules/` (`api-modules-wiring-only`). The rule constrains where a file
+lives, not how it queries: a worker in `application/workers/` reads through repositories, as new
+service code should, but a few services still call the client directly (#3213). It also requires code
 outside `domain/` to import the domain through the `#domain/*` subpath (declared in
 `apps/api/package.json` `imports`), never by a relative `../../domain/...` path. Grandfathered
 violations, if any, are recorded in `scripts/dependency-cruiser-known-violations.json` (currently an
