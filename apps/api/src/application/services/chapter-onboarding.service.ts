@@ -9,17 +9,27 @@ import {
 } from './chapter-palette';
 import { buildCustomFieldRows } from './custom-field-provisioning';
 import { LEGAL_POLICY_VERSION, chapterTextMark } from '@repo/validation';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type {
-  FrappSupabaseClient,
-  TablesInsert,
-} from '../../infrastructure/supabase/database.types';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import type { Chapter } from '#domain/entities/chapter.entity';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
+import {
+  CHAT_CHANNEL_REPOSITORY,
+  CHAT_MESSAGE_REPOSITORY,
+  type IChatChannelRepository,
+  type IChatMessageRepository,
+} from '#domain/repositories/chat.repository.interface';
+import {
+  CHAPTER_CUSTOM_FIELD_REPOSITORY,
+  type IChapterCustomFieldRepository,
+} from '#domain/repositories/chapter-custom-field.repository.interface';
+import {
+  CHAPTER_DIRECTORY_REPOSITORY,
+  type IChapterDirectoryRepository,
+  type NewChapterDirectoryRequest,
+} from '#domain/repositories/chapter-directory.repository.interface';
 
 type Branding = Record<string, unknown>;
 
@@ -80,7 +90,14 @@ export class ChapterOnboardingService {
 
   constructor(
     private readonly chapterService: ChapterService,
-    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    @Inject(CHAPTER_CUSTOM_FIELD_REPOSITORY)
+    private readonly customFieldRepo: IChapterCustomFieldRepository,
+    @Inject(CHAT_CHANNEL_REPOSITORY)
+    private readonly channelRepo: IChatChannelRepository,
+    @Inject(CHAT_MESSAGE_REPOSITORY)
+    private readonly messageRepo: IChatMessageRepository,
+    @Inject(CHAPTER_DIRECTORY_REPOSITORY)
+    private readonly directoryRepo: IChapterDirectoryRepository,
     private readonly activation: ActivationService,
     private readonly legalAcceptance: LegalAcceptanceService,
   ) {}
@@ -153,11 +170,14 @@ export class ChapterOnboardingService {
     );
 
     // Best-effort: a failed custom-field / welcome / directory-request write
-    // must not roll back an otherwise successfully created chapter.
-    // `error`, not `warn`, for the same reason the inner branch uses it: a
-    // rejection here (fetch/DNS/TLS) is the same every-chapter seeding outage
-    // as a returned PostgREST error, and splitting the two levels would put
-    // half the failure surface below the alerting threshold.
+    // must not roll back an otherwise successfully created chapter, so each
+    // rejection (a PostgREST error the repository threw, or fetch/DNS/TLS) is
+    // logged here and nowhere else.
+    // The field seed logs at `error`, not `warn`: a failure is silent from the
+    // officer's side — onboarding still returns 201 — and it fails for *every*
+    // chapter, not one, since the rows are identical each time. A wrong
+    // conflict target or a renamed column would otherwise seed nothing
+    // indefinitely with no signal above debug noise.
     await this.provisionCustomFields(chapter.id, seed.customFields).catch(
       (err) =>
         logThrowable(
@@ -254,8 +274,7 @@ export class ChapterOnboardingService {
    * `buildCustomFieldRows`; the audit trail is not, matching how default roles
    * and channels are seeded.
    *
-   * `ignoreDuplicates` makes re-running provisioning a no-op instead of a
-   * unique-violation on `(chapter_id, key)`.
+   * Re-running provisioning is a no-op (see `seedDefaults`).
    */
   private async provisionCustomFields(
     chapterId: string,
@@ -272,32 +291,12 @@ export class ChapterOnboardingService {
     }
     if (rows.length === 0) return;
 
-    const { error } = await this.supabase
-      .from('chapter_custom_fields')
-      .upsert(rows, { onConflict: 'chapter_id,key', ignoreDuplicates: true });
-    if (error) {
-      // `error`, not `warn`: a failure here is silent from the officer's side —
-      // onboarding still returns 201 — and it fails for *every* chapter, not
-      // one, since the rows are identical each time. A wrong conflict target or
-      // a renamed column would otherwise seed nothing indefinitely with no
-      // signal above debug noise.
-      logThrowable(
-        this.logger,
-        'error',
-        'chapter_custom_fields seed insert failed',
-        error,
-      );
-    }
+    // A failure rejects to `onboard`, which logs it.
+    await this.customFieldRepo.seedDefaults(rows);
   }
 
   private async postWelcomeMessage(chapterId: string, branding: Branding) {
-    const { data: channel } = await this.supabase
-      .from('chat_channels')
-      .select('id')
-      .eq('chapter_id', chapterId)
-      .eq('name', 'general')
-      .maybeSingle();
-
+    const channel = await this.channelRepo.findByName(chapterId, 'general');
     if (!channel) return;
 
     // The chapter mark's text, not `greek_letters` directly: a chapter that
@@ -310,23 +309,12 @@ export class ChapterOnboardingService {
       ? `Welcome to ${identity}. Invite your chapter to get the conversation started.`
       : 'Welcome to your chapter. Invite your chapter to get the conversation started.';
 
-    const welcomeMessage: TablesInsert<'chat_messages'> = {
+    await this.messageRepo.create({
       channel_id: channel.id,
       sender_id: SYSTEM_SENDER_ID,
       content: welcome,
       kind: 'system_audit',
-    };
-    const { error } = await this.supabase
-      .from('chat_messages')
-      .insert(welcomeMessage);
-    if (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        'Welcome system_audit message insert failed',
-        error,
-      );
-    }
+    });
   }
 
   private async recordDirectoryRequest(
@@ -340,7 +328,7 @@ export class ChapterOnboardingService {
     effectiveArchetype: string,
   ) {
     const foundedAt = branding.founded_at;
-    const request: TablesInsert<'chapter_directory_requests'> = {
+    const request: NewChapterDirectoryRequest = {
       chapter_id: chapterId,
       requested_by: userId,
       org_letters: (branding.greek_letters as string | undefined) ?? null,
@@ -351,16 +339,6 @@ export class ChapterOnboardingService {
       founded_year: typeof foundedAt === 'number' ? foundedAt : null,
       archetype: effectiveArchetype,
     };
-    const { error } = await this.supabase
-      .from('chapter_directory_requests')
-      .insert(request);
-    if (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        'chapter_directory_requests insert failed',
-        error,
-      );
-    }
+    await this.directoryRepo.createRequest(request);
   }
 }

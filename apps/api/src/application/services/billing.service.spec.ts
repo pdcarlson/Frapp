@@ -228,6 +228,7 @@ describe('BillingService', () => {
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
+      updatePaletteIfSeedUnchanged: jest.fn(),
       applySubscriptionWebhook: jest
         .fn()
         .mockImplementation(
