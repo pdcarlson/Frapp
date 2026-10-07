@@ -15,7 +15,7 @@
 // WHAT IT CHECKS.
 // - A walk of apps/mobile's non-spec sources (app.json included): no whole
 //   word "Signet" and no signet- download filename anywhere but the comment
-//   a line starts with (the note on LINE_BREAK in ../lib/copy-lines.mjs
+//   a line starts with (the note on LINE_BREAK in ./helpers/copy-lines.mjs
 //   says why, and names the one blind spot). A design-system note that names
 //   Signet goes on its own comment line, not after code. The walk is what
 //   makes the pinned sites below not the whole story: a new screen that says
@@ -49,7 +49,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { copyMatches, inLeadingComment, LINE_BREAK, SIGNET_DOWNLOAD_NAME } from "../lib/copy-lines.mjs";
+import { copyMatches, inLeadingComment, LINE_BREAK, SIGNET_DOWNLOAD_NAME } from "./helpers/copy-lines.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const MOBILE_ROOT = join(REPO_ROOT, "apps/mobile");

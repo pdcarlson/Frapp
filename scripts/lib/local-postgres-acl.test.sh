@@ -5,7 +5,8 @@
 #
 # Hermetic: `docker` is stubbed, so no daemon, no containers and no database are needed, and
 # nothing outside a mktemp dir is touched. Runs under the same `set -euo pipefail` as
-# local-dev-setup.sh. No CI job runs this yet — wiring one up is tracked separately.
+# local-dev-setup.sh. CI runs it in `ci-scripts-tests`, through scripts/ci/__tests__/shell-suites.test.mjs,
+# which picks up every *.test.sh (#802).
 #
 # Most cases here are regression guards for a specific reviewed failure, not coverage for its
 # own sake. The load-bearing ones: a lone FOREIGN stack must never be substituted (repairing
@@ -124,7 +125,8 @@ STUB_STOPPED=''
 
 echo
 echo "frapp_supabase_db_container_name — TOP-LEVEL project_id only"
-d=$(mktemp -d)/MyDir; mkdir -p "$d/supabase"
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+d=$tmp/MyDir; mkdir -p "$d/supabase"
 check "no config.toml -> basename"                "supabase_db_MyDir" 0 "$(frapp_supabase_db_container_name "$d")" 0
 printf '[db]\nport = 54322\n' >"$d/supabase/config.toml"
 check "config without project_id -> basename"     "supabase_db_MyDir" 0 "$(frapp_supabase_db_container_name "$d")" 0
