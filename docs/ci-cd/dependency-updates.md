@@ -15,11 +15,14 @@ patch updates are grouped into **one** PR (`npm-minor-and-patch`); majors are de
 ungrouped so each arrives as its own reviewable diff. Every Dependabot PR costs a babysit cycle under
 the [Autonomous PR lifecycle](../../AGENTS.md), which is why grouping is aggressive.
 
-**The exceptions to "majors arrive alone": the `vitest` and `sentry` groups.** The `sentry` group
+**The exceptions to "majors arrive alone": the `vitest`, `sentry` and `stripe-js` groups.** The `sentry` group
 (`@sentry/nestjs` + `@sentry/nextjs`, which pin `@sentry/core` and `@sentry/node` exactly) groups
 majors only, since their minors already share `npm-minor-and-patch`; its `sentry-security` twin
 covers the security lane at every update type. It replaced the Sentry 11 hold when #2722 landed:
 Sentry 11 had arrived as two single-package PRs (#2712, #2714), and neither could go green.
+The `stripe-js` group (`@stripe/stripe-js` + `@stripe/react-stripe-js`, whose peer range admits one
+stripe-js major) has the same shape, majors-only plus a `stripe-js-security` twin, for the same
+reason: Stripe.js 10 arrived as #3191 and #3192, and each left a second stripe-js in the tree.
 
 **The `vitest` group.** `vitest` and
 `@vitest/coverage-v8` are grouped at *every* update type, because they peer-require each other at an
