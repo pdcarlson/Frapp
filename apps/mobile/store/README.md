@@ -56,13 +56,13 @@ listing text below (description, review notes) with them. A build made before
 step 2 merged still says Signet. Before submitting, check that `expo.name` is
 `Frapp` in `app.json` at the build's commit, or that the installed TestFlight
 build's home-screen name reads Frapp.
-[`frapp-mobile-copy.test.mjs`](../../../scripts/ci/__tests__/frapp-mobile-copy.test.mjs)
+[`frapp-naming.test.mjs`](../../../scripts/ci/__tests__/frapp-naming.test.mjs)
 fails CI when a line of `apps/mobile`'s source says Signet outside the comment
 the line starts with. It can't see Signet on a line that itself starts like a
 comment (a template or JSX text line beginning `*` or `//`), it reads the
-source rather than the built binary, and text the server sends (API messages,
-the system actor's name) moves with ADR-25's later steps, so look at the build
-itself too. The bundle id and Android package (`live.frapp.mobile`), slug,
+source rather than the built binary, so look at the build itself too. Text the
+server sends (API messages, the system actor's name) moved in ADR-25's step 3,
+and the same test's API walk and system-actor pins keep it there. The bundle id and Android package (`live.frapp.mobile`), slug,
 scheme, and every public URL are **frapp** permanently; the full list is
 [`brand-identity.md` § 1](../../../spec/ui/brand-identity.md#1-identity). The
 trademark record is on #1901; this file is the listing paste.

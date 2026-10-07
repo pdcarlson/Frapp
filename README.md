@@ -87,7 +87,7 @@ The canonical table is
 The product is **Frapp** ([ADR-25](spec/architecture/adr/adr-25.md), 2026-09-23). **Signet** is
 the design system's internal name, so you'll see it in tokens (`--signet-*`), file names and
 design-system specs. It never appears in user-visible text: ADR-25's code steps have all landed,
-and the `frapp-*-copy` locks fail a Signet string in any surface's copy.
+and `scripts/ci/__tests__/frapp-naming.test.mjs` fails a Signet string in any surface's copy.
 Code identifiers, the root npm package name, the Expo `slug`, the iOS bundle id
 (`live.frapp.mobile`) and the domains are `frapp` permanently. The binding rule is
 [`spec/ui/brand-identity.md` § 1](spec/ui/brand-identity.md#1-identity).
