@@ -104,7 +104,7 @@ You can open Supabase Studio at:
 
 When `supabase start` finishes, it prints the local project URL and keys (`API URL`, `anon key`, `service_role key`) — use those when filling Infisical `dev` or when building `.env.local` manually.
 
-**Fallback:** create `.env.local` per app from those values and `docs/internal/environment/ENV_REFERENCE.md`, then run the non-Infisical commands in [`docs/internal/environment/LOCAL_DEV.md`](../internal/environment/LOCAL_DEV.md).
+**Fallback:** create `.env.local` per app from those values and `docs/internal/environment/ENV_REFERENCE.md`, then follow [`LOCAL_DEV.md` § Fallback without Infisical](../internal/environment/LOCAL_DEV.md#fallback-without-infisical) (the required Stripe values and the non-Infisical commands).
 
 > **Warning:** Never commit `.env.local` files. They contain real secrets. All staging and production secrets are managed in Infisical — see `docs/internal/environment/SECRETS_MANAGEMENT.md`.
 

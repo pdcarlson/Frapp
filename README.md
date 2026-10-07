@@ -110,4 +110,4 @@ How `spec/` relates to code, and what to do when they disagree: [`AGENTS.md` § 
 - **Set up a machine and run the stack:** [docs/guides/getting-started.md](docs/guides/getting-started.md), the one step-by-step setup, from clone to a healthy API.
 - **Per-app commands, no-Infisical fallback, mobile, and URLs:** [docs/internal/environment/LOCAL_DEV.md](docs/internal/environment/LOCAL_DEV.md).
 - **Working on a change:** [CONTRIBUTING.md](CONTRIBUTING.md).
-- **Environment model and variables:** [spec/environments/README.md](spec/environments/README.md).
+- **Environment model:** [spec/environments/README.md](spec/environments/README.md). Every variable, per app and environment: [ENV_REFERENCE.md](docs/internal/environment/ENV_REFERENCE.md).
