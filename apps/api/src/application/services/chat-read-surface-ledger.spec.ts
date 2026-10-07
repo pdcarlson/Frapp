@@ -50,7 +50,10 @@ import * as ts from 'typescript';
  * present, not commented out, in a spec that skips and focuses nothing. A
  * policy's proof can instead be a scenario in the PGlite harness, which reads
  * the table as a non-owner role and is the only tier that runs RLS; it must
- * still be a `name:` in that file. A surface only a client can mask (a
+ * still be a `name:` in one of its modules under `scripts/pglite/`, every one
+ * of which `pglite-filter-coverage.test.mjs` holds loaded by the entry,
+ * `run.mjs`. That proves the module loads, not that its code runs the
+ * scenario the name belongs to. A surface only a client can mask (a
  * Broadcast the server relays as sent) names the shared client rule's test in
  * `packages/`; that proves the rule, not that every client applies it, which
  * each client's own tests cover. That cannot prove the test asserts the
@@ -63,7 +66,7 @@ import * as ts from 'typescript';
 
 /**
  * A Jest test (`spec` relative to `apps/api/src`, `test` its title), a
- * scenario `name` in `scripts/check-pglite-migrations.mjs`, or a Vitest test
+ * scenario `name` in the PGlite harness (`scripts/pglite/`), or a Vitest test
  * of a shared client package (`clientSpec` relative to the repo root).
  */
 type Proof =
@@ -91,13 +94,7 @@ const API_SRC = join(__dirname, '..', '..');
 const API_ROOT = join(API_SRC, '..');
 const REPO_ROOT = join(API_ROOT, '..', '..');
 const MIGRATIONS = join(REPO_ROOT, 'supabase', 'migrations');
-const PGLITE_HARNESS = join(
-  API_ROOT,
-  '..',
-  '..',
-  'scripts',
-  'check-pglite-migrations.mjs',
-);
+const PGLITE_HARNESS = join(REPO_ROOT, 'scripts', 'pglite');
 
 const CHAT_SERVICE_SPEC = 'application/services/chat.service.spec.ts';
 const POLL_SERVICE_SPEC = 'application/services/poll.service.spec.ts';
@@ -804,19 +801,22 @@ function isNameOnly(node: ts.Identifier): boolean {
  *
  * A PGlite proof is a `name: '…'` property somewhere in the harness, read from
  * its syntax tree, so a name left only in a comment does not count. The
- * harness has no skip or focus to look for: every scenario it declares runs.
+ * harness has no skip or focus to look for, and every module in it is loaded
+ * (`pglite-filter-coverage.test.mjs`).
  */
 function proofProblem(proof: Proof): string | null {
   if ('pglite' in proof) {
-    const live = everyNode(parse(PGLITE_HARNESS)).some(
-      (node) =>
-        ts.isPropertyAssignment(node) &&
-        node.name.getText() === 'name' &&
-        literalText(node.initializer) === proof.pglite,
+    const live = pgliteModules().some((file) =>
+      everyNode(file).some(
+        (node) =>
+          ts.isPropertyAssignment(node) &&
+          node.name.getText() === 'name' &&
+          literalText(node.initializer) === proof.pglite,
+      ),
     );
     return live
       ? null
-      : `scripts/check-pglite-migrations.mjs has no scenario named '${proof.pglite}'`;
+      : `scripts/pglite/ has no scenario named '${proof.pglite}'`;
   }
   const [path, name] =
     'clientSpec' in proof
@@ -832,6 +832,14 @@ function proofProblem(proof: Proof): string | null {
       literalText(node.arguments[0]) === proof.test,
   );
   return live ? null : `${name} has no live it('${proof.test}')`;
+}
+
+/** Every `.mjs` module under scripts/pglite, the PGlite harness, parsed. */
+function pgliteModules(): ts.SourceFile[] {
+  return readdirSync(PGLITE_HARNESS, { recursive: true, encoding: 'utf8' })
+    .filter((rel) => rel.endsWith('.mjs'))
+    .sort()
+    .map((rel) => parse(join(PGLITE_HARNESS, rel)));
 }
 
 /** Every non-spec `.ts` under apps/api/src, parsed. */

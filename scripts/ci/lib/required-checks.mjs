@@ -101,7 +101,7 @@ export const CI_CHECKS = [
   // Every migration applied from empty to PGlite, asserting RLS on every
   // `public` table, the chat hot-path policies, an append-only
   // `chapter_audit_log` and `pg_temp` pinned last in `SECURITY DEFINER`
-  // functions (`scripts/check-pglite-migrations.mjs`). Required since #2538.
+  // functions (`scripts/pglite/`). Required since #2538.
   // Its `changes.pglite` filter must list every file the check reads, or a
   // missed input merges green. ROLLOUT: same caveat as secret-scan.
   "pglite-migrations",

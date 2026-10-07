@@ -409,7 +409,7 @@ the same run). Hosted projects are not applied from a cloud-agent session.
   `select has_function_privilege('anon', 'apply_subscription_webhook(uuid, timestamptz, jsonb)', 'EXECUTE')`
   is `false`. Two into-`past_due` applies against one chapter reporting
   `previous=active` then `previous=past_due` are asserted by
-  `scripts/check-pglite-migrations.mjs`.
+  `scripts/pglite/tiers/subscription-webhook-cas.mjs`.
 
 **Rollback**: See `db-rollback-playbook.md` § Rollback the Stripe subscription webhook previous-status return.
 
@@ -475,7 +475,7 @@ projects are not applied from a cloud-agent session.
   returns 1 row, and
   `select has_function_privilege('anon', 'apply_subscription_webhook(uuid, timestamptz, jsonb)', 'EXECUTE')`
   is `false`. A black-box CAS (older then newer / newer then older against two
-  chapters) is asserted by `scripts/check-pglite-migrations.mjs`.
+  chapters) is asserted by `scripts/pglite/tiers/subscription-webhook-cas.mjs`.
 
 **Rollback**: See `db-rollback-playbook.md` § Rollback the Stripe subscription webhook CAS.
 
