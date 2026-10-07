@@ -265,7 +265,7 @@ tag and takes the highest, so an unlabelled `release:major` change ships as a pa
 
 - `npm run lint` — turbo lint (read-only)
 - `npm run lint:api` — API only (read-only)
-- `npm run lint:api:fix` — applies ESLint auto-fixes; the only lint script that writes; see [contributing.md §5](../guides/contributing.md#5-linting-types-and-tests)
+- `npm run lint:api:fix` — applies ESLint auto-fixes; the only lint script that writes; see [`CONTRIBUTING.md` § Linting, types, and tests](../../CONTRIBUTING.md#linting-types-and-tests)
 - `npm run test -w apps/api` — Jest
 - `npm run build` — turbo build
 - `npm run check-types` — turbo TypeScript

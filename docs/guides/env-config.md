@@ -28,25 +28,7 @@ Key principles:
 
 ## 3. Local development setup
 
-**Recommended:** use the **Infisical CLI** as the primary local flow so secrets stay centralized (same source as staging/prod). Authenticate once with `npx infisical login`, then run apps with secrets injected:
-
-```bash
-npx infisical run --env=dev -- npm run start:dev -w apps/api
-npx infisical run --env=dev -- npm run dev -w apps/web
-```
-
-For all three apps in one terminal, use `npm run dev:stack` from the repo root (it wraps the same Infisical pattern). Populate the Infisical **`dev`** environment using values from `npm run -s supabase -- status -o env` plus the app-specific keys listed in [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md).
-
-### Fallback: Supabase CLI + `.env.local`
-
-If Infisical is unavailable, generate local env files from Supabase and merge in app vars from `ENV_REFERENCE.md`:
-
-```bash
-npm run supabase -- start
-npm run -s supabase -- status -o env
-```
-
-Create `.env.local` per app from that output, then add remaining variables (for the API, include `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` — placeholders are fine unless you are testing billing). Treat `.env.local` as a **fallback**; prefer Infisical when possible.
+Local runs take their secrets from Infisical's **`dev`** environment, injected by the root `npm run dev:*` scripts, so secrets stay in the same source as staging and production. A `.env.local` per app is the fallback when Infisical is unavailable. The steps are in [`getting-started.md` § 4](getting-started.md#4-configure-environment-variables); per-app commands and the no-Infisical fallback are in [`LOCAL_DEV.md`](../internal/environment/LOCAL_DEV.md).
 
 ## 4. Config module in the API
 
