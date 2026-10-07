@@ -11,7 +11,7 @@
 //
 // SCOPE. Every .ts/.tsx source under apps/landing outside the specs:
 // `Signet` as a whole word in anything but a line's leading comment is a
-// hit (the rule is scripts/ci/lib/copy-lines.mjs). Identifiers are not copy
+// hit (the rule is scripts/ci/__tests__/helpers/copy-lines.mjs). Identifiers are not copy
 // and stay until the internals series: `SignetCrest`, `SIGNET_CREST_PATH`,
 // `signet-crest.tsx`, `signet-emblem-B.png` and the `--signet-*` tokens.
 // On top of the walk, the sites a crawler or a social preview reads are
@@ -41,7 +41,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { copyMatches } from "../lib/copy-lines.mjs";
+import { copyMatches } from "./helpers/copy-lines.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const LOCK = fileURLToPath(import.meta.url);
