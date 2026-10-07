@@ -189,8 +189,8 @@ and why.
 
 ## 4a. Repository tenant-scope tests
 
-The 33 Supabase repositories under `apps/api/src/infrastructure/supabase/repositories/` long had no
-direct behavioural tests; seven were covered indirectly through
+The Supabase repositories under `apps/api/src/infrastructure/supabase/repositories/` long had no
+direct behavioural tests; a few were covered indirectly through
 `test/cross-tenant-isolation.e2e-spec.ts`. Wiring the generated `Database` type into the client
 (#1083) closed the *type* hole and not the *column* one — a repository that filters
 `.eq('id', chapterId)` instead of `.eq('chapter_id', chapterId)`, or that loses a tenant filter in a
@@ -303,7 +303,7 @@ Jest default specifically to route around a `minimatch`/`test-exclude` collision
 `test:cov` throw; the details are in [`quality-gates.md`](../ci-cd/quality-gates.md) and
 matter before anyone touches the root `overrides` block.
 
-The **`api-tests`** job runs **three** suites after building shared packages: the unit suite (`npm run test -w apps/api`), the E2E suite (`npm run test:e2e -w apps/api`), and the adversarial AI evals (`npm run test:ai-evals -w apps/api`). Because the E2E specs mock Supabase (§6) and the evals are pure fixtures, the job stays deterministic in GitHub Actions and requires no external services.
+The **`api-tests`** job runs the unit, E2E and AI-eval suites; see §2.
 
 The evals run unconditionally rather than path-gated. Spec §13 requires them on any change to prompts, retrieval or the tool registry; running them always is a superset, and costs ~1.5s against the minutes a separate job's checkout and install would burn (ADR-15). Their behavioural half currently **skips** — no agent exists yet — so a green `api-tests` is not evidence any agent was graded; see [`docs/security/ai-prompt-injection.md`](../security/ai-prompt-injection.md) and `apps/api/test/ai-evals/README.md`.
 
@@ -328,26 +328,7 @@ Both run under `npm run test -w apps/api`. The chat hot path has no Deno tier.
 
 ## 6. E2E scaffolding
 
-E2E config file: `apps/api/test/jest-e2e.json`:
-
-```json
-{
-  "moduleFileExtensions": ["js", "json", "ts"],
-  "rootDir": ".",
-  "testEnvironment": "node",
-  "testRegex": ".e2e-spec.ts$",
-  "setupFiles": ["<rootDir>/setup-e2e.ts"],
-  "transform": {
-    "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": { "module": "commonjs", "moduleResolution": "node", "resolvePackageJsonExports": false, "rootDir": ".", "ignoreDeprecations": "6.0" } }]
-  },
-  "moduleNameMapper": {
-    "^@repo/org-archetypes$": "<rootDir>/../../../packages/org-archetypes/src/index.ts",
-    "^@repo/chapter-theme$": "<rootDir>/../../../packages/chapter-theme/src/index.ts",
-    "^expo-server-sdk$": "<rootDir>/helpers/expo-server-sdk.stub.ts",
-    "^(\\.{1,2}/.*)\\.js$": "$1"
-  }
-}
-```
+E2E config file: [`apps/api/test/jest-e2e.json`](../../apps/api/test/jest-e2e.json) (not copied here; the file is the source).
 
 **Why the `commonjs` transform + `moduleNameMapper`:** booting the full `AppModule` in an E2E spec
 pulls in the `@repo/org-archetypes` and `@repo/chapter-theme` workspace packages, which are
