@@ -14,7 +14,7 @@ import {
 import { refreshMaskedCopies } from "@repo/chat-core/blocks";
 import { useFrappClient, useUnblockMember } from "@repo/hooks";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 
 export interface UnblockFlow {
   /**

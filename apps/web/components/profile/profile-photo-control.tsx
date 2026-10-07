@@ -16,7 +16,7 @@ import {
   readSignedUpload,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
 /** The `image` kind's list, in the words a member reads. */
