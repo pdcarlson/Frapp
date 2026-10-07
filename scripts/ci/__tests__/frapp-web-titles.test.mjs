@@ -35,7 +35,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { copyMatches } from "../lib/copy-lines.mjs";
+import { copyMatches } from "./helpers/copy-lines.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WEB_APP = join(REPO_ROOT, "apps/web/app");
@@ -168,7 +168,7 @@ test("root layout title and tagline say Frapp", () => {
     ),
   );
   // The layout's comments record the Signet-era titles, so only its copy is
-  // judged (the note on LINE_BREAK in ../lib/copy-lines.mjs says how).
+  // judged (the note on LINE_BREAK in ./helpers/copy-lines.mjs says how).
   assert.deepEqual(
     copyMatches([{ rel: LAYOUT, source }], /\bSignet\b/g).map(({ line }) => `${LAYOUT}:${line}`),
     [],
