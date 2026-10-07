@@ -5,9 +5,9 @@
     "rootDir": "src",
     // The shared base config includes DOM in `lib`. This package is called from
     // the NestJS API, where `document` or `window` would compile clean here and
-    // throw there, so DOM is dropped deliberately. Paired with an ESLint
-    // `no-restricted-globals` rule, since a type-level guard alone would not
-    // catch a global reached through `globalThis`.
+    // throw there, so DOM is dropped deliberately. Paired with the ESLint
+    // `no-restricted-globals` rule from `@repo/eslint-config/isomorphic`,
+    // which also covers the specs this tsconfig excludes.
     "lib": ["es2022"],
     // Relaxed for `src/vendor/generate-radix-colors.ts`, upstream code written
     // without this flag: it raises 16 "possibly undefined" errors indexing into
