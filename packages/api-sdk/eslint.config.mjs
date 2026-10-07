@@ -1,4 +1,2 @@
-import { config as baseConfig } from "@repo/eslint-config/base";
-
-/** @type {import("eslint").Linter.Config[]} */
-export default baseConfig;
+// Loaded by React Native, so no DOM globals: see the preset.
+export { isomorphicConfig as default } from "@repo/eslint-config/isomorphic";
