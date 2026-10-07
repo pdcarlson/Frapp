@@ -156,6 +156,8 @@ function main() {
     // documenting a prerequisite at each of the ~8 places this script is
     // invoked) is what keeps a cold `npm install && npm run check:api-contract`
     // working. Turbo caches it, so it costs nothing when packages are current.
+    // Don't remove it because CI already prebuilds: that prebuild is exactly
+    // what would hide the removal, so only a cold clone would fail (#683).
     run("npx turbo run build --filter='./packages/*'");
     run("npm run openapi:export -w apps/api");
     run("npm run generate -w packages/api-sdk");
