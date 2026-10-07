@@ -385,9 +385,8 @@ own, which is how the two came to be linked.
   exists as a correction of claims nobody checked: if a heavy dependency is ever added to that
   component, it lands in the eager chat chunk and nothing will flag it.
 - **Tree shaking:** per-component ShadCN imports; `lucide-react` ships per-icon ESM with
-  `"sideEffects": false`, so no `modularizeImports` is needed. `@repo/chat-core` is consumed through
-  the subpath exports in its `package.json`; `apps/web/lib/chat/reported-message-reads.ts` is the
-  one web module that still imports the root barrel.
+  `"sideEffects": false`, so no `modularizeImports` is needed. `@repo/chat-core` is consumed only through
+  the subpath exports in its `package.json`; it has no root barrel (removed in #3228).
 - **Image optimization:** `next/image`, WebP/AVIF.
 - **Font optimization:** `next/font/local` for Figtree, self-hosted and metric-adjusted with
   `display: "swap"`.

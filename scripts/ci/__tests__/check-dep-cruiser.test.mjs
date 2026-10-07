@@ -213,8 +213,11 @@ test("distTargets agrees with the real manifests it runs against", () => {
   const read = (pkg) => JSON.parse(readFileSync(path.join(REPO_ROOT, "packages", pkg, "package.json"), "utf8"));
   assert.ok(distTargets(read("validation"), ".").includes("./dist/index.js"));
   assert.ok(distTargets(read("observability"), "./identified-posthog").includes("./dist/identified-posthog.js"));
-  // A source-only package can never be "unbuilt".
-  assert.deepEqual(distTargets(read("chat-core"), "./integrations"), []);
+  // A source-only package can never be "unbuilt". Pin the export first, or a missing
+  // key would pass too: distTargets returns [] for any subpath that isn't exported.
+  const chatCore = read("chat-core");
+  assert.equal(chatCore.exports["./integrations"], "./src/integrations/index.ts");
+  assert.deepEqual(distTargets(chatCore, "./integrations"), []);
 });
 
 test("a dist/ that exists but lacks the imported export still counts as unbuilt", (t) => {
