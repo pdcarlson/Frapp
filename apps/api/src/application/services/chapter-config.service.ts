@@ -962,8 +962,7 @@ export class ChapterConfigService {
       throw new NotFoundException('Chapter not found');
     }
 
-    const branding = ((chapter as Record<string, unknown>)['branding'] ??
-      {}) as {
+    const branding = (chapter.branding ?? {}) as {
       colors?: { accent?: string };
     };
     const colors = branding.colors ?? {};
