@@ -16,7 +16,7 @@
 //   @repo/org-archetypes and more, and a package added later is walked without
 //   anyone listing it): no whole word "Signet" and no signet- download
 //   filename outside the comment a line starts with (the note on LINE_BREAK
-//   in ../lib/copy-lines.mjs says why, and names the one blind spot). A
+//   in ./helpers/copy-lines.mjs says why, and names the one blind spot). A
 //   design-system note that names Signet goes on its own comment line, not
 //   after code or inside a JSX comment's star-less continuation. Nothing
 //   passes: unlike the API, the dashboard ships no design-system phrase.
@@ -41,7 +41,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { copyMatches, SIGNET_DOWNLOAD_NAME } from "../lib/copy-lines.mjs";
+import { copyMatches, SIGNET_DOWNLOAD_NAME } from "./helpers/copy-lines.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const LOCK = fileURLToPath(import.meta.url);
