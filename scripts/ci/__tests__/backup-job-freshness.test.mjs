@@ -12,8 +12,9 @@ import {
 
 import { makeFetchMock } from "./helpers.mjs";
 
-// The rules both production backup-freshness watches share (#2332). Each
-// watch's own suite checks that it passes its job name and windows; this one
+// The rules both production backup-freshness watches share (#2332).
+// production-backup-freshness.test.mjs checks that each watch passes its own
+// job name and windows; this one
 // checks the rules, with a job name neither watch uses so no rule can lean on
 // one watch's name.
 
