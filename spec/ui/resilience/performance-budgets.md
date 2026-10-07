@@ -386,7 +386,7 @@ own, which is how the two came to be linked.
   component, it lands in the eager chat chunk and nothing will flag it.
 - **Tree shaking:** per-component ShadCN imports; `lucide-react` ships per-icon ESM with
   `"sideEffects": false`, so no `modularizeImports` is needed. `@repo/chat-core` is consumed only through
-  the subpath exports in its `package.json`; it has no root barrel (removed in #3228).
+  the subpath exports in its `package.json` ([its package row](../../architecture/README.md#4-shared-packages)).
 - **Image optimization:** `next/image`, WebP/AVIF.
 - **Font optimization:** `next/font/local` for Figtree, self-hosted and metric-adjusted with
   `display: "swap"`.
