@@ -5,7 +5,6 @@ These markdown files are the **source of truth** for Frapp developer-facing guid
 | Guide                   | File                                       |
 | ----------------------- | ------------------------------------------ |
 | Getting started         | [getting-started.md](getting-started.md)   |
-| Deployment overview     | [deployment.md](deployment.md)             |
 | Environment & config    | [env-config.md](env-config.md)             |
 | Docker (API)            | [docker.md](docker.md)                     |
 | API architecture        | [api-architecture.md](api-architecture.md) |

@@ -18,8 +18,8 @@ feature/xyz ──PR──▶ main (staging) ──manual dispatch──▶ prod
 
 | Branch      | Purpose                    | Deployment                                                     |
 | ----------- | -------------------------- | -------------------------------------------------------------- |
-| `main`      | Integration + staging      | Every merge deploys to **Render staging**. The **Vercel half ended 2026-09-02** — `frapp-landing` unlinked from Git 2026-09-01, `frapp-web` 2026-09-02, so no merge deploys web or landing and both hosts serve frozen builds (ADR-21 in [`spec/architecture/adr/adr-21.md`](spec/architecture/adr/adr-21.md)) |
-| `feature/*` | Short-lived feature work   | No automatic Vercel deploys; merged into `main`                 |
+| `main`      | Integration + staging      | A merge whose CI passes runs the staging deploy, which ships what the merge changed. What runs, in what order: [`ci-cd.md` § How Deployments Are Gated](docs/ops/deployment/ci-cd.md#how-deployments-are-gated) |
+| `feature/*` | Short-lived feature work   | Never deployed; merged into `main`                             |
 | `hotfix/*`  | Emergency production fixes | Branch from `main`, PR to `main`, then deploy that commit       |
 
 ### Rules
@@ -55,8 +55,7 @@ input rather than a race. See
 | -------------- | ---------------- | ------------------------------------- |
 | Feature → main | **Squash merge** | Clean history, one commit per feature |
 
-Version tags are no longer produced by a merge. `deploy-production.yml` tags the commit
-it deployed, after Render and Vercel report healthy — see [Version Tagging](#version-tagging).
+Version tags are not produced by a merge: see [Version Tagging](#version-tagging).
 
 ---
 
@@ -79,12 +78,6 @@ report-only and are promoted by adding them to an array and re-running
 `npm run configure:branch-protection`, which is a live `PUT` and a human step with an admin PAT: an
 agent session runs `npm run configure:branch-protection:verify` (which writes nothing) and nothing
 else.
-
-### Vercel deployment policy
-
-**Not live since 2026-09-02 — no push deploys either Vercel app.** Both projects are unlinked from Git (`frapp-landing` 2026-09-01, `frapp-web` 2026-09-02), so `git.deploymentEnabled` governs nothing today and staging web and landing serve frozen builds. **ADR-21** in [`spec/architecture/adr/adr-21.md`](spec/architecture/adr/adr-21.md) is the canonical record; the CI-driven replacement is built ([#1578](https://github.com/pdcarlson/Frapp/issues/1578)). The rest of this section describes the settings as they remain committed.
-
-Vercel *was* configured to auto-deploy only on `main` via `git.deploymentEnabled` in each app's `vercel.json`. The catch-all disable rule uses `"**": false` so feature branch names containing `/` are matched correctly and skipped. **Keep both `git.deploymentEnabled` and the `ignoreCommand: "exit 1"` pin — do not delete them as dead config:** they are the versioned form of settings that revert to unversioned dashboard state if Git is ever re-linked. Production deployments are not branch-driven at all: `deploy-production.yml` creates them through the Vercel API with `target: production` for a named commit.
 
 ### AI review coverage
 
@@ -333,28 +326,7 @@ CI validates migration filenames, and `check:migration-safety` fails a new migra
 
 ## Version Tagging
 
-The **Deploy production** workflow creates the tag and GitHub Release, as its last step,
-after Render and Vercel have both reported healthy. So `vX.Y.Z` names a commit that is
-actually serving traffic — it used to name one that had merged and was expected to ship.
-
-The bump is read from the `release:*` labels on **every PR merged since the last `v*`
-tag**, taking the highest:
-
-- **Default:** patch, when no PR in range carries a label (`v0.6.0` → `v0.6.1`)
-- **Minor:** any PR in range labelled `release:minor` (`v0.6.0` → `v0.7.0`)
-- **Major:** any PR in range labelled `release:major`. While the latest tag's major is 0 it
-  mints a minor instead (`v0.6.0` → `v0.7.0`): releases are pre-1.0 until v1 GA, and
-  leaving 0.x takes the dispatch's `bump=major`, though whether the `v1.0.0` it mints can
-  have a GitHub Release is open ([#3015](https://github.com/pdcarlson/Frapp/issues/3015);
-  [spec § Release labels](spec/environments/README.md#release-labels-for-version-tags)).
-  From 1.x on it mints the next major.
-
-**Put the label on your own PR.** Before #1340 the label went on the single promotion PR,
-which no longer exists. A `release:major` change whose PR carries no label ships as a
-patch, silently.
-
-The dispatch also takes an explicit `bump` input that overrides the label scan when you
-need to force a version.
+Release labels, and how the **Deploy production** workflow turns them into a `vX.Y.Z` tag: [`spec/environments/README.md` § Release labels for version tags](spec/environments/README.md#release-labels-for-version-tags).
 
 ---
 
