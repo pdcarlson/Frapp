@@ -147,7 +147,8 @@ cloud sandbox's [`cloud-sandbox-up.sh`](../../../scripts/cloud-sandbox-up.sh) so
 paths cannot drift. Its behaviour is pinned by
 [`local-postgres-acl.test.sh`](../../../scripts/lib/local-postgres-acl.test.sh) — hermetic (docker
 is stubbed, no daemon or database needed), run it with
-`bash scripts/lib/local-postgres-acl.test.sh`. **No CI job runs it yet.** Sandbox-specific failures (network policy, image registry, sentinels) are in
+`bash scripts/lib/local-postgres-acl.test.sh`. CI runs it, with every other `*.test.sh`, through
+[`shell-suites.test.mjs`](../../../scripts/ci/__tests__/shell-suites.test.mjs) in `npm run test:ci-scripts`. Sandbox-specific failures (network policy, image registry, sentinels) are in
 [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md#when-bringup-fails--stop-and-report).
 
 ## Related docs
