@@ -1,4 +1,6 @@
 import { SupabaseChapterRepository } from './supabase-chapter.repository';
+import { SupabaseQueryError } from '../supabase-query-error';
+import type { FrappSupabaseClient } from '../database.types';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -104,6 +106,25 @@ describe('SupabaseChapterRepository — tenant scope', () => {
           repo.isAnalyticsOptedOut(CHAPTER_B),
         ),
       ).resolves.toBe(true);
+    });
+
+    it('throws on a failed read rather than answering "not opted out"', async () => {
+      // Analytics fails closed only because this throws: a read error reported
+      // as `false` would emit events for a chapter that opted out.
+      const maybeSingle = jest.fn().mockResolvedValue({
+        data: null,
+        error: { code: '57014', message: 'canceling statement' },
+      });
+      const chain = { select: jest.fn(), eq: jest.fn(), maybeSingle };
+      chain.select.mockReturnValue(chain);
+      chain.eq.mockReturnValue(chain);
+      const failing = new SupabaseChapterRepository({
+        from: jest.fn(() => chain),
+      } as unknown as FrappSupabaseClient);
+
+      await expect(
+        failing.isAnalyticsOptedOut(CHAPTER_B),
+      ).rejects.toBeInstanceOf(SupabaseQueryError);
     });
 
     it('reads a chapter with no row as not opted out', async () => {
