@@ -2,6 +2,7 @@
 
 **Vercel build fails with "module not found"**
 → Ensure `transpilePackages` in `next.config.js` includes all `@repo/*` packages used by that app.
+
 **Render deploy fails**
 → Check that the Dockerfile path is `apps/api/Dockerfile` and the build context is the repo root (Render default).
 
