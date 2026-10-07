@@ -32,7 +32,7 @@
 //
 // This file is the one home for the permission roster. `app.config.spec.ts`
 // pins what app.json declares for the privacy manifest, and
-// `frapp-mobile-permissions.test.mjs` pins only that the prompt copy names
+// `frapp-naming.test.mjs` pins only that the prompt copy names
 // Frapp (ADR-25); neither keeps a list of which permissions exist.
 //
 // Five checks, all read from the resolved config:
