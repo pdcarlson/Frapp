@@ -203,7 +203,7 @@ Constraints to know before you fight the compiler:
   the compile-only proof. If `GenericSchema` degrades, its `@ts-expect-error` goes unused and
   `nest build` fails.
 - Insert/upsert payload types must be type aliases, not interfaces, for the same reason (see
-  `DuesConfig` in `chapter-config.service.ts`).
+  `DuesConfig` in `domain/entities/chapter-dues-config.entity.ts`).
 - Every `*.repository.ts` under `apps/api/src` follows this.
   `no-as-never.spec.ts` and `tenant-scope-coverage.spec.ts` both find repositories through
   `#test/helpers/repository-corpus`, so a new one joins both ledgers wherever it lives. Both pin

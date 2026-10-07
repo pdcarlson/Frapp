@@ -79,4 +79,17 @@ export interface IChapterRepository {
   ): Promise<AppliedSubscriptionWebhook | null>;
   create(data: Partial<Chapter>): Promise<Chapter>;
   update(id: string, data: Partial<Chapter>): Promise<Chapter>;
+  /**
+   * Compare-and-set a derived theme palette onto the chapter: the write lands
+   * only while `branding.colors.accent` is still `seedAccent`, the accent the
+   * palette was derived from (`undefined` means the chapter had none). Returns
+   * whether it landed; `false` is a lost race with a newer accent save, not an
+   * error. Same guard as the stale-palette sweep's
+   * `SupabaseScheduledJobsRepository.writeRecomputedPalette`.
+   */
+  updatePaletteIfSeedUnchanged(
+    chapterId: string,
+    palette: Partial<Chapter>,
+    seedAccent: string | undefined,
+  ): Promise<boolean>;
 }

@@ -67,6 +67,34 @@ describe('SupabaseChatChannelRepository — tenant scope', () => {
     expect(channels.map((c) => c.id)).toEqual([CHANNEL_B]);
   });
 
+  it('findByName resolves the caller chapter channel, not its same-named twin', async () => {
+    const channel = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByName(CHAPTER_B, 'general'),
+    );
+
+    expect(channel?.id).toBe(CHANNEL_B);
+  });
+
+  it('findByName returns null when the chapter has no such channel', async () => {
+    await expect(repo.findByName(CHAPTER_B, 'announcements')).resolves.toBe(
+      null,
+    );
+  });
+
+  it('createMany writes every row into the caller chapter', async () => {
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.createMany([
+        { chapter_id: CHAPTER_B, name: 'announcements', type: 'PUBLIC' },
+        { chapter_id: CHAPTER_B, name: 'exec', type: 'ROLE_GATED' },
+      ]),
+    );
+
+    const created = harness
+      .rows('chat_channels')
+      .filter((r) => r.name === 'announcements' || r.name === 'exec');
+    expect(created.map((r) => r.chapter_id)).toEqual([CHAPTER_B, CHAPTER_B]);
+  });
+
   describe('findByIds', () => {
     it('drops ids belonging to another chapter', async () => {
       // `filterAccessibleChannelIds` treats membership in CHAPTER_B as

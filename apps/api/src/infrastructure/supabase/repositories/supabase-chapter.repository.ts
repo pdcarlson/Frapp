@@ -143,4 +143,22 @@ export class SupabaseChapterRepository implements IChapterRepository {
     if (error) throw new SupabaseQueryError(error);
     return data;
   }
+
+  async updatePaletteIfSeedUnchanged(
+    chapterId: string,
+    palette: TablesUpdate<'chapters'>,
+    seedAccent: string | undefined,
+  ): Promise<boolean> {
+    const update = this.supabase
+      .from('chapters')
+      .update(palette)
+      .eq('id', chapterId);
+    const guarded =
+      typeof seedAccent === 'string'
+        ? update.eq('branding->colors->>accent', seedAccent)
+        : update.is('branding->colors->>accent', null);
+    const { data, error } = await guarded.select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return (data?.length ?? 0) > 0;
+  }
 }

@@ -82,6 +82,8 @@ describe('ChannelAccessService', () => {
       findIdByName: jest.fn(),
       findPushRouting: jest.fn(),
       createDm: jest.fn(),
+      findByName: jest.fn(),
+      createMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
