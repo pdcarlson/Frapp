@@ -30,7 +30,8 @@ These encode invariants the codebase can't enforce for itself.
   without `.eq('chapter_id', chapterId)`, and a role or permission lookup not re-scoped by
   `chapter_id` (a cross-chapter `role_id` leaks permissions). Reference pattern:
   `apps/api/src/application/services/search.service.ts`, which filters through `canAccessChannel`
-  and re-scopes roles by chapter.
+  and re-scopes roles by chapter, over the chapter-filtered queries in
+  `apps/api/src/infrastructure/supabase/repositories/supabase-search.repository.ts`.
 - **Permission enforcement.** New controller routes need `@RequirePermissions` or
   `@RequireAnyOfPermissions`. Anything invoked on a member's behalf enforces that caller's
   permissions, not the service's ambient authority.

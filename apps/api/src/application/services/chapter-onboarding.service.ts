@@ -22,9 +22,9 @@ import {
   type IChatMessageRepository,
 } from '#domain/repositories/chat.repository.interface';
 import {
-  CHAPTER_CUSTOM_FIELD_REPOSITORY,
-  type IChapterCustomFieldRepository,
-} from '#domain/repositories/chapter-custom-field.repository.interface';
+  CUSTOM_FIELD_REPOSITORY,
+  type ICustomFieldRepository,
+} from '#domain/repositories/custom-field.repository.interface';
 import {
   CHAPTER_DIRECTORY_REPOSITORY,
   type IChapterDirectoryRepository,
@@ -90,8 +90,8 @@ export class ChapterOnboardingService {
 
   constructor(
     private readonly chapterService: ChapterService,
-    @Inject(CHAPTER_CUSTOM_FIELD_REPOSITORY)
-    private readonly customFieldRepo: IChapterCustomFieldRepository,
+    @Inject(CUSTOM_FIELD_REPOSITORY)
+    private readonly customFieldRepo: ICustomFieldRepository,
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
     @Inject(CHAT_MESSAGE_REPOSITORY)
