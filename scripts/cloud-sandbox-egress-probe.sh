@@ -45,8 +45,8 @@ TIMEOUT="${FRAPP_EGRESS_PROBE_TIMEOUT:-8}"
 # below calls this before exiting, so a bringup that reached this script always leaves a
 # readable file behind.
 #
-# Absence was the actual harm in #2205, not the syntax error. agent-infra.md,
-# CLOUD_SANDBOX.md and live-verification/SKILL.md all tell agents to read this file
+# Absence was the actual harm in #2205, not the syntax error. CLOUD_SANDBOX.md and
+# live-verification/SKILL.md both tell agents to read this file
 # INSTEAD of probing hosts by hand, and they frame its absence as impossible. A session that
 # finds nothing therefore has no sanctioned reading for what it is looking at, and the
 # likely move is the hand-rolled curl the file exists to prevent. Making the file

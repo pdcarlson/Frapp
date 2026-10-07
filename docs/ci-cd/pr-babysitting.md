@@ -144,7 +144,7 @@ net — it is the one layer that misses nothing — but it prompts the owner on 
 cloud surface it is not usable unattended and is deliberately not armed (below). The coverage it
 would have added is a known, accepted gap, not an oversight.
 `api.github.com` is readable from a sandbox over the direct route; which route to use, and why, is
-under [`agent-infra.md` → Work status](agent-infra.md#work-status). That changes what is *readable*, not what is *polled*. An awake agent can read GitHub
+under [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule). That changes what is *readable*, not what is *polled*. An awake agent can read GitHub
 directly for ground truth, but nothing in this sandbox runs while the session is asleep, so
 background polling of GitHub still cannot be relied on and the coverage gap argument is unchanged.
 Treat GitHub as reachable only while awake, through the MCP tools; direct REST only for the
@@ -379,7 +379,7 @@ this compares against a design, not against something that ran.) What makes it s
   open, and its body still describes the script as PUT-only, so cite the capability rather than the
   issue. **That read is available to a session**, contrary to what this bullet used to say: it called the read "session-dependent" and
   therefore treated the whole layer as not-verifiable-from-a-session, which the route rule under
-  [`agent-infra.md` → Work status](agent-infra.md#work-status) corrects — `GET /repos/{owner}/Frapp/branches/main/protection` returns 200 direct
+  [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule) corrects — `GET /repos/{owner}/Frapp/branches/main/protection` returns 200 direct
   (21 required contexts as the roster stood at that read, since reduced by #1637 and by the
   docs-gate retirement; read `ALL_REQUIRED_CHECKS` rather than any count quoted here. Plus
   `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
