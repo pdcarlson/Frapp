@@ -125,7 +125,8 @@ STUB_STOPPED=''
 
 echo
 echo "frapp_supabase_db_container_name — TOP-LEVEL project_id only"
-d=$(mktemp -d)/MyDir; mkdir -p "$d/supabase"
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+d=$tmp/MyDir; mkdir -p "$d/supabase"
 check "no config.toml -> basename"                "supabase_db_MyDir" 0 "$(frapp_supabase_db_container_name "$d")" 0
 printf '[db]\nport = 54322\n' >"$d/supabase/config.toml"
 check "config without project_id -> basename"     "supabase_db_MyDir" 0 "$(frapp_supabase_db_container_name "$d")" 0

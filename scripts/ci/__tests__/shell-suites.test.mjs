@@ -8,17 +8,19 @@
 //
 // The convention is the filename: a `*.test.sh` anywhere in the tree is a
 // suite, it runs under `bash` from the repo root, and a non-zero exit fails it.
-// Discovery reads `git ls-files`, tracked plus untracked-but-not-ignored, so a
-// new suite runs locally before it is committed and nothing under
-// `node_modules` is ever picked up.
+// Discovery reads `git ls-files`, tracked plus untracked-but-not-ignored and
+// still on disk, so a new suite runs locally before it is committed and nothing
+// under `node_modules` is ever picked up.
 //
 // A suite here must stay hermetic: this job has no `npm ci`, no Docker and no
 // database. `local-postgres-acl.test.sh` stubs `docker` and writes only into a
-// `mktemp` dir, which is the bar.
+// `mktemp` dir that it removes on exit, which is the bar.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 import { REPO_ROOT } from "./helpers/doc-sections.mjs";
 
@@ -38,7 +40,11 @@ function shellSuites() {
     { cwd: REPO_ROOT, encoding: "utf8" },
   );
   assert.equal(listed.status, 0, `git ls-files failed: ${listed.stderr}`);
-  return [...new Set(listed.stdout.split("\0").filter(Boolean))].sort();
+  // `--cached` still lists a suite deleted or renamed but not yet staged, so
+  // keep only what is on disk.
+  return [...new Set(listed.stdout.split("\0").filter(Boolean))]
+    .filter((path) => existsSync(join(REPO_ROOT, path)))
+    .sort();
 }
 
 const suites = shellSuites();
