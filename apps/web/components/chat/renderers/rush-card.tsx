@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
-import type { RushPayload } from "@repo/chat-integrations";
+import type { RushPayload } from "@repo/chat-core/integrations";
 import {
   useBidRushCandidate,
   useRushCandidate,

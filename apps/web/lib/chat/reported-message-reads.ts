@@ -1,10 +1,10 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { markMessageDeleted } from "@repo/chat-core/cache";
 import {
   CHAT_MESSAGE_QUERY_ROOT,
   chatMessagesKey,
-  markMessageDeleted,
   type ChannelCache,
-} from "@repo/chat-core";
+} from "@repo/chat-core/types";
 import type { ReportedMessageTimeline } from "@repo/hooks";
 
 /**

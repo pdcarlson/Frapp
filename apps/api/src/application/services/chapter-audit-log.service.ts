@@ -29,7 +29,7 @@ import { logThrowable } from '../../infrastructure/observability/log-throwable';
  * `{ added, removed }` rather than both arrays (#2599). This alias is what a
  * from/to caller declares its own `diff` as, so the envelope stays checked
  * where it is the contract —
- * `packages/chat-integrations/src/payloads.ts` documents it, nothing enforces
+ * `packages/chat-core/src/integrations/payloads.ts` documents it, nothing enforces
  * it at runtime, and `chapter_audit_log` is append-only, so a malformed row
  * cannot be corrected afterwards.
  */
