@@ -68,7 +68,7 @@ import {
   getSlashCommand,
   parseSlashInput,
   type SlashCommand,
-} from "@repo/chat-integrations";
+} from "@repo/chat-core/integrations";
 import { MODULE_CATALOG } from "@repo/org-archetypes";
 
 /**
