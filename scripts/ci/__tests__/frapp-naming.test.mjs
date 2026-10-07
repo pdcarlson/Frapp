@@ -531,7 +531,7 @@ export const PINS = [
     lacks: ["'Signet System'", "system@signet.local"],
   },
   {
-    file: "scripts/check-pglite-migrations.mjs",
+    file: "scripts/pglite/landmarks.mjs",
     why: "the PGlite landmark requires Frapp System after replay",
     has: ['display_name === "Frapp System"', "seeded system actor display_name is Frapp System"],
     lacks: ['display_name === "Signet System"'],
