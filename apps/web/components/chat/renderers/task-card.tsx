@@ -24,7 +24,7 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { actionStatus } from "@/lib/task-action-status";
 import { getErrorMessage } from "@/lib/utils";
 

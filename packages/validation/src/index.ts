@@ -801,7 +801,6 @@ export type CustomFieldVisibility = z.infer<typeof CustomFieldVisibilitySchema>;
 export type ChapterCustomField = z.infer<typeof ChapterCustomFieldSchema>;
 export type CreateCustomField = z.infer<typeof CreateCustomFieldSchema>;
 export type UpdateCustomField = z.infer<typeof UpdateCustomFieldSchema>;
-export type SendChatMessage = z.infer<typeof SendChatMessageSchema>;
 
 // ── Pseudonymous analytics (issue #464) ──────────────────────────────────────
 export {
@@ -1059,7 +1058,6 @@ export {
   MAX_ARCHIVE_IMPORT_BYTES,
   MAX_ARCHIVE_CHAPTER_BYTES,
   DOCUMENT_UPLOAD_SURFACES,
-  uploadMimeList,
   contentTypeByExtension,
   acceptAttribute,
   fileExtension,

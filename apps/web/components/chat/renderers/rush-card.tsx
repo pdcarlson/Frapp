@@ -15,7 +15,7 @@ import {
 } from "@repo/hooks";
 import { vocab } from "@/lib/vocabulary";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
 interface RushCardProps {

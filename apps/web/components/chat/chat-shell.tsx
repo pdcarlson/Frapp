@@ -55,7 +55,7 @@ import {
   useThreadBlockList,
 } from "@/lib/chat/use-thread-block-list";
 import { coldLoadDefaultChannelId } from "@/lib/chat/default-channel";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { vocab } from "@/lib/vocabulary";

@@ -336,11 +336,3 @@ export interface DiscordImportFile {
   uploaded_at: string | null;
   created_at: string;
 }
-
-/** A Discord channel the scan found in the export, before it is mapped. */
-export interface DiscoveredDiscordChannel {
-  discord_channel_id: string;
-  discord_channel_name: string;
-  discord_category: string | null;
-  message_count: number;
-}

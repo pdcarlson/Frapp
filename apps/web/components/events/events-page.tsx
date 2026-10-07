@@ -46,7 +46,7 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { EventDetailSheet } from "@/components/events/event-detail-sheet";
 import {
   EventEditorDialog,

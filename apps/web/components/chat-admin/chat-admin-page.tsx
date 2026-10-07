@@ -68,7 +68,7 @@ import {
 import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { ChatReportsCard } from "./chat-reports-card";

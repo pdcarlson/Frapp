@@ -84,7 +84,7 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/hooks/use-toast", () => ({
+vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
