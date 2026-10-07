@@ -92,8 +92,10 @@ reported a confident green.
 Nothing about the output reveals this: the violation count is *lower*, which reads as good news. If
 you change either option, re-verify by introducing a deliberate violation per rule and watching it
 fail — that is how this was caught, and each of the four rule families has been confirmed to fire.
-The `modules/` rules came later and were confirmed by their own probe files (#3219): an importing
-file, an imported constants file and an edge-less file under `src/modules/` each failed the gate.
+The `modules/` rules came later and have a standing proof instead (#3219): the real tree gives them
+nothing to catch, so `npm run check:dep-cruiser:rules` (run in the `dependency-cruiser` job) cruises a
+fixture with an importing file, an imported constants file and an edge-less file under
+`src/modules/`, and fails if any of the three stops firing.
 
 ### The baseline
 

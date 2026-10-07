@@ -11,10 +11,14 @@ import { fileURLToPath } from "node:url";
 // `check:dep-cruiser` stays green whether or not they exist. This cruises a
 // throwaway tree with the real config, the way `check-dep-cruiser.mjs` does,
 // and pins each of the three forms to the file it exists to catch.
+//
+// It needs the installed dependency-cruiser, so it runs in CI's
+// `dependency-cruiser` job (`npm run check:dep-cruiser:rules`), not with the
+// dependency-free `scripts/ci/__tests__` suite.
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../../..",
+  "..",
 );
 const CONFIG_PATH = path.join(REPO_ROOT, "scripts/dependency-cruiser.cjs");
 const DEPCRUISE_BIN = path.join(

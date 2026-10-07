@@ -19,6 +19,7 @@
     "check-types": "turbo run check-types",
     "test:cov": "turbo run test:cov",
     "check:dep-cruiser": "node scripts/check-dep-cruiser.mjs",
+    "check:dep-cruiser:rules": "node --test scripts/dependency-cruiser.rules.test.mjs",
     "check:duplication": "jscpd --config .jscpd.json",
     "check:api-breaking": "node scripts/check-api-breaking-changes.mjs",
     "check:api-breaking:shipped": "node scripts/check-api-breaking-changes.mjs --shipped apps/mobile/store/shipped-builds.json",

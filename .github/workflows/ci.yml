@@ -684,6 +684,11 @@ jobs:
       - name: Check architectural boundaries
         run: npm run check:dep-cruiser
 
+      - name: Prove the modules/ wiring rules still fire
+        # The real tree has nothing for them to catch, so the boundary check
+        # above passes with or without them (#3219).
+        run: npm run check:dep-cruiser:rules
+
   # ── Duplicate detection (jscpd) ─────────────────────────────────────────
   # ADVISORY on purpose — deliberately NOT in scripts/ci/lib/required-checks.mjs.
   #
