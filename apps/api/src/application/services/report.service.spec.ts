@@ -11,6 +11,7 @@ import {
   type IReportRepository,
 } from '#domain/repositories/report.repository.interface';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '#domain/repositories/semester-archive.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 
 /**
@@ -22,6 +23,7 @@ import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface'
 describe('ReportService', () => {
   let service: ReportService;
   let repo: { [K in keyof IReportRepository]: jest.Mock };
+  let roles: { findByChapter: jest.Mock };
   let users: {
     findDisplayIdentitiesByIds: jest.Mock;
     findContactsByIds: jest.Mock;
@@ -54,10 +56,10 @@ describe('ReportService', () => {
       findPointsTotals: jest.fn().mockResolvedValue(complete([])),
       findRosterMembers: jest.fn().mockResolvedValue(complete([])),
       findMemberBalances: jest.fn().mockResolvedValue(complete([])),
-      findRoleNames: jest.fn().mockResolvedValue([]),
       findServiceEntries: jest.fn().mockResolvedValue(complete([])),
     };
 
+    roles = { findByChapter: jest.fn().mockResolvedValue([]) };
     users = {
       findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([]),
       findContactsByIds: jest.fn().mockResolvedValue([]),
@@ -77,6 +79,7 @@ describe('ReportService', () => {
           useValue: mockSemesterArchiveRepo,
         },
         { provide: USER_REPOSITORY, useValue: users },
+        { provide: ROLE_REPOSITORY, useValue: roles },
       ],
     }).compile();
 
@@ -351,7 +354,7 @@ describe('ReportService', () => {
       repo.findMemberBalances.mockResolvedValue(
         complete([{ user_id: 'u-1', total: 25 }]),
       );
-      repo.findRoleNames.mockResolvedValue([{ id: 'r-1', name: 'Member' }]);
+      roles.findByChapter.mockResolvedValue([{ id: 'r-1', name: 'Member' }]);
 
       const result = await service.getRosterReport('ch-1');
 
@@ -373,6 +376,7 @@ describe('ReportService', () => {
         'ch-1',
         REPORT_AGGREGATE_MAX_ROWS,
       );
+      expect(roles.findByChapter).toHaveBeenCalledWith('ch-1');
     });
 
     it('falls back to the raw id for a role the chapter no longer defines', async () => {

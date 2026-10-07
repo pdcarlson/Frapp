@@ -6,6 +6,8 @@ import { REPORT_REPOSITORY } from '#domain/repositories/report.repository.interf
 import { SupabaseReportRepository } from '../../infrastructure/supabase/repositories/supabase-report.repository';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '#domain/repositories/semester-archive.repository.interface';
 import { SupabaseSemesterArchiveRepository } from '../../infrastructure/supabase/repositories/supabase-semester-archive.repository';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { SupabaseRoleRepository } from '../../infrastructure/supabase/repositories/supabase-role.repository';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import { SupabaseUserRepository } from '../../infrastructure/supabase/repositories/supabase-user.repository';
 import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
@@ -21,8 +23,11 @@ import { ReportPdfRenderer } from '../../infrastructure/pdf/report-pdf.renderer'
     ReportService,
     ReportExportService,
     { provide: REPORT_REPOSITORY, useClass: SupabaseReportRepository },
-    // The service report's member names, through the batched display read.
+    // Member names for the service report (the batched display read) and
+    // names plus emails for the roster (`findContactsByIds`).
     { provide: USER_REPOSITORY, useClass: SupabaseUserRepository },
+    // The roster's role names.
+    { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
     // Points report resolves the semester window from the latest archive,
     // matching the leaderboard's source (see report.service.getPointsReport).
     {

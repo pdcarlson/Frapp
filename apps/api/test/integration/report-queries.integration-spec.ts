@@ -17,6 +17,7 @@
 import { ReportService } from '../../src/application/services/report.service';
 import { SupabaseReportRepository } from '../../src/infrastructure/supabase/repositories/supabase-report.repository';
 import { SupabaseUserRepository } from '../../src/infrastructure/supabase/repositories/supabase-user.repository';
+import { SupabaseRoleRepository } from '../../src/infrastructure/supabase/repositories/supabase-role.repository';
 import type { FrappSupabaseClient } from '../../src/infrastructure/supabase/database.types';
 import type { ISemesterArchiveRepository } from '../../src/domain/repositories/semester-archive.repository.interface';
 import { createServiceRoleClient, describeIntegration } from './stack';
@@ -55,6 +56,7 @@ describeIntegration('Report queries against live PostgREST', () => {
       new SupabaseReportRepository(supabase),
       semesterArchiveRepo,
       new SupabaseUserRepository(supabase),
+      new SupabaseRoleRepository(supabase),
     );
     fixture = await seedReportFixture(supabase);
     // Seeding 1,100 service entries plus the rest is several round-trips.

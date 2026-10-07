@@ -51,6 +51,13 @@ export interface ICustomFieldRepository {
   /** Throws {@link CustomFieldKeyConflictError} on a duplicate `key`. */
   create(data: Partial<ChapterCustomField>): Promise<ChapterCustomField>;
   /**
+   * Insert an archetype's default fields for a new chapter (onboarding). A row
+   * whose `(chapter_id, key)` already exists is skipped rather than overwritten
+   * or failed, so re-running provisioning is a no-op — unlike {@link create},
+   * where a duplicate is the officer's mistake and raises.
+   */
+  seedDefaults(rows: Partial<ChapterCustomField>[]): Promise<void>;
+  /**
    * The updated row, or `null` when no row matched in the chapter. Like
    * {@link findById}, a failed write also returns `null` (#2459).
    */

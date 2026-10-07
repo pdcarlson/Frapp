@@ -21,8 +21,6 @@ import {
 
 const EVENT_A = '0a000000-0000-4000-8000-000000000600';
 const EVENT_B = '0b000000-0000-4000-8000-000000000600';
-const ROLE_A = '0a000000-0000-4000-8000-000000000601';
-const ROLE_B = '0b000000-0000-4000-8000-000000000601';
 
 const event = (id: string, chapterId: string) => ({
   id,
@@ -69,10 +67,6 @@ const seed = () => ({
       role_ids: [],
       created_at: '2026-01-15T00:00:00Z',
     }),
-  ],
-  roles: [
-    inA({ id: ROLE_A, name: 'Member' }),
-    inB({ id: ROLE_B, name: 'Member' }),
   ],
   service_entries: [
     inA({
@@ -129,19 +123,15 @@ describe('SupabaseReportRepository — tenant scope', () => {
     expect(rows.map((r) => r.events?.id)).toEqual([EVENT_B]);
   });
 
-  it('findRosterMembers, findRoleNames and findServiceEntries stay in the chapter', async () => {
+  it('findRosterMembers and findServiceEntries stay in the chapter', async () => {
     const members = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.findRosterMembers(CHAPTER_B, 10),
-    );
-    const roles = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.findRoleNames(CHAPTER_B, 10),
     );
     const entries = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.findServiceEntries(CHAPTER_B, {}, 10),
     );
 
     expect(members.rows).toHaveLength(1);
-    expect(roles.map((r) => r.id)).toEqual([ROLE_B]);
     expect(entries.rows).toHaveLength(1);
   });
 

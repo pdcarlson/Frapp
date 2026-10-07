@@ -107,6 +107,17 @@ export class SupabaseCustomFieldRepository implements ICustomFieldRepository {
     return created;
   }
 
+  async seedDefaults(
+    rows: TablesInsert<'chapter_custom_fields'>[],
+  ): Promise<void> {
+    // `ignoreDuplicates` turns a unique violation on `(chapter_id, key)` into
+    // a skipped row, which is what makes re-running provisioning a no-op.
+    const { error } = await this.supabase
+      .from('chapter_custom_fields')
+      .upsert(rows, { onConflict: 'chapter_id,key', ignoreDuplicates: true });
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   async update(
     id: string,
     chapterId: string,

@@ -56,11 +56,6 @@ export interface MemberBalanceRow {
   total: number;
 }
 
-export interface RoleNameRow {
-  id: string;
-  name: string;
-}
-
 export interface ServiceReportFilters {
   userId?: string;
   /** `YYYY-MM-DD`, inclusive. */
@@ -104,8 +99,6 @@ export interface IReportRepository {
     chapterId: string,
     limit: number,
   ): Promise<CappedRows<MemberBalanceRow>>;
-  /** Every role the chapter defines, id and name. */
-  findRoleNames(chapterId: string, limit: number): Promise<RoleNameRow[]>;
   findServiceEntries(
     chapterId: string,
     filters: ServiceReportFilters,

@@ -11,7 +11,6 @@ import type {
   MemberRosterRow,
   PointsReportFilters,
   PointsTotalsRow,
-  RoleNameRow,
   ServiceEntryReportRow,
   ServiceReportFilters,
 } from '#domain/repositories/report.repository.interface';
@@ -236,29 +235,6 @@ export class SupabaseReportRepository implements IReportRepository {
           .range(from, to),
       limit,
     );
-  }
-
-  /**
-   * Every role the chapter defines, rather than the subset a roster mentions:
-   * `roles` is already chapter-scoped and a chapter holds a handful of them, so
-   * filtering by ID bought nothing but an `in (...)` list long enough to need
-   * chunking.
-   */
-  async findRoleNames(
-    chapterId: string,
-    limit: number,
-  ): Promise<RoleNameRow[]> {
-    const { rows } = await fetchCapped<RoleNameRow>(
-      (from, to) =>
-        this.supabase
-          .from('roles')
-          .select('id, name')
-          .eq('chapter_id', chapterId)
-          .order('id', { ascending: true })
-          .range(from, to),
-      limit,
-    );
-    return rows;
   }
 
   async findServiceEntries(

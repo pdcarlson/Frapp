@@ -1312,8 +1312,8 @@ After any rollback event:
   materialises per row under ACCESS EXCLUSIVE. If the archive has already been
   imported, treat a re-apply as a scheduled maintenance window, not a hotfix.
 * **Lighter option**: if the problem is search *results* rather than the schema
-  (stemming surprises, an unexpected match), forward-revert only the service change and
-  leave the column and index in place. They cost writes on insert and nothing on
+  (stemming surprises, an unexpected match), forward-revert only the query change (in
+  `SupabaseSearchRepository`) and leave the column and index in place. They cost writes on insert and nothing on
   read, and they will be needed again.
 
 ## Rollback the chat per-kind notification upsert target
@@ -1423,11 +1423,11 @@ After any rollback event:
   writes for every chapter at once, not just the one that prompted the rollback.
 * **Lighter option**: if the problem is search *results* rather than the schema
   (stemming surprises — `Budget` matches `Budgetson` but `udgets` no longer
-  does), forward-revert only the service change and leave the columns and indexes in
+  does), forward-revert only the query change (in `SupabaseSearchRepository`) and leave the columns and indexes in
   place. They cost writes on insert and nothing on read, and they will be needed
   again.
-* **If you forward-revert the service but keep the schema**, also revert
-  `EVENT_SEARCH_COLUMNS` / `BACKWORK_SEARCH_COLUMNS` together with it: the
+* **If you forward-revert the queries but keep the schema**, also revert
+  `EVENT_SEARCH_COLUMNS` / `BACKWORK_SEARCH_COLUMNS` (in `supabase-search.repository.ts`) together with them: the
   `check-pglite-migrations.mjs` landmark asserts those lists match their table's
   columns minus the tsvector, so a half-revert fails that gate.
 

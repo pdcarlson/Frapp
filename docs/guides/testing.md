@@ -467,7 +467,10 @@ Two conventions make the tests meaningful rather than decorative:
   delete each other's rows.
 
 Verify a new spec has teeth by breaking the code it covers and confirming it fails. The report specs
-were checked that way, against the report queries (now `supabase-report.repository.ts`):
+were checked that way, against `report.service.ts` as it stood before its queries moved into
+repositories (#3221). The embed rows now live in `supabase-report.repository.ts`, the paging in the
+shared `fetchAllPages` (`supabase.utils.ts`), and the chunked user lookup in
+`supabase-user.repository.ts`, so re-running a row means mutating that file:
 
 | Mutation | Tests that fail |
 | --- | --- |

@@ -50,6 +50,7 @@ function makeRepo(
     create: jest.fn((row: Record<string, unknown>) =>
       Promise.resolve({ id: 'f-new', ...row }),
     ),
+    seedDefaults: jest.fn().mockResolvedValue(undefined),
     update: jest.fn().mockResolvedValue(null),
     delete: jest.fn().mockResolvedValue(undefined),
     findValuesForMember: jest.fn().mockResolvedValue([]),

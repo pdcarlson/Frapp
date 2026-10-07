@@ -11,6 +11,10 @@ import {
   type IReportRepository,
 } from '#domain/repositories/report.repository.interface';
 import {
+  ROLE_REPOSITORY,
+  type IRoleRepository,
+} from '#domain/repositories/role.repository.interface';
+import {
   USER_REPOSITORY,
   type IUserRepository,
 } from '#domain/repositories/user.repository.interface';
@@ -154,6 +158,7 @@ export class ReportService {
     @Inject(SEMESTER_ARCHIVE_REPOSITORY)
     private readonly semesterArchiveRepo: ISemesterArchiveRepository,
     @Inject(USER_REPOSITORY) private readonly users: IUserRepository,
+    @Inject(ROLE_REPOSITORY) private readonly roles: IRoleRepository,
   ) {}
 
   /**
@@ -266,9 +271,12 @@ export class ReportService {
     // Balances are one already-summed row per scoring member (#567), read
     // through `get_points_leaderboard` with no window (#1743); the repository
     // carries why, and why that read pages on `user_id`.
-    const [users, balanceRows] = await Promise.all([
+    const [users, balanceRows, roles] = await Promise.all([
       this.users.findContactsByIds(userIds),
       this.reports.findMemberBalances(chapterId, REPORT_AGGREGATE_MAX_ROWS),
+      // Every role the chapter defines: a chapter holds a handful, so the
+      // owning repository's chapter read needs no paging or id list.
+      this.roles.findByChapter(chapterId),
     ]);
 
     const userMap = new Map(
@@ -293,13 +301,9 @@ export class ReportService {
       balanceRows.rows.map((b) => [b.user_id, Number(b.total ?? 0)]),
     );
 
-    // Every role the chapter defines; unmatched entries in the map are inert —
-    // it is only ever read by a member's own `role_ids`.
-    const roleMap = new Map<string, string>();
-    const roles = await this.reports.findRoleNames(chapterId, REPORT_MAX_ROWS);
-    for (const r of roles) {
-      roleMap.set(r.id, r.name);
-    }
+    // Unmatched entries in the map are inert — it is only ever read by a
+    // member's own `role_ids`.
+    const roleMap = new Map(roles.map((r) => [r.id, r.name] as const));
 
     const rows = members.map((m) => {
       const u = userMap.get(m.user_id);
