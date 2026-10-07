@@ -68,7 +68,7 @@ jobs:
               - 'scripts/**'
             pglite:
               - 'supabase/migrations/**'
-              - 'scripts/check-pglite-migrations.mjs'
+              - 'scripts/pglite/**'
               # The change-ping contract spec (the job's last step) applies every migration too.
               - 'apps/web/lib/realtime/**'
               - 'apps/web/vitest.config.ts'
@@ -729,7 +729,7 @@ jobs:
 
   # ── PGlite migration + RLS smoke validator (ADR-11 / ADR-12) ────────────
   # Applies every migration to PGlite and asserts schema landmarks, RLS posture
-  # and probe-role enforcement (scripts/check-pglite-migrations.mjs), then checks
+  # and probe-role enforcement (scripts/pglite/), then checks
   # the change-ping contract. Realtime, Presence and GoTrue with real JWTs are out
   # of reach (ADR-12); other limits: docs/security/authorization-model.md
   # § RLS enforcement.
