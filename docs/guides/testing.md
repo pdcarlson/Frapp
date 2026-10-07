@@ -155,6 +155,10 @@ When unit tests mock `createMany` results for `DEFAULT_SYSTEM_ROLES`, derive sta
 
 > **Tip:** Keep business logic in services small and focused. This makes unit tests much easier to write and maintain.
 
+### Stripe billing service tests
+
+Unit tests for `StripeBillingService` (`apps/api/src/infrastructure/billing/stripe.service.ts`) isolate the Stripe client using `jest.mock('stripe')` and manually mock-inject nested client instances for properties like `.customers` and `.checkout.sessions`. Mocked billing tests cannot catch a cross-account Infisical mismatch (`STRIPE_SECRET_KEY` vs `STRIPE_PRICE_ID`); `StripePriceConsistencyService` is the runtime gate (boot + `/health/ready`).
+
 ## 4. Guards and interceptors
 
 Guards to test:
@@ -276,32 +280,13 @@ integration suite (§6a), which exists for exactly that class of defect.
 characterised — asserted as unscoped, with a comment naming the enforcing service — and the route-level
 guarantee stays with `test/cross-tenant-isolation.e2e-spec.ts`.
 
-## 5. CI parity (lint job)
+## 5. CI parity (lint and API test jobs)
 
 The **`lint-and-typecheck`** job in `.github/workflows/ci.yml` runs ESLint, TypeScript, **`npm run check:brand-assets`**, and a set of per-workspace unit suites. That set is not restated here — it is in [`github-branch-protection-runbook.md`](../ops/github-branch-protection-runbook.md) § Required Status Checks. **Nothing asserts that copy against `ci.yml`** — `check:doc-tables` did, and it was deleted with the other docs gates, so the runbook's list is hand-kept and can lag this job. The validation suite includes a Zod 4 runtime smoke (`packages/validation/src/index.spec.ts`) for record maps plus the string-check, default, and strict APIs the package still uses. The `z.record(key, value)` TypeScript arity is enforced by `tsc` on `packages/validation/src/index.ts`, not by that spec (specs are excluded from the package `tsc`). `@repo/formatting` holds the shared locale date helpers plus tests that fail if a protected cluster (stopwatch padding, bare-date timezone parsing, minute-duration rounding) is folded into the generic formatter.
 
 The four docs gates that covered structure, citations, references and rosters are **gone** — scripts, `check:doc-*` npm scripts and jobs alike. What still runs over the docs outside `ci.yml`, and what it checks: [`docs-ci.md` § What runs](../ci-cd/docs-ci.md#what-runs). None of it is a required check, and none of it requires a doc edit.
 
 `lint` also surfaces the `nestjs-typed` response-schema rule as **warnings**, which do not fail ESLint, so this job stays green while the backlog stays visible. How to measure that backlog rather than copy a number, and when the rule flips to `error`: [`quality-gates.md` § nestjs-typed](../ci-cd/quality-gates.md#nestjs-typed--the-response-schema-rule).
-
-## 5a. Coverage
-
-Coverage runs on demand, not in CI, and has **no threshold** — it is a measurement, not a gate. This
-is a deliberate decision, not an oversight; `spec/architecture/README.md` § 11 states the current
-measured baseline instead of an unenforced minimum — see
-[`quality-gates.md` § Coverage](../ci-cd/quality-gates.md#coverage) for why it stays
-ungated.
-
-```bash
-npm run test:cov                  # every workspace, via turbo
-npm run test:cov -w apps/api      # Jest, v8 provider
-npm run test:cov -w packages/hooks # Vitest, @vitest/coverage-v8
-```
-
-Both runners report through the V8 engine. `apps/api` uses `coverageProvider: "v8"` rather than the
-Jest default specifically to route around a `minimatch`/`test-exclude` collision that made
-`test:cov` throw; the details are in [`quality-gates.md`](../ci-cd/quality-gates.md) and
-matter before anyone touches the root `overrides` block.
 
 The **`api-tests`** job runs the unit, E2E and AI-eval suites; see §2.
 
@@ -566,7 +551,24 @@ recurring shapes, all worth checking in any spec of this kind:
 - A double cast (`as unknown as Payload`) that disables checking of the very field the file exists
   to exercise.
 
-## 7. Coverage expectations
+## 7. Coverage
+
+Coverage runs on demand, not in CI, and has **no threshold** — it is a measurement, not a gate. This
+is a deliberate decision, not an oversight; `spec/architecture/README.md` § 11 states the current
+measured baseline instead of an unenforced minimum — see
+[`quality-gates.md` § Coverage](../ci-cd/quality-gates.md#coverage) for why it stays
+ungated.
+
+```bash
+npm run test:cov                  # every workspace, via turbo
+npm run test:cov -w apps/api      # Jest, v8 provider
+npm run test:cov -w packages/hooks # Vitest, @vitest/coverage-v8
+```
+
+Both runners report through the V8 engine. `apps/api` uses `coverageProvider: "v8"` rather than the
+Jest default specifically to route around a `minimatch`/`test-exclude` collision that made
+`test:cov` throw; the details are in [`quality-gates.md`](../ci-cd/quality-gates.md) and
+matter before anyone touches the root `overrides` block.
 
 For the API we aim for:
 
@@ -574,6 +576,3 @@ For the API we aim for:
 - **Integration/E2E** — at least one end-to-end flow per major domain
 
 > **Warning:** Do not chase 100% coverage at the expense of meaningful tests. Focus on critical business rules, security boundaries, and regressions we've actually seen.
-
-### Stripe Billing Service Tests
-Unit tests for `StripeBillingService` (`apps/api/src/infrastructure/billing/stripe.service.ts`) isolate the Stripe client using `jest.mock('stripe')` and manually mock-inject nested client instances for properties like `.customers` and `.checkout.sessions`. Mocked billing tests cannot catch a cross-account Infisical mismatch (`STRIPE_SECRET_KEY` vs `STRIPE_PRICE_ID`); `StripePriceConsistencyService` is the runtime gate (boot + `/health/ready`).
