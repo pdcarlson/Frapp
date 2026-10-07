@@ -62,7 +62,7 @@ From a cloud sandbox:
   the proxy route.
 
 Measurements and the canonical statement:
-[`agent-infra.md` → Work status](../../../docs/ci-cd/agent-infra.md#work-status).
+[`agent-infra.md` → The `api.github.com` route rule](../../../docs/ci-cd/agent-infra.md#the-apigithubcom-route-rule).
 
 ### Repo settings the MCP has no tool for (direct REST read)
 

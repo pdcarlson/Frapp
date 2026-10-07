@@ -499,7 +499,7 @@ bringup script) after any local reset.
 The four staging hosts in the allowlist above let a sandbox session
 reach the **deployed staging environment**, not just the local stack. This is what retires
 most of the "Runtime checks BLOCKED" protocol in
-[`../../ci-cd/agent-infra.md`](../../ci-cd/agent-infra.md) — see
+[`../../ci-cd/agent-infra.md`](../../ci-cd/agent-infra.md#runtime-checks-blocked-protocol) — see
 [`.claude/skills/live-verification/SKILL.md`](../../../.claude/skills/live-verification/SKILL.md)
 for how an agent is expected to use it.
 
@@ -678,13 +678,16 @@ It runs per session, never in `cloud-sandbox-setup.sh`: that script's filesystem
 for ~7 days, and a week-old cached answer about a policy that can change between sessions
 is worse than no answer.
 
+## Blocked tooling — known list
+
+What a session can't run, beyond the egress rules in [Live staging egress](#live-staging-egress). Add a new block here in the PR that finds it.
+
+- **Docker and local Supabase** run only where bringup's wiring is present ([Auto-bringup](#auto-bringup-and-how-the-agent-waits)). Without it (an environment not configured for bringup) the session has no daemon, so validate migrations with the PGlite harness, `npm run check:pglite-migrations`, which needs no database ([ADR-12](../../../spec/architecture/adr/adr-12.md)).
+- **Supabase MCP tools.** `.claude/settings.json` allows only the Workflow tool and the GitHub MCP tools ([`agent-infra.md` § Applied permission allows](../../ci-cd/agent-infra.md#applied-permission-allows)), so the write tools (`create_branch`, `apply_migration`, `delete_branch`) and most read tools (`list_branches`, `get_project`, `get_cost`) prompt, which an unattended session can't approve. The committed file has never carried a deny rule; the prompt is the enforcement. `list_projects` has been observed to go through. Don't assume any MCP tool works until you've tried it. Local Supabase covers the database and migrations without them.
+- **System packages.** The session runs as root and `apt-get` is installed, but `apt-get update` hung for 40s with no output on 2026-10-07, so budget a system package as unavailable. Nothing here needs one: the PGlite WASM bundle installs from npm.
+
 ## Still out of scope
 
-- **Supabase MCP write tools** (`create_branch`, `apply_migration`) are not allowlisted in
-  `.claude/settings.json`, so they prompt — which unattended sandboxes cannot approve (the
-  committed file has never carried a deny rule; see
-  [`../../ci-cd/agent-infra.md`](../../ci-cd/agent-infra.md)). Local Supabase covers DB + migrations
-  without them.
 - **Push fanout**, but read the halves separately — they differ, and the obvious summary
   is wrong. **APNS is unreachable**: `api.push.apple.com` and `api.sandbox.push.apple.com`
   both fail the policy check, and no Apple host is proposed for the allowlist. **FCM's HTTP
@@ -692,7 +695,7 @@ is worse than no answer.
   Trusted entry `*.googleapis.com`, with no Frapp-specific line involved. That is transport
   only: an actual fanout test still needs service-account credentials and a real device
   token to deliver to, so end-to-end push remains a "Runtime checks BLOCKED" case under
-  [`../../ci-cd/agent-infra.md`](../../ci-cd/agent-infra.md). Probe before assuming either way.
+  [`../../ci-cd/agent-infra.md`](../../ci-cd/agent-infra.md#runtime-checks-blocked-protocol). Probe before assuming either way.
 - **Live Realtime/Presence and RLS-as-GoTrue** are out of scope *only when the staging
   egress above is not configured*. With it plus a staging smoke credential they are
   reachable against hosted `frapp-staging` — that is the point of
