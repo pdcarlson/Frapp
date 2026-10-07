@@ -486,7 +486,7 @@ Two conventions make the tests meaningful rather than decorative:
   delete each other's rows.
 
 Verify a new spec has teeth by breaking the code it covers and confirming it fails. The report specs
-were checked that way, against `report.service.ts`:
+were checked that way, against the report queries (now `supabase-report.repository.ts`):
 
 | Mutation | Tests that fail |
 | --- | --- |

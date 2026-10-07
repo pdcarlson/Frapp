@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '#domain/repositories/semester-archive.repository.interface';
 import type { ISemesterArchiveRepository } from '#domain/repositories/semester-archive.repository.interface';
 import {
@@ -7,13 +6,10 @@ import {
   type PointsWindow,
 } from '#domain/utils/points-window';
 import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-range';
-import { chunkIds } from '#domain/utils/chunk-ids';
 import {
-  type PagedQueryResult,
-  fetchAllPages as fetchAllPagesShared,
-} from '../../infrastructure/supabase/supabase.utils';
-import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+  REPORT_REPOSITORY,
+  type IReportRepository,
+} from '#domain/repositories/report.repository.interface';
 
 export interface AttendanceReportRow {
   member_name: string;
@@ -63,19 +59,6 @@ export interface ServiceReportInput {
   start_date?: string;
   end_date?: string;
 }
-
-type QueryResult<T> = PagedQueryResult<T>;
-
-/**
- * Rows requested per round-trip.
- *
- * A request size, not an assumption about the server's cap — see
- * `fetchAllPages` in `infrastructure/supabase/supabase.utils.ts`, which is the
- * one home for why that holds. Every paged read in the API now shares that
- * rule; the "hold the page size below the cap instead" reasoning that used to
- * be cited here was #1628's bug, not a second safe strategy.
- */
-const REPORT_PAGE_SIZE = 1000;
 
 /**
  * Hard ceiling on the rows one report may return, in every format.
@@ -135,10 +118,6 @@ export const REPORT_MAX_ROWS = 5_000;
  */
 export const REPORT_AGGREGATE_MAX_ROWS = 50_000;
 
-// `ID_CHUNK_SIZE` and `chunkIds` moved to `domain/utils/chunk-ids` so the
-// narrow user-display lookup can share the same measured bound (#1000). The
-// rationale for the number lives with them.
-
 /**
  * A report's rows plus whether {@link REPORT_MAX_ROWS} cut them short.
  *
@@ -164,169 +143,32 @@ export interface ReportResult<T> {
   note?: string;
 }
 
-interface AttendanceJoinedRow {
-  status: string;
-  check_in_time: string | null;
-  events: { id: string; name: string; start_time: string } | null;
-  users: { display_name: string } | null;
-}
-
-interface UserNameRow {
-  id: string;
-  display_name: string;
-}
-
-interface MemberRosterRow {
-  user_id: string;
-  role_ids: string[];
-  created_at: string;
-}
-
-interface UserRosterRow {
-  id: string;
-  display_name: string;
-  email: string;
-}
-
-/**
- * One member's whole balance, already summed by `get_points_leaderboard`
- * (`20260906120001`). This replaced a `{ user_id, amount }` row per
- * *transaction*: the roster used to stream those in and reduce them in Node.
- *
- * The same shape `PointsLeaderboardRow` reads, deliberately: with both bounds
- * null that function answers exactly the question the roster asks, so the
- * roster reads it rather than adding a second per-member sum (#1743).
- */
-interface RosterBalanceRow {
-  user_id: string;
-  /** `bigint` in SQL; PostgREST serializes it as a JSON number. */
-  total: number;
-}
-
-interface RoleNameRow {
-  id: string;
-  name: string;
-}
-
-interface ServiceEntryRow {
-  user_id: string;
-  date: string;
-  duration_minutes: number;
-  description: string;
-  status: string;
-}
-
-interface PointsReportRpcRow {
-  member_name: string;
-  total_points: number;
-  breakdown_by_category: Record<string, number>;
-}
-
-/**
- * Read a query's full result set, one `REPORT_PAGE_SIZE` page at a time, and
- * report honestly whether {@link REPORT_MAX_ROWS} stopped it early.
- *
- * `page` must apply a **total** order — every caller here sorts on the table's
- * `id`, which is selected for ordering but need not be projected. Offset
- * paging over a non-unique sort key has no guaranteed order between
- * statements, so rows sharing a sort value across a page boundary can come
- * back twice or vanish entirely.
- *
- * A total order rules out *that* shuffling; it does not make the read a
- * snapshot. These are separate statements, so a row inserted or deleted
- * between two pages still shifts the window and can duplicate or skip one row
- * at the boundary. Reports are point-in-time summaries rather than ledgers, so
- * that is accepted rather than solved — a keyset cursor would be the fix if it
- * ever stops being.
- *
- * One row past the ceiling is requested so `truncated` is an observed fact
- * rather than an inference from a full final page: a result of exactly
- * `REPORT_MAX_ROWS` rows is complete, not short, and must not be labelled as
- * truncated.
- */
-async function fetchAllPages<T>(
-  page: (from: number, to: number) => PromiseLike<QueryResult<T>>,
-  { limit = REPORT_MAX_ROWS }: { limit?: number } = {},
-): Promise<ReportResult<T>> {
-  // The empty-page termination, the advance-by-what-arrived rule and the
-  // `SupabaseQueryError` a failed page throws all live in the shared helper;
-  // see `supabase.utils.ts` for why each is load-bearing. What stays here is
-  // report-specific: the `limit + 1` read that makes `truncated` an observed
-  // fact.
-  const rows = await fetchAllPagesShared<T>(page, {
-    pageSize: REPORT_PAGE_SIZE,
-    limit: limit + 1,
-  });
-
-  const truncated = rows.length > limit;
-  return {
-    rows: truncated ? rows.slice(0, limit) : rows,
-    truncated,
-    limit,
-  };
-}
-
 @Injectable()
 export class ReportService {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    @Inject(REPORT_REPOSITORY) private readonly reports: IReportRepository,
     @Inject(SEMESTER_ARCHIVE_REPOSITORY)
     private readonly semesterArchiveRepo: ISemesterArchiveRepository,
   ) {}
 
   /**
-   * Attendance rows for a chapter, scoped by the event filters.
-   *
-   * The chapter and date filters are applied to the embedded `events` resource
-   * with `!inner` rather than by first collecting event IDs and passing them
-   * back as an `in` list. The two-step version could not be paged safely: a
-   * chapter with more events than `max_rows` silently lost the overflow, and
-   * lifting that cap would push thousands of UUIDs into a query string.
-   *
-   * `users` **must** name its foreign key. `event_attendance` reaches `users`
-   * twice — `user_id` and `marked_by` — and a bare `users(...)` embed is
-   * rejected by PostgREST as ambiguous (`PGRST201`), which failed this
-   * endpoint in every environment (#746). `user_id` is the attendee; `marked_by`
-   * is the officer who recorded them.
+   * Attendance rows for a chapter, scoped by the event filters. The join and
+   * why it is shaped as it is (`events!inner`, the named `users` foreign key,
+   * #746) are `SupabaseReportRepository.findAttendance`'s.
    */
   async getAttendanceReport(
     chapterId: string,
     input: AttendanceReportInput,
   ): Promise<ReportResult<AttendanceReportRow>> {
-    const { rows: joined, truncated } =
-      await fetchAllPages<AttendanceJoinedRow>((from, to) => {
-        let query = this.supabase
-          .from('event_attendance')
-          .select(
-            `
-        status,
-        check_in_time,
-        events!inner (id, name, start_time),
-        users!event_attendance_user_id_fkey (display_name)
-      `,
-          )
-          .eq('events.chapter_id', chapterId);
-
-        if (input.event_id) {
-          query = query.eq('events.id', input.event_id);
-        }
-        if (input.start_date) {
-          query = query.gte(
-            'events.start_time',
-            `${input.start_date}T00:00:00.000Z`,
-          );
-        }
-        if (input.end_date) {
-          query = query.lte(
-            'events.start_time',
-            `${input.end_date}T23:59:59.999Z`,
-          );
-        }
-
-        return query
-          .order('id', { ascending: true })
-          .range(from, to) as PromiseLike<QueryResult<AttendanceJoinedRow>>;
-      });
+    const { rows: joined, truncated } = await this.reports.findAttendance(
+      chapterId,
+      {
+        eventId: input.event_id,
+        startDate: input.start_date,
+        endDate: input.end_date,
+      },
+      REPORT_MAX_ROWS,
+    );
 
     const rows = joined.map((row) => {
       const startTime = row.events?.start_time ?? '';
@@ -383,33 +225,12 @@ export class ReportService {
       });
     }
 
-    // An RPC result set is subject to `max_rows` exactly like a table read, so
-    // this pages too — and on the same terms, deliberately. PostgREST applies
-    // `LIMIT`/`OFFSET` *outside* the function call, so the trailing empty
-    // request re-runs `get_points_report` in full rather than costing an
-    // indexed scan of nothing: one redundant `GROUP BY` per points report.
-    // That is accepted. Ending on a short page instead would make this read —
-    // alone among them — silently truncate whenever the server's `max_rows`
-    // sat below the page size, which is the precise failure this branch
-    // exists to remove, traded away for a few milliseconds on an admin action
-    // nobody runs in a loop.
-    //
-    // `member_name` is also the only orderable column the function returns —
-    // it exposes no key — so two members sharing a display name across a page
-    // boundary is an ordering tie this cannot break. Reaching that needs more
-    // members in one chapter than a page holds; carrying `user_id` out of the
-    // RPC is tracked separately (#747).
-    const { rows, truncated } = await fetchAllPages<PointsReportRpcRow>(
-      (from, to) =>
-        this.supabase
-          .rpc('get_points_report', {
-            p_chapter_id: chapterId,
-            p_user_id: input.user_id || null,
-            p_since: since ? since.toISOString() : null,
-            p_until: until ? until.toISOString() : null,
-          })
-          .order('member_name', { ascending: true })
-          .range(from, to),
+    // Paged like every report read; why an RPC pages, and the ordering tie it
+    // cannot break (#747), are `SupabaseReportRepository.findPointsTotals`'.
+    const { rows, truncated } = await this.reports.findPointsTotals(
+      chapterId,
+      { userId: input.user_id || null, since, until },
+      REPORT_MAX_ROWS,
     );
 
     return {
@@ -427,14 +248,7 @@ export class ReportService {
     chapterId: string,
   ): Promise<ReportResult<RosterReportRow>> {
     const { rows: members, truncated: membersTruncated } =
-      await fetchAllPages<MemberRosterRow>((from, to) =>
-        this.supabase
-          .from('members')
-          .select('user_id, role_ids, created_at')
-          .eq('chapter_id', chapterId)
-          .order('id', { ascending: true })
-          .range(from, to),
-      );
+      await this.reports.findRosterMembers(chapterId, REPORT_MAX_ROWS);
     if (!members.length)
       return { rows: [], truncated: membersTruncated, limit: REPORT_MAX_ROWS };
 
@@ -443,80 +257,19 @@ export class ReportService {
     // ⚡ Bolt: Parallelize independent DB queries to eliminate sequential
     // network roundtrips. Expected impact: Reduces latency during roster
     // generation by fetching users and point balances concurrently.
-    const usersQuery = Promise.all(
-      chunkIds(userIds).map(
-        (ids) =>
-          this.supabase
-            .from('users')
-            .select('id, display_name, email')
-            .in('id', ids) as PromiseLike<QueryResult<UserRosterRow>>,
-      ),
-    );
-    // Summed by Postgres, one row per member, rather than streamed in as one
-    // row per transaction (#567). Scoped by chapter alone, then matched
-    // against the roster in memory below. Filtering on `user_id` as well would
-    // mean an `in` list holding every member — for a filter that changes
-    // nothing: a balance is only ever read back for a member's own ID, so a
-    // departed member's residual rows are inert.
     //
-    // `get_points_leaderboard` with both bounds null, rather than a roster-only
-    // aggregate of its own (#1743). The two would be the same `group by
-    // pt.user_id` over the same table with the same grants, and the roster
-    // needs no window: a roster balance is the member's all-time chapter
-    // total, which is exactly what unbounded means here. Null bounds are the
-    // function's documented "no window" case, not a coincidence of its filter
-    // — `getLeaderboard` sends the same nulls for the `all` window.
-    //
-    // Still paged, on the same terms as `getPointsReport` above: PostgREST
-    // applies `max_rows` to an RPC result set exactly as to a table read. The
-    // order is on `user_id`, which the function groups by and is therefore
-    // unique across the result — a total order, so no *tie* can duplicate or
-    // drop a row across a page boundary. Ordering here overrides the
-    // function's own `order by total desc`, which the leaderboard needs and
-    // the roster must not page on: `total` is not unique. (`get_points_report`
-    // cannot offer either: it returns no key and can only tie-break on display
-    // name, which is the whole of #747.)
-    //
-    // A total order is not a snapshot, and does not claim to be: a paged read
-    // is several statements, so a concurrent write can still shift a boundary
-    // (`fetchAllPages`' own docstring says so). That is the report-wide caveat
-    // in `docs/performance/reports.md`, not something this ordering fixes.
-    //
-    // What DID change is the shape of that rare failure, and it cuts both
-    // ways. A row inserted between pages used to double-count one transaction;
-    // now a duplicated aggregate row just rewrites the Map with the same value,
-    // which is harmless. But a delete that removes a member's whole group no
-    // longer shaves one transaction off their balance — it drops the group, and
-    // they render as 0. Both need a chapter past one page of scoring members
-    // plus a concurrent write mid-report.
-    const balancesQuery = fetchAllPages<RosterBalanceRow>(
-      (from, to) =>
-        this.supabase
-          .rpc('get_points_leaderboard', {
-            p_chapter_id: chapterId,
-            p_since: null,
-            p_until: null,
-          })
-          .order('user_id', { ascending: true })
-          .range(from, to),
-      { limit: REPORT_AGGREGATE_MAX_ROWS },
-    );
-
-    const [userPages, balanceRows] = await Promise.all([
-      usersQuery,
-      balancesQuery,
+    // Balances are one already-summed row per scoring member (#567), read
+    // through `get_points_leaderboard` with no window (#1743); the repository
+    // carries why, and why that read pages on `user_id`.
+    const [users, balanceRows] = await Promise.all([
+      this.reports.findUserContacts(userIds),
+      this.reports.findMemberBalances(chapterId, REPORT_AGGREGATE_MAX_ROWS),
     ]);
 
-    for (const pageResult of userPages) {
-      if (pageResult.error) throw new SupabaseQueryError(pageResult.error);
-    }
-
     const userMap = new Map(
-      userPages.flatMap((pageResult) =>
-        (pageResult.data ?? []).map(
-          (u) =>
-            [u.id, { display_name: u.display_name, email: u.email }] as const,
-        ),
+      users.map(
+        (u) =>
+          [u.id, { display_name: u.display_name, email: u.email }] as const,
       ),
     );
 
@@ -535,20 +288,10 @@ export class ReportService {
       balanceRows.rows.map((b) => [b.user_id, Number(b.total ?? 0)]),
     );
 
-    // Every role the chapter defines, rather than the subset the roster
-    // mentions: `roles` is already chapter-scoped and a chapter holds a
-    // handful of them, so filtering by ID bought nothing but an `in (...)`
-    // list long enough to need chunking. Unmatched entries in the map are
-    // inert — it is only ever read by a member's own `role_ids`.
+    // Every role the chapter defines; unmatched entries in the map are inert —
+    // it is only ever read by a member's own `role_ids`.
     const roleMap = new Map<string, string>();
-    const { rows: roles } = await fetchAllPages<RoleNameRow>((from, to) =>
-      this.supabase
-        .from('roles')
-        .select('id, name')
-        .eq('chapter_id', chapterId)
-        .order('id', { ascending: true })
-        .range(from, to),
-    );
+    const roles = await this.reports.findRoleNames(chapterId, REPORT_MAX_ROWS);
     for (const r of roles) {
       roleMap.set(r.id, r.name);
     }
@@ -600,48 +343,22 @@ export class ReportService {
     chapterId: string,
     input: ServiceReportInput,
   ): Promise<ReportResult<ServiceReportRow>> {
-    const { rows: entries, truncated } = await fetchAllPages<ServiceEntryRow>(
-      (from, to) => {
-        let query = this.supabase
-          .from('service_entries')
-          .select('user_id, date, duration_minutes, description, status')
-          .eq('chapter_id', chapterId);
-
-        if (input.user_id) {
-          query = query.eq('user_id', input.user_id);
-        }
-        if (input.start_date) {
-          query = query.gte('date', input.start_date);
-        }
-        if (input.end_date) {
-          query = query.lte('date', input.end_date);
-        }
-
-        // `date` alone is not unique, so it cannot order a paged read on its
-        // own — `id` breaks the ties that would otherwise duplicate or drop
-        // entries sharing a date across a page boundary.
-        return query
-          .order('date', { ascending: false })
-          .order('id', { ascending: true })
-          .range(from, to);
+    const { rows: entries, truncated } = await this.reports.findServiceEntries(
+      chapterId,
+      {
+        userId: input.user_id,
+        startDate: input.start_date,
+        endDate: input.end_date,
       },
+      REPORT_MAX_ROWS,
     );
     if (!entries.length) return { rows: [], truncated, limit: REPORT_MAX_ROWS };
 
     const userIds = [...new Set(entries.map((e) => e.user_id))];
-    const userPages = (await Promise.all(
-      chunkIds(userIds).map((ids) =>
-        this.supabase.from('users').select('id, display_name').in('id', ids),
-      ),
-    )) as QueryResult<UserNameRow>[];
-
-    const userMap = new Map<string, string>();
-    for (const pageResult of userPages) {
-      if (pageResult.error) throw new SupabaseQueryError(pageResult.error);
-      for (const u of pageResult.data ?? []) {
-        userMap.set(u.id, u.display_name);
-      }
-    }
+    const users = await this.reports.findUserNames(userIds);
+    const userMap = new Map<string, string>(
+      users.map((u) => [u.id, u.display_name]),
+    );
 
     const rows = entries.map((e) => ({
       member_name: userMap.get(e.user_id) ?? '',

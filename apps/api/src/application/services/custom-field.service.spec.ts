@@ -10,7 +10,11 @@ import {
 } from './custom-field.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { createAuditLogServiceMock } from '#test/helpers/audit-log.mock';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import {
+  CUSTOM_FIELD_REPOSITORY,
+  CustomFieldKeyConflictError,
+  type ICustomFieldRepository,
+} from '#domain/repositories/custom-field.repository.interface';
 
 const CHAPTER_ID = 'chapter-1';
 const ACTOR_ID = 'user-1';
@@ -22,110 +26,42 @@ beforeEach(() => {
   auditLog.record.mockClear();
 });
 
+type RepoMock = { [K in keyof ICustomFieldRepository]: jest.Mock };
+
 /**
- * Builds a Supabase test double tailored to the chains CustomFieldService uses:
- * - chapter_custom_fields: insert/update/delete + select/maybeSingle/order
- *
- * No `chapter_audit_log` branch: an insert reintroduced there hits the
- * unhandled-table fallback and fails loudly (#2167).
+ * A repository double. `create` echoes its payload back as the stored row
+ * unless a test overrides it, so the payload the service built is what the
+ * assertions read.
  */
-function makeSupabase(opts: {
-  /** Row returned by the single-row read used before update/delete. */
-  existingField?: Record<string, unknown> | null;
-  /** Result of insert().select().single() on chapter_custom_fields. */
-  insertResult?: { data?: unknown; error?: unknown };
-  /** Result of update().eq().eq().select().single(). */
-  updateResult?: { data?: unknown; error?: unknown };
-  /** Rows returned by the list query. */
-  listRows?: unknown[];
-  /**
-   * Highest-`sort` row for the chapter, read by `nextSort` before an insert
-   * that supplies no explicit `sort`. `null`/omitted = the chapter has no
-   * fields yet, so the next sort is 0.
-   */
-  highestSortRow?: { sort: number } | null;
-}) {
-  const customFieldInsert = jest.fn();
-  // Recorders hoisted out of the per-call `builder` so tests can assert the
-  // arguments the service passed, not just the value the chain resolved to. A
-  // passthrough chain that ignores its arguments lets a dropped chapter filter
-  // or a flipped sort direction pass green.
-  const fieldEq = jest.fn();
-  const fieldOrder = jest.fn();
-  const fieldLimit = jest.fn();
-
-  const from = jest.fn((table: string) => {
-    if (table === 'chapter_custom_fields') {
-      const builder: Record<string, jest.Mock> = {};
-      builder.select = jest.fn(() => builder);
-      // findByChapter chains .order().order() — the second order resolves.
-      builder.order = jest.fn((...args: unknown[]) => {
-        fieldOrder(...args);
-        const resolved = Promise.resolve({
-          data: opts.listRows ?? [],
-          error: null,
-        });
-        return Object.assign(resolved, {
-          order: jest.fn((...inner: unknown[]) => {
-            fieldOrder(...inner);
-            return resolved;
-          }),
-          // nextSort chains .order().limit().maybeSingle() for the top row.
-          limit: jest.fn((...args: unknown[]) => {
-            fieldLimit(...args);
-            return {
-              maybeSingle: jest.fn(() =>
-                Promise.resolve({
-                  data: opts.highestSortRow ?? null,
-                  error: null,
-                }),
-              ),
-            };
-          }),
-        });
-      });
-      builder.eq = jest.fn((...args: unknown[]) => {
-        fieldEq(...args);
-        return builder;
-      });
-      builder.maybeSingle = jest.fn(() =>
-        Promise.resolve({ data: opts.existingField ?? null, error: null }),
-      );
-      builder.single = jest.fn(() =>
-        Promise.resolve(
-          opts.updateResult ?? opts.insertResult ?? { data: null, error: null },
-        ),
-      );
-      builder.insert = jest.fn((payload: unknown) => {
-        customFieldInsert(payload);
-        return builder;
-      });
-      builder.update = jest.fn(() => builder);
-      builder.delete = jest.fn(() => ({
-        eq: jest.fn(() => ({
-          eq: jest.fn(() => Promise.resolve({ error: null })),
-        })),
-      }));
-      return builder;
-    }
-
-    return {};
-  });
-
+function makeRepo(
+  opts: {
+    /** Row returned by `findById`, read before update/delete. */
+    existingField?: Record<string, unknown> | null;
+    /** Highest `sort` in the chapter; `null`/omitted = no fields yet. */
+    maxSort?: number | null;
+  } = {},
+): RepoMock {
   return {
-    from,
-    customFieldInsert,
-    fieldEq,
-    fieldOrder,
-    fieldLimit,
+    findByChapter: jest.fn().mockResolvedValue([]),
+    findByVisibility: jest.fn().mockResolvedValue([]),
+    findIdsByVisibility: jest.fn().mockResolvedValue([]),
+    findById: jest.fn().mockResolvedValue(opts.existingField ?? null),
+    findMaxSort: jest.fn().mockResolvedValue(opts.maxSort ?? null),
+    create: jest.fn((row: Record<string, unknown>) =>
+      Promise.resolve({ id: 'f-new', ...row }),
+    ),
+    update: jest.fn().mockResolvedValue(null),
+    delete: jest.fn().mockResolvedValue(undefined),
+    findValuesForMember: jest.fn().mockResolvedValue([]),
+    findValuesByFieldIds: jest.fn().mockResolvedValue([]),
   };
 }
 
-async function buildService(supabase: { from: jest.Mock }) {
+async function buildService(repo: RepoMock) {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       CustomFieldService,
-      { provide: SUPABASE_CLIENT, useValue: supabase },
+      { provide: CUSTOM_FIELD_REPOSITORY, useValue: repo },
       { provide: ChapterAuditLogService, useValue: auditLog },
     ],
   }).compile();
@@ -136,13 +72,14 @@ describe('CustomFieldService', () => {
   describe('findByChapter', () => {
     it('returns chapter custom fields ordered by sort', async () => {
       const rows = [{ id: 'f1', sort: 0 }];
-      const supabase = makeSupabase({ listRows: rows });
-      const service = await buildService(supabase);
+      const repo = makeRepo();
+      repo.findByChapter.mockResolvedValue(rows);
+      const service = await buildService(repo);
 
       const result = await service.findByChapter(CHAPTER_ID);
 
       expect(result).toEqual(rows);
-      expect(supabase.from).toHaveBeenCalledWith('chapter_custom_fields');
+      expect(repo.findByChapter).toHaveBeenCalledWith(CHAPTER_ID);
     });
   });
 
@@ -160,10 +97,9 @@ describe('CustomFieldService', () => {
         options: null,
         sort: 0,
       };
-      const supabase = makeSupabase({
-        insertResult: { data: created, error: null },
-      });
-      const service = await buildService(supabase);
+      const repo = makeRepo();
+      repo.create.mockResolvedValue(created);
+      const service = await buildService(repo);
 
       const result = await service.create(CHAPTER_ID, ACTOR_ID, {
         key: 'major',
@@ -172,7 +108,7 @@ describe('CustomFieldService', () => {
       });
 
       expect(result).toEqual(created);
-      expect(supabase.customFieldInsert).toHaveBeenCalledWith(
+      expect(repo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           chapter_id: CHAPTER_ID,
           key: 'major',
@@ -206,11 +142,8 @@ describe('CustomFieldService', () => {
       // The Fields tab sends no `sort`. A fixed default of 0 would place every
       // hand-added field ahead of the fields seeded at onboarding (#572), since
       // findByChapter orders by sort then created_at.
-      const supabase = makeSupabase({
-        highestSortRow: { sort: 7 },
-        insertResult: { data: { id: 'f9' }, error: null },
-      });
-      const service = await buildService(supabase);
+      const repo = makeRepo({ maxSort: 7 });
+      const service = await buildService(repo);
 
       await service.create(CHAPTER_ID, ACTOR_ID, {
         key: 'nickname',
@@ -218,23 +151,15 @@ describe('CustomFieldService', () => {
         type: 'text',
       });
 
-      expect(supabase.customFieldInsert).toHaveBeenCalledWith(
+      expect(repo.findMaxSort).toHaveBeenCalledWith(CHAPTER_ID);
+      expect(repo.create).toHaveBeenCalledWith(
         expect.objectContaining({ sort: 8 }),
       );
     });
 
-    it('scopes the next-sort lookup to this chapter, highest first', async () => {
-      // The resolved value alone cannot pin these: the test double is a
-      // passthrough, so dropping the chapter filter or flipping the sort
-      // direction both still return the fixture. Both are real defects —
-      // an unscoped read derives one chapter's sort from another's rows on a
-      // service-role client that bypasses RLS, and an ascending order returns
-      // min(sort)+1, which collides new fields into the seeded block.
-      const supabase = makeSupabase({
-        highestSortRow: { sort: 7 },
-        insertResult: { data: { id: 'f9' }, error: null },
-      });
-      const service = await buildService(supabase);
+    it('starts at 0 in a chapter with no fields yet', async () => {
+      const repo = makeRepo({ maxSort: null });
+      const service = await buildService(repo);
 
       await service.create(CHAPTER_ID, ACTOR_ID, {
         key: 'nickname',
@@ -242,19 +167,14 @@ describe('CustomFieldService', () => {
         type: 'text',
       });
 
-      expect(supabase.fieldEq).toHaveBeenCalledWith('chapter_id', CHAPTER_ID);
-      expect(supabase.fieldOrder).toHaveBeenCalledWith('sort', {
-        ascending: false,
-      });
-      expect(supabase.fieldLimit).toHaveBeenCalledWith(1);
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: 0 }),
+      );
     });
 
     it('honours an explicitly supplied sort', async () => {
-      const supabase = makeSupabase({
-        highestSortRow: { sort: 7 },
-        insertResult: { data: { id: 'f9' }, error: null },
-      });
-      const service = await buildService(supabase);
+      const repo = makeRepo({ maxSort: 7 });
+      const service = await buildService(repo);
 
       await service.create(CHAPTER_ID, ACTOR_ID, {
         key: 'nickname',
@@ -263,14 +183,15 @@ describe('CustomFieldService', () => {
         sort: 2,
       });
 
-      expect(supabase.customFieldInsert).toHaveBeenCalledWith(
+      expect(repo.findMaxSort).not.toHaveBeenCalled();
+      expect(repo.create).toHaveBeenCalledWith(
         expect.objectContaining({ sort: 2 }),
       );
     });
 
     it('rejects a select field with no choices and does not audit', async () => {
-      const supabase = makeSupabase({});
-      const service = await buildService(supabase);
+      const repo = makeRepo();
+      const service = await buildService(repo);
 
       await expect(
         service.create(CHAPTER_ID, ACTOR_ID, {
@@ -279,18 +200,13 @@ describe('CustomFieldService', () => {
           type: 'select',
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(supabase.customFieldInsert).not.toHaveBeenCalled();
+      expect(repo.create).not.toHaveBeenCalled();
       expect(auditLog.record).not.toHaveBeenCalled();
     });
 
     it('deep-clones options so the persisted row never shares a reference', async () => {
-      const supabase = makeSupabase({
-        insertResult: {
-          data: { id: 'f1', chapter_id: CHAPTER_ID },
-          error: null,
-        },
-      });
-      const service = await buildService(supabase);
+      const repo = makeRepo();
+      const service = await buildService(repo);
 
       const options = { choices: ['S', 'M', 'L'] };
       await service.create(CHAPTER_ID, ACTOR_ID, {
@@ -300,7 +216,7 @@ describe('CustomFieldService', () => {
         options,
       });
 
-      const persisted = supabase.customFieldInsert.mock.calls[0][0] as {
+      const persisted = repo.create.mock.calls[0][0] as {
         options: { choices: string[] };
       };
       expect(persisted.options).toEqual(options);
@@ -308,11 +224,10 @@ describe('CustomFieldService', () => {
       expect(persisted.options.choices).not.toBe(options.choices);
     });
 
-    it('maps a unique-violation to 409 Conflict and does not audit', async () => {
-      const supabase = makeSupabase({
-        insertResult: { data: null, error: { code: '23505' } },
-      });
-      const service = await buildService(supabase);
+    it('maps a duplicate key to 409 Conflict and does not audit', async () => {
+      const repo = makeRepo();
+      repo.create.mockRejectedValue(new CustomFieldKeyConflictError());
+      const service = await buildService(repo);
 
       await expect(
         service.create(CHAPTER_ID, ACTOR_ID, {
@@ -323,18 +238,34 @@ describe('CustomFieldService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
       expect(auditLog.record).not.toHaveBeenCalled();
     });
+
+    it('lets any other repository failure through unmapped', async () => {
+      const failure = new Error('connection reset');
+      const repo = makeRepo();
+      repo.create.mockRejectedValue(failure);
+      const service = await buildService(repo);
+
+      await expect(
+        service.create(CHAPTER_ID, ACTOR_ID, {
+          key: 'x',
+          label: 'X',
+          type: 'text',
+        }),
+      ).rejects.toBe(failure);
+    });
   });
 
   describe('remove', () => {
     it('deletes any field and audits the deletion (no core guard)', async () => {
-      const supabase = makeSupabase({
+      const repo = makeRepo({
         existingField: { id: 'f1', chapter_id: CHAPTER_ID },
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repo);
 
       const result = await service.remove('f1', CHAPTER_ID, ACTOR_ID);
 
       expect(result).toEqual({ success: true });
+      expect(repo.delete).toHaveBeenCalledWith('f1', CHAPTER_ID);
       expect(auditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'chapter_custom_field_deleted',
@@ -344,12 +275,13 @@ describe('CustomFieldService', () => {
     });
 
     it('throws 404 when the field is missing', async () => {
-      const supabase = makeSupabase({ existingField: null });
-      const service = await buildService(supabase);
+      const repo = makeRepo({ existingField: null });
+      const service = await buildService(repo);
 
       await expect(
         service.remove('missing', CHAPTER_ID, ACTOR_ID),
       ).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.delete).not.toHaveBeenCalled();
     });
   });
 
@@ -362,17 +294,18 @@ describe('CustomFieldService', () => {
         required: false,
       };
       const updated = { ...existing, label: 'New' };
-      const supabase = makeSupabase({
-        existingField: existing,
-        updateResult: { data: updated, error: null },
-      });
-      const service = await buildService(supabase);
+      const repo = makeRepo({ existingField: existing });
+      repo.update.mockResolvedValue(updated);
+      const service = await buildService(repo);
 
       const result = await service.update('f1', CHAPTER_ID, ACTOR_ID, {
         label: 'New',
       });
 
       expect(result).toEqual(updated);
+      expect(repo.update).toHaveBeenCalledWith('f1', CHAPTER_ID, {
+        label: 'New',
+      });
       expect(auditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'chapter_custom_field_updated' }),
       );
@@ -380,12 +313,26 @@ describe('CustomFieldService', () => {
 
     it('returns the existing field without auditing when the patch is empty', async () => {
       const existing = { id: 'f1', chapter_id: CHAPTER_ID };
-      const supabase = makeSupabase({ existingField: existing });
-      const service = await buildService(supabase);
+      const repo = makeRepo({ existingField: existing });
+      const service = await buildService(repo);
 
       const result = await service.update('f1', CHAPTER_ID, ACTOR_ID, {});
 
       expect(result).toEqual(existing);
+      expect(repo.update).not.toHaveBeenCalled();
+      expect(auditLog.record).not.toHaveBeenCalled();
+    });
+
+    it('throws 404 when the write matches no row', async () => {
+      const repo = makeRepo({
+        existingField: { id: 'f1', chapter_id: CHAPTER_ID },
+      });
+      repo.update.mockResolvedValue(null);
+      const service = await buildService(repo);
+
+      await expect(
+        service.update('f1', CHAPTER_ID, ACTOR_ID, { label: 'New' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(auditLog.record).not.toHaveBeenCalled();
     });
 
@@ -403,8 +350,9 @@ describe('CustomFieldService', () => {
         { options: { choices: [] } },
       ];
       for (const body of bodies) {
-        const supabase = makeSupabase({ existingField: existing });
-        const service = await buildService(supabase);
+        const service = await buildService(
+          makeRepo({ existingField: existing }),
+        );
         await expect(
           service.update('f1', CHAPTER_ID, ACTOR_ID, body),
         ).rejects.toBeInstanceOf(BadRequestException);

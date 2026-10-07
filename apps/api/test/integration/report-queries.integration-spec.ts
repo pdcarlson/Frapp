@@ -14,8 +14,9 @@
 // Run: `npm run test:integration -w apps/api` (needs a local Supabase stack;
 // skips cleanly without one).
 
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { ReportService } from '../../src/application/services/report.service';
+import { SupabaseReportRepository } from '../../src/infrastructure/supabase/repositories/supabase-report.repository';
+import type { FrappSupabaseClient } from '../../src/infrastructure/supabase/database.types';
 import type { ISemesterArchiveRepository } from '../../src/domain/repositories/semester-archive.repository.interface';
 import { createServiceRoleClient, describeIntegration } from './stack';
 import {
@@ -43,13 +44,16 @@ const semesterArchiveRepo: ISemesterArchiveRepository = {
 };
 
 describeIntegration('Report queries against live PostgREST', () => {
-  let supabase: SupabaseClient;
+  let supabase: FrappSupabaseClient;
   let service: ReportService;
   let fixture: ReportFixture;
 
   beforeAll(async () => {
     supabase = createServiceRoleClient();
-    service = new ReportService(supabase, semesterArchiveRepo);
+    service = new ReportService(
+      new SupabaseReportRepository(supabase),
+      semesterArchiveRepo,
+    );
     fixture = await seedReportFixture(supabase);
     // Seeding 1,100 service entries plus the rest is several round-trips.
   }, 120_000);

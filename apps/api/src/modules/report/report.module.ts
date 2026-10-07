@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ReportService } from '../../application/services/report.service';
 import { ReportExportService } from '../../application/services/report-export.service';
 import { ReportController } from '../../interface/controllers/report.controller';
+import { REPORT_REPOSITORY } from '#domain/repositories/report.repository.interface';
+import { SupabaseReportRepository } from '../../infrastructure/supabase/repositories/supabase-report.repository';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '#domain/repositories/semester-archive.repository.interface';
 import { SupabaseSemesterArchiveRepository } from '../../infrastructure/supabase/repositories/supabase-semester-archive.repository';
 import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
@@ -16,6 +18,7 @@ import { ReportPdfRenderer } from '../../infrastructure/pdf/report-pdf.renderer'
   providers: [
     ReportService,
     ReportExportService,
+    { provide: REPORT_REPOSITORY, useClass: SupabaseReportRepository },
     // Points report resolves the semester window from the latest archive,
     // matching the leaderboard's source (see report.service.getPointsReport).
     {

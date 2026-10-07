@@ -8,7 +8,11 @@ import {
 import { CustomRoleService } from './custom-role.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { createAuditLogServiceMock } from '#test/helpers/audit-log.mock';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import {
+  CUSTOM_ROLE_REPOSITORY,
+  CustomRoleKeyConflictError,
+  type ICustomRoleRepository,
+} from '#domain/repositories/custom-role.repository.interface';
 
 const CHAPTER_ID = 'chapter-1';
 const ACTOR_ID = 'user-1';
@@ -20,73 +24,38 @@ beforeEach(() => {
   auditLog.record.mockClear();
 });
 
+type RepoMock = { [K in keyof ICustomRoleRepository]: jest.Mock };
+
 /**
- * Builds a Supabase test double tailored to the chains CustomRoleService uses:
- * - chapter_custom_roles: insert/update/delete + select/maybeSingle/order
- * `roleResult` / `insertResult` let a test inject a row or an error. No
- * `chapter_audit_log` branch: an insert reintroduced there hits the
- * unhandled-table fallback and fails loudly (#2167).
+ * A repository double. `create` echoes its payload back as the stored row
+ * unless a test overrides it, so the payload the service built is what the
+ * assertions read.
  */
-function makeSupabase(opts: {
-  /** Row returned by the single-row read used before update/delete. */
-  existingRole?: Record<string, unknown> | null;
-  /** Result of insert().select().single() on chapter_custom_roles. */
-  insertResult?: { data?: unknown; error?: unknown };
-  /** Result of update().eq().eq().select().single(). */
-  updateResult?: { data?: unknown; error?: unknown };
-  /** Rows returned by the list query. */
-  listRows?: unknown[];
-}) {
-  const customRoleInsert = jest.fn();
-
-  const from = jest.fn((table: string) => {
-    if (table === 'chapter_custom_roles') {
-      // Each call to from() returns a fresh builder; the terminal method
-      // resolves with the configured result for the operation under test.
-      const builder: Record<string, jest.Mock> = {};
-      builder.select = jest.fn(() => builder);
-      builder.order = jest.fn(() =>
-        Promise.resolve({ data: opts.listRows ?? [], error: null }),
-      );
-      builder.eq = jest.fn(() => builder);
-      // findByIds chain: select('*').in('id', ids).eq('chapter_id', ...)
-      builder.in = jest.fn(() => ({
-        eq: jest.fn(() =>
-          Promise.resolve({ data: opts.listRows ?? [], error: null }),
-        ),
-      }));
-      builder.maybeSingle = jest.fn(() =>
-        Promise.resolve({ data: opts.existingRole ?? null, error: null }),
-      );
-      builder.single = jest.fn(() =>
-        Promise.resolve(
-          opts.updateResult ?? opts.insertResult ?? { data: null, error: null },
-        ),
-      );
-      builder.insert = jest.fn((payload: unknown) => {
-        customRoleInsert(payload);
-        return builder;
-      });
-      builder.update = jest.fn(() => builder);
-      builder.delete = jest.fn(() => ({
-        eq: jest.fn(() => ({
-          eq: jest.fn(() => Promise.resolve({ error: null })),
-        })),
-      }));
-      return builder;
-    }
-
-    return {};
-  });
-
-  return { from, customRoleInsert };
+function makeRepo(
+  opts: {
+    /** Row returned by `findById`, read before update/delete. */
+    existingRole?: Record<string, unknown> | null;
+    /** Rows returned by the list reads. */
+    listRows?: unknown[];
+  } = {},
+): RepoMock {
+  return {
+    findByChapter: jest.fn().mockResolvedValue(opts.listRows ?? []),
+    findByIds: jest.fn().mockResolvedValue(opts.listRows ?? []),
+    findById: jest.fn().mockResolvedValue(opts.existingRole ?? null),
+    create: jest.fn((row: Record<string, unknown>) =>
+      Promise.resolve({ id: 'r-new', ...row }),
+    ),
+    update: jest.fn().mockResolvedValue(null),
+    delete: jest.fn().mockResolvedValue(undefined),
+  };
 }
 
-async function buildService(supabase: { from: jest.Mock }) {
+async function buildService(repo: RepoMock) {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       CustomRoleService,
-      { provide: SUPABASE_CLIENT, useValue: supabase },
+      { provide: CUSTOM_ROLE_REPOSITORY, useValue: repo },
       { provide: ChapterAuditLogService, useValue: auditLog },
     ],
   }).compile();
@@ -97,13 +66,13 @@ describe('CustomRoleService', () => {
   describe('findByChapter', () => {
     it('returns chapter custom roles ordered by rank', async () => {
       const rows = [{ id: 'r1', rank: 1 }];
-      const supabase = makeSupabase({ listRows: rows });
-      const service = await buildService(supabase);
+      const repo = makeRepo({ listRows: rows });
+      const service = await buildService(repo);
 
       const result = await service.findByChapter(CHAPTER_ID);
 
       expect(result).toEqual(rows);
-      expect(supabase.from).toHaveBeenCalledWith('chapter_custom_roles');
+      expect(repo.findByChapter).toHaveBeenCalledWith(CHAPTER_ID);
     });
   });
 
@@ -118,10 +87,9 @@ describe('CustomRoleService', () => {
         capabilities: ['members:view'],
         core: false,
       };
-      const supabase = makeSupabase({
-        insertResult: { data: created, error: null },
-      });
-      const service = await buildService(supabase);
+      const repo = makeRepo();
+      repo.create.mockResolvedValue(created);
+      const service = await buildService(repo);
 
       const result = await service.create(CHAPTER_ID, ACTOR_ID, {
         key: 'pledge_educator',
@@ -132,7 +100,7 @@ describe('CustomRoleService', () => {
 
       expect(result).toEqual(created);
       // Insert defaults applied + chapter scoping.
-      expect(supabase.customRoleInsert).toHaveBeenCalledWith(
+      expect(repo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           chapter_id: CHAPTER_ID,
           key: 'pledge_educator',
@@ -162,13 +130,8 @@ describe('CustomRoleService', () => {
     });
 
     it('ignores a client-supplied core flag and always persists core: false', async () => {
-      const supabase = makeSupabase({
-        insertResult: {
-          data: { id: 'r1', chapter_id: CHAPTER_ID, core: false },
-          error: null,
-        },
-      });
-      const service = await buildService(supabase);
+      const repo = makeRepo();
+      const service = await buildService(repo);
 
       // `core` is not part of CreateCustomRoleDto; even if a caller smuggles it
       // through, the insert must force core: false (only seeding sets core).
@@ -178,16 +141,15 @@ describe('CustomRoleService', () => {
         core: true,
       } as never);
 
-      expect(supabase.customRoleInsert).toHaveBeenCalledWith(
+      expect(repo.create).toHaveBeenCalledWith(
         expect.objectContaining({ core: false }),
       );
     });
 
-    it('maps a unique-violation to 409 Conflict and does not audit', async () => {
-      const supabase = makeSupabase({
-        insertResult: { data: null, error: { code: '23505' } },
-      });
-      const service = await buildService(supabase);
+    it('maps a duplicate key to 409 Conflict and does not audit', async () => {
+      const repo = makeRepo();
+      repo.create.mockRejectedValue(new CustomRoleKeyConflictError());
+      const service = await buildService(repo);
 
       await expect(
         service.create(CHAPTER_ID, ACTOR_ID, {
@@ -197,38 +159,50 @@ describe('CustomRoleService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
       expect(auditLog.record).not.toHaveBeenCalled();
     });
+
+    it('lets any other repository failure through unmapped', async () => {
+      const failure = new Error('connection reset');
+      const repo = makeRepo();
+      repo.create.mockRejectedValue(failure);
+      const service = await buildService(repo);
+
+      await expect(
+        service.create(CHAPTER_ID, ACTOR_ID, { key: 'x', label: 'X' }),
+      ).rejects.toBe(failure);
+    });
   });
 
   describe('remove', () => {
     it('refuses to delete a core role', async () => {
-      const supabase = makeSupabase({
+      const repo = makeRepo({
         existingRole: { id: 'r1', chapter_id: CHAPTER_ID, core: true },
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repo);
 
       await expect(
         service.remove('r1', CHAPTER_ID, ACTOR_ID),
       ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repo.delete).not.toHaveBeenCalled();
       expect(auditLog.record).not.toHaveBeenCalled();
     });
 
     it('deletes a non-core role and audits the deletion', async () => {
-      const supabase = makeSupabase({
+      const repo = makeRepo({
         existingRole: { id: 'r1', chapter_id: CHAPTER_ID, core: false },
       });
-      const service = await buildService(supabase);
+      const service = await buildService(repo);
 
       const result = await service.remove('r1', CHAPTER_ID, ACTOR_ID);
 
       expect(result).toEqual({ success: true });
+      expect(repo.delete).toHaveBeenCalledWith('r1', CHAPTER_ID);
       expect(auditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'chapter_custom_role_deleted' }),
       );
     });
 
     it('throws 404 when the role is missing', async () => {
-      const supabase = makeSupabase({ existingRole: null });
-      const service = await buildService(supabase);
+      const service = await buildService(makeRepo({ existingRole: null }));
 
       await expect(
         service.remove('missing', CHAPTER_ID, ACTOR_ID),
@@ -247,17 +221,18 @@ describe('CustomRoleService', () => {
         core: false,
       };
       const updated = { ...existing, label: 'New' };
-      const supabase = makeSupabase({
-        existingRole: existing,
-        updateResult: { data: updated, error: null },
-      });
-      const service = await buildService(supabase);
+      const repo = makeRepo({ existingRole: existing });
+      repo.update.mockResolvedValue(updated);
+      const service = await buildService(repo);
 
       const result = await service.update('r1', CHAPTER_ID, ACTOR_ID, {
         label: 'New',
       });
 
       expect(result).toEqual(updated);
+      expect(repo.update).toHaveBeenCalledWith('r1', CHAPTER_ID, {
+        label: 'New',
+      });
       expect(auditLog.record).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'chapter_custom_role_updated' }),
       );
@@ -265,12 +240,26 @@ describe('CustomRoleService', () => {
 
     it('returns the existing role without auditing when the patch is empty', async () => {
       const existing = { id: 'r1', chapter_id: CHAPTER_ID, core: false };
-      const supabase = makeSupabase({ existingRole: existing });
-      const service = await buildService(supabase);
+      const repo = makeRepo({ existingRole: existing });
+      const service = await buildService(repo);
 
       const result = await service.update('r1', CHAPTER_ID, ACTOR_ID, {});
 
       expect(result).toEqual(existing);
+      expect(repo.update).not.toHaveBeenCalled();
+      expect(auditLog.record).not.toHaveBeenCalled();
+    });
+
+    it('throws 404 when the write matches no row', async () => {
+      const repo = makeRepo({
+        existingRole: { id: 'r1', chapter_id: CHAPTER_ID, core: false },
+      });
+      repo.update.mockResolvedValue(null);
+      const service = await buildService(repo);
+
+      await expect(
+        service.update('r1', CHAPTER_ID, ACTOR_ID, { label: 'New' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(auditLog.record).not.toHaveBeenCalled();
     });
   });
@@ -280,8 +269,8 @@ describe('CustomRoleService', () => {
   // role may carry `*`.
   describe('wildcard rejection', () => {
     it('rejects create with a wildcard capability and writes nothing', async () => {
-      const supabase = makeSupabase({});
-      const service = await buildService(supabase);
+      const repo = makeRepo();
+      const service = await buildService(repo);
 
       await expect(
         service.create(CHAPTER_ID, ACTOR_ID, {
@@ -290,44 +279,36 @@ describe('CustomRoleService', () => {
           capabilities: ['*', 'members:view'],
         }),
       ).rejects.toThrow(BadRequestException);
-      expect(supabase.customRoleInsert).not.toHaveBeenCalled();
+      expect(repo.create).not.toHaveBeenCalled();
       expect(auditLog.record).not.toHaveBeenCalled();
     });
 
     it('rejects update with a wildcard capability before touching the row', async () => {
       const existing = { id: 'r1', chapter_id: CHAPTER_ID, core: false };
-      const supabase = makeSupabase({ existingRole: existing });
-      const service = await buildService(supabase);
+      const repo = makeRepo({ existingRole: existing });
+      const service = await buildService(repo);
 
       await expect(
         service.update('r1', CHAPTER_ID, ACTOR_ID, {
           capabilities: ['*'],
         }),
       ).rejects.toThrow(BadRequestException);
+      expect(repo.findById).not.toHaveBeenCalled();
+      expect(repo.update).not.toHaveBeenCalled();
       expect(auditLog.record).not.toHaveBeenCalled();
     });
   });
 
   describe('findByIds', () => {
-    it('returns rows scoped to the chapter', async () => {
+    it('reads the ids within the chapter', async () => {
       const rows = [{ id: 'r1', capabilities: ['members:view'] }];
-      const supabase = makeSupabase({ listRows: rows });
-      const service = await buildService(supabase);
+      const repo = makeRepo({ listRows: rows });
+      const service = await buildService(repo);
 
       const result = await service.findByIds(['r1'], CHAPTER_ID);
 
       expect(result).toEqual(rows);
-      expect(supabase.from).toHaveBeenCalledWith('chapter_custom_roles');
-    });
-
-    it('short-circuits on an empty id list without querying', async () => {
-      const supabase = makeSupabase({});
-      const service = await buildService(supabase);
-
-      const result = await service.findByIds([], CHAPTER_ID);
-
-      expect(result).toEqual([]);
-      expect(supabase.from).not.toHaveBeenCalled();
+      expect(repo.findByIds).toHaveBeenCalledWith(['r1'], CHAPTER_ID);
     });
   });
 });

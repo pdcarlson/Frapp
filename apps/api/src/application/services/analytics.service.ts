@@ -7,7 +7,10 @@ import {
   hashUserIdForAnalytics,
   type AnalyticsProperties,
 } from '@repo/validation';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import {
+  CHAPTER_REPOSITORY,
+  type IChapterRepository,
+} from '#domain/repositories/chapter.repository.interface';
 import {
   ANALYTICS_PROVIDER,
   type IAnalyticsProvider,
@@ -21,7 +24,7 @@ import {
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
 import type { Member } from '#domain/entities/member.entity';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import type { Chapter } from '#domain/entities/chapter.entity';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /** Same shape ChapterGuard / billing use; identity refuses to HMAC anything else. */
@@ -65,7 +68,7 @@ export class AnalyticsService {
 
   constructor(
     private readonly config: ConfigService,
-    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    @Inject(CHAPTER_REPOSITORY) private readonly chapters: IChapterRepository,
     @Inject(ANALYTICS_PROVIDER) private readonly provider: IAnalyticsProvider,
     @Inject(FEATURE_FLAG_PROVIDER)
     private readonly flags: IFeatureFlagProvider,
@@ -367,13 +370,10 @@ export class AnalyticsService {
    * chapter that may have opted out.
    */
   private async isChapterAnalyticsEnabled(chapterId: string): Promise<boolean> {
-    const { data, error } = await this.supabase
-      .from('chapters')
-      .select('analytics_opt_out')
-      .eq('id', chapterId)
-      .maybeSingle();
-
-    if (error) {
+    let chapter: Chapter | null;
+    try {
+      chapter = await this.chapters.findById(chapterId);
+    } catch (error) {
       logThrowable(
         this.logger,
         'warn',
@@ -383,9 +383,6 @@ export class AnalyticsService {
       return false; // fail closed: do not emit when opt-out state is unknown
     }
 
-    const optedOut =
-      ((data as Record<string, unknown> | null)?.['analytics_opt_out'] as
-        boolean | null) ?? false;
-    return !optedOut;
+    return !(chapter?.analytics_opt_out ?? false);
   }
 }

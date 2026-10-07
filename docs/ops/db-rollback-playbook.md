@@ -1297,7 +1297,7 @@ After any rollback event:
   DROP INDEX IF EXISTS public.idx_chat_messages_content_search;
   ALTER TABLE public.chat_messages DROP COLUMN IF EXISTS content_search;
   ```
-* **Order**: **take the API off it first, then the database**: a forward revert, then the SQL as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). `SearchService`
+* **Order**: **take the API off it first, then the database**: a forward revert, then the SQL as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). `SupabaseSearchRepository`
   queries the column by name via `.textSearch('content_search', …)`, so dropping
   it under a running post-change API turns `GET /v1/search` into a 500 on every
   request — PostgREST `42703 column "content_search" does not exist`. The
@@ -1400,7 +1400,7 @@ After any rollback event:
   Dropping a column drops its index too; the explicit `DROP INDEX` lines are for
   a partial apply where the column never landed.
 * **Order**: **take the API off it first, then the database**: a forward revert, then the SQL as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)) — same rule and same
-  reason as the chat entry above. `SearchService` names all three columns
+  reason as the chat entry above. `SupabaseSearchRepository` names all three columns
   (`.textSearch('search_vector', …)` for backwork and events,
   `.textSearch('users.display_name_search', …)` for members), so dropping them
   under a running post-change API turns `GET /v1/search` into a 500 on every

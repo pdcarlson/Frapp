@@ -246,7 +246,9 @@ const LANDMARKS = [
             order by indexname`,
     ok: (rows) => {
       if (rows.length !== 2) return false;
-      const byName = Object.fromEntries(rows.map((r) => [r.indexname, r.indexdef]));
+      const byName = Object.fromEntries(
+        rows.map((r) => [r.indexname, r.indexdef]),
+      );
       const channel = byName.idx_chat_notif_prefs_channel_unique ?? "";
       const kind = byName.idx_chat_notif_prefs_kind_unique ?? "";
       const scoped = (def) =>
@@ -318,7 +320,8 @@ const LANDMARKS = [
             (select count(*) from pg_constraint
               where conrelid = 'public.chat_message_attachments'::regclass
                 and contype = 'u')::int as uniques`,
-    ok: (rows) => rows.length === 1 && rows[0].cols === 5 && rows[0].uniques >= 1,
+    ok: (rows) =>
+      rows.length === 1 && rows[0].cols === 5 && rows[0].uniques >= 1,
   },
   {
     // Default deny, like chat_channels. The table is not a Realtime carrier and
@@ -426,7 +429,9 @@ const LANDMARKS = [
            where n.nspname = 'public' and p.proname = 'get_channel_unread_counts'`,
     ok: (rows) =>
       rows.length === 1 &&
-      /not\s+exists\s*\(\s*select\s+1\s+from\s+chat_member_blocks/i.test(rows[0].prosrc ?? "") &&
+      /not\s+exists\s*\(\s*select\s+1\s+from\s+chat_member_blocks/i.test(
+        rows[0].prosrc ?? "",
+      ) &&
       /blocker_user_id\s*=\s*p_user_id/i.test(rows[0].prosrc ?? "") &&
       /blocked_user_id\s*=\s*m\.sender_id/i.test(rows[0].prosrc ?? ""),
   },
@@ -466,8 +471,7 @@ const LANDMARKS = [
     name: "seeded system actor display_name is Frapp System (#2578)",
     sql: `select display_name from public.users
            where id = '00000000-0000-0000-0000-000000000000'`,
-    ok: (rows) =>
-      rows.length === 1 && rows[0].display_name === "Frapp System",
+    ok: (rows) => rows.length === 1 && rows[0].display_name === "Frapp System",
   },
   {
     name: "chapter_directory has GENERATED search_vector column",
@@ -512,7 +516,7 @@ const LANDMARKS = [
   },
   {
     // Schema-drift guard for the two explicit select lists in
-    // `SearchService`. They enumerate columns rather than `select('*')` so the
+    // `SupabaseSearchRepository`. They enumerate columns rather than `select('*')` so the
     // generated tsvector is not shipped back per row -- but an explicit list
     // stops tracking its table the moment a migration adds a column, and the
     // rows are cast to the entity type, so nothing else would notice: the new
@@ -524,7 +528,7 @@ const LANDMARKS = [
     // geofence editor. This landmark is why it cannot happen quietly again.
     //
     // Expected set: every column of the table EXCEPT the generated tsvector.
-    name: "SearchService select lists cover every column of events + backwork_resources",
+    name: "SupabaseSearchRepository select lists cover every column of events + backwork_resources",
     sql: `select table_name, string_agg(column_name, ', ' order by ordinal_position) as cols
             from information_schema.columns
            where table_schema = 'public'
@@ -533,7 +537,10 @@ const LANDMARKS = [
            group by table_name`,
     ok: (rows) => {
       const source = readFileSync(
-        join(REPO_ROOT, "apps/api/src/application/services/search.service.ts"),
+        join(
+          REPO_ROOT,
+          "apps/api/src/infrastructure/supabase/repositories/supabase-search.repository.ts",
+        ),
         "utf8",
       );
       const listFor = (constName) => {
@@ -560,7 +567,9 @@ const LANDMARKS = [
           const missing = want
             .split(",")
             .filter((c) => !got.split(",").includes(c));
-          const extra = got.split(",").filter((c) => !want.split(",").includes(c));
+          const extra = got
+            .split(",")
+            .filter((c) => !want.split(",").includes(c));
           console.error(
             `      ${row.table_name}: select list drift` +
               (missing.length ? ` -- MISSING ${missing.join(", ")}` : "") +
@@ -738,7 +747,9 @@ const RLS_SMOKE = [
       return (
         /\bnot\b/i.test(e) &&
         /starts_with\s*\(\s*(?:\w+\.)?action_type\s*,\s*'reaction:'/i.test(e) &&
-        /chat_viewer_has_blocked\s*\(\s*(?:\w+\.)?user_id\s*,\s*(?:\w+\.)?message_id\s*\)/i.test(e)
+        /chat_viewer_has_blocked\s*\(\s*(?:\w+\.)?user_id\s*,\s*(?:\w+\.)?message_id\s*\)/i.test(
+          e,
+        )
       );
     },
   },
@@ -753,7 +764,9 @@ const RLS_SMOKE = [
             from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public' and p.proname = 'chat_viewer_has_blocked'`,
     ok: (rows) =>
-      rows.length === 1 && rows[0].public_exec === false && rows[0].anon_exec === false,
+      rows.length === 1 &&
+      rows[0].public_exec === false &&
+      rows[0].anon_exec === false,
   },
   {
     name: "users stays default-deny to client roles (the invariant that closes the action-write path)",
@@ -800,7 +813,9 @@ const RLS_SMOKE = [
             from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public' and p.proname = 'can_read_chat_message'`,
     ok: (rows) =>
-      rows.length === 1 && rows[0].public_exec === false && rows[0].anon_exec === false,
+      rows.length === 1 &&
+      rows[0].public_exec === false &&
+      rows[0].anon_exec === false,
   },
   {
     name: "can_read_chat_message() is SECURITY DEFINER with search_path pinned to exactly `public, pg_temp`",
@@ -834,9 +849,11 @@ const RLS_SMOKE = [
       // function. Match quoted elements whole, unquoted ones up to the next comma.
       const items = Array.isArray(cfg)
         ? cfg
-        : ((String(cfg ?? "").replace(/^\{|\}$/g, "").match(/"(?:[^"\\]|\\.)*"|[^,]+/g) ?? []).map(
-            (it) => it.trim().replace(/^"|"$/g, "").replace(/\\"/g, '"'),
-          ));
+        : (
+            String(cfg ?? "")
+              .replace(/^\{|\}$/g, "")
+              .match(/"(?:[^"\\]|\\.)*"|[^,]+/g) ?? []
+          ).map((it) => it.trim().replace(/^"|"$/g, "").replace(/\\"/g, '"'));
       const sp = items
         .map((it) => String(it).trim())
         .find((it) => /^search_path\s*=/i.test(it));
@@ -952,7 +969,9 @@ console.log("\n=== RLS smoke ===");
     .map((r) => r.relname)
     .filter((t) => !RLS_EXEMPT_TABLES.has(t));
   if (offenders.length === 0) {
-    console.log("OK    every public table enables RLS (default-deny invariant)");
+    console.log(
+      "OK    every public table enables RLS (default-deny invariant)",
+    );
   } else {
     missing += 1;
     console.log(
@@ -1170,7 +1189,9 @@ console.log("\n=== Functional smoke: anonymize_user ===");
     `,
       { onNotice: (n) => notices.push(n) },
     );
-    console.log("OK    change-ping tables accept writes with no `realtime` schema");
+    console.log(
+      "OK    change-ping tables accept writes with no `realtime` schema",
+    );
 
     const warnings = notices.filter((n) => n.severity === "WARNING");
     const pingTables = ["notifications", "events", "event_attendance"];
@@ -1181,12 +1202,16 @@ console.log("\n=== Functional smoke: anonymize_user ===");
     const counts = Object.fromEntries(
       pingTables.map((t) => [
         t,
-        warnings.filter((n) => new RegExp(`ping trigger failed for ${t}\\b`).test(n.message ?? "")).length,
+        warnings.filter((n) =>
+          new RegExp(`ping trigger failed for ${t}\\b`).test(n.message ?? ""),
+        ).length,
       ]),
     );
     const wrongCount = pingTables.filter((t) => counts[t] !== 1);
     if (wrongCount.length === 0) {
-      console.log("OK    each swallowed realtime.send failure raised exactly one observable WARNING");
+      console.log(
+        "OK    each swallowed realtime.send failure raised exactly one observable WARNING",
+      );
     } else {
       missing += 1;
       console.log(
@@ -1385,7 +1410,8 @@ console.log("\n=== Functional smoke: anonymize_user ===");
                 from chat_messages where id = '${EVCARD}'`,
         ok: (rows) =>
           rows.length === 1 &&
-          rows[0].content === 'Deleted User scheduled "BBQ" — Aug 9, 6:00 PM UTC' &&
+          rows[0].content ===
+            'Deleted User scheduled "BBQ" — Aug 9, 6:00 PM UTC' &&
           rows[0].event_name === "BBQ",
       },
       {
@@ -1410,7 +1436,8 @@ console.log("\n=== Functional smoke: anonymize_user ===");
         name: "member-typed free text is NOT rewritten (only system-generated cards)",
         sql: `select content from chat_messages
                where sender_id = '${U}' and kind = 'text'`,
-        ok: (rows) => rows.length === 1 && rows[0].content === "hi, Doomed User here",
+        ok: (rows) =>
+          rows.length === 1 && rows[0].content === "hi, Doomed User here",
       },
     ];
     for (const lm of FUNCTIONAL) await runOne(lm);
@@ -1559,7 +1586,11 @@ try {
 // so no scenario inherits the previous one's role. There are three null-uid
 // readers because each binds a different set of policies, and none of them
 // covers what the other two do.
-const signedIn = (uid) => ({ uid, jwtRole: "authenticated", dbRole: "rls_probe" });
+const signedIn = (uid) => ({
+  uid,
+  jwtRole: "authenticated",
+  dbRole: "rls_probe",
+});
 
 // A signed-in session with no `sub`. GoTrue never mints one, so hosted never
 // receives this request. It is the chat tiers' "no JWT" reader because it is
@@ -1660,7 +1691,9 @@ async function probeAs(who, sql) {
 function expectSet(name, probe, visible, labelOf) {
   if (probe.failure !== null) {
     missing += 1;
-    console.log(`MISS  ${name}\n        ↳ the read raised instead: ${probe.failure}`);
+    console.log(
+      `MISS  ${name}\n        ↳ the read raised instead: ${probe.failure}`,
+    );
     return;
   }
   const got = probe.rows.map((r) => r.id).sort();
@@ -1673,8 +1706,12 @@ function expectSet(name, probe, visible, labelOf) {
     missing += 1;
     console.log(
       `MISS  ${name}` +
-        (leaked.length ? `\n        ↳ LEAKED: ${leaked.map(labelOf).join(", ")}` : "") +
-        (absent.length ? `\n        ↳ wrongly hidden: ${absent.map(labelOf).join(", ")}` : ""),
+        (leaked.length
+          ? `\n        ↳ LEAKED: ${leaked.map(labelOf).join(", ")}`
+          : "") +
+        (absent.length
+          ? `\n        ↳ wrongly hidden: ${absent.map(labelOf).join(", ")}`
+          : ""),
     );
   }
 }
@@ -1688,32 +1725,114 @@ async function canReadAs(authUid, messageId) {
 }
 
 const READ_SCENARIOS = [
-  { name: "own-chapter PUBLIC is visible to a chapter member", uid: F.userAAuth, msg: F.msgPublic, expect: true },
-  { name: "cross-chapter PUBLIC is denied (tenant boundary)", uid: F.userBAuth, msg: F.msgPublic, expect: false },
-  { name: "PRIVATE is denied to a chapter member not in member_ids", uid: F.userCAuth, msg: F.msgPrivate, expect: false },
-  { name: "PRIVATE is visible to a member listed in member_ids", uid: F.userAAuth, msg: F.msgPrivate, expect: true },
-  { name: "DM is visible to a participant listed in member_ids", uid: F.userAAuth, msg: F.msgDM, expect: true },
-  { name: "DM is denied to a non-participant", uid: F.userCAuth, msg: F.msgDM, expect: false },
-  { name: "GROUP_DM is visible to a member listed in member_ids", uid: F.userAAuth, msg: F.msgGroupDM, expect: true },
-  { name: "GROUP_DM is denied to a chapter member not in member_ids", uid: F.userCAuth, msg: F.msgGroupDM, expect: false },
-  { name: "ROLE_GATED is denied without the required permission", uid: F.userCAuth, msg: F.msgRoleGated, expect: false },
-  { name: "ROLE_GATED is visible with the required permission", uid: F.userAAuth, msg: F.msgRoleGated, expect: true },
-  { name: "ROLE_GATED is visible to a '*' wildcard holder lacking the specific permission", uid: F.userDAuth, msg: F.msgRoleGated, expect: true },
+  {
+    name: "own-chapter PUBLIC is visible to a chapter member",
+    uid: F.userAAuth,
+    msg: F.msgPublic,
+    expect: true,
+  },
+  {
+    name: "cross-chapter PUBLIC is denied (tenant boundary)",
+    uid: F.userBAuth,
+    msg: F.msgPublic,
+    expect: false,
+  },
+  {
+    name: "PRIVATE is denied to a chapter member not in member_ids",
+    uid: F.userCAuth,
+    msg: F.msgPrivate,
+    expect: false,
+  },
+  {
+    name: "PRIVATE is visible to a member listed in member_ids",
+    uid: F.userAAuth,
+    msg: F.msgPrivate,
+    expect: true,
+  },
+  {
+    name: "DM is visible to a participant listed in member_ids",
+    uid: F.userAAuth,
+    msg: F.msgDM,
+    expect: true,
+  },
+  {
+    name: "DM is denied to a non-participant",
+    uid: F.userCAuth,
+    msg: F.msgDM,
+    expect: false,
+  },
+  {
+    name: "GROUP_DM is visible to a member listed in member_ids",
+    uid: F.userAAuth,
+    msg: F.msgGroupDM,
+    expect: true,
+  },
+  {
+    name: "GROUP_DM is denied to a chapter member not in member_ids",
+    uid: F.userCAuth,
+    msg: F.msgGroupDM,
+    expect: false,
+  },
+  {
+    name: "ROLE_GATED is denied without the required permission",
+    uid: F.userCAuth,
+    msg: F.msgRoleGated,
+    expect: false,
+  },
+  {
+    name: "ROLE_GATED is visible with the required permission",
+    uid: F.userAAuth,
+    msg: F.msgRoleGated,
+    expect: true,
+  },
+  {
+    name: "ROLE_GATED is visible to a '*' wildcard holder lacking the specific permission",
+    uid: F.userDAuth,
+    msg: F.msgRoleGated,
+    expect: true,
+  },
   // FRA-321: this asserted `true` — a ROLE_GATED channel that gates on nothing
   // was visible to every chapter member, i.e. functionally PUBLIC. Both the SQL
   // predicate and canAccessChannel now deny it; the backfill guarantees no
   // existing row is in that shape and the API rejects creating one.
-  { name: "ROLE_GATED with empty required_permissions is denied (no longer falls open)", uid: F.userCAuth, msg: F.msgRoleGatedOpen, expect: false },
+  {
+    name: "ROLE_GATED with empty required_permissions is denied (no longer falls open)",
+    uid: F.userCAuth,
+    msg: F.msgRoleGatedOpen,
+    expect: false,
+  },
   // ...but the wildcard still wins, exactly as canAccessChannel has it. Spelling
   // the deny as a length test placed *before* the wildcard branch would deny a
   // President here and silently re-introduce SQL/TypeScript drift.
-  { name: "ROLE_GATED with empty required_permissions still admits a '*' wildcard holder", uid: F.userDAuth, msg: F.msgRoleGatedOpen, expect: true },
-  { name: "ROLE_GATED denies a chapter-B role id held by a chapter-A member (roles re-scoped by chapter)", uid: F.userEAuth, msg: F.msgRoleGated, expect: false },
-  { name: "ROLE_GATED matches an UPPERCASE stored role id (uuid compare, not text)", uid: F.userFAuth, msg: F.msgRoleGated, expect: true },
-  { name: "NULL auth.uid() (anon / no JWT) is denied", uid: null, msg: F.msgPublic, expect: false },
+  {
+    name: "ROLE_GATED with empty required_permissions still admits a '*' wildcard holder",
+    uid: F.userDAuth,
+    msg: F.msgRoleGatedOpen,
+    expect: true,
+  },
+  {
+    name: "ROLE_GATED denies a chapter-B role id held by a chapter-A member (roles re-scoped by chapter)",
+    uid: F.userEAuth,
+    msg: F.msgRoleGated,
+    expect: false,
+  },
+  {
+    name: "ROLE_GATED matches an UPPERCASE stored role id (uuid compare, not text)",
+    uid: F.userFAuth,
+    msg: F.msgRoleGated,
+    expect: true,
+  },
+  {
+    name: "NULL auth.uid() (anon / no JWT) is denied",
+    uid: null,
+    msg: F.msgPublic,
+    expect: false,
+  },
 ];
 
-console.log("\n=== chat_message_actions read enforcement (can_read_chat_message) ===");
+console.log(
+  "\n=== chat_message_actions read enforcement (can_read_chat_message) ===",
+);
 if (!readSeeded) {
   console.log("SKIP  seed failed above — read-enforcement scenarios not run");
 }
@@ -1724,11 +1843,15 @@ for (const s of readSeeded ? READ_SCENARIOS : []) {
       console.log(`OK    ${s.name}`);
     } else {
       missing += 1;
-      console.log(`MISS  ${s.name}\n        ↳ expected ${s.expect}, got ${got}`);
+      console.log(
+        `MISS  ${s.name}\n        ↳ expected ${s.expect}, got ${got}`,
+      );
     }
   } catch (e) {
     missing += 1;
-    console.log(`ERR   ${s.name}\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`);
+    console.log(
+      `ERR   ${s.name}\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+    );
   }
 }
 
@@ -1746,7 +1869,9 @@ for (const s of readSeeded ? READ_SCENARIOS : []) {
 // A permissive `using (true)` policy of ANY command shape (FOR SELECT or FOR
 // ALL), a neutered predicate, or a dropped policy all change these counts, and
 // none of them can be papered over by how the expression is spelled.
-console.log("\n=== chat_message_actions policy enforcement (black-box, SET ROLE) ===");
+console.log(
+  "\n=== chat_message_actions policy enforcement (black-box, SET ROLE) ===",
+);
 if (readSeeded) {
   try {
     await db.exec(`
@@ -1824,14 +1949,37 @@ if (readSeeded) {
     // would still total 5 here and stay green, which is the whole failure this
     // tier exists to catch.
     const BLACKBOX = [
-      { name: "member sees every action row in channels they can read (all but the empty-gated one)", as: signedIn(F.userAAuth),
-        visible: [F.msgPublic, F.msgPrivate, F.msgDM, F.msgRoleGated, F.msgGroupDM] },
-      { name: "cross-chapter reader sees only their own chapter's row (tenant boundary holds at the table)", as: signedIn(F.userBAuth),
-        visible: [F.msgPublicB] },
-      { name: "chapter member sees only PUBLIC, not PRIVATE/DM/gated (incl. empty-gated)", as: signedIn(F.userCAuth),
-        visible: [F.msgPublic] },
-      { name: "no JWT (null auth.uid()) sees nothing", as: NULL_SUB, visible: [] },
-      { name: "the anon key (role anon, no JWT) sees nothing", as: ANON_KEY, visible: [] },
+      {
+        name: "member sees every action row in channels they can read (all but the empty-gated one)",
+        as: signedIn(F.userAAuth),
+        visible: [
+          F.msgPublic,
+          F.msgPrivate,
+          F.msgDM,
+          F.msgRoleGated,
+          F.msgGroupDM,
+        ],
+      },
+      {
+        name: "cross-chapter reader sees only their own chapter's row (tenant boundary holds at the table)",
+        as: signedIn(F.userBAuth),
+        visible: [F.msgPublicB],
+      },
+      {
+        name: "chapter member sees only PUBLIC, not PRIVATE/DM/gated (incl. empty-gated)",
+        as: signedIn(F.userCAuth),
+        visible: [F.msgPublic],
+      },
+      {
+        name: "no JWT (null auth.uid()) sees nothing",
+        as: NULL_SUB,
+        visible: [],
+      },
+      {
+        name: "the anon key (role anon, no JWT) sees nothing",
+        as: ANON_KEY,
+        visible: [],
+      },
     ];
 
     for (const s of BLACKBOX) {
@@ -1841,7 +1989,6 @@ if (readSeeded) {
       );
       expectSet(s.name, probe, s.visible, label);
     }
-
 
     // ─── chat_message_actions: a block hides the blocked member's reactions (#2494)
     //
@@ -1868,7 +2015,9 @@ if (readSeeded) {
     // Scenario names are cited by `chat-read-surface-ledger.spec.ts` as the
     // proof for `chat_message_actions_select`, which that spec checks is still
     // a `name:` here. Rename one there too.
-    console.log("\n=== chat_message_actions block enforcement (black-box, SET ROLE) — #2494 ===");
+    console.log(
+      "\n=== chat_message_actions block enforcement (black-box, SET ROLE) — #2494 ===",
+    );
     await db.exec("savepoint block_tier;");
     try {
       const K = {
@@ -1942,7 +2091,12 @@ if (readSeeded) {
         {
           name: "a blocker reads none of a blocked member's reaction rows in that chapter, and keeps everything else",
           probe: blockerAfter,
-          visible: [K.blockedVote, K.blockedInChapB, K.otherReaction, K.blockerReaction],
+          visible: [
+            K.blockedVote,
+            K.blockedInChapB,
+            K.otherReaction,
+            K.blockerReaction,
+          ],
         },
         {
           name: "the blocked member still reads every row after being blocked (no oracle)",
@@ -1950,7 +2104,8 @@ if (readSeeded) {
           visible: ROW_IDS,
         },
       ];
-      for (const s of BLOCK_SCENARIOS) expectSet(s.name, s.probe, s.visible, rowLabel);
+      for (const s of BLOCK_SCENARIOS)
+        expectSet(s.name, s.probe, s.visible, rowLabel);
 
       // The helper takes no blocker parameter. Called over RPC it must answer
       // only about the caller's own list: userA learns nothing about userC's
@@ -1958,21 +2113,33 @@ if (readSeeded) {
       const HELPER_SCENARIOS = [
         {
           name: "chat_viewer_has_blocked answers true for the caller's own block in the message's chapter",
-          uid: F.userCAuth, actor: F.userAId, msg: F.msgPublic, expect: true,
+          uid: F.userCAuth,
+          actor: F.userAId,
+          msg: F.msgPublic,
+          expect: true,
         },
         {
           name: "chat_viewer_has_blocked answers false in another chapter (blocks are per chapter)",
-          uid: F.userCAuth, actor: F.userAId, msg: F.msgPublicB, expect: false,
+          uid: F.userCAuth,
+          actor: F.userAId,
+          msg: F.msgPublicB,
+          expect: false,
         },
         {
           name: "chat_viewer_has_blocked answers false to the blocked member asking about their blocker",
-          uid: F.userAAuth, actor: F.userCId, msg: F.msgPublic, expect: false,
+          uid: F.userAAuth,
+          actor: F.userCId,
+          msg: F.msgPublic,
+          expect: false,
         },
         {
           // userC holds the block in chapter A but is not in the DM. A true
           // here would tell them the message exists.
           name: "chat_viewer_has_blocked answers false for a message the caller cannot read (no existence oracle)",
-          uid: F.userCAuth, actor: F.userAId, msg: F.msgDM, expect: false,
+          uid: F.userCAuth,
+          actor: F.userAId,
+          msg: F.msgDM,
+          expect: false,
         },
       ];
       for (const s of HELPER_SCENARIOS) {
@@ -1985,7 +2152,9 @@ if (readSeeded) {
           console.log(`OK    ${s.name}`);
         } else {
           missing += 1;
-          console.log(`MISS  ${s.name}\n        ↳ expected ${s.expect}, got ${got}`);
+          console.log(
+            `MISS  ${s.name}\n        ↳ expected ${s.expect}, got ${got}`,
+          );
         }
       }
     } catch (e) {
@@ -1994,9 +2163,10 @@ if (readSeeded) {
         `ERR   chat_message_actions block enforcement\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
       );
     } finally {
-      await db.exec("rollback to savepoint block_tier; release savepoint block_tier;");
+      await db.exec(
+        "rollback to savepoint block_tier; release savepoint block_tier;",
+      );
     }
-
 
     // ─── chat_messages read enforcement (black-box, SET ROLE) — #977 ─────────
     //
@@ -2026,7 +2196,13 @@ if (readSeeded) {
       {
         who: "chapter member in member_ids holding chat:secret",
         as: signedIn(F.userAAuth),
-        visible: [F.msgPublic, F.msgPrivate, F.msgDM, F.msgRoleGated, F.msgGroupDM],
+        visible: [
+          F.msgPublic,
+          F.msgPrivate,
+          F.msgDM,
+          F.msgRoleGated,
+          F.msgGroupDM,
+        ],
       },
       {
         // The positive control is what makes this assertion mean anything. userB
@@ -2065,7 +2241,8 @@ if (readSeeded) {
       const total = await db.query(
         `select count(*)::int as n from public.chat_messages`,
       );
-      const name = "the message fixtures are the whole table (set assertions below are table-wide)";
+      const name =
+        "the message fixtures are the whole table (set assertions below are table-wide)";
       if (total.rows[0].n === ALL_MSG_IDS.length) {
         console.log(`OK    ${name}`);
       } else {
@@ -2090,7 +2267,6 @@ if (readSeeded) {
         label,
       );
     }
-
 
     // ─── chat_messages: the imported-archive exclusion (Discord import) ──────
     //
@@ -2176,7 +2352,10 @@ if (readSeeded) {
     ];
     const postLabel = (id) => (id === IMPORTED_MSG ? "IMPORTED" : label(id));
     for (const s of POST_ARCHIVE) {
-      const probe = await probeAs(s.as, `select id::text as id from public.chat_messages`);
+      const probe = await probeAs(
+        s.as,
+        `select id::text as id from public.chat_messages`,
+      );
       expectSet(
         `${s.who} still reads exactly ${s.visible.length} row(s) once an imported archive row exists`,
         probe,
@@ -2199,7 +2378,8 @@ if (readSeeded) {
     // excluded only as a side effect of `NULL <> uuid` being NULL — invisible,
     // and undone by the obvious null-safety "fix".
     {
-      const name = "unread counts skip imported rows but still count a live null-sender row";
+      const name =
+        "unread counts skip imported rows but still count a live null-sender row";
       await db.exec(`
         insert into chat_messages (id, channel_id, sender_id, author_name, kind, content)
         values ('a5a5a5a5-0000-4000-8000-00000000bbbb', '${F.chPublic}', null, 'Webhook Bot', 'text', 'live, no sender');
@@ -2235,7 +2415,9 @@ if (readSeeded) {
         console.log(`OK    ${name}`);
       } else {
         missing += 1;
-        console.log(`MISS  ${name}\n        ↳ the kind rule leaked into the shared predicate`);
+        console.log(
+          `MISS  ${name}\n        ↳ the kind rule leaked into the shared predicate`,
+        );
       }
     }
 
@@ -2277,7 +2459,9 @@ if (readSeeded) {
     // is held, the rows exist when read as owner, the catalog carries no
     // client-reachable policy of any command shape, and only then that the
     // probe sees none of the rows.
-    console.log("\n=== members / financial_invoices default-deny (black-box, SET ROLE) ===");
+    console.log(
+      "\n=== members / financial_invoices default-deny (black-box, SET ROLE) ===",
+    );
     // Seeded in its own savepoint. A future NOT NULL column on
     // financial_invoices would otherwise raise straight past the header just
     // printed, into the tier-wide catch, and the log would show this heading
@@ -2296,7 +2480,9 @@ if (readSeeded) {
     } catch (e) {
       denySeeded = false;
       missing += 1;
-      await db.exec("rollback to savepoint deny_seed; release savepoint deny_seed;");
+      await db.exec(
+        "rollback to savepoint deny_seed; release savepoint deny_seed;",
+      );
       console.log(
         `SKIP  members / financial_invoices default-deny — fixture seed failed, 0 of its assertions ran` +
           `\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
@@ -2314,13 +2500,22 @@ if (readSeeded) {
     const DENY_TABLES = ["members", "financial_invoices"];
 
     const DENY_READERS = [
-      { who: "a chapter-A member reading their own chapter", as: signedIn(F.userAAuth) },
+      {
+        who: "a chapter-A member reading their own chapter",
+        as: signedIn(F.userAAuth),
+      },
       { who: "a chapter-B member (cross-tenant)", as: signedIn(F.userBAuth) },
-      { who: "a chapter-A member holding the '*' wildcard", as: signedIn(F.userDAuth) },
+      {
+        who: "a chapter-A member holding the '*' wildcard",
+        as: signedIn(F.userDAuth),
+      },
       // Null uid AND auth.role() = 'anon'. Stubbing only the uid would leave
       // this indistinguishable from a signed-in reader, which is how an
       // `auth.role() = 'anon'` policy stays invisible.
-      { who: "an anonymous reader (no JWT, auth.role() = 'anon')", as: ANON_CLAIM },
+      {
+        who: "an anonymous reader (no JWT, auth.role() = 'anon')",
+        as: ANON_CLAIM,
+      },
       { who: "the anon key (role anon, no JWT)", as: ANON_KEY },
     ];
 
@@ -2350,7 +2545,9 @@ if (readSeeded) {
         console.log(`OK    ${name}`);
       } else {
         missing += 1;
-        console.log(`MISS  ${name}\n        ↳ every deny assertion below is vacuous for such a policy`);
+        console.log(
+          `MISS  ${name}\n        ↳ every deny assertion below is vacuous for such a policy`,
+        );
       }
     }
 
@@ -2367,7 +2564,9 @@ if (readSeeded) {
       const privName = `both probe roles hold SELECT on ${table} (so a zero-row read means RLS, not a missing grant)`;
       if (privileged.rows[0].ok !== true) {
         missing += 1;
-        console.log(`MISS  ${privName}\n        ↳ skipping ${table}: its deny assertions would pass vacuously`);
+        console.log(
+          `MISS  ${privName}\n        ↳ skipping ${table}: its deny assertions would pass vacuously`,
+        );
         continue;
       }
       console.log(`OK    ${privName}`);
@@ -2378,7 +2577,9 @@ if (readSeeded) {
       const seedName = `${table} holds fixture rows as owner (the deny below has something to deny)`;
       if (seeded.rows[0].n < 1) {
         missing += 1;
-        console.log(`MISS  ${seedName}\n        ↳ skipping ${table}: 0 rows, so denying them proves nothing`);
+        console.log(
+          `MISS  ${seedName}\n        ↳ skipping ${table}: 0 rows, so denying them proves nothing`,
+        );
         continue;
       }
       console.log(`OK    ${seedName} — ${seeded.rows[0].n} row(s)`);
@@ -2425,7 +2626,10 @@ if (readSeeded) {
       }
 
       for (const s of DENY_READERS) {
-        const probe = await probeAs(s.as, `select count(*)::int as n from public.${table}`);
+        const probe = await probeAs(
+          s.as,
+          `select count(*)::int as n from public.${table}`,
+        );
         const failure = probe.failure;
         const seen = probe.rows?.[0]?.n;
 
@@ -2434,7 +2638,9 @@ if (readSeeded) {
           missing += 1;
           // Still a failure, not an excuse: the table is supposed to be
           // default-deny, and a policy that errors is a policy that exists.
-          console.log(`MISS  ${name}\n        ↳ the read raised instead: ${failure}`);
+          console.log(
+            `MISS  ${name}\n        ↳ the read raised instead: ${failure}`,
+          );
         } else if (seen === 0) {
           console.log(`OK    ${name}`);
         } else {
@@ -2542,7 +2748,9 @@ console.log("\n=== Functional smoke: legacy attachment backfill ===");
       }
     } catch (e) {
       missing += 1;
-      console.log(`ERR   ${c.name}\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`);
+      console.log(
+        `ERR   ${c.name}\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+      );
     }
   }
 }
@@ -2606,7 +2814,10 @@ try {
       secondIds === firstIds && firstIds !== "",
       "row ids survive a re-run (chapters.directory_id stays valid)",
     ],
-    [badColors === 0, `every loaded color is canonical #RRGGBB (${badColors} bad)`],
+    [
+      badColors === 0,
+      `every loaded color is canonical #RRGGBB (${badColors} bad)`,
+    ],
   ];
 
   for (const [ok, name] of checks) {
@@ -2682,12 +2893,24 @@ console.log("\n=== demo seed load (#2308) ===");
   const snapshot = async (namespace) => {
     const { chapterId, loginUserId, userIdLike } = seedDemo.demoIds(namespace);
     return {
-      chapters: await n(`select count(*)::int as n from chapters where id = '${chapterId}'`),
-      members: await n(`select count(*)::int as n from members where chapter_id = '${chapterId}'`),
-      users: await n(`select count(*)::int as n from users where id::text like '${userIdLike}'`),
-      events: await n(`select count(*)::int as n from events where chapter_id = '${chapterId}'`),
-      documents: await n(`select count(*)::int as n from chapter_documents where chapter_id = '${chapterId}'`),
-      backwork: await n(`select count(*)::int as n from backwork_resources where chapter_id = '${chapterId}'`),
+      chapters: await n(
+        `select count(*)::int as n from chapters where id = '${chapterId}'`,
+      ),
+      members: await n(
+        `select count(*)::int as n from members where chapter_id = '${chapterId}'`,
+      ),
+      users: await n(
+        `select count(*)::int as n from users where id::text like '${userIdLike}'`,
+      ),
+      events: await n(
+        `select count(*)::int as n from events where chapter_id = '${chapterId}'`,
+      ),
+      documents: await n(
+        `select count(*)::int as n from chapter_documents where chapter_id = '${chapterId}'`,
+      ),
+      backwork: await n(
+        `select count(*)::int as n from backwork_resources where chapter_id = '${chapterId}'`,
+      ),
       offLayout: await n(
         `select (select count(*) from chapter_documents
                   where chapter_id = '${chapterId}'
@@ -2696,14 +2919,22 @@ console.log("\n=== demo seed load (#2308) ===");
                   where chapter_id = '${chapterId}'
                     and storage_path not like 'chapters/${chapterId}/backwork/' || id || '/%.pdf') as n`,
       ),
-      loginInvoices: await n(`select count(*)::int as n from financial_invoices where user_id = '${loginUserId}'`),
-      loginServiceEntries: await n(`select count(*)::int as n from service_entries where user_id = '${loginUserId}'`),
-      dms: await n(`select count(*)::int as n from chat_channels where chapter_id = '${chapterId}' and type = 'DM'`),
+      loginInvoices: await n(
+        `select count(*)::int as n from financial_invoices where user_id = '${loginUserId}'`,
+      ),
+      loginServiceEntries: await n(
+        `select count(*)::int as n from service_entries where user_id = '${loginUserId}'`,
+      ),
+      dms: await n(
+        `select count(*)::int as n from chat_channels where chapter_id = '${chapterId}' and type = 'DM'`,
+      ),
       dmMessages: await n(
         `select count(*)::int as n from chat_messages m join chat_channels c on c.id = m.channel_id
           where c.chapter_id = '${chapterId}' and c.type = 'DM'`,
       ),
-      studyZones: await n(`select count(*)::int as n from study_geofences where chapter_id = '${chapterId}' and is_active`),
+      studyZones: await n(
+        `select count(*)::int as n from study_geofences where chapter_id = '${chapterId}' and is_active`,
+      ),
       loginPastSessions: await n(
         `select count(*)::int as n from study_sessions where user_id = '${loginUserId}' and status = 'COMPLETED'`,
       ),
@@ -2717,7 +2948,12 @@ console.log("\n=== demo seed load (#2308) ===");
           where c.chapter_id = '${chapterId}' and c.type = 'PUBLIC' and c.name = 'general'
             and m.type = 'TEXT' and m.sender_id <> '${loginUserId}'`,
       ),
-      loginAuthId: (await db.query(`select supabase_auth_id::text as a from users where id = '${loginUserId}'`)).rows[0]?.a ?? null,
+      loginAuthId:
+        (
+          await db.query(
+            `select supabase_auth_id::text as a from users where id = '${loginUserId}'`,
+          )
+        ).rows[0]?.a ?? null,
     };
   };
   // A seed expected to raise. The simple-query protocol leaves an explicit
@@ -2734,7 +2970,9 @@ console.log("\n=== demo seed load (#2308) ===");
   };
 
   try {
-    await db.exec(`create table auth.users (id uuid primary key, email text not null, raw_app_meta_data jsonb not null default '{}');`);
+    await db.exec(
+      `create table auth.users (id uuid primary key, email text not null, raw_app_meta_data jsonb not null default '{}');`,
+    );
     await db.exec(`
       insert into auth.users (id, email, raw_app_meta_data) values
         ('${REVIEWER_AUTH_ID}', '${REVIEWER_EMAIL}', '{"frapp_demo_namespace": "${seedDemo.REVIEWER_NAMESPACE}"}'),
@@ -2753,27 +2991,43 @@ console.log("\n=== demo seed load (#2308) ===");
     // Re-seeding the live reviewer chapter with a login that cannot be linked —
     // missing, or an account the script does not own — must raise and leave the
     // chapter it would have replaced untouched.
-    const refusedMissing = await refuses(render(seedDemo.REVIEWER_NAMESPACE, "nobody@example.test", true));
+    const refusedMissing = await refuses(
+      render(seedDemo.REVIEWER_NAMESPACE, "nobody@example.test", true),
+    );
     const afterMissing = await snapshot(seedDemo.REVIEWER_NAMESPACE);
-    const refusedStranger = await refuses(render(seedDemo.REVIEWER_NAMESPACE, STRANGER_EMAIL, true));
+    const refusedStranger = await refuses(
+      render(seedDemo.REVIEWER_NAMESPACE, STRANGER_EMAIL, true),
+    );
     const afterStranger = await snapshot(seedDemo.REVIEWER_NAMESPACE);
-    const refusedOtherNs = await refuses(render(seedDemo.REVIEWER_NAMESPACE, OTHER_NS_EMAIL, true));
+    const refusedOtherNs = await refuses(
+      render(seedDemo.REVIEWER_NAMESPACE, OTHER_NS_EMAIL, true),
+    );
     const afterOtherNs = await snapshot(seedDemo.REVIEWER_NAMESPACE);
 
     // A seeded account that is also a member of another chapter (the App Review login
     // founding one, say): deleting it would cascade through that membership, so both the
     // re-seed and `sql --remove` refuse, and the membership survives. The marketing chapter
     // stands in for the other chapter.
-    const { loginUserId: reviewerLogin } = seedDemo.demoIds(seedDemo.REVIEWER_NAMESPACE);
-    const { chapterId: marketingChapter } = seedDemo.demoIds(seedDemo.TEMPLATE_NAMESPACE);
-    await db.exec(`insert into members (user_id, chapter_id) values ('${reviewerLogin}', '${marketingChapter}');`);
+    const { loginUserId: reviewerLogin } = seedDemo.demoIds(
+      seedDemo.REVIEWER_NAMESPACE,
+    );
+    const { chapterId: marketingChapter } = seedDemo.demoIds(
+      seedDemo.TEMPLATE_NAMESPACE,
+    );
+    await db.exec(
+      `insert into members (user_id, chapter_id) values ('${reviewerLogin}', '${marketingChapter}');`,
+    );
     const refusedCrossReseed = await refuses(reviewerSql);
-    const refusedCrossRemove = await refuses(seedDemo.renderRemoveSql({ namespace: seedDemo.REVIEWER_NAMESPACE }));
+    const refusedCrossRemove = await refuses(
+      seedDemo.renderRemoveSql({ namespace: seedDemo.REVIEWER_NAMESPACE }),
+    );
     const crossKept = await n(
       `select count(*)::int as n from members where user_id = '${reviewerLogin}' and chapter_id = '${marketingChapter}'`,
     );
     const afterCross = await snapshot(seedDemo.REVIEWER_NAMESPACE);
-    await db.exec(`delete from members where user_id = '${reviewerLogin}' and chapter_id = '${marketingChapter}';`);
+    await db.exec(
+      `delete from members where user_id = '${reviewerLogin}' and chapter_id = '${marketingChapter}';`,
+    );
 
     // The same without a membership: rows the login wrote in another chapter before leaving
     // it. The membership check this replaced let them cascade away with the account.
@@ -2784,7 +3038,9 @@ console.log("\n=== demo seed load (#2308) ===");
     const leftRowsKept = await n(
       `select count(*)::int as n from point_transactions where user_id = '${reviewerLogin}' and chapter_id = '${marketingChapter}'`,
     );
-    await db.exec(`delete from point_transactions where user_id = '${reviewerLogin}' and chapter_id = '${marketingChapter}';`);
+    await db.exec(
+      `delete from point_transactions where user_id = '${reviewerLogin}' and chapter_id = '${marketingChapter}';`,
+    );
 
     // A reference deleting the account would only null out refuses too: in another chapter
     // that null is its audit log losing the actor, rewritten with no error. A directory
@@ -2796,11 +3052,17 @@ console.log("\n=== demo seed load (#2308) ===");
     const requestKept = await n(
       `select count(*)::int as n from chapter_directory_requests where university = 'Demo University' and requested_by = '${reviewerLogin}'`,
     );
-    await db.exec(`delete from chapter_directory_requests where university = 'Demo University';`);
+    await db.exec(
+      `delete from chapter_directory_requests where university = 'Demo University';`,
+    );
 
     // What the account owns outright goes with it: a push token or settings row is no reason to refuse.
-    await db.exec(`insert into push_tokens (user_id, token) values ('${reviewerLogin}', 'demo-token');`);
-    await db.exec(`insert into user_settings (user_id) values ('${reviewerLogin}');`);
+    await db.exec(
+      `insert into push_tokens (user_id, token) values ('${reviewerLogin}', 'demo-token');`,
+    );
+    await db.exec(
+      `insert into user_settings (user_id) values ('${reviewerLogin}');`,
+    );
     await db.exec(reviewerSql);
     const ownedLeft = await n(
       `select (select count(*) from push_tokens where user_id = '${reviewerLogin}') + (select count(*) from user_settings where user_id = '${reviewerLogin}') as n`,
@@ -2808,64 +3070,159 @@ console.log("\n=== demo seed load (#2308) ===");
 
     // The marketing variant seeds an unmarked account's email unlinked.
     await db.exec(render(seedDemo.TEMPLATE_NAMESPACE, STRANGER_EMAIL, false));
-    const strangerLink = (await snapshot(seedDemo.TEMPLATE_NAMESPACE)).loginAuthId;
+    const strangerLink = (await snapshot(seedDemo.TEMPLATE_NAMESPACE))
+      .loginAuthId;
 
     // A sign-in before the seed leaves a chapterless row on the login's auth id;
     // the next seed adopts it.
-    await db.exec(seedDemo.renderRemoveSql({ namespace: seedDemo.REVIEWER_NAMESPACE }));
-    await db.exec(`insert into users (supabase_auth_id, email) values ('${REVIEWER_AUTH_ID}', '${REVIEWER_EMAIL}');`);
+    await db.exec(
+      seedDemo.renderRemoveSql({ namespace: seedDemo.REVIEWER_NAMESPACE }),
+    );
+    await db.exec(
+      `insert into users (supabase_auth_id, email) values ('${REVIEWER_AUTH_ID}', '${REVIEWER_EMAIL}');`,
+    );
     await db.exec(reviewerSql);
     const adopted = await snapshot(seedDemo.REVIEWER_NAMESPACE);
-    const shells = await n(`select count(*)::int as n from users where supabase_auth_id = '${REVIEWER_AUTH_ID}'`);
+    const shells = await n(
+      `select count(*)::int as n from users where supabase_auth_id = '${REVIEWER_AUTH_ID}'`,
+    );
 
     // ...but a row on the login's auth id that is a member of a chapter is an account in
     // use: the seed refuses instead of deleting it.
-    await db.exec(seedDemo.renderRemoveSql({ namespace: seedDemo.REVIEWER_NAMESPACE }));
+    await db.exec(
+      seedDemo.renderRemoveSql({ namespace: seedDemo.REVIEWER_NAMESPACE }),
+    );
     const inUse = (
       await db.query(
         `insert into users (supabase_auth_id, email) values ('${REVIEWER_AUTH_ID}', '${REVIEWER_EMAIL}') returning id::text as id`,
       )
     ).rows[0].id;
-    await db.exec(`insert into members (user_id, chapter_id) values ('${inUse}', '${marketingChapter}');`);
+    await db.exec(
+      `insert into members (user_id, chapter_id) values ('${inUse}', '${marketingChapter}');`,
+    );
     const refusedInUse = await refuses(reviewerSql);
-    const inUseKept = await n(`select count(*)::int as n from members where user_id = '${inUse}'`);
+    const inUseKept = await n(
+      `select count(*)::int as n from members where user_id = '${inUse}'`,
+    );
     await db.exec(`delete from members where user_id = '${inUse}';`);
     // ...and so is one with no membership left but points in a chapter it has left.
     await db.exec(
       `insert into point_transactions (chapter_id, user_id, amount, category) values ('${marketingChapter}', '${inUse}', 5, 'MANUAL');`,
     );
     const refusedLeftOwner = await refuses(reviewerSql);
-    const leftOwnerKept = await n(`select count(*)::int as n from point_transactions where user_id = '${inUse}'`);
-    await db.exec(`delete from point_transactions where user_id = '${inUse}'; delete from users where id = '${inUse}';`);
+    const leftOwnerKept = await n(
+      `select count(*)::int as n from point_transactions where user_id = '${inUse}'`,
+    );
+    await db.exec(
+      `delete from point_transactions where user_id = '${inUse}'; delete from users where id = '${inUse}';`,
+    );
 
-    for (const namespace of namespaces) await db.exec(seedDemo.renderRemoveSql({ namespace }));
+    for (const namespace of namespaces)
+      await db.exec(seedDemo.renderRemoveSql({ namespace }));
     const removed = await Promise.all(namespaces.map(snapshot));
 
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const checks = [
-      [marketing.members === 26 && reviewer.members === 26, `both variants seed 26 members (marketing ${marketing.members}, reviewer ${reviewer.members})`],
-      [marketing.events === 12 && marketing.documents === 10 && marketing.backwork === 11, `the chapter's events, documents and backwork land (${marketing.events}/${marketing.documents}/${marketing.backwork})`],
-      [marketing.offLayout === 0 && reviewer.offLayout === 0, `every document and backwork path is the API's own chapters/<chapter>/<kind>/<id>/ layout (${marketing.offLayout + reviewer.offLayout} off it)`],
-      [reviewer.loginAuthId === REVIEWER_AUTH_ID, `the reviewer login is linked to its marked auth user (got ${reviewer.loginAuthId})`],
-      [marketing.loginAuthId?.startsWith("c0ffee00-0000-4000-8000-2000"), "with no matching auth user, the marketing login keeps a synthetic auth id"],
-      [strangerLink?.startsWith("c0ffee00-0000-4000-8000-2000"), `an unmarked account with the login's email is never linked (got ${strangerLink})`],
-      [reviewer.loginInvoices === 0 && marketing.loginInvoices > 0, `no invoices on the reviewer (reviewer ${reviewer.loginInvoices}, marketing ${marketing.loginInvoices})`],
-      [reviewer.loginServiceEntries > 0, `the reviewer has a service entry of their own (${reviewer.loginServiceEntries})`],
-      [reviewer.dms === 1 && reviewer.dmMessages === 3 && marketing.dms === 0, `one DM into the reviewer, none in marketing (${reviewer.dms} with ${reviewer.dmMessages} messages / ${marketing.dms})`],
-      [reviewer.studyZones > 0 && reviewer.loginPastSessions > 0, `the reviewer has study zones and past sessions of their own (${reviewer.studyZones} zones, ${reviewer.loginPastSessions} sessions)`],
-      [reviewer.blockable > 0, `#general holds text from another member, so Block is offered there (${reviewer.blockable} messages)`],
+      [
+        marketing.members === 26 && reviewer.members === 26,
+        `both variants seed 26 members (marketing ${marketing.members}, reviewer ${reviewer.members})`,
+      ],
+      [
+        marketing.events === 12 &&
+          marketing.documents === 10 &&
+          marketing.backwork === 11,
+        `the chapter's events, documents and backwork land (${marketing.events}/${marketing.documents}/${marketing.backwork})`,
+      ],
+      [
+        marketing.offLayout === 0 && reviewer.offLayout === 0,
+        `every document and backwork path is the API's own chapters/<chapter>/<kind>/<id>/ layout (${marketing.offLayout + reviewer.offLayout} off it)`,
+      ],
+      [
+        reviewer.loginAuthId === REVIEWER_AUTH_ID,
+        `the reviewer login is linked to its marked auth user (got ${reviewer.loginAuthId})`,
+      ],
+      [
+        marketing.loginAuthId?.startsWith("c0ffee00-0000-4000-8000-2000"),
+        "with no matching auth user, the marketing login keeps a synthetic auth id",
+      ],
+      [
+        strangerLink?.startsWith("c0ffee00-0000-4000-8000-2000"),
+        `an unmarked account with the login's email is never linked (got ${strangerLink})`,
+      ],
+      [
+        reviewer.loginInvoices === 0 && marketing.loginInvoices > 0,
+        `no invoices on the reviewer (reviewer ${reviewer.loginInvoices}, marketing ${marketing.loginInvoices})`,
+      ],
+      [
+        reviewer.loginServiceEntries > 0,
+        `the reviewer has a service entry of their own (${reviewer.loginServiceEntries})`,
+      ],
+      [
+        reviewer.dms === 1 && reviewer.dmMessages === 3 && marketing.dms === 0,
+        `one DM into the reviewer, none in marketing (${reviewer.dms} with ${reviewer.dmMessages} messages / ${marketing.dms})`,
+      ],
+      [
+        reviewer.studyZones > 0 && reviewer.loginPastSessions > 0,
+        `the reviewer has study zones and past sessions of their own (${reviewer.studyZones} zones, ${reviewer.loginPastSessions} sessions)`,
+      ],
+      [
+        reviewer.blockable > 0,
+        `#general holds text from another member, so Block is offered there (${reviewer.blockable} messages)`,
+      ],
       [same(first, second), "re-running both variants is idempotent"],
-      [refusedMissing && same(afterMissing, reviewer), "a reviewer re-seed with no auth user raises and leaves the existing chapter untouched"],
-      [refusedStranger && same(afterStranger, reviewer), "a reviewer re-seed naming an unmarked account raises and leaves the existing chapter untouched"],
-      [refusedOtherNs && same(afterOtherNs, reviewer), "a login marked for another namespace is never linked: the reviewer re-seed raises"],
-      [refusedCrossReseed && refusedCrossRemove && crossKept === 1 && same(afterCross, reviewer), "a seeded account in another chapter makes the re-seed and sql --remove refuse, and that membership survives"],
-      [refusedLeftRows && leftRowsKept === 1, "rows a seeded account left in another chapter, with no membership there, also make the re-seed refuse"],
-      [Number(ownedLeft) === 0, "a push token and a settings row go with the account, without a refusal"],
-      [refusedNullable && requestKept === 1, "a reference the delete would only null (a directory request) refuses too, and is left intact"],
-      [adopted.loginAuthId === REVIEWER_AUTH_ID && shells === 1, `a chapterless row from an early sign-in is adopted (linked ${adopted.loginAuthId}, ${shells} row on the auth id)`],
-      [refusedInUse && inUseKept === 1, "a row on the login's auth id that is a member of a chapter is refused, not taken over"],
-      [refusedLeftOwner && leftOwnerKept === 1, "so is one with no membership but points in a chapter it has left"],
-      [removed.every((r) => r.chapters === 0 && r.members === 0 && r.users === 0 && r.documents === 0), "sql --remove clears both chapters and their people"],
+      [
+        refusedMissing && same(afterMissing, reviewer),
+        "a reviewer re-seed with no auth user raises and leaves the existing chapter untouched",
+      ],
+      [
+        refusedStranger && same(afterStranger, reviewer),
+        "a reviewer re-seed naming an unmarked account raises and leaves the existing chapter untouched",
+      ],
+      [
+        refusedOtherNs && same(afterOtherNs, reviewer),
+        "a login marked for another namespace is never linked: the reviewer re-seed raises",
+      ],
+      [
+        refusedCrossReseed &&
+          refusedCrossRemove &&
+          crossKept === 1 &&
+          same(afterCross, reviewer),
+        "a seeded account in another chapter makes the re-seed and sql --remove refuse, and that membership survives",
+      ],
+      [
+        refusedLeftRows && leftRowsKept === 1,
+        "rows a seeded account left in another chapter, with no membership there, also make the re-seed refuse",
+      ],
+      [
+        Number(ownedLeft) === 0,
+        "a push token and a settings row go with the account, without a refusal",
+      ],
+      [
+        refusedNullable && requestKept === 1,
+        "a reference the delete would only null (a directory request) refuses too, and is left intact",
+      ],
+      [
+        adopted.loginAuthId === REVIEWER_AUTH_ID && shells === 1,
+        `a chapterless row from an early sign-in is adopted (linked ${adopted.loginAuthId}, ${shells} row on the auth id)`,
+      ],
+      [
+        refusedInUse && inUseKept === 1,
+        "a row on the login's auth id that is a member of a chapter is refused, not taken over",
+      ],
+      [
+        refusedLeftOwner && leftOwnerKept === 1,
+        "so is one with no membership but points in a chapter it has left",
+      ],
+      [
+        removed.every(
+          (r) =>
+            r.chapters === 0 &&
+            r.members === 0 &&
+            r.users === 0 &&
+            r.documents === 0,
+        ),
+        "sql --remove clears both chapters and their people",
+      ],
     ];
     for (const [ok, name] of checks) {
       if (ok) {
@@ -2877,12 +3234,19 @@ console.log("\n=== demo seed load (#2308) ===");
     }
   } catch (e) {
     missing += 1;
-    console.log(`MISS  demo seed load\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`);
+    console.log(
+      `MISS  demo seed load\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+    );
     await db.exec("rollback;").catch(() => {});
   } finally {
     // Leave the schema as the migrations produced it, as every block here does.
-    for (const namespace of namespaces) await db.exec(seedDemo.renderRemoveSql({ namespace })).catch(() => {});
-    await db.exec(`delete from users where supabase_auth_id in ('${REVIEWER_AUTH_ID}', '${STRANGER_AUTH_ID}', '${OTHER_NS_AUTH_ID}');`).catch(() => {});
+    for (const namespace of namespaces)
+      await db.exec(seedDemo.renderRemoveSql({ namespace })).catch(() => {});
+    await db
+      .exec(
+        `delete from users where supabase_auth_id in ('${REVIEWER_AUTH_ID}', '${STRANGER_AUTH_ID}', '${OTHER_NS_AUTH_ID}');`,
+      )
+      .catch(() => {});
     await db.exec("drop table if exists auth.users;");
   }
 }
@@ -3139,7 +3503,8 @@ try {
 
   const checks = [
     [
-      oldFirstOlder.length === 1 && oldFirstOlder[0].subscription_status === "past_due",
+      oldFirstOlder.length === 1 &&
+        oldFirstOlder[0].subscription_status === "past_due",
       `old-first: older event applies (got ${oldFirstOlder.length} row(s))`,
     ],
     [
@@ -3147,7 +3512,8 @@ try {
       `old-first: older event reports previous=active (got ${oldFirstOlder[0]?.previous_subscription_status})`,
     ],
     [
-      oldFirstNewer.length === 1 && oldFirstNewer[0].subscription_status === "canceled",
+      oldFirstNewer.length === 1 &&
+        oldFirstNewer[0].subscription_status === "canceled",
       `old-first: newer event overwrites (got ${oldFirstNewer[0]?.subscription_status})`,
     ],
     [
@@ -3155,7 +3521,8 @@ try {
       `old-first: stored status is canceled (got ${afterOldFirst?.subscription_status})`,
     ],
     [
-      newFirstNewer.length === 1 && newFirstNewer[0].subscription_status === "canceled",
+      newFirstNewer.length === 1 &&
+        newFirstNewer[0].subscription_status === "canceled",
       `new-first: newer event applies (got ${newFirstNewer.length} row(s))`,
     ],
     [
@@ -3225,7 +3592,8 @@ try {
       `activate_if on past_due clears the grace clock`,
     ],
     [
-      clockFirst.length === 1 && clockFirst[0].subscription_status === "past_due",
+      clockFirst.length === 1 &&
+        clockFirst[0].subscription_status === "past_due",
       `clock: first past_due applies`,
     ],
     [
@@ -3536,11 +3904,10 @@ try {
   `);
   const call = async (fn, channel, user, chapter = CH) =>
     (
-      await db.query(`select member_ids::text[] as m from public.${fn}($1, $2, $3)`, [
-        channel,
-        chapter,
-        user,
-      ])
+      await db.query(
+        `select member_ids::text[] as m from public.${fn}($1, $2, $3)`,
+        [channel, chapter, user],
+      )
     ).rows;
   const add = (channel, user, chapter) =>
     call("add_private_channel_member", channel, user, chapter);
@@ -3548,9 +3915,10 @@ try {
     call("remove_private_channel_member", channel, user, chapter);
   const members = async (channel) =>
     (
-      await db.query(`select member_ids::text[] as m from chat_channels where id = $1`, [
-        channel,
-      ])
+      await db.query(
+        `select member_ids::text[] as m from chat_channels where id = $1`,
+        [channel],
+      )
     ).rows[0].m;
   const same = (got, want) =>
     Array.isArray(got) && got.join(",") === want.join(",");
@@ -3747,8 +4115,14 @@ try {
     "unfolding before any row exists creates an empty row",
   ]);
   checks.push(
-    [same(await keys(U.a, CH), ["pinned"]), "another member's fold leaves this row alone"],
-    [(await keys(U.a, CH_OTHER)) === undefined, "a fold writes no row in another chapter"],
+    [
+      same(await keys(U.a, CH), ["pinned"]),
+      "another member's fold leaves this row alone",
+    ],
+    [
+      (await keys(U.a, CH_OTHER)) === undefined,
+      "a fold writes no row in another chapter",
+    ],
   );
 
   for (const [ok, name] of checks) {
@@ -3910,7 +4284,9 @@ try {
       console.log(`OK    ${s.name}`);
     } else {
       missing += 1;
-      console.log(`MISS  ${s.name}\n        ↳ expected ${s.want}, got ${s.got}`);
+      console.log(
+        `MISS  ${s.name}\n        ↳ expected ${s.want}, got ${s.got}`,
+      );
     }
   }
 
@@ -3974,7 +4350,9 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
       await db.query(sql);
       return null;
     } catch (e) {
-      const prefixed = String(e?.message ?? "").startsWith("link_discord_author:");
+      const prefixed = String(e?.message ?? "").startsWith(
+        "link_discord_author:",
+      );
       return `${e?.code ?? String(e?.message ?? e)}${prefixed ? "" : " (no link_discord_author: prefix)"}`;
     } finally {
       await db.exec("rollback to savepoint author_link_probe;");
@@ -4012,7 +4390,11 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
         select '${B}', id, '${JAKE}', 'spam', content, author_name from chat_messages where content = 'b1';
     `);
     const reportSender = async (chapter = A) =>
-      (await q(`select reported_sender_id, reported_author_name from chat_message_reports where chapter_id = '${chapter}' and message_id is not null`))[0];
+      (
+        await q(
+          `select reported_sender_id, reported_author_name from chat_message_reports where chapter_id = '${chapter}' and message_id is not null`,
+        )
+      )[0];
 
     const linked = await q(
       `select messages_linked from link_discord_author('${A}', '${JAKE}', '${JK}', 'jkslayer')`,
@@ -4025,7 +4407,9 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
     const afterLink = { a: await senders(CH_A), b: await senders(CH_B) };
     check(
       "linking in chapter A never attaches chapter B's rows by the same Discord author",
-      afterLink.a.a1 === JAKE && afterLink.a.a2 === null && afterLink.b.b1 === null,
+      afterLink.a.a1 === JAKE &&
+        afterLink.a.a2 === null &&
+        afterLink.b.b1 === null,
       afterLink,
     );
 
@@ -4049,7 +4433,9 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
     );
 
     // The same account linked in B too, before anything changes in A.
-    await q(`select * from link_discord_author('${B}', '${JAKE}', '${JK}', 'jkslayer')`);
+    await q(
+      `select * from link_discord_author('${B}', '${JAKE}', '${JK}', 'jkslayer')`,
+    );
 
     check(
       "another member claiming a linked account is refused with 23505",
@@ -4064,7 +4450,9 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
       )) === "42501",
     );
 
-    await q(`select * from link_discord_author('${A}', '${JAKE}', '${PS}', 'pin')`);
+    await q(
+      `select * from link_discord_author('${A}', '${JAKE}', '${PS}', 'pin')`,
+    );
     const afterSwitch = await senders(CH_A);
     const switchedReport = await reportSender();
     check(
@@ -4074,13 +4462,19 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
     );
     check(
       "linking a different account detaches the first and attaches the second",
-      afterSwitch.a1 === null && afterSwitch.a3 === null && afterSwitch.a2 === JAKE,
+      afterSwitch.a1 === null &&
+        afterSwitch.a3 === null &&
+        afterSwitch.a2 === JAKE,
       afterSwitch,
     );
 
-    const restored = await q(`select unlink_discord_author('${A}', '${JAKE}') as n`);
+    const restored = await q(
+      `select unlink_discord_author('${A}', '${JAKE}') as n`,
+    );
     const afterUnlink = await senders(CH_A);
-    const linksLeft = await q(`select count(*)::int as n from discord_author_links where chapter_id = '${A}'`);
+    const linksLeft = await q(
+      `select count(*)::int as n from discord_author_links where chapter_id = '${A}'`,
+    );
     check(
       "unlinking returns the rows to their Discord name and removes the link",
       restored[0]?.n === 1 && afterUnlink.a2 === null && linksLeft[0]?.n === 0,
@@ -4088,14 +4482,21 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
     );
     const bAfterA = await senders(CH_B);
     const bReport = await reportSender(B);
-    const bLink = await q(`select count(*)::int as n from discord_author_links where chapter_id = '${B}' and user_id = '${JAKE}'`);
+    const bLink = await q(
+      `select count(*)::int as n from discord_author_links where chapter_id = '${B}' and user_id = '${JAKE}'`,
+    );
     check(
       "switching and unlinking in chapter A leave chapter B's link, rows and reports alone",
-      bAfterA.b1 === JAKE && bAfterA.b2 === JAKE && bReport?.reported_sender_id === JAKE && bLink[0]?.n === 1,
+      bAfterA.b1 === JAKE &&
+        bAfterA.b2 === JAKE &&
+        bReport?.reported_sender_id === JAKE &&
+        bLink[0]?.n === 1,
       { bAfterA, bReport, bLink },
     );
 
-    await q(`select * from link_discord_author('${A}', '${JAKE}', '${JK}', 'jkslayer')`);
+    await q(
+      `select * from link_discord_author('${A}', '${JAKE}', '${JK}', 'jkslayer')`,
+    );
     // A report whose message is gone (a purged import sets message_id null):
     // only its reported sender ties it to the member.
     await db.exec(`
@@ -4114,7 +4515,9 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
     const pinstripe = await q(
       `select author_name, author_external_id from chat_messages where content = 'a2'`,
     );
-    const jakeLinks = await q(`select count(*)::int as n from discord_author_links where user_id = '${JAKE}'`);
+    const jakeLinks = await q(
+      `select count(*)::int as n from discord_author_links where user_id = '${JAKE}'`,
+    );
     check(
       "account deletion clears the Discord snapshot on the member's linked rows and their reports, keeps the rows, and deletes the links",
       scrubbed.length === 4 &&
@@ -4138,7 +4541,9 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
     // alone would refuse this. Put the membership back so only the tombstone
     // guard stands between a deleted account and a link: the state a first
     // link racing account deletion sees.
-    await db.exec(`insert into members (user_id, chapter_id) values ('${JAKE}', '${A}');`);
+    await db.exec(
+      `insert into members (user_id, chapter_id) values ('${JAKE}', '${A}');`,
+    );
     const tombstoneLink = await errCode(
       `select * from link_discord_author('${A}', '${JAKE}', '${JK}', 'jkslayer')`,
     );
@@ -4151,7 +4556,11 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
       { tombstoneLink, tombstoneLinks },
     );
   } catch (e) {
-    check("Discord author links scenario ran", false, String(e?.message ?? e).split("\n")[0]);
+    check(
+      "Discord author links scenario ran",
+      false,
+      String(e?.message ?? e).split("\n")[0],
+    );
   } finally {
     await db.exec("rollback;").catch(() => {});
   }
@@ -4161,7 +4570,9 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
       console.log(`OK    ${r.name}`);
     } else {
       missing += 1;
-      console.log(`MISS  ${r.name}\n        ↳ ${JSON.stringify(r.detail ?? null).slice(0, 300)}`);
+      console.log(
+        `MISS  ${r.name}\n        ↳ ${JSON.stringify(r.detail ?? null).slice(0, 300)}`,
+      );
     }
   }
 }
@@ -4203,7 +4614,9 @@ console.log("\n=== Functional: Discord author links (#2878) ===");
 // records the two-session proof against the local stack.
 //
 // Everything runs inside one transaction and is rolled back.
-console.log("\n=== Functional: a deleted import takes its emptied channels (#2905) ===");
+console.log(
+  "\n=== Functional: a deleted import takes its emptied channels (#2905) ===",
+);
 {
   const A = "a2905000-0000-4000-8000-00000000000a";
   const B = "b2905000-0000-4000-8000-00000000000b";
@@ -4250,9 +4663,13 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
   const results = [];
   const check = (name, ok, detail) => results.push({ name, ok, detail });
   const q = async (sql) => (await db.query(sql)).rows;
-  const ids = Object.values(CH).map((id) => `'${id}'`).join(", ");
+  const ids = Object.values(CH)
+    .map((id) => `'${id}'`)
+    .join(", ");
   const channelsLeft = async () =>
-    (await q(`select id from chat_channels where id in (${ids}) order by id`)).map((r) => r.id);
+    (
+      await q(`select id from chat_channels where id in (${ids}) order by id`)
+    ).map((r) => r.id);
 
   try {
     await db.exec(`
@@ -4338,42 +4755,65 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
         ('${A}', '${U}', 5, 'MANUAL', '${CH.POINTS}', 'client-2905');
     `);
 
-    const wrongChapter = await q(`select * from delete_empty_discord_import_channels('${PURGING}', '${B}')`);
-    const notPurging = await q(`select * from delete_empty_discord_import_channels('${RUNNING}', '${A}')`);
+    const wrongChapter = await q(
+      `select * from delete_empty_discord_import_channels('${PURGING}', '${B}')`,
+    );
+    const notPurging = await q(
+      `select * from delete_empty_discord_import_channels('${RUNNING}', '${A}')`,
+    );
     check(
       "the wrong chapter id, or an import that isn't purging, deletes nothing",
-      wrongChapter.length === 0 && notPurging.length === 0 && (await channelsLeft()).length === Object.keys(CH).length,
+      wrongChapter.length === 0 &&
+        notPurging.length === 0 &&
+        (await channelsLeft()).length === Object.keys(CH).length,
       { wrongChapter, notPurging },
     );
 
-    const deleted = (await q(`select * from delete_empty_discord_import_channels('${PURGING}', '${A}') as id`))
+    const deleted = (
+      await q(
+        `select * from delete_empty_discord_import_channels('${PURGING}', '${A}') as id`,
+      )
+    )
       .map((r) => r.id)
       .sort();
     const left = await channelsLeft();
     check(
       "deletes exactly the created channels left empty, recorded or mapped, once each, and returns them",
-      JSON.stringify(deleted) === JSON.stringify(DELETABLE) && DELETABLE.every((id) => !left.includes(id)),
+      JSON.stringify(deleted) === JSON.stringify(DELETABLE) &&
+        DELETABLE.every((id) => !left.includes(id)),
       { deleted, left },
     );
     check(
       "keeps a created channel holding a live message, a deleted one, or another import's messages",
-      left.includes(CH.LIVE) && left.includes(CH.DELETED_MSG) && left.includes(CH.OTHER_MSGS),
+      left.includes(CH.LIVE) &&
+        left.includes(CH.DELETED_MSG) &&
+        left.includes(CH.OTHER_MSGS),
       { left },
     );
-    check("keeps a created channel a points-ledger row points at", left.includes(CH.POINTS), { left });
+    check(
+      "keeps a created channel a points-ledger row points at",
+      left.includes(CH.POINTS),
+      { left },
+    );
     check(
       "keeps a created channel an import that isn't deleted merged into, a finished one included, and a channel it merged into that no deleted import created",
-      left.includes(CH.MERGED_INTO) && left.includes(CH.EXISTING) && left.includes(CH.OTHERS_CREATED),
+      left.includes(CH.MERGED_INTO) &&
+        left.includes(CH.EXISTING) &&
+        left.includes(CH.OTHERS_CREATED),
       { left },
     );
     check(
       "a merge by a purging or purged import, this one included, pins nothing (#2922)",
-      [CH.SELF_MERGED, CH.MERGED_BY_PURGED, CH.MERGED_BY_PURGING].every((id) => deleted.includes(id)),
+      [CH.SELF_MERGED, CH.MERGED_BY_PURGED, CH.MERGED_BY_PURGING].every((id) =>
+        deleted.includes(id),
+      ),
       { deleted },
     );
     check(
       "re-reaps a channel a purged, or still purging, import created that this one merged into, unless a live import's merge still pins it (#2922)",
-      deleted.includes(CH.REREAP) && deleted.includes(CH.REREAP_PURGING) && left.includes(CH.REREAP_PINNED),
+      deleted.includes(CH.REREAP) &&
+        deleted.includes(CH.REREAP_PURGING) &&
+        left.includes(CH.REREAP_PINNED),
       { deleted, left },
     );
     check(
@@ -4398,10 +4838,14 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
     );
     check(
       "the mapping rows keep their record with the target cleared, and the created-channel records go",
-      targets.length === 7 && targets.every((r) => r.target_channel_id === null) && records[0]?.n === 0,
+      targets.length === 7 &&
+        targets.every((r) => r.target_channel_id === null) &&
+        records[0]?.n === 0,
       { targets, records },
     );
-    const again = await q(`select * from delete_empty_discord_import_channels('${PURGING}', '${A}')`);
+    const again = await q(
+      `select * from delete_empty_discord_import_channels('${PURGING}', '${A}')`,
+    );
     check("a second call deletes nothing more", again.length === 0, { again });
 
     // Both client roles exist here, so each is checked directly. That catches
@@ -4422,13 +4866,20 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
     `);
     check(
       "neither a signed-in client nor the anon key may call either function, the created-channel table has RLS on, and both indexes exist",
-      guard[0]?.authed === false && guard[0]?.authed_check === false &&
-        guard[0]?.anon === false && guard[0]?.anon_check === false &&
-        guard[0]?.rls === true && guard[0]?.indexes === 2,
+      guard[0]?.authed === false &&
+        guard[0]?.authed_check === false &&
+        guard[0]?.anon === false &&
+        guard[0]?.anon_check === false &&
+        guard[0]?.rls === true &&
+        guard[0]?.indexes === 2,
       guard[0],
     );
   } catch (e) {
-    check("emptied import channels scenario ran", false, String(e?.message ?? e).split("\n")[0]);
+    check(
+      "emptied import channels scenario ran",
+      false,
+      String(e?.message ?? e).split("\n")[0],
+    );
   } finally {
     await db.exec("rollback;").catch(() => {});
   }
@@ -4438,7 +4889,9 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
       console.log(`OK    ${r.name}`);
     } else {
       missing += 1;
-      console.log(`MISS  ${r.name}\n        ↳ ${JSON.stringify(r.detail ?? null).slice(0, 300)}`);
+      console.log(
+        `MISS  ${r.name}\n        ↳ ${JSON.stringify(r.detail ?? null).slice(0, 300)}`,
+      );
     }
   }
 }
@@ -4460,7 +4913,9 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
 //     routes and `start` refuse one, and the worker stops on one.
 //
 // Everything runs inside one transaction and is rolled back.
-console.log("\n=== Functional: a channel an import merged into can be deleted (#2922) ===");
+console.log(
+  "\n=== Functional: a channel an import merged into can be deleted (#2922) ===",
+);
 {
   const A = "a2922000-0000-4000-8000-00000000000a";
   const GENERAL = "a2922000-0000-4000-8000-0000000000c1";
@@ -4498,8 +4953,14 @@ console.log("\n=== Functional: a channel an import merged into can be deleted (#
         ('${LIVE}', 'y1', 'general', 'use_existing', '${GENERAL}');
     `);
 
-    const deleteError = await refused(`delete from chat_channels where id = '${GENERAL}';`);
-    check("an officer's delete of a channel two imports merged into succeeds", deleteError === null, { deleteError });
+    const deleteError = await refused(
+      `delete from chat_channels where id = '${GENERAL}';`,
+    );
+    check(
+      "an officer's delete of a channel two imports merged into succeeds",
+      deleteError === null,
+      { deleteError },
+    );
 
     await db.exec(`delete from chat_channels where id = '${GENERAL}';`);
     const rows = await q(
@@ -4508,7 +4969,11 @@ console.log("\n=== Functional: a channel an import merged into can be deleted (#
     );
     check(
       "both mapping rows keep their record, still merges, with the target cleared",
-      rows.length === 2 && rows.every((r) => r.mapping_action === "use_existing" && r.target_channel_id === null),
+      rows.length === 2 &&
+        rows.every(
+          (r) =>
+            r.mapping_action === "use_existing" && r.target_channel_id === null,
+        ),
       { rows },
     );
 
@@ -4534,7 +4999,11 @@ console.log("\n=== Functional: a channel an import merged into can be deleted (#
       { unnamed, untargeted, constraints },
     );
   } catch (e) {
-    check("merged-into channel delete scenario ran", false, String(e?.message ?? e).split("\n")[0]);
+    check(
+      "merged-into channel delete scenario ran",
+      false,
+      String(e?.message ?? e).split("\n")[0],
+    );
   } finally {
     await db.exec("rollback;").catch(() => {});
   }
@@ -4544,12 +5013,16 @@ console.log("\n=== Functional: a channel an import merged into can be deleted (#
       console.log(`OK    ${r.name}`);
     } else {
       missing += 1;
-      console.log(`MISS  ${r.name}\n        ↳ ${JSON.stringify(r.detail ?? null).slice(0, 300)}`);
+      console.log(
+        `MISS  ${r.name}\n        ↳ ${JSON.stringify(r.detail ?? null).slice(0, 300)}`,
+      );
     }
   }
 }
 
-console.log("\n=== Functional: one 1:1 DM per chapter and member pair (#2788) ===");
+console.log(
+  "\n=== Functional: one 1:1 DM per chapter and member pair (#2788) ===",
+);
 {
   // The pair index is the whole fix: the API's createDm relies on its 23505 to
   // hand a racing call the DM that won, and every unit suite mocks the
@@ -4588,7 +5061,9 @@ console.log("\n=== Functional: one 1:1 DM per chapter and member pair (#2788) ==
       ${dm(A, `dm-${LOW}-${HIGH}`, [LOW, HIGH])}
     `);
 
-    const reversedRenamed = await refused(dm(A, "renamed by an officer", [HIGH, LOW]));
+    const reversedRenamed = await refused(
+      dm(A, "renamed by an officer", [HIGH, LOW]),
+    );
     check(
       "a second DM for the pair is refused, whatever its member order or name",
       /chat_channels_dm_pair_key/.test(reversedRenamed ?? ""),
@@ -4597,7 +5072,8 @@ console.log("\n=== Functional: one 1:1 DM per chapter and member pair (#2788) ==
 
     const otherChapter = await refused(dm(B, `dm-${LOW}-${HIGH}`, [LOW, HIGH]));
     const groupDms = await refused(
-      dm(A, "group one", [LOW, HIGH], "GROUP_DM") + dm(A, "group two", [LOW, HIGH], "GROUP_DM"),
+      dm(A, "group one", [LOW, HIGH], "GROUP_DM") +
+        dm(A, "group two", [LOW, HIGH], "GROUP_DM"),
     );
     check(
       "the same pair may have a DM in another chapter, and group DMs are untouched",
@@ -4610,11 +5086,17 @@ console.log("\n=== Functional: one 1:1 DM per chapter and member pair (#2788) ==
     const none = await refused(dm(A, "none", null));
     check(
       "a DM without exactly two members is refused",
-      [one, three, none].every((e) => /chat_channels_dm_two_members/.test(e ?? "")),
+      [one, three, none].every((e) =>
+        /chat_channels_dm_two_members/.test(e ?? ""),
+      ),
       { one, three, none },
     );
   } catch (e) {
-    check("one-DM-per-pair scenario ran", false, String(e?.message ?? e).split("\n")[0]);
+    check(
+      "one-DM-per-pair scenario ran",
+      false,
+      String(e?.message ?? e).split("\n")[0],
+    );
   } finally {
     await db.exec("rollback;").catch(() => {});
   }
@@ -4624,7 +5106,9 @@ console.log("\n=== Functional: one 1:1 DM per chapter and member pair (#2788) ==
       console.log(`OK    ${r.name}`);
     } else {
       missing += 1;
-      console.log(`MISS  ${r.name}\n        ↳ ${JSON.stringify(r.detail ?? null).slice(0, 300)}`);
+      console.log(
+        `MISS  ${r.name}\n        ↳ ${JSON.stringify(r.detail ?? null).slice(0, 300)}`,
+      );
     }
   }
 }

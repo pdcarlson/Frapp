@@ -8,10 +8,15 @@ import { RbacModule } from '../rbac/rbac.module';
 // named viewer, so it applies the caller's block list like the timeline does
 // (#2257).
 import { ChatBlockModule } from '../chat-block/chat-block.module';
+import { SEARCH_REPOSITORY } from '#domain/repositories/search.repository.interface';
+import { SupabaseSearchRepository } from '../../infrastructure/supabase/repositories/supabase-search.repository';
 
 @Module({
   imports: [RbacModule, ChatBlockModule],
   controllers: [SearchController],
-  providers: [SearchService],
+  providers: [
+    SearchService,
+    { provide: SEARCH_REPOSITORY, useClass: SupabaseSearchRepository },
+  ],
 })
 export class SearchModule {}

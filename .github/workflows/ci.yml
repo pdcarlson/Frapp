@@ -124,8 +124,8 @@ jobs:
               - 'scripts/ci/lib/invoked-directly.mjs'
               - 'scripts/storage-backup.mjs'
               - '.github/environments.json'
-              # The search-column landmark reads the API's search source.
-              - 'apps/api/src/application/services/search.service.ts'
+              # The search-column landmark reads the API's search repository.
+              - 'apps/api/src/infrastructure/supabase/repositories/supabase-search.repository.ts'
               # The job's own definition and the npm script it runs. The job is
               # REQUIRED (#2538): a skipped run reports Success, so a change the
               # filter misses would merge green here and first fail on `main`,
