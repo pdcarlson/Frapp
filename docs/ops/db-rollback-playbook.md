@@ -1481,7 +1481,7 @@ After any rollback event:
   `DELETE` as the action.*
 * **Order**: **take the API off it first.** The live API names the bucket
   (`CHAT_ARCHIVE_BUCKET`): it registers every import file there, and its workers
-  and `ChatService` sign, list and delete objects in it. Delete the bucket only once
+  and `ChatAttachmentService` sign, list and delete objects in it. Delete the bucket only once
   a forward revert that stops using it is live ([§ 3) Undo one migration](#3-undo-one-migration)); an
   empty bucket is not an unused one while that API serves. Once an
   import has run, the objects in it are the only copy of the archive's media —
@@ -1925,7 +1925,7 @@ Migration is additive (one new table with its own indexes, policy, and trigger).
 DROP TABLE IF EXISTS chat_notification_preferences;
 ```
 
-**Note:** The push worker needs no change after rollback. Its preference reads tolerate an empty result set and treat it as "no preference set", which falls back to the defaults table in [`spec/behavior/notifications.md`](../../spec/behavior/notifications.md). The API's preference routes do need a change. `ChatService` reads and writes the table for the channel mute and the per-kind preferences, and those repository calls throw on error, so they 500 for every member once the table is gone. **Take the API off it first** (a forward revert of those routes), then ship the drop as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). *Corrected 2026-10-01 (#2606): this used to say no NestJS change was required.*
+**Note:** The push worker needs no change after rollback. Its preference reads tolerate an empty result set and treat it as "no preference set", which falls back to the defaults table in [`spec/behavior/notifications.md`](../../spec/behavior/notifications.md). The API's preference routes do need a change. `ChatNotificationPreferenceService` reads and writes the table for the channel mute and the per-kind preferences, and those repository calls throw on error, so they 500 for every member once the table is gone. **Take the API off it first** (a forward revert of those routes), then ship the drop as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). *Corrected 2026-10-01 (#2606): this used to say no NestJS change was required.*
 
 ## Rollback Chunk 03 migration (20260524120000_chapter_directory_requests.sql)
 

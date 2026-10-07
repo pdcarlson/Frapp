@@ -221,7 +221,7 @@ describe('SupabaseChatMessageRepository — tenant scope', () => {
   });
 
   it('findAuthorAvatarPaths ignores a message id belonging to another channel (#1231)', async () => {
-    // `ChatService.resolveAuthorAvatars` never trusts a caller-supplied
+    // `ChatAttachmentService.resolveAuthorAvatars` never trusts a caller-supplied
     // storage path — it derives the path set from message ids the caller
     // already proved access to via `channelId`. A POLL_A id handed to
     // channel B's lookup must contribute nothing, or that boundary is a lie.

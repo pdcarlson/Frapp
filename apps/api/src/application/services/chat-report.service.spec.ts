@@ -15,6 +15,7 @@ import {
   ReportedMessageGrant,
 } from './channel-access.service';
 import { ChatService } from './chat.service';
+import { ChatAttachmentService } from './chat-attachment.service';
 import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
 import { SystemPermissions } from '#domain/constants/permissions';
@@ -75,6 +76,8 @@ describe('ChatReportService', () => {
   let chatService: {
     deleteReportedMessage: jest.Mock;
     reportedMessageState: jest.Mock;
+  };
+  let attachments: {
     purgeRemovedMessageAttachments: jest.Mock;
     reportedAttachmentsSnapshot: jest.Mock;
     releaseReportEvidence: jest.Mock;
@@ -115,6 +118,8 @@ describe('ChatReportService', () => {
       reportedMessageState: jest
         .fn()
         .mockResolvedValue({ channelId: 'chan-1', isDeleted: false }),
+    };
+    attachments = {
       purgeRemovedMessageAttachments: jest.fn().mockResolvedValue(undefined),
       // A message with no attachments unless a case says otherwise.
       reportedAttachmentsSnapshot: jest.fn().mockResolvedValue([]),
@@ -138,6 +143,7 @@ describe('ChatReportService', () => {
         { provide: CHAT_MESSAGE_REPORT_REPOSITORY, useValue: reportRepo },
         { provide: ChannelAccessService, useValue: channelAccess },
         { provide: ChatService, useValue: chatService },
+        { provide: ChatAttachmentService, useValue: attachments },
         { provide: RbacService, useValue: rbac },
         { provide: NotificationService, useValue: notificationService },
       ],
@@ -857,7 +863,7 @@ describe('ChatReportService', () => {
       );
       expect(reportRepo.resolveOpenForMessage).not.toHaveBeenCalled();
       // A message still in place keeps its files.
-      expect(chatService.purgeRemovedMessageAttachments).not.toHaveBeenCalled();
+      expect(attachments.purgeRemovedMessageAttachments).not.toHaveBeenCalled();
     });
 
     it('still withdraws the claim when the message cannot be read again either', async () => {
@@ -876,7 +882,7 @@ describe('ChatReportService', () => {
       ).rejects.toBe(failure);
       expect(reportRepo.releaseClaim).toHaveBeenCalledTimes(1);
       expect(reportRepo.resolveOpenForMessage).not.toHaveBeenCalled();
-      expect(chatService.purgeRemovedMessageAttachments).not.toHaveBeenCalled();
+      expect(attachments.purgeRemovedMessageAttachments).not.toHaveBeenCalled();
     });
 
     it('withdraws the claim and rethrows a 4xx refusal even when the message is gone', async () => {
@@ -900,7 +906,7 @@ describe('ChatReportService', () => {
       expect(chatService.reportedMessageState).not.toHaveBeenCalled();
       expect(reportRepo.releaseClaim).toHaveBeenCalledTimes(1);
       expect(reportRepo.resolveOpenForMessage).not.toHaveBeenCalled();
-      expect(chatService.purgeRemovedMessageAttachments).not.toHaveBeenCalled();
+      expect(attachments.purgeRemovedMessageAttachments).not.toHaveBeenCalled();
     });
 
     it("keeps the removal's own error, and logs, when the claim cannot be withdrawn either", async () => {
@@ -1250,10 +1256,10 @@ describe('ChatReportService', () => {
       expect(reportRepo.releaseClaim).not.toHaveBeenCalled();
       // The Storage purge that follows a committed tombstone never ran in the
       // failed call, so it runs here.
-      expect(chatService.purgeRemovedMessageAttachments).toHaveBeenCalledTimes(
+      expect(attachments.purgeRemovedMessageAttachments).toHaveBeenCalledTimes(
         1,
       );
-      expect(chatService.purgeRemovedMessageAttachments).toHaveBeenCalledWith(
+      expect(attachments.purgeRemovedMessageAttachments).toHaveBeenCalledWith(
         MESSAGE_ID,
         CHAPTER,
       );
@@ -1346,14 +1352,14 @@ describe('ChatReportService', () => {
 
     describe('filing', () => {
       it("snapshots the message's attachments onto the report, read from the message it authorized", async () => {
-        chatService.reportedAttachmentsSnapshot.mockResolvedValue([photo]);
+        attachments.reportedAttachmentsSnapshot.mockResolvedValue([photo]);
 
         await service.fileReport(CHAPTER, REPORTER, {
           message_id: MESSAGE_ID,
           reason: 'harassment',
         });
 
-        expect(chatService.reportedAttachmentsSnapshot).toHaveBeenCalledWith(
+        expect(attachments.reportedAttachmentsSnapshot).toHaveBeenCalledWith(
           MESSAGE_ID,
           CHAPTER,
         );
@@ -1363,7 +1369,7 @@ describe('ChatReportService', () => {
       });
 
       it('files nothing when the attachments cannot be read, rather than a report that holds nothing', async () => {
-        chatService.reportedAttachmentsSnapshot.mockRejectedValue(
+        attachments.reportedAttachmentsSnapshot.mockRejectedValue(
           new Error('postgrest down'),
         );
 
@@ -1392,7 +1398,7 @@ describe('ChatReportService', () => {
         expect(reportRepo.findPendingRelease).toHaveBeenCalledWith(CHAPTER, [
           'report-1',
         ]);
-        expect(chatService.releaseReportEvidence).toHaveBeenCalledWith(
+        expect(attachments.releaseReportEvidence).toHaveBeenCalledWith(
           CHAPTER,
           [pending('report-1')],
           expect.any(Date),
@@ -1413,7 +1419,7 @@ describe('ChatReportService', () => {
         expect(reportRepo.findPendingRelease).toHaveBeenCalledWith(CHAPTER, [
           'report-1',
         ]);
-        expect(chatService.releaseReportEvidence).toHaveBeenCalledWith(
+        expect(attachments.releaseReportEvidence).toHaveBeenCalledWith(
           CHAPTER,
           [pending('report-1')],
           expect.any(Date),
@@ -1421,7 +1427,7 @@ describe('ChatReportService', () => {
         // A co-holder resolved within the claim window might yet reopen, so
         // the window starts fifteen minutes before the release.
         const [, , claimWindowStart] =
-          chatService.releaseReportEvidence.mock.calls[0];
+          attachments.releaseReportEvidence.mock.calls[0];
         expect(Date.now() - claimWindowStart.getTime()).toBeGreaterThanOrEqual(
           15 * 60 * 1000,
         );
@@ -1439,7 +1445,7 @@ describe('ChatReportService', () => {
         const dismissed = { ...baseReport, status: 'dismissed' as const };
         reportRepo.resolve.mockResolvedValue(dismissed);
         reportRepo.findPendingRelease.mockResolvedValue([pending('report-1')]);
-        chatService.releaseReportEvidence.mockResolvedValue(new Set());
+        attachments.releaseReportEvidence.mockResolvedValue(new Set());
 
         await expect(
           service.resolveReport('report-1', CHAPTER, 'dismissed', OFFICER),
@@ -1485,8 +1491,8 @@ describe('ChatReportService', () => {
         );
         // One release for the whole set: the holds are read once, and neither
         // report holds against the other.
-        expect(chatService.releaseReportEvidence).toHaveBeenCalledTimes(1);
-        expect(chatService.releaseReportEvidence).toHaveBeenCalledWith(
+        expect(attachments.releaseReportEvidence).toHaveBeenCalledTimes(1);
+        expect(attachments.releaseReportEvidence).toHaveBeenCalledWith(
           CHAPTER,
           [pending('report-1'), pending('report-2')],
           expect.any(Date),
@@ -1504,7 +1510,7 @@ describe('ChatReportService', () => {
           pending('report-1'),
           pending('report-2'),
         ]);
-        chatService.releaseReportEvidence.mockResolvedValue(
+        attachments.releaseReportEvidence.mockResolvedValue(
           new Set(['report-2']),
         );
 
@@ -1548,7 +1554,7 @@ describe('ChatReportService', () => {
             download_url: 'https://signed/photo.png',
           },
         ];
-        chatService.signReportEvidence.mockResolvedValue(signed);
+        attachments.signReportEvidence.mockResolvedValue(signed);
 
         await expect(
           service.listReportEvidence('report-1', CHAPTER, OFFICER),
@@ -1558,7 +1564,7 @@ describe('ChatReportService', () => {
           CHAPTER,
           OFFICER,
         );
-        expect(chatService.signReportEvidence).toHaveBeenCalledWith(
+        expect(attachments.signReportEvidence).toHaveBeenCalledWith(
           'report-1',
           [photo],
         );
@@ -1573,7 +1579,7 @@ describe('ChatReportService', () => {
         await expect(
           service.listReportEvidence('report-1', CHAPTER, OFFICER),
         ).rejects.toThrow(NotFoundException);
-        expect(chatService.signReportEvidence).not.toHaveBeenCalled();
+        expect(attachments.signReportEvidence).not.toHaveBeenCalled();
       });
 
       it.each(['reviewed', 'actioned', 'dismissed'] as const)(
@@ -1587,7 +1593,7 @@ describe('ChatReportService', () => {
           await expect(
             service.listReportEvidence('report-1', CHAPTER, OFFICER),
           ).rejects.toThrow(ConflictException);
-          expect(chatService.signReportEvidence).not.toHaveBeenCalled();
+          expect(attachments.signReportEvidence).not.toHaveBeenCalled();
         },
       );
 
@@ -1602,7 +1608,7 @@ describe('ChatReportService', () => {
         await expect(
           service.listReportEvidence('report-1', CHAPTER, OFFICER),
         ).resolves.toEqual([]);
-        expect(chatService.signReportEvidence).not.toHaveBeenCalled();
+        expect(attachments.signReportEvidence).not.toHaveBeenCalled();
       });
     });
 
@@ -1619,7 +1625,7 @@ describe('ChatReportService', () => {
           { ...pending('report-3'), chapter_id: OTHER_CHAPTER },
           pending('report-2'),
         ]);
-        chatService.releaseReportEvidence.mockImplementation(
+        attachments.releaseReportEvidence.mockImplementation(
           async (chapterId: string, reports: readonly { id: string }[]) =>
             chapterId === CHAPTER
               ? new Set(reports.map(({ id }) => id))
@@ -1637,12 +1643,12 @@ describe('ChatReportService', () => {
           undefined,
         );
         // A chapter's reports release together, against the same window.
-        expect(chatService.releaseReportEvidence).toHaveBeenCalledWith(
+        expect(attachments.releaseReportEvidence).toHaveBeenCalledWith(
           CHAPTER,
           [pending('report-1'), pending('report-2')],
           new Date(RESOLVED_BEFORE),
         );
-        expect(chatService.releaseReportEvidence).toHaveBeenCalledWith(
+        expect(attachments.releaseReportEvidence).toHaveBeenCalledWith(
           OTHER_CHAPTER,
           [{ ...pending('report-3'), chapter_id: OTHER_CHAPTER }],
           new Date(RESOLVED_BEFORE),
@@ -1660,7 +1666,7 @@ describe('ChatReportService', () => {
           .mockResolvedValueOnce([pending('report-1'), pending('report-2')]);
         // report-1 and report-2 never finish: they must not take every
         // tick's page.
-        chatService.releaseReportEvidence.mockImplementation(
+        attachments.releaseReportEvidence.mockImplementation(
           async (_chapterId: string, reports: readonly { id: string }[]) =>
             new Set(
               reports.map(({ id }) => id).filter((id) => id === 'report-3'),
@@ -1694,7 +1700,7 @@ describe('ChatReportService', () => {
           0,
         );
         expect(reportRepo.listPendingRelease).toHaveBeenCalledTimes(1);
-        expect(chatService.releaseReportEvidence).not.toHaveBeenCalled();
+        expect(attachments.releaseReportEvidence).not.toHaveBeenCalled();
       });
 
       it('releases nothing when the read fails, and reads the same page next tick', async () => {
@@ -1707,7 +1713,7 @@ describe('ChatReportService', () => {
         await expect(service.sweepPendingEvidenceReleases(NOW)).rejects.toThrow(
           'postgrest down',
         );
-        expect(chatService.releaseReportEvidence).toHaveBeenCalledTimes(1);
+        expect(attachments.releaseReportEvidence).toHaveBeenCalledTimes(1);
         await service.sweepPendingEvidenceReleases(NOW);
 
         expect(reportRepo.listPendingRelease.mock.calls.at(-1)).toEqual([
@@ -1722,7 +1728,7 @@ describe('ChatReportService', () => {
           pending('report-1'),
           { ...pending('report-2'), chapter_id: OTHER_CHAPTER },
         ]);
-        chatService.releaseReportEvidence
+        attachments.releaseReportEvidence
           .mockRejectedValueOnce(new Error('boom'))
           .mockResolvedValueOnce(new Set(['report-2']));
 

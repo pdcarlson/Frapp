@@ -193,7 +193,7 @@ export class UpdateCategoryDto {
  * One file the client uploaded to the `chat` bucket and is attaching.
  *
  * `storage_path` is validated for shape here and for OWNERSHIP in
- * `ChatService.validateAttachmentInputs`, which re-checks it against the prefix
+ * `ChatAttachmentService.validateAttachmentInputs`, which re-checks it against the prefix
  * the API itself minted. A DTO cannot do that second half — it does not know
  * which channel the request is for — and the ownership check is the one that
  * matters, so neither stands alone.
