@@ -1,23 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
-
-/**
- * A chapter's service-hours policy, as read and written by the config
- * endpoint.
- *
- * API-facing subset of `chapter_service_config` (no timestamps). Writes use
- * `TablesInsert<'chapter_service_config'>`, same pattern as `DuesConfig`.
- */
-export type ServiceConfig = {
-  minutes_per_point: number;
-};
-
-export const SERVICE_CONFIG_FIELDS = [
-  'minutes_per_point',
-] as const satisfies ReadonlyArray<keyof ServiceConfig>;
-
-export const SERVICE_CONFIG_SELECT = SERVICE_CONFIG_FIELDS.join(', ');
+import type { ServiceConfig } from '#domain/entities/chapter-service-config.entity';
+import {
+  CHAPTER_CONFIG_REPOSITORY,
+  type IChapterConfigRepository,
+} from '#domain/repositories/chapter-config.repository.interface';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
  * Used when a chapter has no `chapter_service_config` row yet. Mirrors the
@@ -47,17 +34,15 @@ export class ChapterServiceConfigService {
   private readonly logger = new Logger(ChapterServiceConfigService.name);
 
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    @Inject(CHAPTER_CONFIG_REPOSITORY)
+    private readonly configRepo: IChapterConfigRepository,
   ) {}
 
   async getConfig(chapterId: string): Promise<ServiceConfig> {
-    const { data, error } = await this.supabase
-      .from('chapter_service_config')
-      .select(SERVICE_CONFIG_SELECT)
-      .eq('chapter_id', chapterId)
-      .maybeSingle();
-
-    if (error) {
+    let row: ServiceConfig | null;
+    try {
+      row = await this.configRepo.findServiceConfig(chapterId);
+    } catch (err) {
       // Fall back to the default rate — but say so: for a chapter that
       // configured a different rate, this awards points at the wrong rate
       // until reads recover.
@@ -70,16 +55,16 @@ export class ChapterServiceConfigService {
       // that entry rather than 500ing approval during a transient blip.
       // `ChapterPointsConfigService` models the same split explicitly as
       // `getConfig` / `getConfigOrThrow`. Do not make either side match the other.
-      this.logger.warn(
-        `chapter_service_config read failed for chapter ${chapterId}; applying default rate (${SERVICE_CONFIG_DEFAULTS.minutes_per_point} min/point): ${error.message}`,
+      logThrowable(
+        this.logger,
+        'warn',
+        `chapter_service_config read failed for chapter ${chapterId}; applying default rate (${SERVICE_CONFIG_DEFAULTS.minutes_per_point} min/point)`,
+        err,
       );
       return { ...SERVICE_CONFIG_DEFAULTS };
     }
 
-    return {
-      ...SERVICE_CONFIG_DEFAULTS,
-      ...((data as Partial<ServiceConfig> | null) ?? {}),
-    };
+    return { ...SERVICE_CONFIG_DEFAULTS, ...(row ?? {}) };
   }
 
   /**
