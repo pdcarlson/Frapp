@@ -105,9 +105,9 @@ Run it from the repo root:
 npm run test:floor -w apps/web
 ```
 
-That runs every spec under `apps/web/tests/visual/` â€” today just
+That runs every spec under `apps/web/tests/visual/` (the 375px floor specs, e.g.
 `responsive-floor.spec.ts`, which asserts each dashboard route renders without
-horizontal scroll at 375px. It stores no baseline and compares no pixels, so
+horizontal scroll, plus `nav-fit.spec.ts`). It stores no baseline and compares no pixels, so
 there is no regeneration ritual and no browser-revision sensitivity: any
 Chromium Playwright will launch gives the same answer. Prefix with `CI=true` to
 match CI's `workers: 1` and `forbidOnly` exactly when reproducing a failure.
@@ -117,8 +117,8 @@ width against the budget, and its classes, so there is no artifact to download â
 the log is the diagnosis.
 
 The gate runs as **`web-responsive-floor`**, a required check. It is path-gated:
-every push to `main`, and on pull requests only when the `web` filter matches
-(`apps/web/**`, `packages/**`, `package-lock.json`, `turbo.json`), so a docs- or
+every push to `main`, and on pull requests only when the `web` filter in `ci.yml` matches
+(`apps/web/**`, `packages/**` and the other build-affecting paths listed there), so a docs- or
 API-only PR skips it.
 
 > **The `web-visual-regression` snapshot job is gone.** It compared each route
