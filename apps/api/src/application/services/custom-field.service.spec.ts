@@ -173,6 +173,23 @@ describe('CustomFieldService', () => {
       );
     });
 
+    it('appends after a highest sort of 0 rather than reusing it', async () => {
+      // 0 is a real sort, not a miss: a chapter whose only field sits at 0
+      // must hand the next one 1.
+      const repo = makeRepo({ maxSort: 0 });
+      const service = await buildService(repo);
+
+      await service.create(CHAPTER_ID, ACTOR_ID, {
+        key: 'nickname',
+        label: 'Nickname',
+        type: 'text',
+      });
+
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: 1 }),
+      );
+    });
+
     it('honours an explicitly supplied sort', async () => {
       const repo = makeRepo({ maxSort: 7 });
       const service = await buildService(repo);

@@ -260,10 +260,13 @@ Negation follows Postgres three-valued logic rather than JavaScript truthiness, 
 reports `PGRST116` on multiple matches instead of picking one — matching `postgrest-js`, which
 synthesises that error client-side — both for the same reason.
 
-It is not a Postgres emulator, and two limits follow that a spec must not claim around: the
-`select()` projection is ignored, so dropping `!inner` from an embed is invisible here; and joins are
-not resolved, so an embed is whatever the seed row carries. Both belong to the live-PostgREST
-integration suite (§6a), which exists for exactly that class of defect.
+It is not a Postgres emulator, and three limits follow that a spec must not claim around: the
+`select()` projection is ignored, so dropping `!inner` from an embed is invisible here; joins are
+not resolved, so an embed is whatever the seed row carries; and `.textSearch()` is a stand-in that
+matches when every query term appears as a case-insensitive substring, with no stemming, parse mode
+or negation, so it answers which chapter's row comes back and nothing about what a `websearch`
+query matches. All three belong to the live-PostgREST integration suite (§6a), which exists for
+exactly that class of defect.
 
 **Two meta-specs keep this honest:**
 

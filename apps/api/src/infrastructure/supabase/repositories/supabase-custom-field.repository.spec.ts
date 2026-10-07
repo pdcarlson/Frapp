@@ -145,6 +145,20 @@ describe('SupabaseCustomFieldRepository — tenant scope', () => {
     await expect(repo.findMaxSort(EMPTY_CHAPTER)).resolves.toBeNull();
   });
 
+  it('findMaxSort reports a highest sort of 0 as 0, not as no fields', async () => {
+    harness = createTenantHarness({
+      tables: {
+        chapter_custom_fields: [
+          inA({ id: FIELD_A, ...fieldRow(), sort: 0 }),
+          inB({ id: FIELD_B, ...fieldRow(), sort: 0 }),
+        ],
+      },
+    });
+    repo = new SupabaseCustomFieldRepository(harness.client);
+
+    await expect(repo.findMaxSort(CHAPTER_B)).resolves.toBe(0);
+  });
+
   it('create writes into the caller chapter', async () => {
     const created = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.create({
