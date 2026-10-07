@@ -32,19 +32,23 @@ const CHAPTER_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_CHAPTER_ID = '22222222-2222-4222-8222-222222222222';
 
 /**
- * A chapter repository whose lookup returns the given opt-out, or rejects with
+ * A chapter repository whose opt-out read answers `data.analytics_opt_out`
+ * (false when absent, as the repository reads a missing row), or rejects with
  * `error` the way a failed read does.
  */
 function makeChapterRepo(result: {
-  data?: Record<string, unknown> | null;
+  data?: { analytics_opt_out?: boolean } | null;
   error?: unknown;
 }) {
-  const findById = jest.fn(() =>
+  const isAnalyticsOptedOut = jest.fn(() =>
     result.error
       ? Promise.reject(result.error)
-      : Promise.resolve(result.data ?? null),
+      : Promise.resolve(result.data?.analytics_opt_out ?? false),
   );
-  return { repo: { findById } as unknown as IChapterRepository, findById };
+  return {
+    repo: { isAnalyticsOptedOut } as unknown as IChapterRepository,
+    isAnalyticsOptedOut,
+  };
 }
 
 /** A fully-stubbed member repository; tests wire only the methods they use. */
@@ -226,7 +230,7 @@ describe('AnalyticsService', () => {
     });
 
     it('still returns the chapter group when the chapter has opted out', async () => {
-      const { repo: chapters, findById } = makeChapterRepo({
+      const { repo: chapters, isAnalyticsOptedOut } = makeChapterRepo({
         data: { analytics_opt_out: true },
         error: null,
       });
@@ -239,7 +243,7 @@ describe('AnalyticsService', () => {
       expect(service.getChapterGroupId(CHAPTER_ID)).toBe(
         hashChapterIdForAnalytics(SALT, CHAPTER_ID),
       );
-      expect(findById).not.toHaveBeenCalled();
+      expect(isAnalyticsOptedOut).not.toHaveBeenCalled();
     });
   });
 
@@ -331,13 +335,13 @@ describe('AnalyticsService', () => {
 
     it('reads the opt-out fresh per event so a toggle takes effect immediately', async () => {
       // First read: enabled → event sent. Second read: opted out → suppressed.
-      const findById = jest
+      const isAnalyticsOptedOut = jest
         .fn()
-        .mockResolvedValueOnce({ analytics_opt_out: false })
-        .mockResolvedValueOnce({ analytics_opt_out: true });
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true);
       const service = await buildService({
         salt: SALT,
-        chapters: { findById } as unknown as IChapterRepository,
+        chapters: { isAnalyticsOptedOut } as unknown as IChapterRepository,
         provider,
       });
 
@@ -345,7 +349,7 @@ describe('AnalyticsService', () => {
       await service.track('b', USER_ID, { chapterId: 'chapter-1' });
 
       // No caching: both events trigger a fresh lookup, and the flip is honored.
-      expect(findById).toHaveBeenCalledTimes(2);
+      expect(isAnalyticsOptedOut).toHaveBeenCalledTimes(2);
       expect(provider.capture).toHaveBeenCalledTimes(1);
     });
 
@@ -436,7 +440,7 @@ describe('AnalyticsService', () => {
     });
 
     it('does nothing when analytics is unconfigured (no salt)', async () => {
-      const { repo: chapters, findById } = makeChapterRepo({
+      const { repo: chapters, isAnalyticsOptedOut } = makeChapterRepo({
         data: null,
         error: null,
       });
@@ -448,7 +452,7 @@ describe('AnalyticsService', () => {
       );
 
       expect(provider.capture).not.toHaveBeenCalled();
-      expect(findById).not.toHaveBeenCalled();
+      expect(isAnalyticsOptedOut).not.toHaveBeenCalled();
     });
 
     it('swallows a provider failure', async () => {
@@ -597,13 +601,13 @@ describe('AnalyticsService', () => {
         makeMember('c2'),
       ]);
       // One chapter opted out, one opted in → not every chapter is disabled.
-      const findById = jest
+      const isAnalyticsOptedOut = jest
         .fn()
-        .mockResolvedValueOnce({ analytics_opt_out: true })
-        .mockResolvedValueOnce({ analytics_opt_out: false });
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
       const service = await buildService({
         salt: SALT,
-        chapters: { findById } as unknown as IChapterRepository,
+        chapters: { isAnalyticsOptedOut } as unknown as IChapterRepository,
         provider,
         members,
       });
@@ -612,7 +616,7 @@ describe('AnalyticsService', () => {
 
       expect(provider.capture).toHaveBeenCalledTimes(1);
       // Each membership's own chapter is the one looked up.
-      expect(findById.mock.calls).toEqual([['c1'], ['c2']]);
+      expect(isAnalyticsOptedOut.mock.calls).toEqual([['c1'], ['c2']]);
     });
 
     it('captures a chapter-less event when the caller has no memberships', async () => {

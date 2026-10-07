@@ -254,32 +254,4 @@ export class SupabaseSearchRepository implements ISearchRepository {
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
-
-  async findMemberId(
-    chapterId: string,
-    userId: string,
-  ): Promise<string | null> {
-    const { data, error } = (await this.supabase
-      .from('members')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('chapter_id', chapterId)
-      .limit(1)) as QueryResult<{ id: string }>;
-    if (error) throw new SupabaseQueryError(error);
-    return data?.[0]?.id ?? null;
-  }
-
-  async findMemberRoleIds(
-    chapterId: string,
-    userId: string,
-  ): Promise<string[]> {
-    const { data, error } = (await this.supabase
-      .from('members')
-      .select('role_ids')
-      .eq('user_id', userId)
-      .eq('chapter_id', chapterId)
-      .limit(1)) as QueryResult<{ role_ids: string[] }>;
-    if (error) throw new SupabaseQueryError(error);
-    return data?.[0]?.role_ids ?? [];
-  }
 }

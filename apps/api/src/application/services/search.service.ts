@@ -8,6 +8,10 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import type { BackworkResource } from '#domain/entities/backwork.entity';
 import type { Event } from '#domain/entities/event.entity';
 import {
+  MEMBER_REPOSITORY,
+  type IMemberRepository,
+} from '#domain/repositories/member.repository.interface';
+import {
   SEARCH_REPOSITORY,
   type ISearchRepository,
   type SearchMemberHit,
@@ -125,6 +129,7 @@ export class SearchService {
 
   constructor(
     @Inject(SEARCH_REPOSITORY) private readonly repo: ISearchRepository,
+    @Inject(MEMBER_REPOSITORY) private readonly members: IMemberRepository,
     private readonly rbacService: RbacService,
     // Search is a message read surface, so it owes the same mask as the
     // timeline (#2257). Without it, the one place a member goes looking for
@@ -289,7 +294,8 @@ export class SearchService {
       return events;
     }
 
-    const memberRoleIds = await this.repo.findMemberRoleIds(chapterId, userId);
+    const member = await this.members.findByUserAndChapter(userId, chapterId);
+    const memberRoleIds = member?.role_ids ?? [];
 
     return events.filter((event) =>
       hasRequiredRole(event.required_role_ids, memberRoleIds),
@@ -405,8 +411,8 @@ export class SearchService {
     );
     if (!channels.length) return [];
 
-    const memberId = await this.repo.findMemberId(chapterId, userId);
-    if (!memberId) return [];
+    const member = await this.members.findByUserAndChapter(userId, chapterId);
+    if (!member) return [];
 
     // Resolve through RbacService so custom-role capabilities count here
     // exactly as they do for chat channel access (bridge model,

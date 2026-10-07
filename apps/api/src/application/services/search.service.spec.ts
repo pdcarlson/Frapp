@@ -7,6 +7,7 @@ import {
   SEARCH_REPOSITORY,
   type ISearchRepository,
 } from '#domain/repositories/search.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import { Logger } from '@nestjs/common';
 
@@ -19,6 +20,12 @@ import { Logger } from '@nestjs/common';
 describe('SearchService', () => {
   let service: SearchService;
   let repo: { [K in keyof ISearchRepository]: jest.Mock };
+  let members: { findByUserAndChapter: jest.Mock };
+  /** The caller's membership, as the member repository returns it. */
+  const membership = (roleIds: string[] = []) => ({
+    id: 'member-1',
+    role_ids: roleIds,
+  });
   let mockRbacService: {
     getEffectivePermissions: jest.Mock;
     memberHasAnyPermission: jest.Mock;
@@ -40,7 +47,7 @@ describe('SearchService', () => {
   });
 
   const noRepoCalls = () => {
-    for (const fn of Object.values(repo)) {
+    for (const fn of [...Object.values(repo), members.findByUserAndChapter]) {
       expect(fn).not.toHaveBeenCalled();
     }
   };
@@ -52,8 +59,9 @@ describe('SearchService', () => {
       searchMembers: jest.fn().mockResolvedValue([]),
       searchMessages: jest.fn().mockResolvedValue([]),
       findChannelsForAccess: jest.fn().mockResolvedValue([]),
-      findMemberId: jest.fn().mockResolvedValue('member-1'),
-      findMemberRoleIds: jest.fn().mockResolvedValue([]),
+    };
+    members = {
+      findByUserAndChapter: jest.fn().mockResolvedValue(membership()),
     };
 
     mockRbacService = {
@@ -67,6 +75,7 @@ describe('SearchService', () => {
       providers: [
         SearchService,
         { provide: SEARCH_REPOSITORY, useValue: repo },
+        { provide: MEMBER_REPOSITORY, useValue: members },
         { provide: RbacService, useValue: mockRbacService },
         { provide: ChatBlockService, useValue: mockChatBlocks },
       ],
@@ -199,7 +208,10 @@ describe('SearchService', () => {
         'ch-1',
         undefined,
       );
-      expect(repo.findMemberId).toHaveBeenCalledWith('ch-1', 'user-1');
+      expect(members.findByUserAndChapter).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+      );
       const [searchedChannelIds] = repo.searchMessages.mock.calls[0] as [
         string[],
       ];
@@ -355,7 +367,7 @@ describe('SearchService', () => {
         // `accessibleChannelIds` returns empty without a membership, so the
         // message source would never run and the mask would never be reached —
         // the tests below would pass for the wrong reason.
-        repo.findMemberId.mockResolvedValue('mem-1');
+        members.findByUserAndChapter.mockResolvedValue(membership());
         repo.searchMessages.mockResolvedValue(rows);
       };
 
@@ -447,7 +459,7 @@ describe('SearchService', () => {
     it('should not query messages at all for a non-member', async () => {
       repo.findChannelsForAccess.mockResolvedValue([channel('pub', 'PUBLIC')]);
       // caller is not in this chapter
-      repo.findMemberId.mockResolvedValue(null);
+      members.findByUserAndChapter.mockResolvedValue(null);
 
       const result = await service.search('ch-1', 'outsider', 'hello');
 
@@ -474,17 +486,22 @@ describe('SearchService', () => {
 
       it('drops a role-targeted event for a viewer without a matching role', async () => {
         repo.searchEvents.mockResolvedValue([targetedEvent]);
-        repo.findMemberRoleIds.mockResolvedValue(['role-member']);
+        members.findByUserAndChapter.mockResolvedValue(
+          membership(['role-member']),
+        );
 
         const result = await service.search('ch-1', 'user-1', 'exec');
 
-        expect(repo.findMemberRoleIds).toHaveBeenCalledWith('ch-1', 'user-1');
+        expect(members.findByUserAndChapter).toHaveBeenCalledWith(
+          'user-1',
+          'ch-1',
+        );
         expect(result.events).toEqual([]);
       });
 
       it('drops a role-targeted event for a caller with no membership', async () => {
         repo.searchEvents.mockResolvedValue([targetedEvent]);
-        repo.findMemberRoleIds.mockResolvedValue([]);
+        members.findByUserAndChapter.mockResolvedValue(null);
 
         const result = await service.search('ch-1', 'user-1', 'exec');
 
@@ -493,7 +510,9 @@ describe('SearchService', () => {
 
       it('keeps a role-targeted event for a viewer with a matching role', async () => {
         repo.searchEvents.mockResolvedValue([targetedEvent]);
-        repo.findMemberRoleIds.mockResolvedValue(['role-officer']);
+        members.findByUserAndChapter.mockResolvedValue(
+          membership(['role-officer']),
+        );
 
         const result = await service.search('ch-1', 'user-1', 'exec');
 
@@ -503,7 +522,9 @@ describe('SearchService', () => {
 
       it('keeps a role-targeted event for a viewer holding events:update, regardless of role', async () => {
         repo.searchEvents.mockResolvedValue([targetedEvent]);
-        repo.findMemberRoleIds.mockResolvedValue(['role-member']);
+        members.findByUserAndChapter.mockResolvedValue(
+          membership(['role-member']),
+        );
         mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
 
         const result = await service.search('ch-1', 'user-1', 'exec');
@@ -515,7 +536,7 @@ describe('SearchService', () => {
           expect.arrayContaining(['events:update']),
         );
         // The events:update check short-circuits before the role lookup.
-        expect(repo.findMemberRoleIds).not.toHaveBeenCalled();
+        expect(members.findByUserAndChapter).not.toHaveBeenCalled();
       });
 
       it('does not look up roles at all when no matched event is role-targeted', async () => {
@@ -526,7 +547,7 @@ describe('SearchService', () => {
 
         expect(result.events).toHaveLength(1);
         expect(mockRbacService.memberHasAnyPermission).not.toHaveBeenCalled();
-        expect(repo.findMemberRoleIds).not.toHaveBeenCalled();
+        expect(members.findByUserAndChapter).not.toHaveBeenCalled();
       });
     });
   });

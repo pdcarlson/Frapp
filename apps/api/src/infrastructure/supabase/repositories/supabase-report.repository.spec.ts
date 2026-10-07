@@ -572,7 +572,7 @@ describe('SupabaseReportRepository — paging and query contracts', () => {
   });
 
   describe('the users lookups', () => {
-    it('reads users in chunks of ID_CHUNK_SIZE and keeps every row', async () => {
+    it('reads roster contacts in chunks of ID_CHUNK_SIZE and keeps every row', async () => {
       const ids = Array.from(
         { length: ID_CHUNK_SIZE + 23 },
         (_, i) => `u-${i}`,
@@ -599,13 +599,11 @@ describe('SupabaseReportRepository — paging and query contracts', () => {
       const repo = new SupabaseReportRepository(client);
 
       const contacts = await repo.findUserContacts(ids);
-      const names = await repo.findUserNames(ids);
 
       expect(contacts).toHaveLength(ids.length);
-      expect(names).toHaveLength(ids.length);
+      expect(chains).toHaveLength(2);
       expect(chains[0].in.mock.calls[0][1]).toHaveLength(ID_CHUNK_SIZE);
       expect(chains[0].select).toHaveBeenCalledWith('id, display_name, email');
-      expect(chains[2].select).toHaveBeenCalledWith('id, display_name');
     });
 
     it('fails the read when any chunk fails', async () => {
@@ -624,7 +622,7 @@ describe('SupabaseReportRepository — paging and query contracts', () => {
       });
 
       await expect(
-        new SupabaseReportRepository(client).findUserNames(['u-1']),
+        new SupabaseReportRepository(client).findUserContacts(['u-1']),
       ).rejects.toBeInstanceOf(SupabaseQueryError);
     });
   });

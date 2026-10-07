@@ -17,7 +17,6 @@ import type {
   ServiceEntryReportRow,
   ServiceReportFilters,
   UserContactRow,
-  UserNameRow,
 } from '#domain/repositories/report.repository.interface';
 
 type QueryResult<T> = PagedQueryResult<T>;
@@ -213,7 +212,7 @@ export class SupabaseReportRepository implements IReportRepository {
    *
    * A total order is not a snapshot, and does not claim to be: a paged read is
    * several statements, so a concurrent write can still shift a boundary
-   * (`fetchAllPages`' own docstring says so). That is the report-wide caveat in
+   * ({@link fetchCapped}'s docstring says so). That is the report-wide caveat in
    * `docs/performance/reports.md`, not something this ordering fixes.
    *
    * What DID change is the shape of that rare failure, and it cuts both ways. A
@@ -294,18 +293,6 @@ export class SupabaseReportRepository implements IReportRepository {
         .order('id', { ascending: true })
         .range(from, to);
     }, limit);
-  }
-
-  async findUserNames(ids: string[]): Promise<UserNameRow[]> {
-    const pages = (await Promise.all(
-      chunkIds(ids).map((chunk) =>
-        this.supabase.from('users').select('id, display_name').in('id', chunk),
-      ),
-    )) as QueryResult<UserNameRow>[];
-    return pages.flatMap((page) => {
-      if (page.error) throw new SupabaseQueryError(page.error);
-      return page.data ?? [];
-    });
   }
 
   async findUserContacts(ids: string[]): Promise<UserContactRow[]> {

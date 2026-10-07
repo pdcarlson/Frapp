@@ -24,7 +24,6 @@ import {
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
 import type { Member } from '#domain/entities/member.entity';
-import type { Chapter } from '#domain/entities/chapter.entity';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /** Same shape ChapterGuard / billing use; identity refuses to HMAC anything else. */
@@ -370,9 +369,8 @@ export class AnalyticsService {
    * chapter that may have opted out.
    */
   private async isChapterAnalyticsEnabled(chapterId: string): Promise<boolean> {
-    let chapter: Chapter | null;
     try {
-      chapter = await this.chapters.findById(chapterId);
+      return !(await this.chapters.isAnalyticsOptedOut(chapterId));
     } catch (error) {
       logThrowable(
         this.logger,
@@ -382,7 +380,5 @@ export class AnalyticsService {
       );
       return false; // fail closed: do not emit when opt-out state is unknown
     }
-
-    return !(chapter?.analytics_opt_out ?? false);
   }
 }

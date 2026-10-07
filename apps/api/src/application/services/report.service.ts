@@ -10,6 +10,10 @@ import {
   REPORT_REPOSITORY,
   type IReportRepository,
 } from '#domain/repositories/report.repository.interface';
+import {
+  USER_REPOSITORY,
+  type IUserRepository,
+} from '#domain/repositories/user.repository.interface';
 
 export interface AttendanceReportRow {
   member_name: string;
@@ -149,6 +153,7 @@ export class ReportService {
     @Inject(REPORT_REPOSITORY) private readonly reports: IReportRepository,
     @Inject(SEMESTER_ARCHIVE_REPOSITORY)
     private readonly semesterArchiveRepo: ISemesterArchiveRepository,
+    @Inject(USER_REPOSITORY) private readonly users: IUserRepository,
   ) {}
 
   /**
@@ -355,7 +360,7 @@ export class ReportService {
     if (!entries.length) return { rows: [], truncated, limit: REPORT_MAX_ROWS };
 
     const userIds = [...new Set(entries.map((e) => e.user_id))];
-    const users = await this.reports.findUserNames(userIds);
+    const users = await this.users.findDisplayIdentitiesByIds(userIds);
     const userMap = new Map<string, string>(
       users.map((u) => [u.id, u.display_name]),
     );

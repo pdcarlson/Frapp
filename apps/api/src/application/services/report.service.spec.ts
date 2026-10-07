@@ -11,6 +11,7 @@ import {
   type IReportRepository,
 } from '#domain/repositories/report.repository.interface';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '#domain/repositories/semester-archive.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 
 /**
  * `ReportService` turns the repository's rows into reports. Paging, the
@@ -21,6 +22,7 @@ import { SEMESTER_ARCHIVE_REPOSITORY } from '#domain/repositories/semester-archi
 describe('ReportService', () => {
   let service: ReportService;
   let repo: { [K in keyof IReportRepository]: jest.Mock };
+  let users: { findDisplayIdentitiesByIds: jest.Mock };
   let mockSemesterArchiveRepo: {
     findLatestByChapter: jest.Mock;
     findById: jest.Mock;
@@ -51,9 +53,10 @@ describe('ReportService', () => {
       findMemberBalances: jest.fn().mockResolvedValue(complete([])),
       findRoleNames: jest.fn().mockResolvedValue([]),
       findServiceEntries: jest.fn().mockResolvedValue(complete([])),
-      findUserNames: jest.fn().mockResolvedValue([]),
       findUserContacts: jest.fn().mockResolvedValue([]),
     };
+
+    users = { findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([]) };
 
     mockSemesterArchiveRepo = {
       findLatestByChapter: jest.fn().mockResolvedValue(null),
@@ -68,6 +71,7 @@ describe('ReportService', () => {
           provide: SEMESTER_ARCHIVE_REPOSITORY,
           useValue: mockSemesterArchiveRepo,
         },
+        { provide: USER_REPOSITORY, useValue: users },
       ],
     }).compile();
 
@@ -526,7 +530,7 @@ describe('ReportService', () => {
       repo.findServiceEntries.mockResolvedValue(
         complete([entry('u-1', 'Community service')]),
       );
-      repo.findUserNames.mockResolvedValue([
+      users.findDisplayIdentitiesByIds.mockResolvedValue([
         { id: 'u-1', display_name: 'Bob' },
       ]);
 
@@ -550,7 +554,10 @@ describe('ReportService', () => {
 
       await service.getServiceReport('ch-1', {});
 
-      expect(repo.findUserNames).toHaveBeenCalledWith(['u-1', 'u-2']);
+      expect(users.findDisplayIdentitiesByIds).toHaveBeenCalledWith([
+        'u-1',
+        'u-2',
+      ]);
     });
 
     it('forwards the filters and returns empty without a user lookup', async () => {
@@ -566,7 +573,7 @@ describe('ReportService', () => {
         REPORT_MAX_ROWS,
       );
       expect(result.rows).toEqual([]);
-      expect(repo.findUserNames).not.toHaveBeenCalled();
+      expect(users.findDisplayIdentitiesByIds).not.toHaveBeenCalled();
     });
 
     it('carries the read’s truncation out with the row ceiling', async () => {

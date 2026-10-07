@@ -1,9 +1,9 @@
 // Report queries against a real PostgREST.
 //
-// `report.service.spec.ts` proves the service *maps* responses correctly. It
-// cannot prove PostgREST would accept the request that produced one: its mock
-// returns canned rows for any query, discarding the arguments to `.eq()`,
-// `.in()` and `.order()` entirely. #746 lived in that gap — an ambiguous embed
+// `report.service.spec.ts` proves the service *maps* rows correctly, and
+// `supabase-report.repository.spec.ts` pins the request each query builds —
+// its select strings, filters and ordering. Neither can prove PostgREST would
+// accept that request: both run against doubles. #746 lived in that gap — an ambiguous embed
 // that 500'd `POST /v1/reports/attendance` in every environment since the
 // initial schema, with a green suite the whole time.
 //
@@ -16,6 +16,7 @@
 
 import { ReportService } from '../../src/application/services/report.service';
 import { SupabaseReportRepository } from '../../src/infrastructure/supabase/repositories/supabase-report.repository';
+import { SupabaseUserRepository } from '../../src/infrastructure/supabase/repositories/supabase-user.repository';
 import type { FrappSupabaseClient } from '../../src/infrastructure/supabase/database.types';
 import type { ISemesterArchiveRepository } from '../../src/domain/repositories/semester-archive.repository.interface';
 import { createServiceRoleClient, describeIntegration } from './stack';
@@ -53,6 +54,7 @@ describeIntegration('Report queries against live PostgREST', () => {
     service = new ReportService(
       new SupabaseReportRepository(supabase),
       semesterArchiveRepo,
+      new SupabaseUserRepository(supabase),
     );
     fixture = await seedReportFixture(supabase);
     // Seeding 1,100 service entries plus the rest is several round-trips.

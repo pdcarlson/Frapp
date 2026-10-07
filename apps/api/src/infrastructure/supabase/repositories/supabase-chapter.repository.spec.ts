@@ -79,6 +79,42 @@ describe('SupabaseChapterRepository — tenant scope', () => {
     expect(chapter?.id).toBe(CHAPTER_B);
   });
 
+  describe('isAnalyticsOptedOut', () => {
+    it('reads only the caller chapter', async () => {
+      harness = createTenantHarness({
+        tables: {
+          chapters: seed().chapters.map((row) => ({
+            ...row,
+            analytics_opt_out: row.id === CHAPTER_B,
+          })),
+        },
+        tenantColumns: { chapters: 'id' },
+        collisionExempt: {
+          chapters: [
+            'stripe_customer_id',
+            'subscription_id',
+            'analytics_opt_out',
+          ],
+        },
+      });
+      repo = new SupabaseChapterRepository(harness.client);
+
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, () =>
+          repo.isAnalyticsOptedOut(CHAPTER_B),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it('reads a chapter with no row as not opted out', async () => {
+      // Analytics emits for an unknown chapter rather than suppressing it; a
+      // flipped default here would silently drop those events.
+      await expect(
+        repo.isAnalyticsOptedOut('77777777-7777-4777-8777-777777777777'),
+      ).resolves.toBe(false);
+    });
+  });
+
   describe('findByIds', () => {
     it('returns only the requested chapter ids', async () => {
       // PK batch, not `.eq('id', one chapter)` — `expectTenantScoped` requires

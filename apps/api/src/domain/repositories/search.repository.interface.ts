@@ -62,8 +62,4 @@ export interface ISearchRepository {
     chapterId: string,
     onlyChannelId?: string,
   ): Promise<SearchChannelAccessRow[]>;
-  /** The caller's membership id in the chapter, or `null`. */
-  findMemberId(chapterId: string, userId: string): Promise<string | null>;
-  /** The caller's `role_ids` in the chapter; `[]` when not a member. */
-  findMemberRoleIds(chapterId: string, userId: string): Promise<string[]>;
 }

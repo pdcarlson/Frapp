@@ -184,27 +184,6 @@ describe('SupabaseSearchRepository — tenant scope', () => {
     expect(channels).toEqual([]);
   });
 
-  it('findMemberId and findMemberRoleIds read the caller chapter membership', async () => {
-    const memberId = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.findMemberId(CHAPTER_B, USER_SHARED),
-    );
-    const roleIds = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.findMemberRoleIds(CHAPTER_B, USER_SHARED),
-    );
-
-    expect(memberId).toBe('0b000000-0000-4000-8000-000000000503');
-    expect(roleIds).toEqual(['role-officer']);
-  });
-
-  it('a non-member has no membership id and no roles', async () => {
-    const stranger = '77777777-7777-4777-8777-777777777777';
-
-    await expect(repo.findMemberId(CHAPTER_B, stranger)).resolves.toBeNull();
-    await expect(repo.findMemberRoleIds(CHAPTER_B, stranger)).resolves.toEqual(
-      [],
-    );
-  });
-
   it('searchMessages reads only the channels it is handed, and skips deleted rows', async () => {
     const hits = await repo.searchMessages([CHANNEL_B], 'budget', 10);
 
