@@ -474,9 +474,10 @@ were checked that way, against `report.service.ts` as it stood before its querie
 repositories (#3221), and the counts below are from that run. Re-running a row now means mutating
 where that code lives today: the two embed rows in `supabase-report.repository.ts`, the paging row at
 `fetchCapped`'s call into the shared `fetchAllPages` (`supabase.utils.ts`), and the chunking row at
-the `chunkIds(ids)` call in `SupabaseUserRepository.findContactsByIds`. Mutating the shared helpers
-themselves (`fetchAllPages`, `chunkIds` in `domain/utils/chunk-ids.ts`) reaches every caller, so
-more tests fail than the table says:
+the `chunkIds(ids)` call in `SupabaseUserRepository.findColumnsByIds`, the private read behind both
+`findContactsByIds` (the roster) and `findDisplayIdentitiesByIds`. Mutating that call, or the shared
+helpers themselves (`fetchAllPages`, `chunkIds` in `domain/utils/chunk-ids.ts`), reaches more than
+the roster, so more tests fail than the table says:
 
 | Mutation | Tests that fail |
 | --- | --- |
