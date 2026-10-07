@@ -224,8 +224,7 @@ demoted out of `DRIFT_CHECKS` — are in
 Four docs gates used to run here — `docs-structure`, `doc-paths`, `doc-refs` and `doc-tables` — and
 all four are **deleted**, with their scripts, their allowlists and their `check:doc-*` npm scripts.
 `doc-paths` was the only one ever promoted to required, which is why `DOCS_CHECKS` is now an empty
-array; the comment on that array in
-[`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs) records the trade,
+array; [`docs-ci.md`](../../docs/ci-cd/docs-ci.md#what-runs) records the trade,
 and what replaced them is the standard in
 [`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md) plus the docs
 angle in `.claude/skills/diff-review/angles.md`. No gate reads the docs corpus for documentation

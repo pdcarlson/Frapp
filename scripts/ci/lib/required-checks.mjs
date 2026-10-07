@@ -4,11 +4,12 @@
  * The required-check rosters: data only, with no side effects, network calls or
  * entry point.
  *
- * Two consumers read it. `scripts/configure-branch-protection.mjs` asks "must
- * these pass before a PR merges?" and `scripts/ci/validate-deploy-sha.mjs` asks
- * "did these pass on the commit being deployed?". Keeping the list here keeps a
- * governance writer off the production deploy path, and one roster read two ways
- * replaces a second hand-synced one (ADR-20 amendment 2026-09-01, #1383).
+ * `scripts/configure-branch-protection.mjs` asks "must these pass before a PR
+ * merges?"; `scripts/ci/validate-deploy-sha.mjs` and
+ * `scripts/ci/resolve-deploy-sha.mjs` ask "did these pass on the commit being
+ * deployed?". Keeping the list here keeps a governance writer off the production
+ * deploy path, and one roster read both ways stands in for the deploy-specific
+ * roster #1375 considered and rejected (ADR-20 amendment 2026-09-01, #1383).
  *
  * This file is the one home for these names and for what each check validates:
  * keep each description beside its entry and point docs here.
@@ -45,13 +46,14 @@ export const CI_CHECKS = [
   // `scripts/ci/`.
   "ci-scripts-tests",
   // Secret scanning (gitleaks; ADR-17).
-  // ROLLOUT: list a check here only once its job exists on the target branch and
-  // has run green, or every PR blocks on a missing required check. Applying the
-  // roster is a human step with an admin PAT; an agent session runs only
-  // `npm run configure:branch-protection:verify`, which writes nothing
-  // (docs/ops/github-branch-protection-runbook.md § Prerequisites). The other
-  // ROLLOUT notes say "same caveat as secret-scan" and inherit this one, which
-  // `branch-protection-diff.test.mjs` pins.
+  // ROLLOUT: list a check in the PR that adds its job; listing writes nothing to
+  // GitHub. Apply branch protection only after that PR merges and the job has run
+  // green, or every open PR blocks on a context nobody reports. Applying is a
+  // human step with an admin PAT, and a live PUT of the whole roster; an agent
+  // session runs only `npm run configure:branch-protection:verify`, which writes
+  // nothing (docs/ops/github-branch-protection-runbook.md § Prerequisites, which
+  // also covers the `--dry-run` separator trap). The notes below that say "same
+  // caveat as secret-scan" inherit this one.
   "secret-scan",
   // `npm ci && check-types && lint` with no prebuilt packages, so a regression
   // in turbo.json's `^build` dependency fails here. ROLLOUT: same caveat as

@@ -21,8 +21,9 @@ concurrency:
 #
 # Every job sets `timeout-minutes` (#3129, pinned by workflow-timeouts.test.mjs).
 # Nothing cancels on main, so a job hung at the 360-minute default blocks every
-# push behind it. Sized from runs on 2026-10-02: 5 for jobs taking seconds, 10 for
-# about a minute, 20 for build, test and Playwright jobs.
+# push behind it. Sized from runs on 2026-10-02, with headroom for a cold cache: 5
+# for jobs taking seconds, 10 for about a minute, 20 for build, test and
+# Playwright jobs that take 2 to 4.
 # ---------------------------------------------------------------------------
 
 jobs:
@@ -172,7 +173,9 @@ jobs:
       - name: Theme package tests
         run: npm run test -w @repo/theme
 
-      # Hand-written `statusOf` / `serverMessageOf` / `codeOf`, used by API, web and mobile.
+      # Hand-written `statusOf` / `serverMessageOf` / `codeOf`, used by API, web and
+      # mobile. The package uses the hoisted workspace vitest; this step does not add
+      # a lockfile entry.
       - name: Shared api-sdk package tests
         run: npm run test -w @repo/api-sdk
 
@@ -225,7 +228,7 @@ jobs:
         uses: actions/checkout@v7
 
       # `npm ci --omit=dev` is lockfile-exact and gives the tree Vercel's install does
-      # (1128 / 1146 audited here, against production's 1126 / 1144).
+      # (measured when added: 1128 packages / 1146 audited, against production's 1126 / 1144).
       - name: Setup Node and install production dependencies only
         uses: ./.github/actions/node-setup
         with:
@@ -611,9 +614,9 @@ jobs:
       - name: Expo packages on the installed SDK line
         run: npm run check:expo-sdk-line
 
-      # Hands the module graph to Metro as EAS does (#2388, docs/mobile/testing.md).
-      # Before "Build shared packages" because the EAS worker has no packages/*/dist;
-      # mobile-bundle-gate.test.mjs locks the order. Never add `--dev`. No EAS profile
+      # Hands the module graph to Metro as EAS does, before "Build shared packages"
+      # (#2388; why: docs/mobile/testing.md; mobile-bundle-gate.test.mjs locks the
+      # order). Never add `--dev`. No EAS profile
       # or EXPO_PUBLIC_* is set, so no secrets and nothing real is inlined. iOS only:
       # the app's sources have no platform split.
       - name: App bundles for iOS without prebuilt packages (expo export)
@@ -727,7 +730,8 @@ jobs:
   # ── PGlite migration + RLS smoke validator (ADR-11 / ADR-12) ────────────
   # Applies every migration to PGlite and asserts schema landmarks, RLS posture
   # and probe-role enforcement (scripts/check-pglite-migrations.mjs), then checks
-  # the change-ping contract. Limits: docs/security/authorization-model.md
+  # the change-ping contract. Realtime, Presence and GoTrue with real JWTs are out
+  # of reach (ADR-12); other limits: docs/security/authorization-model.md
   # § RLS enforcement.
   pglite-migrations:
     needs: changes
@@ -756,10 +760,8 @@ jobs:
         run: npx vitest run lib/realtime/change-topics.spec.ts
 
   # ── 375px responsive floor (REQUIRED) ───────────────────────────────────
-  # No baseline and no pixels (#1152). Directory selection, so a new spec joins
-  # this job; no `--grep` without a second job to catch what it drops. No
-  # `continue-on-error`. Why, and the guards against a zero-test run:
-  # docs/ci-cd/quality-gates.md.
+  # No baseline and no pixels (#1152). No `continue-on-error`. Spec selection and
+  # the guards against a zero-test run: docs/ci-cd/quality-gates.md.
   web-responsive-floor:
     needs: [packages-build, changes]
     if: ${{ github.event_name == 'push' || needs.changes.outputs.web == 'true' }}
@@ -827,9 +829,8 @@ jobs:
 
   # ── The landing fold (REQUIRED) ─────────────────────────────────────────
   # Fold geometry, reveal motion and chat frames against the reskin boards (#2368,
-  # #2893), served from a production build (apps/landing/playwright.config.ts).
-  # One spec on purpose: the zero-test guard counts tests, so a second spec needs
-  # apps/web's sibling guard (docs/ci-cd/quality-gates.md). No `continue-on-error`.
+  # #2893). Why a production build and one spec: apps/landing/playwright.config.ts.
+  # No `continue-on-error`.
   landing-fold:
     needs: [packages-build, changes]
     if: ${{ github.event_name == 'push' || needs.changes.outputs.landing == 'true' }}
