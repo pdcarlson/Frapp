@@ -23,25 +23,11 @@ The agent **may** use `GITHUB_PAT` for: creating/closing agent-owned PRs, labels
 
 The agent **must not** use it to: merge without explicit approval, delete branches without approval, broaden repo settings — branch protection and environment protection rules included, since applying those is a human step (see above) — create/modify GitHub Secrets, force-push, or create releases/tags outside the automated release workflow.
 
-Node scripts (e.g. `configure-branch-protection.mjs`) read `GITHUB_PAT` directly — that script also accepts it from `.env.local` or `.env` at the repo root, with an exported variable still winning over both (details: [`../ops/github-branch-protection-runbook.md`](../ops/github-branch-protection-runbook.md)). For `gh`/git, export it as `GH_TOKEN` first — `gh` only auto-reads `GH_TOKEN`/`GITHUB_TOKEN`, not `GITHUB_PAT`. The value must be a PAT with the required repository permissions; do not assume the GitHub Actions runtime token has branch-administration scope.
+Which variable holds the PAT, and exporting it as `GH_TOKEN` for `gh`/git: [`AGENTS.md` § Credentials and secrets](../../AGENTS.md#credentials-and-secrets). How the branch-protection script reads it: [`github-branch-protection-runbook.md`](../ops/github-branch-protection-runbook.md). Work tracking itself, including why the GitHub MCP and not the PAT is the tracker path in a cloud sandbox: [`github-pm.md`](github-pm.md).
 
-```bash
-export GITHUB_PAT=<token>
-export GH_TOKEN="$GITHUB_PAT"   # required for gh / git
-```
+### The `api.github.com` route rule
 
-If only a legacy GitHub token alias is exposed in an older VM, copy it into `GITHUB_PAT` for the session; otherwise prefer the canonical name.
-
-### Work status
-
-There is **no GitHub Projects board** in this workflow. Work status lives in **GitHub Issues** on
-`pdcarlson/Frapp` — the single source of truth (Linear was retired 2026-08-08; record in
-[#680](https://github.com/pdcarlson/Frapp/issues/680)). Board states are label conventions
-(`triage` / priority `P1`–`P4` / `in-progress` / `in-review`); PRs close linked issues natively
-with `Fixes #N` on merge. In cloud sandboxes the GitHub MCP is the only *sanctioned* tracker path — the PAT/`gh` recipes
-above are for Actions and laptops. Design + policy: [`github-pm.md`](github-pm.md).
-
-**The `api.github.com` route rule (measured 2026-09-02).** Reachability of `api.github.com` from a
+**Measured 2026-09-02.** Reachability of `api.github.com` from a
 cloud sandbox is **route-dependent**: the direct route works, and what the proxy route passes
 varies by session and path (corrected 2026-09-22, below). This file used to say
 "session-dependent (observed both proxy-blocked and working, 2026-08-08)"; that framing missed the
@@ -213,7 +199,7 @@ Project ID is documented in [`SECRETS_MANAGEMENT.md`](../internal/environment/SE
 >
 > What that rules out: runner queueing (siblings in the same run got runners in seconds), `needs:` (the parent job had already finished), the `db-migrate-production` concurrency lock (nothing else held it), `environment:` as a mechanism (staging is environment-scoped and does not wait), and a `wait_timer` (a fixed timer cannot produce 3m13s, 15m19s and 29m52s). Variable multi-minute delays on exactly the production-scoped jobs is a person clicking **Approve**.
 >
-> **Verified directly 2026-09-02; the timing evidence above is now corroboration, not the basis.** This paragraph used to read "the environment's protection rules themselves were not read. `GET /repos/{owner}/{repo}/environments/production` is not reachable from an agent sandbox — the proxy answers `403`." The 403 was the proxy route, not the endpoint — see **The `api.github.com` route rule** under Work status. Read direct with node `fetch`, `GET /repos/pdcarlson/Frapp/environments/production` returns **200** and reports `protection_rules: ["required_reviewers"]`, and `GET /repos/pdcarlson/Frapp/environments` returns 200 listing nine environments (`Preview`, `Preview – frapp-docs`, `Preview – frapp-landing`, `Preview – frapp-web`, `production`, `Production – frapp-docs`, `Production – frapp-landing`, `Production – frapp-web`, `staging`). So a required-reviewer rule on `production` is a fact read off the API, and the created→started delays above are consistent with it rather than the only evidence for it. That read establishes the rule is **present**, not *who* the reviewers are — that still takes one look at **Settings → Environments → production**.
+> **Verified directly 2026-09-02; the timing evidence above is now corroboration, not the basis.** This paragraph used to read "the environment's protection rules themselves were not read. `GET /repos/{owner}/{repo}/environments/production` is not reachable from an agent sandbox — the proxy answers `403`." The 403 was the proxy route, not the endpoint — see [The `api.github.com` route rule](#the-apigithubcom-route-rule). Read direct with node `fetch`, `GET /repos/pdcarlson/Frapp/environments/production` returns **200** and reports `protection_rules: ["required_reviewers"]`, and `GET /repos/pdcarlson/Frapp/environments` returns 200 listing nine environments (`Preview`, `Preview – frapp-docs`, `Preview – frapp-landing`, `Preview – frapp-web`, `production`, `Production – frapp-docs`, `Production – frapp-landing`, `Production – frapp-web`, `staging`). So a required-reviewer rule on `production` is a fact read off the API, and the created→started delays above are consistent with it rather than the only evidence for it. That read establishes the rule is **present**, not *who* the reviewers are — that still takes one look at **Settings → Environments → production**.
 >
 > **Consequence, and what #1340 did with it.** Production migrations used to be gated by a human twice: once at the promotion PR, and again after merge, on an approval click nobody was paged for. The second gate is the one that parked a one-migration apply for 29m52s on 2026-08-28.
 >
@@ -242,58 +228,15 @@ Three rules follow. All are pinned by [`workflow-secrets-scope.test.mjs`](../../
 | `production` | `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, `RENDER_API_KEY`, `VERCEL_API_KEY` | `_deploy.yml` (called by `deploy-production.yml`, which passes `secrets: inherit` the same way, #2805) |
 | `production-backup` | `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET` | `db-backup.yml` (production jobs) |
 
-**State on 2026-09-24: the workflows and the settings both follow the rules.** Corrected from this paragraph's first writing, earlier on 2026-09-23, when all nine secrets were still repository secrets and no environment had a branch rule; the rules were set and read back that evening. The owner's [#2583](https://github.com/pdcarlson/Frapp/issues/2583) locked the four environments above to `main` with admin bypass off, deleted the eight environments nothing used, moved every live secret into its environment, rotated every credential among them (the two IDs, `INFISICAL_MACHINE_IDENTITY_ID` and `PR_BASE_SYNC_APP_CLIENT_ID`, are unchanged), and deleted the rest. Read back on 2026-09-24T16:24Z over the direct route: `actions/secrets` returns `total_count: 0`, and each environment's only deployment branch policy is `main`. To read the live state, use the direct REST route under Work status: `GET /repos/pdcarlson/Frapp/actions/secrets` (names only; the target is `total_count: 0`) and `GET /repos/pdcarlson/Frapp/environments` (each `deployment_branch_policy` set). [#2585](https://github.com/pdcarlson/Frapp/issues/2585) makes that a daily watchdog.
+**State on 2026-09-24: the workflows and the settings both follow the rules.** Corrected from this paragraph's first writing, earlier on 2026-09-23, when all nine secrets were still repository secrets and no environment had a branch rule; the rules were set and read back that evening. The owner's [#2583](https://github.com/pdcarlson/Frapp/issues/2583) locked the four environments above to `main` with admin bypass off, deleted the eight environments nothing used, moved every live secret into its environment, rotated every credential among them (the two IDs, `INFISICAL_MACHINE_IDENTITY_ID` and `PR_BASE_SYNC_APP_CLIENT_ID`, are unchanged), and deleted the rest. Read back on 2026-09-24T16:24Z over the direct route: `actions/secrets` returns `total_count: 0`, and each environment's only deployment branch policy is `main`. To read the live state, use the direct REST route ([The `api.github.com` route rule](#the-apigithubcom-route-rule)): `GET /repos/pdcarlson/Frapp/actions/secrets` (names only; the target is `total_count: 0`) and `GET /repos/pdcarlson/Frapp/environments` (each `deployment_branch_policy` set). [#2585](https://github.com/pdcarlson/Frapp/issues/2585) makes that a daily watchdog.
 
 Read-only consumers of the provider keys: `production-guardrails.yml` (`RENDER_API_KEY` and `VERCEL_API_KEY`) and `staging-conformance.yml` (`RENDER_API_KEY`). `_deploy.yml` uses the same two keys to **create** deploys: for production (called by `deploy-production.yml`) a Render deploy by `commitId` and a Vercel deployment with `target: production`, for staging (called by `deploy-staging.yml`) the staging Render deploy and Vercel deployments. They never carry runtime values. Those runtime values (including `SUPABASE_ACCESS_TOKEN`) come from Infisical at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../internal/environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)), and the Infisical pair above is the only way in. `INFISICAL_PROJECT_ID` and `OPENROUTER_API_KEY` had no consumer and were deleted with #2583 ([#1587](https://github.com/pdcarlson/Frapp/issues/1587), [#2447](https://github.com/pdcarlson/Frapp/issues/2447); the OpenRouter key was also revoked at the provider).
 
 **The migration snapshot.** `migration-drift-gate.yml`'s three jobs need each project's applied-migration history, and only a credential can read that. So [`migration-snapshot.yml`](../../.github/workflows/migration-snapshot.yml) reads it from `main`, in `automation`, after every `Deploy staging` and `Deploy production` run, every 4 hours, and as a store build starts, because that keeps its Deploy production run open for hours (its header's "When it runs" owns the list). It uploads the result as the `migration-snapshot` artifact, and [`download-migration-snapshot`](../../.github/actions/download-migration-snapshot/action.yml) fetches the newest one from a successful `main` run with `GITHUB_TOKEN`. The download action accepts only a run whose commit is on `main` (a tag named `main` would otherwise pass for it). Off `main` (a pull request, or a dispatch on a PR's branch), the required `migration-order` and `migration-replay` also need the snapshot to have been read after the latest finished `Deploy staging` or `Deploy production` run on `main`, with no `Deploy staging` run still in flight. While that isn't yet true they wait for the deploy to finish and its publish to land, for as long as the action's header sets (derived there, not measured end to end). If the snapshot is still stale after that, they fail on every PR that touches a migration, naming the publisher. Runs on `main` take the newest trusted snapshot as it is (`on-stale: use`). There the migration has already merged, and failing would leave a red required check on a `main` commit, one `validate-deploy-sha.mjs` refuses to deploy. The report-only `migration-drift` never waits either. It turns red as `stale` when a migration has been on `main` longer than its grace window and the snapshot cannot show whether staging has it: a `Deploy staging` run may have changed staging since, or whether one did could not be read. The job summary says which case applies and what to do; the cases are in [`drift-and-ordering.md` § `migration-drift`](../ops/database/drift-and-ordering.md#migration-drift--reports-does-not-block). The action's header has the reasoning, and the one residual: a `Deploy production` run still in flight. Behind all of it sits a 24-hour age limit on every snapshot. The fix is to repair the publisher, then Actions → **Migration snapshot** → Run workflow on `main`. The same run is the step after any manual change to a migration ledger (a `migration repair`, an `--include-all` apply), which triggers no publish ([`drift-and-ordering.md` § What catches drift, and what catches bad ordering](../ops/database/drift-and-ordering.md#what-catches-drift-and-what-catches-bad-ordering)).
 
-## Release labels
-
-| Label           | Effect on version bump |
-| --------------- | ---------------------- |
-| `release:major` | Major; a minor while the latest tag is 0.x ([spec § Release labels](../../spec/environments/README.md#release-labels-for-version-tags)) |
-| `release:minor` | Minor                  |
-| `release:patch` | Patch (default)        |
-
-Put the label on **every** PR. Before #1340 it went on the single `main` → `production`
-promotion PR, whose labels decided the version on their own. There is no promotion PR now:
-`deploy-production.yml` scans the `release:*` labels on every PR merged since the last `v*`
-tag and takes the highest, so an unlabelled `release:major` change ships as a patch.
-
 ## Lint, test, build (repo root)
 
-- `npm run lint` — turbo lint (read-only)
-- `npm run lint:api` — API only (read-only)
-- `npm run lint:api:fix` — applies ESLint auto-fixes; the only lint script that writes; see [contributing.md §5](../guides/contributing.md#5-linting-types-and-tests)
-- `npm run test -w apps/api` — Jest
-- `npm run build` — turbo build
-- `npm run check-types` — turbo TypeScript
-- `npm run check:api-contract` — OpenAPI / SDK drift
-- `npm run check:migration-safety` — migrations + promotion docs
-- `npm run check:npm-audit` — npm audit gate: non-allowlisted high/critical advisories fail (CI `dependency-audit`; `-- --soft-network` for offline dev)
-
-`lint` and `check-types` both depend on `^build` in root `turbo.json`, so they build the shared
-packages themselves and need no `npx turbo run build --filter='./packages/*'` beforehand — a bare
-`npm install && npm run check-types` works on a cold clone. The CI job **`clean-checkout-typecheck`**
-exists solely to keep that true: it runs `npm ci`, `npm run check-types` and `npm run lint` with no
-`needs:` and no `uses: ./.github/actions/turbo-packages-build` — the composite action that restores
-the turbo cache and prebuilds the packages. Every job that *does* use it (ADR-15 Lever A) is blind to this regression, which is why this one must not — so do not "optimize" that
-one-line `uses:` into this job. `web-production-build` carries the same prohibition for a
-**different** reason: it guards the pruned `npm ci --omit=dev` production install shape, where
-`clean-checkout-typecheck` guards unbuilt package types on a dev tree. `scripts/ci/__tests__/turbo-packages-build-action.test.mjs`
-fails if either acquires the action.
-
-**That guarantee stops at the turbo tasks.** `^build` applies to `build`, `lint` and `check-types`
-only; the root `check:*` scripts above are plain node scripts turbo never schedules, so they cannot
-inherit it. `check:api-contract` is cold-clone-safe for a *different* reason — it builds
-`./packages/*` itself before regenerating (`scripts/check-api-contract-drift.mjs`), because its
-OpenAPI export type-checks `apps/api` against those packages and fails with `TS2307` on `@repo/*`
-without them. Do not remove that build on the grounds that turbo or CI already covers it: CI's
-prebuild step is what would mask the regression, exactly as above. `npm audit` and
-`check:migration-safety` need no build at all. Conflating these three cases is what caused #683.
-
-Testing workflows and CI parity: [`.claude/skills/testing/SKILL.md`](../../.claude/skills/testing/SKILL.md).
+The commands are in [`AGENTS.md` § Lint, test, build, type-check](../../AGENTS.md#lint-test-build-type-check), and the CI job each one mirrors is in the [`testing` skill's CI parity checklist](../../.claude/skills/testing/SKILL.md#ci-parity-checklist). Why a cold clone needs no package prebuild for `lint` and `check-types` is in [`contributing.md` §5](../guides/contributing.md#5-linting-types-and-tests). Why `clean-checkout-typecheck` and `web-production-build` must never use the `turbo-packages-build` action is in [`.github/actions/README.md`](../../.github/actions/README.md). Why `check:api-contract` builds `./packages/*` itself, since turbo never schedules the root `check:*` scripts, is in `scripts/check-api-contract-drift.mjs`'s header. Treating those three cases as one is what caused #683.
 
 ## Dependency updates (Dependabot)
 
@@ -947,25 +890,10 @@ carries and why:
 > *is* allowlisted, and still prompts. If you meet one, this rule is wrong; say so here rather than
 > hunting a harness bug. Either way the operational advice is unchanged and is the part that
 > matters: **when a tool is absent from the snapshot, do not spend a PR on a settings fix** — that
-> is the loop that cost #667, #669 and #676. The snapshot observation was already recorded below in
-> the Linear post-mortem; no general rule was drawn from it, which is how three PRs were spent
-> guessing. See [#744](https://github.com/pdcarlson/Frapp/issues/744).
+> is the loop that cost #667, #669 and #676. The snapshot observation was recorded at the time (#680), but no
+> general rule was drawn from it, which is how three PRs were spent guessing. See [#744](https://github.com/pdcarlson/Frapp/issues/744).
 
-- **The Linear era ended here (2026-08-08).** Three shipped attempts to stop Linear MCP permission
-  prompts in cloud sessions — server-level allows (`mcp__Linear`/`mcp__linear`, PR #667),
-  connector-UUID allows (PR #669), and a `PreToolUse` auto-allow hook (`linear-autoallow.sh`,
-  PR #676) — all failed to verifiably stop the prompts, and each shipped with a verification claim
-  an agent cannot actually make: **an agent cannot observe permission prompts** (an auto-approved
-  call and a manually-approved call return identical results — only the human watching the session
-  knows whether it prompted). Root cause was never established; the cloud harness's own
-  `--allowed-tools` launch snapshot (readable live from `/proc/<pid>/cmdline`) omitted Linear's
-  eight write tools while carrying the `mcp__github__*` wildcard, which is why GitHub Issues was
-  viable as the replacement tracker. Rather than keep guessing, Linear was retired and work
-  tracking moved to GitHub Issues — full decision record, probe table, and evidence policy in
-  [#680](https://github.com/pdcarlson/Frapp/issues/680). The four Linear allow entries and the
-  hook (plus its `mcp__.*__(save_.*|get_workspace)` PreToolUse wiring) were removed in the
-  migration PR. Lesson that outlives the code: **never write a permission-behavior claim that
-  isn't backed by the owner reporting what they saw.**
+- **Linear retired 2026-08-08** after three PRs (#667, #669, #676) failed to verifiably stop its permission prompts. Record and evidence: [#680](https://github.com/pdcarlson/Frapp/issues/680). Lesson: **never write a permission-behavior claim that isn't backed by the owner reporting what they saw**, because an agent cannot observe prompts.
 - GitHub MCP reads: `get_me`, `pull_request_read`, `list_pull_requests`, `search_pull_requests`,
   `actions_get`, `actions_list`, `get_job_logs`, `get_check_run`, `get_commit`, `list_commits`,
   `list_tags`, `list_branches`, `get_file_contents`, `issue_read`, `list_issues`, `search_issues`,
@@ -1068,7 +996,7 @@ This hook does not exist yet — the SessionEnd teardown + scoped MCP write allo
 
 The disclaimer ADR-11 was written against (chat-adjacent chunks gated on a live Supabase Edge Functions runtime) **retired with #416**. The hot path is now NestJS code that runs in the same Jest tier as the rest of the API, and migrations validate via PGlite — both run in any sandbox.
 
-**If** the environment's network allowlist carries the **live staging egress** lines, the remaining reach is narrower than this section assumes: live Realtime / Presence and RLS-as-enforced-by-GoTrue can be exercised against hosted `frapp-staging` from a sandbox, provided the environment carries those lines *and* a staging smoke credential is available — which today it is not, per the open human-action ask in #893, so budget an authenticated check as blocked until that lands. Check `.cloud-sandbox-capabilities.json` first (written by `scripts/cloud-sandbox-egress-probe.sh` in the first seconds of bringup — always written, with `probe_ok: false` when it could not run) rather than probing by hand — and read [`.claude/skills/live-verification/SKILL.md`](../../.claude/skills/live-verification/SKILL.md) before touching the deployed environment. Push fanout is not one case but two: **APNS is unreachable** (`api.push.apple.com` fails the policy check; no Apple host is proposed for the allowlist), while **`fcm.googleapis.com` is already reachable** through the default Trusted entry `*.googleapis.com`. Reachable transport is not a runnable test — delivery still needs service-account credentials and a real device token — so end-to-end push stays blocked, but do not report FCM as network-blocked when it is not.
+An environment that carries the live staging egress lines blocks less than this protocol assumes: live Realtime / Presence and RLS-as-enforced-by-GoTrue can be exercised against hosted `frapp-staging`. An authenticated check also needs a staging smoke credential, which doesn't exist yet (#893), so budget one as blocked until it does. What this session can reach, push included, is in [`CLOUD_SANDBOX.md` § Live staging egress](../internal/environment/CLOUD_SANDBOX.md#live-staging-egress) and its § Still out of scope; how to use staging: [`live-verification`](../../.claude/skills/live-verification/SKILL.md).
 
 If a chunk crosses a boundary the sandbox still can't reach (push fanout; anything needing production; anything needing Realtime/GoTrue where the egress or the credential is in fact absent):
 
@@ -1079,11 +1007,6 @@ If a chunk crosses a boundary the sandbox still can't reach (push fanout; anythi
   status doc ([`../internal/DOCUMENTATION_CONVENTIONS.md`](../internal/DOCUMENTATION_CONVENTIONS.md) § Where a fact
   lives — "work status is not a doc"; [`github-pm.md`](github-pm.md)).
 
-### Sandbox-blocked tooling — known list
+### Sandbox-blocked tooling
 
-- **Docker / `supabase start` / `supabase db reset`:** the daemon is not started by default. In a **Claude Code web** sandbox configured per [`CLOUD_SANDBOX.md`](../internal/environment/CLOUD_SANDBOX.md) (SessionStart → `scripts/cloud-sandbox-up.sh`; Full/Custom network), that script brings up Docker + local Supabase and writes `apps/api/.env.local` plus `apps/web/.env.local`, so the full stack and `npm run start:dev -w apps/api` work with no Infisical, and `npm run build -w apps/web` prerenders instead of dying on the missing `NEXT_PUBLIC_SUPABASE_*` vars (#1156). Where that wiring is absent (unconfigured env, plain CI), there is still no daemon: use the PGlite harness for migration validation.
-- **Supabase MCP write tools (`create_branch`, `apply_migration`, `delete_branch`) and most read tools (`list_branches`, `get_project`, `get_cost`):** not granted by `.claude/settings.json` (its allow rules cover only the Workflow tool and the GitHub MCP tools listed under "Applied permission allows" — no Supabase entries), so they prompt — and unattended sandboxes cannot approve the prompt. `list_projects` has been observed to go through. Do not assume any MCP tool works until you've tried it.
-- **Outbound HTTP to arbitrary hosts:** governed by the sandbox's network policy. Through the agent proxy the failure shape is `curl: (56) CONNECT tunnel failed, response 403`; `curl -sS "$HTTPS_PROXY/__agentproxy/status"` names the refused host under `recentRelayFailures`. Note `supabase start` pulls images from **AWS ECR Public** (`public.ecr.aws`) + **CloudFront** (`*.cloudfront.net`), which the **Trusted** policy does not reliably allow — add those hosts to a Custom allowlist. **Deployed staging** (`staging.frapp.live`, `*.staging.frapp.live`, `api-staging.frapp.live`, and the `frapp-staging` Supabase ref) is reachable *if and only if* the environment carries those lines. **Do not probe by hand and do not assume — read `.cloud-sandbox-capabilities.json`,** which `scripts/cloud-sandbox-egress-probe.sh` writes at the repo root within seconds of bringup starting, long before its `.done` sentinel. The SessionStart hook summarises it too, but only on a fire that finds it already written — never on a fresh container's first session, nor on any fire that starts a bringup — so read the file rather than waiting for the line. Check its `probe_ok` first: `false` means the probe could not run, and the empty `hosts`/`staging_reachable` arrays that come with it are **not** evidence that staging is blocked (nor that the production assertion passed). With `probe_ok: true`, its `warnings` array distinguishes *blocked* from *inconclusive*, which a hand-rolled `curl` will not. See [Live staging egress](../internal/environment/CLOUD_SANDBOX.md#live-staging-egress) and [`.claude/skills/live-verification/SKILL.md`](../../.claude/skills/live-verification/SKILL.md). **Production is never allowlisted** — the probe asserts that negatively, and a reachable prod host is reported as a SECURITY warning rather than as extra capability. Provider APIs (Render, Vercel, Sentry, PostHog, the Supabase Management API) stay blocked to direct `fetch` and are reached via **MCP**, which bypasses the allowlist entirely; **Infisical is the only sanctioned exception** — it has no secrets-capable MCP connector and is reached by direct `fetch` via `app.infisical.com` on the environment allowlist ([#1279](https://github.com/pdcarlson/Frapp/issues/1279); canonical statement: [CLOUD_SANDBOX.md § What this does not unlock](../internal/environment/CLOUD_SANDBOX.md#what-this-does-not-unlock)).
-- **System packages requiring `apt-get` / root:** unavailable. The PGlite WASM bundle is npm-installable and needs none.
-
-When you hit a new block, add it here in the same PR you discovered it in.
+The known list lives in [`CLOUD_SANDBOX.md` § Blocked tooling — known list](../internal/environment/CLOUD_SANDBOX.md#blocked-tooling--known-list). Add a new block there, in the PR that finds it.
