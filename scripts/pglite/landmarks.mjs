@@ -349,11 +349,11 @@ export const LANDMARKS = [
   },
   {
     // Schema-drift guard for the two explicit select lists in
-    // `SearchService`. They enumerate columns rather than `select('*')` so the
-    // generated tsvector is not shipped back per row -- but an explicit list
-    // stops tracking its table the moment a migration adds a column, and the
-    // rows are cast to the entity type, so nothing else would notice: the new
-    // field just silently stops appearing in search results.
+    // `SupabaseSearchRepository`. They enumerate columns rather than
+    // `select('*')` so the generated tsvector is not shipped back per row -- but
+    // an explicit list stops tracking its table the moment a migration adds a
+    // column, and the rows are cast to the entity type, so nothing else would
+    // notice: the new field just silently stops appearing in search results.
     //
     // That already happened once while writing #284 -- the first draft dropped
     // `check_in_zone` / `check_in_zone_name` from event results, which
@@ -361,7 +361,7 @@ export const LANDMARKS = [
     // geofence editor. This landmark is why it cannot happen quietly again.
     //
     // Expected set: every column of the table EXCEPT the generated tsvector.
-    name: "SearchService select lists cover every column of events + backwork_resources",
+    name: "SupabaseSearchRepository select lists cover every column of events + backwork_resources",
     sql: `select table_name, string_agg(column_name, ', ' order by ordinal_position) as cols
             from information_schema.columns
            where table_schema = 'public'
@@ -370,7 +370,10 @@ export const LANDMARKS = [
            group by table_name`,
     ok: (rows) => {
       const source = readFileSync(
-        join(REPO_ROOT, "apps/api/src/application/services/search.service.ts"),
+        join(
+          REPO_ROOT,
+          "apps/api/src/infrastructure/supabase/repositories/supabase-search.repository.ts",
+        ),
         "utf8",
       );
       const listFor = (constName) => {

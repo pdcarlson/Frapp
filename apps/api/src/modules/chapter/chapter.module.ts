@@ -15,11 +15,11 @@ import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
 } from '#domain/repositories/chat.repository.interface';
-import { CHAPTER_CUSTOM_FIELD_REPOSITORY } from '#domain/repositories/chapter-custom-field.repository.interface';
+import { CUSTOM_FIELD_REPOSITORY } from '#domain/repositories/custom-field.repository.interface';
 import { CHAPTER_DIRECTORY_REPOSITORY } from '#domain/repositories/chapter-directory.repository.interface';
 import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
 import { SupabaseChatMessageRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message.repository';
-import { SupabaseChapterCustomFieldRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-custom-field.repository';
+import { SupabaseCustomFieldRepository } from '../../infrastructure/supabase/repositories/supabase-custom-field.repository';
 import { SupabaseChapterDirectoryRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-directory.repository';
 import { AuthModule } from '../auth/auth.module';
 import { ActivationModule } from '../activation/activation.module';
@@ -50,8 +50,8 @@ import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
       useClass: SupabaseChatMessageRepository,
     },
     {
-      provide: CHAPTER_CUSTOM_FIELD_REPOSITORY,
-      useClass: SupabaseChapterCustomFieldRepository,
+      provide: CUSTOM_FIELD_REPOSITORY,
+      useClass: SupabaseCustomFieldRepository,
     },
     {
       provide: CHAPTER_DIRECTORY_REPOSITORY,

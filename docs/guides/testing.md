@@ -264,10 +264,13 @@ Negation follows Postgres three-valued logic rather than JavaScript truthiness, 
 reports `PGRST116` on multiple matches instead of picking one — matching `postgrest-js`, which
 synthesises that error client-side — both for the same reason.
 
-It is not a Postgres emulator, and two limits follow that a spec must not claim around: the
-`select()` projection is ignored, so dropping `!inner` from an embed is invisible here; and joins are
-not resolved, so an embed is whatever the seed row carries. Both belong to the live-PostgREST
-integration suite (§6a), which exists for exactly that class of defect.
+It is not a Postgres emulator, and three limits follow that a spec must not claim around: the
+`select()` projection is ignored, so dropping `!inner` from an embed is invisible here; joins are
+not resolved, so an embed is whatever the seed row carries; and `.textSearch()` is a stand-in that
+matches when every query term appears as a case-insensitive substring, with no stemming, parse mode
+or negation, so it answers which chapter's row comes back and nothing about what a `websearch`
+query matches. All three belong to the live-PostgREST integration suite (§6a), which exists for
+exactly that class of defect.
 
 **Two meta-specs keep this honest:**
 
@@ -452,7 +455,14 @@ Two conventions make the tests meaningful rather than decorative:
   delete each other's rows.
 
 Verify a new spec has teeth by breaking the code it covers and confirming it fails. The report specs
-were checked that way, against `report.service.ts`:
+were checked that way, against `report.service.ts` as it stood before its queries moved into
+repositories (#3221), and the counts below are from that run. Re-running a row now means mutating
+where that code lives today: the two embed rows in `supabase-report.repository.ts`, the paging row at
+`fetchCapped`'s call into the shared `fetchAllPages` (`supabase.utils.ts`), and the chunking row at
+the `chunkIds(ids)` call in `SupabaseUserRepository.findColumnsByIds`, the private read behind both
+`findContactsByIds` (the roster) and `findDisplayIdentitiesByIds`. Mutating that call, or the shared
+helpers themselves (`fetchAllPages`, `chunkIds` in `domain/utils/chunk-ids.ts`), reaches more than
+the roster, so more tests fail than the table says:
 
 | Mutation | Tests that fail |
 | --- | --- |

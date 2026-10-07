@@ -18,6 +18,7 @@ describe('AuthService', () => {
       findById: jest.fn(),
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
+      findContactsByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),

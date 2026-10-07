@@ -46,7 +46,7 @@ import { LegalAcceptanceService } from './legal-acceptance.service';
 import { ConfigService } from '@nestjs/config';
 import { EMAIL_PROVIDER } from '#domain/adapters/email.interface';
 import type { IEmailProvider } from '#domain/adapters/email.interface';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { CHAT_MESSAGE_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 
 describe('InviteService', () => {
   let service: InviteService;
@@ -61,7 +61,6 @@ describe('InviteService', () => {
   let mockConfig: jest.Mocked<Pick<ConfigService, 'get'>>;
   let mockUserRepo: jest.Mocked<IUserRepository>;
   let mockChatService: jest.Mocked<Pick<ChatService, 'getOrCreateDm'>>;
-  let mockSupabase: { from: jest.Mock };
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let mockLegalAcceptance: jest.Mocked<
     Pick<LegalAcceptanceService, 'requireOrAccept'>
@@ -121,6 +120,7 @@ describe('InviteService', () => {
       findById: jest.fn(),
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
+      findContactsByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -131,7 +131,7 @@ describe('InviteService', () => {
         .fn()
         .mockResolvedValue({ id: 'dm-1', type: 'DM', member_ids: [] }),
     };
-    messageInsert = jest.fn().mockResolvedValue({ error: null });
+    messageInsert = jest.fn().mockResolvedValue({ id: 'msg-1' });
     // #422: `resolveInviteRole` reads `chapters.default_invite_role_id`
     // through the chapter repository whenever the caller does not name a
     // role. Defaults to "no default configured", which is the pre-#422 world
@@ -140,6 +140,7 @@ describe('InviteService', () => {
     mockChapterRepo = {
       findById: jest.fn(),
       findByIds: jest.fn(),
+      isAnalyticsOptedOut: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
@@ -155,13 +156,6 @@ describe('InviteService', () => {
         default_invite_role_id: chapterDefaultRoleId,
       } as Chapter),
     );
-
-    mockSupabase = {
-      from: jest.fn((table: string) => {
-        if (table === 'chat_messages') return { insert: messageInsert };
-        return {};
-      }),
-    };
 
     // Passes by default: the Terms gate has its own describe block below, and
     // its logic is LegalAcceptanceService's (legal-acceptance.service.spec.ts).
@@ -182,7 +176,10 @@ describe('InviteService', () => {
         { provide: ChatService, useValue: mockChatService },
         { provide: EMAIL_PROVIDER, useValue: mockEmailProvider },
         { provide: ConfigService, useValue: mockConfig },
-        { provide: SUPABASE_CLIENT, useValue: mockSupabase },
+        {
+          provide: CHAT_MESSAGE_REPOSITORY,
+          useValue: { create: messageInsert },
+        },
         { provide: LegalAcceptanceService, useValue: mockLegalAcceptance },
       ],
     }).compile();
@@ -946,6 +943,30 @@ describe('InviteService', () => {
       const result = await service.redeem('test-uuid', 'user-2');
 
       expect(result).toEqual({ chapterId: 'ch-1', memberId: 'member-1' });
+    });
+
+    it('does not roll back redemption when the notice insert fails', async () => {
+      mockUserRepo.findById.mockResolvedValue({
+        id: 'user-2',
+        supabase_auth_id: 'auth-2',
+        email: 'alex@example.com',
+        display_name: 'Alex Chen',
+        avatar_url: null,
+        bio: null,
+        graduation_year: null,
+        current_city: null,
+        current_company: null,
+        active_chapter_id: null,
+        deleted_at: null,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      });
+      messageInsert.mockRejectedValue(new Error('insert failed'));
+
+      const result = await service.redeem('test-uuid', 'user-2');
+
+      expect(result).toEqual({ chapterId: 'ch-1', memberId: 'member-1' });
+      expect(messageInsert).toHaveBeenCalledTimes(1);
     });
 
     it('skips the DM entirely when the accepter is the invite creator (rejoin)', async () => {

@@ -87,8 +87,8 @@ jobs:
               - 'scripts/ci/lib/invoked-directly.mjs'
               - 'scripts/storage-backup.mjs'
               - '.github/environments.json'
-              # The search-column landmark reads the API's search source.
-              - 'apps/api/src/application/services/search.service.ts'
+              # The search-column landmark reads the API's search repository.
+              - 'apps/api/src/infrastructure/supabase/repositories/supabase-search.repository.ts'
               # The job's own definition and npm script. Required (#2538): every file the
               # check reads belongs in this list.
               - '.github/workflows/ci.yml'

@@ -70,7 +70,7 @@ import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
 } from '#domain/repositories/chat.repository.interface';
-import { CHAPTER_CUSTOM_FIELD_REPOSITORY } from '#domain/repositories/chapter-custom-field.repository.interface';
+import { CUSTOM_FIELD_REPOSITORY } from '#domain/repositories/custom-field.repository.interface';
 import { CHAPTER_DIRECTORY_REPOSITORY } from '#domain/repositories/chapter-directory.repository.interface';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import type { Chapter } from '#domain/entities/chapter.entity';
@@ -139,7 +139,7 @@ describe('ChapterOnboardingService', () => {
           useValue: { create: messageInsert },
         },
         {
-          provide: CHAPTER_CUSTOM_FIELD_REPOSITORY,
+          provide: CUSTOM_FIELD_REPOSITORY,
           useValue: { seedDefaults: fieldsUpsert },
         },
         {
