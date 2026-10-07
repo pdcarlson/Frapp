@@ -14,7 +14,10 @@ import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.in
 import { RbacService } from '../services/rbac.service';
 import { ChatBlockService } from '../services/chat-block.service';
 import type { ChatMessage } from '#domain/entities';
-import { ChannelCacheService } from '../services/channel-cache.service';
+import {
+  ChannelCacheService,
+  type CachedChannelRow,
+} from '../services/channel-cache.service';
 
 /**
  * Recipient-filter proofs driven through the **real Realtime payload path**.
@@ -94,7 +97,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     type: 'PUBLIC',
     member_ids: null,
     required_permissions: null,
-  };
+  } satisfies CachedChannelRow;
 
   /** Sender + one partner. `outsider` is in the chapter but not in the DM. */
   const DM_CHANNEL = {
@@ -103,7 +106,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     name: 'dm',
     type: 'DM',
     member_ids: ['sender', 'dm-partner'],
-  };
+  } satisfies CachedChannelRow;
 
   const PRIVATE_CHANNEL = {
     ...PUBLIC_CHANNEL,
@@ -111,7 +114,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     name: 'exec',
     type: 'PRIVATE',
     member_ids: ['sender', 'insider'],
-  };
+  } satisfies CachedChannelRow;
 
   /**
    * `defaultLevelFor` returns `all` for the announcements channel (PUBLIC and
@@ -125,7 +128,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     id: 'ch-announce',
     name: 'announcements',
     is_read_only: true,
-  };
+  } satisfies CachedChannelRow;
 
   const ROLE_GATED_CHANNEL = {
     ...PUBLIC_CHANNEL,
@@ -133,7 +136,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     name: 'treasury',
     type: 'ROLE_GATED',
     required_permissions: ['finances:read'],
-  };
+  } satisfies CachedChannelRow;
 
   function setMembers(userIds: string[]) {
     findByChapter.mockResolvedValue(userIds.map((id) => ({ user_id: id })));

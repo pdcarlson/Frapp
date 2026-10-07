@@ -118,7 +118,7 @@ export class SupabaseChatNotificationPreferenceRepository implements IChatNotifi
    * (`.claude/skills/api-development/SKILL.md`: "Always `if (error) throw
    * error;`") and refuses to let a partial read pass for a complete one.
    * Expressing the degradation at the call site instead is the policy that
-   * helper documents, and the shape `scheduled-jobs.repository.ts` already uses.
+   * helper documents, and the shape `supabase-scheduled-jobs.repository.ts` already uses.
    *
    * **The `catch` is narrowed on purpose, and the `instanceof` is the whole
    * point.** A failed query arrives as a `SupabaseQueryError`: `fetchAllPages`

@@ -1,20 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import type { ChatNotificationLevel } from '#domain/entities/chat-notification-preference.entity';
+import type { ChatChannelPushRouting } from '#domain/entities/chat.entity';
 
 /** How long a cached channel row may inform an authorization decision, absent an explicit invalidation. */
 const CHANNEL_CACHE_TTL_MS = 30_000;
 
-export interface CachedChannelRow {
-  id: string;
-  chapter_id: string;
-  name: string;
-  is_read_only: boolean | null;
-  type: string;
-  member_ids: string[] | null;
-  required_permissions: string[] | null;
-  /** The officer-set default push level (#2771); `null` means the built-in one. */
-  default_notification_level: ChatNotificationLevel | null;
-}
+/**
+ * A cached channel: the push worker's routing columns, as
+ * `IChatChannelRepository.findPushRouting` reads them. One definition, so the
+ * cache and the read cannot drift apart.
+ */
+export type CachedChannelRow = ChatChannelPushRouting;
 
 /**
  * Shared cache of `chat_channels` rows, keyed by channel id.

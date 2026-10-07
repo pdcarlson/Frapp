@@ -12,8 +12,12 @@ import { CHAT_PUSH_DISPATCH_REPOSITORY } from '#domain/repositories/chat-push-di
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { RbacService } from '../services/rbac.service';
 import { ChatBlockService } from '../services/chat-block.service';
-import { ChannelCacheService } from '../services/channel-cache.service';
+import {
+  ChannelCacheService,
+  type CachedChannelRow,
+} from '../services/channel-cache.service';
 import { SYSTEM_SENDER_ID } from '@repo/validation';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 describe('ChatPushWorkerService', () => {
   let service: ChatPushWorkerService;
@@ -25,6 +29,7 @@ describe('ChatPushWorkerService', () => {
   let findDisplayIdentitiesByIds: jest.Mock;
   let claim: jest.Mock;
   let purgeBefore: jest.Mock;
+  let findPushRouting: jest.Mock;
 
   /** Display names the sender lookup answers with; anyone else has none. */
   const NAMES: Record<string, string> = {
@@ -41,14 +46,14 @@ describe('ChatPushWorkerService', () => {
     type: 'PUBLIC',
     member_ids: null,
     required_permissions: null,
-  };
+  } satisfies CachedChannelRow;
 
   const ANNOUNCEMENT_CHANNEL = {
     ...CHANNEL,
     id: 'ch-announce',
     name: 'announcements',
     is_read_only: true,
-  };
+  } satisfies CachedChannelRow;
 
   beforeEach(async () => {
     notifyUser = jest.fn().mockResolvedValue(undefined);
@@ -63,6 +68,9 @@ describe('ChatPushWorkerService', () => {
     claim = jest.fn().mockResolvedValue('claimed');
     purgeBefore = jest.fn().mockResolvedValue(0);
     findForUsers = jest.fn().mockResolvedValue(new Map());
+    // Every test but the lookup cases seeds its channel through
+    // `__setChannelForTest`, so the read never runs for them.
+    findPushRouting = jest.fn().mockResolvedValue(null);
     getEffectivePermissions = jest.fn().mockResolvedValue([]);
     // Default: nobody has blocked the sender. Answered from the recipients
     // actually passed in rather than a fixed array, for the reason `setPrefs`
@@ -121,7 +129,7 @@ describe('ChatPushWorkerService', () => {
         },
         {
           provide: CHAT_CHANNEL_REPOSITORY,
-          useValue: { findPushRouting: jest.fn() },
+          useValue: { findPushRouting },
         },
         { provide: CHAT_PUSH_DISPATCH_REPOSITORY, useValue: dispatches },
         {
@@ -884,7 +892,7 @@ describe('ChatPushWorkerService', () => {
       name: 'dm-alice-sender',
       type: 'DM',
       member_ids: ['sender', 'alice'],
-    };
+    } satisfies CachedChannelRow;
     const send = (
       channelId: string,
       over: Partial<Parameters<ChatPushWorkerService['handleMessage']>[0]> = {},
@@ -1255,6 +1263,69 @@ describe('ChatPushWorkerService', () => {
       service.__setChannelForTest(CHANNEL); // `mentions` default, no mention
       await send(CHANNEL.id, { id: 'm2' });
       expect(findDisplayIdentitiesByIds).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('channel lookup (#3219)', () => {
+    const MESSAGE = {
+      id: 'm-lookup',
+      channel_id: 'ch-uncached',
+      sender_id: 'sender',
+      content: 'hi',
+      kind: 'text',
+      mentions: [],
+      created_at: '',
+    };
+
+    function warnSpy() {
+      return jest.spyOn(
+        (
+          service as unknown as {
+            logger: { warn: (...args: unknown[]) => void };
+          }
+        ).logger,
+        'warn',
+      );
+    }
+
+    it('warns and pushes nothing when the channel read fails', async () => {
+      findPushRouting.mockRejectedValue(
+        new SupabaseQueryError({ message: 'connection reset', code: '08006' }),
+      );
+      const warn = warnSpy();
+
+      await expect(service.handleMessage(MESSAGE)).resolves.toBeUndefined();
+
+      expect(findPushRouting).toHaveBeenCalledWith('ch-uncached');
+      // The lookup's own line, not the handler's catch-all.
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain(
+        'chat-push: channel lookup failed',
+      );
+      expect(findByChapter).not.toHaveBeenCalled();
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('pushes nothing, quietly, when the channel is gone', async () => {
+      const warn = warnSpy();
+
+      await service.handleMessage(MESSAGE);
+
+      expect(findPushRouting).toHaveBeenCalledWith('ch-uncached');
+      expect(warn).not.toHaveBeenCalled();
+      expect(findByChapter).not.toHaveBeenCalled();
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('caches the row it read, so the next message does not read again', async () => {
+      findPushRouting.mockResolvedValue({ ...CHANNEL, id: 'ch-uncached' });
+      setMembers([]);
+
+      await service.handleMessage(MESSAGE);
+      await service.handleMessage({ ...MESSAGE, id: 'm-lookup-2' });
+
+      expect(findPushRouting).toHaveBeenCalledTimes(1);
+      expect(findByChapter).toHaveBeenCalledWith('chap-1');
     });
   });
 

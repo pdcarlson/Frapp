@@ -53,6 +53,7 @@ src/
 
   application/
     services/
+    workers/        # Realtime subscribers and @Cron sweeps
 
   infrastructure/
     supabase/
@@ -66,6 +67,8 @@ src/
     repositories/
     adapters/
     constants/permissions.ts
+
+  modules/          # Nest wiring only: *.module.ts files and their specs
 ```
 
 > **Note:** Controllers only handle HTTP concerns (routing, status codes, DTOs). They never talk to Supabase directly — they call application services instead.
@@ -148,10 +151,10 @@ Example: adding a `polls` module.
 
 1. **Domain layer**
    - Create `src/domain/entities/poll.entity.ts` with a TypeScript interface representing the table.
-   - Create `src/domain/repositories/poll.repository.ts` defining an interface (e.g. `IPollRepository`).
+   - Create `src/domain/repositories/poll.repository.interface.ts` defining an interface (e.g. `IPollRepository`) and its injection token.
 
 2. **Infrastructure layer**
-   - Implement `SupabasePollRepository` in `src/infrastructure/supabase/repositories/poll.repository.ts`.
+   - Implement `SupabasePollRepository` in `src/infrastructure/supabase/repositories/supabase-poll.repository.ts`.
    - Use the shared `SupabaseClient` provider to query the `polls` table.
 
 3. **Application layer**
@@ -167,6 +170,7 @@ Example: adding a `polls` module.
 
 5. **Module wiring**
    - Create `PollModule` in `src/modules/poll/poll.module.ts`, providing controller, service, and repository implementation.
+   - Put nothing else under `src/modules/`. A worker belongs in `src/application/workers/` and its queries in a repository, like any service's; the `api-modules-wiring-only` dependency-cruiser rules fail any other file there.
    - Import `PollModule` into `AppModule`.
 
 > **Tip:** Always start new features by updating the **specs** (`spec/product/`, `spec/behavior/`, `spec/architecture/README.md`). The API implementation should follow, not lead, the spec.

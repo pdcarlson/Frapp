@@ -154,13 +154,14 @@ const apiLayerRules = [
     severity: "error",
     comment:
       "modules/ is Nest wiring: `*.module.ts` files (and their `*.module.spec.ts`) that register " +
-      "providers and controllers. Any other file there is code no layer rule covers, since the " +
-      "four layer rules above are anchored to domain/, infrastructure/ and application/: a " +
-      "service or repository parked under modules/ may import anything and be imported by " +
-      "anything. Workers and services go in application/, repositories in " +
-      "infrastructure/supabase/repositories/ behind a domain/repositories/ interface (#3219). " +
-      "This catches the file through its outgoing edges; the rule below catches one that " +
-      "imports nothing but is imported.",
+      "providers and controllers. The layer-direction rules are anchored to domain/, " +
+      "infrastructure/ and application/ (api-domain-by-subpath only checks how a file spells a " +
+      "domain import), so a service or repository parked under modules/ is free to import any " +
+      "layer and be imported by any layer. Workers and services go in application/, " +
+      "repositories in infrastructure/supabase/repositories/ behind a domain/repositories/ " +
+      "interface (#3219). dependency-cruiser judges edges, not files, so the rule takes three " +
+      "forms: this one sees such a file through its own imports, -target through an import of " +
+      "it, and -orphan when it has neither.",
     from: { path: "^src/modules/", pathNot: "\\.module(\\.spec)?\\.ts$" },
     to: {},
   },
@@ -168,11 +169,19 @@ const apiLayerRules = [
     name: "api-modules-wiring-only-target",
     severity: "error",
     comment:
-      "The other half of api-modules-wiring-only: an import of a non-module file under " +
-      "modules/, such as a constants file with no imports of its own, which the outgoing-edge " +
-      "rule cannot see.",
+      "api-modules-wiring-only, seen from the importer: a non-module file under modules/ that " +
+      "imports nothing itself, such as a constants file, but is imported.",
     from: {},
     to: { path: "^src/modules/", pathNot: "\\.module\\.ts$" },
+  },
+  {
+    name: "api-modules-wiring-only-orphan",
+    severity: "error",
+    comment:
+      "api-modules-wiring-only for a non-module file under modules/ with no edges at all. " +
+      "Specs are orphans by nature, so `*.module.spec.ts` stays exempt.",
+    from: { orphan: true, path: "^src/modules/", pathNot: "\\.module(\\.spec)?\\.ts$" },
+    to: {},
   },
   {
     name: "api-application-not-to-interface",

@@ -10,7 +10,7 @@ import { SupabaseChatPushDispatchRepository } from './supabase-chat-push-dispatc
  * (a `23505` read as `claimed`) would put every instance back to sending every
  * push with the suite green.
  *
- * Not named `chat-push-dispatch.repository.spec.ts`: that sibling name is the
+ * Not named `supabase-chat-push-dispatch.repository.spec.ts`: that sibling name is the
  * tenant-scope spec `tenant-scope-coverage.spec.ts` looks for, and this table
  * has no tenant column (its ledger line says why).
  */
