@@ -5,7 +5,8 @@
 #
 # Hermetic: `docker` is stubbed, so no daemon, no containers and no database are needed, and
 # nothing outside a mktemp dir is touched. Runs under the same `set -euo pipefail` as
-# local-dev-setup.sh. No CI job runs this yet — wiring one up is tracked separately.
+# local-dev-setup.sh. CI runs it in `ci-scripts-tests`, through scripts/ci/__tests__/shell-suites.test.mjs,
+# which picks up every *.test.sh (#802).
 #
 # Most cases here are regression guards for a specific reviewed failure, not coverage for its
 # own sake. The load-bearing ones: a lone FOREIGN stack must never be substituted (repairing
