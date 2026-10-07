@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, join } from "node:path";
 
@@ -19,7 +19,8 @@ import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
 //
 // So the filter's coverage is derived here from the script, not restated: every
 // path its modules name by `join(...)` or `resolve(...)` on `REPO_ROOT` or
-// `process.cwd()` (the same directory in the entry), by `new URL(...,
+// `process.cwd()` (the same directory: `harness.mjs` defines `REPO_ROOT` as
+// `process.cwd()`, and the other modules import it), by `new URL(...,
 // import.meta.url)`, or by a relative `import`/`export ... from`/`import()`.
 // Each path is resolved as its form resolves it at runtime (a `join` segment is
 // file-system text, a `new URL` or import target is a URL) and then routed the
@@ -46,7 +47,8 @@ import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
 // seed, is imported from its module below rather than restated.
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const ENTRY = "scripts/pglite/run.mjs";
+const HARNESS = "scripts/pglite";
+const ENTRY = `${HARNESS}/run.mjs`;
 
 // Inputs the job depends on that the forms above cannot derive: the job's own
 // definition, the npm script it runs, the lockfile, and the seed CSV that
@@ -414,6 +416,33 @@ function inputs() {
   return [...found];
 }
 
+/**
+ * The tiers `run.mjs` runs: each `await import("./tiers/<name>.mjs")` in its
+ * live code, as harness-relative paths. Read from the masked source, so an
+ * import inside a comment or string is no import, and an `import()` that is not
+ * awaited does not count: `run.mjs` reads the failure count and closes the
+ * database once its last await returns, so an unawaited tier could still be
+ * running then.
+ */
+function awaitedTiers(src) {
+  return callArgs(src, mask(src), /\bawait\s+import\s*\(/g)
+    .map(({ call, args }) => {
+      const target = literal(args[0] ?? "");
+      assert.ok(target !== null, `run.mjs: cannot resolve \`${call}\``);
+      return target;
+    })
+    .filter((target) => target.startsWith("./tiers/"))
+    .map((target) => target.slice(2));
+}
+
+/** Every `.mjs` under `scripts/pglite/`, harness-relative and `/`-separated. */
+function harnessModules() {
+  return readdirSync(join(REPO, HARNESS), { recursive: true, encoding: "utf8" })
+    .map((rel) => rel.split("\\").join("/"))
+    .filter((rel) => rel.endsWith(".mjs"))
+    .sort();
+}
+
 /** The `changes.pglite` filter's patterns, in order. */
 function pgliteFilter() {
   const lines = readFileSync(join(REPO, ".github/workflows/ci.yml"), "utf8").split("\n");
@@ -479,6 +508,49 @@ describe("pglite-migrations: required, and its path filter covers what it reads"
       [],
       "the pglite job would skip on a PR changing these, then fail on main",
     );
+  });
+});
+
+// A tier runs only when `run.mjs` imports it: each tier's body executes on
+// import, and `run.mjs` lists them by hand, in order (#3226). A tier file that
+// is never imported, or whose import line is deleted, commented out or left
+// unawaited, stops running without failing anything: the job reports fewer
+// assertions and stays green. `chat-read-surface-ledger.spec.ts` also resolves a
+// `{ pglite: '<name>' }` proof by finding that `name:` in any module here, so an
+// orphaned module would keep a proof alive. These hold every module loaded. They
+// cannot prove a loaded module's code runs every scenario it names.
+describe("pglite-migrations: every module under scripts/pglite is loaded", () => {
+  it("run.mjs awaits every tier", () => {
+    const awaited = new Set(awaitedTiers(readFileSync(join(REPO, ENTRY), "utf8")));
+    const tiers = harnessModules().filter((rel) => rel.startsWith("tiers/"));
+    assert.ok(tiers.length > 0, "found no tiers — re-point this test");
+    assert.deepEqual(
+      tiers.filter((rel) => !awaited.has(rel)),
+      [],
+      'these tiers never run: add `await import("./tiers/<name>.mjs");` to scripts/pglite/run.mjs, in order',
+    );
+  });
+
+  it("every other module is one the check reads", () => {
+    const read = new Set(inputs());
+    assert.deepEqual(
+      harnessModules().filter((rel) => !read.has(`${HARNESS}/${rel}`)),
+      [],
+      "nothing run.mjs loads imports these",
+    );
+  });
+
+  it("counts an awaited import in live code, and nothing else", () => {
+    const src = [
+      '// run.mjs replays `supabase/migrations/*.sql` (an opener with no closer)',
+      'await import("./tiers/on.mjs"); // await import("./tiers/trailing.mjs");',
+      '/* await import("./tiers/block.mjs"); */',
+      'import("./tiers/unawaited.mjs");',
+      'const s = \'await import("./tiers/string.mjs")\';',
+      'await import("./tiers/last.mjs");',
+      "/** a doc comment after the list */",
+    ].join("\n");
+    assert.deepEqual(awaitedTiers(src), ["tiers/on.mjs", "tiers/last.mjs"]);
   });
 });
 

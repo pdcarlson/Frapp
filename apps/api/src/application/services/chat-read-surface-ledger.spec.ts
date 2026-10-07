@@ -51,8 +51,9 @@ import * as ts from 'typescript';
  * policy's proof can instead be a scenario in the PGlite harness, which reads
  * the table as a non-owner role and is the only tier that runs RLS; it must
  * still be a `name:` in one of its modules under `scripts/pglite/`, every one
- * of which `pglite-tiers-registered.test.mjs` holds reachable from the
- * entry, `run.mjs`, so a name found there is a scenario that runs. A surface only a client can mask (a
+ * of which `pglite-filter-coverage.test.mjs` holds loaded by the entry,
+ * `run.mjs`. That proves the module loads, not that its code runs the
+ * scenario the name belongs to. A surface only a client can mask (a
  * Broadcast the server relays as sent) names the shared client rule's test in
  * `packages/`; that proves the rule, not that every client applies it, which
  * each client's own tests cover. That cannot prove the test asserts the
@@ -800,7 +801,8 @@ function isNameOnly(node: ts.Identifier): boolean {
  *
  * A PGlite proof is a `name: '…'` property somewhere in the harness, read from
  * its syntax tree, so a name left only in a comment does not count. The
- * harness has no skip or focus to look for: every scenario it declares runs.
+ * harness has no skip or focus to look for, and every module in it is loaded
+ * (`pglite-filter-coverage.test.mjs`).
  */
 function proofProblem(proof: Proof): string | null {
   if ('pglite' in proof) {
