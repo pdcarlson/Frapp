@@ -8,46 +8,28 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  # Cancellable on a PR ref, NEVER on main. `github.ref` is `refs/heads/main`
-  # for every push to main, so an unguarded `cancel-in-progress: true` puts
-  # every merge's push run in one group and the first commit's run is cancelled
-  # by the second's — leaving required checks concluded `cancelled`, which
-  # `validate-deploy-sha.mjs` refuses to deploy. Cancelling a PR run costs a
-  # re-push; cancelling a main push run costs a commit's deployability.
-  # Full account: scripts/ci/validate-deploy-sha.mjs § CANCELLED_CONCLUSIONS.
+  # Never cancel on main: a cancelled push run leaves required checks
+  # `cancelled`, which validate-deploy-sha.mjs refuses (§ CANCELLED_CONCLUSIONS).
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # ---------------------------------------------------------------------------
-# Domain-specific parallel jobs. `packages-build` runs first (shared
-# dependency). web-tests, web-responsive-floor, landing-fold, and
-# pglite-migrations are path-gated on PRs via the `changes` job and run
-# unconditionally on push; everything else always runs.
+# `packages-build` runs first. web-tests, web-responsive-floor, landing-fold and
+# pglite-migrations are path-gated on PRs by `changes` and run in full on push.
+# They are still required checks, because a job skipped by a job-level `if:` reports
+# Success (ADR-15 amendment 2026-08-19). `clean-checkout-typecheck` and
+# `web-production-build` deliberately prebuild nothing.
 #
-# Path-gated does NOT mean advisory. web-tests, web-responsive-floor,
-# landing-fold and pglite-migrations are all REQUIRED checks — a job skipped by a job-level `if:` reports Success, which
-# satisfies one. That is also why `changes` is itself required: a required job
-# skipped because a `needs:` parent FAILED also reports skipped, so a
-# non-required parent would be a hole. See scripts/ci/lib/required-checks.mjs.
-#
-# `clean-checkout-typecheck` is the deliberate exception: it depends on nothing
-# and prebuilds nothing, so it alone exercises a clean `npm ci` with no prebuilt
-# packages.
-#
-# Every job sets `timeout-minutes` (#3129), pinned by
-# scripts/ci/__tests__/workflow-timeouts.test.mjs. On main the concurrency
-# group never cancels, so a job left at GitHub's 360-minute default holds the
-# lock for six hours if it hangs, and every push behind it loses its checks.
-# Sized from six runs on 2026-10-02 with headroom for a cold cache: 5 for jobs
-# that take seconds, 10 for those that take a minute or so, 20 for the
-# build, test and Playwright jobs that take 2 to 4.
+# Every job sets `timeout-minutes` (#3129, pinned by workflow-timeouts.test.mjs).
+# Nothing cancels on main, so a job hung at the 360-minute default blocks every
+# push behind it. Sized from runs on 2026-10-02, with headroom for a cold cache: 5
+# for jobs taking seconds, 10 for about a minute, 20 for build, test and
+# Playwright jobs that take 2 to 4.
 # ---------------------------------------------------------------------------
 
 jobs:
-  # Change detection: path-gates the web/pglite jobs (Lever D). Itself required —
-  # see the header above and scripts/ci/lib/required-checks.mjs.
-  # The filter runs only on pull_request; on push the gated jobs run
-  # unconditionally (full validation on protected branches), so a shallow
-  # checkout here can never fail the gate.
+  # Path filter for the gated jobs, and required because they need it
+  # (required-checks.mjs). It filters only on pull_request, so a shallow checkout
+  # cannot fail the gate.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -72,51 +54,32 @@ jobs:
               - 'packages/**'
               - 'package-lock.json'
               - 'turbo.json'
-              # Both gated jobs build `packages/*` through this action, so it is
-              # as build-affecting as `turbo.json`. Omitting it would let a PR
-              # that edits only the action skip two REQUIRED checks, which
-              # report Success when skipped (see the header above).
+              # Gated jobs build through local actions, and a skipped required job reports Success.
               - '.github/actions/**'
             landing:
               - 'apps/landing/**'
               - 'packages/**'
               - 'package-lock.json'
               - 'turbo.json'
-              # Same reasoning as `web` above: the landing job builds
-              # `packages/*` through this action, so a change to it is
-              # build-affecting and must not let a REQUIRED check skip.
+              # Same reason as `web`.
               - '.github/actions/**'
-              # `scripts/**` is here and NOT in `web:` on purpose. This is the
-              # only path-gated job whose server command runs repo scripts:
-              # its Playwright `webServer` does `npm run build`, which is
-              # `scripts/sync-brand-assets.mjs` (prebuild) then
-              # `scripts/next-build.mjs`, which reads
-              # `scripts/lib/brand-pixels.mjs`. Without this, a PR editing only
-              # those makes `changes.landing` false, the job skips, and a
-              # skipped job reports Success — so a REQUIRED gate would go green
-              # having never built the landing, on exactly the change class
-              # that can break its build command. `apps/web`'s webServer is a
-              # bare `npm run dev`, so `web:` needs no equivalent.
+              # Not in `web:`: the landing webServer runs `npm run build`, which runs repo
+              # scripts (sync-brand-assets, next-build, brand-pixels). apps/web runs `npm run dev`.
               - 'scripts/**'
             pglite:
               - 'supabase/migrations/**'
               - 'scripts/check-pglite-migrations.mjs'
-              # The change-ping contract spec also applies every migration (see
-              # the job's last step), so its inputs re-run this job too.
+              # The change-ping contract spec (the job's last step) applies every migration too.
               - 'apps/web/lib/realtime/**'
               - 'apps/web/vitest.config.ts'
               - 'apps/web/tests/setup.ts'
               - 'packages/validation/**'
               - 'package-lock.json'
-              # The PGlite job also loads the chapter directory seed, so a change
-              # to the seed or its loader must re-run it.
+              # The job also loads the chapter directory seed.
               - 'supabase/seed/**'
               - 'scripts/load-chapter-directory.mjs'
               - 'scripts/lib/chapter-directory-seed.mjs'
-              # ...and the demo seed App Review signs in to (#2308), with the
-              # scripts/ci/lib modules it imports, the Storage lister it reuses
-              # from the backup script, and the environments file one of them
-              # reads.
+              # ...and the App Review demo seed (#2308) with the modules it imports.
               - 'scripts/demo/**'
               - 'scripts/ci/lib/env.mjs'
               - 'scripts/ci/lib/environments.mjs'
@@ -126,16 +89,11 @@ jobs:
               - '.github/environments.json'
               # The search-column landmark reads the API's search source.
               - 'apps/api/src/application/services/search.service.ts'
-              # The job's own definition and the npm script it runs. The job is
-              # REQUIRED (#2538): a skipped run reports Success, so a change the
-              # filter misses would merge green here and first fail on `main`,
-              # where validate-deploy-sha then refuses to deploy the commit.
-              # Every file the check reads belongs in this list.
+              # The job's own definition and npm script. Required (#2538): every file the
+              # check reads belongs in this list.
               - '.github/workflows/ci.yml'
               - 'package.json'
-              # The job sets up Node and installs through node-setup, so the
-              # same reasoning as `web` applies: a PR editing only the action
-              # must not skip a required check.
+              # The job installs through node-setup.
               - '.github/actions/**'
 
   # ── Shared packages build (dependency for downstream jobs) ──────────────
@@ -190,80 +148,49 @@ jobs:
       - name: Landing unit tests
         run: npm run test -w apps/landing
 
-      # `@repo/validation` is consumed by the API, web, and mobile, so a
-      # regression in it ships to all three. It had no suite until #687 added
-      # one, and an unrun suite protects nothing.
+      # Consumed by API, web and mobile; had no suite until #687.
       - name: Shared validation package tests
         run: npm run test -w @repo/validation
 
-      # Same reasoning as above. The contrast math here is imported by both
-      # `packages/theme` and `packages/chapter-theme`; each now has a suite of
-      # its own (below), but those pin their callers' behaviour, not this
-      # package's, so it still needs its own step.
+      # Its contrast math feeds theme and chapter-theme, whose suites pin their callers, not this package.
       - name: Shared color package tests
         run: npm run test -w @repo/color
 
-      # Locale date/datetime helpers plus the three protected clusters
-      # (stopwatch padding, bare-date timezone parsing, minute rounding)
-      # that must not fold into the generic formatter.
+      # Includes the stopwatch, bare-date and minute-rounding clusters the generic formatter must not absorb.
       - name: Shared formatting package tests
         run: npm run test -w @repo/formatting
 
-      # Browser-safe observability policy: Sentry PII scrubbing, sample-rate
-      # parse, correlation types. Vendor SDK init stays in each app.
+      # Sentry PII scrubbing, sample-rate parse, correlation types.
       - name: Shared observability package tests
         run: npm run test -w @repo/observability
 
-      # The accent engine. Its contrast guarantee is only as good as the exact
-      # behaviour of the vendored generator, so a dependency bump is precisely
-      # what this suite exists to catch.
+      # The accent engine: catches a vendored-generator change on a dependency bump.
       - name: Chapter theme package tests
         run: npm run test -w @repo/chapter-theme
 
-      # `@repo/theme` owns every token value in the app — the legacy bone/bronze
-      # set, the Signet dark set, and the shared Tailwind preset — and until
-      # #1144 its only gate was `tsc`, which proves the fields are `string` and
-      # `number` and nothing about what they contain. The suite compares them
-      # against `spec/ui/design-system/foundations.md`, so it fails whichever
-      # side drifts. `lint` needs no step here: it arrives through `turbo run
-      # lint` in the `Lint` step above as soon as the package declares a script.
+      # Compares every token value with spec/ui/design-system/foundations.md (#1144).
+      # Its lint runs through `turbo run lint` in the Lint step.
       - name: Theme package tests
         run: npm run test -w @repo/theme
 
-      # Hand-written `statusOf` / `serverMessageOf` / `codeOf` live in
-      # `@repo/api-sdk` (consumed by API + web + mobile). Same trap as
-      # validation: an unrun suite protects nothing. The package uses the
-      # hoisted workspace vitest; this step does not add a lockfile entry.
+      # Hand-written `statusOf` / `serverMessageOf` / `codeOf`, used by API, web and
+      # mobile. The package uses the hoisted workspace vitest; this step does not add
+      # a lockfile entry.
       - name: Shared api-sdk package tests
         run: npm run test -w @repo/api-sdk
 
       - name: Brand assets (icon sync)
         run: npm run check:brand-assets
 
-      # The Supabase Edge Functions under `supabase/functions/` (#2848, ADR-26)
-      # run on Deno, not Node, so nothing above reads them: `check-types` and
-      # `lint` are the workspaces' own. The script installs its pinned Deno from
-      # the npm registry (the one place the version lives), then formats,
-      # lints, type-checks and tests them. `deno test` runs with no permissions
-      # granted, so a test that reached the network fails rather than passes.
+      # Deno, so nothing above reads them (#2848, ADR-26). `deno test` runs with no
+      # permissions, so a test that reaches the network fails.
       - name: Edge Functions (Deno fmt, lint, check, test)
         run: npm run check:edge-functions
 
       # ── Clean-checkout guard (fresh-install path) ───────────────────────────
-  # Reproduces a clean `npm ci && npm run check-types` on a cold machine: no
-  # prebuilt packages/*/dist.
-  # Deliberately has NO `needs: packages-build` and NO
-  # `./.github/actions/turbo-packages-build` step (which is what restores the
-  # turbo cache and builds `packages/*`) — the eight jobs that DO use it are
-  # structurally blind to this failure mode, which is why this one must not.
-  #
-  # The shared packages publish their types as `dist/index.d.ts`, and `dist/` is
-  # gitignored, so a consumer resolving the `types` condition (`apps/api`, via
-  # NodeNext) sees nothing until those packages are built. That is why `turbo.json`
-  # makes `check-types` and `lint` depend on `^build` rather than on themselves.
-  # Revert either one and this job goes red while the rest of CI stays green.
-  #
-  # Keep this job free of build/cache steps — adding one silently disarms it.
+  # `npm ci && check-types && lint` with no prebuilt packages/*/dist, so reverting
+  # turbo.json's `^build` dependency fails here while every prebuilding job stays
+  # green. Keep it free of `needs:`, build and cache steps: adding one disarms it.
   clean-checkout-typecheck:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -273,8 +200,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # `install: ci` restores only the ~/.npm download cache, never
-      # node_modules or packages/*/dist — the clean-checkout property holds.
+      # `install: ci` restores only the npm download cache, never node_modules or dist.
       - name: Setup Node and install dependencies
         uses: ./.github/actions/node-setup
         with:
@@ -287,31 +213,11 @@ jobs:
         run: npm run lint
 
   # ── Production-shaped frontend build (Vercel parity) ────────────────────
-  # Builds apps/web and apps/landing the way Vercel's PRODUCTION deploy does:
-  # a dependency tree with devDependencies pruned. Nothing else in CI does
-  # this, and the gap has taken production down twice -- #1331 (@repo/hooks
-  # compiled its own test files) and #1372 (both apps' tsconfig pulled
-  # tests/, vitest.config.ts and playwright.config.ts into the `next build`
-  # type-check program). Both surfaced first as a failed production deploy.
-  #
-  # Why the existing jobs cannot see this class:
-  #   - `web-tests` / `lint-and-typecheck` run on a full dev install, where
-  #     vitest and friends are on disk.
-  #   - `clean-checkout-typecheck` is a cold install but a *dev* one; it
-  #     guards unbuilt package types, not pruned devDependencies.
-  #   - A green Vercel preview is not evidence either: previews restore a
-  #     build cache (`up to date, audited 1958 packages`) while production
-  #     installs cold (`added 1126 packages, and audited 1144`).
-  #
-  # Deliberately has NO `needs:`, NO `./.github/actions/turbo-packages-build`
-  # step (the turbo cache restore + `packages/*` build) and NO path filter:
-  #   - `needs: packages-build` would put prebuilt package `dist/` on disk
-  #     from a dev tree and hide a package that cannot build under the prune.
-  #   - the `changes.web` filter covers `apps/web/**` and `packages/**` but
-  #     NOT `apps/landing/**`, so gating on it would have skipped this job on
-  #     the landing half of #1372 -- the exact half #1352 failed to record.
-  # Keep this job free of cache and prebuilt-package steps; adding one
-  # silently disarms it.
+  # Builds web and landing on a devDependency-pruned tree, as Vercel's production
+  # install does. #1331 and #1372 broke production through this gap
+  # (docs/ci-cd/agent-infra.md, docs/ci-cd/quality-gates.md). No `needs:`, no
+  # prebuilt-package or cache step, and no path filter (`changes.web` misses
+  # apps/landing): adding any of them disarms it.
   web-production-build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -321,32 +227,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # `omit-dev` runs `npm ci --omit=dev` rather than Vercel's
-      # `npm install --prefix=../..`: it is lockfile-exact and never writes
-      # package-lock.json, and it reproduces the same tree -- measured at
-      # 1128 packages / 1146 audited against the production build log's
-      # 1126 / 1144.
+      # `npm ci --omit=dev` is lockfile-exact and gives the tree Vercel's install does
+      # (measured when added: 1128 packages / 1146 audited, against production's 1126 / 1144).
       - name: Setup Node and install production dependencies only
         uses: ./.github/actions/node-setup
         with:
           install: omit-dev
 
-      # The prune is this job's entire premise, so assert it rather than assume
-      # it. Two probes, one per direction: something dev-only must be gone, and
-      # the type-checker must survive.
-      #
-      # Note that neither is decided by the dependencies/devDependencies split
-      # alone -- npm keeps a package the prune would otherwise drop when it is
-      # reachable as an optional peer, which the lockfile marks `devOptional`.
-      # `typescript` is in that position today, and NOT via Next, which declares
-      # no typescript peer at all: the non-dev packages carrying an optional
-      # typescript peer are `frimousse` (a direct apps/web dependency) and
-      # `@expo/require-utils`. That is a thin thread -- dropping a UI dependency
-      # could strip the type-checker from Vercel's production install too -- so
-      # treat a failure here as "the tree changed shape",
-      # investigate which mechanism moved, and fix that -- do not delete the
-      # check to get green, and do not assume the answer is a misfiled
-      # dependency.
+      # The prune is this job's premise, so assert it. On failure, find which mechanism
+      # moved (the errors name them); don't delete the check to get green.
       - name: Assert the tree is actually pruned
         run: |
           set -euo pipefail
@@ -360,34 +249,12 @@ jobs:
           fi
           echo "::notice::Production-shaped tree confirmed (vitest pruned, typescript present)"
 
-      # turbo is a root devDependency and is therefore pruned too, so it is
-      # fetched the way Vercel's build step gets it. The version is read rather
-      # than pinned here a second time -- one source of truth, so a bump cannot
-      # leave this workflow building with a different turbo than the repo uses.
-      #
-      # Read from package-lock.json, not package.json: the lock records what
-      # `npm ci` actually installs everywhere else, while the manifest records a
-      # RANGE. A lockfile-maintenance bump inside `^2.10.11` would otherwise
-      # leave every other job on the new turbo and this one on 2.10.11 -- the
-      # exact drift this is meant to prevent. It also does not care whether
-      # turbo sits in `dependencies` or `devDependencies`, so moving it (a
-      # plausible edit, since this job prunes devDependencies) cannot break the
-      # required check for every open PR.
+      # turbo is a pruned devDependency, so fetch it at the lockfile's version, not
+      # package.json's range, keeping this job on the turbo every other job installs.
       - name: Build web and landing as production
-        # `next build` prerenders, and `/chat` constructs a Supabase browser
-        # client while doing so, so the build needs NEXT_PUBLIC_* present or it
-        # dies with "@supabase/ssr: Your project's URL and API key are required".
-        # These are the stand-ins from `apps/web/playwright.config.ts` — a valid
-        # HTTP URL and a well-formed JWT-ish string, enough for the client to be
-        # constructible — kept identical so the repo has one placeholder shape.
-        #
-        # Deliberately NOT the real values, even though Vercel's production
-        # build has them via the Infisical sync: `NEXT_PUBLIC_*` is inlined at
-        # build time, so real values would bake a live URL and key into a CI
-        # artifact that is then thrown away. This job exists to check the
-        # dependency shape of the build, not its env — the env only has to be
-        # present enough to let the program run. Do not "fix" this by wiring in
-        # secrets.
+        # `next build` prerenders a Supabase client, so NEXT_PUBLIC_* must be set. These
+        # are apps/web/playwright.config.ts's stand-ins: real values would be inlined into
+        # a throwaway artifact, so never wire secrets in here.
         env:
           NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321"
           NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiJ9.playwright-stand-in.signature"
@@ -398,12 +265,7 @@ jobs:
           echo "Using turbo@${TURBO_VERSION}"
           npx --yes "turbo@${TURBO_VERSION}" run build --filter=web --filter=landing
 
-      # `turbo run --filter` exits 0 when a filtered package simply has no
-      # `build` script -- only an unknown PACKAGE name is an error. So renaming
-      # or rerouting either app's `build` script would leave this required check
-      # green having built one app, silently uncovering the landing half of the
-      # #1372 class that the job exists to cover. Assert the output instead of
-      # trusting the exit code.
+      # `turbo run --filter` exits 0 for a package with no `build` script, so check both apps' output.
       - name: Assert both apps actually built
         run: |
           set -euo pipefail
@@ -440,11 +302,7 @@ jobs:
       - name: Run API E2E tests
         run: npm run test:e2e -w apps/api
 
-      # Adversarial AI evals (spec §13 → Evals). Required to run on any change
-      # to prompts, retrieval or the tool registry; run unconditionally instead,
-      # which is a superset and costs ~1.5s. A separate path-gated job would add
-      # a checkout + `npm ci` + package build — minutes, against ADR-15's budget,
-      # to gate seconds of tests.
+      # Spec §13 → Evals. Unconditional costs ~1.5s, less than a path-gated job would (ADR-15).
       - name: Run AI evals
         run: npm run test:ai-evals -w apps/api
 
@@ -469,22 +327,8 @@ jobs:
       - name: Run web unit tests
         run: npm run test -w apps/web
 
-      # The shared packages consumed by apps/web that nothing else covers. They
-      # live here rather than in their own job because the `changes` filter
-      # above already covers `packages/**`, so they run on the right paths
-      # without adding a branch-protection entry.
-      #
-      # `if: !cancelled()` because these are independent suites, not follow-on
-      # phases: without it a red apps/web test skips them and hides more
-      # failures until the next push. Not `always()` — this workflow sets
-      # `cancel-in-progress`, and `always()` keeps running after a cancellation,
-      # so every superseded run would still pay for those suites.
-      #
-      # This job IS a required check as of the ADR-15 amendment — it is the only
-      # suite covering packages/hooks. The path gate above is compatible with
-      # that: GitHub reports a job skipped by a job-level conditional as
-      # "Success". See scripts/ci/lib/required-checks.mjs for the full
-      # reasoning and the caveat about skipped-because-a-parent-failed.
+      # Shared packages only this suite covers; `changes` already filters `packages/**`.
+      # `!cancelled()`, not `always()`: run past a red suite, not past a cancellation.
       - name: Run shared hooks package tests
         if: ${{ !cancelled() }}
         run: npm run test -w packages/hooks
@@ -520,29 +364,15 @@ jobs:
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
 
-      # A successful build is NOT evidence the image can start, and the gap
-      # between the two is not hypothetical: in #1160 `colorjs.io` and later
-      # `zod` stopped hoisting to the root node_modules, the runner stage never
-      # copied the workspace trees holding them, and `verify-render-api` failed
-      # on 67 consecutive pushes to main -- while this job stayed green on every
-      # one of them. Render reports that as `update_failed`, a post-build state;
-      # the runtime logs show MODULE_NOT_FOUND on first require().
-      # Booting the container is the only gate that sees this class of failure.
+      # A green build doesn't prove the image starts: in #1160 the image failed to boot
+      # on Render for 67 pushes while this job stayed green.
       - name: Boot the image and probe /health
         run: |
           set -euo pipefail
 
-          # /health answers 200 whether or not the database is reachable -- it
-          # reports `database: error` / `status: degraded` rather than throwing
-          # (apps/api/src/interface/controllers/health.controller.ts). So these
-          # obviously-fake values satisfy the boot-time env validation in
-          # apps/api/src/config/env.validation.ts without needing any secret,
-          # and a 200 proves the process booted and Nest is serving.
-          #
-          # sk_test_ci_not_real is a documented placeholder: StripePriceConsistency
-          # skips prices.retrieve for it. A real-looking sk_test_/sk_live_ would
-          # retrieve STRIPE_PRICE_ID at boot (and /health/ready); mocked billing
-          # tests cannot catch a cross-account Infisical mismatch.
+          # /health answers 200 with no database, so fake values pass env validation and a
+          # 200 proves Nest is serving. sk_test_ci_not_real is a placeholder that
+          # StripePriceConsistency skips; a real-looking key would call Stripe at boot.
           docker run -d --name frapp-api-ci -p 3001:3001 \
             -e SUPABASE_URL=http://127.0.0.1:1 \
             -e SUPABASE_SERVICE_ROLE_KEY=ci-not-a-real-key \
@@ -551,17 +381,11 @@ jobs:
             -e STRIPE_PRICE_ID=price_ci_not_real \
             frapp-api:ci
 
-          # --max-time must clear the unreachable-database path, not the happy
-          # one. /health still answers 200 with no database, but only after the
-          # Supabase client gives up: measured at ~7s locally against a dead
-          # SUPABASE_URL. A short per-request timeout therefore fails on every
-          # attempt and turns this gate into a permanent red on all PRs.
-          # Bounded by a total deadline instead, so one slow request cannot
-          # multiply into a ten-minute hang.
+          # /health against a dead SUPABASE_URL takes ~7s, so bound the loop by a total
+          # deadline rather than a short per-request timeout.
           deadline=$(( SECONDS + 180 ))
           while [ "$SECONDS" -lt "$deadline" ]; do
-            # No --show-error: a connection-refused line per attempt would bury
-            # the real failure. `docker logs` below is the diagnostic that matters.
+            # No --show-error: `docker logs` below is the diagnostic that matters.
             if curl --fail --silent --max-time 25 http://127.0.0.1:3001/health; then
               echo
               echo "::notice::API image booted and answered /health"
@@ -610,26 +434,9 @@ jobs:
         if: github.event_name == 'push'
         run: npm run check:api-contract
 
-      # Breaking-change detection lives HERE, in the existing contract job,
-      # rather than in a job of its own — because a separate "SDK-drift" gate
-      # would have been entirely redundant. `check:api-contract` above already
-      # regenerates BOTH openapi.json and packages/api-sdk/src/types.ts and
-      # fails on any diff, and it is already a required check. What was missing
-      # is not drift detection but compatibility: deleting an endpoint or
-      # removing a response field regenerates perfectly cleanly and breaks every
-      # client.
-      #
-      # Two comparisons, two postures (docs/ci-cd/quality-gates.md):
-      # against every shipped mobile build's contract BLOCKING, because a store
-      # binary keeps the calls it was built with; against the PR base ADVISORY,
-      # because apps/web ships with the change.
-      #
-      # The binary comes from the GitHub releases CDN, so it is cached, keyed on
-      # the installer that pins its version and digests. The install step keeps
-      # `continue-on-error`: a failed download must not block a PR on the
-      # advisory comparison. It can't turn the blocking one green either,
-      # because `--shipped` fails on a missing oasdiff whenever a shipped build
-      # is listed (and needs none when no build is).
+      # Breaking-change detection: blocking against shipped mobile builds, advisory
+      # against the PR base (docs/ci-cd/quality-gates.md § oasdiff). The install is
+      # `continue-on-error`; `--shipped` still fails without oasdiff once a build is listed.
       - name: Cache oasdiff
         uses: actions/cache@v6
         with:
@@ -640,27 +447,20 @@ jobs:
         continue-on-error: true
         run: bash scripts/install-oasdiff.sh
 
-      # Runs on push to main too: a break that reached main anyway turns main
-      # red rather than waiting for the next PR to trip over it.
+      # Runs on push too, so a break that reached main turns main red.
       - name: Check API compatibility with shipped mobile builds (blocking)
         run: npm run check:api-breaking:shipped
 
-      # `!cancelled()` so a red blocking step above doesn't skip this one: its
-      # findings are the only report of breaks to routes no shipped build had.
+      # `!cancelled()`: its findings are the only report of breaks to routes no shipped build had.
       - name: Detect breaking API changes against the PR base (advisory)
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         continue-on-error: true
         run: npm run check:api-breaking -- --base "${{ github.event.pull_request.base.sha }}"
 
   # ── Architectural boundary linting (dependency-cruiser) ─────────────────
-  # HARD GATE. The committed baseline
-  # (`scripts/dependency-cruiser-known-violations.json`) exists to shrink, not to
-  # grow; when it is empty, every violation fails. Current posture lives in
-  # docs/ci-cd/quality-gates.md § dependency-cruiser — do not restate a
-  # count here.
-  #
-  # Needs the shared packages built — the cruise resolves workspace imports
-  # through the node_modules symlinks npm workspaces creates.
+  # Required, against a shrink-only baseline (docs/ci-cd/quality-gates.md
+  # § dependency-cruiser). Needs built packages: the cruise resolves workspace
+  # imports through node_modules symlinks.
   dependency-cruiser:
     needs: packages-build
     runs-on: ubuntu-latest
@@ -685,22 +485,9 @@ jobs:
         run: npm run check:dep-cruiser
 
   # ── Duplicate detection (jscpd) ─────────────────────────────────────────
-  # ADVISORY on purpose — deliberately NOT in scripts/ci/lib/required-checks.mjs.
-  #
-  # jscpd has no clone-level baseline the way dependency-cruiser does, so the
-  # only lever is a repo-wide duplication percentage. The threshold and ratchet
-  # live in docs/ci-cd/quality-gates.md § jscpd (config: `.jscpd.json`)
-  # — do not restate a number here. That percentage is too coarse to block a
-  # merge on: it cannot distinguish one bad copy-paste from ordinary drift, and
-  # the ratchet only ever moves down as consolidation lands.
-  #
-  # The job is simply allowed to FAIL when the threshold is breached. That is
-  # what "advisory" means here: `duplicate-detection` is deliberately absent
-  # from CI_CHECKS, so a red X reports loudly and blocks nothing.
-  #
-  # It must NOT be `continue-on-error`. That key rewrites the step's conclusion
-  # to success, so the job goes green and a breached threshold is invisible —
-  # an advisory gate nobody can see is not advisory, it is off.
+  # Advisory, so absent from required-checks.mjs (docs/ci-cd/quality-gates.md
+  # § jscpd). A breach fails the job visibly; never add `continue-on-error`, which
+  # would turn it green.
   duplicate-detection:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -720,10 +507,7 @@ jobs:
       - name: Check duplication against the repo-wide threshold
         run: npm run check:duplication
 
-      # The console reporter prints the summary table only; the clone-by-clone
-      # detail lives in the JSON report, which is the thing you actually need to
-      # act on a threshold breach — so `always()`, or the artifact is missing in
-      # precisely the run that needed it.
+      # The clone-by-clone detail is in the JSON report, so upload it on failure too.
       - name: Upload duplication report
         if: always()
         uses: actions/upload-artifact@v7
@@ -752,43 +536,21 @@ jobs:
         if: github.event_name == 'pull_request'
         run: npm run check:migration-safety -- --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
 
-      # Deliberately bare (no --base/--head) on push: the promotion-docs half
-      # of this check is a PR-time review gate, not a merge-time one — by the
-      # time a commit reaches `main` via merge, the PR run above already
-      # enforced it. Everything that does NOT need a commit range still runs
-      # unconditionally here: filename/version validation (#980), and the
-      # whole-tree ledger-coverage ratchet, which is deliberately checked on
-      # push too because the change that breaks it (deleting an allowlist line)
-      # is often a docs edit rather than a migration PR.
+      # No range on push: the promotion-docs half is a PR-time gate. Filename checks
+      # (#980) and the ledger-coverage ratchet still run here.
       - name: Check migration safety (push)
         if: github.event_name == 'push'
         run: npm run check:migration-safety
 
   # ── Migration lock safety (ADVISORY) ────────────────────────────────────
-  # Squawk over the migrations this change touches, looking for the patterns
-  # that take a heavy lock on a live table: a constraint added without
-  # NOT VALID, a column added with a volatile default, a UNIQUE constraint that
-  # builds its index under ACCESS EXCLUSIVE. Instant on an empty staging table;
-  # a write outage on a production one.
-  #
-  # ADVISORY ON PURPOSE, and `continue-on-error` is the whole mechanism.
-  # Squawk's default rules report 403 issues across 44 of this repo's 51
-  # migrations. `.squawk.toml` excludes the five rules responsible for 390 of
-  # them — two flag a fix that is IMPOSSIBLE under Supabase, which runs each
-  # migration inside a transaction where CONCURRENTLY is illegal — leaving 13
-  # real findings across 8 files. Those 13 are on already-deployed tables, so
-  # blocking today would fail PRs for findings they did not introduce.
-  # Promoting this to a gate needs a baseline of the existing 13, the same move
-  # `scripts/dependency-cruiser-known-violations.json` makes for the architecture gate.
-  # `check-migration-lock-safety.mjs --strict` is the switch when that lands.
-  #
-  # NOT in scripts/ci/lib/required-checks.mjs, deliberately: an advisory
-  # job that is also a required check is just a confusing gate.
+  # Squawk over changed migrations, flagging locks that are instant on staging and
+  # a write outage in production. Advisory until the existing findings get a
+  # baseline (counts in .squawk.toml; `check-migration-lock-safety.mjs --strict` is
+  # the switch), so not a required check.
   migration-lock-safety:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Reports; never blocks. Removing this line makes it a merge gate — do not
-    # do that without the baseline described above.
+    # Reports; never blocks. Don't remove without that baseline.
     continue-on-error: true
     steps:
       - name: Checkout
@@ -796,8 +558,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # squawk-cli is a pinned devDependency (exact version, no caret) so a new
-      # Squawk release cannot change what CI reports without a lockfile change.
+      # squawk-cli is an exact-pinned devDependency.
       - name: Setup Node and install dependencies
         uses: ./.github/actions/node-setup
         with:
@@ -812,17 +573,8 @@ jobs:
         run: npm run check:migration-lock-safety -- --base "${{ github.event.before }}" --head "${{ github.sha }}"
 
   # ── Chapter directory seed validation ───────────────────────────────────
-  # Guards supabase/seed/chapter_directory.csv: canonical #RRGGBB colors,
-  # archetypes that exist in the ArchetypeKey union, no duplicate natural keys.
-  #
-  # The colors are the reason this is blocking. The seed shipped with 50 of its
-  # 100 values missing a leading `#` (#840), and nothing caught it because the
-  # accent engine answers an unparseable hex with the house seed rather than an
-  # error — so a bad value produces a plausible wrong brand color, not a failure.
-  #
-  # No `npm ci` step: the checker imports only node: builtins, so installing the
-  # workspace would be pure latency. The loader's actual execution against a real
-  # database is covered in `pglite-migrations` instead, the one job here with one.
+  # supabase/seed/chapter_directory.csv. Blocking because a bad hex renders as a
+  # plausible wrong color (#840). Node builtins only, so no install.
   chapter-directory-seed:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -856,47 +608,17 @@ jobs:
         with:
           install: ci
 
-      # An Expo client package's major version is its SDK line, and nothing here
-      # compiles Swift, so a package bumped off the line passes every other step
-      # and first fails in `eas build -p ios` (#2218 did exactly that). This
-      # checks, offline, the installed Expo packages against the installed
-      # expo's bundledNativeModules.json and Dependabot's ignore list against
-      # apps/mobile (#2330; what exactly: docs/ci-cd/dependency-updates.md § The
-      # ignore list is a runtime constraint, not a preference). It runs before
-      # `expo export` because it reads files and builds nothing, so its
-      # one-line diagnosis prints even when an off-line bump also breaks the
-      # bundle.
+      # An off-line Expo package first fails in `eas build` (#2218). Checks installed
+      # Expo packages and Dependabot's ignore list (#2330,
+      # docs/ci-cd/dependency-updates.md); first, because it builds nothing.
       - name: Expo packages on the installed SDK line
         run: npm run check:expo-sdk-line
 
-      # Nothing else in CI hands the module graph to Metro; EAS's "Bundle
-      # JavaScript" phase was the first place that did (#2388). That is how
-      # #2347 shipped: a spec under app/ became a route, Metro followed its
-      # vitest import into Vite's module runner, and an iOS production build
-      # died with a bare "Unknown error" while lint, tsc and Vitest were green.
-      # routes.spec.ts now blocks that file placement, not the class: a helper
-      # or a lib/ module a screen imports can still pull unbundleable code in,
-      # and a `@repo/*` exports change can break only Metro's resolution.
-      #
-      # It runs before "Build shared packages" on purpose. The EAS worker
-      # installs from this lockfile and never builds the packages, so no
-      # packages/*/dist exists there. An `import` of `@repo/*` resolves to src/
-      # either way, but a package whose `exports` send `require`/`default`/
-      # `main` to dist/ (validation, formatting, color, org-archetypes,
-      # observability's root) resolves differently once dist/ exists: a local
-      # `require("@repo/validation")` exports with dist/ present and fails to
-      # resolve without it, the state the EAS worker is in.
-      # scripts/ci/__tests__/mobile-bundle-gate.test.mjs locks the order.
-      #
-      # `expo export` builds for production by default (minified, Hermes
-      # bytecode); never add `--dev`, which its parser reads as true even as
-      # `--dev=false`. No EAS_BUILD_PROFILE is set, so app.config.js skips its
-      # production fences and needs no secrets; no EXPO_PUBLIC_* value is set
-      # either, so nothing real is inlined. The output goes to the runner's
-      # temp dir so the checkout stays as `npm ci` left it and no later step
-      # can upload, cache or commit a stray bundle. iOS only: the app's own
-      # sources have no .ios/.android split, so the second platform would
-      # double the step for third-party files.
+      # Hands the module graph to Metro as EAS does, before "Build shared packages"
+      # (#2388; why: docs/mobile/testing.md; mobile-bundle-gate.test.mjs locks the
+      # order). Never add `--dev`. No EAS profile
+      # or EXPO_PUBLIC_* is set, so no secrets and nothing real is inlined. iOS only:
+      # the app's sources have no platform split.
       - name: App bundles for iOS without prebuilt packages (expo export)
         working-directory: apps/mobile
         env:
@@ -913,49 +635,26 @@ jobs:
       - name: Type check mobile
         run: npm run check-types -w apps/mobile
 
-      # The mobile suite existed but ran nowhere, so its guards were free to
-      # regress silently — #687 found one that had (reverting the quiet-hours
-      # zone guard left every test green).
+      # Ran nowhere until #687, which found a guard that had regressed.
       - name: Mobile unit tests
         run: npm run test -w apps/mobile
 
-      # CI runners are UTC. Date-bucketing that mixes UTC parse with local
-      # calendar days is green here and red east of Greenwich (#1058). A single
-      # pinned TZ would only move which hemisphere is untested, so the suite
-      # also runs under Asia/Tokyo. Specs that assert calendar days must use
-      # local-time constructors, not ISO strings with a Z.
+      # CI is UTC; also run east of Greenwich to catch UTC/local date bugs (#1058).
+      # Specs asserting calendar days use local-time constructors.
       - name: Mobile unit tests (Asia/Tokyo)
         env:
           TZ: Asia/Tokyo
         run: npm run test -w apps/mobile
 
-      # What the binaries actually declare, read from the config the plugins'
-      # mods produce rather than from app.json (#2343): the exact iOS purpose
-      # strings and background modes, the Android manifest's exact declared and
-      # `tools:node="remove"` sets, and a required-reason API scan of every
-      # linked iOS pod against ios.privacyManifests. An app.json-level check
-      # can't see an omitted plugin option shipping its default purpose
-      # string, a vendor option spelled some other way, or a new pod using an
-      # undeclared API (an ITMS-91053 rejection). `expo config --type
-      # introspect` writes nothing and needs no native toolchain; the whole
-      # step took about three seconds locally. It runs before prebuild on
-      # purpose: introspection reads apps/mobile/ios and android when they
-      # exist, so it must run on a checkout with no generated tree, where it
-      # starts from Expo's base config the way a clean EAS build does. The
-      # roster and its reasons: scripts/check-mobile-native-declarations.mjs.
+      # What the binaries declare, read from the introspected config rather than
+      # app.json (#2343); roster and reasons in scripts/check-mobile-native-declarations.mjs.
+      # Before prebuild: introspection reads ios/ and android/ when they exist.
       - name: Native declarations match the roster (expo config --type introspect)
         run: npm run check:mobile-native-declarations
 
-      # EAS Build regenerates the native projects from app.json with exactly
-      # this command before it compiles anything, using this lockfile. Nothing
-      # else in CI exercises the config plugins, so a plugin that fails at
-      # prebuild time is a build that fails on EAS's runner instead of here —
-      # which is how a root `overrides` entry broke every iOS build without a
-      # single red check (`@xmldom/xmldom` 0.9 under `@expo/plist`, see
-      # docs/security/security-fixes.md). `--no-install` skips
-      # CocoaPods and the Gradle wrapper, so this needs no native toolchain
-      # and finishes in seconds. The tree is not committed; `--clean` keeps a
-      # cached runner from masking a plugin that only works incrementally.
+      # Runs the config plugins as EAS does before compiling; a root `overrides` entry
+      # once broke every iOS build unseen (docs/security/security-fixes.md).
+      # `--clean` keeps a cached runner from masking an incremental-only plugin.
       - name: Native projects generate from app.json (expo prebuild)
         working-directory: apps/mobile
         env:
@@ -981,12 +680,8 @@ jobs:
         run: npm run test:ci-scripts
 
   # ── Dependency audit gate (issue #618) ──────────────────────────────────
-  # Fast, standalone gate: no `npm ci` (the script audits the lockfile via
-  # --package-lock-only). Fails on any HIGH/CRITICAL advisory not explicitly
-  # allowlisted in scripts/npm-audit-allowlist.json — entries need a reason, a
-  # tracking issue, and an expiry, so known debt is visible and time-boxed
-  # while new advisories block immediately. See
-  # docs/security/security-fixes.md § npm audit sweep + CI gate.
+  # No install: audits the lockfile. Allowlist entries need a reason, an issue and
+  # an expiry (docs/security/security-fixes.md § npm audit sweep + CI gate).
   dependency-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -1005,12 +700,8 @@ jobs:
         run: npm run check:npm-audit
 
   # ── Secret scanning (gitleaks; ADR-13 push-protection replacement) ──────
-  # Fast, standalone gate: no `npm ci` (gitleaks is a single pinned binary). Scans
-  # only the PR/push commit range against .gitleaks.toml. The pre-commit hook is the
-  # local primary; this is the enforced server-side net. It was adopted to replace the
-  # secret push-protection lost when the repo went private — the repo is public again, so
-  # that premise has lapsed and the gitleaks-vs-GHAS choice is unmade rather than settled.
-  # See docs/ci-cd/secret-scanning.md.
+  # gitleaks over the commit range; the pre-commit hook is the local primary
+  # (docs/ci-cd/secret-scanning.md).
   secret-scan:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -1037,30 +728,11 @@ jobs:
         run: node scripts/scan-secrets.mjs --base "${{ github.event.before }}" --head "${{ github.sha }}"
 
   # ── PGlite migration + RLS smoke validator (ADR-11 / ADR-12) ────────────
-  # Two steps. The first, below, is `check:pglite-migrations`. The second runs
-  # the change-ping contract spec (`apps/web/lib/realtime/change-topics.spec.ts`),
-  # which replays the migrations onto a stand-in `realtime` schema with an `anon`
-  # role, so it does reach the Realtime triggers and `realtime.messages`
-  # policies the "Out of reach" note below says the first step can't.
-  #
-  # Applies every `supabase/migrations/*.sql` to a fresh Postgres-in-WASM
-  # and asserts structural landmarks (unique indexes, generated columns) plus
-  # an RLS smoke tier: every public table enables RLS (default-deny invariant)
-  # and the chat hot-path RLS posture holds (default-deny channels/messages;
-  # ownership-scoped reaction policies). Covers what static
-  # `check:migration-safety` can't: the SQL actually runs and the schema lands.
-  # It also runs the black-box *enforcement* tier: non-owner probe roles read
-  # four tables for real, as a signed-in client and as the anon key — exact
-  # visibility sets on the two chat tables, zero rows on `members` /
-  # `financial_invoices`, which must stay default-deny. Supabase's four roles
-  # (`authenticated`, `anon`, `service_role`, `supabase_auth_admin`) are created
-  # before migrations apply, so every block guarded behind
-  # `rolname = '<role>'` actually runs and its `TO` clause binds the probes.
-  # Out of reach: Realtime, Presence and GoTrue with real JWTs, which live in
-  # the NestJS Jest tier (see ADR-11/ADR-12 + agent-infra.md), and the `anon`
-  # EXECUTE grant hosted adds through default privileges, which only
-  # docs/ops/database/promotion-log.md's per-migration checks cover, where an entry has
-  # one (#3052).
+  # Applies every migration to PGlite and asserts schema landmarks, RLS posture
+  # and probe-role enforcement (scripts/check-pglite-migrations.mjs), then checks
+  # the change-ping contract. Realtime, Presence and GoTrue with real JWTs are out
+  # of reach (ADR-12); other limits: docs/security/authorization-model.md
+  # § RLS enforcement.
   pglite-migrations:
     needs: changes
     if: ${{ github.event_name == 'push' || needs.changes.outputs.pglite == 'true' }}
@@ -1082,50 +754,14 @@ jobs:
       - name: Apply migrations to PGlite + assert schema landmarks
         run: npm run check:pglite-migrations
 
-      # `apps/web/lib/realtime/change-topics.spec.ts` applies every migration to
-      # its own PGlite and checks the change-ping contract against what they
-      # leave in effect (#2593). `web-tests` runs it on web changes, but a PR
-      # that only adds a migration, the change it exists to catch, skips that
-      # job, and a skipped required job reports Success. So it runs here too.
+      # A migration-only PR skips `web-tests`, so the change-ping contract (#2593) runs here too.
       - name: Change-ping contract against the applied migrations
         working-directory: apps/web
         run: npx vitest run lib/realtime/change-topics.spec.ts
 
   # ── 375px responsive floor (REQUIRED) ───────────────────────────────────
-  #
-  # One of two Playwright jobs in this workflow; `landing-fold` is the other,
-  # added by #2368 and in the same no-baseline lane. This one was split out of
-  # the advisory `web-visual-regression` snapshot job in #1152 precisely so it
-  # could be required, and that snapshot job has since been deleted outright —
-  # baselines pinned to CI's Chromium build drifted with every bump, and an
-  # advisory gate nobody could act on was costing more than it caught.
-  #
-  # This suite has none of those failure modes: it stores no baseline and
-  # compares no pixels, reading one integer per route and comparing it to 375.
-  # `spec/ui/web-dashboard/README.md` states the floor as a MUST; this job is
-  # what makes that word mean something.
-  #
-  # Selection is by directory, not by tag. With the snapshot suite gone,
-  # `test:floor` runs everything under `apps/web/tests/visual/`, so a NEW spec
-  # added there joins this required job by default rather than falling through
-  # into no job at all. Do not reintroduce a `--grep` filter without a second
-  # job to catch what it excludes.
-  #
-  # No `continue-on-error`, per docs/ci-cd/quality-gates.md: that key
-  # rewrites the step's conclusion to success, which would leave this job green
-  # on a breached floor — a required check that cannot fail is not a gate.
-  #
-  # The other way a gate goes hollow is running zero tests and exiting 0, which
-  # would be worse: green, required, and asserting nothing. What stops that, and
-  # what it does not cover, is in docs/ci-cd/quality-gates.md (the floor gate's
-  # two guards).
-  #
-  # Path-gated like the jobs around it. That does NOT conflict with being
-  # required: the gate is a JOB-level `if:`, and GitHub reports a job skipped by
-  # a conditional as Success. Both `needs:` parents are themselves required
-  # checks, which is the invariant scripts/ci/lib/required-checks.mjs
-  # spells out for `web-tests` — a required check whose parent is not required
-  # is a hole, because a job skipped for a FAILED parent also reports skipped.
+  # No baseline and no pixels (#1152). No `continue-on-error`. Spec selection and
+  # the guards against a zero-test run: docs/ci-cd/quality-gates.md.
   web-responsive-floor:
     needs: [packages-build, changes]
     if: ${{ github.event_name == 'push' || needs.changes.outputs.web == 'true' }}
@@ -1149,16 +785,7 @@ jobs:
         id: pw
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      # Keyed on the resolved Playwright version, so a version bump is a cold
-      # key and this job downloads Chromium once before repopulating the cache.
-      # This used to share the entry with `web-visual-regression`, which ran
-      # concurrently; with that job deleted there is no second writer WITHIN a
-      # run. There can still be one ACROSS runs: the concurrency guard above
-      # stops main push runs cancelling each other, so two merges close together
-      # can reach this step at once on the same version-keyed entry.
-      # `actions/cache` settles that by letting the first reservation win and
-      # warning on the second, so the "Unable to reserve cache" annotation is
-      # harmless where it appears and the restore path is unaffected.
+      # Version-keyed. A concurrent run's "Unable to reserve cache" warning is harmless.
       - name: Cache Playwright browsers
         id: pw-cache
         uses: actions/cache@v6
@@ -1166,17 +793,10 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
-      # GitHub-hosted Ubuntu images ship a google-chrome apt source.
-      # Chromium's OS deps are Ubuntu packages; that Google repo is unused
-      # here. When dl.google.com's InRelease and Packages.gz disagree,
-      # `apt-get update` inside install-deps fails with Hash Sum mismatch —
-      # same hashes across retries, so a 20s backoff does not absorb it.
-      # Drop the source so update only talks to Ubuntu/Microsoft mirrors.
-      # OS packages are not in ~/.cache/ms-playwright — do not skip this on
-      # a browser cache hit, and do not `|| true` the install.
+      # Drop Google's apt source, whose Hash Sum mismatches retries can't absorb. OS deps
+      # aren't in the browser cache, so never skip this on a hit or `|| true` it.
       - name: Install Playwright OS deps
-        # Hung for over two hours on 2026-10-01 (#3129). A slow mirror needs a
-        # few minutes; this fails the hang long before the job's own timeout.
+        # Hung for two hours on 2026-10-01 (#3129); fails a hang before the job timeout.
         timeout-minutes: 10
         run: |
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
@@ -1205,45 +825,12 @@ jobs:
       - name: Assert every dashboard route holds the 375px floor
         run: npm run test:floor -w apps/web
 
-      # No artifact upload, deliberately. The retired snapshot job needed one
-      # because a pixel diff cannot be read from its logs; this suite's failure
-      # message already names the offending route, the widest element inside
-      # `<main>`, its width against the budget, and its classes.
+      # No artifact: the failure names the route, the widest element, its width and classes.
 
   # ── The landing fold (REQUIRED) ─────────────────────────────────────────
-  #
-  # The second Playwright job, and the same LANE as `web-responsive-floor`
-  # rather than a revival of the deleted snapshot one: it stores no baseline and
-  # compares no pixels. It reads geometry off the rendered page and compares it
-  # to what the reskin boards commit to — the 1440x900 fold on `HeroB.dc.html`
-  # and the 390 phone board D6 pins, at 390x844 — plus the two motion
-  # properties a still page cannot show: that a scroll which JUMPS past a reveal
-  # still finishes it, and that reduced motion arms nothing. It also sweeps both
-  # chat frames from 320 to 1440 wide: no row cropped, the composer inside the
-  # frame, the frame inside its column (#2893).
-  #
-  # It serves a PRODUCTION build, which the config explains at length and is not
-  # a preference: under `next dev` the stylesheet arrives after hydration, every
-  # reveal wrapper measures itself inside the viewport, takes its
-  # measure-before-arm early return and never arms. A suite pointed at dev would
-  # assert against a page whose motion never engages.
-  #
-  # Selection is by directory, so a new spec added to `apps/landing/tests/visual/`
-  # joins this job by default rather than falling into no job at all. That
-  # directory holds ONE spec on purpose: Playwright exits 1 when a run collects
-  # no tests, which is what stops this job going green having asserted nothing,
-  # and that guard keys on the collected-test count — a second spec here would
-  # mask the first one's removal, as docs/ci-cd/quality-gates.md describes for
-  # apps/web. Adding one means porting apps/web's sibling-reading guard too.
-  #
-  # No `continue-on-error`, per docs/ci-cd/quality-gates.md: that key
-  # rewrites the step's conclusion to success, and a required check that cannot
-  # fail is not a gate.
-  #
-  # Path-gated on `changes.landing`, which does NOT overlap `changes.web`: a PR
-  # touching only `apps/landing/**` skips `web-responsive-floor` and runs this,
-  # and vice versa. Both `needs:` parents are themselves required checks, which
-  # is the invariant scripts/ci/lib/required-checks.mjs spells out.
+  # Fold geometry, reveal motion and chat frames against the reskin boards (#2368,
+  # #2893). Why a production build and one spec: apps/landing/playwright.config.ts.
+  # No `continue-on-error`.
   landing-fold:
     needs: [packages-build, changes]
     if: ${{ github.event_name == 'push' || needs.changes.outputs.landing == 'true' }}
@@ -1267,11 +854,7 @@ jobs:
         id: pw
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      # Same version-keyed entry as `web-responsive-floor`. The two jobs can run
-      # concurrently within a run and both reserve the same key; `actions/cache`
-      # lets the first reservation win and warns on the second, so the "Unable to
-      # reserve cache" annotation is harmless where it appears and the restore
-      # path is unaffected.
+      # Same version-keyed entry as web-responsive-floor; the reserve warning is harmless.
       - name: Cache Playwright browsers
         id: pw-cache
         uses: actions/cache@v6
@@ -1279,13 +862,9 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
-      # The same apt Hash-Sum-mismatch workaround web-responsive-floor carries,
-      # and it is pinned by scripts/ci/__tests__/playwright-install-deps-retry.test.mjs
-      # for every workflow that runs install-deps. Do not skip apt hash checks
-      # and do not swallow a failure with `|| true`.
+      # Same apt workaround as web-responsive-floor, pinned by playwright-install-deps-retry.test.mjs.
       - name: Install Playwright OS deps
-        # Hung for over two hours on 2026-10-01 (#3129). A slow mirror needs a
-        # few minutes; this fails the hang long before the job's own timeout.
+        # Hung for two hours on 2026-10-01 (#3129); fails a hang before the job timeout.
         timeout-minutes: 10
         run: |
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
@@ -1315,5 +894,4 @@ jobs:
       - name: Assert the fold holds the boards' geometry
         run: npm run test:fold -w apps/landing
 
-      # No artifact upload, same reasoning as the job above: every assertion
-      # here fails with the measurement and the element that broke it.
+      # No artifact upload: every assertion fails with the measurement and element.
