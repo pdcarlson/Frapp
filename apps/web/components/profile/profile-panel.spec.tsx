@@ -125,7 +125,7 @@ vi.mock("@repo/hooks", () => ({
   }),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({
+vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mocks.toast }),
 }));
 vi.mock("@/lib/auth/session", () => ({

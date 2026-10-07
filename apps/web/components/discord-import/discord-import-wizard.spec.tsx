@@ -167,7 +167,7 @@ vi.mock("@repo/hooks", () => ({
   DISCORD_CONNECT_MESSAGES: {},
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
 import { ImportWizard } from "./import-wizard";

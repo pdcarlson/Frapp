@@ -7,7 +7,7 @@ import {
   meterTrackClassName,
 } from "@/components/shared/meter";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import {
   PREAMBLE_READ_BYTES,
