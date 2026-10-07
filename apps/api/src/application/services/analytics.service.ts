@@ -7,7 +7,10 @@ import {
   hashUserIdForAnalytics,
   type AnalyticsProperties,
 } from '@repo/validation';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import {
+  CHAPTER_REPOSITORY,
+  type IChapterRepository,
+} from '#domain/repositories/chapter.repository.interface';
 import {
   ANALYTICS_PROVIDER,
   type IAnalyticsProvider,
@@ -17,7 +20,6 @@ import {
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
 import type { Member } from '#domain/entities/member.entity';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /** Same shape ChapterGuard / billing use; identity refuses to HMAC anything else. */
@@ -61,7 +63,7 @@ export class AnalyticsService {
 
   constructor(
     private readonly config: ConfigService,
-    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    @Inject(CHAPTER_REPOSITORY) private readonly chapters: IChapterRepository,
     @Inject(ANALYTICS_PROVIDER) private readonly provider: IAnalyticsProvider,
     @Inject(MEMBER_REPOSITORY) private readonly members: IMemberRepository,
   ) {
@@ -332,13 +334,9 @@ export class AnalyticsService {
    * chapter that may have opted out.
    */
   private async isChapterAnalyticsEnabled(chapterId: string): Promise<boolean> {
-    const { data, error } = await this.supabase
-      .from('chapters')
-      .select('analytics_opt_out')
-      .eq('id', chapterId)
-      .maybeSingle();
-
-    if (error) {
+    try {
+      return !(await this.chapters.isAnalyticsOptedOut(chapterId));
+    } catch (error) {
       logThrowable(
         this.logger,
         'warn',
@@ -347,7 +345,5 @@ export class AnalyticsService {
       );
       return false; // fail closed: do not emit when opt-out state is unknown
     }
-
-    return !(data?.analytics_opt_out ?? false);
   }
 }

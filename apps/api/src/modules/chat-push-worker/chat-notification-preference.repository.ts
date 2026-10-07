@@ -93,7 +93,7 @@ export class ChatNotificationPreferenceRepository {
     if (userIds.length === 0) return byUser;
 
     // Chunks run concurrently, as every other `chunkIds` consumer does
-    // (`supabase-user.repository.ts`, `report.service.ts`): this is a
+    // (`supabase-user.repository.ts`): this is a
     // per-message hot path, and reading them in series would rebuild a smaller
     // version of the serialisation this method exists to remove.
     const idChunks = chunkIds(userIds);

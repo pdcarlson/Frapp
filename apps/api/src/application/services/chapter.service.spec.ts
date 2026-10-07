@@ -93,6 +93,7 @@ describe('ChapterService', () => {
     mockChapterRepo = {
       findById: jest.fn(),
       findByIds: jest.fn(),
+      isAnalyticsOptedOut: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
@@ -131,6 +132,7 @@ describe('ChapterService', () => {
       findById: jest.fn(),
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
+      findContactsByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),

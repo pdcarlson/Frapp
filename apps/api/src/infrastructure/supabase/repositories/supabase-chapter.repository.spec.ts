@@ -1,4 +1,6 @@
 import { SupabaseChapterRepository } from './supabase-chapter.repository';
+import { SupabaseQueryError } from '../supabase-query-error';
+import type { FrappSupabaseClient } from '../database.types';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -77,6 +79,61 @@ describe('SupabaseChapterRepository — tenant scope', () => {
     // Both chapters share a name and a university — an unlucky `.eq('name', …)`
     // refactor would return the wrong tenant and still look right.
     expect(chapter?.id).toBe(CHAPTER_B);
+  });
+
+  describe('isAnalyticsOptedOut', () => {
+    it('reads only the caller chapter', async () => {
+      harness = createTenantHarness({
+        tables: {
+          chapters: seed().chapters.map((row) => ({
+            ...row,
+            analytics_opt_out: row.id === CHAPTER_B,
+          })),
+        },
+        tenantColumns: { chapters: 'id' },
+        collisionExempt: {
+          chapters: [
+            'stripe_customer_id',
+            'subscription_id',
+            'analytics_opt_out',
+          ],
+        },
+      });
+      repo = new SupabaseChapterRepository(harness.client);
+
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, () =>
+          repo.isAnalyticsOptedOut(CHAPTER_B),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it('throws on a failed read rather than answering "not opted out"', async () => {
+      // Analytics fails closed only because this throws: a read error reported
+      // as `false` would emit events for a chapter that opted out.
+      const maybeSingle = jest.fn().mockResolvedValue({
+        data: null,
+        error: { code: '57014', message: 'canceling statement' },
+      });
+      const chain = { select: jest.fn(), eq: jest.fn(), maybeSingle };
+      chain.select.mockReturnValue(chain);
+      chain.eq.mockReturnValue(chain);
+      const failing = new SupabaseChapterRepository({
+        from: jest.fn(() => chain),
+      } as unknown as FrappSupabaseClient);
+
+      await expect(
+        failing.isAnalyticsOptedOut(CHAPTER_B),
+      ).rejects.toBeInstanceOf(SupabaseQueryError);
+    });
+
+    it('reads a chapter with no row as not opted out', async () => {
+      // Analytics emits for an unknown chapter rather than suppressing it; a
+      // flipped default here would silently drop those events.
+      await expect(
+        repo.isAnalyticsOptedOut('77777777-7777-4777-8777-777777777777'),
+      ).resolves.toBe(false);
+    });
   });
 
   describe('findByIds', () => {
