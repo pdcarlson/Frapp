@@ -1,3 +1,8 @@
+import {
+  ALUMNI_CHANNEL_PERMISSION,
+  ANNOUNCEMENTS_POST_PERMISSION,
+} from '@repo/validation';
+
 export const WILDCARD = '*';
 
 export const SystemPermissions = {
@@ -19,7 +24,9 @@ export const SystemPermissions = {
   CHANNELS_CREATE: 'channels:create',
   CHANNELS_MANAGE: 'channels:manage',
 
-  ANNOUNCEMENTS_POST: 'announcements:post',
+  // The posting gate on read-only channels is `canAccessChannel` in
+  // `@repo/validation`, which owns the value; this entry puts it in the catalog.
+  ANNOUNCEMENTS_POST: ANNOUNCEMENTS_POST_PERMISSION,
 
   BILLING_VIEW: 'billing:view',
   BILLING_MANAGE: 'billing:manage',
@@ -47,13 +54,16 @@ export const SystemPermissions = {
   CHAPTER_CONFIG_VIEW: 'chapter-config:view',
   CHAPTER_CONFIG_MANAGE: 'chapter-config:manage',
 
+  // Gates nothing: `GET /v1/chapter-directory/search` checks no permission.
+  // Kept because the catalog feeds the web's permission pickers, so a chapter
+  // may already have stored it. Retiring it is #3231.
   CHAPTER_DIRECTORY_SEARCH: 'chapter-directory:search',
 
   // Marks a ROLE_GATED channel as one the Alumni lifecycle may author in. Held
   // by the Alumni role, but the posting gate reads it off the *channel's*
   // `required_permissions` — see `ALUMNI_CHANNEL_PERMISSION` in
-  // `@repo/validation`.
-  ALUMNI_POST: 'alumni:post',
+  // `@repo/validation`, which owns the value.
+  ALUMNI_POST: ALUMNI_CHANNEL_PERMISSION,
 } as const;
 
 /**
