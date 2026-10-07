@@ -8,7 +8,7 @@
 //
 // SCOPE. Production target + preview contrast so the two profiles cannot
 // be swapped unnoticed, and the iOS build image every profile pins. The home-screen name (`expo.name`) and the Settings
-// path are frapp-mobile-copy's (ADR-25 step 2); nothing locks the App Store
+// path are frapp-naming's (ADR-25 step 2); nothing locks the App Store
 // listing name. The binary's permanent identifiers are
 // mobile-permanent-identifiers.test.mjs's, which lists them and says where
 // each one is decided. This lock doesn't assert extra.eas.projectId or an
