@@ -364,7 +364,7 @@ The INSERT/DELETE policies are deliberately unchanged (this issue is read-scoped
 ### Verification
 The leak was reproduced and confirmed closed against a **local Supabase Postgres** instance, executing as the real `authenticated` role with `request.jwt.claims` set per user: pre-fix a chapter-B user counted **2** chapter-A action rows; post-fix **0**, while a member of the private channel still read 2 and a chapter member outside it read 1 (public only). The seeded transaction was rolled back.
 
-Regression coverage in `scripts/check-pglite-migrations.mjs` is in three tiers:
+Regression coverage in `scripts/pglite/` is in three tiers:
 
 1. **Catalog shape** — exactly **one** permissive read-applicable policy. The filter is `polpermissive and polcmd in ('r','*')`: Postgres ORs permissive policies together, and a `FOR ALL` policy also applies to SELECT, so a second one of either spelling would silently re-open this exact leak. Plus `SECURITY DEFINER` with `search_path` pinned to exactly `public, pg_temp` (the harness asserts that pair, and that `pg_temp` is last), EXECUTE revoked from PUBLIC, replica identity still default, and `users` still carrying no client-reachable permissive SELECT policy.
 2. **Predicate** — a seeded tier driving `can_read_chat_message` directly across 15 cases (own-chapter, cross-chapter, `PRIVATE` in/out, `DM` in/out, `GROUP_DM` in/out, `ROLE_GATED` with/without permission, `*` wildcard, empty requirement, a chapter-B role id held by a chapter-A member, an uppercase stored role id, null `auth.uid()`).
