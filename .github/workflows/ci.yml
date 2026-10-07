@@ -100,7 +100,7 @@ jobs:
               - 'scripts/**'
             pglite:
               - 'supabase/migrations/**'
-              - 'scripts/check-pglite-migrations.mjs'
+              - 'scripts/pglite/**'
               # The change-ping contract spec also applies every migration (see
               # the job's last step), so its inputs re-run this job too.
               - 'apps/web/lib/realtime/**'

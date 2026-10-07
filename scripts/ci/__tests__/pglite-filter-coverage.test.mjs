@@ -46,7 +46,7 @@ import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
 // seed, is imported from its module below rather than restated.
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const ENTRY = "scripts/check-pglite-migrations.mjs";
+const ENTRY = "scripts/pglite/run.mjs";
 
 // Inputs the job depends on that the forms above cannot derive: the job's own
 // definition, the npm script it runs, the lockfile, and the seed CSV that

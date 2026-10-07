@@ -240,7 +240,7 @@ export const CI_CHECKS = [
   "web-production-build",
   // Every migration applied from empty to an in-process Postgres (PGlite), with
   // the database's security posture asserted on the result
-  // (`scripts/check-pglite-migrations.mjs`): every `public` table enables RLS,
+  // (`scripts/pglite/`): every `public` table enables RLS,
   // the chat hot-path policies keep their shape, `chapter_audit_log` stays
   // append-only, and every `SECURITY DEFINER` function in `public` pins
   // `pg_temp` last. No other check runs the corpus from empty:

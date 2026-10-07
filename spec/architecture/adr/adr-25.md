@@ -87,7 +87,7 @@
   **Every step updates, in the same PR, every test and gate that pins a string it changes.** That means:
   - the `scripts/ci/__tests__/signet-*.test.mjs` locks, which were written to keep "Frapp" out of exactly these strings, and whose headers still cite the cancelled deferred rename;
   - component and unit specs such as `onboarding-tutorial.spec.tsx` ("says Signet, not Frapp");
-  - `scripts/check-pglite-migrations.mjs`;
+  - the PGlite gate, `scripts/pglite/` (*2026-10-07: a single `scripts/check-pglite-migrations.mjs` until [#3226](https://github.com/pdcarlson/Frapp/issues/3226) split it*);
   - the conformance tests.
 
   An unflipped check fails CI. A lock that spans surfaces (calendar PRODID, export filenames, the auth wordmark and the ops-nudge copy) is split per surface by the first step that touches it.
