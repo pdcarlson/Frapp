@@ -1,11 +1,10 @@
 // Which lines of a source file are copy, for the name locks.
 //
-// frapp-mobile-copy, frapp-api-copy, frapp-web-copy and frapp-landing-copy
-// each walk a surface for a product name that must not ship, and none may
-// count a comment that names the design system; frapp-web-titles judges the
-// root layout the same way. This is the one rule all five read by, so a fix to
-// it reaches all five, and so is the download-name pattern the mobile, API and
-// web walks share.
+// frapp-naming walks the mobile, API, web and landing surfaces for a product
+// name that must not ship, and none of those walks may count a comment that
+// names the design system. This is the one rule they all read by, so a fix to
+// it reaches all four, and so is the download-name pattern the mobile, API and
+// web walks share. copy-lines.test.mjs pins it.
 
 /**
  * Why lines and not a scanner. Telling a comment from a string, a regex or
@@ -26,7 +25,7 @@
  *
  * The blind spot: copy on a line that itself starts with `//`, `*`, `/*` or
  * `{/*`, such as a template literal line beginning `* ` or JSX text beginning
- * `//`. The last fixture in frapp-mobile-copy.test.mjs pins it, so widening or
+ * `//`. The last fixture in copy-lines.test.mjs pins it, so widening or
  * closing it is deliberate.
  */
 export const LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/;
