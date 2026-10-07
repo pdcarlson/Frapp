@@ -53,17 +53,17 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "@vitest/coverage-v8": "4.1.11",
     "concurrently": "^10.0.5",
-    "dependency-cruiser": "^18.4.0",
-    "jscpd": "^5.3.3",
+    "dependency-cruiser": "^18.5.0",
+    "jscpd": "^5.4.0",
     "jsdom": "^30.1.1",
     "prettier": "^3.9.9",
     "sharp": "0.35.5",
     "squawk-cli": "2.66.0",
-    "turbo": "^2.11.5",
+    "turbo": "^2.11.6",
     "typescript": "npm:@typescript/typescript6@6.0.2"
   },
   "optionalDependencies": {
-    "@infisical/cli": "0.43.137"
+    "@infisical/cli": "0.43.138"
   },
   "overrides": {
     "react": "19.2.3",
@@ -76,6 +76,7 @@
     "node-forge": "^1.4.0",
     "undici": ">=7.29.1 <8.0.0",
     "path-to-regexp": "^8.4.0",
+    "shell-quote": "^1.11.0",
     "yaml": "^2.9.0",
     "multer": "2.4.0",
     "@xmldom/xmldom": ">=0.8.13",
