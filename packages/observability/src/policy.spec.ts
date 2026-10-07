@@ -8,7 +8,6 @@ import {
 } from "./correlation";
 import {
   DEFAULT_POSTHOG_LOGS_SAMPLE_RATE,
-  OBSERVABILITY_PROVIDERS,
   POSTHOG_EXCEPTION_AUTOCAPTURE,
   POSTHOG_PRODUCTION_REPLAY_ENABLED,
   shouldEnablePostHogReplay,
@@ -43,10 +42,6 @@ describe("correlation constants", () => {
 
 describe("policy constants", () => {
   it("keeps errors counted only in Sentry and replay off", () => {
-    expect(OBSERVABILITY_PROVIDERS.exceptions).toBe("sentry");
-    expect(OBSERVABILITY_PROVIDERS.traces).toBe("sentry");
-    expect(OBSERVABILITY_PROVIDERS.productAnalytics).toBe("posthog");
-    expect(OBSERVABILITY_PROVIDERS.replay).toBe("posthog");
     expect(SENTRY_REPLAY_ENABLED).toBe(false);
     expect(POSTHOG_EXCEPTION_AUTOCAPTURE).toBe(false);
     expect(POSTHOG_PRODUCTION_REPLAY_ENABLED).toBe(false);

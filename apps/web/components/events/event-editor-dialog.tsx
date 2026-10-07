@@ -20,7 +20,7 @@ import {
   RECURRENCE_RULES,
   RECURRENCE_RULE_LABELS,
 } from "@repo/validation";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

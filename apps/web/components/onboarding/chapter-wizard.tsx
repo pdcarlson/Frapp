@@ -61,7 +61,7 @@ import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { SearchGlyph } from "@/components/profile/profile-glyphs";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
