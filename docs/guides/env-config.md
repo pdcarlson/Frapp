@@ -22,7 +22,7 @@ Key principles:
 
 - **Infisical is the single source of truth** for all non-local secrets.
 - **No `.env.example` files** — the centralized `ENV_REFERENCE.md` replaces them.
-- **No placeholder secrets in CI** — CI (`ci.yml`) reads no runtime secrets. Where a job needs a value only to exist, it sets a deliberately fake stand-in that ships nowhere; every build that ships gets real values from Infisical at deploy time ([`ci-cd.md` § Secrets in CI vs CD](../ops/deployment/ci-cd.md#secrets-in-ci-vs-cd)).
+- **No placeholder secrets in CI** — CI (`ci.yml`) reads no runtime secrets. Where a job needs a value only to exist, it sets a deliberately fake stand-in that ships nowhere; what ships gets real values from Infisical (the frontends at build time, the API through its Render sync) ([`ci-cd.md` § Secrets in CI vs CD](../ops/deployment/ci-cd.md#secrets-in-ci-vs-cd)).
 - **Provider-native syncs** — Infisical pushes secrets to its sync destinations automatically (inventory linked above). Mobile EAS credentials are managed in Expo/EAS.
 
 ## 3. Local development setup
