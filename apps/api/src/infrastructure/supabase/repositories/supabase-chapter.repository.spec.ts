@@ -247,3 +247,79 @@ describe('SupabaseChapterRepository — tenant scope', () => {
     });
   });
 });
+
+describe('SupabaseChapterRepository — updatePaletteIfSeedUnchanged', () => {
+  const PALETTE = {
+    theme_palette: { accent: '#AA0000' },
+    theme_palette_engine_version: 3,
+  };
+
+  const chapterWith = (id: string, branding: Record<string, unknown>) => ({
+    id,
+    name: 'Beta Chapter',
+    university: 'State University',
+    branding,
+    theme_palette: {},
+    theme_palette_engine_version: null,
+  });
+
+  const harnessWith = (branding: Record<string, unknown>) =>
+    createTenantHarness({
+      tables: {
+        chapters: [
+          chapterWith(CHAPTER_A, branding),
+          chapterWith(CHAPTER_B, branding),
+        ],
+      },
+      tenantColumns: { chapters: 'id' },
+    });
+
+  it('writes the palette onto only the requested chapter while its accent is still the seed', async () => {
+    const harness = harnessWith({ colors: { accent: '#AA0000' } });
+    const repo = new SupabaseChapterRepository(harness.client);
+
+    const written = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.updatePaletteIfSeedUnchanged(CHAPTER_B, PALETTE, '#AA0000'),
+    );
+
+    expect(written).toBe(true);
+    const rows = harness.rows('chapters');
+    expect(rows.find((r) => r.id === CHAPTER_B)?.theme_palette).toEqual(
+      PALETTE.theme_palette,
+    );
+    // Both twins carry the same accent, so only the id predicate spares A.
+    expect(rows.find((r) => r.id === CHAPTER_A)?.theme_palette).toEqual({});
+  });
+
+  it('reports a lost race and writes nothing once the accent has moved on', async () => {
+    const harness = harnessWith({ colors: { accent: '#0000AA' } });
+    const repo = new SupabaseChapterRepository(harness.client);
+
+    const written = await repo.updatePaletteIfSeedUnchanged(
+      CHAPTER_B,
+      PALETTE,
+      '#AA0000',
+    );
+
+    expect(written).toBe(false);
+    expect(
+      harness.rows('chapters').find((r) => r.id === CHAPTER_B)?.theme_palette,
+    ).toEqual({});
+  });
+
+  it('guards on "no accent" when the palette was derived without one', async () => {
+    const harness = harnessWith({});
+    const repo = new SupabaseChapterRepository(harness.client);
+
+    await expect(
+      repo.updatePaletteIfSeedUnchanged(CHAPTER_B, PALETTE, undefined),
+    ).resolves.toBe(true);
+
+    const accented = harnessWith({ colors: { accent: '#AA0000' } });
+    await expect(
+      new SupabaseChapterRepository(
+        accented.client,
+      ).updatePaletteIfSeedUnchanged(CHAPTER_B, PALETTE, undefined),
+    ).resolves.toBe(false);
+  });
+});
