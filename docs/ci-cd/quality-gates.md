@@ -169,7 +169,7 @@ are named in [`.github/actions/README.md`](../../.github/actions/README.md), and
 version by a test), and against `FROM node:` in
 [`apps/api/Dockerfile`](../../apps/api/Dockerfile). Those pin only the Node major; the exact floor
 is the root `package.json` `engines.node`, and how the pins relate to it is in
-[`spec/environments/README.md` § Prerequisites](../../spec/environments/README.md#prerequisites).
+[`getting-started.md` § Prerequisites](../guides/getting-started.md#prerequisites).
 
 `expo-server-sdk` 7.x was the same class of engines mismatch with a different symptom, and the Node
 move cleared it too. 6.0.0 went ESM-only; 7.0.0 raised `engines.node` to `>=22.12.0` (stable

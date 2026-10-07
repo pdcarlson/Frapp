@@ -19,7 +19,7 @@ failures. `scripts/ci/lib/required-checks.mjs` is the canonical list of required
 |------|---------|
 | Core pre-push subset (secret scan, lint, types, API unit tests, contract, migration safety with a commit range, audit) | `npm run ci:local-gate` |
 | API-only lint | `npm run lint:api` (read-only) |
-| API lint autofix | `npm run lint:api:fix`, the only lint script that writes ([contributing.md §5](../../../docs/guides/contributing.md#5-linting-types-and-tests)) |
+| API lint autofix | `npm run lint:api:fix`, the only lint script that writes ([`CONTRIBUTING.md` § Linting, types, and tests](../../../CONTRIBUTING.md#linting-types-and-tests)) |
 | Single API test file | `npm run test -w apps/api -- --testPathPatterns="event.service"` |
 | Repository tenant-scope specs only | `npm run test -w apps/api -- --testPathPatterns="\.repository\.spec\.ts$\|repositories/"` |
 | Live-PostgREST integration suite | `npm run test:integration -w apps/api` |
