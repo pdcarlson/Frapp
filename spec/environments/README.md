@@ -34,77 +34,25 @@ with green CI. The `production` branch that used to occupy this table was retire
 
 ## 2. Local Development
 
-### Prerequisites
+The local environment is a developer machine running the apps against a local Supabase stack
+(Postgres, Auth, Storage, Realtime) in Docker, on the repo's pinned Supabase CLI, with migrations
+from `supabase/migrations/` applied by `db push --local`. Secrets come from Infisical's `dev`
+environment, injected by the root `npm run dev:*` scripts; a `.env.local` per app built from
+`npm run -s supabase -- status -o env` and
+[`ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md) is the fallback. Mobile is
+the exception: Infisical `dev` holds no `EXPO_PUBLIC_*` name, so `apps/mobile/.env.local` always
+carries those values ([`LOCAL_DEV.md` § Mobile](../../docs/internal/environment/LOCAL_DEV.md#mobile)). The
+Claude Code cloud sandbox brings up the same stack itself
+([`CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md)).
 
-- Node.js at or above the root `package.json` `engines.node`, which is the one statement of the floor. `.nvmrc`, CI's `node-version:` and `apps/api/Dockerfile` pin only the major, so whichever release of it they land on (an older install under `nvm use`, the runner's cached toolchain, a cached image layer) can sit below the floor. Check `node -v` against `engines.node`.
-- npm v10+
-- Docker available to your shell (Docker Desktop with **WSL integration** on Windows/WSL, or Docker Engine on Linux)
-- Supabase CLI: none to install. The repo pins one version, the one CI deploys with, and `npm run supabase -- <args>` runs it, installing it into the gitignored `.cache/supabase-cli/` on first use (`scripts/lib/supabase-cli.sh`)
-- Expo Go app on iOS/Android device
-
-### Setup
-
-**One-shot bootstrap (recommended on WSL/Ubuntu):** from the repo root, with Docker already running:
-
-```bash
-bash scripts/local-dev-setup.sh
-# Skip typecheck / migration-safety for a faster loop:
-# bash scripts/local-dev-setup.sh --quick
-# Stuck or exited Supabase containers (this repo only; keeps volumes):
-# bash scripts/local-dev-setup.sh --reset-supabase
-# Wipe local Supabase data volumes (destructive; confirm in terminal):
-# bash scripts/local-dev-setup.sh --reset-supabase-data
-```
-
-The script runs `npm install`, then `supabase start` and `supabase db push --local` on the pinned CLI, the local Postgres default-ACL repair (fatal if it fails; `FRAPP_SKIP_ACL_REPAIR=1` overrides), optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)). It does **not** start `dockerd` (the Claude Code cloud sandbox does — see [`CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md)). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
-
-**Manual sequence** (equivalent):
-
-```bash
-# 1. Install dependencies
-npm install
-
-# 2. Start Supabase local (Postgres, Auth, Storage, Realtime), on the pinned CLI
-npm run supabase -- start
-
-# 3. Apply database migrations (--local targets the local Supabase instance)
-npm run supabase -- db push --local
-
-# 4. Repair the local Postgres default ACLs. The pinned supabase/postgres image ships
-#    schema `public` without DML grants for anon/authenticated/service_role, so skipping
-#    this leaves every API query failing with `42501 permission denied for table ...`.
-#    Not needed if you ran scripts/local-dev-setup.sh above — it does this for you.
-bash -c '. scripts/lib/supabase-cli.sh && . scripts/lib/local-postgres-acl.sh && frapp_repair_local_acls "$PWD" frapp_supabase'
-
-# 5. Start apps — default (with Infisical — see docs/internal/environment/LOCAL_DEV.md):
-npm run dev:stack
-# Per-app, no Infisical, Turbo caveats: docs/internal/environment/LOCAL_DEV.md
-```
-
-### Environment Variables
-
-If you are not using Infisical CLI injection, create a `.env.local` file for each app. Local Supabase keys come from `npm run -s supabase -- status -o env`.
-
-See **[`docs/internal/environment/ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
-
-**Alternative (Infisical CLI):** Skip `.env.local` files entirely by injecting from Infisical:
-
-```bash
-npx infisical run --env=dev -- npm run start:dev -w apps/api
-```
+Prerequisites and the step-by-step setup:
+[`docs/guides/getting-started.md`](../../docs/guides/getting-started.md). Per-app commands,
+mobile, and the no-Infisical fallback:
+[`LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md).
 
 ### Accessing Services
 
 Ports and URLs for web, API, Swagger, landing and Supabase Studio: [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md) § Ports and URLs.
-
-### Running Mobile
-
-```bash
-cd apps/mobile
-npm start
-```
-
-Scan the QR code with Expo Go. Phone and PC must be on the same network.
 
 ### Updating the API Contract
 
@@ -417,14 +365,7 @@ environments and current state:
 
 ### Local Development
 
-**Primary method (no `.env.local` files):**
-
-```bash
-npx infisical login       # One-time setup
-npm run dev:stack         # Default: API + web + landing (repo root)
-```
-
-Per-app Infisical commands, mobile, and no-Infisical fallback: **[`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)**.
+How local runs get their secrets, including the mobile exception: [§ 2](#2-local-development).
 
 ### Rules
 
