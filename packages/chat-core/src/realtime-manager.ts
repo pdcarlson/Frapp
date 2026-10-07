@@ -6,7 +6,8 @@
  *     channel_id) → `mergeServerRow` into the normalized cache. A merged row
  *     (live or backfilled) also evicts the persisted heavy-command notice its
  *     sender filed under its `client_message_id` (`heavy-command-notices.ts`,
- *     #1909). Also a Broadcast endpoint per channel for typing + presence.
+ *     #1909). Also, per channel, Broadcast for typing and Realtime Presence
+ *     (`track`) for presence (ADR-10).
  *   - One global Postgres Changes subscription on `chat_message_actions` (no
  *     `channel_id` column on that table to filter by) — events are dispatched
  *     to whichever subscribed channel cache holds the message. Reactions on
