@@ -14,8 +14,9 @@
 // them: the job, its timeout, its alert and the alert's copy. Each workflow
 // names its watch in `BACKUP_WATCH`, and an unknown or missing name throws, so
 // a mis-wired workflow is loud rather than silently watching the other job:
-//   production-backup-freshness.yml          BACKUP_WATCH=dump     13:15 UTC
-//   production-backup-storage-freshness.yml  BACKUP_WATCH=storage  14:00 UTC
+//   production-backup-freshness.yml          BACKUP_WATCH=dump
+//   production-backup-storage-freshness.yml  BACKUP_WATCH=storage
+// When each runs: docs/ci-cd/agent-infra.md § Scheduled conformance.
 //
 // This script GETs recent `db-backup.yml` runs and their jobs and judges the
 // watch's job by the rules in `lib/backup-job-freshness.mjs`. That header is
@@ -70,9 +71,9 @@ export const DEFAULT_BRANCH = "main";
 export const STALE_AFTER_MS = 36 * 60 * 60 * 1000;
 export const HUNG_AFTER_MS = 3 * 60 * 60 * 1000;
 
-// The test suite pins each key to its `jobName` on the source text and checks
-// every field against literals of its own, so crossing the two watches fails
-// it. `timeoutMs` is the job's `timeout-minutes` in db-backup.yml: GitHub
+// The test suite pins each key to its `jobName` on the source text, and checks
+// each watch's job, timeout, title and alert copy against literals of its own,
+// so crossing the two watches fails it. `timeoutMs` is the job's `timeout-minutes` in db-backup.yml: GitHub
 // reports a job its timeout stopped as `cancelled`, and this is how the
 // verdict tells that from a cancelled dispatch. The suite checks it against
 // the workflow. Alert titles are the stable lookup keys of open alerts; never

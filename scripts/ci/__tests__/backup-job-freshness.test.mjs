@@ -519,3 +519,54 @@ describe("what the scripts share besides the verdict", () => {
     assert.equal(RUNS_PER_PAGE, 30);
   });
 });
+
+// Moved here from the two per-watch suites when they merged (#2328), where they
+// ran once per watch against these same rules. Each was found by mutation: the
+// rule it pins could be removed with every other test in this file green.
+describe("unreadable or malformed input fails closed", () => {
+  const verdictFor = ({ runsStatus = 200, runs, jobsByRunId = new Map() }) =>
+    evaluateJobFreshness({
+      jobName: JOB,
+      workflowFile: "db-backup.yml",
+      staleAfterMs: STALE,
+      hungAfterMs: HUNG,
+      timeoutMs: TIMEOUT,
+      runsStatus,
+      runs,
+      jobsByRunId,
+      now: NOW,
+    });
+
+  it("unreadable runs fail", () => {
+    const verdict = verdictFor({ runsStatus: 500, runs: null });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /unreadable \(HTTP 500\)/);
+  });
+
+  it("no runs at all fail", () => {
+    const verdict = verdictFor({ runs: [] });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /no db-backup.yml runs found/);
+  });
+
+  it("the newest run's jobs unreadable fails", () => {
+    const verdict = verdictFor({
+      runs: [run(1, { hours: 16.2 })],
+      jobsByRunId: new Map([[1, { status: 502, jobs: null }]]),
+    });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /jobs unreadable \(HTTP 502\)/);
+  });
+
+  // ageMs's NaN guard. Inverting `Number.isNaN(at) ? POSITIVE_INFINITY` to
+  // `: 0` doesn't merely green the run: it reports the job fresh and CLOSES
+  // an open P1.
+  it("a success with no completed_at, or an unparseable one, is not fresh", () => {
+    for (const completed_at of [null, "not-a-date"]) {
+      const verdict = evaluate({ runs: [run(1, { hours: 16.2 })], jobs: { 1: [{ ...job(), completed_at }] } });
+      assert.equal(verdict.ok, false, String(completed_at));
+      assert.equal(verdict.fresh, false, String(completed_at));
+      assert.match(verdict.reason, /older than 36h/);
+    }
+  });
+});

@@ -1,13 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { ALERT_ROUTING as ALERT_ROUTING_DOC } from "../lib/ops-docs.mjs";
 import { fileURLToPath } from "node:url";
 
 import {
-  HUNG_AFTER_MS,
-  STALE_AFTER_MS,
   WATCHES,
   WORKFLOW_FILE,
   readBackupFreshness,
@@ -17,10 +16,9 @@ import {
   runWatchdog,
 } from "../production-backup-freshness.mjs";
 import { ALERT_ASSIGNEE, ALERT_LOOKUP_LABEL } from "../lib/alert-issue.mjs";
-import { evaluateJobFreshness, runsNewestFirst } from "../lib/backup-job-freshness.mjs";
 
 import { makeFetchMock } from "./helpers.mjs";
-import { installsDependenciesIn, workflowFiles, workflowJobs } from "./helpers/workflow-yaml.mjs";
+import { installsDependenciesIn, workflowFiles, workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 // One script serves both production backup-freshness watches (#2328). Every
 // suite below runs once per watch.
@@ -45,6 +43,15 @@ const EXPECTED = [
     otherJobName: "backup-production-storage",
     timeoutMinutes: 30,
     title: "Nightly production dump is stale or failed — recoverability is unproven",
+    // Phrases only this watch's alert copy carries, so swapping copy between
+    // the watches fails: the body opening, the recovery step, a sentence of
+    // its why, and the recovery comment.
+    bodyPhrases: [
+      "The nightly production Postgres dump is missing, failed, hung, or older than 36 hours.",
+      "Inspect the latest `backup-production` job and recover the dump,",
+      "is the only copy of `frapp-prod` outside Supabase",
+    ],
+    recovery: "Nightly production dump is fresh again: ",
     workflow: "production-backup-freshness.yml",
     cron: "15 13 * * *",
     slot: "13:15",
@@ -58,6 +65,13 @@ const EXPECTED = [
     otherJobName: "backup-production",
     timeoutMinutes: 60,
     title: "Nightly production Storage mirror is stale or failed — recoverability is unproven",
+    bodyPhrases: [
+      "The nightly production Storage mirror is missing, failed, hung, or older than 36 hours.",
+      "Inspect the latest `backup-production-storage` job and recover the mirror,",
+      "is the Storage half for `frapp-prod`",
+      "A failed job may be the job refusing bad content rather than crashing",
+    ],
+    recovery: "Nightly production Storage mirror is fresh again: ",
     workflow: "production-backup-storage-freshness.yml",
     cron: "0 14 * * *",
     slot: "14:00",
@@ -78,6 +92,30 @@ const EXPECTED = [
 ];
 
 const HOUR = 60 * 60 * 1000;
+
+/** A `cron: "<expr>"` line, tolerant of the spacing YAML allows. */
+function cronPattern(cron) {
+  return new RegExp(`cron:\\s*["']${cron.replaceAll("*", "\\*")}["']`);
+}
+
+/**
+ * `BACKUP_WATCH` as Actions would hand it to each step that runs the script:
+ * workflow, job and step env merged, innermost winning. A value on another
+ * step reaches nothing, and the script then throws before it can file an
+ * alert. `workflowSteps` reads a path, so the text goes through a temp file.
+ */
+function watchesGivenToScript(yaml) {
+  const dir = mkdtempSync(join(tmpdir(), "backup-watch-"));
+  try {
+    const path = join(dir, "workflow.yml");
+    writeFileSync(path, yaml);
+    return workflowSteps(path)
+      .filter((step) => /node scripts\/ci\/production-backup-freshness\.mjs/.test(step.body))
+      .map((step) => step.env.get("BACKUP_WATCH"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 function uncommented(text) {
   return text
@@ -134,188 +172,10 @@ for (const expected of EXPECTED) {
     completed_at: hoursAgo(hours),
   });
 
-  /**
-   * This watch's verdict through the shared rules, with its own job name and
-   * windows. `jobs` are the newest run's; `olderJobs` maps an earlier run's id
-   * to `{ status, jobs }`. The rules themselves are tested in
-   * backup-job-freshness.test.mjs.
-   */
-  function evaluate(overrides = {}) {
-    const { runsStatus, runs, jobsStatus, jobs, olderJobs, now } = {
-      runsStatus: 200,
-      runs: [{ id: 1, status: "completed", created_at: hoursAgo(16) }],
-      jobsStatus: 200,
-      jobs: [successJob()],
-      olderJobs: {},
-      now: NOW,
-      ...overrides,
-    };
-    const jobsByRunId = new Map(
-      Object.entries(olderJobs).map(([id, entry]) => [Number(id), entry]),
-    );
-    if (Array.isArray(runs) && runs.length > 0) {
-      jobsByRunId.set(runsNewestFirst(runs)[0].id, { status: jobsStatus, jobs });
-    }
-    return evaluateJobFreshness({
-      jobName,
-      workflowFile: WORKFLOW_FILE,
-      staleAfterMs: STALE_AFTER_MS,
-      hungAfterMs: HUNG_AFTER_MS,
-      timeoutMs: JOB_TIMEOUT_MS,
-      runsStatus,
-      runs,
-      jobsByRunId,
-      now,
-    });
-  }
-
-  describe(`${key} watch: the verdict`, () => {
-    it("passes a success younger than 36h", () => {
-      const verdict = evaluate();
-      assert.equal(verdict.ok, true);
-      assert.equal(verdict.fresh, true);
-      assert.match(verdict.reason, /succeeded within 36h/);
-    });
-
-    it("fails a success older than 36h", () => {
-      const verdict = evaluate({
-        runs: [{ id: 1, status: "completed", created_at: hoursAgo(40) }],
-        jobs: [successJob({ hours: 40 })],
-      });
-      assert.equal(verdict.ok, false);
-      assert.equal(verdict.fresh, false);
-      assert.match(verdict.reason, /older than 36h/);
-      assert.ok(40 * HOUR > STALE_AFTER_MS);
-    });
-
-    it("evaluates the newest run even when the list is unsorted", () => {
-      const failed = (hours) => ({ name: jobName, status: "completed", conclusion: "failure", completed_at: hoursAgo(hours) });
-      const verdict = evaluate({
-        runs: [
-          { id: 1, status: "completed", created_at: hoursAgo(16) },
-          { id: 2, status: "completed", created_at: hoursAgo(1) },
-        ],
-        jobs: [failed(1)],
-        olderJobs: { 1: { status: 200, jobs: [failed(16)] } },
-      });
-      assert.equal(verdict.ok, false);
-      assert.match(verdict.reason, /concluded failure/);
-    });
-
-    it(`fails a missing ${jobName} job on a completed run`, () => {
-      const verdict = evaluate({
-        jobs: [{ name: "backup-staging", status: "completed", conclusion: "success" }],
-      });
-      assert.equal(verdict.ok, false);
-      assert.match(verdict.reason, /missing/);
-    });
-
-    it(`does not treat a ${otherJobName} success as its own`, () => {
-      const verdict = evaluate({
-        jobs: [{ name: otherJobName, status: "completed", conclusion: "success", completed_at: hoursAgo(1) }],
-      });
-      assert.equal(verdict.ok, false);
-      assert.match(verdict.reason, /missing/);
-    });
-
-    it("fails skipped, cancelled, and failed conclusions", () => {
-      for (const conclusion of ["failure", "cancelled", "skipped"]) {
-        const verdict = evaluate({
-          jobs: [{ name: jobName, status: "completed", conclusion, completed_at: hoursAgo(1) }],
-        });
-        assert.equal(verdict.ok, false, conclusion);
-        assert.match(verdict.reason, new RegExp(`concluded ${conclusion}`));
-      }
-    });
-
-    it("passes an in-flight job younger than 3h when a success within 36h backs it", () => {
-      const verdict = evaluate({
-        runs: [
-          { id: 1, status: "in_progress", created_at: hoursAgo(1) },
-          { id: 0, status: "completed", created_at: hoursAgo(16.2) },
-        ],
-        olderJobs: { 0: { status: 200, jobs: [successJob()] } },
-        jobs: [{ name: jobName, status: "in_progress", conclusion: null, started_at: hoursAgo(1) }],
-      });
-      assert.equal(verdict.ok, true);
-      assert.equal(verdict.fresh, false);
-      assert.match(verdict.reason, /in flight/);
-    });
-
-    it("fails an in-flight job older than 3h", () => {
-      const verdict = evaluate({
-        runs: [{ id: 1, status: "in_progress", created_at: hoursAgo(4) }],
-        jobs: [{ name: jobName, status: "in_progress", conclusion: null, started_at: hoursAgo(4) }],
-      });
-      assert.equal(verdict.ok, false);
-      assert.match(verdict.reason, /hung for more than 3h/);
-      assert.ok(4 * HOUR > HUNG_AFTER_MS);
-    });
-
-    it("treats a queued run with no jobs yet as in-flight under 3h", () => {
-      const verdict = evaluate({
-        runs: [
-          { id: 1, status: "queued", created_at: hoursAgo(0.5) },
-          { id: 0, status: "completed", created_at: hoursAgo(16.2) },
-        ],
-        olderJobs: { 0: { status: 200, jobs: [successJob()] } },
-        jobs: [],
-      });
-      assert.equal(verdict.ok, true);
-      assert.equal(verdict.fresh, false);
-      assert.match(verdict.reason, /in flight/);
-    });
-
-    // Regression lock for the run-level hung branch. The `jobs: []` case above
-    // covers only the under-3h side, so deleting the run-level age check left
-    // every test green. This is a run GitHub has accepted but whose jobs list is
-    // not yet populated — the run-level clock is the only evidence available.
-    // (A job already suspended on an environment reviewer gate reports
-    // `status: "waiting"` WITH a job record, so it takes the job-level branch
-    // above; do not delete that one on the strength of this test.)
-    it("fails a run in flight for more than 3h with the job not yet created", () => {
-      const verdict = evaluate({
-        runs: [{ id: 1, status: "queued", created_at: hoursAgo(4) }],
-        jobs: [],
-      });
-      assert.equal(verdict.ok, false);
-      assert.match(verdict.reason, /hung for more than 3h/);
-    });
-
-    // Regression lock for ageMs's NaN guard. Every other fixture supplies a
-    // well-formed timestamp, so inverting `Number.isNaN(at) ? POSITIVE_INFINITY`
-    // to `: 0` left all tests green — and that mutant does not merely green the
-    // run, it reports the job as fresh and CLOSES an open P1.
-    it("fails closed when a success job carries no completed_at", () => {
-      const verdict = evaluate({ jobs: [{ ...successJob(), completed_at: null }] });
-      assert.equal(verdict.ok, false);
-      assert.equal(verdict.fresh, false);
-      assert.match(verdict.reason, /older than 36h/);
-    });
-
-    it("fails closed on an unparseable completed_at rather than treating it as now", () => {
-      const verdict = evaluate({ jobs: [{ ...successJob(), completed_at: "not-a-date" }] });
-      assert.equal(verdict.ok, false);
-      assert.match(verdict.reason, /older than 36h/);
-    });
-
-    it("fails when Actions runs are unreadable or empty", () => {
-      assert.equal(evaluate({ runsStatus: 500, runs: null }).ok, false);
-      assert.match(evaluate({ runsStatus: 500, runs: null }).reason, /unreadable \(HTTP 500\)/);
-      assert.equal(evaluate({ runs: [] }).ok, false);
-      assert.match(evaluate({ runs: [] }).reason, /no db-backup.yml runs found/);
-    });
-
-    it("fails when the newest run's jobs are unreadable", () => {
-      const verdict = evaluate({ jobsStatus: 502, jobs: null });
-      assert.equal(verdict.ok, false);
-      assert.match(verdict.reason, /jobs unreadable \(HTTP 502\)/);
-    });
-  });
-
-  // Everything below drives the script's reader with the script's own watch,
-  // so a watch wired to the other job, or to the other job's timeout, fails
-  // against these fixtures, which name this watch's job by literal.
+  // These drive the script's reader with the script's own watch, so a watch
+  // wired to the other job, or to the other job's timeout, fails against
+  // these fixtures, which name this watch's job by literal. The rules
+  // themselves are tested once, in backup-job-freshness.test.mjs.
   const read = (args) => readBackupFreshness({ watch, token: "tok", repo: "org/repo", now: NOW, ...args });
 
   describe(`${key} watch: readBackupFreshness`, () => {
@@ -538,7 +398,9 @@ for (const expected of EXPECTED) {
       assert.ok(createdBody.labels.includes(ALERT_LOOKUP_LABEL));
       assert.deepEqual(createdBody.assignees, [ALERT_ASSIGNEE]);
       assert.ok(createdBody.labels.includes("P1"));
-      assert.match(createdBody.body, new RegExp(`latest \`${jobName}\` job`));
+      for (const phrase of expected.bodyPhrases) assert.ok(createdBody.body.includes(phrase), phrase);
+      const other = EXPECTED.find((e) => e.key !== key);
+      for (const phrase of other.bodyPhrases) assert.ok(!createdBody.body.includes(phrase), `carries ${other.key}'s copy: ${phrase}`);
       assert.doesNotMatch(createdBody.body, /\b(fixes|closes|close|fix|fixed|resolve|resolves|resolved)\s+#/i);
     });
 
@@ -575,6 +437,8 @@ for (const expected of EXPECTED) {
       assert.equal(out.outcome, "pass");
       assert.equal(out.resolved, true);
       assert.ok(calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/42")));
+      const comment = JSON.parse(calls.find((c) => c.method === "POST" && c.url.includes("/comments")).body);
+      assert.ok(comment.body.startsWith(expected.recovery), comment.body);
     });
 
     it("does not close an alert when the lookup itself failed, and goes red", async () => {
@@ -649,8 +513,15 @@ export function scriptPinProblems(source) {
   if (!/verdictLogLine\(verdict\)/.test(source)) {
     problems.push("main() must print through verdictLogLine, so a backed pass shows as a warning");
   }
-  if (!/resolveWatch\(process\.env\.BACKUP_WATCH\)/.test(source)) {
+  const main = source.slice(source.indexOf("async function main()"));
+  if (!/resolveWatch\(process\.env\.BACKUP_WATCH\)/.test(main)) {
     problems.push("main() must pick its watch from BACKUP_WATCH");
+  }
+  // main() is never run by a test, so nothing else sees it hand a fixed watch
+  // to the reader or the alert: the Storage workflow would then judge the dump
+  // and open or close the Storage alert on it.
+  if (!/readBackupFreshness\(\{\s*watch,/.test(main) || !/runWatchdog\(\{\s*watch,/.test(main) || /\bWATCHES\b/.test(main)) {
+    problems.push("main() must pass the watch it resolved, and name no watch itself");
   }
   // The production exit path. `--probe-only`'s exit is pinned separately, but
   // this line is the ONLY thing that turns a FAIL verdict into a red Actions
@@ -679,16 +550,17 @@ export function watchdogWorkflowProblems(yaml, expected) {
   if (/pull_request:/.test(yaml)) {
     problems.push("must not be a pull_request check");
   }
-  if (!new RegExp(`cron: "${expected.cron.replaceAll("*", "\\*")}"`).test(live)) {
+  if (!cronPattern(expected.cron).test(live)) {
     problems.push(`cron must stay ${expected.slot}`);
   }
   for (const { cron, slot } of expected.forbiddenCrons) {
-    if (new RegExp(`cron:\\s*"${cron.replaceAll("*", "\\*")}"`).test(live)) {
+    if (cronPattern(cron).test(live)) {
       problems.push(`must not sit at ${slot}`);
     }
   }
-  if (!new RegExp(`^\\s*BACKUP_WATCH: ${expected.key}$`, "m").test(live)) {
-    problems.push(`must run the ${expected.key} watch (BACKUP_WATCH: ${expected.key})`);
+  const watches = watchesGivenToScript(yaml);
+  if (watches.length === 0 || watches.some((watch) => watch !== expected.key)) {
+    problems.push(`must run the ${expected.key} watch: BACKUP_WATCH reaching the script step is ${JSON.stringify(watches)}`);
   }
   if (!/run: node scripts\/ci\/production-backup-freshness\.mjs$/m.test(live)) {
     problems.push("must run scripts/ci/production-backup-freshness.mjs with no flags");
@@ -715,7 +587,7 @@ for (const expected of EXPECTED) {
     });
 
     it("is schedule + workflow_dispatch only — not a required PR check", () => {
-      assert.ok(liveYaml.includes(`cron: "${expected.cron}"`));
+      assert.match(liveYaml, cronPattern(expected.cron));
       assert.match(workflow, /workflow_dispatch:/);
       assert.doesNotMatch(workflow, /pull_request:/);
       assert.ok(!roster.includes(expected.workflow.replace(/\.yml$/, "")));
@@ -725,10 +597,7 @@ for (const expected of EXPECTED) {
       for (const file of workflowFiles()) {
         if (file === expected.workflow) continue;
         const text = uncommented(readFileSync(join(WORKFLOWS_DIR, file), "utf8"));
-        assert.ok(
-          !text.includes(`cron: "${expected.cron}"`),
-          `${file} collides with ${expected.workflow} at ${expected.slot} UTC`,
-        );
+        assert.doesNotMatch(text, cronPattern(expected.cron), `${file} collides with ${expected.workflow} at ${expected.slot} UTC`);
       }
     });
 
@@ -780,11 +649,11 @@ for (const expected of EXPECTED) {
     };
 
     it(`pointing it at the ${other.key} watch fails`, () => {
-      fails(workflow.replace(`BACKUP_WATCH: ${expected.key}`, `BACKUP_WATCH: ${other.key}`), /BACKUP_WATCH/);
+      fails(workflow.replace(`BACKUP_WATCH: ${expected.key}`, `BACKUP_WATCH: ${other.key}`), /BACKUP_WATCH reaching the script step/);
     });
 
     it("dropping BACKUP_WATCH fails", () => {
-      fails(workflow.replace(/^\s*BACKUP_WATCH: .*\n/m, ""), /BACKUP_WATCH/);
+      fails(workflow.replace(/^\s*BACKUP_WATCH: .*\n/m, ""), /BACKUP_WATCH reaching the script step/);
     });
 
     it("naming environment: production-backup on the watchdog fails", () => {
@@ -801,10 +670,20 @@ for (const expected of EXPECTED) {
       fails(workflow.replace(/install: none/, "install: ci"), /npm ci/);
     });
 
-    it("moving the cron onto a slot it must not take fails", () => {
+    it("adding a slot it must not take fails, even beside its own", () => {
+      // Added, not swapped: swapping also drops its own cron, which fails on
+      // that alone and would hide a deleted forbidden-slot check.
+      const own = `- cron: "${expected.cron}"`;
       for (const { cron, slot } of expected.forbiddenCrons) {
-        fails(workflow.replace(`cron: "${expected.cron}"`, `cron: "${cron}"`), new RegExp(`${expected.slot}|${slot}`));
+        fails(workflow.replace(own, `${own}\n    - cron:  "${cron}"`), new RegExp(`must not sit at ${slot}`));
       }
+    });
+
+    it("moving BACKUP_WATCH off the step that runs the script fails", () => {
+      const moved = workflow
+        .replace(/^\s*BACKUP_WATCH: .*\n/m, "")
+        .replace("install: none", `install: none\n        env:\n          BACKUP_WATCH: ${expected.key}`);
+      fails(moved, /BACKUP_WATCH reaching the script step/);
     });
   });
 }
@@ -889,6 +768,13 @@ describe("script mutations", () => {
 
   it("dropping the in-flight fresh gate fails", () => {
     fails(script.replace("if (!verdict.fresh)", "if (false)"), /in-flight/);
+  });
+
+  it("main() reading or alerting with a fixed watch fails", () => {
+    const main = script.indexOf("async function main()");
+    const inMain = (from, to) => script.slice(0, main) + script.slice(main).replace(from, to);
+    fails(inMain("readBackupFreshness({\n    watch,", "readBackupFreshness({\n    watch: WATCHES.dump,"), /name no watch/);
+    fails(inMain("runWatchdog({\n    watch,", "runWatchdog({\n    watch: WATCHES.storage,"), /name no watch/);
   });
 
   it("defaulting the watch fails", () => {
