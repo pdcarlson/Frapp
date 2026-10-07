@@ -91,6 +91,7 @@
   - the conformance tests.
 
   An unflipped check fails CI. A lock that spans surfaces (calendar PRODID, export filenames, the auth wordmark and the ops-nudge copy) is split per surface by the first step that touches it.
+  *2026-10-07 ([#3225](https://github.com/pdcarlson/Frapp/issues/3225)): with every step done, the thirteen `frapp-*` locks the steps left behind (`frapp-mailer-subjects`, `frapp-landing-copy` and the rest named above) were folded into one table-driven `scripts/ci/__tests__/frapp-naming.test.mjs`, which keeps the same walks, pins and allowlists.*
 
   **This is the one list of specs, docs and consoles each step moves.** `spec/ui/brand-identity.md` § 1 links here rather than keeping its own copy.
   - It was found by reading every Markdown line that says Signet: `spec/` at `ee9dd538`, and `docs/`, the root and package READMEs and `.claude/` at this ADR's branch. The read left out the reference boards (covered by `spec/ui/README.md` precedence rule 1), ADRs, and uses of the name that mean the design system or the product in general prose.

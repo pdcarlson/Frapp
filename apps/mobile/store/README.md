@@ -56,7 +56,7 @@ listing text below (description, review notes) with them. A build made before
 step 2 merged still says Signet. Before submitting, check that `expo.name` is
 `Frapp` in `app.json` at the build's commit, or that the installed TestFlight
 build's home-screen name reads Frapp.
-[`frapp-mobile-copy.test.mjs`](../../../scripts/ci/__tests__/frapp-mobile-copy.test.mjs)
+[`frapp-naming.test.mjs`](../../../scripts/ci/__tests__/frapp-naming.test.mjs)
 fails CI when a line of `apps/mobile`'s source says Signet outside the comment
 the line starts with. It can't see Signet on a line that itself starts like a
 comment (a template or JSX text line beginning `*` or `//`), it reads the
