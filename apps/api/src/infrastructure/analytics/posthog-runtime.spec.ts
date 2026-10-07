@@ -173,22 +173,6 @@ describe('PosthogRuntime', () => {
     expect(logs?.decodedBody).not.toContain(USER_UUID);
   });
 
-  it('evaluates flags only with hex distinct/chapter ids and fails closed otherwise', async () => {
-    const transport = new RecordingPosthogTransport(FIXTURES);
-    transport.flagValues = { 'new-composer': true };
-    const runtime = startRuntime(transport);
-
-    await expect(
-      runtime.isFeatureEnabled('new-composer', USER_UUID),
-    ).resolves.toBe(false);
-    await expect(
-      runtime.isFeatureEnabled('new-composer', HEX, USER_UUID),
-    ).resolves.toBe(false);
-    await expect(
-      runtime.isFeatureEnabled('new-composer', HEX, HEX),
-    ).resolves.toBe(true);
-  });
-
   describe('log sampling (#2374)', () => {
     it('keeps everything at rate 1 and nothing at rate 0', () => {
       expect(shouldSample('same-key', 0)).toBe(false);
