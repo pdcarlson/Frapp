@@ -28,7 +28,7 @@
     "check:links": "node scripts/check-links.mjs",
     "install:lychee": "bash scripts/install-lychee.sh",
     "check:env-slugs": "node scripts/check-env-slugs.mjs",
-    "check:pglite-migrations": "node scripts/check-pglite-migrations.mjs",
+    "check:pglite-migrations": "node scripts/pglite/run.mjs",
     "check:secrets": "node scripts/scan-secrets.mjs",
     "check:npm-audit": "node scripts/check-npm-audit.mjs",
     "check:migration-drift": "node scripts/ci/check-migration-drift.mjs",

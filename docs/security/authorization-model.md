@@ -178,7 +178,7 @@ migration `20260930030000`, which added `discord_import_created_channels`
 migration `20260915210100`, when it had drifted by four: `rush_candidates` and
 `rush_candidate_votes` (#494) had never been added, and `chat_member_blocks` /
 `chat_message_reports` (#2257) arrived with the same gap. Nothing in CI checks
-this list — `scripts/check-pglite-migrations.mjs` reconciles the *policy*
+this list — `scripts/pglite/tiers/policy-inventory.mjs` reconciles the *policy*
 inventory in § "The policies that do exist" and never the table one — so it
 drifts silently and only a re-derivation catches it.
 
@@ -224,7 +224,7 @@ than drift: `realtime.messages` needs a `realtime` schema PGlite does not have.
 `auth_admin_can_read_users` and `auth_admin_can_read_members`, created only inside
 `if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin')`
 (`20260802120000_active_chapter_jwt_claim.sql:137`), are present since the harness creates that
-role before applying migrations (#1557). `scripts/check-pglite-migrations.mjs` pins the `public`
+role before applying migrations (#1557). `scripts/pglite/tiers/policy-inventory.mjs` pins the `public`
 set **by name, command and roles**, so each of these fails CI: adding or dropping one of those 10,
 flipping one from `SELECT` to `ALL`, or changing its `TO` clause. The last case is dropping
 `to authenticated` from `chat_messages_select`, which would bind it to `anon` on hosted. Because
@@ -279,7 +279,7 @@ set search_path = public, pg_temp
 resolution order instead of its implicit position at the front. `search_path = pg_temp, public` is
 not a partial fix — it is the original defect spelled out.
 
-This is checked, not just conventional: `scripts/check-pglite-migrations.mjs` applies every migration
+This is checked, not just conventional: `scripts/pglite/` applies every migration
 and fails the `pglite-migrations` job if any `SECURITY DEFINER` function in `public` does not pin
 `pg_temp` last. Whether that job blocks a merge is set in
 [the branch protection runbook § Required Status Checks](../ops/github-branch-protection-runbook.md#required-status-checks)
@@ -466,7 +466,7 @@ managing permission) *on top of* chapter scoping, so their fixtures are owned by
 
 The rest of the e2e suite stubs `ChapterGuard`; this spec must not, or it tests nothing.
 
-### RLS enforcement (`scripts/check-pglite-migrations.mjs`)
+### RLS enforcement (`scripts/pglite/`)
 
 Four tables are covered black-box, by reading them as unprivileged probe roles rather than by
 pattern-matching the policy expression: `rls_probe`, a member of `authenticated`, for a signed-in
