@@ -200,17 +200,22 @@ function copyWalkFiles(row) {
 }
 
 // ---------------------------------------------------------------------------
-// TEXT_BANS. Whole-file, comments included.
+// TEXT_BANS. Whole-file, comments included. `reach` as in COPY_WALKS: an
+// empty walk would pass every ban.
 
 export const TEXT_BANS = [
   // The seeded system actor (users.id all zeros). Chat cards don't print it
   // today, so a revert would be silent on the UI.
-  { walk: "product", ban: /Signet System/ },
+  {
+    walk: "product",
+    ban: /Signet System/,
+    reach: ["apps/api/src/main.ts", "apps/web/app/layout.tsx", "apps/mobile/app/(auth)/sign-in.tsx", "packages/validation/src/index.ts"],
+  },
   // Specs keep design-system test names ("no Signet map"), so they aren't
   // walked for the word, only for the payment fixtures a sweep would copy
   // back into stripe.ts or the balance card.
-  { walk: "mobileSpecs", ban: /merchantDisplayName:\s*"Signet"/ },
-  { walk: "mobileSpecs", ban: /installed Signet build/ },
+  { walk: "mobileSpecs", ban: /merchantDisplayName:\s*"Signet"/, reach: ["apps/mobile/lib/payments/stripe.spec.ts"] },
+  { walk: "mobileSpecs", ban: /installed Signet build/, reach: ["apps/mobile/components/dues/balance-card.spec.tsx"] },
 ];
 
 export function textBanProblems(row, list) {
@@ -374,8 +379,9 @@ export function landingRouteCoverageProblems(list) {
 }
 
 // ---------------------------------------------------------------------------
-// PINS. `has` and `lacks` take a string (included), a RegExp (tested), or
-// { re, min } / { re, exactly } for a global RegExp's match count. `section`
+// PINS. `has` and `lacks` take a string (included), a RegExp (tested),
+// { re, min } / { re, exactly } for a global RegExp's match count, or
+// { count, min } for a count a function takes. `section`
 // narrows the source first; an empty section fails every `has`. `check` is
 // for what a pattern can't say.
 
@@ -409,8 +415,12 @@ export function builderDescription(source) {
 const OPENAPI_CONFIG = "apps/api/src/openapi-config.ts";
 const SYSTEM_MIGRATION = "20260924190000_rename_system_actor_to_frapp.sql";
 const INVITE_BODY = "invited to join a chapter on Frapp as";
-const titleProp = (value) => new RegExp(`\\btitle=(?:["']${literal(value)}["']|\\{\\s*["']${literal(value)}["']\\s*\\})`, "g");
-const subtitleProp = (value) => new RegExp(`\\bsubtitle=(?:["']${literal(value)}["']|\\{\\s*["']${literal(value)}["']\\s*\\})`, "g");
+/** A count entry for PINS: how many `prop=` values in a file equal `value`, read by jsxProp. */
+const propCount = (prop, value, min) => ({
+  what: `${prop}="${value}"`,
+  count: (source) => jsxProp(source, prop).filter((found) => found === value).length,
+  min,
+});
 
 export const PINS = [
   // --- Auth, as staging-conformance checks it (ADR-25 step 3) -------------
@@ -579,12 +589,12 @@ export const PINS = [
   {
     file: "apps/web/app/page.tsx",
     why: "the web home wordmark and brand tagline",
-    has: [{ re: titleProp("Frapp"), min: 1 }, { re: subtitleProp(TAGLINE), min: 1 }],
+    has: [propCount("title", "Frapp", 1), propCount("subtitle", TAGLINE, 1)],
   },
   {
     file: "apps/web/app/sign-in/page.tsx",
     why: "the sign-in form's and its Suspense fallback's wordmark and tagline",
-    has: [{ re: titleProp("Frapp"), min: 2 }, { re: subtitleProp(TAGLINE), min: 2 }],
+    has: [propCount("title", "Frapp", 2), propCount("subtitle", TAGLINE, 2)],
   },
 
   // --- Mobile (ADR-25 step 2) ----------------------------------------------
@@ -706,13 +716,15 @@ export const PINS = [
 ];
 
 function describe(entry) {
-  return typeof entry === "string" ? JSON.stringify(entry) : String(entry.re ?? entry);
+  if (typeof entry === "string") return JSON.stringify(entry);
+  if (entry.count) return `${entry.min}+ ${entry.what}`;
+  return String(entry.re ?? entry);
 }
 
 function holds(source, entry) {
   if (typeof entry === "string") return source.includes(entry);
   if (entry instanceof RegExp) return new RegExp(entry.source, entry.flags.replace("g", "")).test(source);
-  const count = [...source.matchAll(entry.re)].length;
+  const count = entry.count ? entry.count(source) : [...source.matchAll(entry.re)].length;
   return entry.exactly === undefined ? count >= entry.min : count === entry.exactly;
 }
 
@@ -798,7 +810,11 @@ for (const row of COPY_WALKS) {
 }
 
 test("no whole-file Signet leftovers", () => {
-  for (const row of TEXT_BANS) assert.deepEqual(textBanProblems(row, files(row.walk)), [], String(row.ban));
+  for (const row of TEXT_BANS) {
+    const list = files(row.walk);
+    for (const rel of row.reach) assert.ok(list.some((file) => file.rel === rel), `the ${row.walk} walk must reach ${rel}`);
+    assert.deepEqual(textBanProblems(row, list), [], String(row.ban));
+  }
 });
 
 for (const row of SITE_ROSTERS) {
@@ -826,6 +842,34 @@ test("both Settings recovery paths name expo.name", () => {
   assert.deepEqual(settingsPathProblems(files("mobile"), expoName), []);
   // Renaming the binary without its Settings paths fails.
   assert.equal(settingsPathProblems(files("mobile"), "Signet").length, SETTINGS_SITES.length);
+});
+
+// Lowering a floor or moving a root in the table above takes a second,
+// matching edit here, so the change can't hide in one number. The locks this
+// replaces each held the same check on their own constants.
+test("the table keeps its floors and roots", () => {
+  const floor = (what) => COLLECTED.find((row) => row.what === what).min;
+  assert.equal(floor("web metadata title"), 18);
+  assert.equal(floor("landing metadata title"), 7);
+  const pinned = (file) => PINS.filter((pin) => pin.file === file).flatMap((pin) => pin.has ?? []);
+  assert.deepEqual(pinned("apps/web/app/page.tsx").map((entry) => entry.min), [1, 1]);
+  assert.deepEqual(pinned("apps/web/app/sign-in/page.tsx").map((entry) => entry.min), [2, 2]);
+  assert.equal(pinned("apps/landing/app/layout.tsx")[0].exactly, 3);
+  assert.equal(pinned("apps/landing/app/page.tsx")[0].exactly, 2);
+  assert.deepEqual(SETTINGS_SITES, ["apps/mobile/app/(tabs)/study.tsx", "apps/mobile/components/study/location-primer-sheet.tsx"]);
+  assert.deepEqual(SITE_ROSTERS.find((row) => row.kind === "ops-nudge catalog").sites, ["packages/validation/src/ops-nudges.ts"]);
+  const roots = Object.fromEntries(
+    Object.entries(WALKS).map(([name, spec]) => [name, typeof spec.roots === "function" ? spec.roots() : spec.roots]),
+  );
+  assert.deepEqual(roots.mobile, ["apps/mobile"]);
+  assert.deepEqual(roots.mobileSpecs, ["apps/mobile"]);
+  assert.deepEqual(roots.api, ["apps/api/src"]);
+  assert.deepEqual(roots.web, ["apps/web", ...packageSources()]);
+  assert.deepEqual(roots.webApp, ["apps/web/app"]);
+  assert.deepEqual(roots.landing, ["apps/landing"]);
+  assert.deepEqual(roots.product, ["apps/web", "apps/api", "apps/mobile", "packages"]);
+  assert.deepEqual(roots.validation, ["packages/validation"]);
+  assert.ok(String(WALKS.mobile.ext).includes("json"), "the mobile walk must read app.json, not only code");
 });
 
 // ---------------------------------------------------------------------------

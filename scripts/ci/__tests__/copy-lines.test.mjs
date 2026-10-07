@@ -49,7 +49,7 @@ test("a comment earlier on the same line exempts nothing after it closes", () =>
 });
 
 test("every JavaScript line break ends a comment line", () => {
-  for (const brk of ["\r", "\r\n", " ", " "]) {
+  for (const brk of ["\r", "\r\n", "\u2028", "\u2029"]) {
     assert.deepEqual(hits([{ rel: "a.tsx", source: `// design note${brk}<Text>Welcome to Signet</Text>\n` }]), ["a.tsx:2"], JSON.stringify(brk));
     assert.deepEqual(downloads([{ rel: "a.ts", source: `// note${brk}const f = "signet-events.ics";\n` }]), ["a.ts:2"], JSON.stringify(brk));
   }

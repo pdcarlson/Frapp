@@ -91,7 +91,7 @@
   - the conformance tests.
 
   An unflipped check fails CI. A lock that spans surfaces (calendar PRODID, export filenames, the auth wordmark and the ops-nudge copy) is split per surface by the first step that touches it.
-  *2026-10-07 ([#3225](https://github.com/pdcarlson/Frapp/issues/3225)): with every step done, the thirteen `frapp-*` locks the steps left behind (`frapp-mailer-subjects`, `frapp-landing-copy` and the rest named above) were folded into one table-driven `scripts/ci/__tests__/frapp-naming.test.mjs`, which keeps the same walks, pins and allowlists.*
+  *2026-10-07 ([#3225](https://github.com/pdcarlson/Frapp/issues/3225)): with the code steps 2 to 5 landed, the thirteen locks they left behind (`frapp-api-copy`, `frapp-auth-wordmark`, `frapp-invite-from`, `frapp-landing-copy`, `frapp-mailer-subjects`, `frapp-mobile-copy`, `frapp-mobile-permissions`, `frapp-ops-nudge-copy`, `frapp-public-title`, `frapp-smtp-sender-name`, `frapp-system-display-name`, `frapp-web-copy`, `frapp-web-titles`) were folded into one table-driven `scripts/ci/__tests__/frapp-naming.test.mjs`. Its walks, pinned sites, allowlists and floors are the locks' own, and a plant at each formerly pinned site fails it. Step 6 and the owner's console follow-ups above are unaffected.*
 
   **This is the one list of specs, docs and consoles each step moves.** `spec/ui/brand-identity.md` § 1 links here rather than keeping its own copy.
   - It was found by reading every Markdown line that says Signet: `spec/` at `ee9dd538`, and `docs/`, the root and package READMEs and `.claude/` at this ADR's branch. The read left out the reference boards (covered by `spec/ui/README.md` precedence rule 1), ADRs, and uses of the name that mean the design system or the product in general prose.
