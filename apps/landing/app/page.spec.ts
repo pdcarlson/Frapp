@@ -312,18 +312,18 @@ describe("landing page structure", () => {
 describe("landing motion stylesheet", () => {
   /**
    * The durations and easings in `globals.css` are a CSS mirror of the JS
-   * motion scale. `packages/theme/src/tokens.ts` is not a package export and
+   * motion scale. `packages/theme/src/motion.ts` is not a package export and
    * the scale has no CSS form, so the values are restated; this is what stops
    * the restatement from becoming a second scale.
    */
   const tokensSource = readFileSync(
-    join(repoRoot, "packages/theme/src/tokens.ts"),
+    join(repoRoot, "packages/theme/src/motion.ts"),
     "utf8",
   );
 
   function jsNumber(name: string): number {
     const match = new RegExp(`${name}:\\s*(\\d+)`).exec(tokensSource);
-    if (!match) throw new Error(`motion.duration.${name} not found in tokens.ts`);
+    if (!match) throw new Error(`motion.duration.${name} not found in motion.ts`);
     return Number(match[1]);
   }
 
@@ -333,13 +333,13 @@ describe("landing motion stylesheet", () => {
     return Number(match[1]);
   }
 
-  it("mirrors the motion durations from tokens.ts", () => {
+  it("mirrors the motion durations from motion.ts", () => {
     expect(cssMs("motion-micro")).toBe(jsNumber("micro"));
     expect(cssMs("motion-standard")).toBe(jsNumber("standard"));
     expect(cssMs("motion-context")).toBe(jsNumber("context"));
   });
 
-  it("mirrors the easing curves from tokens.ts", () => {
+  it("mirrors the easing curves from motion.ts", () => {
     const normalize = (value: string) => value.replace(/\s+/g, "");
     for (const [cssName, jsName] of [
       ["motion-ease-standard", "standard"],
@@ -348,7 +348,7 @@ describe("landing motion stylesheet", () => {
       const css = new RegExp(`--${cssName}:\\s*([^;]+);`).exec(globalsSource)?.[1];
       const js = new RegExp(`${jsName}:\\s*"([^"]+)"`).exec(tokensSource)?.[1];
       expect(css, `--${cssName} missing from globals.css`).toBeDefined();
-      expect(js, `motion.easing.${jsName} missing from tokens.ts`).toBeDefined();
+      expect(js, `motion.easing.${jsName} missing from motion.ts`).toBeDefined();
       expect(normalize(css ?? "")).toBe(normalize(js ?? "unmatched"));
     }
   });

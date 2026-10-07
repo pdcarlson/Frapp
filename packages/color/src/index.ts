@@ -4,8 +4,9 @@
  * Three copies of this arithmetic used to exist: one in `@repo/theme`, one in
  * `@repo/chapter-theme` (which inlined it deliberately, to avoid importing
  * theme's private helpers), and one in the API. The first two now import from
- * here (#797) — `packages/theme/src/accent.ts` and
- * `packages/chapter-theme/src/signet.ts`. The API's copy was deleted as dead
+ * here (#797) — the resolver now at
+ * `apps/web/components/settings/resolve-chapter-accent.ts` (#3227 moved it out
+ * of `@repo/theme`) and `packages/chapter-theme/src/signet.ts`. The API's copy was deleted as dead
  * code once the contrast gate moved into `deriveSignetPalette`, so this is now
  * the only implementation, with no second copy to keep in agreement.
  *
@@ -105,8 +106,9 @@ export type MeetsContrastOptions = {
   minimum?: number;
   /**
    * Round to 2dp before comparing. Defaults to `false` (exact).
-   * `packages/theme`'s accent resolver passes `true` to preserve its long-standing
-   * behavior; `packages/chapter-theme` leaves it `false` because its output is
+   * The web Settings accent resolver
+   * (`apps/web/components/settings/resolve-chapter-accent.ts`) passes `true` to
+   * preserve its long-standing behavior; `packages/chapter-theme` leaves it `false` because its output is
    * persisted to `chapters.theme_palette`.
    */
   round?: boolean;
