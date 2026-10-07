@@ -55,7 +55,7 @@ No CI check enforces this lock; it is a review rule. A line grep for `—` over 
 
 ## Navigation map
 
-Source of truth: [`apps/web/components/layout/nav-config.ts`](../../../apps/web/components/layout/nav-config.ts). Each item declares `requirePermission` or `requireAnyOf`; the shell hides items the caller cannot access. The caller's effective permission set is loaded once via `GET /v1/users/me/permissions` and cached with TanStack Query (resolution rules: [`spec/behavior/rbac.md`](../../behavior/rbac.md)).
+Source of truth: [`apps/web/components/layout/nav-config.ts`](../../../apps/web/components/layout/nav-config.ts). Each item declares `requirePermission` or `requireAnyOf`; the shell hides items the caller cannot access. The caller's effective permission set is loaded once via `GET /v1/users/me/permissions` and cached with TanStack Query (resolution rules: [`spec/behavior/rbac.md`](../../behavior/rbac.md)). Controls inside a screen gate through `<Can>` or the `can()` / `canAny()` / `canAll()` helpers, which live in `@repo/validation` ([`packages/validation/src/permissions.ts`](../../../packages/validation/src/permissions.ts)) rather than in `apps/web`, because `apps/mobile` needs the same gate and the wildcard `*` rule has to match the server's `PermissionsGuard`: a per-app copy is how that drifts. `/no-access` explains the next steps to a signed-in user with no chapter role ([Gating & routing semantics](#gating--routing-semantics)).
 
 A Chat anchor, two member sections (Chapter, Resources), and one unlabeled group holding Directory, Billing and Settings. Officer setup and officer tools sit behind the Settings row; there is no Admin group ([#2946](https://github.com/pdcarlson/Frapp/issues/2946)).
 
