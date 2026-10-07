@@ -3,8 +3,9 @@
  *
  * Rules encode boundaries this codebase already states in prose but nothing
  * enforced: the API's layer direction (`.claude/skills/api-development/SKILL.md`,
- * and "Architecture pattern" in `spec/architecture/README.md`), and the
- * monorepo's app/package separation.
+ * and "Architecture pattern" in `spec/architecture/README.md`), that the API's
+ * `src/modules/` holds Nest wiring only, and the monorepo's app/package
+ * separation.
  *
  * ## Why this config is workspace-aware
  *
@@ -109,7 +110,10 @@ const NOT_SHIPPED_CODE =
 /**
  * apps/api layer direction: Interface → Application → Infrastructure → Domain.
  * Outer may import inner; never the reverse. One rule per illegal edge, so a
- * failure names the boundary that broke rather than "a layering rule".
+ * failure names the boundary that broke rather than "a layering rule". Also
+ * here, because they are API-only: `api-domain-by-subpath` (how the domain is
+ * imported) and the three `api-modules-wiring-only` forms (what may live under
+ * `src/modules/`), which are about placement rather than edge direction.
  */
 const apiLayerRules = [
   {

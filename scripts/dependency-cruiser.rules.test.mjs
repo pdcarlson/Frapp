@@ -79,6 +79,11 @@ function cruiseFixture() {
       // depcruise exits non-zero on violations; the report is still on stdout.
       stdout = error.stdout;
     }
+    // No JSON means depcruise failed before reporting (a config that throws on
+    // load, a missing binary); say so rather than fail inside JSON.parse.
+    if (!stdout || !stdout.trim().startsWith("{")) {
+      throw new Error(`depcruise produced no report:\n${stdout ?? ""}`);
+    }
     return JSON.parse(stdout)
       .summary.violations.filter((v) =>
         v.rule.name.startsWith("api-modules-wiring-only"),

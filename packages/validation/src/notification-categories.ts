@@ -24,13 +24,14 @@
  *   non-URGENT traffic to switch: **both** emitters send URGENT —
  *   `chat.service.ts:834` broadcasts every announcements-channel post that way,
  *   and the chat push worker marks anything its announcement predicate matches
- *   the same (`chat-push-worker.service.ts:421`, keyed on `kind` OR a channel
- *   *named* `announcements`). So a preference row here would suppress nothing —
- *   the exact dead-control failure the first paragraph of this docblock exists
- *   to prevent. It ships once routine announcements are distinguishable from
- *   emergency ones; see #1323. (An earlier version of this docblock said
- *   `chat.service.ts` was the only emitter, which would have let someone
- *   evaluating #1323 check one call site and miss the worker's.)
+ *   the same (`isAnnouncementPush` in `chat-push-worker.service.ts`, keyed
+ *   on `kind` OR a channel *named* `announcements`). So a preference row here
+ *   would suppress nothing — the exact dead-control failure the first
+ *   paragraph of this docblock exists to prevent. It ships once routine
+ *   announcements are distinguishable from emergency ones; see #1323. (An
+ *   earlier version of this docblock said `chat.service.ts` was the only
+ *   emitter, which would have let someone evaluating #1323 check one call
+ *   site and miss the worker's.)
  * - **`admin`** — "new member joined" / "invite accepted" / "role change", and
  *   "message reported" to the officers who can open the chat report queue
  *   (`ChatReportService`, via `notifyUser`). It is member-facing in *delivery*

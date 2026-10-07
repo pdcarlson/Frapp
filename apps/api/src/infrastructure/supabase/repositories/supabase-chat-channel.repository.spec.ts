@@ -1,5 +1,6 @@
 import { SupabaseChatChannelRepository } from './supabase-chat-channel.repository';
 import type { FrappSupabaseClient } from '../database.types';
+import { SupabaseQueryError } from '../supabase-query-error';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -343,5 +344,49 @@ describe('SupabaseChatChannelRepository — createDm when the pair already exist
     await expect(repo.createDm(CHAPTER, [LOW, HIGH])).rejects.toMatchObject({
       code: '23514',
     });
+  });
+});
+
+describe('SupabaseChatChannelRepository — a failed read throws', () => {
+  /**
+   * A `.select().eq()…maybeSingle()` chain that answers with `error`. The
+   * callers tell a failed read from a missing row only by the throw: the push
+   * worker warns `chat-push: channel lookup failed`, and the audit bridge warns
+   * that its `#chapter-audit` lookup failed. A `null` here would read as "gone"
+   * and drop the push or the mirror without a warning.
+   */
+  function clientAnswering(error: { code: string; message: string }) {
+    const builder: Record<string, unknown> = {};
+    builder.select = jest.fn(() => builder);
+    builder.eq = jest.fn(() => builder);
+    builder.maybeSingle = jest.fn(() => Promise.resolve({ data: null, error }));
+    return {
+      from: jest.fn(() => builder),
+    } as unknown as FrappSupabaseClient;
+  }
+
+  it('findPushRouting throws rather than reading the failure as a gone channel', async () => {
+    const repo = new SupabaseChatChannelRepository(
+      clientAnswering({ code: '08006', message: 'connection reset' }),
+    );
+
+    await expect(repo.findPushRouting('channel-1')).rejects.toBeInstanceOf(
+      SupabaseQueryError,
+    );
+  });
+
+  it('findByName throws when two channels share the name, rather than answering null', async () => {
+    // PostgREST's maybeSingle answer for more than one row: what a second
+    // `chapter-audit` channel makes the audit bridge's lookup return (#3264).
+    const repo = new SupabaseChatChannelRepository(
+      clientAnswering({
+        code: 'PGRST116',
+        message: 'JSON object requested, multiple (or no) rows returned',
+      }),
+    );
+
+    await expect(
+      repo.findByName('chapter-1', 'chapter-audit'),
+    ).rejects.toBeInstanceOf(SupabaseQueryError);
   });
 });

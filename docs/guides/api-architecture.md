@@ -155,7 +155,7 @@ Example: adding a `polls` module.
 
 2. **Infrastructure layer**
    - Implement `SupabasePollRepository` in `src/infrastructure/supabase/repositories/supabase-poll.repository.ts`.
-   - Use the shared `SupabaseClient` provider to query the `polls` table.
+   - Inject the shared client as `@Inject(SUPABASE_CLIENT) supabase: FrappSupabaseClient`, never the bare `SupabaseClient`, to query the `polls` table.
 
 3. **Application layer**
    - Add `PollService` in `src/application/services/poll.service.ts`.

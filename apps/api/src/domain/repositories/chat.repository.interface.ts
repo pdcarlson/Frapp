@@ -241,9 +241,11 @@ export interface IChatMessageRepository {
   create(data: Partial<ChatMessage>): Promise<ChatMessage>;
   /**
    * Insert a row whose `client_message_id` makes it idempotent, without
-   * reading it back. A unique violation on the `(channel_id, sender_id,
-   * client_message_id)` dedupe index is `'duplicate'` (another writer got
-   * there first); any other error, another unique index's included, throws.
+   * reading it back. A unique violation on a row carrying the whole
+   * `(channel_id, sender_id, client_message_id)` dedupe key is `'duplicate'`
+   * (another writer got there first); any other error throws, including a
+   * unique violation on a row without that key. The index is inferred from
+   * the row, so a caller must not also supply `id` or `external_message_id`.
    */
   insertIdempotent(
     data: Partial<ChatMessage>,
