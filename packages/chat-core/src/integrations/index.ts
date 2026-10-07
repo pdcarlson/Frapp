@@ -246,18 +246,3 @@ export function parseSlashInput(raw: string): ParsedSlashInput {
   const command = match[1] ? match[1].toLowerCase() : null;
   return { isSlash: true, command, args: (match[2] ?? "").trim(), raw };
 }
-
-/**
- * Guard-parses a numeric slash argument. Returns `null` for anything that
- * isn't a finite number so callers never propagate `NaN` (master-plan
- * input-handling rule). Chunk 05 commands that take counts/amounts use this.
- */
-export function parseNumericArg(
-  token: string | undefined | null,
-): number | null {
-  if (token == null) return null;
-  const trimmed = token.trim();
-  if (trimmed.length === 0) return null;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
-}
