@@ -14,7 +14,7 @@
 // - A walk of apps/api/src's non-spec .ts files and the committed
 //   openapi.json: no whole word "Signet" and no signet- download filename
 //   outside the comment a line starts with (the note on LINE_BREAK in
-//   ../lib/copy-lines.mjs says why). One thing passes, DESIGN_SYSTEM_PHRASE.
+//   ./helpers/copy-lines.mjs says why). One thing passes, DESIGN_SYSTEM_PHRASE.
 //   "Signet" stays the design system's name until the internals series after
 //   the beta, and the palette engine's server log lines name its accent
 //   ("Signet accent contrast below AA"). Only that phrase passes. The OpenAPI
@@ -37,7 +37,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { copyMatches, SIGNET_DOWNLOAD_NAME } from "../lib/copy-lines.mjs";
+import { copyMatches, SIGNET_DOWNLOAD_NAME } from "./helpers/copy-lines.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const API_SRC = join(REPO_ROOT, "apps/api/src");
