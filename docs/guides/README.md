@@ -12,7 +12,7 @@ These markdown files are the **source of truth** for Frapp developer-facing guid
 | Testing                 | [testing.md](testing.md)                   |
 | Accessibility testing   | [accessibility-testing.md](accessibility-testing.md) |
 | Demo data & screenshots | [demo-data.md](demo-data.md)               |
-| Contributing            | [contributing.md](contributing.md)         |
+| Contributing            | [CONTRIBUTING.md](../../CONTRIBUTING.md) (repo root) |
 
 **Default local run (API + web + landing):** `npm run dev:stack` from repo root after Infisical login — full detail and alternatives in [`../internal/environment/LOCAL_DEV.md`](../internal/environment/LOCAL_DEV.md).
 
