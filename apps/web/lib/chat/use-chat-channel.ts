@@ -29,7 +29,7 @@ import { useFrappClient } from "@repo/hooks";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { useChannelDraft } from "./use-channel-draft";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 import {
   chatMessagesKey,

@@ -297,6 +297,10 @@ export function isWithinArchiveUploadSizeLimit(byteLength: number): boolean {
   );
 }
 
+/**
+ * Not re-exported from the package: no product code needs the raw list. The
+ * specs read it, and the `archive` spec holds it against its bucket migration.
+ */
 export function uploadMimeList(kind: UploadKind): readonly string[] {
   return KINDS[kind].mimeList;
 }
