@@ -90,7 +90,7 @@ describeIntegration('Chapter logo replacement against live storage', () => {
       unused,
       unused,
       storage,
-      supabase,
+      unused,
       unused,
       auditLog,
     );
