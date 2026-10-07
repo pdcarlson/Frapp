@@ -6,7 +6,6 @@
   "exports": {
     "./tailwind": "./src/tailwind.config.ts",
     "./signet.css": "./src/signet.css",
-    "./accent": "./src/accent.ts",
     "./signet": "./src/signet.ts"
   },
   "scripts": {
@@ -15,10 +14,8 @@
     "test": "vitest run",
     "test:cov": "vitest run --coverage"
   },
-  "dependencies": {
-    "@repo/color": "*"
-  },
   "devDependencies": {
+    "@repo/color": "*",
     "@repo/chapter-theme": "*",
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",

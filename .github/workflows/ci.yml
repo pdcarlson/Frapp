@@ -152,7 +152,7 @@ jobs:
       - name: Shared validation package tests
         run: npm run test -w @repo/validation
 
-      # Its contrast math feeds theme and chapter-theme, whose suites pin their callers, not this package.
+      # Its contrast math feeds chapter-theme, hooks and apps/web, whose suites pin their callers, not this package.
       - name: Shared color package tests
         run: npm run test -w @repo/color
 
