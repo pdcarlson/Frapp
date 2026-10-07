@@ -5,7 +5,7 @@ import { useUpdateRole } from "@repo/hooks";
 import { cn, getErrorMessage, initials } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 
 export type MatrixRole = {
   id: string;

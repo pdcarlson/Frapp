@@ -18,7 +18,7 @@ vi.mock("@repo/hooks", () => ({
   useRemoveAvatar: () => ({ mutateAsync: mocks.remove }),
   putSignedUpload: (input: unknown) => mocks.put(input),
 }));
-vi.mock("@/hooks/use-toast", () => ({
+vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mocks.toast }),
 }));
 
