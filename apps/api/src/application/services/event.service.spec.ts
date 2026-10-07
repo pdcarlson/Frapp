@@ -580,6 +580,28 @@ describe('EventService', () => {
       }
     });
 
+    it('fails the request when one occurrence insert fails', async () => {
+      const weeklyEvent: Event = {
+        ...baseEvent,
+        recurrence_rule: 'WEEKLY',
+      };
+      mockEventRepo.create
+        .mockResolvedValueOnce(weeklyEvent)
+        .mockResolvedValueOnce(weeklyEvent)
+        .mockRejectedValueOnce(new Error('insert failed'))
+        .mockResolvedValue(weeklyEvent);
+
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          name: 'Chapter Meeting',
+          start_time: baseEvent.start_time,
+          end_time: baseEvent.end_time,
+          recurrence_rule: 'WEEKLY',
+        }),
+      ).rejects.toThrow('insert failed');
+    });
+
     it('should not generate instances when no recurrence_rule is set', async () => {
       mockEventRepo.create.mockResolvedValue(baseEvent);
 
