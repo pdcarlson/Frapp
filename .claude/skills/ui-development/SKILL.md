@@ -32,7 +32,7 @@ Primitives follow ShadCN conventions: CVA variants, `cn()` from `@/lib/utils`, a
 behavior. To add one, copy it into `components/ui/` and install its Radix package with
 `npm install @radix-ui/react-<primitive> -w apps/web`. Don't add a registry primitive for a single
 call site. Several were deleted for having only one, and the replacements are
-`components/shared/async-states.tsx` (skeletons), `components/ui/toast.tsx` + `hooks/use-toast.ts`
+`components/shared/async-states.tsx` (skeletons), `components/ui/toast.tsx` + `lib/hooks/use-toast.ts`
 (toasts), and `DropdownMenuSeparator`'s classes (a rule).
 
 Conventions that are easy to get wrong:

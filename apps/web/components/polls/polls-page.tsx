@@ -47,7 +47,7 @@ import {
   type SubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { asArray, getErrorMessage } from "@/lib/utils";
 

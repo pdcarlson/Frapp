@@ -42,5 +42,15 @@ export * from "./use-custom-fields";
 export * from "./use-discord-import";
 export * from "./use-discord-connection";
 export * from "./channel-sidebar";
-export * from "./use-chat-sidebar";
+// `useChatSidebar` and its query keys stay module-private: every surface reads
+// the arrangement through `useSidebarPreferences`.
+export {
+  useSidebarPreferences,
+  useSetSidebarFilter,
+  useSetSidebarSectionCollapsed,
+  useSetChannelPinned,
+  type SidebarPreferences,
+  type SidebarFilterChange,
+  type SidebarWriteOptions,
+} from "./use-chat-sidebar";
 export * from "./use-discord-author-link";
