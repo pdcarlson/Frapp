@@ -232,7 +232,7 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 | `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`) |
 | `dependency-audit`   | npm audit gate: any high/critical advisory not allowlisted in `scripts/npm-audit-allowlist.json` fails (issue #618) |
 | `chapter-directory-seed` | `supabase/seed/chapter_directory.csv`: canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (issue #840) |
-| `web-tests`          | `apps/web` + the shared packages only this suite covers (`packages/hooks`, `packages/chat-core`, `packages/chat-integrations`) |
+| `web-tests`          | `apps/web` + the shared packages only this suite covers (`packages/hooks`, `packages/chat-core`) |
 | `changes`            | Path filter deciding whether `web-tests`, `web-responsive-floor`, `landing-fold` and `pglite-migrations` run; required only because they need it |
 | `pglite-migrations`  | Every migration applied from empty to PGlite, with the RLS posture asserted on the result (`scripts/pglite/`), then the change-ping contract checked against the same replay (`apps/web/lib/realtime/change-topics.spec.ts`). Added to the roster by [#2538](https://github.com/pdcarlson/Frapp/issues/2538). `validate-deploy-sha` requires it for production deploys from the roster alone; a PR can merge past a red run until an admin applies the roster, which `--verify` shows |
 | `dependency-cruiser` | Architectural boundaries (API layer direction, package/app separation, cycles) against a committed baseline — [`quality-gates.md`](../ci-cd/quality-gates.md) |

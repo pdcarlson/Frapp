@@ -28,7 +28,6 @@
     "@repo/api-sdk": "*",
     "@repo/chapter-theme": "*",
     "@repo/chat-core": "*",
-    "@repo/chat-integrations": "*",
     "@repo/color": "*",
     "@repo/formatting": "*",
     "@repo/hooks": "*",

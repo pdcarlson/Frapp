@@ -3,13 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "exports": {
-    ".": "./src/index.ts",
     "./adapters": "./src/adapters.ts",
     "./topic-registry": "./src/topic-registry.ts",
     "./types": "./src/types.ts",
     "./cache": "./src/cache.ts",
     "./history": "./src/history.ts",
     "./dispatch": "./src/dispatch.ts",
+    "./integrations": "./src/integrations/index.ts",
     "./chat-client": "./src/chat-client.ts",
     "./realtime-manager": "./src/realtime-manager.ts",
     "./polls": "./src/polls.ts",
@@ -31,7 +31,6 @@
   },
   "dependencies": {
     "@repo/api-sdk": "*",
-    "@repo/chat-integrations": "*",
     "@repo/formatting": "*",
     "@repo/validation": "*",
     "@supabase/supabase-js": "^2.117.1",

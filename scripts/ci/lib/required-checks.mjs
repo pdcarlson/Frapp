@@ -67,8 +67,8 @@ export const CI_CHECKS = [
   // engine turns a malformed hex into a plausible wrong color, not an error.
   // ROLLOUT: same caveat as secret-scan.
   "chapter-directory-seed",
-  // apps/web + packages/hooks, chat-core and chat-integrations, the only suite
-  // covering packages/hooks. Path-gated by a job-level `if:`, which reports
+  // apps/web + packages/hooks and chat-core, the only suite covering
+  // packages/hooks. Path-gated by a job-level `if:`, which reports
   // Success when skipped, so it can still be required (ADR-15 amendment
   // 2026-08-19). ROLLOUT: same caveat as secret-scan.
   "web-tests",
