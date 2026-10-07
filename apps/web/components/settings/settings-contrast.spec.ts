@@ -10,7 +10,7 @@ import {
   SURFACE,
   TEXT,
 } from "@/tests/signet-contrast";
-import { resolveChapterAccentColor } from "@repo/theme/accent";
+import { resolveChapterAccentColor } from "@/components/settings/resolve-chapter-accent";
 import {
   ACCENT_PREVIEW_INK,
   formatFailingRatio,
