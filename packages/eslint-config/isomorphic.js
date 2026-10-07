@@ -13,6 +13,10 @@ import { config as baseConfig } from "./base.js";
  * The shared `onlyWarn` plugin reports a hit as a warning; every adopting
  * workspace lints with `--max-warnings 0`, so it still fails.
  *
+ * The rule sees bare references only: `globalThis.document` is a property
+ * access it does not flag. Dropping DOM from a package's tsconfig `lib` is the
+ * guard for that inside the compiled sources.
+ *
  * @type {import("eslint").Linter.Config[]}
  * */
 export const isomorphicConfig = [
@@ -24,7 +28,9 @@ export const isomorphicConfig = [
         "window",
         "document",
         "navigator",
+        "location",
         "localStorage",
+        "sessionStorage",
       ],
     },
   },
