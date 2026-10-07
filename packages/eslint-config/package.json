@@ -5,6 +5,7 @@
   "private": true,
   "exports": {
     "./base": "./base.js",
+    "./isomorphic": "./isomorphic.js",
     "./next-js": "./next.js",
     "./react-internal": "./react-internal.js"
   },
