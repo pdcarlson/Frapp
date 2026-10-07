@@ -24,7 +24,8 @@ import type { IMemberRepository } from '#domain/repositories/member.repository.i
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import {
   DEFAULT_SYSTEM_ROLES,
   DEFAULT_CHANNELS,
@@ -64,8 +65,7 @@ describe('ChapterService', () => {
     deleteFiles: jest.Mock;
     listObjects: jest.Mock;
   };
-  let mockSupabase: { from: jest.Mock };
-  let mockInsert: jest.Mock;
+  let mockChannelRepo: { createMany: jest.Mock };
   let mockAuditLog: AuditLogServiceMock;
 
   beforeEach(async () => {
@@ -97,6 +97,7 @@ describe('ChapterService', () => {
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
+      updatePaletteIfSeedUnchanged: jest.fn(),
       applySubscriptionWebhook: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -138,10 +139,7 @@ describe('ChapterService', () => {
       anonymize: jest.fn(),
     };
 
-    mockInsert = jest.fn().mockResolvedValue({ error: null });
-    mockSupabase = {
-      from: jest.fn().mockReturnValue({ insert: mockInsert }),
-    };
+    mockChannelRepo = { createMany: jest.fn().mockResolvedValue(undefined) };
 
     mockAuditLog = createAuditLogServiceMock();
 
@@ -152,7 +150,7 @@ describe('ChapterService', () => {
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
-        { provide: SUPABASE_CLIENT, useValue: mockSupabase },
+        { provide: CHAT_CHANNEL_REPOSITORY, useValue: mockChannelRepo },
         { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: ChapterAuditLogService, useValue: mockAuditLog },
       ],
@@ -672,9 +670,8 @@ describe('ChapterService', () => {
       config: {},
     });
 
-    expect(mockSupabase.from).toHaveBeenCalledWith('chat_channels');
-    expect(mockSupabase.from().insert).toHaveBeenCalledTimes(1);
-    expect(mockSupabase.from().insert).toHaveBeenCalledWith(
+    expect(mockChannelRepo.createMany).toHaveBeenCalledTimes(1);
+    expect(mockChannelRepo.createMany).toHaveBeenCalledWith(
       DEFAULT_CHANNELS.map((channelDef) => ({
         chapter_id: chapter.id,
         name: channelDef.name,
@@ -764,9 +761,9 @@ describe('ChapterService', () => {
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     });
-    mockInsert.mockResolvedValueOnce({
-      error: { message: 'insert failed' },
-    });
+    mockChannelRepo.createMany.mockRejectedValueOnce(
+      new SupabaseQueryError({ message: 'insert failed' }),
+    );
     const loggerErrorSpy = jest
       .spyOn((service as any).logger, 'error')
       .mockImplementation(() => undefined);
@@ -780,8 +777,8 @@ describe('ChapterService', () => {
     ).rejects.toThrow(InternalServerErrorException);
 
     expect(loggerErrorSpy).toHaveBeenCalledWith(
-      'Failed to insert default chat channels for chapter ch-1',
-      'insert failed',
+      'Failed to insert default chat channels for chapter ch-1: insert failed',
+      expect.stringMatching(/\n\s+at /),
     );
   });
 

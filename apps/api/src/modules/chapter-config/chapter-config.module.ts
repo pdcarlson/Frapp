@@ -22,6 +22,10 @@ import { CUSTOM_ROLE_REPOSITORY } from '#domain/repositories/custom-role.reposit
 import { SupabaseCustomRoleRepository } from '../../infrastructure/supabase/repositories/supabase-custom-role.repository';
 import { CUSTOM_FIELD_REPOSITORY } from '#domain/repositories/custom-field.repository.interface';
 import { SupabaseCustomFieldRepository } from '../../infrastructure/supabase/repositories/supabase-custom-field.repository';
+import { CHAPTER_CONFIG_REPOSITORY } from '#domain/repositories/chapter-config.repository.interface';
+import { SupabaseChapterConfigRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-config.repository';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
 import { ActivationModule } from '../activation/activation.module';
 
 @Module({
@@ -52,8 +56,14 @@ import { ActivationModule } from '../activation/activation.module';
       useClass: SupabaseChapterAuditLogRepository,
     },
     // `ChapterAuditLogService.list` resolves the chapter's President role to
-    // decide who sees exec-only rows (#1773).
+    // decide who sees exec-only rows (#1773), and `ChapterConfigService`
+    // checks a default invite role belongs to the chapter (#422).
     { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
+    {
+      provide: CHAPTER_CONFIG_REPOSITORY,
+      useClass: SupabaseChapterConfigRepository,
+    },
+    { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
   ],
   exports: [
     ChapterWorkflowsService,

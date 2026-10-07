@@ -70,6 +70,7 @@ describe('RbacService', () => {
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
+      updatePaletteIfSeedUnchanged: jest.fn(),
       applySubscriptionWebhook: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
