@@ -7,7 +7,7 @@ import {
   parsePointsArgs,
   parseTaskArgs,
   tokenizeQuotedArgs,
-} from "@repo/chat-integrations";
+} from "@repo/chat-core/integrations";
 
 describe("tokenizeQuotedArgs", () => {
   it("splits on whitespace", () => {

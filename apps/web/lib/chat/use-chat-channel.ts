@@ -84,7 +84,7 @@ import {
   type DispatchResult,
   type ResolveMember,
 } from "@repo/chat-core/dispatch";
-import type { SlashCommand } from "@repo/chat-integrations";
+import type { SlashCommand } from "@repo/chat-core/integrations";
 import { createDexieOutboxStore } from "./offline-queue";
 import { useChatOutboundScope } from "./chat-scope";
 import { usePersistedChannelTail } from "./use-first-chunk-cache";

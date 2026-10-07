@@ -110,7 +110,7 @@ export const CI_CHECKS = [
   // target branch and has run green.
   "chapter-directory-seed",
   // Web + shared-package unit tests (apps/web, packages/hooks,
-  // packages/chat-core, packages/chat-integrations). It is the ONLY suite covering
+  // packages/chat-core). It is the ONLY suite covering
   // packages/hooks, which the consolidation work ahead edits directly, so leaving it
   // advisory means a broken shared hook merges green.
   //

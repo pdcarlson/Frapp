@@ -5,7 +5,7 @@ import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
-import type { SystemAuditPayload } from "@repo/chat-integrations";
+import type { SystemAuditPayload } from "@repo/chat-core/integrations";
 
 interface SystemAuditCardProps {
   message: ChatMessage;

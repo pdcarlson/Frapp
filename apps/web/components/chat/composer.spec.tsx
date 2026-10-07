@@ -81,7 +81,7 @@ import {
   uploadFailureDescription,
 } from "./composer";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
-import type { SlashCommand } from "@repo/chat-integrations";
+import type { SlashCommand } from "@repo/chat-core/integrations";
 
 type ComposerProps = Parameters<typeof Composer>[0];
 

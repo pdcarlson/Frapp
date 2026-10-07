@@ -214,7 +214,7 @@ test("distTargets agrees with the real manifests it runs against", () => {
   assert.ok(distTargets(read("validation"), ".").includes("./dist/index.js"));
   assert.ok(distTargets(read("observability"), "./identified-posthog").includes("./dist/identified-posthog.js"));
   // A source-only package can never be "unbuilt".
-  assert.deepEqual(distTargets(read("chat-core"), "."), []);
+  assert.deepEqual(distTargets(read("chat-core"), "./integrations"), []);
 });
 
 test("a dist/ that exists but lacks the imported export still counts as unbuilt", (t) => {
