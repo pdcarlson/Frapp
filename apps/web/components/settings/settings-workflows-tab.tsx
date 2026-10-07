@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { guardIntDraft, parseGuardedInt } from "@/lib/utils";
 import { intDraftRefusal } from "./int-draft-refusal";
 import type { OrgWorkflow } from "@repo/hooks";

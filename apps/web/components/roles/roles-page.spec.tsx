@@ -104,7 +104,7 @@ vi.mock("@/lib/stores/chapter-store", () => ({
   ) => selector({ activeChapterId: "chapter-1" }),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
 import { RolesAndPermissionsPage } from "@/components/roles/roles-page";
 
