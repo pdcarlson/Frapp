@@ -507,6 +507,30 @@ describe('ChapterOnboardingService', () => {
     );
   });
 
+  it('still onboards, and warns, when the directory request insert fails', async () => {
+    // The repository throws on a PostgREST error now, so `onboard`'s catch is
+    // the only thing between a failed backfill row and a 500 for a chapter
+    // that already exists.
+    const warned = jest
+      .spyOn(service['logger'], 'warn')
+      .mockImplementation(() => undefined);
+    requestInsert.mockRejectedValueOnce(
+      new SupabaseQueryError({ message: 'boom' }),
+    );
+
+    await expect(
+      service.onboard('user-1', {
+        name: 'Made Up Chapter Name',
+        university: 'Nowhere State',
+        accept_terms_privacy: true,
+      }),
+    ).resolves.toMatchObject({ id: 'ch-1' });
+
+    expect(warned).toHaveBeenCalledWith(
+      'Failed to record chapter directory request: boom',
+    );
+  });
+
   it('does not record a directory request when a directory match is provided', async () => {
     await service.onboard('user-1', directoryDto);
     expect(requestInsert).not.toHaveBeenCalled();

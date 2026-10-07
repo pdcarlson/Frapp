@@ -170,11 +170,14 @@ export class ChapterOnboardingService {
     );
 
     // Best-effort: a failed custom-field / welcome / directory-request write
-    // must not roll back an otherwise successfully created chapter.
-    // `error`, not `warn`, for the same reason the inner branch uses it: a
-    // rejection here (fetch/DNS/TLS) is the same every-chapter seeding outage
-    // as a returned PostgREST error, and splitting the two levels would put
-    // half the failure surface below the alerting threshold.
+    // must not roll back an otherwise successfully created chapter, so each
+    // rejection (a PostgREST error the repository threw, or fetch/DNS/TLS) is
+    // logged here and nowhere else.
+    // The field seed logs at `error`, not `warn`: a failure is silent from the
+    // officer's side — onboarding still returns 201 — and it fails for *every*
+    // chapter, not one, since the rows are identical each time. A wrong
+    // conflict target or a renamed column would otherwise seed nothing
+    // indefinitely with no signal above debug noise.
     await this.provisionCustomFields(chapter.id, seed.customFields).catch(
       (err) =>
         logThrowable(
@@ -271,8 +274,7 @@ export class ChapterOnboardingService {
    * `buildCustomFieldRows`; the audit trail is not, matching how default roles
    * and channels are seeded.
    *
-   * `ignoreDuplicates` makes re-running provisioning a no-op instead of a
-   * unique-violation on `(chapter_id, key)`.
+   * Re-running provisioning is a no-op (see `seedDefaults`).
    */
   private async provisionCustomFields(
     chapterId: string,
@@ -289,11 +291,7 @@ export class ChapterOnboardingService {
     }
     if (rows.length === 0) return;
 
-    // A failure rejects to `onboard`, which logs it at `error`, not `warn`: it
-    // is silent from the officer's side — onboarding still returns 201 — and
-    // it fails for *every* chapter, not one, since the rows are identical each
-    // time. A wrong conflict target or a renamed column would otherwise seed
-    // nothing indefinitely with no signal above debug noise.
+    // A failure rejects to `onboard`, which logs it.
     await this.customFieldRepo.seedDefaults(rows);
   }
 

@@ -211,3 +211,69 @@ describe('SupabaseChapterConfigRepository — tenant scope', () => {
     await expect(repo.findDuesConfig(UNCONFIGURED)).resolves.toBe(null);
   });
 });
+
+describe('SupabaseChapterConfigRepository — query errors', () => {
+  /**
+   * A client whose every query resolves `{ data: null, error }`. A read that
+   * returned `null` here instead of throwing would tell `ChapterConfigService`
+   * "no row yet", and its PATCH would then upsert the defaults over the
+   * chapter's real settings (#1626). The services' fail-open and fail-closed
+   * postures both depend on these reads throwing.
+   */
+  function failingClient() {
+    const result = {
+      data: null,
+      error: { code: '57014', message: 'canceling statement' },
+    };
+    const builder: Record<string, unknown> = {};
+    for (const method of ['select', 'eq', 'upsert']) {
+      builder[method] = jest.fn(() => builder);
+    }
+    builder.maybeSingle = jest.fn(() => Promise.resolve(result));
+    builder.then = (
+      resolve: (value: typeof result) => unknown,
+      reject: (reason: unknown) => unknown,
+    ) => Promise.resolve(result).then(resolve, reject);
+    return { from: jest.fn(() => builder) };
+  }
+
+  const repo = () =>
+    new SupabaseChapterConfigRepository(
+      failingClient() as unknown as ConstructorParameters<
+        typeof SupabaseChapterConfigRepository
+      >[0],
+    );
+
+  it.each<[string, (r: SupabaseChapterConfigRepository) => Promise<unknown>]>([
+    ['findWorkflows', (r) => r.findWorkflows(CHAPTER_B)],
+    ['findWorkflow', (r) => r.findWorkflow(CHAPTER_B, 'wf_dues_grace')],
+    [
+      'upsertWorkflows',
+      (r) =>
+        r.upsertWorkflows([
+          { chapter_id: CHAPTER_B, key: 'k', enabled: true, threshold: null },
+        ]),
+    ],
+    ['findDuesConfig', (r) => r.findDuesConfig(CHAPTER_B)],
+    ['upsertDuesConfig', (r) => r.upsertDuesConfig(CHAPTER_B, DUES)],
+    ['findServiceConfig', (r) => r.findServiceConfig(CHAPTER_B)],
+    [
+      'upsertServiceConfig',
+      (r) => r.upsertServiceConfig(CHAPTER_B, { minutes_per_point: 30 }),
+    ],
+    ['findPointsConfig', (r) => r.findPointsConfig(CHAPTER_B)],
+    [
+      'upsertPointsConfig',
+      (r) =>
+        r.upsertPointsConfig(CHAPTER_B, {
+          adjustment_rate_limit_per_hour: 20,
+          anomaly_threshold: 40,
+        }),
+    ],
+  ])('%s throws the query error rather than returning', async (_name, call) => {
+    await expect(call(repo())).rejects.toMatchObject({
+      name: 'SupabaseQueryError',
+      code: '57014',
+    });
+  });
+});

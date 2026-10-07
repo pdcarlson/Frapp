@@ -101,9 +101,10 @@ export interface IChatChannelRepository {
    */
   createDm(chapterId: string, memberIds: string[]): Promise<ChatChannel>;
   /**
-   * The chapter's channel with this exact name, or `null`. Only for a name
-   * the chapter cannot have twice (a seeded default such as `general`): more
-   * than one match is a query error, not a pick.
+   * The chapter's channel with this exact name, or `null`. Nothing makes a
+   * name unique within a chapter, so more than one match is a query error,
+   * not a pick: call it only where a duplicate cannot exist yet, as
+   * onboarding does for the `general` channel it seeded moments earlier.
    */
   findByName(chapterId: string, name: string): Promise<ChatChannel | null>;
   create(data: Partial<ChatChannel>): Promise<ChatChannel>;

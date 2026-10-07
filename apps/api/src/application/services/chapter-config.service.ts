@@ -159,7 +159,7 @@ export type ChapterBetaConfigPatch = {
  * What `patchConfig` accepts. Every key is optional and absent means "leave it
  * alone", which is what makes the JSON columns merge rather than replace.
  *
- * The three singleton blocks reuse the config types this layer already owns
+ * The three singleton blocks reuse the domain's config types
  * ({@link DuesConfig}, `ServiceConfig`, `PointsConfig`) instead of restating
  * their fields, which is also what lets `patchConfig` drop the
  * `as Partial<…>` casts it used to need on each one.
@@ -478,8 +478,8 @@ export class ChapterConfigService {
 
       // #795: mirror the authoritative accent into the legacy column.
       //
-      // No separate `accent_color` diff entry: `getConfig`'s select does not
-      // read that column, so the only "previous" value available here is the
+      // No separate `accent_color` diff entry: `getConfig` does not return
+      // that column, so the only "previous" value available here is the
       // branding accent, and on exactly the legacy rows this mirror exists to
       // repair those two disagree. Recording the branding value as the column's
       // prior state would put a number in the audit log that the column never

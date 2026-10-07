@@ -224,15 +224,13 @@ function makeRepos(
     upsertPointsConfig: pointsUpsert,
   };
   /*
-   * Returns the role only when the lookup was scoped to this chapter.
-   *
-   * The obvious version — resolving a fixture picked up front whatever the
-   * arguments — cannot tell a chapter-scoped lookup from an unscoped one, so
-   * the cross-chapter test below passes even with the chapter argument
-   * deleted from the service. That was verified by mutation, not assumed:
-   * with the naive mock, removing the filter left 33/33 green. A test that
-   * cannot fail for the reason it exists is worse than no test, because it
-   * reports coverage of the one invariant RLS is not enforcing for us.
+   * Returns the role only when the lookup was scoped to this chapter, so a
+   * service that stopped passing the chapter gets `[]` (a 400) on every
+   * positive test below, and the call-shape test "scopes the role lookup by
+   * chapter_id" fails by name. The cross-chapter 400 test cannot catch that
+   * on its own: its fixture has no matching role, so it answers `[]` either
+   * way. (Before #3220 this was a Supabase builder mock recording its `.eq`
+   * filters, for the same reason.)
    */
   const roleRepo = {
     findByIds: jest.fn((ids: string[], chapterId?: string) => {
@@ -1215,9 +1213,8 @@ describe('ChapterConfigService default invite role (#422)', () => {
 
   /*
    * Guards the guard. If `assertRoleBelongsToChapter` ever stops passing the
-   * chapter, this fails immediately and by name — rather than the
-   * cross-chapter test above silently continuing to pass, which is what it did
-   * before the mock checked its scope.
+   * chapter, this fails immediately and by name. The cross-chapter test above
+   * cannot: its fixture has no matching role in any chapter.
    */
   it('scopes the role lookup by chapter_id, not just by id', async () => {
     const repos = makeRepos([], null, {}, null, null, {
