@@ -28,7 +28,7 @@ Key principles:
 
 ## 3. Local development setup
 
-Local runs take their secrets from Infisical's **`dev`** environment, injected by the root `npm run dev:*` scripts, so secrets stay in the same source as staging and production. A `.env.local` per app is the fallback when Infisical is unavailable. The steps are in [`getting-started.md` § 4](getting-started.md#4-configure-environment-variables); per-app commands and the no-Infisical fallback are in [`LOCAL_DEV.md`](../internal/environment/LOCAL_DEV.md).
+How local runs get their secrets (Infisical `dev`, a `.env.local` fallback, and the mobile exception) is in [`spec/environments/README.md` § 2](../../spec/environments/README.md#2-local-development). The steps are in [`getting-started.md` § 4](getting-started.md#4-configure-environment-variables); per-app commands and the no-Infisical fallback are in [`LOCAL_DEV.md`](../internal/environment/LOCAL_DEV.md).
 
 ## 4. Config module in the API
 

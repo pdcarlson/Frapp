@@ -39,7 +39,9 @@ The local environment is a developer machine running the apps against a local Su
 from `supabase/migrations/` applied by `db push --local`. Secrets come from Infisical's `dev`
 environment, injected by the root `npm run dev:*` scripts; a `.env.local` per app built from
 `npm run -s supabase -- status -o env` and
-[`ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md) is the fallback. The
+[`ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md) is the fallback. Mobile is
+the exception: Infisical `dev` holds no `EXPO_PUBLIC_*` name, so `apps/mobile/.env.local` always
+carries those values ([`LOCAL_DEV.md` § Mobile](../../docs/internal/environment/LOCAL_DEV.md#mobile)). The
 Claude Code cloud sandbox brings up the same stack itself
 ([`CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md)).
 
@@ -364,8 +366,7 @@ environments and current state:
 
 ### Local Development
 
-Local runs read the `dev` environment through `infisical run`, with no `.env.local` files; setup is
-in [`getting-started.md` § 4](../../docs/guides/getting-started.md#4-configure-environment-variables).
+How local runs get their secrets, including the mobile exception: [§ 2](#2-local-development).
 
 ### Rules
 

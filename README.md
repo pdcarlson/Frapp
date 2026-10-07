@@ -99,7 +99,7 @@ All product decisions, behavior rules, and architecture are documented in the `s
 - **[spec/product/](spec/product/README.md)** — Features, user flows, surfaces, onboarding.
 - **[spec/behavior/](spec/behavior/README.md)** — Rules, edge cases, invariants, error handling.
 - **[spec/architecture/README.md](spec/architecture/README.md)** — Stack, data model, auth, storage, API contracts.
-- **[spec/environments/README.md](spec/environments/README.md)** — Local, staging, production setup; CI/CD.
+- **[spec/environments/README.md](spec/environments/README.md)** — Environment model (local, staging, production); CI/CD.
 
 How `spec/` relates to code, and what to do when they disagree: [`AGENTS.md` § Spec vs code](AGENTS.md#spec-vs-code).
 

@@ -152,13 +152,13 @@ For example `feat(api): add service hours endpoints`, `refactor: switch api auth
 - Run the local gate first: `npm run ci:local-gate`
   - This runs the gitleaks scan, then the CI parity checks (lint, type-check, API tests, contract freshness, migration safety, npm audit). It previews what CI will run and nothing more — never add a local-only check to it.
 - If a check needs a different base branch, use: `npm run ci:local-gate -- --base-ref <ref>`
-- Fill out the PR template completely. In it:
+- Fill out the PR template completely. In the description:
   - Link the spec sections you implemented.
   - Describe the change in terms of **behavior** and **domains** ("Backwork upload metadata", not
     "added 3 columns").
   - List test coverage: unit tests, E2E, and any manual scenarios you ran.
   - Call out follow-up work and tech debt explicitly.
-- Check the "Docs / Spec impact" section. Whether your change owes a doc edit, and which doc: [`docs/internal/DOCUMENTATION_CONVENTIONS.md` § Where a fact lives](docs/internal/DOCUMENTATION_CONVENTIONS.md#where-a-fact-lives).
+- Check the "Docs / Spec impact" section; whether your change owes a doc edit, and which doc, is under [Documentation](#documentation).
 - CI checks will run automatically.
 - Code review runs **locally before you push**, not on the PR: the pre-push review-gate hook requires a
   `/diff-review` pass, which writes the evidence marker itself. `git push --no-verify` is for
