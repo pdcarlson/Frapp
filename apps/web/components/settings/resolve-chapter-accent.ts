@@ -6,6 +6,7 @@ import {
   roundRatio,
   type Rgb,
 } from "@repo/color";
+import { signetDarkTokens } from "@repo/theme/signet";
 
 /**
  * Re-validates a chapter's stored accent against the surface it is drawn on,
@@ -25,16 +26,17 @@ const MIN_ACCENT_CONTRAST = 4.5;
  * Settings preview, which passes house gold on the dark card, never reaches
  * these.
  *
- * A dark ink and a bone anchor the ends, but they do not make the ladder exhaustive: a
- * mid-tone background such as `#767676` clears neither. When nothing passes the
+ * Signet's own values: house gold, then the lightest and darkest neutrals,
+ * which anchor the ends. They do not make the ladder exhaustive: a mid-tone
+ * background such as `#767676` clears neither end. When nothing passes the
  * resolver keeps the caller's requested fallback, which is exactly what it
  * emitted before #797 — no worse, and the `fallbackApplied` flag plus the
  * reported ratio still tell the caller what happened.
  */
 const FALLBACK_LADDER = [
-  "#C8A062",
-  "#1F1A15",
-  "#FAF7F2",
+  signetDarkTokens.color.gold.house,
+  signetDarkTokens.color.text.foreground,
+  signetDarkTokens.color.surface.background,
 ] as const;
 
 export type AccentValidationResult = {

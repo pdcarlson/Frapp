@@ -69,9 +69,9 @@ describe("meetsContrast", () => {
    * The regression lock for the rounding contract.
    *
    * `#006FFB` scores 4.499888 against white — below AA, but it rounds to 4.50.
-   * `packages/theme`'s accent resolver has always compared the rounded value, so
-   * this color and the ~9,000 others in the `[4.495, 4.5)` band render today on
-   * the web dashboard and in the mobile app. Extracting the math here must not
+   * The web Settings accent resolver (`resolve-chapter-accent.ts`, formerly in
+   * `packages/theme`) has always compared the rounded value, so this color and
+   * the ~9,000 others in the `[4.495, 4.5)` band pass its check today. Extracting the math here must not
    * quietly tighten that, so rounding is an explicit per-caller option.
    *
    * If either expectation below flips, live chapter accents repaint.

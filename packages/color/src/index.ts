@@ -106,8 +106,9 @@ export type MeetsContrastOptions = {
   minimum?: number;
   /**
    * Round to 2dp before comparing. Defaults to `false` (exact).
-   * `packages/theme`'s accent resolver passes `true` to preserve its long-standing
-   * behavior; `packages/chapter-theme` leaves it `false` because its output is
+   * The web Settings accent resolver
+   * (`apps/web/components/settings/resolve-chapter-accent.ts`) passes `true` to
+   * preserve its long-standing behavior; `packages/chapter-theme` leaves it `false` because its output is
    * persisted to `chapters.theme_palette`.
    */
   round?: boolean;

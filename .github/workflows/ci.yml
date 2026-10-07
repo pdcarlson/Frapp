@@ -197,7 +197,7 @@ jobs:
         run: npm run test -w @repo/validation
 
       # Same reasoning as above. The contrast math here is imported by
-      # `packages/chapter-theme` and the web Settings accent resolver; their
+      # `packages/chapter-theme`, `packages/hooks` and `apps/web`; their
       # suites pin their callers' behaviour, not this package's, so it still
       # needs its own step.
       - name: Shared color package tests
