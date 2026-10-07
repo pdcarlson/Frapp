@@ -134,7 +134,9 @@ the ones a later reader would otherwise re-litigate.
   Vercel preview deployments. The owner disconnected both Vercel projects from Git — landing
   2026-09-01, web 2026-09-02 (ADR-21) — so the staging half of that trade-off no longer exists:
   nothing deploys staging web or landing on merge, and both hosts are frozen at their last Git
-  build. **ADR-21 below is the canonical record** of the unlink, the per-project freeze points and
+  build. *Corrected 2026-10-07 (#3214): true only until #1578 (2026-09-04). Since then CI builds
+  and uploads staging web and landing after green CI on `main`, now in `deploy-staging.yml`; the
+  staging half came back as a CI build, not a Git one.* **ADR-21 below is the canonical record** of the unlink, the per-project freeze points and
   the breakages; read them there rather than restating them here. The `ignoreCommand: "exit 1"` row
   in the table above governs nothing while the projects stay unlinked — but **keep the key**, and
   `vercel.json`'s `git` block with it: they are the versioned form of settings that revert to
