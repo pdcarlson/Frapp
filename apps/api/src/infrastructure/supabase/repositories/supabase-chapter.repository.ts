@@ -30,6 +30,16 @@ export class SupabaseChapterRepository implements IChapterRepository {
     return data;
   }
 
+  async isAnalyticsOptedOut(id: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('chapters')
+      .select('analytics_opt_out')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data?.analytics_opt_out ?? false;
+  }
+
   async findByIds(ids: string[]): Promise<Chapter[]> {
     if (!ids.length) return [];
     const { data, error } = await this.supabase
