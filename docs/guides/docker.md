@@ -20,15 +20,7 @@ Key points:
 
 Because the build context is the **repo root**, the **root** `.dockerignore` keeps the image small and builds fast:
 
-```text
-apps/web
-apps/mobile
-apps/landing
-**/node_modules
-**/dist
-**/.turbo
-**/.env*
-```
+The file is [`.dockerignore`](../../.dockerignore) (not copied here); it excludes the frontend apps, tests, specs and Markdown, among other things.
 
 We rely on the builder stage to compile TypeScript and only copy `dist/` into the runtime image.
 
@@ -60,27 +52,7 @@ Then hit:
 
 ## 4. docker-compose (optional convenience)
 
-At the repo root we maintain a minimal `docker-compose.yml` for the API:
-
-```yaml
-services:
-  api:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
-    ports:
-      - "3001:3001"
-    environment:
-      - SUPABASE_URL=http://host.docker.internal:54321
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
-      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
-      - STRIPE_PRICE_ID=${STRIPE_PRICE_ID}
-      - PORT=3001
-      - NODE_ENV=production
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-```
+At the repo root we maintain a minimal [`docker-compose.yml`](../../docker-compose.yml) for the API (build context, port 3001, Supabase and Stripe env passthrough, a healthcheck on `/health`). It is not copied here; the file is the source.
 
 Usage:
 
