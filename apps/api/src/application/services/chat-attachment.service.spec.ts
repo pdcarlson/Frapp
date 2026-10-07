@@ -9,7 +9,6 @@ import type { ReportedAttachment } from '#domain/entities/chat-moderation.entity
 import { ChatAttachmentService } from './chat-attachment.service';
 import {
   baseChannel,
-  baseMember,
   baseMessage,
   createChatServiceFixture,
   type ChatServiceFixture,
@@ -943,7 +942,8 @@ describe('ChatAttachmentService', () => {
     });
 
     /**
-     * The verdicts these three pin are covered by the parity table below too.
+     * The verdicts these three pin are covered by the parity table too
+     * (`chat.service.spec.ts` § "mint and send agree").
      * What only they can assert is that the denial happens *before* the URL is
      * signed: parity compares thrown-or-not, so a mint reordered to sign first
      * and authorize second would still read `denied` and stay green while the

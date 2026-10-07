@@ -1481,7 +1481,7 @@ After any rollback event:
   `DELETE` as the action.*
 * **Order**: **take the API off it first.** The live API names the bucket
   (`CHAT_ARCHIVE_BUCKET`): it registers every import file there, and its workers
-  and `ChatService` sign, list and delete objects in it. Delete the bucket only once
+  and `ChatAttachmentService` sign, list and delete objects in it. Delete the bucket only once
   a forward revert that stops using it is live ([§ 3) Undo one migration](#3-undo-one-migration)); an
   empty bucket is not an unused one while that API serves. Once an
   import has run, the objects in it are the only copy of the archive's media —

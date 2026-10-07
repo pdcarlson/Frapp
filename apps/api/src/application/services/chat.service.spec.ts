@@ -1,6 +1,4 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import {
-  Logger,
   NotFoundException,
   BadRequestException,
   ConflictException,
@@ -9,7 +7,6 @@ import {
 import {
   canAccessChannel,
   CHAT_SINCE_NOT_FOUND_CODE,
-  MAX_UPLOAD_BYTES,
   moduleDisabledMessage,
 } from '@repo/validation';
 import { ChatService, tombstoneMetadata } from './chat.service';
@@ -22,52 +19,19 @@ import {
   type ChatServiceFixture,
 } from '#test/helpers/chat-service.fixture';
 import {
-  CHAT_CHANNEL_REPOSITORY,
-  CHAT_CATEGORY_REPOSITORY,
-  CHAT_MESSAGE_REPOSITORY,
-  CHAT_MESSAGE_ACTION_REPOSITORY,
-  CHAT_MESSAGE_ATTACHMENT_REPOSITORY,
   ChatMessageActionDuplicateError,
   ChatMessageCursorNotFoundError,
   ChatMessageDuplicateError,
-  MESSAGE_REACTION_REPOSITORY,
-  CHANNEL_READ_RECEIPT_REPOSITORY,
 } from '#domain/repositories/chat.repository.interface';
-import type {
-  IChatChannelRepository,
-  IChatCategoryRepository,
-  IChatMessageActionRepository,
-  IChatMessageAttachmentRepository,
-  IChatMessageRepository,
-  IMessageReactionRepository,
-  IChannelReadReceiptRepository,
-} from '#domain/repositories/chat.repository.interface';
-import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
-import type { IStorageProvider } from '#domain/adapters/storage.interface';
-import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type {
   ChatChannel,
   ChatMessage,
   ChatMessageAction,
-  ChatChannelCategory,
   MessageReaction,
 } from '#domain/entities/chat.entity';
-import { NotificationService } from './notification.service';
-import { ActivationService } from './activation.service';
-import { RbacService } from './rbac.service';
-import {
-  ChannelAccessService,
-  ReportedMessageGrant,
-} from './channel-access.service';
-import type {
-  ChatMessageReportView,
-  ReportedAttachment,
-} from '#domain/entities/chat-moderation.entity';
-import { ChatBlockService } from './chat-block.service';
-import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
+import { ReportedMessageGrant } from './channel-access.service';
+import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
 import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
-import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
-import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
 
 describe('ChatService', () => {
   let service: ChatService;
