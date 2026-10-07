@@ -468,9 +468,12 @@ Two conventions make the tests meaningful rather than decorative:
 
 Verify a new spec has teeth by breaking the code it covers and confirming it fails. The report specs
 were checked that way, against `report.service.ts` as it stood before its queries moved into
-repositories (#3221). The embed rows now live in `supabase-report.repository.ts`, the paging in the
-shared `fetchAllPages` (`supabase.utils.ts`), and the chunked user lookup in
-`supabase-user.repository.ts`, so re-running a row means mutating that file:
+repositories (#3221), and the counts below are from that run. Re-running a row now means mutating
+where that code lives today: the two embed rows in `supabase-report.repository.ts`, the paging row at
+`fetchCapped`'s call into the shared `fetchAllPages` (`supabase.utils.ts`), and the chunking row at
+the `chunkIds(ids)` call in `SupabaseUserRepository.findContactsByIds`. Mutating the shared helpers
+themselves (`fetchAllPages`, `chunkIds` in `domain/utils/chunk-ids.ts`) reaches every caller, so
+more tests fail than the table says:
 
 | Mutation | Tests that fail |
 | --- | --- |
