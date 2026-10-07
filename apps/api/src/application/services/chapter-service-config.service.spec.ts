@@ -1,31 +1,31 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChapterServiceConfigService } from './chapter-service-config.service';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { CHAPTER_CONFIG_REPOSITORY } from '#domain/repositories/chapter-config.repository.interface';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 const CHAPTER_ID = 'ch-1';
 
 /**
- * Supabase stub resolving the singleton `chapter_service_config` read through
- * `maybeSingle()`. `error` models a read failure so the fallback posture can be
- * asserted.
+ * Repository stub for the singleton `chapter_service_config` read. `error`
+ * rejects the way the repository does on a query error, so the fallback
+ * posture can be asserted.
  */
-function makeSupabase(
-  row: Record<string, unknown> | null,
+function makeConfigRepo(
+  row: { minutes_per_point: number } | null,
   error: { message: string } | null = null,
 ) {
-  const maybeSingle = jest.fn().mockResolvedValue({ data: row, error });
-  const eq = jest.fn().mockReturnValue({ maybeSingle });
-  const builder: Record<string, jest.Mock> = {};
-  builder.select = jest.fn().mockReturnValue({ eq });
-  const from = jest.fn().mockReturnValue(builder);
-  return { from, eq, maybeSingle };
+  return {
+    findServiceConfig: error
+      ? jest.fn().mockRejectedValue(new SupabaseQueryError(error))
+      : jest.fn().mockResolvedValue(row),
+  };
 }
 
-async function buildService(supabase: { from: jest.Mock }) {
+async function buildService(configRepo: { findServiceConfig: jest.Mock }) {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       ChapterServiceConfigService,
-      { provide: SUPABASE_CLIENT, useValue: supabase },
+      { provide: CHAPTER_CONFIG_REPOSITORY, useValue: configRepo },
     ],
   }).compile();
   return module.get(ChapterServiceConfigService);
@@ -34,7 +34,7 @@ async function buildService(supabase: { from: jest.Mock }) {
 describe('ChapterServiceConfigService', () => {
   describe('getConfig', () => {
     it('returns the default rate when the chapter has no row', async () => {
-      const service = await buildService(makeSupabase(null));
+      const service = await buildService(makeConfigRepo(null));
 
       await expect(service.getConfig(CHAPTER_ID)).resolves.toEqual({
         minutes_per_point: 60,
@@ -43,7 +43,7 @@ describe('ChapterServiceConfigService', () => {
 
     it('returns the chapter override when a row exists', async () => {
       const service = await buildService(
-        makeSupabase({ minutes_per_point: 20 }),
+        makeConfigRepo({ minutes_per_point: 20 }),
       );
 
       await expect(service.getConfig(CHAPTER_ID)).resolves.toEqual({
@@ -55,7 +55,7 @@ describe('ChapterServiceConfigService', () => {
       // Approval must not 500 because a config read blipped; it awards at the
       // default rate and the service logs a warning.
       const service = await buildService(
-        makeSupabase(null, { message: 'connection reset' }),
+        makeConfigRepo(null, { message: 'connection reset' }),
       );
 
       await expect(service.getConfig(CHAPTER_ID)).resolves.toEqual({
@@ -64,20 +64,19 @@ describe('ChapterServiceConfigService', () => {
     });
 
     it('scopes the read to the chapter', async () => {
-      const supabase = makeSupabase(null);
-      const service = await buildService(supabase);
+      const repo = makeConfigRepo(null);
+      const service = await buildService(repo);
 
       await service.getConfig(CHAPTER_ID);
 
-      expect(supabase.from).toHaveBeenCalledWith('chapter_service_config');
-      expect(supabase.eq).toHaveBeenCalledWith('chapter_id', CHAPTER_ID);
+      expect(repo.findServiceConfig).toHaveBeenCalledWith(CHAPTER_ID);
     });
   });
 
   describe('getMinutesPerPoint', () => {
     it('returns the configured rate', async () => {
       const service = await buildService(
-        makeSupabase({ minutes_per_point: 30 }),
+        makeConfigRepo({ minutes_per_point: 30 }),
       );
 
       await expect(service.getMinutesPerPoint(CHAPTER_ID)).resolves.toBe(30);
@@ -94,7 +93,7 @@ describe('ChapterServiceConfigService', () => {
         // — or hand-edited — would otherwise award Infinity or a fractional
         // floor.
         const service = await buildService(
-          makeSupabase({ minutes_per_point: stored }),
+          makeConfigRepo({ minutes_per_point: stored }),
         );
 
         await expect(service.getMinutesPerPoint(CHAPTER_ID)).resolves.toBe(60);

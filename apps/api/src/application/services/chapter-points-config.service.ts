@@ -1,27 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { CHAPTER_POINTS_CONFIG_DEFAULTS } from '@repo/validation';
-import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
-
-/**
- * A chapter's points anti-fraud policy, as read and written by the config
- * endpoint.
- *
- * API-facing subset of `chapter_points_config` (no timestamps). Writes use
- * `TablesInsert<'chapter_points_config'>`, same pattern as `ServiceConfig`.
- */
-export type PointsConfig = {
-  adjustment_rate_limit_per_hour: number;
-  anomaly_threshold: number;
-};
-
-export const POINTS_CONFIG_FIELDS = [
-  'adjustment_rate_limit_per_hour',
-  'anomaly_threshold',
-] as const satisfies ReadonlyArray<keyof PointsConfig>;
-
-export const POINTS_CONFIG_SELECT = POINTS_CONFIG_FIELDS.join(', ');
+import type { PointsConfig } from '#domain/entities/chapter-points-config.entity';
+import {
+  CHAPTER_CONFIG_REPOSITORY,
+  type IChapterConfigRepository,
+} from '#domain/repositories/chapter-config.repository.interface';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
  * Used when a chapter has no `chapter_points_config` row yet. Mirrors the
@@ -54,7 +38,8 @@ export class ChapterPointsConfigService {
   private readonly logger = new Logger(ChapterPointsConfigService.name);
 
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    @Inject(CHAPTER_CONFIG_REPOSITORY)
+    private readonly configRepo: IChapterConfigRepository,
   ) {}
 
   /**
@@ -69,18 +54,22 @@ export class ChapterPointsConfigService {
    * a write; see `getConfigOrThrow`.
    */
   async getConfig(chapterId: string): Promise<PointsConfig> {
-    const { data, error } = await this.read(chapterId);
-
-    if (error) {
-      this.logger.warn(
+    let row: PointsConfig | null;
+    try {
+      row = await this.configRepo.findPointsConfig(chapterId);
+    } catch (err) {
+      logThrowable(
+        this.logger,
+        'warn',
         `chapter_points_config read failed for chapter ${chapterId}; applying default anti-fraud limits ` +
           `(${POINTS_CONFIG_DEFAULTS.adjustment_rate_limit_per_hour}/hr, threshold ` +
-          `${POINTS_CONFIG_DEFAULTS.anomaly_threshold}): ${error.message}`,
+          `${POINTS_CONFIG_DEFAULTS.anomaly_threshold})`,
+        err,
       );
       return { ...POINTS_CONFIG_DEFAULTS };
     }
 
-    return this.coerce(data, chapterId);
+    return this.coerce(row, chapterId);
   }
 
   /**
@@ -96,25 +85,21 @@ export class ChapterPointsConfigService {
    * silent write of fabricated state.
    */
   async getConfigOrThrow(chapterId: string): Promise<PointsConfig> {
-    const { data, error } = await this.read(chapterId);
-
-    if (error) {
-      this.logger.error(
+    let row: PointsConfig | null;
+    try {
+      row = await this.configRepo.findPointsConfig(chapterId);
+    } catch (err) {
+      logThrowable(
+        this.logger,
+        'error',
         `chapter_points_config read failed for chapter ${chapterId}; refusing to ` +
-          `report or write against a fabricated prior state: ${error.message}`,
+          `report or write against a fabricated prior state`,
+        err,
       );
-      throw new SupabaseQueryError(error);
+      throw err;
     }
 
-    return this.coerce(data, chapterId);
-  }
-
-  private async read(chapterId: string) {
-    return this.supabase
-      .from('chapter_points_config')
-      .select(POINTS_CONFIG_SELECT)
-      .eq('chapter_id', chapterId)
-      .maybeSingle();
+    return this.coerce(row, chapterId);
   }
 
   /**
@@ -131,7 +116,7 @@ export class ChapterPointsConfigService {
    * happily letting make 50, and a PATCH of the other field wrote the 0 back
    * into a CHECK violation the chapter could not clear through the API.
    */
-  private coerce(data: unknown, chapterId: string): PointsConfig {
+  private coerce(data: PointsConfig | null, chapterId: string): PointsConfig {
     // `Partial<T>` says a key may be absent, not that its value may be null,
     // so read through a nullable shape rather than letting a null column
     // masquerade as a number.
