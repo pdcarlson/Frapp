@@ -267,7 +267,7 @@ export class ReportService {
     // through `get_points_leaderboard` with no window (#1743); the repository
     // carries why, and why that read pages on `user_id`.
     const [users, balanceRows] = await Promise.all([
-      this.reports.findUserContacts(userIds),
+      this.users.findContactsByIds(userIds),
       this.reports.findMemberBalances(chapterId, REPORT_AGGREGATE_MAX_ROWS),
     ]);
 

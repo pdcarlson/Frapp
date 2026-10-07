@@ -8,6 +8,8 @@ Previously, user input was directly interpolated into Supabase `.or()` filter st
 
 To fix this, an `escapeFilterValue` utility was created in `apps/api/src/infrastructure/supabase/supabase.utils.ts` that safely escapes string values according to PostgREST quoting rules (surrounding values with double quotes and doubling internal quotes). All dynamic inputs used in `.or()` filters within `search.service.ts` are now sanitized using this utility.
 
+*Corrected 2026-10-07 (#3221):* search no longer builds `.or()` filters at all. Every source matches through `.textSearch()` on a generated tsvector, which sends the raw query as one opaque parameter value, so there is no filter grammar to inject into; the queries now live in `apps/api/src/infrastructure/supabase/repositories/supabase-search.repository.ts`. `escapeFilterValue` is still used where a repository builds an `.or()` string (for example `supabase-backwork-resource.repository.ts` and `supabase-chat-message.repository.ts`).
+
 ### Prevention
 Always use `escapeFilterValue` when injecting dynamic user inputs into PostgREST/Supabase string filters.
 

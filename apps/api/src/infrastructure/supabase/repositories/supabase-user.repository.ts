@@ -6,7 +6,11 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import { IUserRepository } from '#domain/repositories/user.repository.interface';
-import { User, UserDisplayIdentity } from '#domain/entities/user.entity';
+import {
+  User,
+  UserContact,
+  UserDisplayIdentity,
+} from '#domain/entities/user.entity';
 import { chunkIds } from '#domain/utils/chunk-ids';
 import { SupabaseQueryError } from '../supabase-query-error';
 
@@ -53,6 +57,25 @@ export class SupabaseUserRepository implements IUserRepository {
       ),
     );
     const rows: UserDisplayIdentity[] = [];
+    for (const { data, error } of pages) {
+      if (error) throw new SupabaseQueryError(error);
+      rows.push(...(data ?? []));
+    }
+    return rows;
+  }
+
+  async findContactsByIds(ids: string[]): Promise<UserContact[]> {
+    if (!ids.length) return [];
+    // Chunked for the same 414 reason as `findDisplayIdentitiesByIds`.
+    const pages = await Promise.all(
+      chunkIds(ids).map((chunk) =>
+        this.supabase
+          .from('users')
+          .select('id, display_name, email')
+          .in('id', chunk),
+      ),
+    );
+    const rows: UserContact[] = [];
     for (const { data, error } of pages) {
       if (error) throw new SupabaseQueryError(error);
       rows.push(...(data ?? []));

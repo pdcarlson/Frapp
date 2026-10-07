@@ -192,6 +192,7 @@ describe('PointsService', () => {
         { id: 'user-2', display_name: 'Bobby Member' },
       ]),
       findDisplayIdentitiesByIds: jest.fn(),
+      findContactsByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),

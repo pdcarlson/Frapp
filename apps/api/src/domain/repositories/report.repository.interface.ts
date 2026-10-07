@@ -46,12 +46,6 @@ export interface MemberRosterRow {
   created_at: string;
 }
 
-export interface UserContactRow {
-  id: string;
-  display_name: string;
-  email: string;
-}
-
 /**
  * One member's whole all-time balance, already summed by
  * `get_points_leaderboard` with both bounds null. `total` is `bigint` in SQL;
@@ -117,11 +111,4 @@ export interface IReportRepository {
     filters: ServiceReportFilters,
     limit: number,
   ): Promise<CappedRows<ServiceEntryReportRow>>;
-  /**
-   * `users` rows for `ids`, with `email`, for the roster. `users` is global;
-   * the ids come from the chapter's own rows, which is what scopes this read.
-   * It lives here rather than on `IUserRepository` because that repository's
-   * batched display read deliberately never marshals `email`.
-   */
-  findUserContacts(ids: string[]): Promise<UserContactRow[]>;
 }

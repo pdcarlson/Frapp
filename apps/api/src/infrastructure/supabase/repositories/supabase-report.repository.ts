@@ -2,8 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import { type PagedQueryResult, fetchAllPages } from '../supabase.utils';
-import { SupabaseQueryError } from '../supabase-query-error';
-import { chunkIds } from '#domain/utils/chunk-ids';
 import type {
   AttendanceJoinedRow,
   AttendanceReportFilters,
@@ -16,7 +14,6 @@ import type {
   RoleNameRow,
   ServiceEntryReportRow,
   ServiceReportFilters,
-  UserContactRow,
 } from '#domain/repositories/report.repository.interface';
 
 type QueryResult<T> = PagedQueryResult<T>;
@@ -293,21 +290,5 @@ export class SupabaseReportRepository implements IReportRepository {
         .order('id', { ascending: true })
         .range(from, to);
     }, limit);
-  }
-
-  async findUserContacts(ids: string[]): Promise<UserContactRow[]> {
-    const pages = await Promise.all(
-      chunkIds(ids).map(
-        (chunk) =>
-          this.supabase
-            .from('users')
-            .select('id, display_name, email')
-            .in('id', chunk) as PromiseLike<QueryResult<UserContactRow>>,
-      ),
-    );
-    return pages.flatMap((page) => {
-      if (page.error) throw new SupabaseQueryError(page.error);
-      return page.data ?? [];
-    });
   }
 }

@@ -2,9 +2,7 @@ import {
   REPORT_PAGE_SIZE,
   SupabaseReportRepository,
 } from './supabase-report.repository';
-import { SupabaseQueryError } from '../supabase-query-error';
 import type { FrappSupabaseClient } from '../database.types';
-import { ID_CHUNK_SIZE } from '#domain/utils/chunk-ids';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -568,62 +566,6 @@ describe('SupabaseReportRepository — paging and query contracts', () => {
       // the function's own `order by total desc` — correct for the leaderboard
       // surface, unusable for paging here, since `total` is not unique.
       expect(chain.order).toHaveBeenCalledWith('user_id', { ascending: true });
-    });
-  });
-
-  describe('the users lookups', () => {
-    it('reads roster contacts in chunks of ID_CHUNK_SIZE and keeps every row', async () => {
-      const ids = Array.from(
-        { length: ID_CHUNK_SIZE + 23 },
-        (_, i) => `u-${i}`,
-      );
-      const chains: Record<string, jest.Mock>[] = [];
-      const { client } = clientWith({
-        from: () => {
-          const chain: Record<string, jest.Mock> = {};
-          chain.select = jest.fn(() => chain);
-          chain.in = jest.fn((_column: string, chunk: string[]) =>
-            Promise.resolve({
-              data: chunk.map((id) => ({
-                id,
-                display_name: id,
-                email: `${id}@x.dev`,
-              })),
-              error: null,
-            }),
-          );
-          chains.push(chain);
-          return chain;
-        },
-      });
-      const repo = new SupabaseReportRepository(client);
-
-      const contacts = await repo.findUserContacts(ids);
-
-      expect(contacts).toHaveLength(ids.length);
-      expect(chains).toHaveLength(2);
-      expect(chains[0].in.mock.calls[0][1]).toHaveLength(ID_CHUNK_SIZE);
-      expect(chains[0].select).toHaveBeenCalledWith('id, display_name, email');
-    });
-
-    it('fails the read when any chunk fails', async () => {
-      const { client } = clientWith({
-        from: () => {
-          const chain: Record<string, jest.Mock> = {};
-          chain.select = jest.fn(() => chain);
-          chain.in = jest.fn(() =>
-            Promise.resolve({
-              data: null,
-              error: { code: '57014', message: 'canceling statement' },
-            }),
-          );
-          return chain;
-        },
-      });
-
-      await expect(
-        new SupabaseReportRepository(client).findUserContacts(['u-1']),
-      ).rejects.toBeInstanceOf(SupabaseQueryError);
     });
   });
 });

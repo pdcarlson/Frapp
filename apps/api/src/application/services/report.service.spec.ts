@@ -22,7 +22,10 @@ import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface'
 describe('ReportService', () => {
   let service: ReportService;
   let repo: { [K in keyof IReportRepository]: jest.Mock };
-  let users: { findDisplayIdentitiesByIds: jest.Mock };
+  let users: {
+    findDisplayIdentitiesByIds: jest.Mock;
+    findContactsByIds: jest.Mock;
+  };
   let mockSemesterArchiveRepo: {
     findLatestByChapter: jest.Mock;
     findById: jest.Mock;
@@ -53,10 +56,12 @@ describe('ReportService', () => {
       findMemberBalances: jest.fn().mockResolvedValue(complete([])),
       findRoleNames: jest.fn().mockResolvedValue([]),
       findServiceEntries: jest.fn().mockResolvedValue(complete([])),
-      findUserContacts: jest.fn().mockResolvedValue([]),
     };
 
-    users = { findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([]) };
+    users = {
+      findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([]),
+      findContactsByIds: jest.fn().mockResolvedValue([]),
+    };
 
     mockSemesterArchiveRepo = {
       findLatestByChapter: jest.fn().mockResolvedValue(null),
@@ -340,7 +345,7 @@ describe('ReportService', () => {
       repo.findRosterMembers.mockResolvedValue(
         complete([member('u-1', ['r-1'])]),
       );
-      repo.findUserContacts.mockResolvedValue([
+      users.findContactsByIds.mockResolvedValue([
         { id: 'u-1', display_name: 'Alice', email: 'alice@test.com' },
       ]);
       repo.findMemberBalances.mockResolvedValue(
@@ -363,7 +368,7 @@ describe('ReportService', () => {
         'ch-1',
         REPORT_MAX_ROWS,
       );
-      expect(repo.findUserContacts).toHaveBeenCalledWith(['u-1']);
+      expect(users.findContactsByIds).toHaveBeenCalledWith(['u-1']);
       expect(repo.findMemberBalances).toHaveBeenCalledWith(
         'ch-1',
         REPORT_AGGREGATE_MAX_ROWS,
@@ -404,7 +409,7 @@ describe('ReportService', () => {
       repo.findRosterMembers.mockResolvedValue(
         complete([member('u-b'), member('u-a')]),
       );
-      repo.findUserContacts.mockResolvedValue([
+      users.findContactsByIds.mockResolvedValue([
         { id: 'u-a', display_name: 'Alice', email: 'a@t.com' },
         { id: 'u-b', display_name: 'Bob', email: 'b@t.com' },
       ]);
@@ -448,7 +453,7 @@ describe('ReportService', () => {
       const result = await service.getRosterReport('ch-1');
 
       expect(result.rows).toEqual([]);
-      expect(repo.findUserContacts).not.toHaveBeenCalled();
+      expect(users.findContactsByIds).not.toHaveBeenCalled();
       expect(repo.findMemberBalances).not.toHaveBeenCalled();
     });
 

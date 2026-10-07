@@ -36,8 +36,6 @@ import {
  * assertion below fails if a second `foo.repository.ts` appears.
  */
 const TENANT_SCOPE_BACKLOG: Record<string, string> = {
-  'supabase-user.repository.ts':
-    'users is global — identity exists before and across chapters; membership lives in members.',
   'supabase-user-settings.repository.ts':
     'user_settings is per-user and chapter-independent.',
   'supabase-push-token.repository.ts':
@@ -119,7 +117,7 @@ describe('API repository tenant-scope coverage', () => {
     // unless it lands with a `TENANT_SCOPE_BACKLOG` reason instead, which
     // moves only the first.
     expect({ covered, total: repositories.length }).toEqual({
-      covered: 42,
+      covered: 43,
       total: EXPECTED_REPOSITORY_COUNT,
     });
   });

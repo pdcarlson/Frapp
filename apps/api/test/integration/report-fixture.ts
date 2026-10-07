@@ -319,7 +319,7 @@ export async function seedReportFixture(
         chapter_id: primaryId,
         user_id: i % 2 === 0 ? sharedUser.id : primaryOnly.id,
         // A single repeated date on purpose: `date` is the primary sort key and
-        // is not unique, so this forces the `id` tiebreak in `getServiceReport`
+        // is not unique, so this forces the `id` tiebreak in `SupabaseReportRepository.findServiceEntries`
         // to carry every page boundary. Without it the ordering would be
         // incidentally stable and the tiebreak untested.
         date: '2026-05-01',
