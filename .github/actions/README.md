@@ -47,7 +47,7 @@ action file is not on disk yet when the runner resolves it.
   `turbo-packages-build`.** Each exists to fail when the shared packages cannot build
   from a cold tree — `clean-checkout-typecheck` on a dev install, `web-production-build`
   under the pruned `npm ci --omit=dev` shape — and prebuilt `dist/` on disk hides
-  exactly that. Same test enforces it.
+  exactly that. `scripts/ci/__tests__/turbo-packages-build-action.test.mjs` enforces it.
 - **Gate the filter, not just the workflow.** A job path-gated by `dorny/paths-filter`
   that calls an action here needs `.github/actions/**` in *that* filter list.
   Without it a PR editing only the action skips the job, and a job skipped by a
