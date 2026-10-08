@@ -94,10 +94,7 @@ export function DocumentRow({
     place in the lane to pay it. Do not "correct" the row to 40
     to match the board.
   */
-    <li
-      key={doc.id}
-      className="flex min-h-11 flex-col gap-1 py-2 sm:flex-row sm:items-center sm:gap-3"
-    >
+    <li className="flex min-h-11 flex-col gap-1 py-2 sm:flex-row sm:items-center sm:gap-3">
       {/*
       s12 draws a leading file glyph on every document row —
       the accent duotone on its pinned cards, the neutral one

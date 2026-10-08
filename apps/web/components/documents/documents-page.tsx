@@ -102,7 +102,7 @@ export function DocumentsPage() {
     of the matches alone and drop every folder containing nothing that matched —
     tabs vanishing key by key as someone types, including the selected one. So
     while a search is active and the endpoint is down, the rail keeps only its
-    two built-in filters and the notice below says so. Remembering the last
+    two built-in filters and `FolderRail`'s notice says so. Remembering the last
     unfiltered list instead would mean a ref written during render or a
     setState in an effect, both of which the compiler rejects and neither of
     which is worth it to prop up a degraded path.
@@ -339,8 +339,8 @@ export function DocumentsPage() {
         />
       </div>
       {/*
-        Rendered last and unconditionally, for the reason the states above no
-        longer are: an offline or error branch that sits over this would
+        Rendered last and unconditionally, for the reason `DocumentList`'s states
+        no longer are: an offline or error branch that sits over this would
         unmount a pending confirmation without settling its promise, leaving
         `await confirm(...)` hanging forever. That is the two-change
         interaction the Chapter Ops slice shipped and its guard caught.

@@ -139,7 +139,7 @@ export function FolderRail({
               <Can permission="chapter_docs:manage">
                 {/*
                   A second line under the name rather than a trailing cluster
-                  on the same row: at the rail's 240px these four controls
+                  on the same row: at the rail's 200px these four controls
                   cannot sit beside a folder name and still clear §2's
                   44px touch floor, and shrinking them below it is what
                   `button.tsx`'s `icon` size exists to prevent. Four controls

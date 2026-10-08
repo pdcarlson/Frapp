@@ -207,9 +207,11 @@ export function UploadDocumentDialog({
     on close therefore left a spent rejection sitting under the file
     field the next time the sheet opened after a Cancel.
 
-    Opening has no such hole: there is no `setOpen(true)` anywhere on
-    this page, so every open is a `DialogTrigger` press, which does go
-    through Radix's setter. Clearing there is reached by every route
+    Opening has no such hole: nothing calls `uploadDialog.setOpen(true)`,
+    here or in `documents-page.tsx`, which holds the handle through
+    `useDocumentUpload`. So every open is a `DialogTrigger` press, which does
+    go through Radix's setter. Opening it programmatically would skip this
+    clear and show the last rejection. Clearing there is reached by every route
     into a fresh sheet, whatever ended the last one.
 
     The draft itself survives on purpose: a mistyped title is worth

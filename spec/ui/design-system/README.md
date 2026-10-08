@@ -180,7 +180,7 @@ Where a dialog's `open` state lives in a parent, the **parent** carries the gate
 
 The table is hand-kept, so re-derive it before trusting it: list the `ChapterGuard` controllers in `apps/api/src/interface/controllers/` and count their non-GET routes without `@FreeTier` / `@SubscriptionExempt`. `financial-invoice`'s exempt route is the payment-intent. `study.controller.ts` holds two controller classes behind different modules. `alumni` carries the guard but has no non-GET route, so it contributes no write surface.
 
-Three of `chapter-document`'s six writes — folder create, rename and delete — have no client counterpart yet: the documents page derives its folder list from the loaded documents and its folder buttons are pure filters. A folder-management UI must adopt the gate when it lands.
+All six of `chapter-document`'s writes have a web client. The upload URL and confirm sit behind the upload sheet, document delete behind each row, and folder create, update (rename and reorder) and delete behind the folder rail and its dialog. The rail's "All files" and "No folder" rows stay ungated because they are client-side filters, not writes. (Corrected 2026-10-08: this paragraph used to say the three folder writes had no client, which stopped being true when folder management shipped with #791.)
 
 **Free-tier** (writes survive `incomplete`, and `past_due` inside grace): every controller class or handler marked `@FreeTier()`; the rules are [`api-architecture.md` § Subscription enforcement (ChapterGuard)](../../../docs/guides/api-architecture.md#subscription-enforcement-chapterguard). The three `@GraceBlocked` routes are `POST /invites`, `POST /invites/batch` and `POST /invites/email`.
 
