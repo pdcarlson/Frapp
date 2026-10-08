@@ -857,7 +857,7 @@ export class ChapterConfigService {
    * whether the write landed.
    *
    * Compare-and-set on the seed, the same guard the stale-palette sweep uses
-   * (`ScheduledJobsRepository.writeRecomputedPalette`): the write lands only
+   * (`SupabaseScheduledJobsRepository.writeRecomputedPalette`): the write lands only
    * while `branding.colors.accent` is still the seed this palette was derived
    * from. Both callers read that seed in an earlier statement, so a Settings
    * accent save can land in between; without the guard this write would put

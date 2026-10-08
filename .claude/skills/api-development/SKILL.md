@@ -21,13 +21,17 @@ Interface → Application → Infrastructure → Domain.
 | Layer | Directory | Holds |
 |-------|-----------|-------|
 | Interface | `interface/` | Controllers, DTOs, guards, interceptors, decorators, filters |
-| Application | `application/services/` | Business logic; must not import `interface/` |
+| Application | `application/services/`, `application/workers/` | Business logic; `workers/` holds the Realtime subscribers and `@Cron` sweeps. Must not import `interface/` |
 | Infrastructure | `infrastructure/` | Supabase repositories, Stripe, storage, notifications; must not import `application/` or `interface/` |
 | Domain | `domain/` | Entities, repository and adapter interfaces, constants; imports no other layer |
-| Modules | `modules/` | Nest wiring only |
+| Modules | `modules/` | Nest wiring only: `*.module.ts` files and their specs |
 
 dependency-cruiser enforces this (`npm run check:dep-cruiser -- --workspace apps/api`, rules in
-`scripts/dependency-cruiser.cjs`, required CI check `dependency-cruiser`). It also requires code
+`scripts/dependency-cruiser.cjs`, required CI check `dependency-cruiser`), including that nothing but
+a module file sits under `modules/` (`api-modules-wiring-only`). The rule constrains where a file
+lives, not how it queries; new code reads through repositories (who still holds the client:
+[`spec/architecture/README.md` § 5.1](../../../spec/architecture/README.md#51-repository-conventions)).
+dependency-cruiser also requires code
 outside `domain/` to import the domain through the `#domain/*` subpath (declared in
 `apps/api/package.json` `imports`), never by a relative `../../domain/...` path. Grandfathered
 violations, if any, are recorded in `scripts/dependency-cruiser-known-violations.json` (currently an
@@ -202,7 +206,7 @@ Constraints to know before you fight the compiler:
   `nest build` fails.
 - Insert/upsert payload types must be type aliases, not interfaces, for the same reason (see
   `DuesConfig` in `domain/entities/chapter-dues-config.entity.ts`).
-- Every `*.repository.ts` under `apps/api/src` follows this, including the module-local ones.
+- Every `*.repository.ts` under `apps/api/src` follows this.
   `no-as-never.spec.ts` and `tenant-scope-coverage.spec.ts` both find repositories through
   `#test/helpers/repository-corpus`, so a new one joins both ledgers wherever it lives. Both pin
   the repository count, so adding one means raising `EXPECTED_REPOSITORY_COUNT` in that helper

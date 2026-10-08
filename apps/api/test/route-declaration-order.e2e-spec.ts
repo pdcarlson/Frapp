@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { ChatService } from '../src/application/services/chat.service';
+import { ChatNotificationPreferenceService } from '../src/application/services/chat-notification-preference.service';
 import { MemberService } from '../src/application/services/member.service';
 import { ServiceEntryService } from '../src/application/services/service-entry.service';
 import { ChapterDocumentService } from '../src/application/services/chapter-document.service';
@@ -45,10 +46,15 @@ describe('Route declaration order — a literal route must not be swallowed by :
     chapterId: CHAPTER_ID,
   });
 
-  const chatServiceMock = {
-    getUnreadCounts: jest.fn().mockResolvedValue([]),
+  // The preference reads moved out of `ChatService` (#1380); the routes did
+  // not, so `getChannel` on the chat mock is still the wrong handler to reach.
+  const notificationPreferencesMock = {
     getChannelNotificationPreferences: jest.fn().mockResolvedValue([]),
     getKindNotificationPreferences: jest.fn().mockResolvedValue([]),
+  };
+
+  const chatServiceMock = {
+    getUnreadCounts: jest.fn().mockResolvedValue([]),
     getChannel: jest.fn().mockResolvedValue({ id: 'wrong-handler' }),
   };
 
@@ -92,6 +98,8 @@ describe('Route declaration order — a literal route must not be swallowed by :
       .useValue(createSupabaseMock())
       .overrideProvider(ChatService)
       .useValue(chatServiceMock)
+      .overrideProvider(ChatNotificationPreferenceService)
+      .useValue(notificationPreferencesMock)
       .overrideProvider(MemberService)
       .useValue(memberServiceMock)
       .overrideProvider(ServiceEntryService)
@@ -147,7 +155,7 @@ describe('Route declaration order — a literal route must not be swallowed by :
       .expect(200);
 
     expect(
-      chatServiceMock.getChannelNotificationPreferences,
+      notificationPreferencesMock.getChannelNotificationPreferences,
     ).toHaveBeenCalledWith(CHAPTER_ID, 'member-1');
     expect(chatServiceMock.getChannel).not.toHaveBeenCalled();
   });
@@ -165,13 +173,12 @@ describe('Route declaration order — a literal route must not be swallowed by :
       .set('x-chapter-id', CHAPTER_ID)
       .expect(200);
 
-    expect(chatServiceMock.getKindNotificationPreferences).toHaveBeenCalledWith(
-      CHAPTER_ID,
-      'member-1',
-    );
+    expect(
+      notificationPreferencesMock.getKindNotificationPreferences,
+    ).toHaveBeenCalledWith(CHAPTER_ID, 'member-1');
     expect(chatServiceMock.getChannel).not.toHaveBeenCalled();
     expect(
-      chatServiceMock.getChannelNotificationPreferences,
+      notificationPreferencesMock.getChannelNotificationPreferences,
     ).not.toHaveBeenCalled();
   });
 

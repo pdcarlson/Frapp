@@ -16,22 +16,26 @@ import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interf
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
-import { NotificationService } from '../../application/services/notification.service';
+import { NotificationService } from '../services/notification.service';
 import { BurstBundler } from './burst-bundler';
-import { ChatNotificationPreferenceRepository } from './chat-notification-preference.repository';
-import { ChatPushDispatchRepository } from './chat-push-dispatch.repository';
-import { decidePush } from './push-rules';
+import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
+import type { IChatNotificationPreferenceRepository } from '#domain/repositories/chat-notification-preference.repository.interface';
+import { CHAT_PUSH_DISPATCH_REPOSITORY } from '#domain/repositories/chat-push-dispatch.repository.interface';
+import type { IChatPushDispatchRepository } from '#domain/repositories/chat-push-dispatch.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
+import { decidePush } from '../services/push-rules';
 import {
   canAccessChannel,
   isAnnouncementChannel,
   isDirectChannel,
   SYSTEM_SENDER_ID,
 } from '@repo/validation';
-import { RbacService } from '../../application/services/rbac.service';
+import { RbacService } from '../services/rbac.service';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
-import { ChatBlockService } from '../../application/services/chat-block.service';
-import { ChannelCacheService } from './channel-cache.service';
-import type { CachedChannelRow } from './channel-cache.service';
+import { ChatBlockService } from '../services/chat-block.service';
+import { ChannelCacheService } from '../services/channel-cache.service';
+import type { CachedChannelRow } from '../services/channel-cache.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
 
@@ -175,8 +179,12 @@ export class ChatPushWorkerService
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
     private readonly notificationService: NotificationService,
-    private readonly prefRepo: ChatNotificationPreferenceRepository,
-    private readonly dispatches: ChatPushDispatchRepository,
+    @Inject(CHAT_NOTIFICATION_PREFERENCE_REPOSITORY)
+    private readonly prefRepo: IChatNotificationPreferenceRepository,
+    @Inject(CHAT_PUSH_DISPATCH_REPOSITORY)
+    private readonly dispatches: IChatPushDispatchRepository,
+    @Inject(CHAT_CHANNEL_REPOSITORY)
+    private readonly channels: IChatChannelRepository,
     private readonly rbac: RbacService,
     /**
      * Channel rows, cached to keep a hot channel from re-querying per message.
@@ -604,24 +612,19 @@ export class ChatPushWorkerService
     // below is in flight. Passing this epoch to `set` below lets it detect
     // that case and discard the now-stale result instead of re-caching it.
     const epoch = this.channelCache.getEpoch(channelId);
-    const { data, error } = await this.supabase
-      .from('chat_channels')
-      .select(
-        'id, chapter_id, name, is_read_only, type, member_ids, required_permissions, default_notification_level',
-      )
-      .eq('id', channelId)
-      .maybeSingle();
-    if (error || !data) {
-      if (error) {
-        logThrowable(
-          this.logger,
-          'warn',
-          'chat-push: channel lookup failed',
-          error,
-        );
-      }
+    let data: ChannelRow | null;
+    try {
+      data = await this.channels.findPushRouting(channelId);
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        'chat-push: channel lookup failed',
+        error,
+      );
       return null;
     }
+    if (!data) return null;
     const row: ChannelRow = data;
     this.channelCache.set(channelId, row, epoch);
     return row;

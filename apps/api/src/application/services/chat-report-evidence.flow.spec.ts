@@ -1,6 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import { ChatReportService } from './chat-report.service';
 import { ChatService } from './chat.service';
+import { ChatAttachmentService } from './chat-attachment.service';
 import type { ChannelAccessService } from './channel-access.service';
 import type { NotificationService } from './notification.service';
 import type { RbacService } from './rbac.service';
@@ -53,6 +54,7 @@ describe('Reported attachment evidence, end to end (#2481)', () => {
   let messages: Map<string, ChatMessage>;
   let reports: ChatReportService;
   let chat: ChatService;
+  let attachments: ChatAttachmentService;
 
   const attachmentRow = (id: string, messageId: string, path: string) => ({
     id,
@@ -118,7 +120,7 @@ describe('Reported attachment evidence, end to end (#2481)', () => {
       .update({ chat_messages: { is_deleted: true } } as never)
       .eq('message_id', messageId);
     if (error) throw new Error(error.message);
-    await chat.purgeRemovedMessageAttachments(messageId, CHAPTER_A);
+    await attachments.purgeRemovedMessageAttachments(messageId, CHAPTER_A);
   }
 
   beforeEach(() => {
@@ -172,24 +174,30 @@ describe('Reported attachment evidence, end to end (#2481)', () => {
     } as unknown as IStorageProvider;
     const reportRepo = new SupabaseChatMessageReportRepository(harness.client);
     const unused = {} as never;
+    const messageRepo = {
+      findById: jest.fn(async (id: string) => messages.get(id) ?? null),
+    } as never;
+    attachments = new ChatAttachmentService(
+      new SupabaseChatMessageAttachmentRepository(harness.client),
+      messageRepo,
+      storage,
+      reportRepo,
+      unused,
+      unused,
+    );
     chat = new ChatService(
       { findById: jest.fn(async () => ({ id: CHANNEL })) } as never,
       unused,
-      {
-        findById: jest.fn(async (id: string) => messages.get(id) ?? null),
-      } as never,
-      unused,
-      new SupabaseChatMessageAttachmentRepository(harness.client),
-      unused,
-      unused,
-      unused,
-      storage,
+      messageRepo,
       unused,
       unused,
       unused,
       unused,
       unused,
-      reportRepo,
+      unused,
+      unused,
+      unused,
+      attachments,
     );
     const channelAccess = {
       assertMessageAccess: jest.fn(async (id: string) => messages.get(id)),
@@ -204,6 +212,7 @@ describe('Reported attachment evidence, end to end (#2481)', () => {
       reportRepo,
       channelAccess,
       chat,
+      attachments,
       rbac,
       notifications,
     );

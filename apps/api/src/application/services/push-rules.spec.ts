@@ -4,7 +4,7 @@ import {
   resolveLevel,
   type PushRuleChannel,
 } from './push-rules';
-import type { ChatNotificationPreferenceRow } from './chat-notification-preference.repository';
+import type { ChatNotificationPreferenceRow } from '#domain/repositories/chat-notification-preference.repository.interface';
 
 /** A PUBLIC channel with this name and id `ch-1`, overridable per case. */
 const ch = (

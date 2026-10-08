@@ -583,7 +583,7 @@ function chunk<T>(items: T[], size: number): T[][] {
  * message ids rather than trusting a caller-supplied storage path (the
  * `chat-archive` bucket has no storage RLS, and an avatar path is otherwise
  * indistinguishable from another message's attachment path) — see
- * `ChatService.resolveAuthorAvatars`. `ChatMessage.author_avatar_path` itself
+ * `ChatAttachmentService.resolveAuthorAvatars`. `ChatMessage.author_avatar_path` itself
  * never leaves the client in this call; it's only the lookup key used against
  * the result below.
  *

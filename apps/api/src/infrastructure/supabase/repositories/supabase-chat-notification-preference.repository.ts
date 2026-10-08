@@ -1,14 +1,15 @@
 import type { ChatNotificationLevel } from '@repo/validation';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type {
-  FrappSupabaseClient,
-  TablesInsert,
-} from '../../infrastructure/supabase/database.types';
+import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import { chunkIds } from '#domain/utils/chunk-ids';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
-import { fetchAllPages } from '../../infrastructure/supabase/supabase.utils';
-import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
+import { logThrowable } from '../../observability/log-throwable';
+import { fetchAllPages } from '../supabase.utils';
+import { SupabaseQueryError } from '../supabase-query-error';
+import type {
+  ChatNotificationPreferenceRow,
+  IChatNotificationPreferenceRepository,
+} from '#domain/repositories/chat-notification-preference.repository.interface';
 
 /**
  * Rows per round trip when reading preferences for a batch of users.
@@ -31,22 +32,10 @@ import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query
  */
 export const PREFERENCE_PAGE_SIZE = 500;
 
-/** Per-channel-or-kind notification level (ADR-06), defined in `@repo/validation`. */
-export type { ChatNotificationLevel } from '@repo/validation';
-
-export interface ChatNotificationPreferenceRow {
-  user_id: string;
-  chapter_id: string;
-  scope: 'channel' | 'kind';
-  scope_id: string | null;
-  scope_kind: string | null;
-  level: ChatNotificationLevel;
-}
-
 @Injectable()
-export class ChatNotificationPreferenceRepository {
+export class SupabaseChatNotificationPreferenceRepository implements IChatNotificationPreferenceRepository {
   private readonly logger = new Logger(
-    ChatNotificationPreferenceRepository.name,
+    SupabaseChatNotificationPreferenceRepository.name,
   );
 
   constructor(
@@ -129,7 +118,7 @@ export class ChatNotificationPreferenceRepository {
    * (`.claude/skills/api-development/SKILL.md`: "Always `if (error) throw
    * error;`") and refuses to let a partial read pass for a complete one.
    * Expressing the degradation at the call site instead is the policy that
-   * helper documents, and the shape `scheduled-jobs.repository.ts` already uses.
+   * helper documents, and the shape `supabase-scheduled-jobs.repository.ts` already uses.
    *
    * **The `catch` is narrowed on purpose, and the `instanceof` is the whole
    * point.** A failed query arrives as a `SupabaseQueryError`: `fetchAllPages`

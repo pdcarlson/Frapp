@@ -4,17 +4,18 @@ import * as Sentry from '@sentry/nestjs';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
-import { NotificationService } from '../../application/services/notification.service';
-import { RbacService } from '../../application/services/rbac.service';
-import { ChatBlockService } from '../../application/services/chat-block.service';
+import { NotificationService } from '../services/notification.service';
+import { RbacService } from '../services/rbac.service';
+import { ChatBlockService } from '../services/chat-block.service';
 import {
   ChatPushWorkerService,
   fanOutStartTime,
   MAX_PRESENCE_CHANNELS,
 } from './chat-push-worker.service';
-import { ChatNotificationPreferenceRepository } from './chat-notification-preference.repository';
-import { ChatPushDispatchRepository } from './chat-push-dispatch.repository';
-import { ChannelCacheService } from './channel-cache.service';
+import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
+import { CHAT_PUSH_DISPATCH_REPOSITORY } from '#domain/repositories/chat-push-dispatch.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import { ChannelCacheService } from '../services/channel-cache.service';
 
 jest.mock('@sentry/nestjs', () => ({
   ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
@@ -130,10 +131,14 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
         { provide: MEMBER_REPOSITORY, useValue: { findByChapter } },
         { provide: NotificationService, useValue: { notifyUser } },
         {
-          provide: ChatNotificationPreferenceRepository,
+          provide: CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
           useValue: { findForUsers: jest.fn().mockResolvedValue(new Map()) },
         },
-        { provide: ChatPushDispatchRepository, useValue: { claim } },
+        {
+          provide: CHAT_CHANNEL_REPOSITORY,
+          useValue: { findPushRouting: jest.fn() },
+        },
+        { provide: CHAT_PUSH_DISPATCH_REPOSITORY, useValue: { claim } },
         {
           provide: RbacService,
           useValue: {

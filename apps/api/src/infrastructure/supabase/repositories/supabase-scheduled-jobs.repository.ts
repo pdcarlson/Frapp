@@ -1,26 +1,26 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type {
-  FrappSupabaseClient,
-  TablesInsert,
-} from '../../infrastructure/supabase/database.types';
+import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 // Aliased: the private method below wraps this one to swallow errors, and the
 // alias keeps which of the two is which readable at the call site.
 import {
   type PagedQueryResult,
   fetchAllPages as fetchAllPagesOrThrow,
-} from '../../infrastructure/supabase/supabase.utils';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+} from '../supabase.utils';
+import { logThrowable } from '../../observability/log-throwable';
 import { TaskStatus } from '#domain/entities';
-
-// Re-exported from the entity so the sweep signatures and the typed
-// `scheduled_notification_dispatches` row can never drift apart. Kept as
-// named exports here because `scheduled-jobs.service.ts` imports them from
-// this module.
-export type { DispatchEntityType, DispatchThreshold } from '#domain/entities';
 import type { DispatchEntityType, DispatchThreshold } from '#domain/entities';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
-import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
+import { SupabaseQueryError } from '../supabase-query-error';
+import type {
+  IScheduledJobsRepository,
+  StalePaletteRow,
+  SweepEventRow,
+  SweepInvoiceRow,
+  SweepPollRow,
+  SweepTaskRow,
+  SweepUpcomingEventRow,
+} from '#domain/repositories/scheduled-jobs.repository.interface';
 
 /**
  * PostgREST caps responses at `max_rows` (1000 — `supabase/config.toml`) and
@@ -46,72 +46,12 @@ interface EventCandidateRow {
   required_role_ids: string[] | null;
 }
 
-export interface SweepEventRow {
-  id: string;
-  chapter_id: string;
-  end_time: string;
-}
-
-/**
- * An event about to start. Carries the targeting fields because the reminder's
- * audience is resolved per event, and `name`/`start_time` because they are the
- * notification copy.
- */
-export interface SweepUpcomingEventRow {
-  id: string;
-  chapter_id: string;
-  name: string;
-  start_time: string;
-  is_mandatory: boolean;
-  required_role_ids: string[] | null;
-}
-
-export interface SweepInvoiceRow {
-  id: string;
-  chapter_id: string;
-  user_id: string;
-  title: string;
-  amount: number;
-  due_date: string;
-}
-
-export interface SweepTaskRow {
-  id: string;
-  chapter_id: string;
-  assignee_id: string;
-  created_by: string;
-  title: string;
-  due_date: string;
-}
-
 interface PollCandidateRow {
   id: string;
   channel_id: string;
   /** `metadata->>expires_at`, aliased: the sweep reads nothing else of it. */
   expires_at: string | null;
   chat_channels: { chapter_id: string } | { chapter_id: string }[] | null;
-}
-
-export interface SweepPollRow {
-  id: string;
-  chapter_id: string;
-  channel_id: string;
-  expires_at: string;
-}
-
-/**
- * A chapter whose stored `theme_palette` an older engine wrote (#1165), with
- * the seed to re-derive it from.
- */
-export interface StalePaletteRow {
-  id: string;
-  /**
-   * `branding.colors.accent` as text, read with `->>` in the query itself.
-   * The seed every palette writer uses (accent-engine.md §7), and also the
-   * compare-and-set key for the write, so the two must be read the same way.
-   * `null` when the chapter never picked an accent: the house seed.
-   */
-  seed: string | null;
 }
 
 /**
@@ -129,17 +69,13 @@ function stalePaletteFilter(engineVersion: number): string {
 }
 
 /**
- * Data access for the scheduled sweeps.
- *
- * Module-local and service-role scoped, following the `chat-push-worker`
- * precedent: sweeps run across every chapter at once, while every repository
- * under `domain/repositories` is deliberately chapter-scoped. Rather than add
- * a cross-chapter variant to three separate domain repositories, the queries
- * that only the scheduler needs live with the scheduler.
+ * Data access for the scheduled sweeps. Service-role scoped and cross-chapter;
+ * why that is one port rather than variants on three chapter-scoped
+ * repositories is on {@link IScheduledJobsRepository}.
  */
 @Injectable()
-export class ScheduledJobsRepository {
-  private readonly logger = new Logger(ScheduledJobsRepository.name);
+export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository {
+  private readonly logger = new Logger(SupabaseScheduledJobsRepository.name);
 
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,

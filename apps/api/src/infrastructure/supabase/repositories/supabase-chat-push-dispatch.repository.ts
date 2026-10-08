@@ -1,34 +1,24 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type {
-  FrappSupabaseClient,
-  TablesInsert,
-} from '../../infrastructure/supabase/database.types';
+import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import {
   PG_FOREIGN_KEY_VIOLATION,
   PG_UNIQUE_VIOLATION,
 } from '#domain/constants/postgres-error-codes';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
-import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
+import { logThrowable } from '../../observability/log-throwable';
+import { SupabaseQueryError } from '../supabase-query-error';
+import type {
+  ChatPushClaimOutcome,
+  IChatPushDispatchRepository,
+} from '#domain/repositories/chat-push-dispatch.repository.interface';
 
 /**
- * How one claim attempt ended.
- *
- * - `claimed`: this instance inserted the row and owns the message's fan-out.
- * - `taken`: another instance (or an earlier delivery) already owns it.
- * - `gone`: the message was hard-deleted before the claim; nothing to send.
- * - `failed`: the insert failed for another reason, already logged.
- */
-export type ChatPushClaimOutcome = 'claimed' | 'taken' | 'gone' | 'failed';
-
-/**
- * The push worker's cross-instance claim (#2846). Every API instance receives
- * every `chat_messages` INSERT from Realtime; the primary key on
- * `chat_push_dispatches` is what lets exactly one of them send.
+ * The push worker's cross-instance claim (#2846); the contract is on
+ * {@link IChatPushDispatchRepository}.
  */
 @Injectable()
-export class ChatPushDispatchRepository {
-  private readonly logger = new Logger(ChatPushDispatchRepository.name);
+export class SupabaseChatPushDispatchRepository implements IChatPushDispatchRepository {
+  private readonly logger = new Logger(SupabaseChatPushDispatchRepository.name);
 
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
@@ -38,7 +28,7 @@ export class ChatPushDispatchRepository {
    * Claim the right to fan out one message.
    *
    * Only `claimed` may send. A `failed` insert is treated as not claimed, the
-   * same as `ScheduledJobsRepository.claimDispatch`: on a write whose outcome
+   * same as `SupabaseScheduledJobsRepository.claimDispatch`: on a write whose outcome
    * is unknown, a missed push is the cheaper mistake than one sent twice.
    */
   async claim(messageId: string): Promise<ChatPushClaimOutcome> {

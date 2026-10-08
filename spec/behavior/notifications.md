@@ -114,7 +114,7 @@ Multiple notifications from the same source are collapsed before they reach the 
 - Events: "2 upcoming events today."
 
 **Grouping happens server-side, in the push worker — not on the device.** The
-`BurstBundler` (`apps/api/src/modules/chat-push-worker/burst-bundler.ts`) collapses
+`BurstBundler` (`apps/api/src/application/workers/burst-bundler.ts`) collapses
 3+ messages from the same sender to the same recipient inside a 60s window into a
 single "N new messages" push, and that decision reaches the client only as
 `data.bundled` / `data.count`. No category, thread, collapse or channel identifier is
@@ -142,7 +142,7 @@ Users can mute specific chat channels. Muted channels:
 - @mentions in muted channels still generate notifications (override mute).
 
 The mention-override is implemented in the push worker's `decidePush`
-(`apps/api/src/modules/chat-push-worker/push-rules.ts`): a `hasMention` recipient is sent a
+(`apps/api/src/application/services/push-rules.ts`): a `hasMention` recipient is sent a
 push regardless of the resolved `off` level. The one exception is the `system_audit` kind —
 those system messages never page anyone unless explicitly opted in (see below), so a mention
 does not lift their `off` default.

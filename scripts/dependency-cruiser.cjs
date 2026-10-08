@@ -3,8 +3,9 @@
  *
  * Rules encode boundaries this codebase already states in prose but nothing
  * enforced: the API's layer direction (`.claude/skills/api-development/SKILL.md`,
- * and "Architecture pattern" in `spec/architecture/README.md`), and the
- * monorepo's app/package separation.
+ * and "Architecture pattern" in `spec/architecture/README.md`), that the API's
+ * `src/modules/` holds Nest wiring only, and the monorepo's app/package
+ * separation.
  *
  * ## Why this config is workspace-aware
  *
@@ -46,7 +47,7 @@
  *
  * Hard failure rather than a default, because the failure mode of a default is
  * a clean run that checked almost nothing: with this unset, `isApi`,
- * `isPackage` and `isApp` are all false and the three API layer rules plus both
+ * `isPackage` and `isApp` are all false and the API layer rules plus both
  * boundary rules silently disappear. Someone running `npx depcruise` by hand to
  * check a layering import would get a green result and push.
  */
@@ -109,7 +110,10 @@ const NOT_SHIPPED_CODE =
 /**
  * apps/api layer direction: Interface → Application → Infrastructure → Domain.
  * Outer may import inner; never the reverse. One rule per illegal edge, so a
- * failure names the boundary that broke rather than "a layering rule".
+ * failure names the boundary that broke rather than "a layering rule". Also
+ * here, because they are API-only: `api-domain-by-subpath` (how the domain is
+ * imported) and the three `api-modules-wiring-only` forms (what may live under
+ * `src/modules/`), which are about placement rather than edge direction.
  */
 const apiLayerRules = [
   {
@@ -148,6 +152,40 @@ const apiLayerRules = [
       "subpath at all, which is its own consistent convention.",
     from: { path: "^src/", pathNot: "^src/domain/" },
     to: { path: "^src/domain/", dependencyTypesNot: ["aliased-subpath-import"] },
+  },
+  {
+    name: "api-modules-wiring-only",
+    severity: "error",
+    comment:
+      "modules/ is Nest wiring: `*.module.ts` files (and their `*.module.spec.ts`) that register " +
+      "providers and controllers. The layer-direction rules are anchored to domain/, " +
+      "infrastructure/ and application/ (api-domain-by-subpath only checks how a file spells a " +
+      "domain import), so a service or repository parked under modules/ is free to import any " +
+      "layer and be imported by any layer. Workers and services go in application/, " +
+      "repositories in infrastructure/supabase/repositories/ behind a domain/repositories/ " +
+      "interface (#3219). dependency-cruiser judges edges, not files, so the rule takes three " +
+      "forms: this one sees such a file through its own imports, -target through an import of " +
+      "it, and -orphan when it has neither.",
+    from: { path: "^src/modules/", pathNot: "\\.module(\\.spec)?\\.ts$" },
+    to: {},
+  },
+  {
+    name: "api-modules-wiring-only-target",
+    severity: "error",
+    comment:
+      "api-modules-wiring-only, seen from the importer: a non-module file under modules/ that " +
+      "imports nothing itself, such as a constants file, but is imported.",
+    from: {},
+    to: { path: "^src/modules/", pathNot: "\\.module\\.ts$" },
+  },
+  {
+    name: "api-modules-wiring-only-orphan",
+    severity: "error",
+    comment:
+      "api-modules-wiring-only for a non-module file under modules/ with no edges at all. " +
+      "Specs are orphans by nature, so `*.module.spec.ts` stays exempt.",
+    from: { orphan: true, path: "^src/modules/", pathNot: "\\.module(\\.spec)?\\.ts$" },
+    to: {},
   },
   {
     name: "api-application-not-to-interface",

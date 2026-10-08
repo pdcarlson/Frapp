@@ -348,7 +348,7 @@ today, so it is the norm rather than a quirk:
 | Bucket | Route guard | What actually gates the mint |
 | --- | --- | --- |
 | `chat` | `members:view` | `assertChannelAccess(…, 'post')` in `requestChatUploadUrl` — the same gate `sendMessage` applies, so mint and send cannot diverge (#2186) |
-| `chat-archive` | `members:view` | `assertChannelAccess` in the attachment and author-avatar download mints (`chat.service.ts:1742,1876`) |
+| `chat-archive` | `members:view` | `assertChannelAccess` in the attachment and author-avatar download mints (`ChatAttachmentService.listMessageAttachments` and `resolveAuthorAvatars`) |
 | `service` | `members:view` | the owner-or-admin check in `ServiceEntryService.getProofDownloadUrl`, so one member cannot pull another's proof |
 
 The general rule the first of these came from: **every step of a multi-step write authorizes as the

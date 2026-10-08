@@ -4,7 +4,7 @@ import {
   DISCORD_IMPORT_REPOSITORY,
   type IDiscordImportRepository,
 } from '#domain/repositories/discord-import.repository.interface';
-import { archiveQuotaMessage } from '../../application/services/discord-import.service';
+import { archiveQuotaMessage } from '../services/discord-import.service';
 import {
   DISCORD_CONNECTION_REPOSITORY,
   type IDiscordConnectionRepository,

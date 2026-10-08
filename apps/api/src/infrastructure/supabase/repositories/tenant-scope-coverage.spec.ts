@@ -46,7 +46,7 @@ const TENANT_SCOPE_BACKLOG: Record<string, string> = {
     'reactions are message-scoped like poll_votes; covered indirectly by the chat-channel boundary. Backlog.',
   'supabase-read-receipt.repository.ts':
     'read receipts are channel-scoped; the unread-count RPC does take p_chapter_id. Backlog.',
-  'chat-push-dispatch.repository.ts':
+  'supabase-chat-push-dispatch.repository.ts':
     'chat_push_dispatches is a global idempotency ledger keyed by chat message id (#2846), like stripe_webhook_events; it has no chapter column.',
   'supabase-activation-milestone.repository.ts':
     'chapter-scoped and upsert-only; low blast radius, and no hook call site in the query-key migration. Backlog.',

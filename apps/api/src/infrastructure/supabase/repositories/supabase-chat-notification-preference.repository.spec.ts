@@ -1,8 +1,8 @@
 import { Logger } from '@nestjs/common';
 import {
-  ChatNotificationPreferenceRepository,
+  SupabaseChatNotificationPreferenceRepository,
   PREFERENCE_PAGE_SIZE,
-} from './chat-notification-preference.repository';
+} from './supabase-chat-notification-preference.repository';
 import {
   CHAPTER_B,
   USER_A,
@@ -97,15 +97,15 @@ const seed = () => ({
   ],
 });
 
-describe('ChatNotificationPreferenceRepository — tenant scope', () => {
+describe('SupabaseChatNotificationPreferenceRepository — tenant scope', () => {
   let harness: TenantHarness;
-  let repo: ChatNotificationPreferenceRepository;
+  let repo: SupabaseChatNotificationPreferenceRepository;
 
   beforeEach(() => {
     harness = createTenantHarness({
       tables: seed(),
     });
-    repo = new ChatNotificationPreferenceRepository(harness.client);
+    repo = new SupabaseChatNotificationPreferenceRepository(harness.client);
   });
 
   it('findForUsers returns only the caller chapter prefs for the shared user', async () => {
@@ -222,7 +222,9 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
           },
         }),
       };
-      const repo = new ChatNotificationPreferenceRepository(client as never);
+      const repo = new SupabaseChatNotificationPreferenceRepository(
+        client as never,
+      );
       return { repo, ranges, orderedBy, inLists };
     }
 
@@ -338,7 +340,7 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
       // chunks run concurrently, so a counter would interleave them and the
       // test would be scripting something other than what it claims.
       const pagesServed = new Map<string, number>();
-      const failingRepo = new ChatNotificationPreferenceRepository({
+      const failingRepo = new SupabaseChatNotificationPreferenceRepository({
         from: () => ({
           // A fresh builder per page — the paged read rebuilds the query on
           // every iteration, so per-chain state would reset and prove nothing.
@@ -415,7 +417,7 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
         // helper spreads a non-iterable and throws a real `Error`.
         range: () => Promise.resolve({ data: {}, error: null }),
       };
-      const brokenRepo = new ChatNotificationPreferenceRepository({
+      const brokenRepo = new SupabaseChatNotificationPreferenceRepository({
         from: () => ({ select: () => chain }),
       } as never);
 
@@ -467,7 +469,7 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
             },
           }),
       };
-      const failingRepo = new ChatNotificationPreferenceRepository({
+      const failingRepo = new SupabaseChatNotificationPreferenceRepository({
         from: () => ({ select: () => chain }),
       } as never);
 
@@ -548,8 +550,8 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
    * so these `.eq()` calls are the entire tenant boundary. A member of two
    * chapters clearing an override in one must not lose it in the other.
    *
-   * Pinned here rather than in `chat.service.spec.ts`, where the repository is
-   * mocked and the filter chain is therefore invisible.
+   * Pinned here rather than in `chat-notification-preference.service.spec.ts`,
+   * where the repository is mocked and the filter chain is therefore invisible.
    */
   it('deleteKindLevel binds user, chapter and scope', async () => {
     await harness.expectTenantScoped(CHAPTER_B, () =>
@@ -615,7 +617,7 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
     jest.spyOn(failing.client, 'from').mockReturnValue({
       select: () => chain,
     });
-    const failingRepo = new ChatNotificationPreferenceRepository(
+    const failingRepo = new SupabaseChatNotificationPreferenceRepository(
       failing.client,
     );
 
@@ -632,7 +634,9 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
     // where the per-user read only lost the one member it was called for.
     // `chat-push-worker.service.spec.ts` cannot catch that either: it hardcodes
     // the lookup to resolve.
-    const worker = new ChatNotificationPreferenceRepository(failing.client);
+    const worker = new SupabaseChatNotificationPreferenceRepository(
+      failing.client,
+    );
     await expect(
       worker.findForUsers([USER_SHARED], CHAPTER_B),
     ).resolves.toEqual(new Map());
