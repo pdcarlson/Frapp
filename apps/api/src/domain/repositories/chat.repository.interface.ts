@@ -99,7 +99,8 @@ export interface IChatChannelRepository {
    * The push worker's routing columns for one channel, or null when it is
    * gone. Keyed by id alone, because the Realtime `chat_messages` INSERT that
    * triggers the read carries no chapter; the worker scopes everything after
-   * it by the returned `chapter_id`.
+   * it by the returned `chapter_id`. Worker-only: a request path must read a
+   * channel with `findById(id, chapterId)`, never this.
    */
   findPushRouting(channelId: string): Promise<ChatChannelPushRouting | null>;
   /**

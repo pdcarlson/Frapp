@@ -14,7 +14,8 @@ export type ChatNotificationPreferenceRow = Pick<
 
 /**
  * Per-channel and per-kind chat notification levels (ADR-06). The push worker
- * reads them in batches; `ChatService` reads and writes the caller's own.
+ * reads them in batches; `ChatNotificationPreferenceService` reads and writes
+ * the caller's own.
  */
 export interface IChatNotificationPreferenceRepository {
   /**

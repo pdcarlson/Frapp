@@ -36,6 +36,11 @@ const FIXTURE = {
   // Named like a module but is not one: the exemption is anchored to the
   // `.module.ts` suffix, so this is a -target violation too.
   "src/modules/a/a.module.helpers.ts": "export const Y = 2;\n",
+  // The same lookalike with imports of its own and no importer pins the base
+  // rule's anchor; one with no edges at all pins -orphan's.
+  "src/modules/b/b.module.helpers.ts":
+    "import { S } from '../../application/a.service';\nexport const B = S;\n",
+  "src/modules/b/b.module.stray.ts": "export const W = 1;\n",
   // Code under modules/ with imports of its own: the base rule.
   "src/modules/a/a.helper.ts":
     "import { S } from '../../application/a.service';\nexport const H = S;\n",
@@ -98,8 +103,10 @@ function cruiseFixture() {
 test("each api-modules-wiring-only form fires on its file, and only there", () => {
   assert.deepEqual(cruiseFixture(), [
     "api-modules-wiring-only-orphan: src/modules/a/z.orphan.ts -> src/modules/a/z.orphan.ts",
+    "api-modules-wiring-only-orphan: src/modules/b/b.module.stray.ts -> src/modules/b/b.module.stray.ts",
     "api-modules-wiring-only-target: src/modules/a/a.module.ts -> src/modules/a/a.consts.ts",
     "api-modules-wiring-only-target: src/modules/a/a.module.ts -> src/modules/a/a.module.helpers.ts",
     "api-modules-wiring-only: src/modules/a/a.helper.ts -> src/application/a.service.ts",
+    "api-modules-wiring-only: src/modules/b/b.module.helpers.ts -> src/application/a.service.ts",
   ]);
 });

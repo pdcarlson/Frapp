@@ -201,11 +201,22 @@ describe('ChatBridgeWorkerService.handleAuditRow', () => {
       const db = sharedDatabase();
       const service = await instantiate(db.repos());
       const warn = warnSpy(service);
+      const debug = jest.spyOn(
+        (
+          service as unknown as {
+            logger: { debug: (...args: unknown[]) => void };
+          }
+        ).logger,
+        'debug',
+      );
 
       await service.handleAuditRow(baseRow);
       await service.handleAuditRow(baseRow);
 
       expect(warn).not.toHaveBeenCalled();
+      expect(debug).toHaveBeenCalledWith(
+        'chat-bridge: audit audit-1 already mirrored',
+      );
     });
   });
 });

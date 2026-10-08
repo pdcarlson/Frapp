@@ -29,9 +29,9 @@ Interface → Application → Infrastructure → Domain.
 dependency-cruiser enforces this (`npm run check:dep-cruiser -- --workspace apps/api`, rules in
 `scripts/dependency-cruiser.cjs`, required CI check `dependency-cruiser`), including that nothing but
 a module file sits under `modules/` (`api-modules-wiring-only`). The rule constrains where a file
-lives, not how it queries. No service or worker queries the client directly any more (the two chat
-workers keep it only for Realtime subscriptions), and new code reads through repositories; the
-interface-layer guards and the health controller still query it. It also requires code
+lives, not how it queries; new code reads through repositories (who still holds the client:
+[`spec/architecture/README.md` § 5.1](../../../spec/architecture/README.md#51-repository-conventions)).
+dependency-cruiser also requires code
 outside `domain/` to import the domain through the `#domain/*` subpath (declared in
 `apps/api/package.json` `imports`), never by a relative `../../domain/...` path. Grandfathered
 violations, if any, are recorded in `scripts/dependency-cruiser-known-violations.json` (currently an
