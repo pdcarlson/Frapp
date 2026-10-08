@@ -8,7 +8,8 @@ import {
   type ChapterBrandingInput,
 } from './chapter-palette';
 import { buildCustomFieldRows } from './custom-field-provisioning';
-import { LEGAL_POLICY_VERSION, chapterTextMark } from '@repo/validation';
+import { chapterTextMark } from '@repo/validation';
+import { LEGAL_POLICY_VERSION } from '#domain/constants/legal';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';

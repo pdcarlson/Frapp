@@ -5,10 +5,10 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import {
-  canAccessChannel,
   CHAT_SINCE_NOT_FOUND_CODE,
   moduleDisabledMessage,
 } from '@repo/validation';
+import { canAccessChannel } from '#domain/utils/channel-access';
 import { ChatService, tombstoneMetadata } from './chat.service';
 import { ChatAttachmentService } from './chat-attachment.service';
 import {
