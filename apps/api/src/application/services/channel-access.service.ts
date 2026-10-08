@@ -242,10 +242,11 @@ export class ChannelAccessService {
    *
    * Lives here, beside `assertChannelAccess`, for the reason that method's own
    * docblock gives: more than one surface authorizes a message now (`ChatService`
-   * for pin/delete/react, `ChatBookmarkService` for bookmarks), and two copies of
-   * a message-level authorization helper is exactly the drift this service
-   * exists to prevent. `ChatService` keeps a thin private delegate so its call
-   * sites read unchanged.
+   * for pin/delete, `ChatReactionService` for reactions and votes,
+   * `ChatBookmarkService` for bookmarks), and two copies of a message-level
+   * authorization helper is exactly the drift this service exists to prevent.
+   * `ChatService` keeps a thin private delegate so its call sites read
+   * unchanged.
    *
    * `grant` is the one way past the channel predicate, and it is narrow by
    * construction — see {@link ReportedMessageGrant}. With a grant the

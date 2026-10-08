@@ -19,16 +19,10 @@ import {
   type ChatServiceFixture,
 } from '#test/helpers/chat-service.fixture';
 import {
-  ChatMessageActionDuplicateError,
   ChatMessageCursorNotFoundError,
   ChatMessageDuplicateError,
 } from '#domain/repositories/chat.repository.interface';
-import type {
-  ChatChannel,
-  ChatMessage,
-  ChatMessageAction,
-  MessageReaction,
-} from '#domain/entities/chat.entity';
+import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
 import { ReportedMessageGrant } from './channel-access.service';
 import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
 import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
