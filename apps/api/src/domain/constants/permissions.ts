@@ -1,7 +1,5 @@
-import {
-  ALUMNI_CHANNEL_PERMISSION,
-  ANNOUNCEMENTS_POST_PERMISSION,
-} from '@repo/validation';
+import { ALUMNI_CHANNEL_PERMISSION } from '@repo/validation';
+import { ANNOUNCEMENTS_POST_PERMISSION } from '../utils/channel-access';
 
 export const WILDCARD = '*';
 
@@ -24,8 +22,9 @@ export const SystemPermissions = {
   CHANNELS_CREATE: 'channels:create',
   CHANNELS_MANAGE: 'channels:manage',
 
-  // The posting gate on read-only channels is `canAccessChannel` in
-  // `@repo/validation`, which owns the value; this entry puts it in the catalog.
+  // The posting gate on read-only channels is `canAccessChannel`
+  // (`domain/utils/channel-access.ts`), which owns the value; this entry puts
+  // it in the catalog.
   ANNOUNCEMENTS_POST: ANNOUNCEMENTS_POST_PERMISSION,
 
   BILLING_VIEW: 'billing:view',

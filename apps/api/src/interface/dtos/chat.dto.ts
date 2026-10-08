@@ -21,8 +21,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   CHAT_NOTIFICATION_LEVELS,
-  POSITION_MAX,
 } from '@repo/validation';
+import { POSITION_MAX } from '#domain/constants/field-limits';
 import {
   CHAT_MESSAGE_KINDS,
   SETTABLE_NOTIFICATION_KINDS,
