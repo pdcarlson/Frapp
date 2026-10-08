@@ -1,7 +1,7 @@
 // These are behavioural test doubles, not a module-resolution workaround: the
-// `@repo/*` dists are CJS and import fine here (the `@repo/validation` mock
-// below spreads the real module, and custom-field-provisioning.spec.ts imports
-// CUSTOM_FIELDS_SEED directly). An earlier version of this comment claimed they
+// `@repo/*` dists are CJS and import fine here (the `@repo/chapter-theme` mock
+// below spreads the real module, `@repo/validation` loads unmocked, and
+// custom-field-provisioning.spec.ts imports CUSTOM_FIELDS_SEED directly). An earlier version of this comment claimed they
 // were ESM-only and untransformable — they are not; the symptom behind that was
 // an unbuilt `dist`, fixed by building the packages.
 //

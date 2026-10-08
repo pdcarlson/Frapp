@@ -98,11 +98,11 @@ export function hashChapterIdForAnalytics(
  * correlatable across the log and error-reporting boundaries without either
  * side holding the raw value.
  *
- * Unlike the user and chapter hashes this one is **not** reversible even with
- * the salt in hand — a 32-bit IPv4 space is small enough to enumerate against a
- * known salt. That is a property to be aware of when handling the salt, not a
- * reason to skip the hash: an attacker who holds the salt has already lost you
- * the user and chapter pseudonyms too.
+ * Unlike the user and chapter hashes this one **is** reversible by anyone
+ * holding the salt: a 32-bit IPv4 space is small enough to enumerate against a
+ * known salt, where a UUID is not. That is a property to be aware of when
+ * handling the salt, not a reason to skip the hash: an attacker who holds the
+ * salt has already lost you the user and chapter pseudonyms too.
  *
  * @throws if `salt` or `ip` is empty — a missing salt must fail loudly rather
  *   than silently keying every origin under the empty-string salt. Callers that

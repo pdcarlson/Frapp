@@ -1,4 +1,5 @@
 import { ALUMNI_CHANNEL_PERMISSION } from '@repo/validation';
+import type { ChannelType } from '../entities/chat.entity';
 
 /**
  * The chat channel-access predicate, shared by every chat and search path in
@@ -16,13 +17,10 @@ import { ALUMNI_CHANNEL_PERMISSION } from '@repo/validation';
  * gone and no client imports it, so the rule is the API's alone.
  */
 
-export type ChatChannelType =
-  'PUBLIC' | 'PRIVATE' | 'ROLE_GATED' | 'DM' | 'GROUP_DM';
-
 /** The trusted channel fields the access decision depends on. */
 export interface ChannelAccessRecord {
   /**
-   * A {@link ChatChannelType}, widened to `string` because it is read off a
+   * A {@link ChannelType}, widened to `string` because it is read off a
    * stored row: an unknown value is denied, never trusted.
    */
   type: string;
@@ -99,7 +97,7 @@ export interface ChannelAccessInput {
 // requires `ALUMNI_CHANNEL_PERMISSION` (`@repo/validation`); see
 // `isAlumniPostableChannel`.
 export const ALUMNI_POSTABLE_CHANNEL_TYPES: ReadonlySet<string> =
-  new Set<ChatChannelType>(['DM', 'GROUP_DM']);
+  new Set<ChannelType>(['DM', 'GROUP_DM']);
 
 /**
  * Whether an Alumni-role member may author content in `channel`.
