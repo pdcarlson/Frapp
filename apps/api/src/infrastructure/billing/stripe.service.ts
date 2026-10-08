@@ -12,11 +12,11 @@ import {
 } from '#domain/adapters/billing.interface';
 
 /**
- * The trial the public site sells (#913). `apps/landing/app/page.tsx` labels the
- * CTA "Start free trial" (`:440`), promises "every new chapter starts with a
- * 14-day trial" (`:99`), and repeats it in the hero trust line (`:211`) — so a
- * checkout session that charges on day zero breaks a commercial promise, not
- * just a spec.
+ * The trial the public site sells (#913). The landing's pricing section
+ * (`apps/landing/components/home/pricing-section.tsx`) badges Chapter Pro
+ * "14-day trial" and states "The trial starts at checkout inside the app: 14
+ * days, card up front, first charge on day 15" — so a checkout session that
+ * charges on day zero breaks a commercial promise, not just a spec.
  *
  * It has to live here rather than on the Price: Stripe's Price object has no
  * writable trial field, so `subscription_data.trial_period_days` on the
