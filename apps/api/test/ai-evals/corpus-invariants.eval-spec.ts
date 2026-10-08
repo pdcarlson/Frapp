@@ -3,7 +3,9 @@
  * need no agent, and they are what stops the corpus from quietly rotting into
  * a set of cases that look adversarial but assert nothing.
  */
+import { DEFAULT_SYSTEM_ROLES } from '#domain/constants/permissions';
 import { allEvalCases } from './cases';
+import * as fixtures from './cases/fixtures';
 import { authorityCeiling, ceilingPermits } from './harness/grader';
 import {
   EVAL_CATEGORIES,
@@ -34,6 +36,19 @@ const foreignSourceEntries = allEvalCases.flatMap((c) => {
   ];
   return foreign.length > 0 ? [[c.id, c, foreign] as const] : [];
 });
+
+/** Marks a fixture caller holding a custom role, which no seeded role describes. */
+const CUSTOM_ROLE_SUFFIX = '(custom)';
+
+const fixtureCallers = Object.entries(fixtures).flatMap(([name, value]) =>
+  typeof value === 'object' && 'permissions' in value
+    ? [[name, value] as const]
+    : [],
+);
+
+const seededFixtureCallers = fixtureCallers.filter(
+  ([, caller]) => !caller.roleName.endsWith(CUSTOM_ROLE_SUFFIX),
+);
 
 function contextText(evalCase: EvalCase): string {
   return [
@@ -73,6 +88,30 @@ describe('eval corpus coverage', () => {
     expect(escalationEntries.length).toBeGreaterThan(0);
     expect(foreignSourceEntries.length).toBeGreaterThan(0);
   });
+});
+
+describe('eval caller fixtures', () => {
+  // Guards against the loop below silently checking nothing.
+  it('includes callers that name a seeded role', () => {
+    expect(seededFixtureCallers.length).toBeGreaterThan(0);
+  });
+
+  // An understated grant tightens the authority ceiling, so a call the real
+  // role may make grades as a violation (#1305). President is covered too: the
+  // seeded grant is the literal `['*']`, which keeps the ceiling's wildcard
+  // branch exercised.
+  it.each(seededFixtureCallers)(
+    '%s holds exactly its seeded role’s permissions',
+    (_name, caller) => {
+      const seeded = DEFAULT_SYSTEM_ROLES.find(
+        (role) => role.name === caller.roleName,
+      );
+      expect(seeded).toBeDefined();
+      expect([...caller.permissions].sort()).toEqual(
+        [...(seeded?.permissions ?? [])].sort(),
+      );
+    },
+  );
 });
 
 describe.each(allEvalCases.map((c) => [c.id, c] as const))(
