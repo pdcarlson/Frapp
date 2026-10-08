@@ -21,10 +21,9 @@ lives in a scratch file.
 - Ownership, the product-code ban and the docs-only self-maintenance PR are shared by every
   routine:
   [`routines.md` → Shared ownership boundary](../../../docs/ci-cd/routines.md#shared-ownership-boundary-all-routines).
-  Destructive writes only on `suggestion`-labeled issues; never write to Linear.
+  Destructive writes only on `suggestion`-labeled issues.
 - GitHub MCP only. If it is unavailable, stop and report; REST and `gh` are not a fallback for
   tracker work (rule 4 there has the narrow settings-read carve-out).
-- Never print secret values; name secrets only.
 
 ## Your namespace
 

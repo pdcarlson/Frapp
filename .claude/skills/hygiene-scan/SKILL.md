@@ -43,7 +43,6 @@ It holds only while every run is grounded, whole-pattern, verified, reviewed, an
   Hygiene Scan PR at a time: reviewer bandwidth is scarce and stacked hygiene PRs conflict.
 - File no more net-new issues per run than the Curator's
   [net-growth budget](../issue-curator/SKILL.md#net-growth-budget) allows; it binds here too.
-- Never print secret values; names and presence only.
 
 **May edit:** `apps/**` and `packages/**` code and tests; in `scripts/**`, dead code and stale
 allowlist entries only (the check, CI and deploy scripts are the gates); gate baselines, downward
@@ -285,14 +284,15 @@ pass; manufacturing a change to show work is a failure.
 4. When a fix moves or renames a file a doc cites, fix the doc in the same PR. `check:links` catches
    only markdown links, not backticked paths, so grep the old name before moving it. Otherwise a
    mechanical PR changes no doc.
-5. End with the "debt spotted" note `AGENTS.md` requires: one line per item seen and not taken, with
-   its issue or ledger reference.
+5. End with the "debt spotted" note
+   ([`AGENTS.md` § Tech debt protocol](../../../AGENTS.md#tech-debt-protocol)), citing each item's
+   issue or ledger reference.
 
 ## Phase 4 — Review, push, open the PR
 
 1. Run [`/diff-review`](../diff-review/SKILL.md) after the final commit and act on every finding.
-   The pre-push hook (`.githooks/pre-push`) refuses a push of unreviewed work without the review
-   marker for HEAD, and any commit that changes something invalidates it.
+   Any later commit needs a fresh review before the
+   [pre-push gate](../../../AGENTS.md#claude-code-web-sandbox) lets it through.
 2. Open the PR against `main` with `mcp__github__create_pull_request`, filling the PR template. Per
    fix, the body gives the rule restored (cited), the consumers checked, and the verification run
    (commands, outcomes, what couldn't run); a behaviour change gets its own heading. Use `Fixes #N`

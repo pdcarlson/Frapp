@@ -22,8 +22,8 @@ the [board-health report](#board-health-report) is written.
 The shared contract is
 [`routines.md` → Shared ownership boundary](../../../docs/ci-cd/routines.md#shared-ownership-boundary-all-routines)
 and [→ Tracker access](../../../docs/ci-cd/routines.md#tracker-access-shared-by-all-routines):
-GitHub MCP only (stop and report if it's unavailable), Linear is retired, no product code. Triage
-organizes the whole inbox, whoever filed it, but destroys only what agents own.
+GitHub MCP only (stop and report if it's unavailable), no product code. Triage organizes the
+whole inbox, whoever filed it, but destroys only what agents own.
 
 - **Organize (any `triage` item):** fill an absent priority label, add an `Estimate:` line,
   record `Blocked by #N`, attach to an epic where it clearly belongs, and promote to Backlog by
@@ -33,13 +33,12 @@ organizes the whole inbox, whoever filed it, but destroys only what agents own.
   get_labels` for `suggestion` before each such write; if it's absent, skip and log. A
   human-filed item that looks wrong stays in triage with a comment for the human. One that only
   lacks an Agent brief isn't held: an absent brief reads as `depth:deep`.
-- `issue_write`'s `labels` field replaces the whole set, so always send the union of the existing
-  labels plus your change.
+- Label writes are read-modify-write ([`AGENTS.md` § Work tracking](../../../AGENTS.md#work-tracking)).
 - Leave `in-progress` and `in-review` issues alone (claims and sweeps belong to `/next`), and
   `routine-state` issues too (routine infrastructure, never work). Leave `incident` issues'
   labels and priority alone, since the watchdog that filed one also closes it (what agents may do
   with one: [`alert-routing.md` § Escalation](../../../docs/ops/alert-routing.md#escalation)).
-- Never print secret values. The only repo write this routine makes is the
+- The only repo write this routine makes is the
   [self-maintenance](#self-maintenance-update-yourself) PR.
 
 **Reading before a body edit.** Start each run with the marker-count guard in

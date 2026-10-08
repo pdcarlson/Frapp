@@ -408,10 +408,9 @@ Verify end to end: run the tests and the app.
 
 ## Phase 3 — review at push, the single gate
 
-Run [`/diff-review`](../skills/diff-review/SKILL.md), always and unreduced. The pre-push hook
-([`.githooks/pre-push`](../../.githooks/pre-push)), the only pre-PR review gate, refuses a push
-of unreviewed work until `.cache/diff-review/<PUSHED_COMMIT_SHA>` exists, and `/diff-review`
-writes it. Don't try
+Run [`/diff-review`](../skills/diff-review/SKILL.md), always and unreduced: it writes the marker the
+pre-push hook, the only pre-PR review gate, requires
+([`AGENTS.md` § Claude Code web sandbox](../../AGENTS.md#claude-code-web-sandbox)). Don't try
 `/code-review`: a `/next` turn is a slash-command expansion, which its invocation scan skips, so it
 is always refused here.
 
@@ -441,9 +440,9 @@ unless he clears it then and there.
 
 If the unit changed a fact a doc asserts, update that doc in this same PR; the §1.2 drift items are
 the minimum list, per member. Put files in their canonical home per
-[`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md). Never drop a
-stray file or append an unrelated note to make a change look documented; if the unit changed nothing
-a doc describes, change no doc ([`docs-ci.md`](../../docs/ci-cd/docs-ci.md)).
+[`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md). If the unit
+changed nothing a doc describes, change no doc
+([`AGENTS.md` § Documentation discipline](../../AGENTS.md#documentation-discipline)).
 
 Push and open the PR with one `Fixes #N` line per member in the PR body. GitHub ignores closing
 keywords in the title, and a prose mention doesn't close. The body follows
