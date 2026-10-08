@@ -21,6 +21,7 @@ import {
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
 import type { Member } from '#domain/entities/member.entity';
+import { memberFixture } from '#test/helpers/entity-fixtures';
 
 const SALT = 'test-env-salt';
 const USER_ID = 'user-123';
@@ -64,17 +65,14 @@ function makeMemberRepo(): jest.Mocked<IMemberRepository> {
 }
 
 function makeMember(chapterId: string): Member {
-  return {
+  return memberFixture({
     id: `m-${chapterId}`,
     user_id: USER_ID,
     chapter_id: chapterId,
-    role_ids: [],
-    custom_role_ids: [],
     has_completed_onboarding: true,
-    dismissed_ops_nudges: [],
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
-  };
+  });
 }
 
 async function buildService(opts: {

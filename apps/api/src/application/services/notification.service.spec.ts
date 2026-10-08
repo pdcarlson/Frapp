@@ -30,6 +30,7 @@ import {
   LIST_QUERY_LIMIT_MAX,
   LIST_QUERY_LIMIT_MIN,
 } from '#domain/constants/list-query-limits';
+import { memberFixture } from '#test/helpers/entity-fixtures';
 
 describe('NotificationService', () => {
   let service: NotificationService;
@@ -147,18 +148,14 @@ describe('NotificationService', () => {
   const chapterMember = (
     userId: string,
     overrides: Partial<Member> = {},
-  ): Member => ({
-    id: `m-${userId}`,
-    user_id: userId,
-    chapter_id: 'ch-1',
-    role_ids: [],
-    custom_role_ids: [],
-    has_completed_onboarding: false,
-    dismissed_ops_nudges: [],
-    created_at: '',
-    updated_at: '',
-    ...overrides,
-  });
+  ): Member =>
+    memberFixture({
+      id: `m-${userId}`,
+      user_id: userId,
+      created_at: '',
+      updated_at: '',
+      ...overrides,
+    });
 
   const notificationsFor = (userIds: string[]): Notification[] =>
     userIds.map((userId, index) => ({
@@ -1017,17 +1014,13 @@ describe('NotificationService', () => {
   });
 
   describe('notification preferences', () => {
-    const baseMember = {
+    const baseMember = memberFixture({
       id: 'm-1',
       user_id: 'u-1',
-      chapter_id: 'ch-1',
-      role_ids: [],
-      custom_role_ids: [],
       has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
       created_at: '',
       updated_at: '',
-    };
+    });
 
     it('should get preferences for user and chapter', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);

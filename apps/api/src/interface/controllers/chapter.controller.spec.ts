@@ -48,6 +48,7 @@ import {
   LogoUploadUrlDto,
   ConfirmLogoDto,
 } from '../dtos/chapter.dto';
+import { chapterFixture } from '#test/helpers/entity-fixtures';
 
 describe('ChapterController', () => {
   let controller: ChapterController;
@@ -235,22 +236,17 @@ describe('ChapterController', () => {
       const chapterId = 'chapter-1';
       const dto: UpdateChapterDto = { name: 'Updated Chapter' };
       chapterService.update.mockResolvedValue({
-        chapter: {
+        chapter: chapterFixture({
           id: chapterId,
           name: 'Updated Chapter',
-          university: 'State U',
           subscription_status: 'active',
-          past_due_since: null,
           stripe_customer_id: 'cus_SENSITIVE',
           subscription_id: 'sub_SENSITIVE',
           last_stripe_webhook_at: '2026-08-02T00:00:00.000Z',
           legal_accepted_by: 'user-legal-signer',
-          accent_color: null,
-          logo_path: null,
-          donation_url: null,
           created_at: '2026-01-01T00:00:00.000Z',
           updated_at: '2026-01-01T00:00:00.000Z',
-        } as any,
+        }),
         failedContrastChecks: [],
       });
 
@@ -355,22 +351,17 @@ describe('ChapterController', () => {
    * `billing:view`, so their responses are projected the same way (#930).
    */
   const rawChapterRow = (logoPath: string | null) =>
-    ({
+    chapterFixture({
       id: 'chapter-1',
-      name: 'Alpha',
-      university: 'State U',
       subscription_status: 'active',
-      past_due_since: null,
       stripe_customer_id: 'cus_SENSITIVE',
       subscription_id: 'sub_SENSITIVE',
       last_stripe_webhook_at: '2026-08-02T00:00:00.000Z',
       legal_accepted_by: 'user-legal-signer',
-      accent_color: null,
       logo_path: logoPath,
-      donation_url: null,
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-01T00:00:00.000Z',
-    }) as any;
+    });
 
   const expectMemberSafe = (result: object) => {
     expect(result).not.toHaveProperty('stripe_customer_id');

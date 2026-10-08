@@ -10,6 +10,7 @@ import type { IUserRepository } from '#domain/repositories/user.repository.inter
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import { ProfilePhotoUrlService } from './profile-photo-url.service';
+import { userFixture } from '#test/helpers/entity-fixtures';
 
 describe('UserService', () => {
   let service: UserService;
@@ -54,21 +55,11 @@ describe('UserService', () => {
   });
 
   it('should return user when found', async () => {
-    const user = {
-      id: 'user-1',
+    const user = userFixture({
       supabase_auth_id: 'auth-123',
       email: 'test@example.com',
       display_name: 'test',
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockRepo.findById.mockResolvedValue(user);
 
     const result = await service.findById('user-1');
@@ -89,21 +80,11 @@ describe('UserService', () => {
   });
 
   it('should update user profile data', async () => {
-    const existingUser = {
-      id: 'user-1',
+    const existingUser = userFixture({
       supabase_auth_id: 'auth-123',
       email: 'test@example.com',
       display_name: 'Old Name',
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     const updatedUser = {
       ...existingUser,
       display_name: 'Updated Name',
@@ -129,21 +110,14 @@ describe('UserService', () => {
   });
 
   it('should reject profile updates on a tombstoned (deleted) account', async () => {
-    mockRepo.findById.mockResolvedValue({
-      id: 'user-1',
-      supabase_auth_id: 'auth-123',
-      email: 'deleted+user-1@anonymized.invalid',
-      display_name: 'Deleted User',
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: '2026-08-03T00:00:00Z',
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    mockRepo.findById.mockResolvedValue(
+      userFixture({
+        supabase_auth_id: 'auth-123',
+        email: 'deleted+user-1@anonymized.invalid',
+        display_name: 'Deleted User',
+        deleted_at: '2026-08-03T00:00:00Z',
+      }),
+    );
 
     await expect(
       service.update('user-1', { display_name: 'Sneaky Comeback' }),
@@ -294,21 +268,13 @@ describe('UserService', () => {
     }
 
     function userWith(avatar_url: string | null, deleted_at?: string) {
-      return {
-        id: 'user-1',
+      return userFixture({
         supabase_auth_id: 'auth-123',
         email: 'test@example.com',
         display_name: 'Test',
         avatar_url,
-        bio: null,
-        graduation_year: null,
-        current_city: null,
-        current_company: null,
-        active_chapter_id: null,
         deleted_at: deleted_at ?? null,
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      };
+      });
     }
 
     beforeEach(() => {

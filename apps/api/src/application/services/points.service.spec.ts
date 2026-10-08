@@ -35,6 +35,7 @@ import {
   ChapterPointsConfigService,
   POINTS_CONFIG_DEFAULTS,
 } from './chapter-points-config.service';
+import { memberFixture } from '#test/helpers/entity-fixtures';
 
 /**
  * A stand-in for `get_points_leaderboard`, used to test the SERVICE.
@@ -138,18 +139,17 @@ describe('PointsService', () => {
     userId: string,
     chapterId: string,
     overrides: Partial<Member> = {},
-  ): Member => ({
-    id: `member-${userId}`,
-    user_id: userId,
-    chapter_id: chapterId,
-    role_ids: ['role-member'],
-    custom_role_ids: [],
-    has_completed_onboarding: true,
-    dismissed_ops_nudges: [],
-    created_at: '2026-01-01T00:00:00.000Z',
-    updated_at: '2026-01-01T00:00:00.000Z',
-    ...overrides,
-  });
+  ): Member =>
+    memberFixture({
+      id: `member-${userId}`,
+      user_id: userId,
+      chapter_id: chapterId,
+      role_ids: ['role-member'],
+      has_completed_onboarding: true,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    });
 
   /**
    * Give the chapter these transactions. The repository mock then aggregates
