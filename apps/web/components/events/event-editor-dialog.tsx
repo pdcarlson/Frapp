@@ -104,7 +104,7 @@ type ZoneParseResult =
  *
  * Wholly blank rows are ignored, so an accidental empty row does not become a
  * validation error. The under-3 message deliberately echoes the server's own
- * wording in `normalizeCheckInZone` (`event.service.ts`) so the client message
+ * wording in `normalizeCheckInZone` (`event-input.ts`) so the client message
  * and the API 400 cannot drift apart.
  */
 function parseZoneDrafts(drafts: ZoneVertexDraft[]): ZoneParseResult {

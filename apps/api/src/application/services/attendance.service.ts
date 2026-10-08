@@ -15,7 +15,7 @@ import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interf
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import { RbacService } from './rbac.service';
-import { hasRequiredRole } from './event.service';
+import { hasRequiredRole } from './event-role-targeting';
 import { isValidZone, pointInPolygon } from '#domain/utils/geofence';
 import {
   mintCheckInToken,

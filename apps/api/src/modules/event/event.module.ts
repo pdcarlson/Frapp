@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { EventService } from '../../application/services/event.service';
+import { EventSeriesService } from '../../application/services/event-series.service';
+import { EventAnnouncementService } from '../../application/services/event-announcement.service';
 import { EventController } from '../../interface/controllers/event.controller';
 import { SupabaseEventRepository } from '../../infrastructure/supabase/repositories/supabase-event.repository';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
@@ -15,6 +17,8 @@ import { RbacModule } from '../rbac/rbac.module';
   controllers: [EventController],
   providers: [
     EventService,
+    EventSeriesService,
+    EventAnnouncementService,
     { provide: EVENT_REPOSITORY, useClass: SupabaseEventRepository },
     // Bound locally rather than importing ChapterModule (its exporter) — same
     // choice AttendanceModule makes for the same repository, to avoid pulling

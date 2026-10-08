@@ -516,8 +516,18 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
       },
     ],
   },
+  // The event-name pushes, split three ways with the service (#3270): the
+  // emitters themselves, and the two callers that hand them a written row.
+  'application/services/event-announcement.service.ts': {
+    calls: 4,
+    entries: [MEMBER_TEXT],
+  },
+  'application/services/event-series.service.ts': {
+    calls: 2,
+    entries: [MEMBER_TEXT],
+  },
   'application/services/event.service.ts': {
-    calls: 7,
+    calls: 2,
     entries: [MEMBER_TEXT],
   },
   'application/services/financial-invoice.service.ts': {

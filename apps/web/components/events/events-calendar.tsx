@@ -232,7 +232,7 @@ export function EventsCalendar({
                     // The series head carries `recurrence_rule`; every
                     // generated occurrence carries `parent_event_id` instead
                     // (and a null `recurrence_rule`) — see
-                    // `event.service.ts`. Distinct icons so the two don't
+                    // `event-series.service.ts`. Distinct icons so the two don't
                     // read as the same thing on the grid.
                     const isSeriesHead =
                       typeof event.recurrence_rule === "string" &&
