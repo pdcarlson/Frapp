@@ -127,6 +127,31 @@ that would have failed. It was the thing that would have said so first.
 The workflow's shipping job (the shared `_deploy.yml` job, since #2805) holds the
 `db-migrate-production` concurrency group with `cancel-in-progress: false`, so two
 dispatches queue instead of interleaving two `db push` runs against one database.
+`cancel-in-progress: false` is the half that matters. Cancelling mid-`db push` is how a
+database ends up half-migrated, and cancelling between the API and the upload leaves the
+hosts on different commits. GitHub still replaces a _pending_ run when a third arrives, and
+the replaced run ends `cancelled` (what staging does with it:
+[`ci-cd.md` § How Deployments Are Gated](../deployment/ci-cd.md#how-deployments-are-gated)).
+On production, `deploy-alert.mjs` files nothing for a job that listed no steps. The group
+is a lock only while that job is the one thing that migrates the database, and it covers
+GitHub Actions runs only: it cannot stop a `supabase db push` from a laptop, which the
+daily drift check catches after the fact. A `full` dry run holds the group through an
+install and two builds on top of the rehearsal, so a `migrations-only` recovery dispatch can queue behind a run that
+changes nothing. If that bites during an incident, wait, or cancel the dry run by hand.
+Never loosen `cancel-in-progress`.
+
+**The working-tree fence.** `check-migration-replay.mjs` moves the pending migrations out
+of `supabase/migrations/` into `supabase/.migrations-replay-parked/` and restores them in a
+`finally`. A `finally` survives a thrown error but not SIGKILL (a cancellation, a runner
+timeout, the OOM killer). In `migration-drift-gate.yml` that is harmless, on a throwaway
+runner that never touches production. In the deploy job, the apply that follows runs
+`supabase db push` against the real database. `run-migration.mjs` would count the baseline
+files still on disk, see a non-zero total, push nothing, and print "Migrations applied
+successfully". A deploy that reports applied migrations having applied none is worse than
+one that fails. So a separate step, which no `continue-on-error` can swallow, refuses to
+apply when the parked directory exists or `supabase/` is dirty. It also refuses when
+`SUPABASE_DB_PASSWORD` is missing, checked while the rehearsal stack is still up for a
+re-run.
 
 > **The `production` environment's Required reviewers is now the ONLY human
 > gate, and it pauses the run.** Production migrations used to be gated by a
