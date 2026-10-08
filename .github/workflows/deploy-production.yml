@@ -124,7 +124,7 @@ run-name: "${{ inputs.dry_run_only == true && 'DRY RUN · ' || '' }}${{ inputs.s
 # Every environment-scoped job costs its own Approve click. Migrate + deploy +
 # verify live in ONE `environment: production` job so a production release is
 # one approval, not four. That job is `_deploy.yml`'s, the one staging runs
-# too (epic #2802, #2805): its header has the order and the trust split, and
+# too (epic #2802, #2805): ci-cd.md has the order and the trust split, and
 # production's layers are its steps named `inputs.environment ==
 # 'production'`. The `release`, `mobile` and `deploy-outcome` jobs name no
 # environment and add no clicks; the jobs `release` and `mobile` call name
