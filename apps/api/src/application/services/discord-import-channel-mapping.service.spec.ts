@@ -27,6 +27,43 @@ async function build(current: DiscordImport = job()) {
     await createDiscordImportFixture(current));
 }
 
+describe('DiscordImportChannelMappingService — a started import is fixed', () => {
+  // A rescan or remap replaces the channel set, and with it the cursors the
+  // worker is walking, so every entry point refuses once the import has run.
+  describe.each(['running', 'completed', 'purging'] as const)(
+    'on a %s import',
+    (status) => {
+      it.each([
+        [
+          'discoverBotChannels',
+          'bot' as const,
+          () => channelMapping.discoverBotChannels(IMPORT_ID, CHAPTER),
+        ],
+        [
+          'applyDiscoveredChannelMapping',
+          'bot' as const,
+          () =>
+            channelMapping.applyDiscoveredChannelMapping(
+              IMPORT_ID,
+              CHAPTER,
+              [],
+            ),
+        ],
+        [
+          'setChannelMapping',
+          'upload' as const,
+          () => channelMapping.setChannelMapping(IMPORT_ID, CHAPTER, []),
+        ],
+      ])('%s refuses', async (_name, source, call) => {
+        await build(job({ status, source, guild_id: GUILD }));
+        await expect(call()).rejects.toThrow(/can no longer be changed/);
+        expect(bot.discoverChannels).not.toHaveBeenCalled();
+        expect(repo.replaceChannels).not.toHaveBeenCalled();
+      });
+    },
+  );
+});
+
 describe('DiscordImportChannelMappingService — channel mapping', () => {
   it('refuses a merge with no target chosen', async () => {
     // "Ask, never guess": chat_channels has no unique (chapter_id, name), so a

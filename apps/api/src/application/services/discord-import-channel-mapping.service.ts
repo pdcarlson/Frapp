@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   Inject,
   Injectable,
   ServiceUnavailableException,
@@ -29,17 +28,13 @@ import {
   type IDiscordBotGateway,
 } from '#domain/adapters/discord.interface';
 import { DiscordOAuthService } from './discord-oauth.service';
-import { assertImportMutable, loadImport } from './discord-import-guards';
+import {
+  assertImportMutable,
+  loadImport,
+  requireBoundGuild,
+} from './discord-import-guards';
+import { MAX_WARNINGS } from '../workers/discord-import-worker.service';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
-
-/**
- * Discovery warnings kept on the job row.
- *
- * Matches the worker's own `MAX_WARNINGS`. A guild with hundreds of channels
- * the bot cannot read would otherwise grow this row without limit, and the
- * admin reads the first few and acts on them either way.
- */
-const MAX_WARNINGS_ON_DISCOVERY = 50;
 
 export interface ChannelMappingInput {
   discord_channel_id: string;
@@ -177,7 +172,7 @@ export class DiscordImportChannelMappingService {
    *
    * Re-runnable: it replaces the channel set wholesale, which is right while
    * the import is still mutable (nothing has been read yet, so there is no
-   * cursor to lose) and is refused afterwards by `assertMutable`.
+   * cursor to lose) and is refused afterwards by `assertImportMutable`.
    */
   async discoverBotChannels(
     id: string,
@@ -195,12 +190,7 @@ export class DiscordImportChannelMappingService {
       );
     }
 
-    const guildId = await this.oauthService.requireGuildId(chapterId);
-    if (job.guild_id && job.guild_id !== guildId) {
-      throw new ConflictException(
-        'This chapter is now connected to a different Discord server. Start a new import.',
-      );
-    }
+    const guildId = await requireBoundGuild(this.oauthService, job, chapterId);
 
     // Discord's failures here are operational, not bugs: the token can be
     // rotated out from under a live connection, and a chapter can remove the
@@ -293,7 +283,9 @@ export class DiscordImportChannelMappingService {
 
     await this.importRepo.update(id, chapterId, {
       guild_id: guildId,
-      warnings: discovery.warnings.slice(-MAX_WARNINGS_ON_DISCOVERY),
+      // The worker's own cap: a guild with hundreds of channels the bot
+      // cannot read would otherwise grow this row without limit.
+      warnings: discovery.warnings.slice(-MAX_WARNINGS),
     });
 
     return {

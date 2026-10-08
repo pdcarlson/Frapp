@@ -45,7 +45,11 @@ import type {
 import { parseRoleMapping } from '#domain/utils/discord-role-gates';
 import { DiscordOAuthService } from './discord-oauth.service';
 import { DiscordImportRoleMappingService } from './discord-import-role-mapping.service';
-import { assertImportMutable, loadImport } from './discord-import-guards';
+import {
+  assertImportMutable,
+  loadImport,
+  requireBoundGuild,
+} from './discord-import-guards';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /** How many files one mint request may register. */
@@ -395,12 +399,7 @@ export class DiscordImportService {
     // disconnected or replaced.
     let partsTotal = 0;
     if (job.source === 'bot') {
-      const guildId = await this.oauthService.requireGuildId(chapterId);
-      if (job.guild_id && job.guild_id !== guildId) {
-        throw new ConflictException(
-          'This chapter is now connected to a different Discord server. Start a new import.',
-        );
-      }
+      await requireBoundGuild(this.oauthService, job, chapterId);
     } else {
       const files = await this.importRepo.findFiles(id, chapterId);
       const parts = files.filter((file) => file.kind === 'export');

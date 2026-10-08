@@ -488,12 +488,38 @@ describe('DiscordImportService — lifecycle guards', () => {
     );
   });
 
-  it('refuses to change a running import', async () => {
-    await build(job({ status: 'running' }));
-    await expect(
-      roleMapping.setRoleMapping(IMPORT_ID, CHAPTER, [], true),
-    ).rejects.toBeInstanceOf(ConflictException);
-  });
+  // Each service runs `assertImportMutable` itself (#3271), so each of its
+  // call sites is pinned here or in the mapping services' own specs.
+  describe.each(['running', 'completed', 'purging'] as const)(
+    'refuses to change a %s import',
+    (status) => {
+      it.each([
+        [
+          'requestUploadUrls',
+          () =>
+            service.requestUploadUrls(IMPORT_ID, CHAPTER, [
+              {
+                kind: 'export' as const,
+                relative_path: 'export.json',
+                content_type: 'application/json',
+                byte_size: 10,
+              },
+            ]),
+        ],
+        [
+          'confirmUploads',
+          () => service.confirmUploads(IMPORT_ID, CHAPTER, ['a/b.json']),
+        ],
+        ['start', () => service.start(IMPORT_ID, CHAPTER, USER, true)],
+      ])('%s', async (_name, call) => {
+        await build(job({ status }));
+        await expect(call()).rejects.toThrow(/can no longer be changed/);
+        expect(repo.registerFiles).not.toHaveBeenCalled();
+        expect(repo.markFilesUploaded).not.toHaveBeenCalled();
+        expect(repo.update).not.toHaveBeenCalled();
+      });
+    },
+  );
 
   it('refuses to purge a running import rather than racing the worker', async () => {
     await build(job({ status: 'running' }));

@@ -1,11 +1,12 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import type { IDiscordImportRepository } from '#domain/repositories/discord-import.repository.interface';
 import type { DiscordImport } from '#domain/entities/discord-import.entity';
+import type { DiscordOAuthService } from './discord-oauth.service';
 
 /**
- * The two checks every admin-facing Discord import service runs before it
- * touches an import (#3271). Shared functions rather than a method on one of
- * the services, so `DiscordImportService`, `DiscordImportChannelMappingService`
+ * The checks the admin-facing Discord import services run before they touch
+ * an import (#3271). Shared functions rather than a method on one of the
+ * services, so `DiscordImportService`, `DiscordImportChannelMappingService`
  * and `DiscordImportRoleMappingService` refuse the same imports with the same
  * sentence.
  */
@@ -36,4 +37,24 @@ export function assertImportMutable(job: DiscordImport): void {
       `This import is ${job.status} and can no longer be changed.`,
     );
   }
+}
+
+/**
+ * The chapter's connected guild, re-resolved by `chapter_id` rather than
+ * trusted from the job row, and refused when it is no longer the one the
+ * import was created against: a bot import cannot be scanned or started
+ * against a server the chapter has since disconnected or replaced.
+ */
+export async function requireBoundGuild(
+  oauthService: DiscordOAuthService,
+  job: DiscordImport,
+  chapterId: string,
+): Promise<string> {
+  const guildId = await oauthService.requireGuildId(chapterId);
+  if (job.guild_id && job.guild_id !== guildId) {
+    throw new ConflictException(
+      'This chapter is now connected to a different Discord server. Start a new import.',
+    );
+  }
+  return guildId;
 }

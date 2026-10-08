@@ -30,6 +30,19 @@ async function build(current: DiscordImport = job()) {
   return service;
 }
 
+describe('DiscordImportRoleMappingService — a started import is fixed', () => {
+  it.each(['running', 'completed', 'purging'] as const)(
+    'refuses to save the role step on a %s import',
+    async (status) => {
+      await build(job({ status }));
+      await expect(
+        roleMapping.setRoleMapping(IMPORT_ID, CHAPTER, [], true),
+      ).rejects.toThrow(/can no longer be changed/);
+      expect(repo.update).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe('DiscordImportRoleMappingService — Discord roles gate private channels (#2818)', () => {
   const EXEC_ROLE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   const MEMBER_ROLE = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
