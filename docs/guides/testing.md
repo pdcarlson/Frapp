@@ -276,7 +276,7 @@ exactly that class of defect.
 
 - `tenant-scope.harness.spec.ts` runs each guard against a deliberately broken repository stand-in,
   so a harness that can no longer fail is itself a failure. Extend it whenever you extend the harness.
-- `tenant-scope-coverage.spec.ts` is the coverage ledger: every `*.repository.ts` under `apps/api/src` (recursive; not just `supabase-*` in one directory) either has a sibling `*.repository.spec.ts` driving `createTenantHarness`, or a line in `TENANT_SCOPE_BACKLOG` giving the reason. A new repository added without either fails CI. Clearing a backlog entry means writing the spec and raising the pinned count. Module-local workers (`modules/scheduled-jobs/scheduled-jobs.repository.ts`, `modules/chat-push-worker/chat-notification-preference.repository.ts`) are in the denominator. Scheduled-jobs sweeps (`findEventsPendingAutoAbsent`, `findOpenInvoicesDueBetween`, `findIncompleteTasksDueBetween`) are characterised as unscoped (cross-chapter by design); `claimDispatch` and `releaseDispatch` are asserted tenant-scoped — chapter comes from the sweep row, and a colliding twin in another chapter is neither claimed nor released. The stale-palette pair works on `chapters` itself (`tenantColumns: { chapters: 'id' }`): `findChaptersWithStalePalette` is characterised as cross-chapter, and `writeRecomputedPalette` is asserted to write only the chapter its row names.
+- `tenant-scope-coverage.spec.ts` is the coverage ledger: every `*.repository.ts` under `apps/api/src` (recursive; not just `supabase-*` in one directory) either has a sibling `*.repository.spec.ts` driving `createTenantHarness`, or a line in `TENANT_SCOPE_BACKLOG` giving the reason. A new repository added without either fails CI. Clearing a backlog entry means writing the spec and raising the pinned count. The worker repositories (`supabase-scheduled-jobs.repository.ts`, `supabase-chat-notification-preference.repository.ts`) are in the denominator like any other. Scheduled-jobs sweeps (`findEventsPendingAutoAbsent`, `findOpenInvoicesDueBetween`, `findIncompleteTasksDueBetween`) are characterised as unscoped (cross-chapter by design); `claimDispatch` and `releaseDispatch` are asserted tenant-scoped — chapter comes from the sweep row, and a colliding twin in another chapter is neither claimed nor released. The stale-palette pair works on `chapters` itself (`tenantColumns: { chapters: 'id' }`): `findChaptersWithStalePalette` is characterised as cross-chapter, and `writeRecomputedPalette` is asserted to write only the chapter its row names.
 
 **What these tests do not replace.** Methods that take a row `id` and no chapter (`memberRepo.findById`,
 `roleRepo.update`, `attendanceRepo.update`) are scoped by their callers, not by the query. Those are
@@ -488,7 +488,7 @@ not exist, again with every test green.
 **Test through the subscription, not around it, and stay in the unit tier.** The integration tier
 (§6a) is deliberately not run by CI, so a recipient-filter proof placed there defends nothing while
 reading in the tracker as though it does. The pattern
-(`apps/api/src/modules/chat-push-worker/chat-push-worker.realtime.spec.ts`):
+(`apps/api/src/application/workers/chat-push-worker.realtime.spec.ts`):
 
 - Provide a Supabase stand-in whose `channel().on()` **captures** the callback the worker registers,
   asserting the event and table it registered for. Emit every case through that captured callback.
@@ -517,7 +517,7 @@ reading in the tracker as though it does. The pattern
   channel a seeded `off` changes no outcome, and the whole block passes with per-channel preferences
   disabled entirely.
 
-Teeth, verified against `apps/api/src/modules/chat-push-worker/chat-push-worker.service.ts` the same
+Teeth, verified against `apps/api/src/application/workers/chat-push-worker.service.ts` the same
 way §6a's table was:
 
 | Mutation | Tests that fail |

@@ -8,9 +8,10 @@ import {
   PURGE_BATCH_SIZE,
 } from './discord-import-worker.service';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
-import { ChannelCacheService } from '../chat-push-worker/channel-cache.service';
+import { ARCHIVE_MEDIA_COPY_BUDGET_MS } from '../../infrastructure/storage/supabase-archive-media-copier.service';
+import { ChannelCacheService } from '../services/channel-cache.service';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
-import { RbacService } from '../../application/services/rbac.service';
+import { RbacService } from '../services/rbac.service';
 import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
@@ -1566,5 +1567,12 @@ describe('worker constants', () => {
 
   it('leases for longer than one tick', () => {
     expect(LEASE_MS).toBeGreaterThan(60_000);
+  });
+
+  it('keeps one archive media copy call inside the import lease', () => {
+    // The worker renews the lease before each copier call; one call must not
+    // outlast it. Asserted here rather than in the copier's spec, because
+    // infrastructure/ must not import the application-layer worker.
+    expect(ARCHIVE_MEDIA_COPY_BUDGET_MS).toBeLessThan(LEASE_MS);
   });
 });

@@ -26,7 +26,7 @@ failures. `scripts/ci/lib/required-checks.mjs` is the canonical list of required
 | Build `packages/*` (what CI's `packages-build` job runs) | `npx turbo run build --filter='./packages/*'` |
 
 Jest 30 takes the plural `--testPathPatterns`. The singular `--testPathPattern` no longer
-exists. The tenant-scope pattern keys on the filename so module-local repositories are included,
+exists. The tenant-scope pattern keys on the filename so a repository is included wherever it lives,
 and the `repositories/` half picks up the meta-specs that enforce the ledgers
 (`tenant-scope-coverage`, `tenant-scope.harness`, `no-as-never`).
 
@@ -67,7 +67,7 @@ in the last row; path-gated jobs are still required.
 | `mobile-validate` | `npm run check:expo-sdk-line`, `npm run lint -w apps/mobile`, `npm run check-types -w apps/mobile`, `npm run test -w apps/mobile` and again with `TZ=Asia/Tokyo`. For `app.json` or dependency changes, or an edit to a file that requests an OS permission (the gate's `requestedBy` roster), run `npm run check:mobile-native-declarations` (it refuses to run while a generated `apps/mobile/ios` or `android` exists). For `app.json` or dependency changes, also run `npx expo prebuild --no-install --clean --platform all` in `apps/mobile`. When a change moves modules or touches a `@repo/*` package's exports, run `npx expo export --platform ios --output-dir /tmp/mobile-bundle` in `apps/mobile`; CI runs it before the packages are built, so a local `packages/*/dist` can hide a resolution failure ([`docs/mobile/testing.md` § Gotchas](../../../docs/mobile/testing.md#gotchas)) |
 | `api-docker-build` | `docker build -f apps/api/Dockerfile .` (CI also boots the image and probes `/health`) |
 | `api-contract-check` | `npm run check:api-contract` and `npm run check:api-breaking:shipped` (blocking once a shipped mobile build is listed; run `bash scripts/install-oasdiff.sh` first). CI also runs the advisory `check:api-breaking` against the PR base |
-| `dependency-cruiser` | `npm run check:dep-cruiser` |
+| `dependency-cruiser` | `npm run check:dep-cruiser`, then `npm run check:dep-cruiser:rules`, which proves the `modules/` wiring rules still fire (the real tree gives them nothing to catch) |
 | `migration-safety` | `npm run check:migration-safety -- --base "$(git merge-base origin/main HEAD)" --head HEAD` |
 | `dependency-audit` | `npm run check:npm-audit`. Add `-- --soft-network` when offline. Fails on any high/critical advisory not in `scripts/npm-audit-allowlist.json` |
 | `secret-scan` | `npm run check:secrets -- --base "$(git merge-base origin/main HEAD)" --head HEAD` |
@@ -147,7 +147,7 @@ was applied and no foreign row was read or written. Follow
 `supabase-task.repository.spec.ts` as the example.
 
 - `tenant-scope-coverage.spec.ts` fails if a `*.repository.ts` anywhere under `apps/api/src`
-  (module-local ones included, found through `#test/helpers/repository-corpus`) has no harness
+  (wherever it lives, found through `#test/helpers/repository-corpus`) has no harness
   spec and no reason in `TENANT_SCOPE_BACKLOG`.
 - When you extend the harness, also extend `tenant-scope.harness.spec.ts`, which proves each guard
   still fails against a deliberately broken repository. A harness that can't fail looks identical

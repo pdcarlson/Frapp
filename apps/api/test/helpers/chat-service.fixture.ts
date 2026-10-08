@@ -30,8 +30,8 @@ import { ActivationService } from '../../src/application/services/activation.ser
 import { RbacService } from '../../src/application/services/rbac.service';
 import { ChannelAccessService } from '../../src/application/services/channel-access.service';
 import { ChatBlockService } from '../../src/application/services/chat-block.service';
-import { ChatNotificationPreferenceRepository } from '../../src/modules/chat-push-worker/chat-notification-preference.repository';
-import { ChannelCacheService } from '../../src/modules/chat-push-worker/channel-cache.service';
+import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
+import { ChannelCacheService } from '../../src/application/services/channel-cache.service';
 
 /**
  * The shared fixture for the chat service specs (#1380): one Nest testing
@@ -90,6 +90,7 @@ export async function createChatServiceFixture() {
     findDm: jest.fn(),
     createDm: jest.fn(),
     findByName: jest.fn(),
+    findPushRouting: jest.fn(),
     createMany: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
@@ -118,6 +119,7 @@ export async function createChatServiceFixture() {
     findByClientMessageId: jest.fn(),
     findAuthorAvatarPaths: jest.fn().mockResolvedValue([]),
     create: jest.fn(),
+    insertIdempotent: jest.fn(),
     update: jest.fn(),
   };
 
@@ -258,7 +260,7 @@ export async function createChatServiceFixture() {
       // predicate end-to-end.
       ChannelAccessService,
       {
-        provide: ChatNotificationPreferenceRepository,
+        provide: CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
         useValue: mockChatNotificationPrefs,
       },
       { provide: ChannelCacheService, useValue: mockChannelCache },

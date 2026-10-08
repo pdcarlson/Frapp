@@ -68,7 +68,7 @@ import {
   type MaskedChatMessage,
 } from './chat-block-mask';
 import { ActivationService } from './activation.service';
-import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
+import { ChannelCacheService } from './channel-cache.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 const MAX_PINNED_MESSAGES = 50;

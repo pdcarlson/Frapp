@@ -5,31 +5,31 @@ import type { IMemberRepository } from '#domain/repositories/member.repository.i
 import {
   AttendanceService,
   CHECK_IN_GRACE_PERIOD_MINUTES,
-} from '../../application/services/attendance.service';
-import { NotificationService } from '../../application/services/notification.service';
-import { ChapterWorkflowsService } from '../../application/services/chapter-workflows.service';
-import { PollService } from '../../application/services/poll.service';
-import { ChatReportService } from '../../application/services/chat-report.service';
+} from '../services/attendance.service';
+import { NotificationService } from '../services/notification.service';
+import { ChapterWorkflowsService } from '../services/chapter-workflows.service';
+import { PollService } from '../services/poll.service';
+import { ChatReportService } from '../services/chat-report.service';
 import {
   ReportRetentionService,
   type ReportSweepResult,
-} from '../../application/services/report-retention.service';
+} from '../services/report-retention.service';
 import {
-  ScheduledJobsRepository,
-  type DispatchEntityType,
-  type DispatchThreshold,
+  SCHEDULED_JOBS_REPOSITORY,
+  type IScheduledJobsRepository,
   type SweepInvoiceRow,
   type SweepTaskRow,
   type SweepPollRow,
   type SweepUpcomingEventRow,
-} from './scheduled-jobs.repository';
+} from '#domain/repositories/scheduled-jobs.repository.interface';
+import type { DispatchEntityType, DispatchThreshold } from '#domain/entities';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
 import {
   buildChapterPalette,
   chapterPaletteColumns,
   logChapterPaletteWarnings,
-} from '../../application/services/chapter-palette';
+} from '../services/chapter-palette';
 
 /**
  * How far back the hourly auto-absent sweep reaches. Comfortably longer than
@@ -144,7 +144,8 @@ export class ScheduledJobsService {
   private readonly logger = new Logger(ScheduledJobsService.name);
 
   constructor(
-    private readonly repository: ScheduledJobsRepository,
+    @Inject(SCHEDULED_JOBS_REPOSITORY)
+    private readonly repository: IScheduledJobsRepository,
     private readonly attendanceService: AttendanceService,
     private readonly notificationService: NotificationService,
     private readonly workflows: ChapterWorkflowsService,

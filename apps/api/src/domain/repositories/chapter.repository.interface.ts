@@ -91,7 +91,7 @@ export interface IChapterRepository {
    * palette was derived from (`undefined` means the chapter had none). Returns
    * whether it landed; `false` is a lost race with a newer accent save, not an
    * error. Same guard as the stale-palette sweep's
-   * `ScheduledJobsRepository.writeRecomputedPalette`.
+   * `SupabaseScheduledJobsRepository.writeRecomputedPalette`.
    */
   updatePaletteIfSeedUnchanged(
     chapterId: string,

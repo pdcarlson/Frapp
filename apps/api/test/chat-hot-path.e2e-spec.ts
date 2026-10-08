@@ -37,8 +37,8 @@ import { SUPABASE_CLIENT } from '../src/infrastructure/supabase/supabase.provide
 import { NotificationService } from '../src/application/services/notification.service';
 import { ActivationService } from '../src/application/services/activation.service';
 import { RbacService } from '../src/application/services/rbac.service';
-import { ChatNotificationPreferenceRepository } from '../src/modules/chat-push-worker/chat-notification-preference.repository';
-import { ChannelCacheService } from '../src/modules/chat-push-worker/channel-cache.service';
+import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '../src/domain/repositories/chat-notification-preference.repository.interface';
+import { ChannelCacheService } from '../src/application/services/channel-cache.service';
 import type {
   ChatChannel,
   ChatMessage,
@@ -138,6 +138,7 @@ describe('Chat hot path (e2e)', () => {
     findByChapter: jest.fn(),
     findByIds: jest.fn(),
     findDm: jest.fn(),
+    findPushRouting: jest.fn(),
     createDm: jest.fn(),
     findByName: jest.fn(),
     createMany: jest.fn(),
@@ -165,6 +166,7 @@ describe('Chat hot path (e2e)', () => {
     findPollsByChapter: jest.fn(),
     findByClientMessageId: jest.fn(),
     findAuthorAvatarPaths: jest.fn(),
+    insertIdempotent: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
   };
@@ -263,7 +265,7 @@ describe('Chat hot path (e2e)', () => {
       .useValue(rbacServiceMock)
       .overrideProvider(ActivationService)
       .useValue(activationServiceMock)
-      .overrideProvider(ChatNotificationPreferenceRepository)
+      .overrideProvider(CHAT_NOTIFICATION_PREFERENCE_REPOSITORY)
       .useValue(chatNotificationPrefsMock)
       .overrideProvider(ChannelCacheService)
       .useValue(channelCacheMock)

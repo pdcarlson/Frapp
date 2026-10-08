@@ -128,7 +128,7 @@ describe('tenant-scope harness', () => {
      *
      * A `Map`'s entries are not own enumerable properties, so `Object.values()`
      * on one returns `[]`. Before the walk handled `Map` explicitly, a
-     * repository that grouped its rows — `ChatNotificationPreferenceRepository.
+     * repository that grouped its rows — `SupabaseChatNotificationPreferenceRepository.
      * findForUsers` returns `Map<userId, rows>` — had its returned payload
      * inspected for nothing at all, while `expectTenantScoped` still reported
      * "scoped". A passing-direction test cannot catch that: it is green either
@@ -677,7 +677,7 @@ describe('tenant-scope harness', () => {
         },
       });
 
-      // The form already shipped in scheduled-jobs.repository.ts. Typing the
+      // The form already shipped in supabase-scheduled-jobs.repository.ts. Typing the
       // operand as a string would compare 'true' === true and match nothing.
       const { data } = await (harness.client as any)
         .from('widgets')

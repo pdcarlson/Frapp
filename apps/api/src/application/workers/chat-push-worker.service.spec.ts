@@ -2,17 +2,22 @@ import { Test } from '@nestjs/testing';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
-import { NotificationService } from '../../application/services/notification.service';
+import { NotificationService } from '../services/notification.service';
 import { ChatPushWorkerService } from './chat-push-worker.service';
 import {
-  ChatNotificationPreferenceRepository,
+  CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
   type ChatNotificationPreferenceRow,
-} from './chat-notification-preference.repository';
-import { ChatPushDispatchRepository } from './chat-push-dispatch.repository';
-import { RbacService } from '../../application/services/rbac.service';
-import { ChatBlockService } from '../../application/services/chat-block.service';
-import { ChannelCacheService } from './channel-cache.service';
+} from '#domain/repositories/chat-notification-preference.repository.interface';
+import { CHAT_PUSH_DISPATCH_REPOSITORY } from '#domain/repositories/chat-push-dispatch.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import { RbacService } from '../services/rbac.service';
+import { ChatBlockService } from '../services/chat-block.service';
+import {
+  ChannelCacheService,
+  type CachedChannelRow,
+} from '../services/channel-cache.service';
 import { SYSTEM_SENDER_ID } from '@repo/validation';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 describe('ChatPushWorkerService', () => {
   let service: ChatPushWorkerService;
@@ -24,6 +29,7 @@ describe('ChatPushWorkerService', () => {
   let findDisplayIdentitiesByIds: jest.Mock;
   let claim: jest.Mock;
   let purgeBefore: jest.Mock;
+  let findPushRouting: jest.Mock;
 
   /** Display names the sender lookup answers with; anyone else has none. */
   const NAMES: Record<string, string> = {
@@ -40,14 +46,14 @@ describe('ChatPushWorkerService', () => {
     type: 'PUBLIC',
     member_ids: null,
     required_permissions: null,
-  };
+  } satisfies CachedChannelRow;
 
   const ANNOUNCEMENT_CHANNEL = {
     ...CHANNEL,
     id: 'ch-announce',
     name: 'announcements',
     is_read_only: true,
-  };
+  } satisfies CachedChannelRow;
 
   beforeEach(async () => {
     notifyUser = jest.fn().mockResolvedValue(undefined);
@@ -62,6 +68,9 @@ describe('ChatPushWorkerService', () => {
     claim = jest.fn().mockResolvedValue('claimed');
     purgeBefore = jest.fn().mockResolvedValue(0);
     findForUsers = jest.fn().mockResolvedValue(new Map());
+    // Every test but the lookup cases seeds its channel through
+    // `__setChannelForTest`, so the read never runs for them.
+    findPushRouting = jest.fn().mockResolvedValue(null);
     getEffectivePermissions = jest.fn().mockResolvedValue([]);
     // Default: nobody has blocked the sender. Answered from the recipients
     // actually passed in rather than a fixed array, for the reason `setPrefs`
@@ -115,10 +124,14 @@ describe('ChatPushWorkerService', () => {
           useValue: { notifyUser },
         },
         {
-          provide: ChatNotificationPreferenceRepository,
+          provide: CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
           useValue: { findForUsers },
         },
-        { provide: ChatPushDispatchRepository, useValue: dispatches },
+        {
+          provide: CHAT_CHANNEL_REPOSITORY,
+          useValue: { findPushRouting },
+        },
+        { provide: CHAT_PUSH_DISPATCH_REPOSITORY, useValue: dispatches },
         {
           provide: RbacService,
           useValue: { getEffectivePermissions },
@@ -879,7 +892,7 @@ describe('ChatPushWorkerService', () => {
       name: 'dm-alice-sender',
       type: 'DM',
       member_ids: ['sender', 'alice'],
-    };
+    } satisfies CachedChannelRow;
     const send = (
       channelId: string,
       over: Partial<Parameters<ChatPushWorkerService['handleMessage']>[0]> = {},
@@ -1253,37 +1266,91 @@ describe('ChatPushWorkerService', () => {
     });
   });
 
+  describe('channel lookup (#3219)', () => {
+    const MESSAGE = {
+      id: 'm-lookup',
+      channel_id: 'ch-uncached',
+      sender_id: 'sender',
+      content: 'hi',
+      kind: 'text',
+      mentions: [],
+      created_at: '',
+    };
+
+    function warnSpy() {
+      return jest.spyOn(
+        (
+          service as unknown as {
+            logger: { warn: (...args: unknown[]) => void };
+          }
+        ).logger,
+        'warn',
+      );
+    }
+
+    it('warns and pushes nothing when the channel read fails', async () => {
+      findPushRouting.mockRejectedValue(
+        new SupabaseQueryError({ message: 'connection reset', code: '08006' }),
+      );
+      const warn = warnSpy();
+
+      await expect(service.handleMessage(MESSAGE)).resolves.toBeUndefined();
+
+      expect(findPushRouting).toHaveBeenCalledWith('ch-uncached');
+      // The lookup's own line, not the handler's catch-all.
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain(
+        'chat-push: channel lookup failed',
+      );
+      expect(findByChapter).not.toHaveBeenCalled();
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('pushes nothing, quietly, when the channel is gone', async () => {
+      const warn = warnSpy();
+
+      await service.handleMessage(MESSAGE);
+
+      expect(findPushRouting).toHaveBeenCalledWith('ch-uncached');
+      expect(warn).not.toHaveBeenCalled();
+      expect(findByChapter).not.toHaveBeenCalled();
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('caches the row it read, so the next message does not read again', async () => {
+      findPushRouting.mockResolvedValue({ ...CHANNEL, id: 'ch-uncached' });
+      setMembers([]);
+
+      await service.handleMessage(MESSAGE);
+      await service.handleMessage({ ...MESSAGE, id: 'm-lookup-2' });
+
+      expect(findPushRouting).toHaveBeenCalledTimes(1);
+      expect(findByChapter).toHaveBeenCalledWith('chap-1');
+    });
+  });
+
   describe('channel cache eviction race (#988)', () => {
     it('does not re-cache a channel read that resolves after a concurrent invalidate', async () => {
       // No `__setChannelForTest` here — the point is to exercise the real,
-      // uncached `resolveChannel` DB-read path with a controllable Supabase
+      // uncached `resolveChannel` read path with a controllable repository
       // response, so `channelCache.set()` gets called for real rather than
       // being bypassed by a pre-seeded cache hit.
-      let resolveSelect!: (value: {
-        data: typeof CHANNEL;
-        error: null;
-      }) => void;
-      const selectPromise = new Promise<{
-        data: typeof CHANNEL;
-        error: null;
-      }>((resolve) => {
-        resolveSelect = resolve;
+      let resolveRead!: (value: typeof CHANNEL) => void;
+      const readPromise = new Promise<typeof CHANNEL>((resolve) => {
+        resolveRead = resolve;
       });
-      // Signals the moment the SELECT is actually issued, so the invalidate
+      // Signals the moment the read is actually issued, so the invalidate
       // below lands while the read is in flight rather than before it starts.
       // `handleMessage` awaits its dispatch claim first, so the read no longer
       // starts in the same tick the message arrives.
-      let selectStarted!: () => void;
+      let readStarted!: () => void;
       const started = new Promise<void>((resolve) => {
-        selectStarted = resolve;
+        readStarted = resolve;
       });
-      const maybeSingle = jest.fn(() => {
-        selectStarted();
-        return selectPromise;
+      const findPushRouting = jest.fn(() => {
+        readStarted();
+        return readPromise;
       });
-      const eq = jest.fn().mockReturnValue({ maybeSingle });
-      const select = jest.fn().mockReturnValue({ eq });
-      const from = jest.fn().mockReturnValue({ select });
       const channelStub = {
         subscribe: jest.fn(),
         presenceState: () => ({}),
@@ -1302,7 +1369,7 @@ describe('ChatPushWorkerService', () => {
           { provide: ChannelCacheService, useValue: channelCache },
           {
             provide: SUPABASE_CLIENT,
-            useValue: { from, channel: () => channelStub },
+            useValue: { channel: () => channelStub },
           },
           {
             provide: MEMBER_REPOSITORY,
@@ -1313,11 +1380,12 @@ describe('ChatPushWorkerService', () => {
             useValue: { notifyUser: jest.fn().mockResolvedValue(undefined) },
           },
           {
-            provide: ChatNotificationPreferenceRepository,
+            provide: CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
             useValue: { findForUsers: jest.fn().mockResolvedValue(new Map()) },
           },
+          { provide: CHAT_CHANNEL_REPOSITORY, useValue: { findPushRouting } },
           {
-            provide: ChatPushDispatchRepository,
+            provide: CHAT_PUSH_DISPATCH_REPOSITORY,
             useValue: { claim: jest.fn().mockResolvedValue('claimed') },
           },
           {
@@ -1338,8 +1406,8 @@ describe('ChatPushWorkerService', () => {
       const worker = mod.get(ChatPushWorkerService);
 
       // A message arrives for an uncached channel. `resolveChannel` misses
-      // the cache and starts the SELECT above, which stays pending until
-      // `resolveSelect` is called below.
+      // the cache and starts the read above, which stays pending until
+      // `resolveRead` is called below.
       const handlePromise = worker.handleMessage({
         id: 'm1',
         channel_id: CHANNEL.id,
@@ -1356,8 +1424,8 @@ describe('ChatPushWorkerService', () => {
       await started;
       channelCache.invalidate(CHANNEL.id);
 
-      // Now the in-flight SELECT resolves with the pre-update row.
-      resolveSelect({ data: CHANNEL, error: null });
+      // Now the in-flight read resolves with the pre-update row.
+      resolveRead(CHANNEL);
       await handlePromise;
 
       // Without epoch fencing this would cache CHANNEL for a fresh 30s,

@@ -14,7 +14,7 @@ baseline story actually supports.
 
 | Gate | Command | CI job | Posture | Why that posture |
 |---|---|---|---|---|
-| dependency-cruiser | `npm run check:dep-cruiser` | `dependency-cruiser` | **Required** | Has a real baseline, and it is **empty** as of 2026-09-07 (7 grandfathered when the gate landed, 5 until then), so every violation now fails |
+| dependency-cruiser | `npm run check:dep-cruiser`, then `npm run check:dep-cruiser:rules` | `dependency-cruiser` | **Required** | Has a real baseline, and it is **empty** as of 2026-09-07 (7 grandfathered when the gate landed, 5 until then), so every violation now fails |
 | oasdiff against shipped mobile builds | `npm run check:api-breaking:shipped` | step in `api-contract-check` | **Required** | A store binary keeps the calls it was built with until its owner updates, so a break merged against it breaks every install. Passes, and says so, while no build is listed |
 | oasdiff against the PR base | `npm run check:api-breaking` | step in `api-contract-check` | **Advisory** | `apps/web` regenerates from this repo and deploys with the change |
 | `nestjs-typed` response schema | `npm run lint -w apps/api` | step in `lint-and-typecheck` | **`warn`** | A large undecorated-route backlog (count it, see below) and no ESLint baseline mechanism |
@@ -65,11 +65,16 @@ only: it lives in the pre-auth spec, and nothing guards that spec. Deleting or r
 
 ## dependency-cruiser — architectural boundaries
 
-Enforces two things the codebase already asserted in prose and nothing checked:
+Enforces three things the codebase already asserted in prose and nothing checked:
 
 - **The API's layer direction.** Interface → Application → Infrastructure → Domain; outer may import
   inner, never the reverse ([`api-development` skill](../../.claude/skills/api-development/SKILL.md)).
-  One rule per illegal edge, so a failure names the boundary that broke.
+  One rule per illegal edge, so a failure names the boundary that broke. `api-domain-by-subpath`
+  also requires the domain to be imported as `#domain/*`, never by a relative path.
+- **The API's `modules/` holds Nest wiring only.** Any file under `apps/api/src/modules/` other than
+  a `*.module.ts` (or its spec) fails `api-modules-wiring-only`, in one of three forms, because the
+  gate judges edges rather than files: the base rule through the file's own imports, `-target` through an
+  import of it, `-orphan` when it has neither (#3219). Workers go in `application/workers/`.
 - **Monorepo separation.** A package must not import an app; apps share code through `packages/`,
   never directly.
 
@@ -87,6 +92,10 @@ reported a confident green.
 Nothing about the output reveals this: the violation count is *lower*, which reads as good news. If
 you change either option, re-verify by introducing a deliberate violation per rule and watching it
 fail — that is how this was caught, and each of the four rule families has been confirmed to fire.
+The `modules/` rules came later and have a standing proof instead (#3219): the real tree gives them
+nothing to catch, so `npm run check:dep-cruiser:rules` (run in the `dependency-cruiser` job) cruises a
+fixture with an importing file, an imported constants file and an edge-less file under
+`src/modules/`, and fails if any of the three stops firing.
 
 ### The baseline
 

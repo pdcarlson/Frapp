@@ -9,13 +9,11 @@ import {
   type ArchiveMediaCopyItem,
 } from '#domain/adapters/archive-media-copier.interface';
 import {
-  ARCHIVE_MEDIA_COPY_BUDGET_MS,
   ARCHIVE_MEDIA_COPY_FUNCTION,
   ARCHIVE_MEDIA_COPY_RETRY_DELAYS_MS,
   ARCHIVE_MEDIA_COPY_TIMEOUT_MS,
   SupabaseArchiveMediaCopier,
 } from './supabase-archive-media-copier.service';
-import { LEASE_MS } from '../../modules/discord-import-worker/discord-import-worker.service';
 import { SUPABASE_CLIENT } from '../supabase/supabase.provider';
 
 const item = (path: string): ArchiveMediaCopyItem => ({
@@ -188,11 +186,6 @@ describe('SupabaseArchiveMediaCopier', () => {
       /did not answer within 140 s/,
     );
     expect(invoke).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps one call inside the import lease', () => {
-    // The worker renews the lease before each call; one call must not outlast it.
-    expect(ARCHIVE_MEDIA_COPY_BUDGET_MS).toBeLessThan(LEASE_MS);
   });
 
   it('names a timeout as a timeout', async () => {

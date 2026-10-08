@@ -10,9 +10,12 @@ import {
   isSettableNotificationKind,
 } from '#domain/entities/chat.entity';
 import { ChannelAccessService } from './channel-access.service';
-import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
-import type { ChatNotificationLevel } from '../../modules/chat-push-worker/chat-notification-preference.repository';
-import { resolveLevel } from '../../modules/chat-push-worker/push-rules';
+import {
+  CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
+  type IChatNotificationPreferenceRepository,
+} from '#domain/repositories/chat-notification-preference.repository.interface';
+import type { ChatNotificationLevel } from '#domain/entities/chat-notification-preference.entity';
+import { resolveLevel } from './push-rules';
 
 /**
  * A member's own chat notification levels: per channel (#296) and per message
@@ -28,7 +31,8 @@ export class ChatNotificationPreferenceService {
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
     private readonly channelAccess: ChannelAccessService,
-    private readonly chatNotificationPrefs: ChatNotificationPreferenceRepository,
+    @Inject(CHAT_NOTIFICATION_PREFERENCE_REPOSITORY)
+    private readonly chatNotificationPrefs: IChatNotificationPreferenceRepository,
   ) {}
 
   /**

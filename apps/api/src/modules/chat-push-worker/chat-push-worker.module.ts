@@ -1,7 +1,11 @@
 import { Module } from '@nestjs/common';
-import { ChatPushWorkerService } from './chat-push-worker.service';
-import { ChatNotificationPreferenceRepository } from './chat-notification-preference.repository';
-import { ChatPushDispatchRepository } from './chat-push-dispatch.repository';
+import { ChatPushWorkerService } from '../../application/workers/chat-push-worker.service';
+import { SupabaseChatNotificationPreferenceRepository } from '../../infrastructure/supabase/repositories/supabase-chat-notification-preference.repository';
+import { SupabaseChatPushDispatchRepository } from '../../infrastructure/supabase/repositories/supabase-chat-push-dispatch.repository';
+import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
+import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
+import { CHAT_PUSH_DISPATCH_REPOSITORY } from '#domain/repositories/chat-push-dispatch.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { NotificationModule } from '../notification/notification.module';
 import { ChapterModule } from '../chapter/chapter.module';
 import { RbacModule } from '../rbac/rbac.module';
@@ -40,9 +44,20 @@ import { AuthModule } from '../auth/auth.module';
   ],
   providers: [
     ChatPushWorkerService,
-    ChatNotificationPreferenceRepository,
+    {
+      provide: CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
+      useClass: SupabaseChatNotificationPreferenceRepository,
+    },
     // The per-message claim that keeps a second instance from re-sending (#2846).
-    ChatPushDispatchRepository,
+    {
+      provide: CHAT_PUSH_DISPATCH_REPOSITORY,
+      useClass: SupabaseChatPushDispatchRepository,
+    },
+    // The routing columns of the channel a message landed in.
+    {
+      provide: CHAT_CHANNEL_REPOSITORY,
+      useClass: SupabaseChatChannelRepository,
+    },
   ],
 })
 export class ChatPushWorkerModule {}

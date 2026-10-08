@@ -3,17 +3,21 @@ import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
-import { NotificationService } from '../../application/services/notification.service';
+import { NotificationService } from '../services/notification.service';
 import { ChatPushWorkerService } from './chat-push-worker.service';
 import {
-  ChatNotificationPreferenceRepository,
+  CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
   type ChatNotificationPreferenceRow,
-} from './chat-notification-preference.repository';
-import { ChatPushDispatchRepository } from './chat-push-dispatch.repository';
-import { RbacService } from '../../application/services/rbac.service';
-import { ChatBlockService } from '../../application/services/chat-block.service';
+} from '#domain/repositories/chat-notification-preference.repository.interface';
+import { CHAT_PUSH_DISPATCH_REPOSITORY } from '#domain/repositories/chat-push-dispatch.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import { RbacService } from '../services/rbac.service';
+import { ChatBlockService } from '../services/chat-block.service';
 import type { ChatMessage } from '#domain/entities';
-import { ChannelCacheService } from './channel-cache.service';
+import {
+  ChannelCacheService,
+  type CachedChannelRow,
+} from '../services/channel-cache.service';
 
 /**
  * Recipient-filter proofs driven through the **real Realtime payload path**.
@@ -93,7 +97,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     type: 'PUBLIC',
     member_ids: null,
     required_permissions: null,
-  };
+  } satisfies CachedChannelRow;
 
   /** Sender + one partner. `outsider` is in the chapter but not in the DM. */
   const DM_CHANNEL = {
@@ -102,7 +106,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     name: 'dm',
     type: 'DM',
     member_ids: ['sender', 'dm-partner'],
-  };
+  } satisfies CachedChannelRow;
 
   const PRIVATE_CHANNEL = {
     ...PUBLIC_CHANNEL,
@@ -110,7 +114,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     name: 'exec',
     type: 'PRIVATE',
     member_ids: ['sender', 'insider'],
-  };
+  } satisfies CachedChannelRow;
 
   /**
    * `defaultLevelFor` returns `all` for the announcements channel (PUBLIC and
@@ -124,7 +128,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     id: 'ch-announce',
     name: 'announcements',
     is_read_only: true,
-  };
+  } satisfies CachedChannelRow;
 
   const ROLE_GATED_CHANNEL = {
     ...PUBLIC_CHANNEL,
@@ -132,7 +136,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     name: 'treasury',
     type: 'ROLE_GATED',
     required_permissions: ['finances:read'],
-  };
+  } satisfies CachedChannelRow;
 
   function setMembers(userIds: string[]) {
     findByChapter.mockResolvedValue(userIds.map((id) => ({ user_id: id })));
@@ -229,13 +233,17 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
         { provide: MEMBER_REPOSITORY, useValue: { findByChapter } },
         { provide: NotificationService, useValue: { notifyUser } },
         {
-          provide: ChatNotificationPreferenceRepository,
+          provide: CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
           useValue: { findForUsers },
+        },
+        {
+          provide: CHAT_CHANNEL_REPOSITORY,
+          useValue: { findPushRouting: jest.fn() },
         },
         {
           // A single instance that wins every claim: this file is about the
           // payload path, and the claim is proven in the service spec.
-          provide: ChatPushDispatchRepository,
+          provide: CHAT_PUSH_DISPATCH_REPOSITORY,
           useValue: { claim: jest.fn().mockResolvedValue('claimed') },
         },
         { provide: RbacService, useValue: { getEffectivePermissions } },

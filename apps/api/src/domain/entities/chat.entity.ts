@@ -130,6 +130,22 @@ export interface ChatChannel {
 }
 
 /**
+ * The columns the push worker routes and authorizes a push on, read by
+ * `IChatChannelRepository.findPushRouting` and cached by `ChannelCacheService`.
+ */
+export type ChatChannelPushRouting = Pick<
+  ChatChannel,
+  | 'id'
+  | 'chapter_id'
+  | 'name'
+  | 'is_read_only'
+  | 'type'
+  | 'member_ids'
+  | 'required_permissions'
+  | 'default_notification_level'
+>;
+
+/**
  * `ChatChannel` plus the caller-scoped capability a client needs to decide
  * whether to render a live composer, without re-implementing
  * `canAccessChannel` or being shipped the caller's raw alumni/permission
