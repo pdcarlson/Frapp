@@ -24,6 +24,7 @@ lives in a scratch file.
   Destructive writes only on `suggestion`-labeled issues.
 - GitHub MCP only. If it is unavailable, stop and report; REST and `gh` are not a fallback for
   tracker work (rule 4 there has the narrow settings-read carve-out).
+- Secrets by name and presence only ([`AGENTS.md` § Credentials and secrets](../../../AGENTS.md#credentials-and-secrets)).
 
 ## Your namespace
 

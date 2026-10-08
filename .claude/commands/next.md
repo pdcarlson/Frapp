@@ -84,9 +84,8 @@ reduced. `model:` and `ultracode:` are spin-up hints for whoever launches sessio
 the work (§0.2 condition 4), never assignees or labels: migrated
 issues carry stale assignees, and an `in-progress` label can outlive its session.
 
-**Label writes replace the whole set.** `issue_write`'s `labels` field overwrites the issue's labels,
-so every label change below means: read the set (`issue_read get_labels`), apply the delta, write
-back the full union.
+**Label writes are read-modify-write** (`issue_read get_labels`;
+[`AGENTS.md` § Work tracking](../../AGENTS.md#work-tracking)).
 
 ## Constants
 

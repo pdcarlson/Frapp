@@ -38,6 +38,7 @@ whole inbox, whoever filed it, but destroys only what agents own.
   `routine-state` issues too (routine infrastructure, never work). Leave `incident` issues'
   labels and priority alone, since the watchdog that filed one also closes it (what agents may do
   with one: [`alert-routing.md` § Escalation](../../../docs/ops/alert-routing.md#escalation)).
+- Secrets by name and presence only ([`AGENTS.md` § Credentials and secrets](../../../AGENTS.md#credentials-and-secrets)).
 - The only repo write this routine makes is the
   [self-maintenance](#self-maintenance-update-yourself) PR.
 

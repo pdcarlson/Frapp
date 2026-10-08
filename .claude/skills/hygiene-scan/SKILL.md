@@ -43,6 +43,7 @@ It holds only while every run is grounded, whole-pattern, verified, reviewed, an
   Hygiene Scan PR at a time: reviewer bandwidth is scarce and stacked hygiene PRs conflict.
 - File no more net-new issues per run than the Curator's
   [net-growth budget](../issue-curator/SKILL.md#net-growth-budget) allows; it binds here too.
+- Secrets by name and presence only ([`AGENTS.md` § Credentials and secrets](../../../AGENTS.md#credentials-and-secrets)).
 
 **May edit:** `apps/**` and `packages/**` code and tests; in `scripts/**`, dead code and stale
 allowlist entries only (the check, CI and deploy scripts are the gates); gate baselines, downward

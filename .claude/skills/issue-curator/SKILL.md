@@ -31,6 +31,7 @@ GitHub MCP only (stop and report if it's unavailable), no product code, comment 
   with `duplicate_of` the other one. Leave the other issue alone, apart from at most one
   back-reference comment.
 - Label writes are read-modify-write ([`AGENTS.md` § Work tracking](../../../AGENTS.md#work-tracking)).
+- Secrets by name and presence only ([`AGENTS.md` § Credentials and secrets](../../../AGENTS.md#credentials-and-secrets)).
 - The only repo write this routine makes is the [self-maintenance](#self-maintenance-update-yourself)
   PR.
 

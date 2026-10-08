@@ -143,6 +143,7 @@ Otherwise:
 
 - Never manufacture edits or rewrite prose that was already true. Churn in the docs reads as drift
   to the next reader.
+- Secrets by name and presence only ([`AGENTS.md` § Credentials and secrets](../../../AGENTS.md#credentials-and-secrets)).
 - When a provider is unreachable, say "unverified". A guess presented as a verification launders
   an assumption into something that reads as checked.
 

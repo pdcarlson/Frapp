@@ -4,8 +4,11 @@ Canonical, version-controlled design + policy for Frapp's project management on 
 (`pdcarlson/Frapp`), per **ADR-16** and its GitHub-migration amendment ([`spec/architecture/adr/adr-16.md`](../../spec/architecture/adr/adr-16.md)).
 GitHub Issues is the source of truth for planning and work status.
 
-> **Linear retired 2026-08-08**, because its MCP writes prompted in every cloud session. The
-> evidence, the FRA-→#N mapping and the owner's wind-down (done 2026-09-30) are in [#680](https://github.com/pdcarlson/Frapp/issues/680).
+> **Linear retired 2026-08-08**, because its MCP writes prompted in every cloud session; evidence and
+> the FRA-→#N mapping are in [#680](https://github.com/pdcarlson/Frapp/issues/680). #680 closed on
+> 2026-09-30 with its owner wind-down untracked, not done: nothing records Linear's GitHub
+> integration as disconnected, so disconnect it before any Linear-side cleanup, or a Linear close can
+> sync onto and close a real GitHub issue.
 
 ---
 
