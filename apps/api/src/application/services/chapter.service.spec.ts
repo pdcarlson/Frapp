@@ -33,23 +33,29 @@ import {
 import type { Chapter } from '#domain/entities/chapter.entity';
 import type { Role } from '#domain/entities/role.entity';
 import type { Member } from '#domain/entities/member.entity';
+import {
+  chapterFixture,
+  memberFixture,
+  roleFixture,
+} from '#test/helpers/entity-fixtures';
 
 function mockRoleIdForName(name: string): string {
   return `role-${name.toLowerCase().replace(/\s+/g, '-')}`;
 }
 
 function mockSystemRolesForChapter(chapterId: string): Role[] {
-  return DEFAULT_SYSTEM_ROLES.map((r) => ({
-    id: mockRoleIdForName(r.name),
-    chapter_id: chapterId,
-    name: r.name,
-    system_key: r.system_key,
-    permissions: [...r.permissions],
-    is_system: r.is_system,
-    display_order: r.display_order,
-    color: r.color ?? null,
-    created_at: '2024-01-01',
-  }));
+  return DEFAULT_SYSTEM_ROLES.map((r) =>
+    roleFixture({
+      id: mockRoleIdForName(r.name),
+      chapter_id: chapterId,
+      name: r.name,
+      system_key: r.system_key,
+      permissions: [...r.permissions],
+      is_system: r.is_system,
+      display_order: r.display_order,
+      color: r.color ?? null,
+    }),
+  );
 }
 
 describe('ChapterService', () => {
@@ -160,21 +166,9 @@ describe('ChapterService', () => {
   });
 
   it('should find chapter by id', async () => {
-    const chapter: Chapter = {
-      id: 'ch-1',
-      name: 'Alpha',
-      university: 'State U',
-      stripe_customer_id: null,
+    const chapter: Chapter = chapterFixture({
       subscription_status: 'active',
-      subscription_id: null,
-      past_due_since: null,
-      last_stripe_webhook_at: null,
-      accent_color: null,
-      logo_path: null,
-      donation_url: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockChapterRepo.findById.mockResolvedValue(chapter);
 
     const result = await service.findById('ch-1');
@@ -185,36 +179,18 @@ describe('ChapterService', () => {
 
   it('should list chapters for the current user', async () => {
     const chapters: Chapter[] = [
-      {
-        id: 'ch-1',
-        name: 'Alpha',
-        university: 'State U',
-        stripe_customer_id: null,
+      chapterFixture({
         subscription_status: 'active',
-        subscription_id: null,
-        past_due_since: null,
-        last_stripe_webhook_at: null,
         accent_color: '#2563EB',
-        logo_path: null,
-        donation_url: null,
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      },
-      {
+      }),
+      chapterFixture({
         id: 'ch-2',
         name: 'Beta',
         university: 'Tech U',
-        stripe_customer_id: null,
-        subscription_status: 'incomplete',
-        subscription_id: null,
-        past_due_since: null,
-        last_stripe_webhook_at: null,
         accent_color: '#1D4ED8',
-        logo_path: null,
-        donation_url: null,
         created_at: '2024-01-02',
         updated_at: '2024-01-02',
-      },
+      }),
     ];
     // A row that predates `dismissed_ops_nudges` (#492): the key is absent,
     // not `[]`, which is what the `?? []` in `mapMembershipSummary` is for.
@@ -230,17 +206,14 @@ describe('ChapterService', () => {
     };
     mockMemberRepo.findByUser.mockResolvedValue([
       legacyMember as Member,
-      {
+      memberFixture({
         id: 'member-2',
-        user_id: 'user-1',
         chapter_id: 'ch-2',
         role_ids: ['role-member'],
-        custom_role_ids: [],
-        has_completed_onboarding: false,
         dismissed_ops_nudges: ['events'],
         created_at: '2024-01-02',
         updated_at: '2024-01-02',
-      },
+      }),
     ]);
     // Returned reversed so the membership-order remap is the thing under
     // test, not PostgREST's result order.
@@ -303,45 +276,23 @@ describe('ChapterService', () => {
 
   it('drops a membership whose chapter row is gone', async () => {
     mockMemberRepo.findByUser.mockResolvedValue([
-      {
-        id: 'member-1',
-        user_id: 'user-1',
-        chapter_id: 'ch-1',
+      memberFixture({
         role_ids: ['role-president'],
-        custom_role_ids: [],
         has_completed_onboarding: true,
-        dismissed_ops_nudges: [],
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      },
-      {
+      }),
+      memberFixture({
         id: 'member-2',
-        user_id: 'user-1',
         chapter_id: 'ch-missing',
         role_ids: ['role-member'],
-        custom_role_ids: [],
-        has_completed_onboarding: false,
-        dismissed_ops_nudges: [],
         created_at: '2024-01-02',
         updated_at: '2024-01-02',
-      },
+      }),
     ]);
     mockChapterRepo.findByIds.mockResolvedValue([
-      {
-        id: 'ch-1',
-        name: 'Alpha',
-        university: 'State U',
-        stripe_customer_id: null,
+      chapterFixture({
         subscription_status: 'active',
-        subscription_id: null,
-        past_due_since: null,
-        last_stripe_webhook_at: null,
         accent_color: '#2563EB',
-        logo_path: null,
-        donation_url: null,
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      },
+      }),
     ]);
 
     const result = await service.listForUser('user-1');
@@ -360,21 +311,11 @@ describe('ChapterService', () => {
 
   describe('findByIdWithLogoUrl', () => {
     function chapterWith(logoPath: string | null): Chapter {
-      return {
-        id: 'ch-1',
-        name: 'Alpha',
-        university: 'State U',
-        stripe_customer_id: null,
+      return chapterFixture({
         subscription_status: 'active',
-        subscription_id: null,
-        past_due_since: null,
-        last_stripe_webhook_at: null,
         accent_color: '#8B0000',
         logo_path: logoPath,
-        donation_url: null,
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      };
+      });
     }
 
     it('signs the logo out of the private branding bucket', async () => {
@@ -473,21 +414,9 @@ describe('ChapterService', () => {
   });
 
   it('should create chapter with default roles', async () => {
-    const chapter: Chapter = {
-      id: 'ch-1',
-      name: 'Alpha',
-      university: 'State U',
-      stripe_customer_id: null,
+    const chapter: Chapter = chapterFixture({
       subscription_status: 'active',
-      subscription_id: null,
-      past_due_since: null,
-      last_stripe_webhook_at: null,
-      accent_color: null,
-      logo_path: null,
-      donation_url: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockChapterRepo.create.mockResolvedValue(chapter);
 
     const roles = mockSystemRolesForChapter(chapter.id);
@@ -519,36 +448,25 @@ describe('ChapterService', () => {
   });
 
   it('should merge onboarding config columns into the chapter insert', async () => {
-    const chapter: Chapter = {
-      id: 'ch-1',
+    const chapter: Chapter = chapterFixture({
       name: 'Sigma Phi Epsilon',
       university: 'UCLA',
-      stripe_customer_id: null,
-      subscription_status: 'incomplete',
-      subscription_id: null,
-      past_due_since: null,
-      last_stripe_webhook_at: null,
-      accent_color: null,
-      logo_path: null,
-      donation_url: null,
       created_at: '2026-05-24',
       updated_at: '2026-05-24',
-    };
+    });
     mockChapterRepo.create.mockResolvedValue(chapter);
     mockRoleRepo.createMany.mockResolvedValueOnce(
       mockSystemRolesForChapter(chapter.id),
     );
-    mockMemberRepo.create.mockResolvedValue({
-      id: 'member-1',
-      user_id: 'user-1',
-      chapter_id: chapter.id,
-      role_ids: [mockRoleIdForName('President')],
-      custom_role_ids: [],
-      has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2026-05-24',
-      updated_at: '2026-05-24',
-    });
+    mockMemberRepo.create.mockResolvedValue(
+      memberFixture({
+        chapter_id: chapter.id,
+        role_ids: [mockRoleIdForName('President')],
+        has_completed_onboarding: true,
+        created_at: '2026-05-24',
+        updated_at: '2026-05-24',
+      }),
+    );
 
     await service.create('user-1', {
       name: 'Sigma Phi Epsilon',
@@ -570,21 +488,9 @@ describe('ChapterService', () => {
   });
 
   it('should assign creator as President on chapter creation', async () => {
-    const chapter: Chapter = {
-      id: 'ch-1',
-      name: 'Alpha',
-      university: 'State U',
-      stripe_customer_id: null,
+    const chapter: Chapter = chapterFixture({
       subscription_status: 'active',
-      subscription_id: null,
-      past_due_since: null,
-      last_stripe_webhook_at: null,
-      accent_color: null,
-      logo_path: null,
-      donation_url: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockChapterRepo.create.mockResolvedValue(chapter);
 
     const roles = mockSystemRolesForChapter(chapter.id);
@@ -592,17 +498,11 @@ describe('ChapterService', () => {
 
     mockRoleRepo.createMany.mockResolvedValueOnce(roles);
 
-    const member: Member = {
-      id: 'member-1',
-      user_id: 'user-1',
+    const member: Member = memberFixture({
       chapter_id: chapter.id,
       role_ids: [presidentRole.id],
-      custom_role_ids: [],
       has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockMemberRepo.create.mockResolvedValue(member);
 
     await service.create('user-1', {
@@ -620,49 +520,34 @@ describe('ChapterService', () => {
   });
 
   it('should create default channels on chapter creation', async () => {
-    const chapter: Chapter = {
-      id: 'ch-1',
-      name: 'Alpha',
-      university: 'State U',
-      stripe_customer_id: null,
+    const chapter: Chapter = chapterFixture({
       subscription_status: 'active',
-      subscription_id: null,
-      past_due_since: null,
-      last_stripe_webhook_at: null,
-      accent_color: null,
-      logo_path: null,
-      donation_url: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockChapterRepo.create.mockResolvedValue(chapter);
 
     mockRoleRepo.createMany.mockImplementation((dataArr) =>
       Promise.resolve(
-        dataArr.map((data) => ({
-          id: mockRoleIdForName(data.name ?? ''),
-          chapter_id: data.chapter_id!,
-          name: data.name!,
-          system_key: data.system_key ?? null,
-          permissions: data.permissions ?? [],
-          is_system: data.is_system ?? false,
-          display_order: data.display_order ?? 0,
-          color: data.color ?? null,
-          created_at: '2024-01-01',
-        })),
+        dataArr.map((data) =>
+          roleFixture({
+            id: mockRoleIdForName(data.name ?? ''),
+            chapter_id: data.chapter_id!,
+            name: data.name!,
+            system_key: data.system_key ?? null,
+            permissions: data.permissions ?? [],
+            is_system: data.is_system ?? false,
+            display_order: data.display_order ?? 0,
+            color: data.color ?? null,
+          }),
+        ),
       ),
     );
-    mockMemberRepo.create.mockResolvedValue({
-      id: 'member-1',
-      user_id: 'user-1',
-      chapter_id: chapter.id,
-      role_ids: [mockRoleIdForName('President')],
-      custom_role_ids: [],
-      has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    mockMemberRepo.create.mockResolvedValue(
+      memberFixture({
+        chapter_id: chapter.id,
+        role_ids: [mockRoleIdForName('President')],
+        has_completed_onboarding: true,
+      }),
+    );
 
     await service.create('user-1', {
       name: 'Alpha',
@@ -719,48 +604,33 @@ describe('ChapterService', () => {
   });
 
   it('should fail chapter creation when default channel insert returns an error', async () => {
-    const chapter: Chapter = {
-      id: 'ch-1',
-      name: 'Alpha',
-      university: 'State U',
-      stripe_customer_id: null,
+    const chapter: Chapter = chapterFixture({
       subscription_status: 'active',
-      subscription_id: null,
-      past_due_since: null,
-      last_stripe_webhook_at: null,
-      accent_color: null,
-      logo_path: null,
-      donation_url: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockChapterRepo.create.mockResolvedValue(chapter);
     mockRoleRepo.createMany.mockImplementation((dataArr) =>
       Promise.resolve(
-        dataArr.map((data) => ({
-          id: mockRoleIdForName(data.name ?? ''),
-          chapter_id: data.chapter_id!,
-          name: data.name!,
-          system_key: data.system_key ?? null,
-          permissions: data.permissions ?? [],
-          is_system: data.is_system ?? false,
-          display_order: data.display_order ?? 0,
-          color: data.color ?? null,
-          created_at: '2024-01-01',
-        })),
+        dataArr.map((data) =>
+          roleFixture({
+            id: mockRoleIdForName(data.name ?? ''),
+            chapter_id: data.chapter_id!,
+            name: data.name!,
+            system_key: data.system_key ?? null,
+            permissions: data.permissions ?? [],
+            is_system: data.is_system ?? false,
+            display_order: data.display_order ?? 0,
+            color: data.color ?? null,
+          }),
+        ),
       ),
     );
-    mockMemberRepo.create.mockResolvedValue({
-      id: 'member-1',
-      user_id: 'user-1',
-      chapter_id: chapter.id,
-      role_ids: [mockRoleIdForName('President')],
-      custom_role_ids: [],
-      has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    mockMemberRepo.create.mockResolvedValue(
+      memberFixture({
+        chapter_id: chapter.id,
+        role_ids: [mockRoleIdForName('President')],
+        has_completed_onboarding: true,
+      }),
+    );
     mockChannelRepo.createMany.mockRejectedValueOnce(
       new SupabaseQueryError({ message: 'insert failed' }),
     );
@@ -783,21 +653,12 @@ describe('ChapterService', () => {
   });
 
   it('should update chapter data with valid WCAG accent color', async () => {
-    const updatedChapter: Chapter = {
-      id: 'ch-1',
+    const updatedChapter: Chapter = chapterFixture({
       name: 'Alpha Updated',
-      university: 'State U',
-      stripe_customer_id: null,
       subscription_status: 'active',
-      subscription_id: null,
-      past_due_since: null,
-      last_stripe_webhook_at: null,
       accent_color: '#1E293B',
-      logo_path: null,
-      donation_url: null,
-      created_at: '2024-01-01',
       updated_at: '2024-01-02',
-    };
+    });
     mockChapterRepo.update.mockResolvedValue(updatedChapter);
 
     const result = await service.update(
@@ -1283,21 +1144,11 @@ describe('ChapterService', () => {
   });
 
   it('should confirm logo upload and update logo_path', async () => {
-    const updatedChapter: Chapter = {
-      id: 'ch-1',
-      name: 'Alpha',
-      university: 'State U',
-      stripe_customer_id: null,
+    const updatedChapter: Chapter = chapterFixture({
       subscription_status: 'active',
-      subscription_id: null,
-      past_due_since: null,
-      last_stripe_webhook_at: null,
-      accent_color: null,
       logo_path: 'chapters/ch-1/branding/logo.png',
-      donation_url: null,
-      created_at: '2024-01-01',
       updated_at: '2024-01-02',
-    };
+    });
     mockChapterRepo.findById.mockResolvedValue({
       ...updatedChapter,
       logo_path: null,
@@ -1720,21 +1571,10 @@ describe('ChapterService', () => {
   });
 
   it('should delete logo and clear logo_path', async () => {
-    const chapterWithLogo: Chapter = {
-      id: 'ch-1',
-      name: 'Alpha',
-      university: 'State U',
-      stripe_customer_id: null,
+    const chapterWithLogo: Chapter = chapterFixture({
       subscription_status: 'active',
-      subscription_id: null,
-      past_due_since: null,
-      last_stripe_webhook_at: null,
-      accent_color: null,
       logo_path: 'chapters/ch-1/branding/logo.png',
-      donation_url: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     const updatedChapter = { ...chapterWithLogo, logo_path: null };
     mockChapterRepo.findById.mockResolvedValue(chapterWithLogo);
     mockChapterRepo.update.mockResolvedValue(updatedChapter);
@@ -1752,21 +1592,9 @@ describe('ChapterService', () => {
   });
 
   it('should delete logo when chapter has no logo (no-op)', async () => {
-    const chapterWithoutLogo: Chapter = {
-      id: 'ch-1',
-      name: 'Alpha',
-      university: 'State U',
-      stripe_customer_id: null,
+    const chapterWithoutLogo: Chapter = chapterFixture({
       subscription_status: 'active',
-      subscription_id: null,
-      past_due_since: null,
-      last_stripe_webhook_at: null,
-      accent_color: null,
-      logo_path: null,
-      donation_url: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockChapterRepo.findById.mockResolvedValue(chapterWithoutLogo);
     mockChapterRepo.update.mockResolvedValue(chapterWithoutLogo);
 

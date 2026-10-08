@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from './auth.service';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+import { userFixture } from '#test/helpers/entity-fixtures';
 
 const AUTH_ID_UNIQUE_VIOLATION = {
   code: '23505',
@@ -36,21 +37,11 @@ describe('AuthService', () => {
   });
 
   it('should return existing user when already synced', async () => {
-    const existingUser = {
-      id: 'user-1',
+    const existingUser = userFixture({
       supabase_auth_id: 'auth-123',
       email: 'test@example.com',
       display_name: 'test',
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockRepo.findBySupabaseAuthId.mockResolvedValue(existingUser);
 
     const result = await service.syncUser('auth-123', 'test@example.com');
@@ -62,21 +53,12 @@ describe('AuthService', () => {
 
   it('should create new user when not synced', async () => {
     mockRepo.findBySupabaseAuthId.mockResolvedValue(null);
-    const newUser = {
+    const newUser = userFixture({
       id: 'user-2',
       supabase_auth_id: 'auth-456',
       email: 'new@example.com',
       display_name: 'new',
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockRepo.create.mockResolvedValue(newUser);
 
     const result = await service.syncUser('auth-456', 'new@example.com');
@@ -92,21 +74,14 @@ describe('AuthService', () => {
 
   it('should use email prefix as display_name for new users', async () => {
     mockRepo.findBySupabaseAuthId.mockResolvedValue(null);
-    mockRepo.create.mockResolvedValue({
-      id: 'user-3',
-      supabase_auth_id: 'auth-789',
-      email: 'jane.doe@company.org',
-      display_name: 'jane.doe',
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    mockRepo.create.mockResolvedValue(
+      userFixture({
+        id: 'user-3',
+        supabase_auth_id: 'auth-789',
+        email: 'jane.doe@company.org',
+        display_name: 'jane.doe',
+      }),
+    );
 
     await service.syncUser('auth-789', 'jane.doe@company.org');
 
@@ -118,21 +93,12 @@ describe('AuthService', () => {
   });
 
   it('returns the winner when a parallel first-request insert collides', async () => {
-    const racedUser = {
+    const racedUser = userFixture({
       id: 'user-4',
       supabase_auth_id: 'auth-race',
       email: 'race@example.com',
       display_name: 'race',
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockRepo.findBySupabaseAuthId
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(racedUser);
@@ -168,21 +134,14 @@ describe('AuthService', () => {
 
   it('stores a placeholder email when Apple omits one', async () => {
     mockRepo.findBySupabaseAuthId.mockResolvedValue(null);
-    mockRepo.create.mockResolvedValue({
-      id: 'user-5',
-      supabase_auth_id: 'auth-apple',
-      email: 'noreply+auth-apple@users.invalid',
-      display_name: 'Ada Lovelace',
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    mockRepo.create.mockResolvedValue(
+      userFixture({
+        id: 'user-5',
+        supabase_auth_id: 'auth-apple',
+        email: 'noreply+auth-apple@users.invalid',
+        display_name: 'Ada Lovelace',
+      }),
+    );
 
     await service.syncUser('auth-apple', '', { full_name: 'Ada Lovelace' });
 
@@ -195,21 +154,14 @@ describe('AuthService', () => {
 
   it('names a private-relay user Member when Auth sent no display name', async () => {
     mockRepo.findBySupabaseAuthId.mockResolvedValue(null);
-    mockRepo.create.mockResolvedValue({
-      id: 'user-6',
-      supabase_auth_id: 'auth-relay',
-      email: 'n@privaterelay.appleid.com',
-      display_name: 'Member',
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    mockRepo.create.mockResolvedValue(
+      userFixture({
+        id: 'user-6',
+        supabase_auth_id: 'auth-relay',
+        email: 'n@privaterelay.appleid.com',
+        display_name: 'Member',
+      }),
+    );
 
     await service.syncUser('auth-relay', 'n@privaterelay.appleid.com');
 
@@ -222,21 +174,12 @@ describe('AuthService', () => {
   });
 
   it('adopts a real email onto a placeholder row and never the reverse', async () => {
-    const placeholderUser = {
+    const placeholderUser = userFixture({
       id: 'user-7',
       supabase_auth_id: 'auth-adopt',
       email: 'noreply+auth-adopt@users.invalid',
       display_name: 'Member',
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockRepo.findBySupabaseAuthId.mockResolvedValue(placeholderUser);
     mockRepo.update.mockResolvedValue({
       ...placeholderUser,
@@ -251,21 +194,14 @@ describe('AuthService', () => {
   });
 
   it('does not replace a university email with Apple Hide My Email', async () => {
-    mockRepo.findBySupabaseAuthId.mockResolvedValue({
-      id: 'user-8',
-      supabase_auth_id: 'auth-keep',
-      email: 'officer@university.edu',
-      display_name: 'officer',
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    mockRepo.findBySupabaseAuthId.mockResolvedValue(
+      userFixture({
+        id: 'user-8',
+        supabase_auth_id: 'auth-keep',
+        email: 'officer@university.edu',
+        display_name: 'officer',
+      }),
+    );
 
     await service.syncUser('auth-keep', 'n@privaterelay.appleid.com', {
       full_name: 'Ada Lovelace',
@@ -276,21 +212,14 @@ describe('AuthService', () => {
   });
 
   it('does not throw when an existing row omits display_name', async () => {
-    mockRepo.findBySupabaseAuthId.mockResolvedValue({
-      id: 'user-10',
-      supabase_auth_id: 'auth-missing-name',
-      email: 'officer@university.edu',
-      display_name: undefined as unknown as string,
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    mockRepo.findBySupabaseAuthId.mockResolvedValue(
+      userFixture({
+        id: 'user-10',
+        supabase_auth_id: 'auth-missing-name',
+        email: 'officer@university.edu',
+        display_name: undefined as unknown as string,
+      }),
+    );
 
     await expect(
       service.syncUser('auth-missing-name', 'officer@university.edu'),
@@ -299,36 +228,22 @@ describe('AuthService', () => {
   });
 
   it('fills an empty display_name on a later request without touching email', async () => {
-    mockRepo.findBySupabaseAuthId.mockResolvedValue({
-      id: 'user-9',
-      supabase_auth_id: 'auth-name',
-      email: 'officer@university.edu',
-      display_name: '',
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
-    mockRepo.update.mockResolvedValue({
-      id: 'user-9',
-      supabase_auth_id: 'auth-name',
-      email: 'officer@university.edu',
-      display_name: 'Ada Lovelace',
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    mockRepo.findBySupabaseAuthId.mockResolvedValue(
+      userFixture({
+        id: 'user-9',
+        supabase_auth_id: 'auth-name',
+        email: 'officer@university.edu',
+        display_name: '',
+      }),
+    );
+    mockRepo.update.mockResolvedValue(
+      userFixture({
+        id: 'user-9',
+        supabase_auth_id: 'auth-name',
+        email: 'officer@university.edu',
+        display_name: 'Ada Lovelace',
+      }),
+    );
 
     await service.syncUser('auth-name', 'officer@university.edu', {
       full_name: 'Ada Lovelace',

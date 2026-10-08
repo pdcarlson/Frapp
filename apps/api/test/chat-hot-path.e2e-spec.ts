@@ -11,6 +11,7 @@ import {
 } from './helpers/supabase-mock.factory';
 import { configureApp } from '../src/bootstrap';
 import { createGuardStubs, AllowAllGuard } from './helpers/guard-stubs.factory';
+import { memberFixture } from './helpers/entity-fixtures';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_CATEGORY_REPOSITORY,
@@ -123,16 +124,14 @@ describe('Chat hot path (e2e)', () => {
     content: 'From a different channel',
   });
 
-  const baseMember = {
+  const baseMember = memberFixture({
     id: 'mem-1',
-    user_id: 'user-1',
     chapter_id: 'chapter-1',
     role_ids: ['role-member'],
     has_completed_onboarding: true,
-    dismissed_ops_nudges: [],
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
-  };
+  });
 
   const channelRepoMock: jest.Mocked<IChatChannelRepository> = {
     findById: jest.fn(),

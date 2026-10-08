@@ -26,6 +26,11 @@ import {
 import type { Role } from '#domain/entities/role.entity';
 import type { Member } from '#domain/entities/member.entity';
 import type { Chapter } from '#domain/entities/chapter.entity';
+import {
+  chapterFixture,
+  memberFixture,
+  roleFixture,
+} from '#test/helpers/entity-fixtures';
 
 const ACTOR = 'user-actor';
 
@@ -102,17 +107,13 @@ describe('RbacService', () => {
 
   it('should list roles for chapter', async () => {
     const roles: Role[] = [
-      {
-        id: 'role-1',
-        chapter_id: 'ch-1',
+      roleFixture({
         name: 'President',
-        system_key: null,
         permissions: [SystemPermissions.WILDCARD],
         is_system: true,
         display_order: 1,
         color: '#FFD700',
-        created_at: '2024-01-01',
-      },
+      }),
     ];
     mockRoleRepo.findByChapter.mockResolvedValue(roles);
 
@@ -123,17 +124,10 @@ describe('RbacService', () => {
   });
 
   it('should create custom role', async () => {
-    const role: Role = {
-      id: 'role-1',
-      chapter_id: 'ch-1',
-      name: 'Custom',
-      system_key: null,
+    const role: Role = roleFixture({
       permissions: ['members:view'],
-      is_system: false,
       display_order: 10,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    });
     mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
     mockRoleRepo.create.mockResolvedValue(role);
 
@@ -168,17 +162,9 @@ describe('RbacService', () => {
   });
 
   it('surfaces a failed audit write after the role is created (#1599)', async () => {
-    const role: Role = {
-      id: 'role-1',
-      chapter_id: 'ch-1',
-      name: 'Custom',
-      system_key: null,
-      permissions: [],
-      is_system: false,
+    const role: Role = roleFixture({
       display_order: 10,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    });
     mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
     mockRoleRepo.create.mockResolvedValue(role);
     mockChapterAuditLogService.record.mockRejectedValue(
@@ -194,17 +180,9 @@ describe('RbacService', () => {
   // A Discord import records the new role's id in `onCreated`, so the id is
   // kept even when the audit write that follows fails.
   it('runs onCreated after the insert and before the audit write', async () => {
-    const role: Role = {
-      id: 'role-1',
-      chapter_id: 'ch-1',
-      name: 'Custom',
-      system_key: null,
-      permissions: [],
-      is_system: false,
+    const role: Role = roleFixture({
       display_order: 10,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    });
     const order: string[] = [];
     mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
     mockRoleRepo.create.mockImplementation(async () => {
@@ -235,17 +213,9 @@ describe('RbacService', () => {
   });
 
   it('still writes role_created when onCreated fails, and surfaces its error', async () => {
-    const role: Role = {
-      id: 'role-1',
-      chapter_id: 'ch-1',
-      name: 'Custom',
-      system_key: null,
-      permissions: [],
-      is_system: false,
+    const role: Role = roleFixture({
       display_order: 10,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    });
     mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
     mockRoleRepo.create.mockResolvedValue(role);
 
@@ -265,17 +235,10 @@ describe('RbacService', () => {
   });
 
   it('surfaces a failed audit write after the role is updated or deleted (#1599)', async () => {
-    const role: Role = {
-      id: 'role-1',
-      chapter_id: 'ch-1',
-      name: 'Custom',
-      system_key: null,
+    const role: Role = roleFixture({
       permissions: ['members:view'],
-      is_system: false,
       display_order: 10,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    });
     mockRoleRepo.findById.mockResolvedValue(role);
     mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
     mockRoleRepo.update.mockResolvedValue({ ...role, name: 'Renamed' });
@@ -295,17 +258,11 @@ describe('RbacService', () => {
   });
 
   it('writes no role_deleted row when the delete itself fails', async () => {
-    mockRoleRepo.findById.mockResolvedValue({
-      id: 'role-1',
-      chapter_id: 'ch-1',
-      name: 'Custom',
-      system_key: null,
-      permissions: [],
-      is_system: false,
-      display_order: 10,
-      color: null,
-      created_at: '2024-01-01',
-    });
+    mockRoleRepo.findById.mockResolvedValue(
+      roleFixture({
+        display_order: 10,
+      }),
+    );
     mockRoleRepo.delete.mockRejectedValue(new Error('db boom'));
 
     await expect(service.delete('role-1', 'ch-1', ACTOR)).rejects.toThrow(
@@ -327,17 +284,12 @@ describe('RbacService', () => {
   });
 
   it('rejects introducing the wildcard on update, but keeps an existing one editable', async () => {
-    const plainRole: Role = {
+    const plainRole: Role = roleFixture({
       id: 'role-plain',
-      chapter_id: 'ch-1',
       name: 'Plain',
-      system_key: null,
       permissions: ['members:view'],
-      is_system: false,
       display_order: 5,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    });
     mockRoleRepo.findById.mockResolvedValue(plainRole);
 
     await expect(
@@ -368,17 +320,13 @@ describe('RbacService', () => {
   it('rejects stripping the wildcard from the President role, but allows it on a legacy role', async () => {
     // With introduction blocked, a strip would be unrecoverable and leave the
     // chapter without any wildcard holder.
-    const presidentRole: Role = {
+    const presidentRole: Role = roleFixture({
       id: 'role-president',
-      chapter_id: 'ch-1',
       name: 'President',
-      system_key: null,
       permissions: ['*'],
       is_system: true,
       display_order: 1,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    });
     mockRoleRepo.findById.mockResolvedValue(presidentRole);
 
     await expect(
@@ -411,17 +359,7 @@ describe('RbacService', () => {
   });
 
   it('should reject duplicate role name', async () => {
-    const existing: Role = {
-      id: 'role-1',
-      chapter_id: 'ch-1',
-      name: 'Custom',
-      system_key: null,
-      permissions: [],
-      is_system: false,
-      display_order: 0,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    const existing: Role = roleFixture();
     mockRoleRepo.findByChapterAndName.mockResolvedValue(existing);
 
     await expect(
@@ -433,17 +371,10 @@ describe('RbacService', () => {
   });
 
   it('should update role', async () => {
-    const role: Role = {
-      id: 'role-1',
-      chapter_id: 'ch-1',
-      name: 'Custom',
-      system_key: null,
+    const role: Role = roleFixture({
       permissions: ['members:view'],
-      is_system: false,
       display_order: 10,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    });
     const updated: Role = {
       ...role,
       name: 'Custom Updated',
@@ -478,17 +409,12 @@ describe('RbacService', () => {
   });
 
   describe('update audit diff (#2599)', () => {
-    const before: Role = {
-      id: 'role-1',
-      chapter_id: 'ch-1',
+    const before: Role = roleFixture({
       name: 'Treasurer',
-      system_key: null,
       permissions: ['billing:view', 'members:view', 'events:create'],
-      is_system: false,
       display_order: 4,
       color: '#112233',
-      created_at: '2024-01-01',
-    };
+    });
 
     it('records recolouring, reordering and a removed permission, not the whole array', async () => {
       const after: Role = {
@@ -552,17 +478,11 @@ describe('RbacService', () => {
   });
 
   it('should reject updating a role from another chapter', async () => {
-    const role: Role = {
-      id: 'role-1',
+    const role: Role = roleFixture({
       chapter_id: 'ch-other',
-      name: 'Custom',
-      system_key: null,
       permissions: ['members:view'],
-      is_system: false,
       display_order: 10,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    });
     mockRoleRepo.findById.mockResolvedValue(role);
 
     await expect(
@@ -575,28 +495,11 @@ describe('RbacService', () => {
   });
 
   it('should reject rename to existing name', async () => {
-    const role: Role = {
-      id: 'role-1',
-      chapter_id: 'ch-1',
-      name: 'Custom',
-      system_key: null,
-      permissions: [],
-      is_system: false,
-      display_order: 0,
-      color: null,
-      created_at: '2024-01-01',
-    };
-    const existingOther: Role = {
+    const role: Role = roleFixture();
+    const existingOther: Role = roleFixture({
       id: 'role-2',
-      chapter_id: 'ch-1',
       name: 'Other',
-      system_key: null,
-      permissions: [],
-      is_system: false,
-      display_order: 0,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    });
     mockRoleRepo.findById.mockResolvedValue(role);
     mockRoleRepo.findByChapterAndName.mockResolvedValue(existingOther);
 
@@ -609,17 +512,7 @@ describe('RbacService', () => {
   });
 
   it('should delete custom role', async () => {
-    const role: Role = {
-      id: 'role-1',
-      chapter_id: 'ch-1',
-      name: 'Custom',
-      system_key: null,
-      permissions: [],
-      is_system: false,
-      display_order: 0,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    const role: Role = roleFixture();
     mockRoleRepo.findById.mockResolvedValue(role);
     mockRoleRepo.delete.mockResolvedValue(undefined);
 
@@ -638,17 +531,9 @@ describe('RbacService', () => {
   });
 
   it('should reject deleting a role from another chapter', async () => {
-    const role: Role = {
-      id: 'role-1',
+    const role: Role = roleFixture({
       chapter_id: 'ch-other',
-      name: 'Custom',
-      system_key: null,
-      permissions: [],
-      is_system: false,
-      display_order: 0,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    });
     mockRoleRepo.findById.mockResolvedValue(role);
 
     await expect(service.delete('role-1', 'ch-1', ACTOR)).rejects.toThrow(
@@ -661,17 +546,13 @@ describe('RbacService', () => {
   });
 
   it('should prevent deletion of system roles', async () => {
-    const role: Role = {
-      id: 'role-1',
-      chapter_id: 'ch-1',
+    const role: Role = roleFixture({
       name: 'President',
-      system_key: null,
       permissions: [SystemPermissions.WILDCARD],
       is_system: true,
       display_order: 1,
       color: '#FFD700',
-      created_at: '2024-01-01',
-    };
+    });
     mockRoleRepo.findById.mockResolvedValue(role);
 
     await expect(service.delete('role-1', 'ch-1', ACTOR)).rejects.toThrow(
@@ -685,30 +566,22 @@ describe('RbacService', () => {
   });
 
   describe('transferPresidency', () => {
-    const presidentRole: Role = {
+    const presidentRole: Role = roleFixture({
       id: 'role-president',
-      chapter_id: 'ch-1',
       name: 'President',
-      system_key: null,
       permissions: [SystemPermissions.WILDCARD],
       is_system: true,
       display_order: 1,
       color: '#FFD700',
-      created_at: '2024-01-01',
-    };
-
-    const makeMember = (overrides: Partial<Member>): Member => ({
-      id: 'member-x',
-      user_id: 'user-x',
-      chapter_id: 'ch-1',
-      role_ids: [],
-      custom_role_ids: [],
-      has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-      ...overrides,
     });
+
+    const makeMember = (overrides: Partial<Member>): Member =>
+      memberFixture({
+        id: 'member-x',
+        user_id: 'user-x',
+        has_completed_onboarding: true,
+        ...overrides,
+      });
 
     it('moves the wildcard role to the target in a single atomic RPC call', async () => {
       const currentMember = makeMember({
@@ -964,84 +837,56 @@ describe('RbacService', () => {
   // #349: the orphan-president recovery flow (spec/behavior/rbac.md §
   // Presidency Transfer "Edge case").
   describe('orphan-president flow', () => {
-    const presidentRole: Role = {
+    const presidentRole: Role = roleFixture({
       id: 'role-president',
-      chapter_id: 'ch-1',
       name: 'President',
-      system_key: null,
       permissions: [SystemPermissions.WILDCARD],
       is_system: true,
       display_order: 1,
       color: '#FFD700',
-      created_at: '2024-01-01',
-    };
-    const treasurerRole: Role = {
+    });
+    const treasurerRole: Role = roleFixture({
       id: 'role-treasurer',
-      chapter_id: 'ch-1',
       name: 'Treasurer',
-      system_key: null,
       permissions: [SystemPermissions.BILLING_MANAGE],
       is_system: true,
       display_order: 2,
-      color: null,
-      created_at: '2024-01-01',
-    };
-    const secretaryRole: Role = {
+    });
+    const secretaryRole: Role = roleFixture({
       id: 'role-secretary',
-      chapter_id: 'ch-1',
       name: 'Secretary',
-      system_key: null,
       permissions: [SystemPermissions.MEMBERS_VIEW],
       is_system: true,
       display_order: 4,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    });
     // The eligibility floor: any role ranked at or below this is the
     // ordinary-member baseline, not an admin tier, and is never eligible to
     // claim — see the "does not let an ordinary Member claim" test below.
-    const memberRole: Role = {
+    const memberRole: Role = roleFixture({
       id: 'role-member',
-      chapter_id: 'ch-1',
       name: 'Member',
       system_key: SystemRoleKeys.MEMBER,
       permissions: [SystemPermissions.MEMBERS_VIEW],
       is_system: true,
       display_order: 5,
-      color: null,
-      created_at: '2024-01-01',
-    };
-
-    const makeMember = (overrides: Partial<Member>): Member => ({
-      id: 'member-x',
-      user_id: 'user-x',
-      chapter_id: 'ch-1',
-      role_ids: [],
-      custom_role_ids: [],
-      has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-      ...overrides,
     });
 
-    const makeChapter = (overrides: Partial<Chapter>): Chapter => ({
-      id: 'ch-1',
-      name: 'Test Chapter',
-      university: 'Test U',
-      stripe_customer_id: null,
-      subscription_status: 'active',
-      subscription_id: null,
-      past_due_since: null,
-      last_stripe_webhook_at: null,
-      accent_color: null,
-      logo_path: null,
-      donation_url: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-      needs_president: false,
-      ...overrides,
-    });
+    const makeMember = (overrides: Partial<Member>): Member =>
+      memberFixture({
+        id: 'member-x',
+        user_id: 'user-x',
+        has_completed_onboarding: true,
+        ...overrides,
+      });
+
+    const makeChapter = (overrides: Partial<Chapter>): Chapter =>
+      chapterFixture({
+        name: 'Test Chapter',
+        university: 'Test U',
+        subscription_status: 'active',
+        needs_president: false,
+        ...overrides,
+      });
 
     describe('flagIfPresidentRemoved', () => {
       it('is a no-op when the removed member held no roles at all', async () => {
@@ -1458,17 +1303,10 @@ describe('RbacService', () => {
   });
 
   describe('memberHasAnyPermission', () => {
-    const member: Member = {
-      id: 'member-1',
-      user_id: 'user-1',
-      chapter_id: 'ch-1',
+    const member: Member = memberFixture({
       role_ids: ['role-foreign'],
-      custom_role_ids: [],
       has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
 
     it('resolves roles within the chapter, so a foreign role id grants nothing', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
@@ -1492,29 +1330,20 @@ describe('RbacService', () => {
     const buildMember = (
       role_ids: string[],
       custom_role_ids: string[] = [],
-    ): Member => ({
-      id: 'member-1',
-      user_id: 'user-1',
-      chapter_id: 'ch-1',
-      role_ids,
-      custom_role_ids,
-      has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    ): Member =>
+      memberFixture({
+        role_ids,
+        custom_role_ids,
+        has_completed_onboarding: true,
+      });
 
-    const buildRole = (id: string, permissions: string[]): Role => ({
-      id,
-      chapter_id: 'ch-1',
-      name: `role-${id}`,
-      system_key: null,
-      permissions,
-      is_system: false,
-      display_order: 10,
-      color: null,
-      created_at: '2024-01-01',
-    });
+    const buildRole = (id: string, permissions: string[]): Role =>
+      roleFixture({
+        id,
+        name: `role-${id}`,
+        permissions,
+        display_order: 10,
+      });
 
     it('returns empty array when user is not a member of the chapter', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
@@ -1729,29 +1558,21 @@ describe('RbacService', () => {
   // event check-in, and most chat posting are denied by holding it.
   // See spec/behavior/alumni.md.
   describe('isAlumni / hasAlumniRole', () => {
-    const alumniRole: Role = {
+    const alumniRole: Role = roleFixture({
       id: 'role-alumni',
-      chapter_id: 'ch-1',
       name: ALUMNI_ROLE_NAME,
       system_key: SystemRoleKeys.ALUMNI,
       permissions: [SystemPermissions.MEMBERS_VIEW],
       is_system: true,
       display_order: 7,
       color: '#6B7280',
-      created_at: '2024-01-01',
-    };
-
-    const memberWithRoles = (role_ids: string[]): Member => ({
-      id: 'member-1',
-      user_id: 'user-1',
-      chapter_id: 'ch-1',
-      role_ids,
-      custom_role_ids: [],
-      has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
     });
+
+    const memberWithRoles = (role_ids: string[]): Member =>
+      memberFixture({
+        role_ids,
+        has_completed_onboarding: true,
+      });
 
     it('returns true when the member holds the Alumni role', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(
@@ -1817,9 +1638,8 @@ describe('RbacService', () => {
   // reattaching the freed name to another role moved those restrictions onto
   // its holders instead.
   describe('system roles are rename-proof (FRA-320)', () => {
-    const renamedAlumniRole: Role = {
+    const renamedAlumniRole: Role = roleFixture({
       id: 'role-alumni',
-      chapter_id: 'ch-1',
       // Renamed by the chapter. Only the label changed.
       name: 'Alumni (Inactive)',
       system_key: SystemRoleKeys.ALUMNI,
@@ -1827,20 +1647,12 @@ describe('RbacService', () => {
       is_system: true,
       display_order: 7,
       color: '#6B7280',
-      created_at: '2024-01-01',
-    };
+    });
 
-    const alumniMember: Member = {
-      id: 'member-1',
-      user_id: 'user-1',
-      chapter_id: 'ch-1',
+    const alumniMember: Member = memberFixture({
       role_ids: ['role-alumni'],
-      custom_role_ids: [],
       has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
 
     it('still applies Alumni restrictions after the role is renamed', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(alumniMember);
@@ -1919,33 +1731,27 @@ describe('RbacService', () => {
       id: string,
       permissions: string[],
       chapter_id = 'ch-1',
-    ): Role => ({
-      id,
-      chapter_id,
-      name: `role-${id}`,
-      system_key: null,
-      permissions,
-      is_system: false,
-      display_order: 10,
-      color: null,
-      created_at: '2024-01-01',
-    });
+    ): Role =>
+      roleFixture({
+        id,
+        chapter_id,
+        name: `role-${id}`,
+        permissions,
+        display_order: 10,
+      });
 
     const member = (
       user_id: string,
       role_ids: string[],
       custom_role_ids: string[] = [],
-    ): Member => ({
-      id: `member-${user_id}`,
-      user_id,
-      chapter_id: 'ch-1',
-      role_ids,
-      custom_role_ids,
-      has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    ): Member =>
+      memberFixture({
+        id: `member-${user_id}`,
+        user_id,
+        role_ids,
+        custom_role_ids,
+        has_completed_onboarding: true,
+      });
 
     beforeEach(() => {
       mockRoleRepo.findByChapter.mockResolvedValue([

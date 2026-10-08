@@ -47,6 +47,11 @@ import { ConfigService } from '@nestjs/config';
 import { EMAIL_PROVIDER } from '#domain/adapters/email.interface';
 import type { IEmailProvider } from '#domain/adapters/email.interface';
 import { CHAT_MESSAGE_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import {
+  memberFixture,
+  roleFixture,
+  userFixture,
+} from '#test/helpers/entity-fixtures';
 
 describe('InviteService', () => {
   let service: InviteService;
@@ -505,28 +510,17 @@ describe('InviteService', () => {
       used_at: null,
       created_at: '2024-01-01',
     };
-    const memberRole: Role = {
+    const memberRole: Role = roleFixture({
       id: 'role-member',
-      chapter_id: 'ch-1',
       name: 'Member',
       system_key: SystemRoleKeys.MEMBER,
-      permissions: [],
       is_system: true,
       display_order: 3,
-      color: null,
-      created_at: '2024-01-01',
-    };
-    const member: Member = {
-      id: 'member-1',
+    });
+    const member: Member = memberFixture({
       user_id: 'user-2',
-      chapter_id: 'ch-1',
       role_ids: [memberRole.id],
-      custom_role_ids: [],
-      has_completed_onboarding: false,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
     mockInviteRepo.markUsedAtomically.mockResolvedValue(
@@ -587,17 +581,12 @@ describe('InviteService', () => {
         '2026-01-01T00:00:00.000Z',
       );
       mockRoleRepo.findByChapter.mockResolvedValue([]);
-      mockMemberRepo.create.mockResolvedValue({
-        id: 'member-x',
-        user_id: 'user-2',
-        chapter_id: 'ch-1',
-        role_ids: [],
-        custom_role_ids: [],
-        has_completed_onboarding: false,
-        dismissed_ops_nudges: [],
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      });
+      mockMemberRepo.create.mockResolvedValue(
+        memberFixture({
+          id: 'member-x',
+          user_id: 'user-2',
+        }),
+      );
     });
 
     it('refuses a canceled chapter with 403 and leaves the token unconsumed', async () => {
@@ -673,17 +662,13 @@ describe('InviteService', () => {
       mockChapterRepo.findById.mockResolvedValue(
         lockedChapter({ subscription_status: 'canceled' }),
       );
-      mockMemberRepo.findByUserAndChapter.mockResolvedValue({
-        id: 'member-existing',
-        user_id: 'user-2',
-        chapter_id: 'ch-1',
-        role_ids: [],
-        custom_role_ids: [],
-        has_completed_onboarding: true,
-        dismissed_ops_nudges: [],
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      });
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+        memberFixture({
+          id: 'member-existing',
+          user_id: 'user-2',
+          has_completed_onboarding: true,
+        }),
+      );
 
       await expect(
         service.redeem('locked-token', 'user-2'),
@@ -742,17 +727,12 @@ describe('InviteService', () => {
         '2026-01-01T00:00:00.000Z',
       );
       mockRoleRepo.findByChapter.mockResolvedValue([]);
-      mockMemberRepo.create.mockResolvedValue({
-        id: 'member-t',
-        user_id: 'user-2',
-        chapter_id: 'ch-1',
-        role_ids: [],
-        custom_role_ids: [],
-        has_completed_onboarding: false,
-        dismissed_ops_nudges: [],
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      });
+      mockMemberRepo.create.mockResolvedValue(
+        memberFixture({
+          id: 'member-t',
+          user_id: 'user-2',
+        }),
+      );
     });
 
     it('asks the gate without acceptance when the checkbox is not sent', async () => {
@@ -845,28 +825,17 @@ describe('InviteService', () => {
       used_at: null,
       created_at: '2024-01-01',
     };
-    const memberRole: Role = {
+    const memberRole: Role = roleFixture({
       id: 'role-member',
-      chapter_id: 'ch-1',
       name: 'Member',
       system_key: SystemRoleKeys.MEMBER,
-      permissions: [],
       is_system: true,
       display_order: 3,
-      color: null,
-      created_at: '2024-01-01',
-    };
-    const member: Member = {
-      id: 'member-1',
+    });
+    const member: Member = memberFixture({
       user_id: 'user-2',
-      chapter_id: 'ch-1',
       role_ids: [memberRole.id],
-      custom_role_ids: [],
-      has_completed_onboarding: false,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
 
     beforeEach(() => {
       mockInviteRepo.findByToken.mockResolvedValue(invite);
@@ -879,21 +848,14 @@ describe('InviteService', () => {
     });
 
     it('DMs the inviter with a system_audit message naming the accepter', async () => {
-      mockUserRepo.findById.mockResolvedValue({
-        id: 'user-2',
-        supabase_auth_id: 'auth-2',
-        email: 'alex@example.com',
-        display_name: 'Alex Chen',
-        avatar_url: null,
-        bio: null,
-        graduation_year: null,
-        current_city: null,
-        current_company: null,
-        active_chapter_id: null,
-        deleted_at: null,
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      });
+      mockUserRepo.findById.mockResolvedValue(
+        userFixture({
+          id: 'user-2',
+          supabase_auth_id: 'auth-2',
+          email: 'alex@example.com',
+          display_name: 'Alex Chen',
+        }),
+      );
 
       await service.redeem('test-uuid', 'user-2');
 
@@ -921,21 +883,14 @@ describe('InviteService', () => {
     });
 
     it('does not roll back redemption when the DM/message write throws', async () => {
-      mockUserRepo.findById.mockResolvedValue({
-        id: 'user-2',
-        supabase_auth_id: 'auth-2',
-        email: 'alex@example.com',
-        display_name: 'Alex Chen',
-        avatar_url: null,
-        bio: null,
-        graduation_year: null,
-        current_city: null,
-        current_company: null,
-        active_chapter_id: null,
-        deleted_at: null,
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      });
+      mockUserRepo.findById.mockResolvedValue(
+        userFixture({
+          id: 'user-2',
+          supabase_auth_id: 'auth-2',
+          email: 'alex@example.com',
+          display_name: 'Alex Chen',
+        }),
+      );
       // A departed inviter, a chat outage, or any other DM-path failure —
       // this covers the "missing inviter" edge case the fix must survive.
       mockChatService.getOrCreateDm.mockRejectedValue(new Error('boom'));
@@ -946,21 +901,14 @@ describe('InviteService', () => {
     });
 
     it('does not roll back redemption when the notice insert fails', async () => {
-      mockUserRepo.findById.mockResolvedValue({
-        id: 'user-2',
-        supabase_auth_id: 'auth-2',
-        email: 'alex@example.com',
-        display_name: 'Alex Chen',
-        avatar_url: null,
-        bio: null,
-        graduation_year: null,
-        current_city: null,
-        current_company: null,
-        active_chapter_id: null,
-        deleted_at: null,
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      });
+      mockUserRepo.findById.mockResolvedValue(
+        userFixture({
+          id: 'user-2',
+          supabase_auth_id: 'auth-2',
+          email: 'alex@example.com',
+          display_name: 'Alex Chen',
+        }),
+      );
       messageInsert.mockRejectedValue(new Error('insert failed'));
 
       const result = await service.redeem('test-uuid', 'user-2');
@@ -974,21 +922,14 @@ describe('InviteService', () => {
         ...invite,
         created_by: 'user-2',
       });
-      mockUserRepo.findById.mockResolvedValue({
-        id: 'user-2',
-        supabase_auth_id: 'auth-2',
-        email: 'alex@example.com',
-        display_name: 'Alex Chen',
-        avatar_url: null,
-        bio: null,
-        graduation_year: null,
-        current_city: null,
-        current_company: null,
-        active_chapter_id: null,
-        deleted_at: null,
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      });
+      mockUserRepo.findById.mockResolvedValue(
+        userFixture({
+          id: 'user-2',
+          supabase_auth_id: 'auth-2',
+          email: 'alex@example.com',
+          display_name: 'Alex Chen',
+        }),
+      );
 
       const result = await service.redeem('test-uuid', 'user-2');
 
@@ -1028,28 +969,17 @@ describe('InviteService', () => {
       used_at: null,
       created_at: '2024-01-01',
     };
-    const memberRole: Role = {
+    const memberRole: Role = roleFixture({
       id: 'role-member',
-      chapter_id: 'ch-1',
       name: 'Member',
       system_key: SystemRoleKeys.MEMBER,
-      permissions: [],
       is_system: true,
       display_order: 3,
-      color: null,
-      created_at: '2024-01-01',
-    };
-    const member: Member = {
-      id: 'member-1',
+    });
+    const member: Member = memberFixture({
       user_id: 'user-2',
-      chapter_id: 'ch-1',
       role_ids: [memberRole.id],
-      custom_role_ids: [],
-      has_completed_onboarding: false,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
     mockInviteRepo.markUsedAtomically.mockResolvedValue(
@@ -1081,34 +1011,25 @@ describe('InviteService', () => {
       used_at: null,
       created_at: '2024-01-01',
     };
-    const renamedMemberRole: Role = {
+    const renamedMemberRole: Role = roleFixture({
       id: 'role-member',
-      chapter_id: 'ch-1',
       name: 'Active Brother',
       system_key: SystemRoleKeys.MEMBER,
-      permissions: [],
       is_system: true,
       display_order: 3,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    });
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
     mockInviteRepo.markUsedAtomically.mockResolvedValue(
       '2026-01-01T00:00:00.000Z',
     );
     mockRoleRepo.findByChapter.mockResolvedValue([renamedMemberRole]);
-    mockMemberRepo.create.mockResolvedValue({
-      id: 'member-1',
-      user_id: 'user-2',
-      chapter_id: 'ch-1',
-      role_ids: [renamedMemberRole.id],
-      custom_role_ids: [],
-      has_completed_onboarding: false,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    mockMemberRepo.create.mockResolvedValue(
+      memberFixture({
+        user_id: 'user-2',
+        role_ids: [renamedMemberRole.id],
+      }),
+    );
 
     await service.redeem('test-uuid', 'user-2');
 
@@ -1166,17 +1087,11 @@ describe('InviteService', () => {
       used_at: null,
       created_at: '2024-01-01',
     };
-    const existingMember: Member = {
-      id: 'member-1',
+    const existingMember: Member = memberFixture({
       user_id: 'user-2',
-      chapter_id: 'ch-1',
       role_ids: ['role-1'],
-      custom_role_ids: [],
       has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(existingMember);
 
@@ -1219,28 +1134,17 @@ describe('InviteService', () => {
       used_at: null,
       created_at: '2024-01-01',
     };
-    const memberRole: Role = {
+    const memberRole: Role = roleFixture({
       id: 'role-member',
-      chapter_id: 'ch-1',
       name: 'Member',
       system_key: SystemRoleKeys.MEMBER,
-      permissions: [],
       is_system: true,
       display_order: 3,
-      color: null,
-      created_at: '2024-01-01',
-    };
-    const member: Member = {
-      id: 'member-1',
+    });
+    const member: Member = memberFixture({
       user_id: 'user-2',
-      chapter_id: 'ch-1',
       role_ids: [memberRole.id],
-      custom_role_ids: [],
-      has_completed_onboarding: false,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
     mockInviteRepo.markUsedAtomically.mockResolvedValue(
@@ -1333,17 +1237,11 @@ describe('InviteService', () => {
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
-        id: 'member-1',
-        user_id: 'user-2',
-        chapter_id: 'ch-1',
-        role_ids: [],
-        custom_role_ids: [],
-        has_completed_onboarding: false,
-        dismissed_ops_nudges: [],
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      });
+      .mockResolvedValueOnce(
+        memberFixture({
+          user_id: 'user-2',
+        }),
+      );
     mockInviteRepo.markUsedAtomically.mockResolvedValue(
       '2026-01-01T00:00:00.000Z',
     );
@@ -1452,17 +1350,11 @@ describe('InviteService', () => {
       '2026-01-01T00:00:00.000Z',
     );
     mockRoleRepo.findByChapter.mockResolvedValue([]);
-    mockMemberRepo.create.mockResolvedValue({
-      id: 'member-1',
-      user_id: 'user-2',
-      chapter_id: 'ch-1',
-      role_ids: [],
-      custom_role_ids: [],
-      has_completed_onboarding: false,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    mockMemberRepo.create.mockResolvedValue(
+      memberFixture({
+        user_id: 'user-2',
+      }),
+    );
 
     await service.redeem('test-uuid', 'user-2');
 
@@ -1508,17 +1400,11 @@ describe('InviteService', () => {
       used_at: null,
       created_at: '2024-01-01',
     };
-    const existingMember: Member = {
-      id: 'member-1',
+    const existingMember: Member = memberFixture({
       user_id: 'user-2',
-      chapter_id: 'ch-1',
       role_ids: ['role-1'],
-      custom_role_ids: [],
       has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(existingMember);
 
@@ -1608,18 +1494,14 @@ describe('InviteService', () => {
    */
   describe('default invite role (#422)', () => {
     function role(over: Partial<Role> = {}): Role {
-      return {
+      return roleFixture({
         id: 'role-member',
-        chapter_id: 'ch-1',
         name: 'Member',
         system_key: SystemRoleKeys.MEMBER,
-        permissions: [],
         is_system: true,
         display_order: 3,
-        color: null,
-        created_at: '2024-01-01',
         ...over,
-      };
+      });
     }
 
     const pledgeRole = role({

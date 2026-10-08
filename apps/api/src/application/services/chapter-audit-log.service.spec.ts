@@ -11,21 +11,20 @@ import {
 } from '#domain/repositories/role.repository.interface';
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import type { Role } from '#domain/entities/role.entity';
+import { roleFixture } from '#test/helpers/entity-fixtures';
 
 // The chapter's seeded President role. Every `list` case below reads as the
 // President unless it says otherwise, so the visibility assertions on the
 // existing filter tests keep meaning "no visibility filter was added".
-const PRESIDENT_ROLE: Role = {
+const PRESIDENT_ROLE: Role = roleFixture({
   id: 'role-president-1',
   chapter_id: 'chapter-1',
   name: 'President',
   permissions: ['*'],
   is_system: true,
   system_key: SystemRoleKeys.PRESIDENT,
-  display_order: 0,
-  color: null,
   created_at: '2026-01-01T00:00:00.000Z',
-};
+});
 const PRESIDENT = { roleIds: [PRESIDENT_ROLE.id] };
 const OFFICER = { roleIds: ['role-treasurer-1'] };
 
