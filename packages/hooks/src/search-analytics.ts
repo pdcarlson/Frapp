@@ -6,7 +6,8 @@
  * into two names.
  *
  * Kebab-case to match the existing client-event convention (`opened-channel`,
- * the `activation-*` funnel names in `packages/validation/src/analytics.ts`).
+ * the `activation-*` funnel names in
+ * `apps/api/src/domain/constants/activation-milestones.ts`).
  *
  * Every property passed alongside this event must be behavioral, never
  * content — the raw query string is never sent. `assertContentFreeProperties`

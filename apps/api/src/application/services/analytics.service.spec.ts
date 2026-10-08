@@ -1,11 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { ForbiddenException, Logger } from '@nestjs/common';
+import { ContentFreePropertyError } from '@repo/validation';
 import {
-  ContentFreePropertyError,
   hashChapterIdForAnalytics,
   hashUserIdForAnalytics,
-} from '@repo/validation';
+} from '#domain/utils/analytics-keying';
 import { isPseudonymHex } from '@repo/observability';
 import { AnalyticsService } from './analytics.service';
 import {
