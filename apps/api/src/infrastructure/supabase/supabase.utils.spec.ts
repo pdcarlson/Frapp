@@ -2,6 +2,7 @@ import {
   escapeFilterValue,
   escapeLikePattern,
   fetchAllPages,
+  omitColumns,
   type PagedQueryResult,
 } from './supabase.utils';
 
@@ -10,6 +11,27 @@ describe('escapeFilterValue', () => {
     expect(escapeFilterValue('plain')).toBe('"plain"');
     expect(escapeFilterValue('a"b')).toBe('"a\\"b"');
     expect(escapeFilterValue('a\\b')).toBe('"a\\\\b"');
+  });
+});
+
+describe('omitColumns', () => {
+  it('drops the named columns and keeps the rest', () => {
+    expect(
+      omitColumns<{ id: string }>({ id: 'a', user_id: 'u', extra: 1 }, [
+        'user_id',
+        'extra',
+      ]),
+    ).toEqual({ id: 'a' });
+  });
+
+  it('copies rather than mutating the input row', () => {
+    const row = { id: 'a', user_id: 'u' };
+    omitColumns(row, ['user_id']);
+    expect(row).toEqual({ id: 'a', user_id: 'u' });
+  });
+
+  it('ignores a listed column the row does not carry', () => {
+    expect(omitColumns({ id: 'a' }, ['user_id'])).toEqual({ id: 'a' });
   });
 });
 
