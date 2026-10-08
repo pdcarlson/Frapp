@@ -170,7 +170,7 @@ A controller is subscription-gated only if `ChapterGuard` is in its guard chain 
 | `discord-import` | 11 | `components/discord-import/*` (**not mirrored**) |
 | `report` | 4 | `components/reports/reports-page.tsx` |
 | `rush` | 3 | `components/chat/renderers/rush-card.tsx` (vote, bid; **not mirrored**) · the `/rush` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
-| `semester-rollover` | 1 | `components/settings/settings-page.tsx` (rollover only) |
+| `semester-rollover` | 1 | `components/settings/settings-semester-tab.tsx` (rollover only) |
 | `service-entry` | 4 | `components/service/service-page.tsx` · the `/hours` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 | `study` → `StudyGeofenceController` | 3 | `components/geofences/geofences-admin-page.tsx` |
 | `study` → `StudySessionController` | 5 | `components/study/study-page.tsx` |

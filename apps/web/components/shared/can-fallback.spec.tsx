@@ -364,7 +364,8 @@ describe("the branches this change did not touch", () => {
  * of the two a gate is depends on what it wraps, which no grep decides.
  *
  * Three were missed on the first pass of that change and found by its pre-push
- * review — `settings-page`'s rollover gate wraps an entire `<Card>`,
+ * review — `settings-page`'s rollover gate (in `settings-semester-tab` since
+ * #3272) wraps an entire `<Card>`,
  * `service-page`'s approve gate the whole review queue, and `invoice-admin-card`
  * the whole invoice surface. That is the argument for a ledger over a
  * heuristic: the mistake was in the classification, so the classification is
@@ -386,7 +387,7 @@ const SURFACE_GATES: readonly { file: string; match: string }[] = [
   { file: "components/geofences/geofences-admin-page.tsx", match: 'permission="geofences:manage"' },
   { file: "components/roles/roles-page.tsx", match: 'permission="roles:manage"' },
   { file: "components/points/points-audit-card.tsx", match: 'permission="points:view_all"' },
-  { file: "components/settings/settings-page.tsx", match: 'permission="semester:rollover"' },
+  { file: "components/settings/settings-semester-tab.tsx", match: 'permission="semester:rollover"' },
   { file: "components/service/service-page.tsx", match: 'permission="service:approve"' },
   { file: "components/chat-admin/chat-admin-page.tsx", match: 'permission="channels:manage"' },
   { file: "components/chat-admin/chat-reports-card.tsx", match: "allOf={CHAT_REPORT_QUEUE_PERMISSIONS}" },
@@ -417,7 +418,8 @@ const CONSUMERS: readonly string[] = [
   "components/reports/reports-page.tsx",
   "components/roles/roles-page.tsx",
   "components/service/service-page.tsx",
-  "components/settings/settings-page.tsx",
+  "components/settings/settings-danger-tab.tsx",
+  "components/settings/settings-semester-tab.tsx",
   "components/shared/subscription-gate.tsx",
   "components/tasks/tasks-board.tsx",
 ];

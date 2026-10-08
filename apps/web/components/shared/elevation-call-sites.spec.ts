@@ -369,7 +369,7 @@ describe("a tinted row hover stays inside its rounded list", () => {
    * `overflow-hidden`, which would clip the rows' focus ring too.
    */
   const settings = codeWithoutComments(
-    join(WEB, "components", "settings", "settings-page.tsx"),
+    join(WEB, "components", "settings", "settings-rail.tsx"),
   );
   const tools = /function SettingsToolsOnly[\s\S]*?\n}\n/.exec(settings)?.[0] ?? "";
 

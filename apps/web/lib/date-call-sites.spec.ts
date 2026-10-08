@@ -102,7 +102,7 @@ const HAND_ROLLED =
  * | `effective_date` | `chapter_documents` | `20260831220000_chapter_documents_metadata.sql:24` |
  *
  * The last three have no formatter call today — `service-page.tsx` and
- * `settings-page.tsx` interpolate them raw, which is a cosmetic
+ * `settings-semester-tab.tsx` interpolate them raw, which is a cosmetic
  * inconsistency rather than this defect. They are listed anyway, because the
  * obvious future tidy-up is to wrap them in the shared helper, and reaching
  * for `formatLocaleDate` is exactly how the two fixed sites got it wrong.
