@@ -1,6 +1,7 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { DiscordNotConfiguredError } from '#domain/adapters/discord.interface';
 import type { DiscordImport } from '#domain/entities/discord-import.entity';
+import { MAX_WARNINGS } from '../workers/discord-import-worker.service';
 import {
   CHAPTER,
   FOREIGN_CHANNEL,
@@ -56,7 +57,10 @@ describe('DiscordImportChannelMappingService — a started import is fixed', () 
         ],
       ])('%s refuses', async (_name, source, call) => {
         await build(job({ status, source, guild_id: GUILD }));
-        await expect(call()).rejects.toThrow(/can no longer be changed/);
+        const error = await call().catch((e: unknown) => e);
+        // The status is the contract: a started import answers 409.
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as Error).message).toMatch(/can no longer be changed/);
         expect(bot.discoverChannels).not.toHaveBeenCalled();
         expect(repo.replaceChannels).not.toHaveBeenCalled();
       });
@@ -275,6 +279,29 @@ describe('DiscordImportChannelMappingService — discovering a guild', () => {
       CHAPTER,
       expect.objectContaining({ guild_id: GUILD }),
     );
+  });
+
+  it('keeps only the newest MAX_WARNINGS warnings on the job row', async () => {
+    await build(job({ source: 'bot' }));
+    const warnings = Array.from(
+      { length: MAX_WARNINGS + 5 },
+      (_, i) => `warning ${i}`,
+    );
+    bot.discoverChannels.mockResolvedValue({
+      channels: [],
+      warnings,
+      roles: [],
+    });
+
+    const result = await channelMapping.discoverBotChannels(IMPORT_ID, CHAPTER);
+
+    // The admin still sees every warning this scan produced; the row keeps
+    // the newest, under the worker's own cap.
+    expect(result.warnings).toHaveLength(MAX_WARNINGS + 5);
+    const stored = (
+      repo.update.mock.calls.at(-1)?.[2] as { warnings: string[] }
+    ).warnings;
+    expect(stored).toEqual(warnings.slice(-MAX_WARNINGS));
   });
 
   it('503s when the bot is not configured, carrying the gateway error as cause', async () => {

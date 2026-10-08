@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import type { DiscordImport } from '#domain/entities/discord-import.entity';
 import {
   CHAPTER,
@@ -35,9 +35,12 @@ describe('DiscordImportRoleMappingService — a started import is fixed', () => 
     'refuses to save the role step on a %s import',
     async (status) => {
       await build(job({ status }));
-      await expect(
-        roleMapping.setRoleMapping(IMPORT_ID, CHAPTER, [], true),
-      ).rejects.toThrow(/can no longer be changed/);
+      const error = await roleMapping
+        .setRoleMapping(IMPORT_ID, CHAPTER, [], true)
+        .catch((e: unknown) => e);
+      // The status is the contract: a started import answers 409.
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as Error).message).toMatch(/can no longer be changed/);
       expect(repo.update).not.toHaveBeenCalled();
     },
   );

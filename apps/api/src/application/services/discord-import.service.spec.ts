@@ -513,7 +513,10 @@ describe('DiscordImportService — lifecycle guards', () => {
         ['start', () => service.start(IMPORT_ID, CHAPTER, USER, true)],
       ])('%s', async (_name, call) => {
         await build(job({ status }));
-        await expect(call()).rejects.toThrow(/can no longer be changed/);
+        const error = await call().catch((e: unknown) => e);
+        // The status is the contract: a started import answers 409.
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as Error).message).toMatch(/can no longer be changed/);
         expect(repo.registerFiles).not.toHaveBeenCalled();
         expect(repo.markFilesUploaded).not.toHaveBeenCalled();
         expect(repo.update).not.toHaveBeenCalled();
