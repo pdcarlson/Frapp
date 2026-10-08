@@ -135,8 +135,8 @@ the replaced run ends `cancelled` (what staging does with it:
 On production, `deploy-alert.mjs` files nothing for a job that listed no steps. The group
 is a lock only while that job is the one thing that migrates the database, and it covers
 GitHub Actions runs only: it cannot stop a `supabase db push` from a laptop, which the
-daily drift check catches after the fact. A `full` dry run holds the group through an install and two builds on top
-of the rehearsal, so a `migrations-only` recovery dispatch can queue behind a run that
+daily drift check catches after the fact. A `full` dry run holds the group through an
+install and two builds on top of the rehearsal, so a `migrations-only` recovery dispatch can queue behind a run that
 changes nothing. If that bites during an incident, wait, or cancel the dry run by hand.
 Never loosen `cancel-in-progress`.
 

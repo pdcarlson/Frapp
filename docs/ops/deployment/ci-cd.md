@@ -199,7 +199,7 @@ human is actually looking at what is about to ship.
 ### The deploy job's trust split
 
 `_deploy.yml` is one job because the built Vercel output lives in `$RUNNER_TEMP` between the build and
-upload phases, and because of the one-approval rule in the 2026-09-06 note above. Inside that one job
+upload phases, and because of ADR-20's one-approval rule (the build-before-apply note above). Inside that one job
 it uses two trees in turn ([#2805](https://github.com/pdcarlson/Frapp/issues/2805)):
 
 - **The deployed commit** (`inputs.sha`) is what gets installed, built, migrated and shipped.

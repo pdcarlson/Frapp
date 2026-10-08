@@ -137,7 +137,8 @@ jobs:
           fi
           echo "The '$TARGET_ENVIRONMENT' environment's secrets reached this called job (its environment: key, and the caller's secrets: inherit): INFISICAL_MACHINE_IDENTITY_ID, INFISICAL_CLIENT_SECRET, RENDER_API_KEY, VERCEL_API_KEY (names only)."
 
-      # The deployed commit, for the installs. Nothing trusted runs from it until the move to the trusted ref.
+      # The deployed commit, for the installs. Nothing trusted runs from it until
+      # the move to the trusted ref.
       - name: Checkout the commit to deploy
         uses: actions/checkout@v7
         with:
