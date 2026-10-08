@@ -15,6 +15,7 @@ const {
   mockCurrentChapter,
   mockDeleteDoc,
   mockRefetch,
+  mockFolderRefetch,
   mockDocumentRefetch,
   mockRequestUpload,
   mockConfirmUpload,
@@ -26,10 +27,12 @@ const {
   documentsArgs,
   foldersQuery,
   mockOffline,
+  canGate,
 } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   mockDeleteDoc: vi.fn().mockResolvedValue({}),
   mockRefetch: vi.fn(),
+  mockFolderRefetch: vi.fn(),
   mockDocumentRefetch: vi.fn(),
   mockRequestUpload: vi.fn(),
   mockConfirmUpload: vi.fn(),
@@ -38,6 +41,9 @@ const {
   mockUpdateFolder: vi.fn().mockResolvedValue({}),
   mockDeleteFolder: vi.fn().mockResolvedValue({}),
   mockOffline: { value: false },
+  // Whether the mocked `Can` renders its children. Only the gate-remount test
+  // flips it; everything else sees a pass-through.
+  canGate: { granted: true },
   documentsQuery: {
     data: [] as unknown[],
     isPending: false,
@@ -47,7 +53,11 @@ const {
   // What the page last asked `useDocuments` for — the search wiring is only
   // observable through this, since the mock never reaches the network.
   documentsArgs: { value: undefined as { search?: string } | undefined },
-  foldersQuery: { data: [] as unknown[], isError: false },
+  foldersQuery: {
+    data: [] as unknown[],
+    isError: false,
+    refetch: () => undefined as unknown,
+  },
 }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
@@ -87,7 +97,8 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 }));
 
 vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Can: ({ children }: { children: React.ReactNode }) =>
+    canGate.granted ? <>{children}</> : null,
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -113,6 +124,7 @@ function resolvedDocumentsQuery() {
     { id: "f-2", name: "Rush", sort_order: 1 },
   ];
   foldersQuery.isError = false;
+  foldersQuery.refetch = mockFolderRefetch;
 }
 
 const uploadTrigger = () =>
@@ -1028,7 +1040,7 @@ describe("DocumentsPage search and folder resilience", () => {
 
   it("keeps folder controls at the 44px touch floor", () => {
     // `button.tsx` sizes `icon` at 44 deliberately; these four sit adjacent in
-    // a 240px rail, where an undersized target puts delete next to move-down.
+    // a 200px rail, where an undersized target puts delete next to move-down.
     render(<DocumentsPage />);
 
     const move = screen.getByRole("button", { name: /move governance down/i });
@@ -1182,5 +1194,87 @@ describe("DocumentsPage offline write gating", () => {
     );
     expect(screen.getByRole("alert")).toHaveFocus();
     expect(document.body).not.toHaveFocus();
+  });
+});
+
+describe("DocumentsPage wiring across its split components (#3273)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    canGate.granted = true;
+    resolvedDocumentsQuery();
+    chapter.active();
+  });
+
+  afterEach(() => {
+    canGate.granted = true;
+  });
+
+  it("keeps an upload draft when the permission gate unmounts the sheet and comes back", async () => {
+    // The reason `useDocumentUpload` is called by the page and not by the
+    // sheet: state owned inside the `Can`-gated subtree goes with it.
+    const user = userEvent.setup();
+    const { rerender } = render(<DocumentsPage />);
+
+    await user.click(uploadTrigger());
+    await user.type(await screen.findByLabelText(/title/i), "Retreat agenda");
+
+    canGate.granted = false;
+    rerender(<DocumentsPage />);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    canGate.granted = true;
+    rerender(<DocumentsPage />);
+    expect(await screen.findByLabelText(/title/i)).toHaveValue(
+      "Retreat agenda",
+    );
+  });
+
+  it("retries the documents query from the list's error state", async () => {
+    documentsQuery.isError = true;
+    documentsQuery.data = [];
+    render(<DocumentsPage />);
+
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
+    expect(mockFolderRefetch).not.toHaveBeenCalled();
+  });
+
+  it("retries the documents query from the list's offline state", async () => {
+    mockOffline.value = true;
+    documentsQuery.isPending = true;
+    documentsQuery.data = [];
+    render(<DocumentsPage />);
+
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
+    expect(mockFolderRefetch).not.toHaveBeenCalled();
+  });
+
+  it("retries the folder query, not the documents, from the rail's notice", async () => {
+    foldersQuery.data = [];
+    foldersQuery.isError = true;
+    render(<DocumentsPage />);
+
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    expect(mockFolderRefetch).toHaveBeenCalledTimes(1);
+    expect(mockRefetch).not.toHaveBeenCalled();
+  });
+
+  it("refetches the folders after a reorder fails, so the rail shows what saved", async () => {
+    mockUpdateFolder.mockRejectedValueOnce(new Error("network down"));
+    render(<DocumentsPage />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /move rush up/i }),
+    );
+
+    await waitFor(() => expect(mockFolderRefetch).toHaveBeenCalledTimes(1));
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Couldn't reorder folders" }),
+    );
   });
 });
