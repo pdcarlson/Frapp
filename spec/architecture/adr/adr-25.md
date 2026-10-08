@@ -55,7 +55,7 @@
   4. **Web dashboard and third-party sign-in and billing.**
      - *Code:*
        - Tab titles, the auth headings, onboarding, settings and roles copy, the invite share text and the CSV and ICS filenames, plus the `packages/validation` and `packages/hooks` strings the dashboard renders.
-       - Everything that names the Discord application or bot, on both sides: the web import copy, and the API's Discord error messages (`discord-import.service.ts`, `discord-bot-gateway.service.ts`, `discord-api-message.ts`).
+       - Everything that names the Discord application or bot, on both sides: the web import copy, and the API's Discord error messages (`discord-import.service.ts`, `discord-bot-gateway.service.ts`, `discord-api-message.ts`). *2026-10-08: the scan's error messages moved from `discord-import.service.ts` to `discord-import-channel-mapping.service.ts` ([#3271](https://github.com/pdcarlson/Frapp/issues/3271)).*
      - *Specs and docs:*
        - the web half of `writing.md` § 7's Sign in title;
        - the tab-title template and title-lock description in `spec/ui/web-greenfield/deletion-checklist.md` § Copy, with a dated note (*2026-10-01:* that file is deleted, and the rule it recorded is [`spec/ui/web-dashboard/README.md` § Errors and tab titles](../../ui/web-dashboard/README.md#errors-and-tab-titles), [#2743](https://github.com/pdcarlson/Frapp/issues/2743));
