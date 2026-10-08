@@ -4,8 +4,8 @@ import type { ChannelType } from '../entities/chat.entity';
 /**
  * The chat channel-access predicate, shared by every chat and search path in
  * the API: cold reads, the hot-path send and react controllers
- * (`ChatService.sendMessage`, `ChatService.recordMessageAction`), and search.
- * Pure: no I/O, no framework imports. Callers perform their own TRUSTED
+ * (`ChatService.sendMessage`, `ChatReactionService.recordMessageAction`), and
+ * search. Pure: no I/O, no framework imports. Callers perform their own TRUSTED
  * database lookups (channel record, the caller's chapter membership, and, only
  * for ROLE_GATED channels, the caller's effective permissions) and feed them
  * in here. Centralizing the rule prevents the layers from drifting apart,

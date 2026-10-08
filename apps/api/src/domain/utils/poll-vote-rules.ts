@@ -2,7 +2,7 @@
  * Poll vote rules, shared by the two paths that accept a vote, which are NOT
  * the same code path and cannot be merged into one: `PollService.vote` writes
  * `poll_votes` keyed by a numeric `option_index`, while
- * `ChatService.recordMessageAction` writes `chat_message_actions` with a
+ * `ChatReactionService.recordMessageAction` writes `chat_message_actions` with a
  * string `payload.option_id`. Two storage shapes, two encodings, one set of
  * rules.
  *

@@ -99,6 +99,8 @@ const PGLITE_HARNESS = join(REPO_ROOT, 'scripts', 'pglite');
 const CHAT_SERVICE_SPEC = 'application/services/chat.service.spec.ts';
 const CHAT_ATTACHMENT_SERVICE_SPEC =
   'application/services/chat-attachment.service.spec.ts';
+const CHAT_REACTION_SERVICE_SPEC =
+  'application/services/chat-reaction.service.spec.ts';
 const POLL_SERVICE_SPEC = 'application/services/poll.service.spec.ts';
 
 const OWN_PREFERENCES: Entry = {
@@ -227,7 +229,7 @@ const HTTP_LEDGER: Record<string, Entry> = {
   ChatController_getReactions_v1: {
     status: 'masked',
     proof: {
-      spec: CHAT_SERVICE_SPEC,
+      spec: CHAT_REACTION_SERVICE_SPEC,
       test: 'drops the reactions of a member the caller has blocked',
     },
   },
@@ -449,7 +451,7 @@ const PUSH_LEDGER: Record<string, Entry> = {
   'reactions (no push exists)': {
     status: 'masked',
     proof: {
-      spec: CHAT_SERVICE_SPEC,
+      spec: CHAT_REACTION_SERVICE_SPEC,
       test: 'does not notify on a hot-path reaction action',
     },
   },
