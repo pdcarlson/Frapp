@@ -3,7 +3,7 @@ import { canAccessChannel } from '#domain/utils/channel-access';
 import { RbacService } from './rbac.service';
 import { ChatBlockService } from './chat-block.service';
 import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
-import { hasRequiredRole } from './event.service';
+import { hasRequiredRole } from './event-role-targeting';
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { BackworkResource } from '#domain/entities/backwork.entity';
 import type { Event } from '#domain/entities/event.entity';

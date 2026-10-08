@@ -106,7 +106,7 @@ fixture with an importing file, an imported constants file and an edge-less file
 DTOs from the interface layer), and **`[]` since 2026-09-07**, when the last five were fixed rather
 than grandfathered: each of those services now declares its own `…Input` type and the controller is
 where the DTO meets it, which is the shape the layer's other services already used —
-`CreateEventInput` in `event.service.ts` beside `CreateEventDto` in `event.dto.ts` is the pattern.
+`CreateEventInput` in `event-input.ts` beside `CreateEventDto` in `event.dto.ts` is the pattern.
 (No count here on purpose: a hand-maintained total of "services that follow the convention" would go
 stale on the next service added. `grep -rlE "^(export )?(interface|type) [A-Za-z]+Input\b" apps/api/src/application/`
 is the closest mechanical proxy and over-counts — it matches result and row types too.)
