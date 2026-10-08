@@ -108,8 +108,8 @@ jobs:
     # `always()` rather than `!cancelled()`, deliberately: a CANCELLED deploy
     # raises the alert, because `FAILED_RESULTS` in deploy-alert.mjs counts
     # `cancelled` as a failure ("a cancelled deploy is not a deploy"). The cost:
-    # cancelling a superseded queued run by hand files an alert, which closes as
-    # soon as the run behind it deploys.
+    # cancelling a superseded queued run by hand files an alert, which closes
+    # when the run for main's tip deploys or finds the API up to date.
     if: |
       always() &&
       github.event.workflow_run.conclusion == 'success' &&
