@@ -3,6 +3,8 @@ import { DiscordImportController } from '../../interface/controllers/discord-imp
 import { DiscordConnectionController } from '../../interface/controllers/discord-connection.controller';
 import { DiscordAuthorLinkController } from '../../interface/controllers/discord-author-link.controller';
 import { DiscordImportService } from '../../application/services/discord-import.service';
+import { DiscordImportChannelMappingService } from '../../application/services/discord-import-channel-mapping.service';
+import { DiscordImportRoleMappingService } from '../../application/services/discord-import-role-mapping.service';
 import { DiscordOAuthService } from '../../application/services/discord-oauth.service';
 import { DiscordAuthorLinkService } from '../../application/services/discord-author-link.service';
 import { DiscordImportWorkerService } from '../../application/workers/discord-import-worker.service';
@@ -69,6 +71,8 @@ import {
   ],
   providers: [
     DiscordImportService,
+    DiscordImportChannelMappingService,
+    DiscordImportRoleMappingService,
     DiscordOAuthService,
     DiscordAuthorLinkService,
     DiscordImportWorkerService,
