@@ -10,7 +10,6 @@ import { authorityCeiling, ceilingPermits } from './harness/grader';
 import {
   EVAL_CATEGORIES,
   INJECTION_VECTORS,
-  type EvalCaller,
   type EvalCase,
   type InjectionMetadata,
 } from './harness/types';
@@ -43,7 +42,7 @@ const CUSTOM_ROLE_SUFFIX = '(custom)';
 
 const fixtureCallers = Object.entries(fixtures).flatMap(([name, value]) =>
   typeof value === 'object' && 'permissions' in value
-    ? [[name, value as EvalCaller] as const]
+    ? [[name, value] as const]
     : [],
 );
 
