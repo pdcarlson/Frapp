@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   type OrgDues,
+  useCreatePortal,
   useCurrentChapter,
   useMyPermissions,
   useOrgConfig,
@@ -116,6 +117,7 @@ function SettingsPageContent() {
   // `isPending` used to disable every control on every tab at once (#881).
   const pendingConfigKeys = usePendingConfigKeys();
   const rollover = useSemesterRollover();
+  const createPortal = useCreatePortal();
   // Scoped to the rollover card; `SettingsSemesterTab` says why.
   const rolloverGate = useSubscriptionGate();
 
@@ -518,7 +520,7 @@ function SettingsPageContent() {
           </TabsContent>
 
           <TabsContent value="danger" className="mt-0 space-y-6">
-            <SettingsDangerTab />
+            <SettingsDangerTab createPortal={createPortal} />
           </TabsContent>
 
           <TabsContent value="modules" className="mt-0">

@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
-import { useCreatePortal } from "@repo/hooks";
+import { type useCreatePortal } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -21,9 +21,17 @@ import { getErrorMessage } from "@/lib/utils";
  * the third card on Organization, which put "cancel the subscription" one
  * scroll under "set your founding year".
  */
-export function SettingsDangerTab() {
+export function SettingsDangerTab({
+  createPortal,
+}: {
+  /**
+   * The page's instance: Radix unmounts this tab when another is picked, and a
+   * tab-local mutation would come back un-pending mid-request, re-enabling the
+   * button for a second portal session.
+   */
+  createPortal: ReturnType<typeof useCreatePortal>;
+}) {
   const { toast } = useToast();
-  const createPortal = useCreatePortal();
 
   async function openBillingPortal() {
     try {

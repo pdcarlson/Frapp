@@ -85,9 +85,24 @@ function renderGate(
   );
 }
 
-const PAUSED = { data: undefined, isPending: true, isError: false, fetchStatus: "paused" };
-const IDLE = { data: undefined, isPending: true, isError: false, fetchStatus: "idle" };
-const LOADING = { data: undefined, isPending: true, isError: false, fetchStatus: "fetching" };
+const PAUSED = {
+  data: undefined,
+  isPending: true,
+  isError: false,
+  fetchStatus: "paused",
+};
+const IDLE = {
+  data: undefined,
+  isPending: true,
+  isError: false,
+  fetchStatus: "idle",
+};
+const LOADING = {
+  data: undefined,
+  isPending: true,
+  isError: false,
+  fetchStatus: "fetching",
+};
 
 describe("a paused permission check is never silent", () => {
   it("would have caught the twelve surfaces that rendered nothing offline", () => {
@@ -153,7 +168,12 @@ describe("a check that failed offline is the paused state, reached the other way
    * `isError && !data` branch and hid every gated control, which is the
    * denial §5 rule 4 reserves for permissions the member will never hold.
    */
-  const FAILED = { data: undefined, isPending: false, isError: true, fetchStatus: "idle" };
+  const FAILED = {
+    data: undefined,
+    isPending: false,
+    isError: true,
+    fetchStatus: "idle",
+  };
 
   function rerenderGate(
     rerender: (ui: ReactElement) => void,
@@ -329,26 +349,38 @@ describe("the branches this change did not touch", () => {
 
     permissionsResult.value = { ...PAUSED };
     const anyPaused = render(
-      <Can anyOf={["chapter_docs:upload", "chapter_docs:manage"]}>{upload}</Can>,
+      <Can anyOf={["chapter_docs:upload", "chapter_docs:manage"]}>
+        {upload}
+      </Can>,
     );
     expect(anyPaused.getByText(/can't check your access/i)).toBeInTheDocument();
     anyPaused.unmount();
 
     permissionsResult.value = cached;
     const anyCached = render(
-      <Can anyOf={["chapter_docs:upload", "chapter_docs:manage"]}>{upload}</Can>,
+      <Can anyOf={["chapter_docs:upload", "chapter_docs:manage"]}>
+        {upload}
+      </Can>,
     );
-    expect(anyCached.getByRole("button", { name: /upload/i })).toBeInTheDocument();
+    expect(
+      anyCached.getByRole("button", { name: /upload/i }),
+    ).toBeInTheDocument();
     anyCached.unmount();
 
     permissionsResult.value = { ...PAUSED };
-    const allPaused = render(<Can allOf={["chapter_docs:upload"]}>{upload}</Can>);
+    const allPaused = render(
+      <Can allOf={["chapter_docs:upload"]}>{upload}</Can>,
+    );
     expect(allPaused.getByText(/can't check your access/i)).toBeInTheDocument();
     allPaused.unmount();
 
     permissionsResult.value = cached;
-    const allCached = render(<Can allOf={["chapter_docs:upload"]}>{upload}</Can>);
-    expect(allCached.getByRole("button", { name: /upload/i })).toBeInTheDocument();
+    const allCached = render(
+      <Can allOf={["chapter_docs:upload"]}>{upload}</Can>,
+    );
+    expect(
+      allCached.getByRole("button", { name: /upload/i }),
+    ).toBeInTheDocument();
     allCached.unmount();
   });
 });
@@ -364,7 +396,8 @@ describe("the branches this change did not touch", () => {
  * of the two a gate is depends on what it wraps, which no grep decides.
  *
  * Three were missed on the first pass of that change and found by its pre-push
- * review — `settings-semester-tab`'s rollover gate wraps an entire `<Card>`,
+ * review — `settings-page`'s rollover gate (in
+ * `settings-semester-tab` since #3272) wraps an entire `<Card>`,
  * `service-page`'s approve gate the whole review queue, and `invoice-admin-card`
  * the whole invoice surface. That is the argument for a ledger over a
  * heuristic: the mistake was in the classification, so the classification is
@@ -381,16 +414,46 @@ describe("the branches this change did not touch", () => {
  * make someone justify.
  */
 const SURFACE_GATES: readonly { file: string; match: string }[] = [
-  { file: "components/polls/polls-page.tsx", match: 'permission="polls:view_all"' },
-  { file: "components/reports/reports-page.tsx", match: 'permission="reports:export"' },
-  { file: "components/geofences/geofences-admin-page.tsx", match: 'permission="geofences:manage"' },
-  { file: "components/roles/roles-page.tsx", match: 'permission="roles:manage"' },
-  { file: "components/points/points-audit-card.tsx", match: 'permission="points:view_all"' },
-  { file: "components/settings/settings-semester-tab.tsx", match: 'permission="semester:rollover"' },
-  { file: "components/service/service-page.tsx", match: 'permission="service:approve"' },
-  { file: "components/chat-admin/chat-admin-page.tsx", match: 'permission="channels:manage"' },
-  { file: "components/chat-admin/chat-reports-card.tsx", match: "allOf={CHAT_REPORT_QUEUE_PERMISSIONS}" },
-  { file: "components/discord-import/discord-import-page.tsx", match: 'permission="channels:manage"' },
+  {
+    file: "components/polls/polls-page.tsx",
+    match: 'permission="polls:view_all"',
+  },
+  {
+    file: "components/reports/reports-page.tsx",
+    match: 'permission="reports:export"',
+  },
+  {
+    file: "components/geofences/geofences-admin-page.tsx",
+    match: 'permission="geofences:manage"',
+  },
+  {
+    file: "components/roles/roles-page.tsx",
+    match: 'permission="roles:manage"',
+  },
+  {
+    file: "components/points/points-audit-card.tsx",
+    match: 'permission="points:view_all"',
+  },
+  {
+    file: "components/settings/settings-semester-tab.tsx",
+    match: 'permission="semester:rollover"',
+  },
+  {
+    file: "components/service/service-page.tsx",
+    match: 'permission="service:approve"',
+  },
+  {
+    file: "components/chat-admin/chat-admin-page.tsx",
+    match: 'permission="channels:manage"',
+  },
+  {
+    file: "components/chat-admin/chat-reports-card.tsx",
+    match: "allOf={CHAT_REPORT_QUEUE_PERMISSIONS}",
+  },
+  {
+    file: "components/discord-import/discord-import-page.tsx",
+    match: 'permission="channels:manage"',
+  },
 ];
 
 /**
@@ -440,9 +503,10 @@ function stripComments(source: string): string {
 
 /** The local name the file bound the import to — `Can`, or whatever it renamed it to. */
 function localName(source: string): string | null {
-  const clause = /import\s*\{([^}]*)\}\s*from\s*["']@\/components\/shared\/can["']/.exec(
-    source,
-  );
+  const clause =
+    /import\s*\{([^}]*)\}\s*from\s*["']@\/components\/shared\/can["']/.exec(
+      source,
+    );
   if (!clause) return null;
   for (const spec of clause[1]!.split(",")) {
     const [imported, alias] = spec.split(/\s+as\s+/).map((part) => part.trim());
