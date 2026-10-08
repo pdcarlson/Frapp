@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -17,12 +17,34 @@ const landingRoot = process.cwd();
 const repoRoot = join(landingRoot, "..", "..");
 
 const pageSource = readFileSync(join(landingRoot, "app/page.tsx"), "utf8");
+
+/*
+ * `page.tsx` composes the sections; each section and both product frames live
+ * in `components/home/`, one file apiece (#3274). The copy rules bind every one
+ * of them, so the directory is read whole rather than listed here: a section
+ * added later is covered without anyone remembering to add it.
+ */
+const homeDir = join(landingRoot, "components/home");
+const homeSources = Object.fromEntries(
+  readdirSync(homeDir)
+    .filter((file) => /\.tsx?$/.test(file) && !/\.spec\.tsx?$/.test(file))
+    .sort()
+    .map((file) => [file, readFileSync(join(homeDir, file), "utf8")]),
+);
+
+function homeSource(file: string): string {
+  const source = homeSources[file];
+  if (source === undefined) throw new Error(`components/home/${file} is gone`);
+  return source;
+}
+
+const allSources = [pageSource, ...Object.values(homeSources)].join("\n");
 const globalsSource = readFileSync(join(landingRoot, "app/globals.css"), "utf8");
 const layoutSource = readFileSync(join(landingRoot, "app/layout.tsx"), "utf8");
 
 /**
  * Copy rules bind rendered strings, not repository prose, and the comments in
- * `page.tsx` are prose that keeps the house style. Stripping them is what lets
+ * `page.tsx` and its sections are prose that keeps the house style. Stripping them is what lets
  * the em-dash rule be asserted over the whole remaining file instead of over a
  * hand-maintained list of string literals.
  */
@@ -39,58 +61,59 @@ function flatten(source: string): string {
 }
 
 const renderedPage = withoutComments(pageSource);
-const flatPage = flatten(pageSource);
+const renderedAll = withoutComments(allSources);
+const flatAll = flatten(allSources);
 const renderedLayout = withoutComments(layoutSource);
 
 describe("landing marketing copy rules", () => {
   it("uses no em dashes in rendered copy", () => {
     // `spec/ui/landing/README.md` § Marketing copy rules. No CI check enforced
     // this before; it was a review rule and reviews miss one.
-    expect(renderedPage).not.toContain("—");
+    expect(renderedAll).not.toContain("—");
     expect(withoutComments(layoutSource)).not.toContain("—");
   });
 
   it("says Check in and never RSVP", () => {
     // `spec/behavior/events.md`: pre-event RSVP intent is not modelled, so a
     // control for it would draw a product that does not exist.
-    expect(renderedPage).not.toMatch(/RSVP/i);
-    expect(renderedPage).not.toMatch(/\bgoing\b/i);
-    expect(renderedPage).not.toMatch(/can.?t make it/i);
-    expect(renderedPage).toContain("Check in");
+    expect(renderedAll).not.toMatch(/RSVP/i);
+    expect(renderedAll).not.toMatch(/\bgoing\b/i);
+    expect(renderedAll).not.toMatch(/can.?t make it/i);
+    expect(renderedAll).toContain("Check in");
   });
 
   it("ships no Ask control and no machine that answers", () => {
     // `spec/behavior/ai.md`: no shipped surface can answer a question, and the
     // web Ask pill opens an "isn't ready" notice.
-    expect(renderedPage).not.toMatch(/\bAsk\b/);
-    expect(renderedPage).not.toMatch(/\bAI\b/);
-    expect(renderedPage).not.toMatch(/assistant/i);
+    expect(renderedAll).not.toMatch(/\bAsk\b/);
+    expect(renderedAll).not.toMatch(/\bAI\b/);
+    expect(renderedAll).not.toMatch(/assistant/i);
   });
 
   it("keeps the locked tagline in the title and out of the page body", () => {
     // D8. Scope is the body only; `brand-identity.md` §1 still locks it as the
     // brand tagline, which is what a title tag carries.
-    expect(renderedPage).not.toContain("Ask your chapter anything");
+    expect(renderedAll).not.toContain("Ask your chapter anything");
     expect(layoutSource).toContain("Frapp. Ask your chapter anything.");
-    expect(renderedPage).toContain(
+    expect(renderedAll).toContain(
       "Everything your chapter needs is already in chat.",
     );
   });
 
   it("carries no figure that is not a commitment", () => {
-    expect(renderedPage).toContain("$0");
-    expect(renderedPage).toContain("$149");
-    expect(renderedPage).toContain("14 days");
-    expect(renderedPage).toContain("day 15");
+    expect(renderedAll).toContain("$0");
+    expect(renderedAll).toContain("$149");
+    expect(renderedAll).toContain("14 days");
+    expect(renderedAll).toContain("day 15");
     // The unsourced strip that used to run under the hero.
-    expect(renderedPage).not.toContain("50+");
-    expect(renderedPage).not.toContain("2,000+");
-    expect(renderedPage).not.toContain("10,000+");
-    expect(renderedPage).not.toMatch(/five minutes/i);
+    expect(renderedAll).not.toContain("50+");
+    expect(renderedAll).not.toContain("2,000+");
+    expect(renderedAll).not.toContain("10,000+");
+    expect(renderedAll).not.toMatch(/five minutes/i);
   });
 
   it("drops the ops-consolidation positioning everywhere it was stated", () => {
-    for (const source of [renderedPage, renderedLayout]) {
+    for (const source of [renderedAll, renderedLayout]) {
       expect(source).not.toContain("Discord");
       expect(source).not.toContain("OmegaFi");
       expect(source).not.toContain("Life360");
@@ -101,15 +124,15 @@ describe("landing marketing copy rules", () => {
   it("names events, check-in and points in the chat sentence, and not dues", () => {
     // `spec/behavior/chat/integrations.md` lists the dues chat kind as a stub
     // renderer, so no dues artifact may be claimed to land in the thread.
-    expect(flatPage).toContain(
+    expect(flatAll).toContain(
       "Events, check-in and points land in the conversation",
     );
-    expect(renderedPage).not.toMatch(/dues[^.]{0,40}(in|into) (the )?(chat|thread|conversation)/i);
+    expect(renderedAll).not.toMatch(/dues[^.]{0,40}(in|into) (the )?(chat|thread|conversation)/i);
   });
 
   it("carries no testimonial, no FAQ and no stats array", () => {
     for (const name of ["testimonials", "faqs", "chapterStats", "features"]) {
-      expect(renderedPage).not.toMatch(new RegExp(`const ${name}\\b`));
+      expect(renderedAll).not.toMatch(new RegExp(`const ${name}\\b`));
     }
   });
 
@@ -117,16 +140,16 @@ describe("landing marketing copy rules", () => {
     // Three frames render from two components: `ChatFrame` is used twice, at
     // the fold and in the chat proof section, so the source carries two
     // `role="img"` attributes and three call sites.
-    expect(renderedPage.match(/role="img"/g) ?? []).toHaveLength(2);
-    expect(renderedPage.match(/<ChatFrame\b/g) ?? []).toHaveLength(2);
-    expect(renderedPage.match(/<EventFrame\b/g) ?? []).toHaveLength(1);
+    expect(renderedAll.match(/role="img"/g) ?? []).toHaveLength(2);
+    expect(renderedAll.match(/<ChatFrame\b/g) ?? []).toHaveLength(2);
+    expect(renderedAll.match(/<EventFrame\b/g) ?? []).toHaveLength(1);
     // Every `role="img"` carries an `aria-label`, or it announces nothing. The
     // pairing is what makes this bite: counting `aria-label=` anywhere in the
     // file passed on the nav and the lockup alone, so a frame could lose its
     // label and the assertion would not notice.
-    expect(renderedPage.match(/role="img"\s+aria-label=/g) ?? []).toHaveLength(2);
+    expect(renderedAll.match(/role="img"\s+aria-label=/g) ?? []).toHaveLength(2);
     expect(
-      flatPage.match(/Names and (messages|events) are illustrative/g) ?? [],
+      flatAll.match(/Names and (messages|events) are illustrative/g) ?? [],
     ).toHaveLength(3);
   });
 });
@@ -140,23 +163,24 @@ describe("landing page structure", () => {
 
   it("keeps the anchors the nav, the footer and positioning.md point at", () => {
     // `spec/product/positioning.md` cites the pricing section by its id.
-    expect(renderedPage).toContain('id="product"');
-    expect(renderedPage).toContain('id="pricing"');
+    expect(renderedAll).toContain('id="product"');
+    expect(renderedAll).toContain('id="pricing"');
   });
 
   it("renders no image request, so the H1 stays the LCP element", () => {
     // `spec/ui/landing/README.md` § Performance. The crest is an inline path
     // and both product frames are JSX.
-    expect(pageSource).not.toMatch(/from ["']next\/image["']/);
-    expect(renderedPage).not.toContain("showcase-dashboard");
-    expect(renderedPage).not.toContain("showcase-mobile");
+    expect(allSources).not.toMatch(/from ["']next\/image["']/);
+    expect(renderedAll).not.toContain("showcase-dashboard");
+    expect(renderedAll).not.toContain("showcase-mobile");
   });
 
   it("gives the hero H1, lead and primary CTA no entrance animation", () => {
-    const hero = renderedPage.slice(
-      renderedPage.indexOf("<main"),
-      renderedPage.indexOf("Built for officers"),
-    );
+    // The hero is the first thing inside `main`.
+    const main = renderedPage.slice(renderedPage.indexOf("<main"));
+    expect(main.indexOf("<HeroSection")).toBeGreaterThan(-1);
+    expect(main.indexOf("<HeroSection")).toBeLessThan(main.indexOf("<OfficersSection"));
+    const hero = withoutComments(homeSource("hero-section.tsx"));
     expect(hero).toContain("Run your chapter where it already talks.");
     expect(hero).not.toContain("RevealOnView");
     expect(hero).not.toContain("reveal-item");
@@ -166,10 +190,7 @@ describe("landing page structure", () => {
     // The phone board orders the section copy-first and the desktop board puts
     // the frame on the left. Collapsing to one column in DOM order would have
     // shown a 560px mockup before the heading that names it.
-    const events = renderedPage.slice(
-      renderedPage.indexOf('aria-labelledby="events"'),
-      renderedPage.indexOf('id="pricing"'),
-    );
+    const events = withoutComments(homeSource("events-proof-section.tsx"));
     expect(events.indexOf("Check-in that keeps its own books.")).toBeLessThan(
       events.indexOf("<EventFrame"),
     );
@@ -181,7 +202,8 @@ describe("landing page structure", () => {
     // 350x560 at radius 28 with 44/16 insets, overridden at `sm` to the desktop
     // board's 390x600 at radius 36 with 56/20. Varying only the width shipped a
     // phone frame at the desktop's height and cropped different content.
-    const frame = renderedPage.slice(renderedPage.indexOf("function EventFrame"));
+    const frame = withoutComments(homeSource("event-frame.tsx"));
+    expect(frame).toContain("function EventFrame");
     for (const base of ["h-[560px]", "w-[350px]", "rounded-[28px]", "px-4", "pt-11"]) {
       expect(frame, `event frame is missing the phone base ${base}`).toContain(base);
     }
@@ -201,9 +223,10 @@ describe("landing page structure", () => {
     // or mobile since 2026-09-29, so the frame that pictures it can't draw any
     // (#2893). Each case pins one rule of that section, positively where it
     // can, because "no radius 18" alone lets a bubble back at any other radius.
-    const start = renderedPage.indexOf("const threadRows");
-    const end = renderedPage.indexOf("function Composer");
-    const thread = renderedPage.slice(start, end);
+    const chatFrame = withoutComments(homeSource("chat-frame.tsx"));
+    const start = chatFrame.indexOf("const threadRows");
+    const end = chatFrame.indexOf("function Composer");
+    const thread = chatFrame.slice(start, end);
 
     it("finds the thread", () => {
       expect(start, "the chat thread's row list moved").toBeGreaterThanOrEqual(0);
@@ -289,7 +312,7 @@ describe("landing page structure", () => {
       ["log-in", "footer"],
     ]) {
       expect(
-        renderedPage,
+        renderedAll,
         `no TrackedCta for ${cta} on ${surface}`,
       ).toMatch(new RegExp(`cta="${cta}"\\s*\\n?\\s*surface="${surface}"`));
     }
@@ -300,10 +323,8 @@ describe("landing page structure", () => {
   });
 
   it("puts one control in the pricing section, on the Free card", () => {
-    const pricing = renderedPage.slice(
-      renderedPage.indexOf('id="pricing"'),
-      renderedPage.indexOf("Everything your chapter needs"),
-    );
+    const pricing = withoutComments(homeSource("pricing-section.tsx"));
+    expect(pricing).toContain('id="pricing"');
     expect(pricing.match(/surface="pricing"/g) ?? []).toHaveLength(1);
     expect(pricing).toContain("Upgrade any time from Settings inside the app.");
   });
