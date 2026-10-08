@@ -137,12 +137,13 @@ export default tseslint.config(
       ],
     },
   },
-  // How a caught throwable reaches a log line (#1669, #2114, #2460). Each
-  // selector set is wider than the source scan it replaced, never narrower:
-  // that scan matched argument text, so a selector here matches the shape
-  // anywhere inside the second argument rather than only at its top.
-  // `eslint-bans.spec.ts` lints every shape the scan pinned and fails if one
-  // stops being reported.
+  // How a caught throwable reaches a log line (#1669, #2114, #2460). These
+  // replaced a source scan that matched argument text, so a selector here
+  // matches its shape anywhere inside the second argument, not only at its
+  // top. Widen one when a missed shape turns up; never narrow it.
+  // `eslint-bans.spec.ts` lints every shape the scan pinned, and fails if one
+  // stops being reported. Not seen, by the scan either: a static
+  // `Logger.error`, and a throwable reached through a helper.
   {
     files: ['src/**/*.ts'],
     ignores: ['**/*.spec.ts'],
