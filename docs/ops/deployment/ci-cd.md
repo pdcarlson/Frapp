@@ -9,7 +9,7 @@
 3. **PR merged** → Push event triggers the staging deploy pipeline (`workflow_run` waits for CI).
 4. **Staging pipeline**: the **Deploy staging** workflow ([`deploy-staging.yml`](../../../.github/workflows/deploy-staging.yml)) calls the shared deploy job ([`_deploy.yml`](../../../.github/workflows/_deploy.yml), since [#2804](https://github.com/pdcarlson/Frapp/issues/2804)) with `environment: staging`. That one job, `deploy`, runs in the `staging` environment for its secrets, and the caller passes `secrets: inherit`: without it GitHub released none of them to the called job (run 36479856561, stopped by the job's first step before anything shipped). That `inherit` makes them arrive is from [actions/runner#4453](https://github.com/actions/runner/issues/4453) until the first run with it, recorded on #2804; the first step checks on every run. It works on the commit CI verified, in this order:
    1. Check out that commit with full history. `npm ci`, the pinned Vercel CLI install and a build of the API (for step 4's boot check) run before any secret is present.
-   2. Move the workspace to the trusted ref (`github.sha`, `main`) for the pieces that must not come from the commit being deployed: the Supabase CLI setup and the Infisical injection (local actions), the provider ids (from `.github/environments.json`, [#2806](https://github.com/pdcarlson/Frapp/issues/2806)), and a copy of the served-commit check. Record the environment baseline, inject Infisical `staging`, then check the deployed commit back out. `_deploy.yml`'s header has the reasoning (#2805).
+   2. Move the workspace to the trusted ref (`github.sha`, `main`) for the pieces that must not come from the commit being deployed: the Supabase CLI setup and the Infisical injection (local actions), the provider ids (from `.github/environments.json`, [#2806](https://github.com/pdcarlson/Frapp/issues/2806)), and a copy of the served-commit check. Record the environment baseline, inject Infisical `staging`, then check the deployed commit back out. [§ The deploy job's trust split](#the-deploy-jobs-trust-split) has the reasoning (#2805).
    3. **Plan** (`plan-staging-deploy.mjs`), read-only. The API deploys when something its image is built from changed since the commit staging serves. Web and landing upload when something they are built from (`FRONTEND_BUILD_PATHS`) changed since what the staging hostnames serve ([#2865](https://github.com/pdcarlson/Frapp/issues/2865)); for `main`'s tip, also when it can't tell (a hostname it can't read, a commit on another history, a diff that fails). Any other commit uploads only when both hostnames serve older commits. Nothing uploads over a hostname serving a newer commit. Either way, it uploads only when the API staging will serve carries the commit's API. A re-run of the tip's run uploads even when nothing changed, which is how a rotated build-time value reaches staging. The script header has the reasoning.
    4. **Check the config** (`check-deploy-config.mjs`, [#3112](https://github.com/pdcarlson/Frapp/issues/3112)), before anything is written. When the plan deploys the API, it runs that commit's boot check (`validateEnv`) on the values Infisical injected. It also requires `SUPABASE_FUNCTIONS_DEPLOY_TOKEN` when step 8 deploys a function, and, when step 9 verifies, what the served-commit and client checks read: `API_HEALTHCHECK_URL` as the API's `/health` URL, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. It names each failing variable and never its value. It reads Infisical, so it can't see a Render sync that failed or lags.
    5. Migrations dry-run, listing what is pending, on every run.
@@ -195,6 +195,41 @@ That second click was measured holding a one-migration apply for 29m52s (evidenc
 `docs/ci-cd/agent-infra.md` § GitHub environments and bootstrap secrets). #1340
 kept the approval and dropped the promotion PR, so the surviving gate is the one where a
 human is actually looking at what is about to ship.
+
+### The deploy job's trust split
+
+`_deploy.yml` is one job because the built Vercel output lives in `$RUNNER_TEMP` between the build and
+upload phases, and because of ADR-20's one-approval rule (the build-before-apply note above). Inside that one job
+it uses two trees in turn ([#2805](https://github.com/pdcarlson/Frapp/issues/2805)):
+
+- **The deployed commit** (`inputs.sha`) is what gets installed, built, migrated and shipped.
+- **The trusted ref** (`github.sha`, the commit the workflow file was loaded from, which is `main` for
+  both callers) supplies the local composite actions and the checks that must not come from the commit
+  they check.
+
+Each piece comes from the trusted ref for its own reason:
+
+- **Local actions** would load from the deployed commit after the move back to it
+  ([`.github/actions/README.md`](../../../.github/actions/README.md) has the rule and its guard).
+- **The verdicts on the deploy.** The provider preflight runs at the trusted ref. The served-commit check,
+  the client checks, the config check, the source-map check and production's rehearsal-stack start run
+  from a copy of `scripts/ci` taken there, before the move back to the deployed commit. Run from the
+  deployed tree, each would set a floor on rollbacks: a commit from before the script existed would
+  fail the check, after shipping in the case of the checks that run after the deploy.
+- **The provider ids** come from the trusted ref's `.github/environments.json`, so a rollback deploys to
+  the services today's config names, not the ones an older commit named
+  ([#2806](https://github.com/pdcarlson/Frapp/issues/2806)).
+
+The installs come first, on the deployed commit and before any secret is injected
+([#2801](https://github.com/pdcarlson/Frapp/issues/2801)), so no install script runs with the Infisical
+store in its environment. That is all it buys. The move to the trusted ref uses `git checkout --force`,
+because a plain checkout keeps a local edit to any tracked file the two commits share, and an install
+script's edit to an action file must not survive into the trusted window. It also points
+`core.hooksPath` at `/dev/null`: `npm ci` ran the root `prepare`, which points it at the deployed
+commit's `.githooks`, and a hook an install script left in `.git/hooks` must not run either. An install
+script can still leave something the trusted steps run, such as other `.git/config` keys or a directory
+appended to `$GITHUB_PATH`. Taking the install out of this job is
+[#2824](https://github.com/pdcarlson/Frapp/issues/2824)'s fix, not another check in it.
 
 ### Required Status Checks
 
