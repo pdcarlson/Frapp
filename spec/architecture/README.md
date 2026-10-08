@@ -442,7 +442,7 @@ Both paths run in NestJS today (ADR-11 unwound the original Edge split, ADR-01);
 
 ### Edge Function / hot-path authorization
 
-The chat write path uses the service-role client (RLS bypassed) on a client-supplied `channel_id` / `message_id`, so it **must verify the caller belongs to the target chapter before the write** — otherwise a member of chapter A could target chapter B's channel. A single pure predicate, `canAccessChannel`, exported from `@repo/validation`, is the shared authorization gate reused by the NestJS chat + search services (and, historically, both Edge Functions). It takes an `operation: 'read' | 'post'` parameter (default `'read'`): for `operation:'post'`, after the read check it denies when `channel.is_read_only` (e.g. `#announcements`) and the caller holds neither `'announcements:post'` nor `'*'`. The client hides disallowed commands for UX, but the server is the trust boundary.
+The chat write path uses the service-role client (RLS bypassed) on a client-supplied `channel_id` / `message_id`, so it **must verify the caller belongs to the target chapter before the write** — otherwise a member of chapter A could target chapter B's channel. A single pure predicate, `canAccessChannel` (`apps/api/src/domain/utils/channel-access.ts`), is the shared authorization gate reused by the NestJS chat + search services (and, historically, both Edge Functions). It takes an `operation: 'read' | 'post'` parameter (default `'read'`): for `operation:'post'`, after the read check it denies when `channel.is_read_only` (e.g. `#announcements`) and the caller holds neither `'announcements:post'` nor `'*'`. The client hides disallowed commands for UX, but the server is the trust boundary.
 
 ### Presence-aware push rules
 
