@@ -187,10 +187,7 @@ describe('Reported attachment evidence, end to end (#2481)', () => {
     );
     chat = new ChatService(
       { findById: jest.fn(async () => ({ id: CHANNEL })) } as never,
-      unused,
       messageRepo,
-      unused,
-      unused,
       unused,
       unused,
       unused,
