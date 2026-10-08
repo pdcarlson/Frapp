@@ -541,7 +541,7 @@ export const SendChatMessageSchema = z.object({
 // ── Chat channel-access predicate ────────────────────────────────────────────
 // Shared by every chat + search code path in the NestJS API: cold reads,
 // the hot-path send + react controllers (`ChatService.sendMessage`,
-// `ChatService.recordMessageAction`), and search. Pure: no zod, no I/O,
+// `ChatReactionService.recordMessageAction`), and search. Pure: no zod, no I/O,
 // no framework imports. Callers perform their own TRUSTED database
 // lookups (channel record, the caller's chapter membership, and — only
 // for ROLE_GATED channels — the caller's effective permissions) and feed
@@ -877,7 +877,7 @@ export type { OpsNudgeModule, OpsNudgeModuleKey } from "./ops-nudges";
 // ── Poll vote rules ──────────────────────────────────────────────────────────
 // Shared by the two paths that accept a vote, which are NOT the same code path
 // and cannot be merged into one: `PollService.vote` writes `poll_votes` keyed by
-// a numeric `option_index`, while `ChatService.recordMessageAction` writes
+// a numeric `option_index`, while `ChatReactionService.recordMessageAction` writes
 // `chat_message_actions` with a string `payload.option_id`. Two storage shapes,
 // two encodings, one set of rules.
 //

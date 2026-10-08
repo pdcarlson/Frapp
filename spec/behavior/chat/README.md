@@ -106,7 +106,7 @@ A message that would take too long to format renders as its raw text too, decide
 - Multiple distinct reactions per message. Each reaction tracks the count and the list of users who reacted.
 - A user can add the same emoji only once per message. Adding it again removes the reaction (toggle).
 - Reactions are rows in `chat_message_actions` whose `action_type` is `reaction:<emoji>` (`REACTION_ACTION_PREFIX` in `@repo/chat-core`), so the table's unique `(message_id, user_id, action_type)` index is what allows one of each emoji per member. Clients read them directly under RLS and receive new ones over Realtime. The older `message_reactions` table and its `POST|GET /v1/channels/messages/{messageId}/reactions` routes are still served, but no client reads them; retiring them is #879.
-- **Hot-path idempotency (`ChatService.recordMessageAction`).** Per-user actions on the hot path are written to `chat_message_actions`, deduped by the DB unique index `(message_id, user_id, action_type)`. The write is **atomic** — a single insert, with a unique-violation (`23505`) treated as a successful dedup (`deduplicated: true`), never a read-then-insert TOCTOU and never a 5xx. Concurrent identical reactions therefore yield exactly one row.
+- **Hot-path idempotency (`ChatReactionService.recordMessageAction`).** Per-user actions on the hot path are written to `chat_message_actions`, deduped by the DB unique index `(message_id, user_id, action_type)`. The write is **atomic** — a single insert, with a unique-violation (`23505`) treated as a successful dedup (`deduplicated: true`), never a read-then-insert TOCTOU and never a 5xx. Concurrent identical reactions therefore yield exactly one row.
 
 **File and image uploads:**
 

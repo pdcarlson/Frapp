@@ -37,7 +37,7 @@ A `points`, `task`, `event`, `hours`, `rush`, or `system_audit` card asserts tha
 
 ## Vote-change (UPSERT semantics)
 
-Poll votes are written to `chat_message_actions` via `POST /v1/channels/messages/:messageId/actions` (`ChatService.recordMessageAction`). Every user has **at most one** row with `action_type='vote'` per poll message (the dedupe unique index `(message_id, user_id, action_type)` is retained). Switching options is an upsert in effect, not in SQL: the insert raises the dedupe unique violation, which `recordMessageAction` catches and turns into an update of `payload.option_id` (and `created_at`) in place and returns a distinct response shape (`updated: true`) so the optimistic client can replay the tally. Emoji reactions (`action_type='reaction:<emoji>'`) keep the unique-violation → dedup path unchanged (one reaction per user per emoji, toggle to remove).
+Poll votes are written to `chat_message_actions` via `POST /v1/channels/messages/:messageId/actions` (`ChatReactionService.recordMessageAction`). Every user has **at most one** row with `action_type='vote'` per poll message (the dedupe unique index `(message_id, user_id, action_type)` is retained). Switching options is an upsert in effect, not in SQL: the insert raises the dedupe unique violation, which `recordMessageAction` catches and turns into an update of `payload.option_id` (and `created_at`) in place and returns a distinct response shape (`updated: true`) so the optimistic client can replay the tally. Emoji reactions (`action_type='reaction:<emoji>'`) keep the unique-violation → dedup path unchanged (one reaction per user per emoji, toggle to remove).
 
 ## Rich-message renderer registry
 
