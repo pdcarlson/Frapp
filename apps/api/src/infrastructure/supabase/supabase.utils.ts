@@ -25,6 +25,19 @@ export function escapeLikePattern(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
+/**
+ * Copies a row without the named columns: the one way a repository drops a
+ * column from a row before it leaves the data layer (a disclosure boundary,
+ * see `stripBookmarkRow`). The row is copied, never mutated in place, and a
+ * listed key the row does not carry is a no-op. `T` is the caller's claim about
+ * what remains, so name it at the call site when the input is untyped.
+ */
+export function omitColumns<T>(row: object, columns: readonly string[]): T {
+  const rest: Record<string, unknown> = { ...row };
+  for (const column of columns) delete rest[column];
+  return rest as T;
+}
+
 /** The shape every PostgREST query resolves to, narrowed to what paging needs. */
 export interface PagedQueryResult<T> {
   data: T[] | null;
