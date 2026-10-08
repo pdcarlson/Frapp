@@ -5,6 +5,7 @@ import type { IChatMemberBlockRepository } from '#domain/repositories/chat-moder
 import type { ChatMemberBlockRef } from '#domain/entities/chat-moderation.entity';
 import { chunkIds } from '#domain/utils/chunk-ids';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { omitColumns } from '../supabase.utils';
 
 /**
  * Per-chapter member block list (#2257).
@@ -160,7 +161,5 @@ export class SupabaseChatMemberBlockRepository implements IChatMemberBlockReposi
  * say it is not there.
  */
 function stripBlockRow(row: Record<string, unknown>): ChatMemberBlockRef {
-  const rest = { ...row };
-  delete (rest as { blocker_user_id?: unknown }).blocker_user_id;
-  return rest as unknown as ChatMemberBlockRef;
+  return omitColumns<ChatMemberBlockRef>(row, ['blocker_user_id']);
 }
