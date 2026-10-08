@@ -47,7 +47,8 @@ export class EventService {
    * who can `PATCH`/`DELETE` any event but doesn't hold the specific targeted
    * role would lose read access to events they are authorized to manage — an
    * authorization gap in the wrong direction. `viewerId` is omitted by every
-   * internal caller (`update`/`delete`/series ops) — those routes are already
+   * internal caller (`update`, which also hands the row it reads to
+   * `EventSeriesService` for a series edit) — those routes are already
    * gated on `events:update`/`events:delete`, a stronger authorization than
    * read visibility, so they must not be narrowed by it. Only the read-only
    * routes (`list`/`getOne`/`getIcs`) pass a viewer.
@@ -166,7 +167,8 @@ export class EventService {
     // semantics and is deliberately allowed through.
     //
     // Either chat key alone is refused, not just the pair. Neither half posts
-    // a card on its own today (the mismatch is warned about below), but
+    // a card on its own today (the mismatch is warned about in
+    // `EventAnnouncementService.tryPostEventCard`), but
     // accepting one piecemeal would make the guard depend on which key a
     // caller happened to omit.
     if (
@@ -225,8 +227,9 @@ export class EventService {
     input: UpdateEventInput,
     scope: EventMutationScope = 'instance',
   ): Promise<Event> {
+    let existing: Event | null = null;
     if (input.start_time || input.end_time) {
-      const existing = await this.findById(id, chapterId);
+      existing = await this.findById(id, chapterId);
       const startTime = input.start_time ?? existing.start_time;
       const endTime = input.end_time ?? existing.end_time;
 
@@ -243,7 +246,9 @@ export class EventService {
     }
 
     if (scope === 'series') {
-      return this.series.updateSeries(id, chapterId, input);
+      // Hand on the row already read rather than reading it twice.
+      const target = existing ?? (await this.findById(id, chapterId));
+      return this.series.updateSeries(target, chapterId, input);
     }
 
     const updated = await this.eventRepo.update(id, chapterId, {

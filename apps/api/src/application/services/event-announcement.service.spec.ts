@@ -105,6 +105,18 @@ describe('EventAnnouncementService', () => {
       expect(result).toEqual(baseEvent);
     });
 
+    it('should not fail if notification throws on update', async () => {
+      const moved = { ...baseEvent, location: 'New Location' };
+      mockEventRepo.update.mockResolvedValue(moved);
+      mockNotificationService.notifyChapter.mockRejectedValue(
+        new Error('push failed'),
+      );
+
+      await expect(
+        service.update('evt-1', 'ch-1', { location: 'New Location' }),
+      ).resolves.toEqual(moved);
+    });
+
     // A role-targeted event's "New Event"/"Event Updated" push must not name
     // it to a member who now correctly 404s reading the event itself (#1463)
     // — only members whose role_ids intersect required_role_ids are notified.

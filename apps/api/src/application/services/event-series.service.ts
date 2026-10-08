@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Inject, Injectable, BadRequestException } from '@nestjs/common';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
 import { Event } from '#domain/entities/event.entity';
@@ -21,8 +16,9 @@ import type { UpdateEventInput } from './event-input';
  * patched, because they determine *when* the generated occurrences fall.
  *
  * Compared by value, not by presence: a client that PATCHes the whole event
- * object back (which the web editor does — `event-editor-dialog.tsx:396` always
- * sends `recurrence_rule`) would otherwise trigger a destructive regenerate on
+ * object back (which the web editor does — its save payload in
+ * `event-editor-dialog.tsx` carries `recurrence_rule` whenever the event has
+ * one) would otherwise trigger a destructive regenerate on
  * every save. Regeneration deletes rows, and `event_attendance` is
  * `on delete cascade`, so a needless regenerate is a data-loss bug.
  */
@@ -66,17 +62,6 @@ export class EventSeriesService {
   ) {}
 
   /**
-   * The internal (viewer-less) event read: series operations are reached only
-   * from routes already gated on `events:update` / `events:delete`, so they are
-   * never narrowed by role-targeted read visibility.
-   */
-  private async findEvent(id: string, chapterId: string): Promise<Event> {
-    const event = await this.eventRepo.findById(id, chapterId);
-    if (!event) throw new NotFoundException('Event not found');
-    return event;
-  }
-
-  /**
    * Materialize the generated occurrences of a recurring parent.
    *
    * `skipBefore`, when supplied, skips occurrences at or before that instant
@@ -88,11 +73,20 @@ export class EventSeriesService {
     parent: Event,
     skipBefore?: number,
   ): Promise<void> {
-    const payloads = this.buildOccurrencePayloads(parent, skipBefore);
-    // Concurrent rather than one awaited create per date, so a long series is
-    // not N sequential round-trips. `Promise.all`, not `allSettled`, so a failed
-    // insert fails the request instead of reporting success. It is not atomic:
-    // the parent and the inserts that landed stay written (#3235).
+    await this.insertOccurrences(
+      this.buildOccurrencePayloads(parent, skipBefore),
+    );
+  }
+
+  /**
+   * Write a batch of built occurrence rows: creation and both regenerate paths
+   * go through here. Concurrent rather than one awaited create per date, so a
+   * long series is not N sequential round-trips. `Promise.all`, not
+   * `allSettled`, so a failed insert fails the request instead of reporting
+   * success. It is not atomic: the parent and the inserts that landed stay
+   * written (#3235).
+   */
+  private async insertOccurrences(payloads: Partial<Event>[]): Promise<void> {
     await Promise.all(
       payloads.map((payload) => this.eventRepo.create(payload)),
     );
@@ -264,11 +258,10 @@ export class EventSeriesService {
    * occurrence. Past occurrences are never in the write set.
    */
   async updateSeries(
-    id: string,
+    target: Event,
     chapterId: string,
     input: UpdateEventInput,
   ): Promise<Event> {
-    const target = await this.findEvent(id, chapterId);
     const parent = await this.resolveSeriesParent(target, chapterId);
 
     // A series edit issued against a *child* carries that child's times, not the
@@ -404,9 +397,7 @@ export class EventSeriesService {
         future.map((child) => child.id),
         chapterId,
       );
-      await Promise.all(
-        replacements.map((payload) => this.eventRepo.create(payload)),
-      );
+      await this.insertOccurrences(replacements);
     } else {
       const propagate = propagatableFields(normalized);
       if (Object.keys(propagate).length > 0) {
@@ -560,9 +551,7 @@ export class EventSeriesService {
         rest.map((child) => child.id),
         chapterId,
       );
-      await Promise.all(
-        replacements.map((payload) => this.eventRepo.create(payload)),
-      );
+      await this.insertOccurrences(replacements);
     } else if (rest.length > 0) {
       // No regeneration, so the survivors keep their own dates — but they must
       // be re-pointed at the new head, or they would still hang off the row

@@ -11,9 +11,11 @@ import {
 describe('EventSeriesService', () => {
   let service: EventServiceFixture['service'];
   let mockEventRepo: EventServiceFixture['mockEventRepo'];
+  let mockNotificationService: EventServiceFixture['mockNotificationService'];
 
   beforeEach(async () => {
-    ({ service, mockEventRepo } = await createEventServiceFixture());
+    ({ service, mockEventRepo, mockNotificationService } =
+      await createEventServiceFixture());
   });
 
   // ── Recurring Instance Generation ───────────────────────────────────
@@ -945,6 +947,78 @@ describe('EventSeriesService', () => {
             new Date(payload.end_time as string).getTime(),
           ).toBeGreaterThan(new Date(payload.start_time as string).getTime());
         }
+      });
+    });
+
+    // The "Event Updated" push crosses from EventSeriesService into
+    // EventAnnouncementService (#3270), so both series paths assert it lands,
+    // and on the row that now heads the series.
+    describe('series update announcements', () => {
+      it('announces a started-head edit on the new head, not the retired one', async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mergeUpdate([parent, ...wholeSeries]);
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { location: 'Chapter House' },
+          'series',
+        );
+
+        expect(mockNotificationService.notifyChapter).toHaveBeenCalledWith(
+          'ch-1',
+          expect.objectContaining({
+            title: 'Event Updated',
+            data: { target: { screen: 'events', eventId: 'child-future-1' } },
+          }),
+        );
+      });
+
+      it('announces an upcoming-head edit on the head', async () => {
+        const upcomingParent: Event = {
+          ...parent,
+          start_time: '2026-04-01T18:00:00.000Z',
+          end_time: '2026-04-01T19:00:00.000Z',
+        };
+        mockEventRepo.findById.mockResolvedValue(upcomingParent);
+        mockEventRepo.findChildren.mockResolvedValue([]);
+        mergeUpdate([upcomingParent]);
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { location: 'Chapter House' },
+          'series',
+        );
+
+        expect(mockNotificationService.notifyChapter).toHaveBeenCalledWith(
+          'ch-1',
+          expect.objectContaining({
+            title: 'Event Updated',
+            data: { target: { screen: 'events', eventId: 'parent-1' } },
+          }),
+        );
+      });
+
+      it('reads the addressed row once when a series edit carries times', async () => {
+        const upcomingParent: Event = {
+          ...parent,
+          start_time: '2026-04-01T18:00:00.000Z',
+          end_time: '2026-04-01T19:00:00.000Z',
+        };
+        mockEventRepo.findById.mockResolvedValue(upcomingParent);
+        mockEventRepo.findChildren.mockResolvedValue([]);
+        mergeUpdate([upcomingParent]);
+
+        await service.update(
+          'parent-1',
+          'ch-1',
+          { end_time: '2026-04-01T20:00:00.000Z' },
+          'series',
+        );
+
+        expect(mockEventRepo.findById).toHaveBeenCalledTimes(1);
       });
     });
 

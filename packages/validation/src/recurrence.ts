@@ -9,7 +9,7 @@
  */
 
 /**
- * The only rules `EventService` can generate a series from. A value outside
+ * The only rules `EventSeriesService` can generate a series from. A value outside
  * this list is rejected with a 400 by the event DTOs; `null` is separately
  * allowed and clears a series.
  */

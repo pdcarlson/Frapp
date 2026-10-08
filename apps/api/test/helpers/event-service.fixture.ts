@@ -91,8 +91,6 @@ export async function createEventServiceFixture() {
 
   return {
     service: module.get(EventService),
-    series: module.get(EventSeriesService),
-    announcements: module.get(EventAnnouncementService),
     mockEventRepo,
     mockNotificationService,
     mockUserRepo,

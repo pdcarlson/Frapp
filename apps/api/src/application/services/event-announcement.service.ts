@@ -41,7 +41,14 @@ export class EventAnnouncementService {
         category: 'events',
         data: { target: { screen: 'events', eventId: event.id } },
       });
-    } catch {}
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Failed to send the New Event push (event ${event.id}, chapter ${chapterId})`,
+        error,
+      );
+    }
   }
 
   /**
@@ -160,7 +167,14 @@ export class EventAnnouncementService {
         category: 'events',
         data: { target: { screen: 'events', eventId: updated.id } },
       });
-    } catch {}
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Failed to send the Event Updated push (event ${updated.id}, chapter ${chapterId})`,
+        error,
+      );
+    }
   }
 
   /**
