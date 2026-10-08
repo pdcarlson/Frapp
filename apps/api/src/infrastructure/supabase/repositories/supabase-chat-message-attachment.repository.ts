@@ -7,6 +7,7 @@ import type {
 } from '#domain/repositories/chat.repository.interface';
 import { ChatMessageAttachment } from '#domain/entities/chat.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { omitColumns } from '../supabase.utils';
 
 /**
  * `chat_message_attachments` reads and writes.
@@ -178,10 +179,8 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
  * property that actually matters.
  */
 function stripAttachmentRow(row: ChatMessageAttachment): ChatMessageAttachment {
-  const { ...rest } = row as ChatMessageAttachment & {
-    chat_channels?: unknown;
-  };
-  delete (rest as { chat_channels?: unknown }).chat_channels;
-  delete (rest as { external_url?: unknown }).external_url;
-  return rest;
+  return omitColumns<ChatMessageAttachment>(row, [
+    'chat_channels',
+    'external_url',
+  ]);
 }
