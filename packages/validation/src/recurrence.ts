@@ -32,7 +32,7 @@ export const RECURRENCE_RULE_LABELS: Record<RecurrenceRule, string> = {
 /**
  * How many *child* occurrences the API materializes for a rule.
  *
- * These are children only — `EventService.buildOccurrencePayloads` loops from
+ * These are children only — `EventSeriesService.buildOccurrencePayloads` loops from
  * `i = 1`, so the parent row is itself the series' first occurrence and is not
  * counted here. That distinction is the whole reason `toRRuleValue` adds one below.
  */
@@ -63,7 +63,7 @@ export function isRecurrenceRule(value: unknown): value is RecurrenceRule {
  * Number of generated child occurrences for a rule, or `null` when the value is
  * not a rule this app generates from.
  *
- * `EventService.occurrenceCountFor` delegates here so the series the API
+ * `EventSeriesService.occurrenceCountFor` delegates here so the series the API
  * *materializes* and the series an exported `.ics` *describes* cannot drift
  * apart — changing one number now changes both.
  */
