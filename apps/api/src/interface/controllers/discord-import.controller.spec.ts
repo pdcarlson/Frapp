@@ -2,6 +2,8 @@ import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { DiscordImportController } from './discord-import.controller';
 import { DiscordImportService } from '../../application/services/discord-import.service';
+import { DiscordImportChannelMappingService } from '../../application/services/discord-import-channel-mapping.service';
+import { DiscordImportRoleMappingService } from '../../application/services/discord-import-role-mapping.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SystemPermissions } from '#domain/constants/permissions';
 
@@ -18,16 +20,16 @@ const IMPORT_ID = '44444444-4444-4444-8444-444444444444';
  */
 describe('DiscordImportController — roles:manage is resolved for the caller (#2818)', () => {
   let controller: DiscordImportController;
-  let importService: {
-    setRoleMapping: jest.Mock;
-    start: jest.Mock;
-  };
+  let importService: { start: jest.Mock };
+  let roleMapping: { setRoleMapping: jest.Mock };
   let rbacService: { memberHasAnyPermission: jest.Mock };
 
   beforeEach(async () => {
     importService = {
-      setRoleMapping: jest.fn(async () => ({ id: IMPORT_ID })),
       start: jest.fn(async () => ({ id: IMPORT_ID })),
+    };
+    roleMapping = {
+      setRoleMapping: jest.fn(async () => ({ id: IMPORT_ID })),
     };
     rbacService = { memberHasAnyPermission: jest.fn() };
 
@@ -35,6 +37,8 @@ describe('DiscordImportController — roles:manage is resolved for the caller (#
       controllers: [DiscordImportController],
       providers: [
         { provide: DiscordImportService, useValue: importService },
+        { provide: DiscordImportChannelMappingService, useValue: {} },
+        { provide: DiscordImportRoleMappingService, useValue: roleMapping },
         { provide: RbacService, useValue: rbacService },
       ],
     }).compile();
@@ -61,7 +65,7 @@ describe('DiscordImportController — roles:manage is resolved for the caller (#
         USER,
         [SystemPermissions.ROLES_MANAGE],
       );
-      expect(importService.setRoleMapping).toHaveBeenCalledWith(
+      expect(roleMapping.setRoleMapping).toHaveBeenCalledWith(
         IMPORT_ID,
         CHAPTER,
         roles,
@@ -144,12 +148,16 @@ describe('DiscordImportController — no route returns the worker lease (#2860)'
             create: jest.fn(async () => leakyRow),
             list: jest.fn(async () => [withProgress]),
             get: jest.fn(async () => withProgress),
-            setRoleMapping: jest.fn(async () => leakyRow),
             start: jest.fn(async () => leakyRow),
             cancel: jest.fn(async () => leakyRow),
             clear: jest.fn(async () => leakyRow),
             requestPurge: jest.fn(async () => leakyRow),
           },
+        },
+        { provide: DiscordImportChannelMappingService, useValue: {} },
+        {
+          provide: DiscordImportRoleMappingService,
+          useValue: { setRoleMapping: jest.fn(async () => leakyRow) },
         },
         {
           provide: RbacService,
