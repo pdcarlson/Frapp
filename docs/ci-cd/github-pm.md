@@ -2,24 +2,13 @@
 
 Canonical, version-controlled design + policy for Frapp's project management on **GitHub Issues**
 (`pdcarlson/Frapp`), per **ADR-16** and its GitHub-migration amendment ([`spec/architecture/adr/adr-16.md`](../../spec/architecture/adr/adr-16.md)).
-GitHub Issues is the source of truth for planning and work status. Linear is **retired** — the
-decision record, viability probes, and the FRA-→#N migration mapping live in
-[issue #680](https://github.com/pdcarlson/Frapp/issues/680).
+GitHub Issues is the source of truth for planning and work status.
 
-> **Status: live** (migrated 2026-08-08). Every open Linear issue either already had a GitHub twin
-> (the June import) or was recreated as a GitHub issue during the migration; open issues carry
-> priority labels. The Linear workspace stays readable until the owner deletes it; no repo
-> contract reads or writes it. (Caveat until the owner finishes the wind-down: #680's checklist
-> doesn't yet record the Linear GitHub integration as disconnected, and while it is connected a
-> Linear-side change can sync onto a GitHub issue. The legacy Routines are resolved: none has a
-> Linear-derived name or a Linear connector, and each carries a current prompt; `list_triggers`,
-> 2026-09-22.)
->
-> **Why the migration:** Linear's MCP write tools (`save_issue` etc.) required a manual permission
-> approval in every Claude Code cloud session, and three config-level fixes (#667, #669, #676)
-> failed to stop the prompts. The GitHub MCP server is pre-approved by the cloud harness
-> (`mcp__github__*` in its `--allowed-tools`), so agents can file, label, and close issues
-> unattended. Full evidence trail: #680.
+> **Linear retired 2026-08-08**, because its MCP writes prompted in every cloud session; evidence and
+> the FRA-→#N mapping are in [#680](https://github.com/pdcarlson/Frapp/issues/680). #680 closed on
+> 2026-09-30 with its owner wind-down untracked, not done: nothing records Linear's GitHub
+> integration as disconnected, so disconnect it before any Linear-side cleanup, or a Linear close can
+> sync onto and close a real GitHub issue.
 
 ---
 
@@ -592,22 +581,9 @@ Unchanged in substance from the Linear era. The backlog routines split writes in
 
 ## No platform caps
 
-GitHub Issues has no active-issue cap, so the Linear Free-tier 250-active accounting is gone. The
-backlog stays lean **by choice**: the curator's conservative net-new budget and the triage
-routine's grooming are quality goals (so `/next` ranks real work first), not cap avoidance.
-
-## Migration record (2026-08-08)
-
-- All 206 open GitHub issues predating the migration were 1:1 title-matched twins of open Linear
-  issues (the June import + the GitHub→Linear sync). The 60 open Linear-born issues without twins
-  were recreated as GitHub issues with their Linear bodies and a provenance footer; the FRA-→#N
-  mapping table lives in **#680**.
-- Twin bodies were **not** rewritten from Linear — a body edited by the curator in Linear may be
-  newer than its GitHub twin. An absent Agent brief reads as `depth:deep`; the triage routine
-  backfills briefs on `suggestion`-owned issues over time.
-- Owner wind-down checklist (also in #680): disconnect Linear's GitHub integration **before any
-  Linear-side cleanup** (close-sync could otherwise close real GitHub issues), then remove the
-  Linear connector from claude.ai, then archive/delete the workspace at leisure.
+GitHub Issues has no active-issue cap. The backlog stays lean **by choice**: the curator's
+conservative net-new budget and the triage routine's grooming are quality goals (so `/next` ranks
+real work first), not cap avoidance.
 
 ## Sources
 
