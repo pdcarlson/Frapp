@@ -1,3 +1,5 @@
+/* The four rules at the top of `app/page.tsx` bind everything this file draws. */
+
 /*
  * The rules both product frames follow (static JSX, one labelled `role="img"`,
  * board-transcribed internals, bounded by `spec/behavior/`) open `chat-frame.tsx`.

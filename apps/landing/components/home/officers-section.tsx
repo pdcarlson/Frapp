@@ -1,5 +1,7 @@
 import { EYEBROW, PROOF_BODY, SECTION_GAP, SHELL } from "./styles";
 
+/* The four rules at the top of `app/page.tsx` bind everything this file draws. */
+
 const officers = [
   {
     role: "President",

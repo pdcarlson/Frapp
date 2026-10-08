@@ -8,6 +8,8 @@ import {
   SHELL,
 } from "./styles";
 
+/* The four rules at the top of `app/page.tsx` bind everything this file draws. */
+
 /* 1 · Hero (D9, HeroB.dc.html). */
 export function HeroSection({
   signupUrl,

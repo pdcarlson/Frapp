@@ -3,6 +3,8 @@ import { FrappLockup } from "../frapp-lockup";
 import { TrackedCta } from "../tracked-cta";
 import { BUTTON_PRIMARY_NAV, LINK_QUIET, SHELL } from "./styles";
 
+/* The four rules at the top of `app/page.tsx` bind everything this file draws. */
+
 export function SiteHeader({
   signupUrl,
   loginUrl,

@@ -3,6 +3,8 @@ import { SignetCrest } from "../signet-crest";
 import { TrackedCta } from "../tracked-cta";
 import { LINK_QUIET, SHELL } from "./styles";
 
+/* The four rules at the top of `app/page.tsx` bind everything this file draws. */
+
 /*
  * Eight links in the board's order, with the one tracked control sitting third
  * where the board puts it. Split around it rather than hoisted to the front: on

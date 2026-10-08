@@ -1,6 +1,8 @@
 import { RevealOnView } from "../reveal-on-view";
 import { type StaggerStyle } from "./styles";
 
+/* The four rules at the top of `app/page.tsx` bind everything this file draws. */
+
 /*
  * ── The two product frames ───────────────────────────────────────────────────
  *

@@ -26,7 +26,7 @@ const pageSource = readFileSync(join(landingRoot, "app/page.tsx"), "utf8");
  */
 const homeDir = join(landingRoot, "components/home");
 const homeSources = Object.fromEntries(
-  readdirSync(homeDir)
+  readdirSync(homeDir, { recursive: true, encoding: "utf8" })
     .filter((file) => /\.tsx?$/.test(file) && !/\.spec\.tsx?$/.test(file))
     .sort()
     .map((file) => [file, readFileSync(join(homeDir, file), "utf8")]),
@@ -175,11 +175,57 @@ describe("landing page structure", () => {
     expect(renderedAll).not.toContain("showcase-mobile");
   });
 
+  it("renders every section and frame it keeps a file for", () => {
+    // The copy rules above read `components/home/` from disk, so a section that
+    // drops off the page would still satisfy them. Every component a file there
+    // exports is either rendered by `page.tsx` or by another file there.
+    const exported = Object.values(homeSources).flatMap((source) =>
+      [...source.matchAll(/^export function (\w+)/gm)].map((match) => String(match[1])),
+    );
+    expect(exported.length).toBeGreaterThan(0);
+    for (const name of exported) {
+      expect(
+        renderedAll,
+        `${name} is exported from components/home/ but nothing renders it`,
+      ).toMatch(new RegExp(`<${name}\\b`));
+    }
+    for (const section of [
+      "SiteHeader",
+      "HeroSection",
+      "OfficersSection",
+      "ChatProofSection",
+      "EventsProofSection",
+      "PricingSection",
+      "ClosingSection",
+      "SiteFooter",
+    ]) {
+      expect(renderedPage, `page.tsx no longer renders ${section}`).toMatch(
+        new RegExp(`<${section}\\b`),
+      );
+    }
+  });
+
+  it("points every section file at the page's four rules", () => {
+    // The rules live once, at the top of `page.tsx`; two of them (sentence case,
+    // only what ships) are review rules no assertion here can enforce, so the
+    // file an editor actually opens has to send them there.
+    for (const [file, source] of Object.entries(homeSources)) {
+      if (!file.endsWith(".tsx")) continue;
+      expect(source, `components/home/${file} lost its pointer to the rules`).toContain(
+        "The four rules at the top of `app/page.tsx` bind everything this file draws.",
+      );
+    }
+  });
+
   it("gives the hero H1, lead and primary CTA no entrance animation", () => {
-    // The hero is the first thing inside `main`.
+    // The hero is the first thing inside `main`, and nothing `page.tsx` puts
+    // around it, or ahead of it, may animate either.
     const main = renderedPage.slice(renderedPage.indexOf("<main"));
-    expect(main.indexOf("<HeroSection")).toBeGreaterThan(-1);
-    expect(main.indexOf("<HeroSection")).toBeLessThan(main.indexOf("<OfficersSection"));
+    const aboveOfficers = main.slice(0, main.indexOf("<OfficersSection"));
+    expect(main.indexOf("<OfficersSection")).toBeGreaterThan(-1);
+    expect(aboveOfficers).toMatch(/^<main\b[^>]*>\s*<HeroSection\b/);
+    expect(aboveOfficers).not.toContain("RevealOnView");
+    expect(aboveOfficers).not.toContain("reveal-item");
     const hero = withoutComments(homeSource("hero-section.tsx"));
     expect(hero).toContain("Run your chapter where it already talks.");
     expect(hero).not.toContain("RevealOnView");

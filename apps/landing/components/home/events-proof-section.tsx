@@ -12,6 +12,8 @@ import {
   type StaggerStyle,
 } from "./styles";
 
+/* The four rules at the top of `app/page.tsx` bind everything this file draws. */
+
 const eventsProof = [
   {
     title: "One check-in, everywhere.",
