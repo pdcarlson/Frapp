@@ -30,6 +30,17 @@ const loggerCall = (levels) =>
 /** A catch binding, a settled reason, or any `…Error` name: a throwable. */
 const THROWABLE_NAME = '/^(err|error|e|reason|[A-Za-z][A-Za-z0-9]*Error)$/';
 
+/**
+ * A second argument the logger prints as text rather than inspects: a string,
+ * a template, a context object, JSON, or an Error's `.stack`.
+ */
+const NOT_RENDERED =
+  ":not(MemberExpression[property.name='stack'], ObjectExpression, TemplateLiteral, Literal, CallExpression[callee.object.name='JSON'])";
+
+/** A coercion's false branch that is anything but a constant string. */
+const NON_CONSTANT_ALTERNATE =
+  ":not([alternate.type='Literal'], [alternate.type='TemplateLiteral'][alternate.expressions.length=0])";
+
 const THROWABLE_EXTRA_MESSAGE =
   "Don't pass a throwable as Logger.error/warn's extra argument: Nest's ConsoleLogger util.inspects it, which prints a PostgREST error's `details` (row values) into plaintext logs (#1669). Use logThrowable() from infrastructure/observability/log-throwable.";
 
@@ -103,7 +114,8 @@ export default tseslint.config(
   // exempt files are its repository and the compile-only insert-type check,
   // which performs no runtime write. Adding a file here is not the fix for a
   // new inline writer. Not seen: a table name reached through a variable, or
-  // a raw-SQL insert through an RPC.
+  // a name built by concatenation or interpolation, or a raw-SQL insert
+  // through an RPC.
   {
     files: ['src/**/*.ts'],
     ignores: [
@@ -125,30 +137,29 @@ export default tseslint.config(
       ],
     },
   },
-  // How a caught throwable reaches a log line (#1669, #2114, #2460).
-  // `log-throwable.ts` is the one place that does it by hand. The coercion ban
-  // also exempts `src/domain/`, which may not import observability
-  // (`api-domain-is-innermost`) and whose one coercion formats JSON.parse's
-  // SyntaxError, always an Error.
-  //
-  // The coercion selector can't check that both branches name the same value,
-  // so it flags any `instanceof Error ? ….stack|message : String(…)|name`
-  // ternary. That is deliberately wider than the source scan it replaced,
-  // never narrower.
+  // How a caught throwable reaches a log line (#1669, #2114, #2460). Each
+  // selector set is wider than the source scan it replaced, never narrower:
+  // that scan matched argument text, so a selector here matches the shape
+  // anywhere inside the second argument rather than only at its top.
+  // `eslint-bans.spec.ts` lints every shape the scan pinned and fails if one
+  // stops being reported.
   {
     files: ['src/**/*.ts'],
-    ignores: [
-      '**/*.spec.ts',
-      'src/infrastructure/observability/log-throwable.ts',
-    ],
+    ignores: ['**/*.spec.ts'],
     rules: {
       'frapp/no-throwable-logger-extra': [
         'error',
         ...[
           `${loggerCall('error|warn')} > Identifier.arguments:nth-child(2)[name=${THROWABLE_NAME}]`,
+          // An allSettled reason, bare, optional-chained, or as a fallback
+          // (`c ? 'x' : r.reason`, `r.reason.stack ?? r.reason`). Not when it
+          // is only the object of a further read, as in `r.reason.message`.
           `${loggerCall('error|warn')} > MemberExpression.arguments:nth-child(2)[property.name='reason']`,
-          `${loggerCall('error|warn')} > TSAsExpression.arguments:nth-child(2)[typeAnnotation.typeName.name='Error']`,
-          `${loggerCall('error|warn')} > :not(MemberExpression[property.name='stack'], ObjectExpression, TemplateLiteral, Literal, CallExpression[callee.object.name='JSON']).arguments:nth-child(2) TSAsExpression[typeAnnotation.typeName.name='Error']`,
+          `${loggerCall('error|warn')} > ${NOT_RENDERED}.arguments:nth-child(2) MemberExpression[property.name='reason']:not(.object)`,
+          // `as Error` in any type: `Error & { code?: string }` is the usual
+          // way to type-lie a PostgREST error into a logger.
+          `${loggerCall('error|warn')} > TSAsExpression.arguments:nth-child(2) TSTypeReference[typeName.name='Error']`,
+          `${loggerCall('error|warn')} > ${NOT_RENDERED}.arguments:nth-child(2) TSAsExpression TSTypeReference[typeName.name='Error']`,
           // `error instanceof Error ? error.stack : error` (#2114): the false
           // branch is the object itself. `: String(error)` is not this leak.
           `${loggerCall('error|warn')} > ConditionalExpression.arguments:nth-child(2) Identifier.alternate[name=/^(err|error|e|reason)$/]`,
@@ -167,19 +178,21 @@ export default tseslint.config(
       ],
     },
   },
+  // `src/domain/` is exempt: it may not import observability
+  // (`api-domain-is-innermost`), and its one coercion formats JSON.parse's
+  // SyntaxError, which is always an Error. The selector can't check that both
+  // branches name the same value, so it flags any `instanceof Error` ternary
+  // whose true branch reads `.stack` or `.message` and whose false branch is
+  // anything but a constant string.
   {
     files: ['src/**/*.ts'],
-    ignores: [
-      '**/*.spec.ts',
-      'src/domain/**',
-      'src/infrastructure/observability/log-throwable.ts',
-    ],
+    ignores: ['**/*.spec.ts', 'src/domain/**'],
     rules: {
       'frapp/no-hand-rolled-error-coercion': [
         'error',
         ...[
-          "ConditionalExpression[test.operator='instanceof'][test.right.name='Error'][consequent.property.name=/^(stack|message)$/]:matches([alternate.type='Identifier'], [alternate.type='MemberExpression'], [alternate.callee.name='String'])",
-          "ConditionalExpression[test.operator='instanceof'][test.right.name='Error'][consequent.operator='??'][consequent.left.property.name=/^(stack|message)$/]:matches([alternate.type='Identifier'], [alternate.type='MemberExpression'], [alternate.callee.name='String'])",
+          `ConditionalExpression[test.operator='instanceof'][test.right.name='Error'][consequent.property.name=/^(stack|message)$/]${NON_CONSTANT_ALTERNATE}`,
+          `ConditionalExpression[test.operator='instanceof'][test.right.name='Error'][consequent.operator='??'][consequent.left.property.name=/^(stack|message)$/]${NON_CONSTANT_ALTERNATE}`,
         ].map((selector) => ({
           selector,
           message:
