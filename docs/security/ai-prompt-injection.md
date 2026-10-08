@@ -70,7 +70,7 @@ assumptions.
 | Attacker | Reaches which vector | Cannot |
 | --- | --- | --- |
 | **Chapter member** (`members:view`, `backwork:upload`, `service:log`, `polls:create`) | Tool-result free text (own profile note, custom field values); chat messages | Upload a chapter document (`chapter_docs:upload`), post to `#announcements` (`announcements:post`), read another chapter |
-| **Alumnus** (`members:view` only) | Tool-result free text on their own row; posting confined to `#alumni` / DMs — **neither of which is in the corpus** | Everything a member cannot, plus points, event check-in and study hours. The weakest principal and, contrary to the usual assumption, **not** a corpus-write path |
+| **Alumnus** (`members:view`, `alumni:post`) | Tool-result free text on their own row; posting confined to `#alumni` (what `alumni:post` grants) / DMs — **neither of which is in the corpus** | Everything a member cannot, plus points, event check-in and study hours. The weakest principal and, contrary to the usual assumption, **not** a corpus-write path |
 | **VP / Secretary** (`members:view`, `polls:view_all`) | Nothing in the corpus beyond tool-result free text — neither holds `chapter_docs:upload` nor `announcements:post` | Upload documents, post announcements, read another chapter |
 | **Custom role with `chapter_docs:upload`** | Uploaded documents — the highest-volume vector | Cross-chapter anything |
 | **President** (`*`) | Every corpus surface, including `#announcements`, the highest-trust indexed one | Cross-chapter anything |
