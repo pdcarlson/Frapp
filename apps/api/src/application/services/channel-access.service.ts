@@ -138,9 +138,10 @@ function assertGrantNames(
 }
 
 /**
- * Single source of truth for chat channel-level authorization. Both the chat
- * hot path (`ChatService`) and the poll surface (`PollService`) authorize
- * through this service so the two cannot drift: every read / send / vote is
+ * Single source of truth for chat channel-level authorization. The chat hot
+ * path (`ChatService` for reads and sends, `ChatReactionService` for reactions
+ * and card votes) and the poll surface (`PollService`) authorize through this
+ * service so they cannot drift: every read / send / vote is
  * decided by the shared `canAccessChannel` predicate against the same
  * channel + membership + effective-permissions lookups.
  *

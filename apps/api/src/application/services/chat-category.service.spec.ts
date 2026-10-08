@@ -14,6 +14,42 @@ describe('ChatCategoryService', () => {
     ({ categories, mockCategoryRepo } = await createChatServiceFixture());
   });
 
+  describe('getCategories', () => {
+    it("lists the caller chapter's categories", async () => {
+      mockCategoryRepo.findByChapter.mockResolvedValue([]);
+
+      await categories.getCategories('ch-1');
+
+      expect(mockCategoryRepo.findByChapter).toHaveBeenCalledWith('ch-1');
+    });
+  });
+
+  describe('createCategory', () => {
+    it('defaults display_order to 0 when none is given', async () => {
+      await categories.createCategory({ chapter_id: 'ch-1', name: 'Rush' });
+
+      expect(mockCategoryRepo.create).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        name: 'Rush',
+        display_order: 0,
+      });
+    });
+
+    it('keeps an explicit display_order', async () => {
+      await categories.createCategory({
+        chapter_id: 'ch-1',
+        name: 'Rush',
+        display_order: 3,
+      });
+
+      expect(mockCategoryRepo.create).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        name: 'Rush',
+        display_order: 3,
+      });
+    });
+  });
+
   describe('deleteCategory', () => {
     const baseCategory = {
       id: 'cat-1',
@@ -28,7 +64,26 @@ describe('ChatCategoryService', () => {
       mockCategoryRepo.delete.mockResolvedValue();
 
       await categories.deleteCategory('cat-1', 'ch-1');
+      expect(mockCategoryRepo.findById).toHaveBeenCalledWith('cat-1', 'ch-1');
       expect(mockCategoryRepo.delete).toHaveBeenCalledWith('cat-1', 'ch-1');
+    });
+
+    // The repository filters on the chapter it is handed, so both the lookup
+    // and the write must carry the caller's chapter: a wrong one threaded
+    // through both would rename another chapter's category.
+    it('should scope both the lookup and the update to the caller chapter', async () => {
+      mockCategoryRepo.findById.mockResolvedValue(baseCategory);
+      mockCategoryRepo.update.mockResolvedValue({
+        ...baseCategory,
+        name: 'Renamed',
+      });
+
+      await categories.updateCategory('cat-1', 'ch-1', { name: 'Renamed' });
+
+      expect(mockCategoryRepo.findById).toHaveBeenCalledWith('cat-1', 'ch-1');
+      expect(mockCategoryRepo.update).toHaveBeenCalledWith('cat-1', 'ch-1', {
+        name: 'Renamed',
+      });
     });
 
     // chat_channels.category_id is ON DELETE SET NULL, so an unscoped delete
