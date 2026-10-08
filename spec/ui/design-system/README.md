@@ -161,7 +161,7 @@ A controller is subscription-gated only if `ChapterGuard` is in its guard chain 
 | --- | --- | --- |
 | `attendance` | 3 | `components/events/attendance-panel.tsx` · `components/chat/renderers/event-card.tsx` (check-in) |
 | `backwork` | 9 | `components/backwork/backwork-page.tsx` · `components/backwork/backwork-taxonomy-drawer.tsx` (department/professor edit, delete, merge; **not mirrored**) |
-| `chapter-document` | 6 | `components/documents/documents-page.tsx` |
+| `chapter-document` | 6 | `components/documents/documents-page.tsx` (notice) · `components/documents/upload-document-dialog.tsx` (upload) · `components/documents/document-row.tsx` (delete) · `components/documents/folder-rail.tsx` and `components/documents/folder-management.tsx` (folder create, rename, reorder, delete) |
 | `event` | 3 | `components/events/events-page.tsx` (both create triggers) · `components/events/event-editor-dialog.tsx` · `components/events/event-detail-sheet.tsx` (edit + delete) · the `/event` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 | `financial-invoice` | 3 (+1 exempt) | `components/billing/invoice-list.tsx` |
 | `points` | 1 | `app/(dashboard)/points/page.tsx` (trigger) · `components/points/points-adjustment-dialog.tsx` · the `/points` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
