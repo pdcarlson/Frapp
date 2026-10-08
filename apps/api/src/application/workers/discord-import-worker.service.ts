@@ -16,7 +16,7 @@ import {
   STORAGE_PROVIDER,
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
-import { MAX_ARCHIVE_EXPORT_PART_BYTES } from '@repo/validation';
+import { MAX_ARCHIVE_EXPORT_PART_BYTES } from '#domain/constants/discord-archive-limits';
 import {
   CHAT_ARCHIVE_BUCKET,
   archiveImportPrefix,
