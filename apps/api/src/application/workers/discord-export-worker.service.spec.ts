@@ -7,7 +7,7 @@ import {
 import {
   MAX_ARCHIVE_CHAPTER_BYTES,
   MAX_ARCHIVE_IMPORT_BYTES,
-} from '@repo/validation';
+} from '#domain/constants/discord-archive-limits';
 import {
   ArchiveQuotaExceededError,
   DISCORD_IMPORT_REPOSITORY,

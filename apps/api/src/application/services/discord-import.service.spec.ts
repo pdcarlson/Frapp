@@ -7,7 +7,7 @@ import {
   MAX_ARCHIVE_CHAPTER_BYTES,
   MAX_ARCHIVE_EXPORT_PART_BYTES,
   MAX_ARCHIVE_IMPORT_BYTES,
-} from '@repo/validation';
+} from '#domain/constants/discord-archive-limits';
 import { ArchiveQuotaExceededError } from '#domain/repositories/discord-import.repository.interface';
 import { isUnsafeStoragePath } from '#domain/utils/storage-path';
 import type { DiscordImport } from '#domain/entities/discord-import.entity';

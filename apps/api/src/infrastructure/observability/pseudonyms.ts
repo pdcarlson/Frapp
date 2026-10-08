@@ -2,7 +2,7 @@ import {
   hashChapterIdForAnalytics,
   hashIpForObservability,
   hashUserIdForAnalytics,
-} from '@repo/validation';
+} from '#domain/utils/analytics-keying';
 
 /**
  * The one place the API reads the observability salt.

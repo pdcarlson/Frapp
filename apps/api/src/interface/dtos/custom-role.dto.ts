@@ -10,11 +10,11 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ROLE_NAME_MAX_LENGTH } from '@repo/validation';
 import {
   POSITION_MAX,
   ROLE_KEY_MAX_LENGTH,
-  ROLE_NAME_MAX_LENGTH,
-} from '@repo/validation';
+} from '#domain/constants/field-limits';
 
 /**
  * A custom role persisted to `chapter_custom_roles` (Settings → Roles → Custom).

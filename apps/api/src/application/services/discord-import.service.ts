@@ -8,14 +8,16 @@ import {
 import { basename } from 'node:path';
 import {
   DISCORD_IMPORT_CLEARABLE_STATUSES,
-  MAX_ARCHIVE_CHAPTER_BYTES,
-  MAX_ARCHIVE_EXPORT_PART_BYTES,
-  MAX_ARCHIVE_IMPORT_BYTES,
   contentTypeByExtension,
   fileExtension,
   isAllowedUploadMime,
-  isWithinArchiveUploadSizeLimit,
 } from '@repo/validation';
+import {
+  MAX_ARCHIVE_CHAPTER_BYTES,
+  MAX_ARCHIVE_EXPORT_PART_BYTES,
+  MAX_ARCHIVE_IMPORT_BYTES,
+  isWithinArchiveUploadSizeLimit,
+} from '#domain/constants/discord-archive-limits';
 import { formatBytes } from '@repo/formatting';
 import {
   ArchiveQuotaExceededError,
