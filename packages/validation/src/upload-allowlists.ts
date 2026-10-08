@@ -33,9 +33,8 @@
  * **not** one number, and `supabase/config.toml`'s `[storage] file_size_limit`
  * is not `MAX_UPLOAD_BYTES`: it caps the **local stack** and overrides a higher
  * per-bucket column there. What the hosted projects enforce per object is not
- * measured here, and so is not claimed. See `MAX_ARCHIVE_UPLOAD_BYTES` below
- * for the one kind deliberately held off this cap; the per-bucket values are
- * owned by
+ * measured here, and so is not claimed. See the `archive` kind below for the
+ * one kind deliberately held off this cap; the per-bucket values are owned by
  * `spec/architecture/README.md` § 7 (Storage).
  *
  * ## What the bucket allowlist actually enforces
@@ -84,8 +83,6 @@
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 export const MAX_UPLOAD_LABEL = "25 MB";
 
-export type UploadKind = "image" | "proof" | "document" | "archive";
-
 /**
  * The `archive` kind is NOT a member-upload surface.
  *
@@ -100,64 +97,12 @@ export type UploadKind = "image" | "proof" | "document" | "archive";
  * widening those to cover a one-off import would raise the ceiling on every
  * member upload in the product, which is exactly the trade that migration
  * rejected. SVG stays absent here too — an archive is not a reason to make an
- * exception for script-bearing markup.
+ * exception for script-bearing markup. Its size ceilings are the API's alone
+ * (`apps/api/src/domain/constants/discord-archive-limits.ts`, #3268): no
+ * client checks an archive's size.
  */
-export const MAX_ARCHIVE_UPLOAD_BYTES = 100 * 1024 * 1024;
 
-/**
- * Ceiling on one uploaded DiscordChatExporter JSON partition.
- *
- * Far below the bucket cap, and deliberately: the importer parses a whole
- * partition into memory with `JSON.parse`, on an API instance sized in hundreds
- * of megabytes that is also serving live chat. 8 MiB of JSON is roughly 25 MB of
- * heap and a sub-100ms synchronous parse; a 100 MB partition is neither.
- *
- * DiscordChatExporter's own `--partition` flag is what keeps exports under this,
- * so the admin-facing error names that flag rather than a byte count.
- */
-export const MAX_ARCHIVE_EXPORT_PART_BYTES = 8 * 1024 * 1024;
-
-/**
- * Ceiling on the total bytes one Discord import may register.
- *
- * The two constants above bound a single OBJECT. Neither bounds an import, and
- * nothing else did either (#1243): a `channels:manage` holder could loop
- * create-import → mint 100 upload URLs → repeat, and `CustomThrottlerGuard`
- * bounds request rate, not bytes.
- *
- * The number comes from what a legitimate import actually weighs. A
- * DiscordChatExporter run over an active chapter's server with `--media` is
- * plausibly single-digit GB, so 20 GiB clears any real export by a wide margin
- * and only ever catches a runaway or a deliberate loop.
- *
- * Binary, like every other ceiling in this file — 20 GiB is ~21.5 GB decimal.
- * Admin-facing messages render it through `formatBytes`, which labels binary
- * units the way a file browser does, so the copy reads "20 GB" and the constant
- * stays exact. Do not "correct" one to match the other.
- *
- * **This is not a capacity plan for the hosted project.** It is an abuse
- * ceiling. What the hosted projects can actually hold (the org's Pro storage
- * quota and each project's 100 MB per-object limit) is recorded in
- * `docs/ops/deployment/supabase.md` § Plan and quotas. Lowering this to track a real
- * capacity budget is a one-line edit here, exactly as it is for the two
- * ceilings above.
- */
-export const MAX_ARCHIVE_IMPORT_BYTES = 20 * 1024 * 1024 * 1024;
-
-/**
- * Ceiling on the total bytes one chapter may hold across all of its imports.
- *
- * Deliberately above {@link MAX_ARCHIVE_IMPORT_BYTES} rather than equal to it:
- * re-importing after a bad run is the normal recovery path, and a chapter that
- * has not purged the first attempt would otherwise be locked out of the second.
- * Two full-size imports plus headroom.
- *
- * Bytes are released by the per-import purge (`DELETE /v1/discord-imports/{id}`)
- * and by nothing else — there is no retention sweep over this bucket yet
- * (#1246). A chapter that hits this ceiling deletes an old import to continue,
- * which is what the refusal message tells it to do.
- */
-export const MAX_ARCHIVE_CHAPTER_BYTES = 50 * 1024 * 1024 * 1024;
+export type UploadKind = "image" | "proof" | "document" | "archive";
 
 /**
  * Surfaces that must share the `document` kind. Adding a fourth member-upload
@@ -284,18 +229,6 @@ const KINDS: Record<UploadKind, KindTable> = {
     ...ARCHIVE_MEDIA_BINDINGS,
   ]),
 };
-
-/**
- * Size check for the `archive` kind. Separate from
- * `isWithinUploadSizeLimit` so the member-upload ceiling stays where it is.
- */
-export function isWithinArchiveUploadSizeLimit(byteLength: number): boolean {
-  return (
-    Number.isFinite(byteLength) &&
-    byteLength >= 0 &&
-    byteLength <= MAX_ARCHIVE_UPLOAD_BYTES
-  );
-}
 
 /**
  * Not re-exported from the package: no product code needs the raw list. The
