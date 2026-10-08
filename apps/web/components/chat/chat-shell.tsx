@@ -1212,15 +1212,15 @@ export function ChatShell({
    * `is_read_only` are load-bearing; `channelAllowsReplies` says which case
    * each covers.
    *
-   * Read off the two fields the rail actually carries rather than through
-   * `@repo/validation`'s `allowsInThreadReplies`. Calling that predicate
-   * would need a hand-built `ChannelAccessRecord`, and the fields the rail has
-   * never loaded would have to be invented — `required_permissions: null` and
-   * no `archived_at`. That is a projection wearing the full type: the moment
-   * the predicate consults a field this literal fabricates, the call silently
-   * disagrees with the server while *looking* like it cannot. This is a UX
-   * pre-filter; the server is the enforcement, and it is the server's copy of
-   * the rule that has to be right.
+   * Read off the two fields the rail actually carries rather than mirroring
+   * the API's `allowsInThreadReplies` (`apps/api/src/domain/utils/
+   * channel-access.ts`). That predicate takes a whole `ChannelAccessRecord`,
+   * and the fields the rail has never loaded would have to be invented —
+   * `required_permissions: null` and no `archived_at`. That is a projection
+   * wearing the full type: the moment the predicate consults a field such a
+   * literal fabricates, a copy silently disagrees with the server while
+   * *looking* like it cannot. This is a UX pre-filter; the server is the
+   * enforcement, and it is the server's copy of the rule that has to be right.
    */
   const canReplyHere = !!activeChannel && channelAllowsReplies(activeChannel);
   /**

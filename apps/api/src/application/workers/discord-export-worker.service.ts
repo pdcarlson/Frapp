@@ -24,12 +24,12 @@ import {
   CHAT_ARCHIVE_BUCKET,
   archiveMediaObjectPath,
 } from '#domain/constants/storage';
+import { isAllowedUploadMime } from '@repo/validation';
 import {
   MAX_ARCHIVE_CHAPTER_BYTES,
   MAX_ARCHIVE_IMPORT_BYTES,
-  isAllowedUploadMime,
   isWithinArchiveUploadSizeLimit,
-} from '@repo/validation';
+} from '#domain/constants/discord-archive-limits';
 import {
   messageContentIntentOffError,
   EMPTY_CONTENT_TALLY,

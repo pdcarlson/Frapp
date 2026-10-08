@@ -15,7 +15,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
-import { INT4_MAX, ROLE_NAME_MAX_LENGTH } from '@repo/validation';
+import { ROLE_NAME_MAX_LENGTH } from '@repo/validation';
+import { INT4_MAX } from '#domain/constants/field-limits';
 import { MAX_UPLOAD_URL_BATCH } from '../../application/services/discord-import.service';
 import {
   DISCORD_IMPORT_PROGRESS_LIMITS,
