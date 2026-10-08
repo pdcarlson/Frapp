@@ -26,11 +26,11 @@ import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.in
 import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
 import { decidePush } from '../services/push-rules';
 import {
-  canAccessChannel,
   isAnnouncementChannel,
   isDirectChannel,
   SYSTEM_SENDER_ID,
 } from '@repo/validation';
+import { canAccessChannel } from '#domain/utils/channel-access';
 import { RbacService } from '../services/rbac.service';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { ChatBlockService } from '../services/chat-block.service';

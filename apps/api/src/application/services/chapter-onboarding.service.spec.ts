@@ -52,11 +52,10 @@ jest.mock('@repo/chapter-theme', () => ({
     '@repo/chapter-theme',
   ).SIGNET_ENGINE_VERSION,
 }));
-// Only the policy version is stubbed. The rest must stay real: the seeding path
-// validates every candidate row with the actual `CreateCustomFieldSchema`, so a
-// bare stub here would silently make that validation a no-op.
-jest.mock('@repo/validation', () => ({
-  ...jest.requireActual('@repo/validation'),
+// Only the policy version is stubbed; `@repo/validation` stays real, because
+// the seeding path validates every candidate row with the actual
+// `CreateCustomFieldSchema`.
+jest.mock('#domain/constants/legal', () => ({
   LEGAL_POLICY_VERSION: 'test-version',
 }));
 
