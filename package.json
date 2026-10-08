@@ -56,11 +56,11 @@
     "concurrently": "^10.0.5",
     "dependency-cruiser": "^18.5.0",
     "jscpd": "^5.4.0",
-    "jsdom": "^30.1.1",
+    "jsdom": "^30.1.2",
     "prettier": "^3.9.9",
     "sharp": "0.35.5",
-    "squawk-cli": "2.66.0",
-    "turbo": "^2.11.6",
+    "squawk-cli": "2.67.0",
+    "turbo": "^2.11.7",
     "typescript": "npm:@typescript/typescript6@6.0.2"
   },
   "optionalDependencies": {
