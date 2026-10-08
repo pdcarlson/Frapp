@@ -3,8 +3,10 @@ import { LegalAcceptanceService } from './legal-acceptance.service';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import type { User } from '#domain/entities/user.entity';
 
-jest.mock('@repo/validation', () => ({
+jest.mock('#domain/constants/legal', () => ({
   LEGAL_POLICY_VERSION: 'current-version',
+}));
+jest.mock('@repo/validation', () => ({
   LEGAL_ACCEPTANCE_REQUIRED_CODE: 'legal.acceptance_required',
   LEGAL_ACCEPTANCE_REQUIRED_MESSAGE: 'shared refusal message',
 }));

@@ -549,7 +549,7 @@ Where each answer comes from:
   be built on the same picker, and neither is claimed here as shipped.
 - **User ID carries Analytics** because PostHog identifies members with
   `distinct_id = hmac_sha256(salt, user_id)`. The derivation lives in
-  `hashUserIdForAnalytics` (`packages/validation/src/analytics.ts`), called from
+  `hashUserIdForAnalytics` (`apps/api/src/domain/utils/analytics-keying.ts`), called from
   `apps/api/src/application/services/analytics.service.ts`; it is server-side because
   the salt is API-only. `packages/observability/src/correlation.ts` only *names* the
   shape and states that clients never compute it — this file used to cite it as the

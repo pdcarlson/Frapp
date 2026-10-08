@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { validateCardPollVote } from '@repo/validation';
+import { validateCardPollVote } from '#domain/utils/poll-vote-rules';
 import {
   CHAT_MESSAGE_ACTION_REPOSITORY,
   MESSAGE_REACTION_REPOSITORY,

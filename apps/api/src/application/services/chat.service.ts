@@ -8,13 +8,13 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import {
-  allowsInThreadReplies,
   CHAT_SINCE_NOT_FOUND_CODE,
   extractMentionTokens,
   isDirectChannel,
   isModuleEnabled,
   resolveMentions,
 } from '@repo/validation';
+import { allowsInThreadReplies } from '#domain/utils/channel-access';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
