@@ -1,25 +1,19 @@
-import { createHmac } from 'node:crypto';
+import { assertContentFreeProperties } from '@repo/validation';
 import {
   ACTIVATION_MILESTONES,
   activationMilestoneStep,
-  assertContentFreeProperties,
+} from '../constants/activation-milestones';
+import {
   hashChapterIdForAnalytics,
   hashIpForObservability,
   hashUserIdForAnalytics,
   hmacSha256Hex,
-} from '@repo/validation';
-
-/** Authoritative oracle for the UTF-8 string interface the clients use. */
-function nodeHmac(key: string, message: string): string {
-  return createHmac('sha256', Buffer.from(key, 'utf8'))
-    .update(Buffer.from(message, 'utf8'))
-    .digest('hex');
-}
+} from './analytics-keying';
 
 /**
- * Pins the shared analytics keying util (`@repo/validation`) so the API, web,
- * and mobile all derive identical pseudonyms. Lives in the API Jest suite
- * because that already runs `@repo/validation` in CI.
+ * Pins the analytics keying util so every pseudonym the API has already sent
+ * stays the same. The activation-funnel and payload-hygiene cases ride along
+ * because a milestone is also an event name.
  */
 describe('analytics keying util', () => {
   describe('hmacSha256Hex — RFC 4231 HMAC-SHA-256 vectors', () => {
@@ -38,18 +32,39 @@ describe('analytics keying util', () => {
       );
     });
 
-    // The clients hash UTF-8 strings, so cross-check the string interface
-    // against node:crypto across edge cases the RFC byte vectors can't express:
-    // a key longer than the 64-byte block (forces key hashing) and multi-byte
-    // Unicode in both key and message.
+    // Digests the pure-TypeScript HMAC in `@repo/validation` produced before
+    // #3268 moved keying here onto node:crypto, over the cases the RFC byte
+    // vectors can't express: a key longer than the 64-byte block (forces key
+    // hashing), multi-byte Unicode in key and message, and empty strings. A
+    // pseudonym that changed would split every user, chapter and origin in
+    // PostHog and Sentry in two.
     it.each([
-      ['short-salt', 'user-1'],
-      ['k'.repeat(65), 'long-key-triggers-key-hashing'],
-      ['per-env-salt-éxample', 'user-with-unicode-名前-😀'],
-      ['', ''],
-    ])('matches node:crypto for key=%p message=%p', (key, message) => {
-      expect(hmacSha256Hex(key, message)).toBe(nodeHmac(key, message));
-    });
+      [
+        'short-salt',
+        'user-1',
+        'd0b28d5993db9b460543c4210b861b395896ad16b4301bbf5153d99be7116823',
+      ],
+      [
+        'k'.repeat(65),
+        'long-key-triggers-key-hashing',
+        'a520086103e00147c33aa7feb091f7c3591c7f352b09747ffbd1139c67055491',
+      ],
+      [
+        'per-env-salt-éxample',
+        'user-with-unicode-名前-😀',
+        '33c2da77b82b5dbb75b6fde097e38950147269234a5de3526701072e1d30e504',
+      ],
+      [
+        '',
+        '',
+        'b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad',
+      ],
+    ])(
+      'keeps the pre-#3268 digest for key=%p message=%p',
+      (key, message, digest) => {
+        expect(hmacSha256Hex(key, message)).toBe(digest);
+      },
+    );
 
     it('is deterministic for the same inputs', () => {
       expect(hmacSha256Hex('salt', 'user-1')).toBe(
@@ -160,7 +175,7 @@ describe('analytics keying util', () => {
     // any other boundary using that salt — otherwise operators cannot correlate.
     it('agrees with the raw HMAC under the same salt', () => {
       expect(hashChapterIdForAnalytics('salt', 'chapter-1')).toBe(
-        nodeHmac('salt', 'chapter-1'),
+        hmacSha256Hex('salt', 'chapter-1'),
       );
     });
 
@@ -198,7 +213,7 @@ describe('analytics keying util', () => {
     // between a security log line and a Sentry event on one digest.
     it('agrees with the raw HMAC under the same salt', () => {
       expect(hashIpForObservability('salt', '203.0.113.7')).toBe(
-        nodeHmac('salt', '203.0.113.7'),
+        hmacSha256Hex('salt', '203.0.113.7'),
       );
     });
 

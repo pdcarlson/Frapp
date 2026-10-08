@@ -818,7 +818,7 @@ After any rollback event:
   itself: with no quota, one chapter can again register unbounded bytes into
   `chat-archive`, which has no reaper other than the admin's own per-import purge
   (#1246). Prefer raising `MAX_ARCHIVE_IMPORT_BYTES` / `MAX_ARCHIVE_CHAPTER_BYTES` in
-  `packages/validation/src/upload-allowlists.ts` — a one-line application change, no
+  `apps/api/src/domain/constants/discord-archive-limits.ts` — a one-line application change, no
   migration — over rolling this back.
 * **Data caveat**: the function writes, so this is not a pure read to drop. It upserts
   `discord_import_files` rows with a **monotonic** `byte_size` (a re-registered path may

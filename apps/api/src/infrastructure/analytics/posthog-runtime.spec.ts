@@ -1,5 +1,5 @@
 import { SENTRY_ERROR_CORRELATED_EVENT } from '@repo/observability';
-import { hashUserIdForAnalytics } from '@repo/validation';
+import { hashUserIdForAnalytics } from '#domain/utils/analytics-keying';
 import {
   enqueueSanitizedLog,
   PosthogRuntime,
