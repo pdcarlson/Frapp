@@ -8,14 +8,14 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import {
-  allowsInThreadReplies,
   CHAT_SINCE_NOT_FOUND_CODE,
   extractMentionTokens,
   isDirectChannel,
   isModuleEnabled,
   resolveMentions,
-  validateCardPollVote,
 } from '@repo/validation';
+import { allowsInThreadReplies } from '#domain/utils/channel-access';
+import { validateCardPollVote } from '#domain/utils/poll-vote-rules';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_CATEGORY_REPOSITORY,

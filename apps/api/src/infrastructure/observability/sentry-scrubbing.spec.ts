@@ -1,5 +1,8 @@
 import type { ErrorEvent } from '@sentry/nestjs';
-import { hashUserIdForAnalytics, hmacSha256Hex } from '@repo/validation';
+import {
+  hashUserIdForAnalytics,
+  hmacSha256Hex,
+} from '#domain/utils/analytics-keying';
 import {
   redactFreeText,
   scrubSentryEvent,

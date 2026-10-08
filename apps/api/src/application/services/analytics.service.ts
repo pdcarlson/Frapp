@@ -3,10 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { isPseudonymHex } from '@repo/observability';
 import {
   assertContentFreeProperties,
-  hashChapterIdForAnalytics,
-  hashUserIdForAnalytics,
   type AnalyticsProperties,
 } from '@repo/validation';
+import {
+  hashChapterIdForAnalytics,
+  hashUserIdForAnalytics,
+} from '#domain/utils/analytics-keying';
 import {
   CHAPTER_REPOSITORY,
   type IChapterRepository,

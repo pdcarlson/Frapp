@@ -17,11 +17,13 @@ import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CHAPTER_SHORT_NAME_MAX_LENGTH,
-  INT4_MAX,
-  INVOICE_AMOUNT_MAX_CENTS,
   POINTS_ADJUSTMENT_MAX,
   YEAR_MAX,
 } from '@repo/validation';
+import {
+  INT4_MAX,
+  INVOICE_AMOUNT_MAX_CENTS,
+} from '#domain/constants/field-limits';
 import { Type } from 'class-transformer';
 import type { DuesCadence } from '#domain/entities/chapter-dues-config.entity';
 
