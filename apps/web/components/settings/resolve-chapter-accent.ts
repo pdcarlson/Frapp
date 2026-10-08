@@ -10,7 +10,7 @@ import { signetDarkTokens } from "@repo/theme/signet";
 
 /**
  * Re-validates a chapter's stored accent against the surface it is drawn on,
- * for the Settings accent preview, its one caller (`settings-page.tsx`).
+ * for the Settings accent preview, its one caller (`settings-accent-tab.tsx`).
  *
  * It lived in `@repo/theme` as `@repo/theme/accent` until #3227, when it was the
  * last reader of that package's legacy bronze palette and had this one caller

@@ -1,12 +1,9 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useId, useState } from "react";
-import Link from "next/link";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 import {
   type OrgDues,
-  useCreatePortal,
   useCurrentChapter,
   useMyPermissions,
   useOrgConfig,
@@ -22,40 +19,19 @@ import {
   type SemesterArchive,
 } from "@repo/hooks";
 import { type PatchChapterConfig } from "@repo/validation";
-import { resolveChapterAccentColor } from "@/components/settings/resolve-chapter-accent";
-import { AA_NORMAL, normalizeHex } from "@repo/color";
-import { signetDarkTokens } from "@repo/theme/signet";
 import { titleCase, vocab } from "@/lib/vocabulary";
-import { Button } from "@/components/ui/button";
+import { Card, CardDescription, CardHeader } from "@/components/ui/card";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  EmptyState,
   ErrorState,
   anyReadUncached,
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
 import { PageHeader } from "@/components/layout/page-header";
-import { PermissionsOfflineSurface } from "@/components/shared/async-states";
-import { BillingGlyph } from "@/components/layout/nav-glyphs";
-import { Can } from "@/components/shared/can";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
-import {
-  SubscriptionNotice,
-  useSubscriptionGate,
-} from "@/components/shared/subscription-gate";
+import { useSubscriptionGate } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
 import {
   can,
@@ -65,14 +41,26 @@ import {
 } from "@repo/validation";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
-import { asArray, cn, getErrorMessage } from "@/lib/utils";
-import { EYEBROW } from "@/components/ui/typography";
-import { FOCUS_RING } from "@/components/ui/focus";
+import { asArray, getErrorMessage } from "@/lib/utils";
 import {
   isSettingsTabVisible,
   visibleSettingsTools,
-  type SettingsTool,
 } from "@/components/settings/settings-access";
+import {
+  SETTINGS_TABS,
+  SETTINGS_TAB_VALUES,
+  SettingsRail,
+  SettingsToolsOnly,
+} from "@/components/settings/settings-rail";
+import {
+  SettingsAccentTab,
+  useAccentDraft,
+} from "@/components/settings/settings-accent-tab";
+import {
+  SettingsSemesterTab,
+  useRolloverForm,
+} from "@/components/settings/settings-semester-tab";
+import { SettingsDangerTab } from "@/components/settings/settings-danger-tab";
 import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
 import { SettingsModulesTab } from "@/components/settings/settings-modules-tab";
 import { SettingsWorkflowsTab } from "@/components/settings/settings-workflows-tab";
@@ -80,10 +68,6 @@ import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
-import {
-  formatFailingRatio,
-  previewInkFor,
-} from "@/components/settings/accent-preview-ink";
 
 type Branding = {
   greek_letters?: string;
@@ -93,78 +77,6 @@ type Branding = {
   school_short?: string;
   founded_at?: number;
 };
-
-// Board `4d`: rail rows are `height:34px;border-radius:10px;padding:0 10px`,
-// inactive `#A9A399`, active a filled gold chip (`background:#2A2410;
-// color:#F0CD5E;font-weight:600`) rather than the §6 2px edge indicator this
-// rail used to run down its side.
-//
-// **The fill is the chapter accent, not `--gold-ask-*`.** The board paints the
-// Ask pill and the active tab at the same hexes only because the demo tenant's
-// seed and the house gold coincide — the trap `tokens.md` §L-01 names and
-// `pro-chip.tsx` already refused once in this lane. Ask is fixed; a settings
-// tab is product UI and retints.
-//
-// **`--accent-subtle`/`--accent-text` are that retinting family. Plain
-// `--accent` was not**: it was a ShadCN alias of `--popover` (`#2A2621`), so
-// `bg-accent` painted the active tab a dead grey on every chapter, gold
-// included. The alias is deleted (#3036); `elevation-call-sites.spec.ts` keeps
-// the name out.
-//
-// Below `lg` the rail is still a horizontal wrap row, so the chip reads the
-// same either way — there is no underline variant to keep in sync any more.
-const RAIL_TRIGGER_CLASS =
-  "h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-muted-foreground data-[state=active]:bg-accent-subtle data-[state=active]:font-semibold data-[state=active]:text-accent-text data-[state=active]:shadow-none lg:w-full lg:flex-none";
-
-const RAIL_DANGER_TRIGGER_CLASS =
-  "h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-destructive data-[state=active]:bg-destructive-tint data-[state=active]:font-semibold data-[state=active]:text-destructive-text data-[state=active]:shadow-none lg:mt-auto lg:w-full lg:flex-none";
-
-// Valid `?tab=` deep-link targets — mirrors the rail triggers below.
-//
-// Order is board `4d`'s: Chapter, Accent, Subscription, Modules, Roles, Join
-// code, Semester, Fields, Privacy, then Danger zone pinned last. Three
-// departures, each forced by what this product actually has:
-//
-// - **No `joincode`.** The board draws a Join code tab. `apps/web` has no
-//   join-code surface at all — a repo-wide grep for `join_code`, `joinCode`
-//   and `invite_code` returns nothing outside the API SDK. Building one is a
-//   capability, and this lane is chrome (`spec/ui/web-dashboard/README.md`
-//   § Settings).
-// - **No `subscription`.** The board puts plan status behind this rail, but
-//   `/billing` is a route a member reaches to pay their own invoice — see the
-//   note in `billing-page.tsx`, which is why `4d`'s "Members never see this
-//   page" was already refused there. A tab would hide it from the members it
-//   is for. `/billing` stays a route; Danger zone links to the Stripe portal.
-// - **`dues` and `workflows` are ours.** The board draws neither. Both are
-//   live chapter configuration with no other home, so they keep rail entries,
-//   slotted after Fields where the board's own knob tabs sit.
-//
-// `beta` and `audit` are gone rather than reordered. They rendered
-// `SettingsComingSoon` stubs naming "Chunk 08" — generated chrome advertising
-// unbuilt work, which is exactly what this epic deletes.
-const SETTINGS_TABS: readonly { value: string; label: string }[] = [
-  { value: "org", label: "Chapter" },
-  { value: "theme", label: "Accent" },
-  { value: "modules", label: "Modules" },
-  { value: "roles", label: "Roles" },
-  { value: "semester", label: "Semester" },
-  { value: "fields", label: "Fields" },
-  { value: "dues", label: "Dues" },
-  { value: "workflows", label: "Workflows" },
-  { value: "privacy", label: "Privacy" },
-  { value: "danger", label: "Danger zone" },
-];
-const SETTINGS_TAB_VALUES: readonly string[] = SETTINGS_TABS.map(
-  (tab) => tab.value,
-);
-
-// The officer tools (`settings-access.ts`) are links, not tabs: each keeps its
-// own full-width page. Same row geometry as a rail trigger, with the nav's
-// hover step, since clicking one leaves this page rather than switching a tab.
-const RAIL_LINK_CLASS = cn(
-  "flex h-[34px] items-center rounded-[10px] px-[10px] text-sm text-muted-foreground transition hover:bg-card hover:text-foreground lg:w-full",
-  FOCUS_RING,
-);
 
 // Fallback shown before the config query resolves. Mirrors the API's
 // chapter_dues_config defaults for an unconfigured chapter.
@@ -179,50 +91,6 @@ const DEFAULT_DUES: OrgDues = {
   grace_days: 7,
   scholarship_pool_cents: 0,
 };
-
-/**
- * Names the surface a server-reported §8 contrast failure was measured
- * against, for the fixed four checks `deriveSignetPalette` can return
- * (`packages/chapter-theme/src/signet.ts`). Falls back to the raw values for
- * a shape a future engine change adds — never hides a real failure behind an
- * unrecognized pair.
- */
-function describeFailedContrastCheck(check: {
-  role: string;
-  against: string;
-  ratio: number;
-}): string {
-  const ratio = formatFailingRatio(check.ratio);
-  if (
-    check.role === "--signet-accent-text" &&
-    check.against === "--signet-accent-subtle-bg"
-  ) {
-    return `Accent text on its own tinted background reads at ${ratio}:1, under the 4.5:1 minimum.`;
-  }
-  // Only claim "app background" when `against` is the literal background hex
-  // this check is actually specified for — never inferred from `role` alone,
-  // so a future engine check on `--signet-accent-text` against some other
-  // surface falls to the raw fallback below instead of being mislabeled.
-  if (
-    check.role === "--signet-accent-text" &&
-    !check.against.startsWith("--signet-")
-  ) {
-    return `Accent text on the app background reads at ${ratio}:1, under the 4.5:1 minimum.`;
-  }
-  if (
-    check.role === "--signet-accent-on-primary" &&
-    check.against === "--signet-accent-primary"
-  ) {
-    return `Text on the accent's solid fill reads at ${ratio}:1, under the 4.5:1 minimum.`;
-  }
-  if (
-    check.role === "--signet-accent-on-primary" &&
-    check.against === "--signet-accent-hover"
-  ) {
-    return `Text on the accent's hover shade reads at ${ratio}:1, under the 4.5:1 minimum.`;
-  }
-  return `${check.role} against ${check.against} reads at ${ratio}:1, under the 4.5:1 minimum.`;
-}
 
 function SettingsPageContent() {
   const { toast } = useToast();
@@ -248,12 +116,7 @@ function SettingsPageContent() {
   // `isPending` used to disable every control on every tab at once (#881).
   const pendingConfigKeys = usePendingConfigKeys();
   const rollover = useSemesterRollover();
-  const createPortal = useCreatePortal();
-  // Scoped to the rollover card on purpose. `SemesterRolloverController` is the
-  // only paid-ops write on this screen (#841); `chapter-config`, `chapter`, and
-  // `user` are `@FreeTier` and `notification` is not chapter-guarded at all, so
-  // gating the rest would lock a lapsed chapter out of settings it is still
-  // entitled to change — over-gating is the worse defect here.
+  // Scoped to the rollover card; `SettingsSemesterTab` says why.
   const rolloverGate = useSubscriptionGate();
 
   const canManage = can(
@@ -326,34 +189,8 @@ function SettingsPageContent() {
     [],
   );
 
-  const [accentDraft, setAccentDraft] = useState("");
-  // Ties the disabled Save to the hint that says why (design-system README:
-  // a disabled control is paired with its reason).
-  const accentHexHintId = useId();
-  // The server's own §8 disclosure from the last successful save — distinct
-  // from `previewInkFailsAA` below, which is a client-side check of the
-  // unsaved draft. Cleared on the next edit so a stale warning never survives
-  // past the accent it was measured against (#1183).
-  const [accentContrastWarning, setAccentContrastWarning] = useState<
-    { role: string; against: string; ratio: number }[] | null
-  >(null);
-  const [semesterLabel, setSemesterLabel] = useState("");
-  const [semesterStart, setSemesterStart] = useState("");
-  const [semesterEnd, setSemesterEnd] = useState("");
-  // Defaults to off: promotion rewrites roles across the whole chapter and is
-  // not one-click undoable, so it is opted into per rollover, never inherited.
-  const [promoteNewMembers, setPromoteNewMembers] = useState(false);
-
-  useEffect(() => {
-    const chapter = chapterQuery.data;
-    if (!chapter) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- seed the accent draft from the chapter query
-    setAccentDraft(chapter.accent_color ?? "");
-    // A resync (chapter switch, another tab's save, a background refetch) can
-    // change the draft out from under a still-displayed warning, which would
-    // otherwise describe a colour this render no longer shows (#1183).
-    setAccentContrastWarning(null);
-  }, [chapterQuery.data]);
+  const accentDraft = useAccentDraft(chapterQuery.data);
+  const rolloverForm = useRolloverForm();
 
   if (!activeChapterId) {
     return (
@@ -446,19 +283,15 @@ function SettingsPageContent() {
   const vocabulary = config?.vocabulary ?? memberView?.vocabulary ?? {};
   // #351: this chapter's term for the pre-promotion role, e.g. "New Member"
   // (IFC default), "Aspirant" (NPHC), "Candidate" (professional) — the
-  // rollover copy below promotes members holding this role, so it should
-  // read in the chapter's own vocabulary rather than the hardcoded IFC term.
+  // rollover copy in `settings-semester-tab.tsx` promotes members holding
+  // this role, so it should read in the chapter's own vocabulary rather than
+  // the hardcoded IFC term.
   // Capitalized: the rollover copy uses it as a role-name reference
   // alongside "Member" (itself always capitalized), and `vocab()`'s own
   // defaults are sentence-case prose ("New member") rather than the title
   // case the seeded role is actually displayed with elsewhere (e.g. the
   // Discord-import role mapping step).
   const pledgeTerm = titleCase(vocab("pledge", { vocabulary }));
-  // "every X", not "Xs": `pledgeTerm` can be an officer-typed free-text
-  // override with no plural-form guarantee (see settings-org-tab.tsx's
-  // vocab editor) — naively appending "s" breaks for a term already plural
-  // or ending in s/x/z/ch/sh.
-  const promoteToggleLabel = `Also promote every ${pledgeTerm} to Member`;
   const brandingRaw = config?.branding ?? {};
   const branding: Branding = {
     greek_letters:
@@ -489,62 +322,6 @@ function SettingsPageContent() {
   const enabledModules = config?.enabled_modules ?? {};
   const workflows = config?.workflows ?? [];
   const dues = config?.dues ?? DEFAULT_DUES;
-
-  // #1157: the preview swatch sits on a Signet card, so the WCAG check runs
-  // against that dark surface, with a fallback legible on it. The resolver
-  // requires both and throws on a non-hex value, so these stay constants.
-  const accent = resolveChapterAccentColor(accentDraft || undefined, {
-    background: signetDarkTokens.color.surface.card,
-    fallbackAccent: signetDarkTokens.color.gold.house,
-  });
-  // What Save sends: the draft as the `#RRGGBB` the API's DTO requires. The
-  // resolver above already reads a 3-digit shorthand or a padded hex as that
-  // colour, so saving the same normalization keeps the preview, the warnings
-  // and the save describing one colour. Sending the raw draft let `#08E`
-  // preview cleanly and then fail the save with a 400.
-  const accentDraftHex = normalizeHex(accentDraft);
-  // Empty, blank or not a hex colour: Save is disabled and the tab says what to
-  // enter. An empty draft counts: it sends no `accent_color`, which the API
-  // treats as "no change" and answers with success, so the toast would claim a
-  // save that wrote nothing. The copy is an instruction rather than a complaint
-  // about "this color" because an empty field (a chapter with no stored
-  // accent, or a cleared input) holds no colour to complain about, and it
-  // takes warning styling only once something unsavable has been typed.
-  const accentDraftUnsavable = !accentDraftHex;
-  // A well-formed colour that fails contrast on the card. `fallbackApplied`
-  // alone is also true for an empty or malformed draft, where "saving stores the
-  // color you entered" would be false.
-  const accentPreviewFallsBack = accent.reason === "insufficient_contrast";
-
-  /*
-    The on-accent tone for the *draft* colour, and whether it is legible.
-
-    See the swatch below for why `--primary-foreground` cannot answer this.
-    What matters here is the `?? ` this used to end with: `pickAccessibleColor`
-    returns `null` when *neither* candidate clears AA, and falling back to
-    `gold.onHouse` reasserted a tone it had just rejected. The review typed an
-    ordinary blue — nothing exotic — and got "Preview" at a sub-AA ratio with
-    no warning, which is the same defect one layer down from the one this
-    swatch was being fixed for. (`#0086FE` on the current ladder: kept by the
-    resolver on `--card`, ink under AA; the figures are pinned in
-    `settings-contrast.spec.ts`. The original `#0080FD` stopped reaching this
-    branch when the greenfield ladder lightened `--card` and the resolver
-    began substituting it.)
-
-    The docstring's excuse was wrong too: `resolveChapterAccentColor` does not
-    reject that accent. It asks whether the accent is legible **as text on the
-    card**, which is a different question from whether text is legible **on
-    the accent**, and it answers `reason: "ok"`.
-
-    So: always the better of the two rather than the first that passes, which
-    is defined for every input; and when the better one still misses, the
-    screen says so instead of drawing an illegible label and calling it a
-    preview. `writing.md` §7 carries the string.
-  */
-  const preview = previewInkFor(accent.resolvedAccent);
-  const previewInk = preview?.ink ?? signetDarkTokens.color.gold.onHouse;
-  const previewInkRatio = preview?.ratio ?? 0;
-  const previewInkFailsAA = preview !== null && previewInkRatio < AA_NORMAL;
   const semesters = asArray<SemesterArchive>(semestersQuery.data);
   const permissionsCatalog = asArray<{ key: string; permission: string }>(
     catalogQuery.data,
@@ -595,7 +372,8 @@ function SettingsPageContent() {
       await removeLogo.mutateAsync();
       toast({
         title: "Logo removed",
-        description: "Your chapter mark falls back to its short name or letters.",
+        description:
+          "Your chapter mark falls back to its short name or letters.",
       });
     } catch (error) {
       toast({
@@ -619,105 +397,6 @@ function SettingsPageContent() {
         description: getErrorMessage(
           error,
           "The API rejected the update. Retry in a moment.",
-        ),
-        variant: "destructive",
-      });
-    }
-  }
-
-  function updateAccentDraft(value: string) {
-    setAccentDraft(value);
-    // A new edit invalidates the previous save's server-reported warning —
-    // it described a different colour.
-    setAccentContrastWarning(null);
-  }
-
-  async function saveAccent(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!accentDraftHex) return;
-    try {
-      const result = await updateChapter.mutateAsync({
-        accent_color: accentDraftHex,
-      });
-      setAccentContrastWarning(result?.failedContrastChecks ?? null);
-      toast({
-        title: "Accent color saved",
-      });
-    } catch (error) {
-      toast({
-        title: "Couldn't save accent color",
-        description: getErrorMessage(error, "Retry, or check your connection."),
-        variant: "destructive",
-      });
-    }
-  }
-
-  async function startRollover(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!semesterLabel || !semesterStart || !semesterEnd) return;
-    const confirmed = await confirm({
-      title: `Start a new semester labelled "${semesterLabel}"?`,
-      description: promoteNewMembers
-        ? `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves. Every ${pledgeTerm} is also promoted to Member; they keep any other roles they hold, and this cannot be undone in one step.`
-        : "The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.",
-      confirmLabel: "Start new semester",
-      // Not destructive: a rollover archives rather than deletes, and
-      // `writing.md` §7's own copy for this flow says the history stays. A red
-      // button would state a loss the API does not perform. Promotion is a role
-      // change rather than a deletion, so it does not change that reading — the
-      // description above states its scope instead.
-      tone: "default",
-    });
-    if (!confirmed) return;
-    try {
-      await rollover.mutateAsync({
-        label: semesterLabel,
-        start_date: semesterStart,
-        end_date: semesterEnd,
-        promote_new_members: promoteNewMembers,
-      });
-      toast({
-        title: "Semester archived",
-        description: promoteNewMembers
-          ? `${semesterLabel} is now the active period, and every ${pledgeTerm} was promoted to Member.`
-          : `${semesterLabel} is now the active period.`,
-      });
-      setSemesterLabel("");
-      setSemesterStart("");
-      setSemesterEnd("");
-      setPromoteNewMembers(false);
-    } catch (error) {
-      toast({
-        title: "Couldn't archive semester",
-        description: getErrorMessage(
-          error,
-          "Rollovers are limited to one per month. Check the archive list below.",
-        ),
-        variant: "destructive",
-      });
-    }
-  }
-
-  async function openBillingPortal() {
-    try {
-      const result = await createPortal.mutateAsync({
-        return_url:
-          typeof window !== "undefined"
-            ? `${window.location.origin}/settings`
-            : "/settings",
-      });
-      const url =
-        result && typeof result === "object" && "url" in result
-          ? (result as { url?: string }).url
-          : null;
-      if (!url) throw new Error("Billing portal did not return a URL.");
-      window.location.assign(url);
-    } catch (error) {
-      toast({
-        title: "Couldn't open billing portal",
-        description: getErrorMessage(
-          error,
-          "Confirm billing:manage permission and an active Stripe customer.",
         ),
         variant: "destructive",
       });
@@ -789,52 +468,7 @@ function SettingsPageContent() {
         onValueChange={setActiveTab}
         className="flex flex-col gap-6 lg:flex-row lg:items-start"
       >
-        {/*
-          Board `4d`: `width:200px`, `padding:12px 8px`, `gap:2px`, a right
-          hairline. `lg:w-[200px]` is that width exactly rather than the `w-56`
-          (224px) this rail used to take.
-
-          The officer tools sit above the tabs (#2946). They were the nav's
-          Admin group until it folded into Settings, and they are what an
-          officer comes here for most often; setup is occasional.
-        */}
-        <div className="flex w-full flex-col gap-3 lg:w-[200px] lg:self-stretch lg:border-r lg:border-border lg:px-2 lg:py-3">
-          {tools.length > 0 ? (
-            <nav aria-label="Officer tools" className="flex flex-col gap-0.5">
-              <p className={cn(EYEBROW, "px-[10px] pb-1 text-muted")}>Tools</p>
-              <div className="flex flex-row flex-wrap gap-0.5 lg:flex-col">
-                {tools.map((tool) => (
-                  <Link key={tool.id} href={tool.href} className={RAIL_LINK_CLASS}>
-                    {tool.label}
-                  </Link>
-                ))}
-              </div>
-            </nav>
-          ) : null}
-          {tools.length > 0 ? (
-            <p className={cn(EYEBROW, "px-[10px] pb-1 text-muted lg:mt-2")}>
-              Chapter setup
-            </p>
-          ) : null}
-          <TabsList
-            aria-label="Chapter setup"
-            className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 bg-transparent p-0 lg:flex-1 lg:flex-col lg:flex-nowrap lg:items-stretch"
-          >
-            {visibleTabs.map((tab) => (
-              <TabsTrigger
-                key={tab.value}
-                value={tab.value}
-                className={
-                  tab.value === "danger"
-                    ? RAIL_DANGER_TRIGGER_CLASS
-                    : RAIL_TRIGGER_CLASS
-                }
-              >
-                {tab.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
+        <SettingsRail tools={tools} visibleTabs={visibleTabs} />
 
         <div className="min-w-0 flex-1">
           <TabsContent value="org" className="mt-0 space-y-6">
@@ -865,7 +499,6 @@ function SettingsPageContent() {
               />,
             )}
           </TabsContent>
-
           {/*
             Board `4d` gives Semester its own rail entry. It used to be two
             cards at the bottom of Organization, under the chapter profile and
@@ -873,221 +506,19 @@ function SettingsPageContent() {
             why the tab needed a sentence explaining itself.
           */}
           <TabsContent value="semester" className="mt-0 space-y-6">
-            <Can
-              permission="semester:rollover"
-              deniedFallback={null}
-              offlineFallback={(retry) => (
-                <PermissionsOfflineSurface
-                  description="Reconnect to check whether you can start a new semester."
-                  onRetry={retry}
-                />
-              )}
-            >
-              <Card>
-                <CardHeader>
-                  <CardTitle>Start a new semester</CardTitle>
-                  <CardDescription>
-                    Archives the current leaderboard period with a label and
-                    date range. Points keep accumulating. The leaderboard just
-                    resets its default window.
-                  </CardDescription>
-                </CardHeader>
-                <form onSubmit={startRollover}>
-                  <CardContent className="grid gap-3 md:grid-cols-3">
-                    {/*
-                      Disable, don't hide (§5 rule 4) — and the notice sits on
-                      the rollover card rather than the page header so it never
-                      reads as "all of settings is blocked". `mb-0` because the
-                      grid gap already spaces it.
-                    */}
-                    <SubscriptionNotice
-                      gate={rolloverGate}
-                      feature="semester rollover"
-                      className="mb-0 md:col-span-3"
-                    />
-                    <div className="grid gap-1 md:col-span-1">
-                      <Label htmlFor="semester-label">Label</Label>
-                      <Input
-                        id="semester-label"
-                        value={semesterLabel}
-                        onChange={(event) =>
-                          setSemesterLabel(event.target.value)
-                        }
-                        placeholder="Fall 2026"
-                        required
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="semester-start">Start date</Label>
-                      <Input
-                        id="semester-start"
-                        type="date"
-                        value={semesterStart}
-                        onChange={(event) =>
-                          setSemesterStart(event.target.value)
-                        }
-                        required
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="semester-end">End date</Label>
-                      <Input
-                        id="semester-end"
-                        type="date"
-                        value={semesterEnd}
-                        onChange={(event) => setSemesterEnd(event.target.value)}
-                        required
-                      />
-                    </div>
-                    {/*
-                      Pledge promotion (spec/behavior/semester-rollover.md step
-                      3). Optional and off by default — it rewrites roles across
-                      the chapter, so it is opted into per rollover. The
-                      confirmation dialog restates the consequence before it
-                      runs. Same `gate.controlProps` as the submit button so an
-                      ungated chapter cannot toggle a control it cannot use.
-
-                      Wrapped in `<Can permission="roles:manage">` because the
-                      API enforces exactly that on the promotion path: rewriting
-                      `members.role_ids` is what `PATCH /members/:id/roles`
-                      gates, and `semester:rollover` alone does not carry it.
-                      Offering the toggle without it would produce a 403 at
-                      submit. A rollover *without* promotion stays available —
-                      this hides the toggle, never the card.
-
-                      `aria-label` is explicit rather than inherited from the
-                      wrapping `<label>`: a `<label>` does not name a `button`,
-                      which is what Radix renders for `role="switch"`. Same
-                      reason `settings-fields-tab.tsx` names its switches.
-                    */}
-                    <Can permission="roles:manage">
-                      <label className="flex items-start gap-2 text-sm md:col-span-3">
-                        <Switch
-                          id="semester-promote"
-                          aria-label={promoteToggleLabel}
-                          checked={promoteNewMembers}
-                          onCheckedChange={setPromoteNewMembers}
-                          {...rolloverGate.controlProps(rollover.isPending)}
-                        />
-                        <span>
-                          {promoteToggleLabel}
-                          <span className="block text-xs text-muted-foreground">
-                            {`Everyone currently holding the ${pledgeTerm} role becomes a Member. Other roles they hold are kept.`}
-                          </span>
-                        </span>
-                      </label>
-                    </Can>
-                  </CardContent>
-                  <CardFooter className="flex justify-end">
-                    {/*
-                      No dialog to gate here, so the submit *is* the entry
-                      control — and a disabled default button also suppresses
-                      implicit Enter submission from the three fields above.
-                    */}
-                    <Button
-                      type="submit"
-                      {...rolloverGate.controlProps(rollover.isPending)}
-                    >
-                      {rollover.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : null}
-                      Archive current semester
-                    </Button>
-                  </CardFooter>
-                </form>
-              </Card>
-            </Can>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Archived semesters</CardTitle>
-                <CardDescription>
-                  Every rollover is preserved and viewable in reports and
-                  leaderboards.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {semestersQuery.isPending ? (
-                  <LoadingState message="Loading archives..." />
-                ) : semesters.length === 0 ? (
-                  <EmptyState
-                    title="No archived semesters yet"
-                    description="After you run your first rollover, the history appears here."
-                  />
-                ) : (
-                  <ul className="divide-y divide-border/70">
-                    {semesters.map((archive) => (
-                      <li
-                        key={archive.id}
-                        className="flex items-center justify-between py-2 text-sm"
-                      >
-                        <span className="font-medium">{archive.label}</span>
-                        <span className="text-muted-foreground">
-                          {archive.start_date} – {archive.end_date}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </CardContent>
-            </Card>
+            <SettingsSemesterTab
+              form={rolloverForm}
+              pledgeTerm={pledgeTerm}
+              confirm={confirm}
+              rollover={rollover}
+              rolloverGate={rolloverGate}
+              semesters={semesters}
+              semestersPending={semestersQuery.isPending}
+            />
           </TabsContent>
 
-          {/*
-            Board `4d` pin 1 pins Danger zone last, and this is what it holds:
-            the Stripe portal (where a chapter cancels) and the deactivation
-            route. It was the third card on Organization, which put "cancel the
-            subscription" one scroll under "set your founding year".
-          */}
           <TabsContent value="danger" className="mt-0 space-y-6">
-            <Card className="border-destructive/30">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  Billing &amp; danger zone
-                </CardTitle>
-                <CardDescription>
-                  Manage payment methods, download invoices, or cancel the
-                  subscription from the Stripe-hosted portal.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Can
-                  permission="billing:manage"
-                  deniedFallback={
-                    <p className="text-sm text-muted-foreground">
-                      Only users with <code>billing:manage</code> can open the
-                      Stripe portal.
-                    </p>
-                  }
-                >
-                  <Button
-                    variant="secondary"
-                    onClick={() => void openBillingPortal()}
-                    disabled={createPortal.isPending}
-                  >
-                    {createPortal.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      // Names the destination, not the verb — §6.2 keeps
-                      // Lucide for control furniture, and the billing intent
-                      // is already a Signet duotone in `nav-glyphs.tsx`.
-                      // `AlertTriangle` above stays Lucide: it is the danger
-                      // marker `async-states.tsx` draws for the same tone, not
-                      // a domain intent.
-                      <BillingGlyph className="h-4 w-4" />
-                    )}
-                    Open Stripe billing portal
-                  </Button>
-                </Can>
-                <p className="flex items-start gap-2 text-sm text-muted-foreground">
-                  <Trash2 className="mt-0.5 h-4 w-4 shrink-0" />
-                  Chapter deactivation is a supported-by-Frapp action. Contact
-                  support from the billing portal. Data is preserved
-                  indefinitely in read-only mode (see privacy policy).
-                </p>
-              </CardContent>
-            </Card>
+            <SettingsDangerTab />
           </TabsContent>
 
           <TabsContent value="modules" className="mt-0">
@@ -1177,205 +608,12 @@ function SettingsPageContent() {
               />,
             )}
           </TabsContent>
-
           <TabsContent value="theme" className="mt-0">
-            <Card>
-              <CardHeader>
-                <CardTitle>Accent color</CardTitle>
-                {/*
-                  Every clause of the copy this replaces was false, and the last
-                  one had become false by being delivered.
-
-                  - **"branded PDF reports"** — the accent has never reached a
-                    PDF. `report-pdf.renderer.ts` draws from five fixed
-                    constants (`INK`, `MUTED`, `RULE`, `HEAD_FILL`,
-                    `ZEBRA_FILL`) and the branding payload
-                    `report-export.service.ts` hands it is
-                    `{ chapterName, university, logo }` — no colour of any kind.
-                  - **"against white"** — #1157 moved the check to the dark card
-                    it actually renders on (`resolveChapterAccentColor` is
-                    called with `background: surface.card` a few hundred lines
-                    up). The code moved; the sentence did not.
-                  - **"invalid colors fall back to the [design system's]
-                    default"** —
-                    conflates two different outcomes. A hex the engine cannot
-                    parse falls back to `HOUSE_SEED`; a parseable colour that
-                    fails §8 contrast is **saved anyway** and disclosed by the
-                    server contrast warning below, because `chapter.service.ts` removed
-                    that gate deliberately ("gating it would reject 49 of the 50
-                    real chapters in the directory seed").
-                  - **"arrives in Chunk 07"** — this is chunk 07
-                    ([#2147](https://github.com/pdcarlson/Frapp/issues/2147)).
-
-                  An earlier draft of the replacement also claimed the accent
-                  paints "selected text". It does not, and the review is what
-                  caught it: `::selection` is deliberately the neutral ladder's
-                  two ends, because an accent-derived highlight is invisible on
-                  accent-painted fills (the chat self bubble when this was
-                  written, gone since #2873; primary buttons still). See the
-                  rule's own comment in
-                  `packages/theme/src/signet.css`.
-
-                  "Lightened where it needs to stand out" covers two engine
-                  steps, in order. The generator swaps in its own lighter step
-                  9 for a seed near the dark background (accent-engine.md §2),
-                  and then the §8 floor (#2541, #2586) lifts any scale whose
-                  fill, hover or label still falls short, swapped or not. So
-                  `#800000` paints its swapped `#F42F22` as is, `#003087`'s
-                  swapped `#1C6CFE` is lifted on to `#2D7BFF`, `#8B0000` is
-                  lifted to `#D75748`, and some vivid mid-tones move too
-                  (`#3366FF` paints `#4479FF`). Without the clause this card
-                  would promise a colour the save does not paint. The wording
-                  is mobile's Preferences row's.
-
-                  The closing sentence is board `2e`'s own preview caption
-                  (the mark and ✦ Ask never change), moved into the
-                  product. It is the one place an admin is choosing a colour, so
-                  it is the one place worth saying what the colour cannot reach.
-                  `settings-accent.spec.tsx` pins it against the tokens.
-                */}
-                <CardDescription>
-                  Paints primary buttons, your own name in chat and the
-                  nav&apos;s active item, lightened where it needs to stand out.
-                  Saving derives the rest of the palette from it, and contrast
-                  is checked against the dark surfaces it lands on. The Frapp
-                  mark, the Ask pill and the scrollbars never change.
-                </CardDescription>
-              </CardHeader>
-              <form onSubmit={saveAccent}>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <Input
-                      type="color"
-                      aria-label="Accent color picker"
-                      value={accentDraftHex || accent.resolvedAccent}
-                      onChange={(event) =>
-                        updateAccentDraft(event.target.value)
-                      }
-                      className="h-12 w-24 p-1"
-                    />
-                    <Input
-                      aria-label="Accent color hex value"
-                      value={accentDraft}
-                      onChange={(event) =>
-                        updateAccentDraft(event.target.value)
-                      }
-                      placeholder={signetDarkTokens.color.gold.seed}
-                      className="max-w-xs font-mono"
-                    />
-                    {/*
-                      The one place a raw chapter hex legitimately paints — it
-                      is a preview *of* that hex, which is the carve-out
-                      README §2's ban is written around. The text on top is the
-                      part that has been wrong twice.
-
-                      It shipped as `text-white`: a guess, and wrong for every
-                      light seed the directory holds (`#FFFFFF`, `#C0C0C0`,
-                      `#C9A56F`), where white on the fill is 1.0–2.2:1 and the
-                      word disappears. The obvious fix — `text-primary-foreground`
-                      — is wrong in a subtler way, and the pre-push review
-                      caught it: that token is `--signet-accent-on-primary`,
-                      written once from the chapter's **saved** palette. This
-                      swatch previews the **draft**, recomputed on every
-                      keystroke, so an admin on a dark saved accent typing a
-                      light draft would watch the fill go pale while the text
-                      stayed white. `resolveChapterAccentColor` cannot help:
-                      it returns the accent's legibility *as text on a
-                      background*, and no on-accent tone at all.
-
-                      So it is computed here, from the draft, against §4's own
-                      two ends of the text ladder — and where neither clears
-                      AA, the caption below says so rather than the swatch
-                      drawing an illegible word and calling it a preview.
-                    */}
-                    <div
-                      className="flex h-12 w-36 items-center justify-center rounded-md text-sm font-semibold"
-                      style={{
-                        backgroundColor: accent.resolvedAccent,
-                        color: previewInk,
-                      }}
-                    >
-                      Preview
-                    </div>
-                  </div>
-                  {accentDraftUnsavable ? (
-                    <p
-                      id={accentHexHintId}
-                      className={
-                        accentDraft === ""
-                          ? "text-xs text-muted-foreground"
-                          : "text-xs text-warning"
-                      }
-                    >
-                      Enter a hex code like #5AA9E6 to save an accent color.
-                    </p>
-                  ) : null}
-                  {accentPreviewFallsBack ? (
-                    <p className="text-xs text-warning">
-                      This color is hard to read on the card, so the preview
-                      shows {accent.resolvedAccent} instead. Saving stores the
-                      color you entered, and the palette is derived from it.
-                    </p>
-                  ) : null}
-                  {/*
-                    A second, different question from the one above. That
-                    warning fires when the accent is illegible *as text on the
-                    card*; this one when text is illegible *on the accent* —
-                    which is what a primary button actually is, and what this
-                    card's own description promises the accent will be used
-                    for. `#0086FE` passes the first and fails this one (pinned
-                    in `settings-contrast.spec.ts`). Both check the draft
-                    preview only, and each says
-                    what a save does instead, because saving differs from the
-                    preview: the entered colour is stored, not the substitute,
-                    and the saved label (`on-primary`) always clears 4.5:1
-                    (accent-engine.md §8, #2543).
-                  */}
-                  {previewInkFailsAA ? (
-                    <p className="text-xs text-warning">
-                      Label text on this preview reads at{" "}
-                      {formatFailingRatio(previewInkRatio)}:1, under the 4.5:1
-                      minimum. Saving picks a label color that clears it.
-                    </p>
-                  ) : null}
-                  {/*
-                    Independent of the draft checks above, which run client-side
-                    on the unsaved draft (the two contrast ones against a single
-                    fixed backdrop each). This is the server's own §8
-                    verdict on the colour actually saved, generated through
-                    the real design-system pipeline. §8 forbids a runtime
-                    substitution here, so a failing save still succeeds — this
-                    discloses rather than corrects (#1183).
-                  */}
-                  {accentContrastWarning && accentContrastWarning.length > 0 ? (
-                    <p className="text-xs text-warning">
-                      {accentContrastWarning
-                        .map(describeFailedContrastCheck)
-                        .join(" ")}{" "}
-                      Try a lighter or darker shade of this hue and save again.
-                    </p>
-                  ) : null}
-                </CardContent>
-                <CardFooter className="flex justify-end">
-                  <Button
-                    type="submit"
-                    disabled={
-                      !canEditProfile ||
-                      updateChapter.isPending ||
-                      accentDraftUnsavable
-                    }
-                    aria-describedby={
-                      accentDraftUnsavable ? accentHexHintId : undefined
-                    }
-                  >
-                    {updateChapter.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : null}
-                    Save accent color
-                  </Button>
-                </CardFooter>
-              </form>
-            </Card>
+            <SettingsAccentTab
+              draft={accentDraft}
+              canEditProfile={canEditProfile}
+              updateChapter={updateChapter}
+            />
           </TabsContent>
 
           <TabsContent value="privacy" className="mt-0">
@@ -1396,56 +634,6 @@ function SettingsPageContent() {
         </div>
       </Tabs>
     </div>
-  );
-}
-
-/**
- * Settings for a viewer who holds officer tools but no setup tabs, such as a
- * treasurer with `reports:export`. A rail of one link beside an empty panel
- * would be a page that says nothing, so the tools are listed as the page
- * itself. With no tools either, the viewer reached this URL with nothing to do
- * here, and the empty state says who can change that.
- */
-function SettingsToolsOnly({ tools }: { tools: readonly SettingsTool[] }) {
-  if (tools.length === 0) {
-    return (
-      <EmptyState
-        title="Nothing in Settings for your role"
-        description="Chapter setup and officer tools come with an officer role. Ask your chapter president if you need one."
-      />
-    );
-  }
-  return (
-    <nav aria-label="Officer tools" className="space-y-2">
-      <p className={cn(EYEBROW, "text-muted")}>Tools</p>
-      <ul className="divide-y divide-border rounded-[14px] border border-border bg-card">
-        {tools.map((tool) => (
-          <li key={tool.id} className="group">
-            <Link
-              href={tool.href}
-              className={cn(
-                // A row in a card list hovers like a table row
-                // (`ui/table.tsx`): the accent tint, which moves hue where
-                // `bg-accent`, the elevated step, moved 1.105:1. The end rows
-                // take the list's inner radius (14px less its 1px border) so
-                // the visible tint stays inside its corners; clipping the list
-                // with `overflow-hidden` instead would clip the focus ring too.
-                "flex flex-col gap-0.5 px-4 py-3 transition hover:bg-accent-subtle",
-                "group-first:rounded-t-[13px] group-last:rounded-b-[13px]",
-                FOCUS_RING,
-              )}
-            >
-              <span className="text-sm font-semibold text-foreground">
-                {tool.label}
-              </span>
-              <span className="text-caption text-muted-foreground">
-                {tool.description}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </nav>
   );
 }
 
