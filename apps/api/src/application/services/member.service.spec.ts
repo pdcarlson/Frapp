@@ -26,6 +26,11 @@ import {
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { Member } from '#domain/entities/member.entity';
 import type { User } from '#domain/entities/user.entity';
+import {
+  memberFixture,
+  roleFixture,
+  userFixture,
+} from '#test/helpers/entity-fixtures';
 
 describe('MemberService', () => {
   let service: MemberService;
@@ -147,34 +152,17 @@ describe('MemberService', () => {
 
   it('should list member profiles by chapter', async () => {
     const members = [
-      {
-        id: 'member-1',
-        user_id: 'user-1',
+      memberFixture({
         chapter_id: 'chapter-1',
         role_ids: ['role-1'],
-        custom_role_ids: [],
         has_completed_onboarding: true,
-        dismissed_ops_nudges: [],
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      },
+      }),
     ];
     const users = [
-      {
-        id: 'user-1',
-        supabase_auth_id: 'auth-1',
+      userFixture({
         email: 'john@example.com',
         display_name: 'John Doe',
-        avatar_url: null,
-        bio: null,
-        graduation_year: null,
-        current_city: null,
-        current_company: null,
-        active_chapter_id: null,
-        deleted_at: null,
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      },
+      }),
     ];
     mockRepo.findByChapter.mockResolvedValue(members);
     mockUserRepo.findByIds.mockResolvedValue(users);
@@ -195,17 +183,11 @@ describe('MemberService', () => {
   });
 
   it('should find member by user and chapter', async () => {
-    const member = {
-      id: 'member-1',
-      user_id: 'user-1',
+    const member = memberFixture({
       chapter_id: 'chapter-1',
       role_ids: ['role-1'],
-      custom_role_ids: [],
       has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
     mockRepo.findByUserAndChapter.mockResolvedValue(member);
 
     const result = await service.findByUserAndChapter('user-1', 'chapter-1');
@@ -232,17 +214,14 @@ describe('MemberService', () => {
   // MemberProfile. Its whole point is what it leaves out, so these assert the
   // narrow lookup is the one used and the shape stays three fields wide.
   describe('findRosterByChapter', () => {
-    const memberRow = (userId: string, id = `member-${userId}`) => ({
-      id,
-      user_id: userId,
-      chapter_id: 'chapter-1',
-      role_ids: ['role-1'],
-      custom_role_ids: [],
-      has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    const memberRow = (userId: string, id = `member-${userId}`) =>
+      memberFixture({
+        id,
+        user_id: userId,
+        chapter_id: 'chapter-1',
+        role_ids: ['role-1'],
+        has_completed_onboarding: true,
+      });
 
     it('returns one display-only entry per member', async () => {
       mockRepo.findByChapter.mockResolvedValue([
@@ -372,17 +351,16 @@ describe('MemberService', () => {
       userId: string,
       createdAt: string,
       id = `member-${userId}`,
-    ) => ({
-      id,
-      user_id: userId,
-      chapter_id: 'chapter-1',
-      role_ids: ['role-1'],
-      custom_role_ids: [],
-      has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: createdAt,
-      updated_at: createdAt,
-    });
+    ) =>
+      memberFixture({
+        id,
+        user_id: userId,
+        chapter_id: 'chapter-1',
+        role_ids: ['role-1'],
+        has_completed_onboarding: true,
+        created_at: createdAt,
+        updated_at: createdAt,
+      });
 
     it('carries each membership join timestamp alongside the roster projection', async () => {
       mockRepo.findByChapter.mockResolvedValue([
@@ -445,50 +423,34 @@ describe('MemberService', () => {
   });
 
   describe('updateRoles', () => {
-    const existingMember = {
-      id: 'member-1',
-      user_id: 'user-1',
+    const existingMember = memberFixture({
       chapter_id: 'chapter-1',
       role_ids: ['role-1'],
-      custom_role_ids: [],
       has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
-    const presidentRole = {
+    });
+    const presidentRole = roleFixture({
       id: 'role-president',
       chapter_id: 'chapter-1',
       name: 'President',
-      system_key: null,
       permissions: ['*'],
       is_system: true,
       display_order: 1,
       color: '#FFD700',
-      created_at: '2024-01-01',
-    };
-    const memberRole = {
-      id: 'role-1',
+    });
+    const memberRole = roleFixture({
       chapter_id: 'chapter-1',
       name: 'Member',
-      system_key: null,
       permissions: ['members:view'],
       is_system: true,
       display_order: 5,
-      color: null,
-      created_at: '2024-01-01',
-    };
-    const customRole = {
+    });
+    const customRole = roleFixture({
       id: 'role-2',
       chapter_id: 'chapter-1',
       name: 'Social Chair',
-      system_key: null,
       permissions: ['events:create'],
-      is_system: false,
       display_order: 8,
-      color: null,
-      created_at: '2024-01-01',
-    };
+    });
 
     it('updates non-President roles for an ordinary member', async () => {
       mockRepo.findById.mockResolvedValue(existingMember);
@@ -709,17 +671,13 @@ describe('MemberService', () => {
       // (a) A duplicated held president id must not mask adding a second
       // wildcard role, and (b) a duplicate in a no-op payload must not read
       // as a presidency change.
-      const legacyWildcardRole = {
+      const legacyWildcardRole = roleFixture({
         id: 'role-legacy-star',
         chapter_id: 'chapter-1',
         name: 'Legacy Star',
-        system_key: null,
         permissions: ['*'],
-        is_system: false,
         display_order: 9,
-        color: null,
-        created_at: '2024-01-01',
-      };
+      });
       mockRoleRepo.findByChapter.mockResolvedValue([
         presidentRole,
         memberRole,
@@ -767,17 +725,13 @@ describe('MemberService', () => {
       // A legacy `*` role minted before wildcard writes were rejected must not
       // be attachable through the generic endpoint — the presidency-transfer
       // flow is the only path that moves wildcard access.
-      const legacyWildcardRole = {
+      const legacyWildcardRole = roleFixture({
         id: 'role-legacy-star',
         chapter_id: 'chapter-1',
         name: 'Legacy Star',
-        system_key: null,
         permissions: ['*'],
-        is_system: false,
         display_order: 9,
-        color: null,
-        created_at: '2024-01-01',
-      };
+      });
       mockRepo.findById.mockResolvedValue(existingMember);
       mockRoleRepo.findByChapter.mockResolvedValue([
         presidentRole,
@@ -826,17 +780,12 @@ describe('MemberService', () => {
   });
 
   it('should update onboarding status', async () => {
-    const updatedMember = {
-      id: 'member-1',
-      user_id: 'user-1',
+    const updatedMember = memberFixture({
       chapter_id: 'chapter-1',
       role_ids: ['role-1'],
-      custom_role_ids: [],
       has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
       updated_at: '2024-01-02',
-    };
+    });
     mockRepo.update.mockResolvedValue(updatedMember);
 
     const result = await service.updateOnboarding('member-1', true);
@@ -848,17 +797,11 @@ describe('MemberService', () => {
   });
 
   describe('remove', () => {
-    const existingMember = {
-      id: 'member-1',
-      user_id: 'user-1',
+    const existingMember = memberFixture({
       chapter_id: 'chapter-1',
       role_ids: ['role-1'],
-      custom_role_ids: [],
       has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
 
     it('removes a member belonging to the active chapter', async () => {
       mockRepo.findById.mockResolvedValue(existingMember);
@@ -1105,32 +1048,19 @@ describe('MemberService', () => {
 
   describe('findProfileById', () => {
     it('should return member profile with user info', async () => {
-      const member = {
-        id: 'member-1',
-        user_id: 'user-1',
+      const member = memberFixture({
         chapter_id: 'chapter-1',
         role_ids: ['role-1'],
-        custom_role_ids: [],
         has_completed_onboarding: true,
-        dismissed_ops_nudges: [],
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      };
-      const user = {
-        id: 'user-1',
-        supabase_auth_id: 'auth-1',
+      });
+      const user = userFixture({
         email: 'john@example.com',
         display_name: 'John Doe',
-        avatar_url: null,
         bio: 'Engineer',
         graduation_year: 2024,
         current_city: 'NYC',
         current_company: 'Acme',
-        active_chapter_id: null,
-        deleted_at: null,
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      };
+      });
       mockRepo.findById.mockResolvedValue(member);
       mockUserRepo.findById.mockResolvedValue(user);
 
@@ -1158,17 +1088,12 @@ describe('MemberService', () => {
 
     it("serves the member's uploaded photo as a signed URL (#732)", async () => {
       const path = 'chapters/chapter-1/profiles/user-1/p.png';
-      mockRepo.findById.mockResolvedValue({
-        id: 'member-1',
-        user_id: 'user-1',
-        chapter_id: 'chapter-1',
-        role_ids: [],
-        custom_role_ids: [],
-        has_completed_onboarding: true,
-        dismissed_ops_nudges: [],
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      });
+      mockRepo.findById.mockResolvedValue(
+        memberFixture({
+          chapter_id: 'chapter-1',
+          has_completed_onboarding: true,
+        }),
+      );
       mockUserRepo.findById.mockResolvedValue({
         id: 'user-1',
         email: 'a@b.c',
@@ -1186,33 +1111,18 @@ describe('MemberService', () => {
     });
 
     it('passes the viewer-allowed visibility set to the custom-field lookup', async () => {
-      const member = {
-        id: 'member-1',
-        user_id: 'user-1',
+      const member = memberFixture({
         chapter_id: 'chapter-1',
         role_ids: ['role-1'],
-        custom_role_ids: [],
         has_completed_onboarding: true,
-        dismissed_ops_nudges: [],
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      };
-      mockRepo.findById.mockResolvedValue(member);
-      mockUserRepo.findById.mockResolvedValue({
-        id: 'user-1',
-        supabase_auth_id: 'auth-1',
-        email: 'john@example.com',
-        display_name: 'John Doe',
-        avatar_url: null,
-        bio: null,
-        graduation_year: null,
-        current_city: null,
-        current_company: null,
-        active_chapter_id: null,
-        deleted_at: null,
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
       });
+      mockRepo.findById.mockResolvedValue(member);
+      mockUserRepo.findById.mockResolvedValue(
+        userFixture({
+          email: 'john@example.com',
+          display_name: 'John Doe',
+        }),
+      );
 
       // A different viewer (not self) who is the president (wildcard).
       mockRbacService.getEffectivePermissions.mockResolvedValue(['*']);
@@ -1261,17 +1171,11 @@ describe('MemberService', () => {
     });
 
     it('should throw ForbiddenException when member not in chapter', async () => {
-      mockRepo.findById.mockResolvedValue({
-        id: 'member-1',
-        user_id: 'user-1',
-        chapter_id: 'chapter-other',
-        role_ids: [],
-        custom_role_ids: [],
-        has_completed_onboarding: false,
-        dismissed_ops_nudges: [],
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      });
+      mockRepo.findById.mockResolvedValue(
+        memberFixture({
+          chapter_id: 'chapter-other',
+        }),
+      );
 
       await expect(
         service.findProfileById('member-1', 'chapter-1', 'viewer-1'),
@@ -1285,34 +1189,16 @@ describe('MemberService', () => {
   describe('searchByChapterAndName', () => {
     it('should return matching members by display name', async () => {
       const members = [
-        {
-          id: 'member-1',
-          user_id: 'user-1',
+        memberFixture({
           chapter_id: 'chapter-1',
-          role_ids: [],
-          custom_role_ids: [],
           has_completed_onboarding: true,
-          dismissed_ops_nudges: [],
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ];
       const users = [
-        {
-          id: 'user-1',
-          supabase_auth_id: 'auth-1',
+        userFixture({
           email: 'john@example.com',
           display_name: 'John Doe',
-          avatar_url: null,
-          bio: null,
-          graduation_year: null,
-          current_city: null,
-          current_company: null,
-          active_chapter_id: null,
-          deleted_at: null,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ];
       mockRepo.findByChapter.mockResolvedValue(members);
       mockUserRepo.findByIds.mockResolvedValue(users);
@@ -1343,34 +1229,16 @@ describe('MemberService', () => {
 
     it('should match on email as well as display name (#588)', async () => {
       const members = [
-        {
-          id: 'member-1',
-          user_id: 'user-1',
+        memberFixture({
           chapter_id: 'chapter-1',
-          role_ids: [],
-          custom_role_ids: [],
           has_completed_onboarding: true,
-          dismissed_ops_nudges: [],
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ];
       const users = [
-        {
-          id: 'user-1',
-          supabase_auth_id: 'auth-1',
+        userFixture({
           email: 'jdoe@school.edu',
           display_name: 'Jane Roe',
-          avatar_url: null,
-          bio: null,
-          graduation_year: null,
-          current_city: null,
-          current_company: null,
-          active_chapter_id: null,
-          deleted_at: null,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ];
       mockRepo.findByChapter.mockResolvedValue(members);
       mockUserRepo.findByIds.mockResolvedValue(users);
@@ -1387,34 +1255,16 @@ describe('MemberService', () => {
 
     it('should match a member solely by a visible custom-field value', async () => {
       const members = [
-        {
-          id: 'member-1',
-          user_id: 'user-1',
+        memberFixture({
           chapter_id: 'chapter-1',
-          role_ids: [],
-          custom_role_ids: [],
           has_completed_onboarding: true,
-          dismissed_ops_nudges: [],
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ];
       const users = [
-        {
-          id: 'user-1',
-          supabase_auth_id: 'auth-1',
+        userFixture({
           email: 'john@example.com',
           display_name: 'John Doe',
-          avatar_url: null,
-          bio: null,
-          graduation_year: null,
-          current_city: null,
-          current_company: null,
-          active_chapter_id: null,
-          deleted_at: null,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ];
       mockRepo.findByChapter.mockResolvedValue(members);
       mockUserRepo.findByIds.mockResolvedValue(users);
@@ -1447,34 +1297,16 @@ describe('MemberService', () => {
 
     it('never matches an exec-tier field value for a baseline member viewer (#588)', async () => {
       const members = [
-        {
-          id: 'member-1',
-          user_id: 'user-1',
+        memberFixture({
           chapter_id: 'chapter-1',
-          role_ids: [],
-          custom_role_ids: [],
           has_completed_onboarding: true,
-          dismissed_ops_nudges: [],
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ];
       const users = [
-        {
-          id: 'user-1',
-          supabase_auth_id: 'auth-1',
+        userFixture({
           email: 'john@example.com',
           display_name: 'John Doe',
-          avatar_url: null,
-          bio: null,
-          graduation_year: null,
-          current_city: null,
-          current_company: null,
-          active_chapter_id: null,
-          deleted_at: null,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ];
       mockRepo.findByChapter.mockResolvedValue(members);
       mockUserRepo.findByIds.mockResolvedValue(users);
@@ -1497,60 +1329,30 @@ describe('MemberService', () => {
 
     it('matches a self-tier field value only on the viewer’s own row', async () => {
       const members = [
-        {
-          id: 'member-1',
+        memberFixture({
           user_id: 'viewer-user-1',
           chapter_id: 'chapter-1',
-          role_ids: [],
-          custom_role_ids: [],
           has_completed_onboarding: true,
-          dismissed_ops_nudges: [],
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
-        {
+        }),
+        memberFixture({
           id: 'member-2',
           user_id: 'user-2',
           chapter_id: 'chapter-1',
-          role_ids: [],
-          custom_role_ids: [],
           has_completed_onboarding: true,
-          dismissed_ops_nudges: [],
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ];
       const users = [
-        {
+        userFixture({
           id: 'viewer-user-1',
-          supabase_auth_id: 'auth-1',
           email: 'me@example.com',
           display_name: 'Me',
-          avatar_url: null,
-          bio: null,
-          graduation_year: null,
-          current_city: null,
-          current_company: null,
-          active_chapter_id: null,
-          deleted_at: null,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
-        {
+        }),
+        userFixture({
           id: 'user-2',
           supabase_auth_id: 'auth-2',
           email: 'them@example.com',
           display_name: 'Them',
-          avatar_url: null,
-          bio: null,
-          graduation_year: null,
-          current_city: null,
-          current_company: null,
-          active_chapter_id: null,
-          deleted_at: null,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ];
       mockRepo.findByChapter.mockResolvedValue(members);
       mockUserRepo.findByIds.mockResolvedValue(users);
@@ -1591,32 +1393,17 @@ describe('MemberService', () => {
   // the signing from any one of them fails here.
   describe('every member read signs the stored photo path', () => {
     const PHOTO = 'chapters/chapter-1/profiles/user-1/p.jpg';
-    const member = {
-      id: 'member-1',
-      user_id: 'user-1',
+    const member = memberFixture({
       chapter_id: 'chapter-1',
       role_ids: ['role-alumni'],
-      custom_role_ids: [],
       has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
-    const user = {
-      id: 'user-1',
-      supabase_auth_id: 'auth-1',
+    });
+    const user = userFixture({
       email: 'ann@example.com',
       display_name: 'Ann Lee',
       avatar_url: PHOTO,
-      bio: null,
       graduation_year: 2020,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
 
     beforeEach(() => {
       mockRepo.findByChapter.mockResolvedValue([member]);
@@ -1624,17 +1411,15 @@ describe('MemberService', () => {
       mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
         { id: 'user-1', display_name: 'Ann Lee', avatar_url: PHOTO },
       ]);
-      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
-        id: 'role-alumni',
-        chapter_id: 'chapter-1',
-        name: 'Alumni',
-        system_key: null,
-        permissions: [],
-        is_system: true,
-        display_order: 5,
-        color: null,
-        created_at: '2024-01-01',
-      });
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(
+        roleFixture({
+          id: 'role-alumni',
+          chapter_id: 'chapter-1',
+          name: 'Alumni',
+          is_system: true,
+          display_order: 5,
+        }),
+      );
     });
 
     it.each([
@@ -1663,46 +1448,28 @@ describe('MemberService', () => {
 
   describe('findAlumniByChapter', () => {
     it('should return alumni members with profile info', async () => {
-      const alumniRole = {
+      const alumniRole = roleFixture({
         id: 'role-alumni',
         chapter_id: 'chapter-1',
         name: 'Alumni',
-        system_key: null,
-        permissions: [],
         is_system: true,
         display_order: 5,
-        color: null,
-        created_at: '2024-01-01',
-      };
+      });
       const members = [
-        {
-          id: 'member-1',
-          user_id: 'user-1',
+        memberFixture({
           chapter_id: 'chapter-1',
           role_ids: ['role-alumni'],
-          custom_role_ids: [],
           has_completed_onboarding: true,
-          dismissed_ops_nudges: [],
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ];
       const users = [
-        {
-          id: 'user-1',
-          supabase_auth_id: 'auth-1',
+        userFixture({
           email: 'alumni@example.com',
           display_name: 'Alumni User',
-          avatar_url: null,
-          bio: null,
           graduation_year: 2022,
           current_city: 'Boston',
           current_company: 'Tech Corp',
-          active_chapter_id: null,
-          deleted_at: null,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ];
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(alumniRole);
       mockRepo.findByChapter.mockResolvedValue(members);
@@ -1724,72 +1491,40 @@ describe('MemberService', () => {
     });
 
     it('should filter alumni by graduation_year', async () => {
-      const alumniRole = {
+      const alumniRole = roleFixture({
         id: 'role-alumni',
         chapter_id: 'chapter-1',
         name: 'Alumni',
-        system_key: null,
-        permissions: [],
         is_system: true,
         display_order: 5,
-        color: null,
-        created_at: '2024-01-01',
-      };
+      });
       const members = [
-        {
-          id: 'member-1',
-          user_id: 'user-1',
+        memberFixture({
           chapter_id: 'chapter-1',
           role_ids: ['role-alumni'],
-          custom_role_ids: [],
           has_completed_onboarding: true,
-          dismissed_ops_nudges: [],
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
-        {
+        }),
+        memberFixture({
           id: 'member-2',
           user_id: 'user-2',
           chapter_id: 'chapter-1',
           role_ids: ['role-alumni'],
-          custom_role_ids: [],
           has_completed_onboarding: true,
-          dismissed_ops_nudges: [],
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ];
       const users = [
-        {
-          id: 'user-1',
-          supabase_auth_id: 'auth-1',
+        userFixture({
           email: 'a@example.com',
           display_name: 'User 1',
-          avatar_url: null,
-          bio: null,
           graduation_year: 2022,
-          current_city: null,
-          current_company: null,
-          active_chapter_id: null,
-          deleted_at: null,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
-        {
+        }),
+        userFixture({
           id: 'user-2',
           supabase_auth_id: 'auth-2',
           email: 'b@example.com',
           display_name: 'User 2',
-          avatar_url: null,
-          bio: null,
           graduation_year: 2023,
-          current_city: null,
-          current_company: null,
-          active_chapter_id: null,
-          deleted_at: null,
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ];
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(alumniRole);
       mockRepo.findByChapter.mockResolvedValue(members);
@@ -1816,43 +1551,29 @@ describe('MemberService', () => {
   // to agree with `findAlumniByChapter` member for member — otherwise a
   // chapter's "Actives" and "Alumni" counts could overlap or leave someone out.
   describe('is_alumni', () => {
-    const alumniRole = {
+    const alumniRole = roleFixture({
       id: 'role-alumni',
       chapter_id: 'chapter-1',
       name: 'Alumni',
       system_key: SystemRoleKeys.ALUMNI,
-      permissions: [],
       is_system: true,
       display_order: 5,
-      color: null,
-      created_at: '2024-01-01',
-    };
-    const memberRow = (id: string, roleIds: string[]) => ({
-      id,
-      user_id: `user-of-${id}`,
-      chapter_id: 'chapter-1',
-      role_ids: roleIds,
-      custom_role_ids: [],
-      has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
     });
-    const userRow = (memberId: string, name: string) => ({
-      id: `user-of-${memberId}`,
-      supabase_auth_id: `auth-of-${memberId}`,
-      email: `${memberId}@example.com`,
-      display_name: name,
-      avatar_url: null,
-      bio: null,
-      graduation_year: null,
-      current_city: null,
-      current_company: null,
-      active_chapter_id: null,
-      deleted_at: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    });
+    const memberRow = (id: string, roleIds: string[]) =>
+      memberFixture({
+        id,
+        user_id: `user-of-${id}`,
+        chapter_id: 'chapter-1',
+        role_ids: roleIds,
+        has_completed_onboarding: true,
+      });
+    const userRow = (memberId: string, name: string) =>
+      userFixture({
+        id: `user-of-${memberId}`,
+        supabase_auth_id: `auth-of-${memberId}`,
+        email: `${memberId}@example.com`,
+        display_name: name,
+      });
     const members = [
       memberRow('active', ['role-member']),
       memberRow('alumnus', ['role-alumni']),
@@ -1932,17 +1653,11 @@ describe('MemberService', () => {
   });
 
   describe('dismissOpsNudge', () => {
-    const member = {
-      id: 'member-1',
-      user_id: 'user-1',
+    const member = memberFixture({
       chapter_id: 'chapter-1',
       role_ids: ['role-1'],
-      custom_role_ids: [],
       has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
+    });
 
     it('appends the module key to the member row', async () => {
       mockRepo.findById.mockResolvedValue(member);

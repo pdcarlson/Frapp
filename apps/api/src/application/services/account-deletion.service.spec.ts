@@ -14,22 +14,19 @@ import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import { AUTH_ADMIN_PROVIDER } from '#domain/adapters/auth-admin.interface';
 import type { IAuthAdminProvider } from '#domain/adapters/auth-admin.interface';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
+import { memberFixture, userFixture } from '#test/helpers/entity-fixtures';
 
-const liveUser = {
-  id: 'user-1',
-  supabase_auth_id: 'auth-1',
+const liveUser = userFixture({
   email: 'doomed@example.com',
   display_name: 'Doomed User',
   avatar_url: 'chapters/chapter-a/profiles/user-1/pic.png',
   bio: 'bio',
   graduation_year: 2027,
   current_city: 'Troy',
-  current_company: null,
   active_chapter_id: 'chapter-a',
-  deleted_at: null,
   created_at: '2026-01-01',
   updated_at: '2026-01-01',
-};
+});
 
 const tombstone = {
   ...liveUser,
@@ -44,17 +41,15 @@ const tombstone = {
   deleted_at: '2026-08-03T00:00:00Z',
 };
 
-const membership = (chapterId: string, roleIds: string[] = []): Member => ({
-  id: `m-${chapterId}`,
-  user_id: 'user-1',
-  chapter_id: chapterId,
-  role_ids: roleIds,
-  custom_role_ids: [],
-  has_completed_onboarding: true,
-  dismissed_ops_nudges: [],
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
-});
+const membership = (chapterId: string, roleIds: string[] = []): Member =>
+  memberFixture({
+    id: `m-${chapterId}`,
+    chapter_id: chapterId,
+    role_ids: roleIds,
+    has_completed_onboarding: true,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  });
 
 describe('AccountDeletionService', () => {
   let service: AccountDeletionService;
