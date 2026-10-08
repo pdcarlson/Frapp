@@ -2,11 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  MAX_ARCHIVE_EXPORT_PART_BYTES,
-  MAX_ARCHIVE_UPLOAD_BYTES,
   MAX_UPLOAD_BYTES,
   isAllowedUploadMime,
-  isWithinArchiveUploadSizeLimit,
   isWithinUploadSizeLimit,
   uploadMimeList,
 } from "./upload-allowlists";
@@ -56,29 +53,14 @@ describe("archive upload kind mirrors the chat-archive bucket", () => {
   });
 });
 
-describe("archive size limits stay off the member-upload ceiling", () => {
+// The archive's own size ceilings are the API's (#3268):
+// `apps/api/src/domain/constants/discord-archive-limits.spec.ts`.
+describe("archive uploads stay off the member-upload ceiling", () => {
   it("does not raise the limit for ordinary uploads", () => {
     // Widening `document` to cover a one-off import would raise the ceiling on
     // every member upload in the product — the trade the bucket migration
     // explicitly rejected.
     expect(MAX_UPLOAD_BYTES).toBe(25 * 1024 * 1024);
     expect(isWithinUploadSizeLimit(MAX_UPLOAD_BYTES + 1)).toBe(false);
-  });
-
-  it("allows a 100 MB archive object but not more", () => {
-    expect(MAX_ARCHIVE_UPLOAD_BYTES).toBe(100 * 1024 * 1024);
-    expect(isWithinArchiveUploadSizeLimit(MAX_ARCHIVE_UPLOAD_BYTES)).toBe(true);
-    expect(isWithinArchiveUploadSizeLimit(MAX_ARCHIVE_UPLOAD_BYTES + 1)).toBe(
-      false,
-    );
-    expect(isWithinArchiveUploadSizeLimit(-1)).toBe(false);
-  });
-
-  it("caps an export partition far below the object cap", () => {
-    // The importer JSON.parses a whole partition into memory on an instance
-    // that is also serving live chat.
-    expect(MAX_ARCHIVE_EXPORT_PART_BYTES).toBeLessThan(
-      MAX_ARCHIVE_UPLOAD_BYTES,
-    );
   });
 });

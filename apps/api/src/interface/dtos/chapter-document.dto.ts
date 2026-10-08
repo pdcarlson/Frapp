@@ -9,7 +9,7 @@ import {
   MinLength,
   ValidateIf,
 } from 'class-validator';
-import { POSITION_MAX } from '@repo/validation';
+import { POSITION_MAX } from '#domain/constants/field-limits';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RequestDocumentUploadUrlDto {

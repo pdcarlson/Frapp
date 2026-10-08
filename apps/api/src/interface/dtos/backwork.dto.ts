@@ -10,7 +10,8 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
-import { INT4_MAX, YEAR_MAX } from '@repo/validation';
+import { YEAR_MAX } from '@repo/validation';
+import { INT4_MAX } from '#domain/constants/field-limits';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 

@@ -6,13 +6,12 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import type { ChannelOperation } from '@repo/validation';
+import type { ChannelOperation } from '#domain/utils/channel-access';
+import { POLL_OPTIONS_MAX, POLL_OPTIONS_MIN } from '@repo/validation';
 import {
   isPollClosed,
-  POLL_OPTIONS_MAX,
-  POLL_OPTIONS_MIN,
   validateIndexedPollVote,
-} from '@repo/validation';
+} from '#domain/utils/poll-vote-rules';
 import { CHAT_MESSAGE_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
 import { POLL_VOTE_REPOSITORY } from '#domain/repositories/poll-vote.repository.interface';

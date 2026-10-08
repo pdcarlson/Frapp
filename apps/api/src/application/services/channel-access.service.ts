@@ -21,8 +21,11 @@ import type {
   ChatMessage,
 } from '#domain/entities/chat.entity';
 import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
-import { canAccessChannel, isAlumniPostableChannel } from '@repo/validation';
-import type { ChannelOperation } from '@repo/validation';
+import {
+  canAccessChannel,
+  isAlumniPostableChannel,
+} from '#domain/utils/channel-access';
+import type { ChannelOperation } from '#domain/utils/channel-access';
 import { RbacService } from './rbac.service';
 
 /**
