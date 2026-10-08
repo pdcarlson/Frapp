@@ -88,7 +88,7 @@ measurements.
 `FOCUS_RING_OFFSET` drew its ring in `--ring` (accent-8). The ring is the **entire** focus indicator
 in that recipe, so it has to clear the 3:1 non-text floor unaided. It is not a two-component recipe:
 `ui/switch.tsx` and `ui/tabs.tsx` are the archetypes, but `settings-fields-tab`, `settings-modules-tab`,
-`chat-admin-page`, `members-directory`, `roles-page` and `documents-page` all use it
+`chat-admin-page`, `members-directory`, `roles-page` and the documents `folder-rail` all use it
 too, among others (`grep -rnw FOCUS_RING_OFFSET apps/web --include='*.tsx'` lists the current
 sites; a count written here went stale). (`chapter-wizard` is not one of them: it imports and applies `FOCUS_RING`, and
 named `FOCUS_RING_OFFSET` only inside a JSX comment that cited
