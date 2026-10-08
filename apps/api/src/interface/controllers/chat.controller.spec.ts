@@ -6,6 +6,8 @@ import { ChatController } from './chat.controller';
 import { ChatService } from '../../application/services/chat.service';
 import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
+import { ChatCategoryService } from '../../application/services/chat-category.service';
+import { ChatReactionService } from '../../application/services/chat-reaction.service';
 import type { MaskedChatMessage } from '../../application/services/chat-block-mask';
 import { RbacService } from '../../application/services/rbac.service';
 import { SystemPermissions } from '#domain/constants/permissions';
@@ -20,8 +22,6 @@ describe('ChatController', () => {
       | 'editMessage'
       | 'pinMessage'
       | 'unpinMessage'
-      | 'updateCategory'
-      | 'deleteCategory'
       | 'getChannelList'
       | 'getChannel'
       | 'createChannel'
@@ -29,24 +29,27 @@ describe('ChatController', () => {
       | 'addPrivateChannelMember'
       | 'removePrivateChannelMember'
       | 'sendMessage'
-      | 'recordMessageAction'
     >
   >;
   let attachments: jest.Mocked<
     Pick<ChatAttachmentService, 'requestChatUploadUrl'>
   >;
+  let categories: jest.Mocked<
+    Pick<ChatCategoryService, 'updateCategory' | 'deleteCategory'>
+  >;
+  let reactions: jest.Mocked<Pick<ChatReactionService, 'recordMessageAction'>>;
   let rbacService: jest.Mocked<Pick<RbacService, 'memberHasAnyPermission'>>;
 
   beforeEach(async () => {
     rbacService = { memberHasAnyPermission: jest.fn() };
     attachments = { requestChatUploadUrl: jest.fn() };
+    categories = { updateCategory: jest.fn(), deleteCategory: jest.fn() };
+    reactions = { recordMessageAction: jest.fn() };
     service = {
       deleteMessage: jest.fn(),
       editMessage: jest.fn(),
       pinMessage: jest.fn(),
       unpinMessage: jest.fn(),
-      updateCategory: jest.fn(),
-      deleteCategory: jest.fn(),
       getChannelList: jest.fn(),
       getChannel: jest.fn(),
       createChannel: jest.fn(),
@@ -54,7 +57,6 @@ describe('ChatController', () => {
       addPrivateChannelMember: jest.fn(),
       removePrivateChannelMember: jest.fn(),
       sendMessage: jest.fn(),
-      recordMessageAction: jest.fn(),
     };
 
     const module: TestingModule = await createUnguardedTestingModule({
@@ -63,6 +65,8 @@ describe('ChatController', () => {
         { provide: ChatService, useValue: service },
         { provide: ChatAttachmentService, useValue: attachments },
         { provide: ChatNotificationPreferenceService, useValue: {} },
+        { provide: ChatCategoryService, useValue: categories },
+        { provide: ChatReactionService, useValue: reactions },
         { provide: RbacService, useValue: rbacService },
       ],
     }).compile();
@@ -177,10 +181,10 @@ describe('ChatController', () => {
       await controller.updateCategory('cat-1', 'ch-1', { name: 'Renamed' });
       await controller.deleteCategory('cat-1', 'ch-1');
 
-      expect(service.updateCategory).toHaveBeenCalledWith('cat-1', 'ch-1', {
+      expect(categories.updateCategory).toHaveBeenCalledWith('cat-1', 'ch-1', {
         name: 'Renamed',
       });
-      expect(service.deleteCategory).toHaveBeenCalledWith('cat-1', 'ch-1');
+      expect(categories.deleteCategory).toHaveBeenCalledWith('cat-1', 'ch-1');
     });
   });
 
@@ -276,7 +280,7 @@ describe('ChatController', () => {
         { action_type: 'vote', payload: { option_id: 'opt-a' } },
       );
 
-      expect(service.recordMessageAction).toHaveBeenCalledWith(
+      expect(reactions.recordMessageAction).toHaveBeenCalledWith(
         'msg-1',
         'ch-1',
         'user-1',

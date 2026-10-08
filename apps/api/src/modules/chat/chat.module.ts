@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ChatService } from '../../application/services/chat.service';
 import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
+import { ChatCategoryService } from '../../application/services/chat-category.service';
+import { ChatReactionService } from '../../application/services/chat-reaction.service';
 import { ChatBookmarkService } from '../../application/services/chat-bookmark.service';
 import { ChatReportService } from '../../application/services/chat-report.service';
 import { ChatSidebarService } from '../../application/services/chat-sidebar.service';
@@ -99,6 +101,10 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     // ordering; `ChatService.sendMessage` calls into the first.
     ChatAttachmentService,
     ChatNotificationPreferenceService,
+    // Step 2 (#1380): channel categories, and reactions/actions on a message.
+    // Neither is on the send path; both are called only by `ChatController`.
+    ChatCategoryService,
+    ChatReactionService,
     // Bookmarks (#462) share this module's wiring but not `ChatService` — see
     // the service's own docblock for why they are a separate class.
     ChatBookmarkService,

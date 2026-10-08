@@ -26,6 +26,8 @@ import { memberFixture } from './entity-fixtures';
 import { ChatService } from '../../src/application/services/chat.service';
 import { ChatAttachmentService } from '../../src/application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../src/application/services/chat-notification-preference.service';
+import { ChatCategoryService } from '../../src/application/services/chat-category.service';
+import { ChatReactionService } from '../../src/application/services/chat-reaction.service';
 import { NotificationService } from '../../src/application/services/notification.service';
 import { ActivationService } from '../../src/application/services/activation.service';
 import { RbacService } from '../../src/application/services/rbac.service';
@@ -36,10 +38,11 @@ import { ChannelCacheService } from '../../src/application/services/channel-cach
 
 /**
  * The shared fixture for the chat service specs (#1380): one Nest testing
- * module wiring `ChatService`, `ChatAttachmentService` and
- * `ChatNotificationPreferenceService` over the same mocked repositories, so a
- * case in any of the three specs sees the services wired as `ChatModule`
- * wires them. `ChannelAccessService` is real, over the mocked channel, member
+ * module wiring `ChatService` and the services split out of it
+ * (`ChatAttachmentService`, `ChatNotificationPreferenceService`,
+ * `ChatCategoryService`, `ChatReactionService`) over the same mocked
+ * repositories, so a case in any of their specs sees the services wired as
+ * `ChatModule` wires them. `ChannelAccessService` is real, over the mocked channel, member
  * and RBAC reads, so the access rejections run the actual predicate.
  */
 export const baseMember = memberFixture({
@@ -231,6 +234,8 @@ export async function createChatServiceFixture() {
       ChatService,
       ChatAttachmentService,
       ChatNotificationPreferenceService,
+      ChatCategoryService,
+      ChatReactionService,
       { provide: CHAT_CHANNEL_REPOSITORY, useValue: mockChannelRepo },
       { provide: CHAT_CATEGORY_REPOSITORY, useValue: mockCategoryRepo },
       { provide: CHAT_MESSAGE_REPOSITORY, useValue: mockMessageRepo },
@@ -271,6 +276,8 @@ export async function createChatServiceFixture() {
     service: module.get(ChatService),
     attachments: module.get(ChatAttachmentService),
     notificationPreferences: module.get(ChatNotificationPreferenceService),
+    categories: module.get(ChatCategoryService),
+    reactions: module.get(ChatReactionService),
     mockChannelRepo,
     mockCategoryRepo,
     mockMessageRepo,

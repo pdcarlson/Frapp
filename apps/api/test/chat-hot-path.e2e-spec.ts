@@ -57,14 +57,15 @@ const { AuthGuardStub, ChapterGuardStub } = createGuardStubs({
 
 /**
  * HTTP-level coverage for the NestJS chat hot path — `ChatController` wired to
- * the REAL `ChatService` and `ChannelAccessService` (only their repository /
- * collaborator dependencies are mocked, exactly as `chat.service.spec.ts`
- * does), so the authorization decisions this suite asserts on are the actual
+ * the REAL `ChatService`, `ChatReactionService` and `ChannelAccessService`
+ * (only their repository / collaborator dependencies are mocked, exactly as
+ * `chat.service.spec.ts` does), so the authorization decisions this suite asserts on are the actual
  * production code path, not a stand-in. `attendance-points-flow.e2e-spec.ts`
  * is the harness pattern this follows; unlike that suite, the service under
  * test is not itself mocked, because the point here is the authz surface
  * (channel access, read-only-channel gating, cross-channel reply rejection),
- * which lives inside `ChatService`/`ChannelAccessService`, not the controller.
+ * which lives inside the chat services and `ChannelAccessService`, not the
+ * controller.
  */
 describe('Chat hot path (e2e)', () => {
   let app: INestApplication;
