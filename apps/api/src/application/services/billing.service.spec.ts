@@ -76,6 +76,11 @@ import type { Chapter } from '#domain/entities/chapter.entity';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
 import { FinancialInvoiceService } from './financial-invoice.service';
+import {
+  chapterFixture,
+  memberFixture,
+  roleFixture,
+} from '#test/helpers/entity-fixtures';
 
 /** One row of the fake `stripe_webhook_events` table (FRA-23). */
 interface WebhookEventRow {
@@ -176,21 +181,14 @@ describe('BillingService', () => {
   let webhookEventStore: Map<string, WebhookEventRow>;
   let mockWebhookEventRepo: IStripeWebhookEventRepository;
 
-  const baseChapter: Chapter = {
-    id: 'ch-1',
+  const baseChapter: Chapter = chapterFixture({
     name: 'Alpha Chapter',
     university: 'State University',
     stripe_customer_id: 'cus_123',
-    subscription_status: 'incomplete',
-    subscription_id: null,
-    past_due_since: null,
-    last_stripe_webhook_at: null,
     accent_color: '#2563EB',
-    logo_path: null,
-    donation_url: null,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
-  };
+  });
 
   // checkout.session.completed carries the chapter id in Stripe metadata and
   // feeds it straight to a uuid-typed column, so the handler drops anything
@@ -1068,17 +1066,13 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
-      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
-        id: 'role-pres',
-        chapter_id: 'ch-1',
-        name: 'President',
-        system_key: null,
-        permissions: [],
-        is_system: true,
-        display_order: 0,
-        color: null,
-        created_at: '2024-01-01',
-      });
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(
+        roleFixture({
+          id: 'role-pres',
+          name: 'President',
+          is_system: true,
+        }),
+      );
       mockMemberRepo.findByChapter.mockResolvedValue([]);
 
       await service.handleWebhookEvent(event);
@@ -1239,29 +1233,20 @@ describe('BillingService', () => {
         subscription_status: 'canceled',
         previous_subscription_status: 'active',
       });
-      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
-        id: 'role-pres',
-        chapter_id: 'ch-1',
-        name: 'President',
-        system_key: null,
-        permissions: [],
-        is_system: true,
-        display_order: 0,
-        color: null,
-        created_at: '2024-01-01',
-      });
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(
+        roleFixture({
+          id: 'role-pres',
+          name: 'President',
+          is_system: true,
+        }),
+      );
       mockMemberRepo.findByChapter.mockResolvedValue([
-        {
+        memberFixture({
           id: 'member-pres',
           user_id: 'user-pres',
-          chapter_id: 'ch-1',
           role_ids: ['role-pres'],
-          custom_role_ids: [],
           has_completed_onboarding: true,
-          dismissed_ops_nudges: [],
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ]);
       mockNotificationService.notifyUser.mockRejectedValue(
         new Error('Notification failed'),
@@ -2041,28 +2026,17 @@ describe('BillingService', () => {
         data: { object: { id: 'sub_123', status } },
       });
 
-      const presidentRole = {
+      const presidentRole = roleFixture({
         id: 'role-pres',
-        chapter_id: 'ch-1',
         name: 'President',
-        system_key: null,
-        permissions: [],
         is_system: true,
-        display_order: 0,
-        color: null,
-        created_at: '2024-01-01',
-      };
-      const presidentMember = {
+      });
+      const presidentMember = memberFixture({
         id: 'member-pres',
         user_id: 'user-pres',
-        chapter_id: 'ch-1',
         role_ids: ['role-pres'],
-        custom_role_ids: [],
         has_completed_onboarding: true,
-        dismissed_ops_nudges: [],
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-      };
+      });
 
       it('ignores a customer.subscription.updated older than the high-water mark', async () => {
         const chapter = {
@@ -3378,29 +3352,20 @@ describe('BillingService', () => {
         subscription_status: 'past_due',
         previous_subscription_status: 'active',
       });
-      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
-        id: 'role-pres',
-        chapter_id: 'ch-1',
-        name: 'President',
-        system_key: null,
-        permissions: [],
-        is_system: true,
-        display_order: 0,
-        color: null,
-        created_at: '2024-01-01',
-      });
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(
+        roleFixture({
+          id: 'role-pres',
+          name: 'President',
+          is_system: true,
+        }),
+      );
       mockMemberRepo.findByChapter.mockResolvedValue([
-        {
+        memberFixture({
           id: 'member-pres',
           user_id: 'user-pres',
-          chapter_id: 'ch-1',
           role_ids: ['role-pres'],
-          custom_role_ids: [],
           has_completed_onboarding: true,
-          dismissed_ops_nudges: [],
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ]);
 
       await service.handleWebhookEvent(event);
@@ -3442,30 +3407,22 @@ describe('BillingService', () => {
         subscription_status: 'past_due',
         previous_subscription_status: 'active',
       });
-      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
-        id: 'role-pres',
-        chapter_id: 'ch-1',
-        // Relabelled by the chapter; only `system_key` still identifies it.
-        name: 'Chapter Chair',
-        system_key: SystemRoleKeys.PRESIDENT,
-        permissions: [],
-        is_system: true,
-        display_order: 0,
-        color: null,
-        created_at: '2024-01-01',
-      });
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(
+        roleFixture({
+          id: 'role-pres',
+          // Relabelled by the chapter; only `system_key` still identifies it.
+          name: 'Chapter Chair',
+          system_key: SystemRoleKeys.PRESIDENT,
+          is_system: true,
+        }),
+      );
       mockMemberRepo.findByChapter.mockResolvedValue([
-        {
+        memberFixture({
           id: 'member-pres',
           user_id: 'user-pres',
-          chapter_id: 'ch-1',
           role_ids: ['role-pres'],
-          custom_role_ids: [],
           has_completed_onboarding: true,
-          dismissed_ops_nudges: [],
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ]);
 
       await service.handleWebhookEvent(event);
@@ -3545,29 +3502,20 @@ describe('BillingService', () => {
         subscription_status: 'canceled',
         previous_subscription_status: 'active',
       });
-      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
-        id: 'role-pres',
-        chapter_id: 'ch-1',
-        name: 'President',
-        system_key: null,
-        permissions: [],
-        is_system: true,
-        display_order: 0,
-        color: null,
-        created_at: '2024-01-01',
-      });
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(
+        roleFixture({
+          id: 'role-pres',
+          name: 'President',
+          is_system: true,
+        }),
+      );
       mockMemberRepo.findByChapter.mockResolvedValue([
-        {
+        memberFixture({
           id: 'member-pres',
           user_id: 'user-pres',
-          chapter_id: 'ch-1',
           role_ids: ['role-pres'],
-          custom_role_ids: [],
           has_completed_onboarding: true,
-          dismissed_ops_nudges: [],
-          created_at: '2024-01-01',
-          updated_at: '2024-01-01',
-        },
+        }),
       ]);
 
       await service.handleWebhookEvent(event);

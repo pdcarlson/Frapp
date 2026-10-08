@@ -2,6 +2,7 @@ import { GoneException, NotFoundException } from '@nestjs/common';
 import { LegalAcceptanceService } from './legal-acceptance.service';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import type { User } from '#domain/entities/user.entity';
+import { userFixture } from '#test/helpers/entity-fixtures';
 
 jest.mock('@repo/validation', () => ({
   LEGAL_POLICY_VERSION: 'current-version',
@@ -9,24 +10,16 @@ jest.mock('@repo/validation', () => ({
   LEGAL_ACCEPTANCE_REQUIRED_MESSAGE: 'shared refusal message',
 }));
 
-const baseUser = (overrides: Partial<User> = {}): User => ({
-  id: 'user-1',
-  supabase_auth_id: 'auth-1',
-  email: 'member@example.com',
-  display_name: 'Member',
-  avatar_url: null,
-  bio: null,
-  graduation_year: null,
-  current_city: null,
-  current_company: null,
-  active_chapter_id: null,
-  deleted_at: null,
-  legal_accepted_at: null,
-  legal_policy_version: null,
-  created_at: '2026-01-01T00:00:00.000Z',
-  updated_at: '2026-01-01T00:00:00.000Z',
-  ...overrides,
-});
+const baseUser = (overrides: Partial<User> = {}): User =>
+  userFixture({
+    email: 'member@example.com',
+    display_name: 'Member',
+    legal_accepted_at: null,
+    legal_policy_version: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  });
 
 describe('LegalAcceptanceService (#2302)', () => {
   let userRepo: jest.Mocked<Pick<IUserRepository, 'findById' | 'update'>>;

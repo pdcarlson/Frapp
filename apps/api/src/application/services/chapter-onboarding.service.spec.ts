@@ -75,6 +75,7 @@ import { CHAPTER_DIRECTORY_REPOSITORY } from '#domain/repositories/chapter-direc
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import type { Chapter } from '#domain/entities/chapter.entity';
 import type { ChapterOnboardingInput } from './chapter-onboarding.service';
+import { chapterFixture } from '#test/helpers/entity-fixtures';
 
 // Read from the real package, not the mock above: compared against the mocked
 // value, a mock that dropped the constant would make both sides `undefined`.
@@ -85,21 +86,12 @@ const { SIGNET_ENGINE_VERSION } = jest.requireActual<{
 const SYSTEM_SENDER_ID = '00000000-0000-0000-0000-000000000000';
 
 function makeChapter(): Chapter {
-  return {
-    id: 'ch-1',
+  return chapterFixture({
     name: 'Sigma Phi Epsilon',
     university: 'UCLA',
-    stripe_customer_id: null,
-    subscription_status: 'incomplete',
-    subscription_id: null,
-    past_due_since: null,
-    last_stripe_webhook_at: null,
-    accent_color: null,
-    logo_path: null,
-    donation_url: null,
     created_at: '2026-05-24',
     updated_at: '2026-05-24',
-  };
+  });
 }
 
 describe('ChapterOnboardingService', () => {
