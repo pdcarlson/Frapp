@@ -1,97 +1,14 @@
 name: Deploy
 
-# THE DEPLOY JOB, shared by staging and production (epic #2802): production is
-# staging plus layers. A reusable workflow: `on: workflow_call` only, so
-# nothing starts it but a caller in this repo.
+# The deploy job both environments share (epic #2802): staging, plus the
+# production layers named `inputs.environment == 'production'`. Called by
+# deploy-staging.yml (#2804) and deploy-production.yml (#2805), each with
+# `secrets: inherit`. The order, and why it is one job and two trees:
+# docs/ops/deployment/ci-cd.md § How Deployments Are Gated and § The deploy job's trust split.
 #
-# Callers:
-#   * `deploy-staging.yml` ("Deploy staging"), after CI succeeds on `main`,
-#     with `environment: staging` and the commit CI verified (#2804).
-#   * `deploy-production.yml` ("Deploy production"), dispatched by hand, after
-#     its unscoped `validate` job has checked the confirmation and the SHA,
-#     with `environment: production`, `dry_run` and `scope` (#2805).
-#
-# ── The order ───────────────────────────────────────────────────────────────
-#   install and build the API (no secrets yet) → move to the trusted ref →
-#   local actions, provider ids, preflight, env baseline, inject Infisical →
-#   back to the deployed commit → plan (staging) → check the config (#3112) →
-#   rehearse (production) → migration dry run → BUILD web +
-#   landing → [production dry run stops here] → apply the migrations → deploy
-#   the Edge Functions → deploy the API by commit → verify it serves the
-#   commit → check it answers its clients (CORS, the minimum app version, the
-#   attachment-copy function) → UPLOAD web + landing → point the staging hosts
-#   at them → ask Sentry for the source maps (reports, never fails).
-# A failure anywhere before the upload ships no frontend: a failed build before
-# anything is applied, a failed migration before the API, a failed API (or one
-# its clients can't use) before the frontends that call it. One job, because
-# the built output lives in `$RUNNER_TEMP` between the two Vercel phases, and
-# because every job that names `production` costs its own approval click:
-# this is still one.
-#
-# Each environment's layers are named by `inputs.environment`. Staging's: the
-# plan (`scripts/ci/plan-staging-deploy.mjs`) and the staging hostnames; its
-# build, verify and upload follow the plan's outputs. Production's: the
-# provider preflight, the migration rehearsal and its fence, the dry-run stop,
-# the post-apply `config.toml` assert and `scope: migrations-only`. Where the two differ
-# in a value (a slug, `DEPLOY_TARGET`), each has its own step with literals,
-# never an `a && 'x' || 'y'` expression. The provider ids are the one
-# exception: a single step reads the named environment's Render service id and
-# the Vercel ids from `.github/environments.json` (`provider-ids.mjs`, #2806),
-# and every step that needs one takes that step's output.
-#
-# ── The trust split ─────────────────────────────────────────────────────────
-# Two trees, used in turn. The deployed commit (`inputs.sha`) is what gets
-# installed, built, migrated and shipped. The trusted ref (`github.sha`: the
-# commit this file itself was loaded from, which for both callers is `main`)
-# supplies the local composite actions and the checks that must not come from
-# the commit they check:
-#   * `uses: ./…` resolves from the workspace when the step runs, so a local
-#     action after the detach would load from the deployed commit. Rolling
-#     back to a commit older than the action dies with "Can't find
-#     'action.yml'" (db-rollback-playbook.md § Deploying an OLDER commit), and
-#     a newer commit's `supabase-cli` pin would silently differ from the one
-#     the rehearsal used.
-#   * The provider preflight, the served-commit check and the client checks
-#     are verdicts on the deploy, so they run trusted code: the preflight
-#     before the detach, the two checks from a copy taken before it.
-#   * The provider ids are read from the trusted ref's
-#     `.github/environments.json`, so a rollback deploys to the services
-#     today's config names, not the ones an older commit named.
-# The installs come first, on the deployed commit and before any secret is
-# injected (#2801): no install script runs with the Infisical store in its
-# environment. That is all it buys; an install script can still leave
-# something behind that a later step runs with secrets (#2824).
-# `infisical-secrets-action.test.mjs` pins that no local action runs outside
-# the trusted window.
-#
-# ── Secrets: the environment's, released by the caller's `inherit` (#2804) ──
-# `workflow_call` has no environment of its own. This job declares
-# `environment: ${{ inputs.environment }}` for that environment's secrets,
-# after its main-only rule (and, for production, its reviewers). That alone
-# releases none of them to a called job: the first run through this file
-# (36479856561) read all four empty and failed its first step, before anything
-# shipped. The caller must also pass `secrets: inherit` (actions/runner#4453;
-# `workflow-secrets-scope.test.mjs` rule E holds every caller to it). That
-# inherit makes them arrive is from that report, not yet seen here: the first
-# run with it is the proof, recorded on #2804. GitHub's docs say an
-# environment secret wins over an inherited one of the same name, and no
-# repository secret exists to inherit (#2583). The first step checks on every
-# run that they arrived. `workflow-secrets-scope.test.mjs` pins
-# that every caller names a main-only environment literally and runs on no
-# pull-request trigger, since the name here is an expression.
-#
-# ── Where the config comes from ─────────────────────────────────────────────
-# Infisical, injected once, after every install (#834, #2672). Each Vercel
-# build gets only the keys its app reads, and every Vercel CLI process runs on
-# the names recorded just before the injection
-# (`scripts/ci/lib/vercel-build-env.mjs`). `RENDER_API_KEY`, `VERCEL_API_KEY`
-# and the Infisical bootstrap pair are environment secrets.
-# `API_HEALTHCHECK_URL` comes from the injection. Render auto-deploy must be
-# off in both environments (#2679; staging-conformance and the production
-# preflight assert it), so this job is the only thing that deploys the API.
-#
-# The callers' names that other things key on (workflow names, files and job
-# ids) are listed in each caller's header.
+# Where the environments differ in a value, each has its own step with
+# literals, never an `a && 'x' || 'y'` expression. The provider ids are the
+# one exception (provider-ids.mjs, #2806).
 
 on:
   workflow_call:
@@ -140,59 +57,22 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # The environment the caller names, so this job gets THAT environment's
-    # secrets, after its main-only rule, and its reviewers (see the header).
+    # The caller's environment: its secrets, its main-only rule, its reviewers.
     environment: ${{ inputs.environment }}
-    # The steps' own ceilings: the Render poll 20 minutes, the served-commit
-    # check 5, the client checks under 5 (five requests, each at most three
-    # 15-second attempts), the Vercel READY poll 30
-    # (`VERCEL_OVERALL_TIMEOUT_MS`), the source-map check under 3 (a minute of
-    # re-asking, two intervals and one read): 63 in all. On top of them come
-    # installs, the builds (web and landing, and since #3112 the API's for
-    # its boot check), production's rehearsal stack and the migrations: about
-    # 5 of the deploy job's 9 minutes on the 2026-10-01 production run
-    # (36873240684), before the API build was added. 75 bounds the job past
-    # all of them.
+    # The steps' own ceilings (Render 20, served commit 5, client checks under 5,
+    # Vercel READY 30, source maps under 3: 63) plus the installs, builds and
+    # production's rehearsal. 75 bounds them all.
     timeout-minutes: 75
-    # One deploy per environment at a time, queued, never cancelled. The group
-    # is the environment's migration lock (`db-migrate-staging`,
-    # `db-migrate-production`; `docs/ops/database/promotion.md` documents them), and
-    # this job is the only thing that migrates either database. Two production
-    # dispatches (a `full` release and a `migrations-only` retry, say) must not
-    # interleave two `db push` runs, and a merge must not start a staging push
-    # beside another.
-    #
-    # `cancel-in-progress: false` is the important half: cancelling mid-`db push`
-    # is how a database ends up half-migrated, and cancelling between the API
-    # and the upload leaves the hosts on different commits. GitHub still
-    # replaces a PENDING run when a third arrives; that job ends `cancelled`.
-    # Staging's `deploy-outcome` reports it as a failure, which closes on the
-    # next run: that run plans from the served commit and so carries the
-    # replaced run's changes too. Production's files nothing if the job lists
-    # no steps (deploy-alert.mjs's never-started rule).
-    #
-    # A `full` production dry run holds the group for an install and two
-    # builds on top of the rehearsal, so a `migrations-only` recovery dispatch
-    # can queue behind a run that changes nothing. If that bites during an
-    # incident, wait or cancel the dry run by hand; never loosen
-    # `cancel-in-progress`.
-    #
-    # Honest limit: this lock covers GitHub Actions runs only. It cannot stop a
-    # human running `supabase db push` from a laptop, which is why the runbook
-    # says not to and the drift gate catches it when someone does.
+    # The environment's migration lock. Never cancel a running deploy: it can leave
+    # a half-migrated database or hosts on different commits. Why, and the lock's
+    # limits: docs/ops/database/promotion.md § Production: one path, two scopes.
     concurrency:
       group: db-migrate-${{ inputs.environment }}
       cancel-in-progress: false
-    # `plan` is staging's: a successful `stale` run neither raises nor closes
-    # the alert, a successful `forward` one doesn't close it, a failed run of
-    # either raises it, and a `current` one isn't reported as an API deploy.
-    # `sourcemaps` feeds each caller's source-map alerts; at most one of its
-    # two steps runs, so the other half of the value is always empty. It is
-    # verdict words only: the runner drops a job output that contains a value
-    # the Infisical injection masked, `staging` and `production` among them
-    # (verify-sentry-sourcemaps.mjs, "Why the output is only words").
-    # `sourcemaps-checked` says whether a check ran, so a dropped `sourcemaps`
-    # can't pass for "nothing built". The rest feed production's summary.
+    # `plan` drives staging's alert. `sourcemaps` holds verdict words only, because
+    # the runner drops an output that contains a masked value
+    # (verify-sentry-sourcemaps.mjs). `sourcemaps-checked` tells a dropped
+    # `sourcemaps` apart from "nothing built". The rest feed production's summary.
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
       render-deploy-id: ${{ steps.render.outputs.deploy_id }}
@@ -201,17 +81,9 @@ jobs:
       sourcemaps: ${{ steps.sourcemaps-staging.outputs.verdicts }}${{ steps.sourcemaps-production.outputs.verdicts }}
       sourcemaps-checked: ${{ steps.sourcemaps-staging.outcome }}${{ steps.sourcemaps-production.outcome }}
     steps:
-      # Refused here, before any checkout: an environment this job doesn't
-      # know, a SHA that isn't 40 lowercase hex (the rule
-      # `validate-deploy-sha.mjs` applies before production's approval, so a
-      # SHA it passed is never refused here), a staging run with a dry run or a
-      # partial scope, and a production scope other than `full` or
-      # `migrations-only`.
-      #
-      # It also checks on every run that the environment's secrets reached this
-      # CALLED job, which needs its own `environment:` key and the caller's
-      # `secrets: inherit` (see the header). Names only: each check is
-      # `secrets.X != ''`, so no value enters this step.
+      # Refuse bad inputs before any checkout. Also check that the environment's
+      # secrets arrived, by name only: they need this job's `environment:` and the
+      # caller's `secrets: inherit`.
       - name: Check the inputs, and that the environment's secrets reached this job
         id: guard
         env:
@@ -262,77 +134,43 @@ jobs:
           fi
           echo "The '$TARGET_ENVIRONMENT' environment's secrets reached this called job (its environment: key, and the caller's secrets: inherit): INFISICAL_MACHINE_IDENTITY_ID, INFISICAL_CLIENT_SECRET, RENDER_API_KEY, VERCEL_API_KEY (names only)."
 
-      # The deployed commit, for the installs. Nothing trusted runs from this
-      # tree until the detach below.
+      # The deployed commit, for the installs. Nothing trusted runs from it until the detach.
       - name: Checkout the commit to deploy
         uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
-          # Full history: the move to the trusted ref below needs `github.sha`,
-          # and staging's plan diffs from the commit staging serves, which can
-          # be any number of commits back.
+          # Full history: the move to the trusted ref and staging's plan both reach back.
           fetch-depth: 0
-          # Nothing here talks to the remote after checkout; the plan's git
-          # calls are local. Third-party actions run below, and this job holds
-          # environment secrets.
+          # Nothing here talks to the remote, and the job holds environment secrets.
           persist-credentials: false
 
-      # Hand-written, not ./.github/actions/node-setup: a local action loads
-      # from the tree on disk, which is the deployed commit here, so deploying
-      # a commit older than that action would fail. The action ref, the
-      # version and `package-manager-cache: false` must match node-setup's step,
-      # whose comment says why the opt-out is there (`node-setup-action.test.mjs`).
+      # Hand-written, not ./.github/actions/node-setup, which would load from the
+      # deployed commit. Must match node-setup's step (node-setup-action.test.mjs).
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: 24
           package-manager-cache: false
 
-      # Before any secret is injected (#2801). `vercel build` runs each app's
-      # own build, which needs the workspace's dependencies: both apps import
-      # from `packages/`. Up here a registry 5xx or a full disk costs nothing:
-      # nothing has been applied. A migrations-only run builds nothing.
+      # Before any secret is injected (#2801). A migrations-only run builds nothing.
       - name: Install dependencies
         if: ${{ inputs.scope != 'migrations-only' }}
         run: npm ci
 
-      # Pinned, like every other CLI this repo installs in CI. An unpinned
-      # `@latest` would make the deploy path depend on whatever Vercel
-      # published this morning.
+      # Pinned, like every CLI that CI installs.
       - name: Install Vercel CLI
         if: ${{ inputs.scope != 'migrations-only' }}
         run: npm install --global vercel@59.11.7
 
-      # The API and the packages it imports, compiled from this commit for the
-      # config check below (#3112), which runs this commit's boot check
-      # (`validateEnv`) because that is what will boot. The same builds the
-      # Render image runs (`apps/api/Dockerfile`). Here, before any secret, for
-      # the installs' reason (#2801): no build tool runs with the store in its
-      # environment. The output is gitignored, so neither checkout below
-      # touches it. A migrations-only run deploys no API, so it builds none,
-      # and neither does a rollback to a commit with no boot check (before
-      # c7c698fc), which the check then skips with a warning.
+      # For the config check's boot check (#3112), before any secret (#2801). None
+      # under migrations-only, or for a commit from before the boot check (c7c698fc).
       - name: Build the API, for its boot check
         if: ${{ inputs.scope != 'migrations-only' && hashFiles('apps/api/src/config/env.validation.ts') != '' }}
         run: npx --no-install turbo run build --filter=api
 
-      # `github.sha` is the commit this file was loaded from: for production the
-      # dispatched `main`, for staging `main`'s tip when CI's run finished. It
-      # is an ancestor of `origin/main`, so the full-history checkout already
-      # has it.
-      #
-      # `--force`, because `git checkout` keeps a local edit to any tracked file
-      # the two commits share, and an install script's edit to an action file
-      # must not survive into the trusted window. `npm ci` ran the root
-      # `prepare`, which points `core.hooksPath` at the deployed commit's
-      # `.githooks`. Pointing it at `/dev/null` turns every hook off for the
-      # rest of the job, so neither checkout here runs one, including one an
-      # install script left in `.git/hooks`.
-      #
-      # Honest limit: an install script can still leave something the trusted
-      # steps run, such as other `.git/config` keys or a directory appended to
-      # `$GITHUB_PATH`. The install runs before any secret; taking it out of
-      # this job is #2824's fix, not another check here.
+      # The local actions and the checks run from `github.sha` (`main`). `--force` and
+      # the null hooksPath keep an install script's edits and hooks out of the trusted
+      # window. What they can't stop is #2824: docs/ops/deployment/ci-cd.md § The deploy job's trust split.
       - name: Move the workspace to the trusted ref
         env:
           TRUSTED_SHA: ${{ github.sha }}
@@ -342,9 +180,7 @@ jobs:
           git checkout --force --detach "$TRUSTED_SHA"
           git --no-pager log -1 --format='Trusted ref for the local actions and checks: %H%n%s'
 
-      # The Render service and the Vercel team and projects, from
-      # `.github/environments.json` at the trusted ref, so a rollback deploys
-      # to the services the config names today (#2806). Not secrets.
+      # From the trusted ref, so a rollback deploys to the services named today (#2806).
       - name: Read the provider ids
         id: ids
         env:
@@ -354,26 +190,9 @@ jobs:
       - name: Setup Supabase CLI
         uses: ./.github/actions/supabase-cli
 
-      # Before anything is applied or built. Both auto-deploy and the Vercel
-      # Git link fail OPEN: if Render's auto-deploy is back on, or a Vercel
-      # project is re-linked, ordinary merges are already shipping to
-      # production and this workflow is not the only path. The same preflight
-      # asserts `serviceDetails.healthCheckPath` is `/health` (empty is a
-      # TCP-only probe; `/health/ready` would cancel on a degraded dependency).
-      #
-      # Under `migrations-only` exactly ONE assertion is dropped: frapp-LANDING's
-      # Vercel Production Branch. Render's stays, because auto-deploy being back
-      # on means an ordinary merge could ship code against the schema this run
-      # is about to change. frapp-WEB's stays too: `apps/web` is a direct
-      # Supabase client (PostgREST reads, `postgres_changes` on
-      # `public.chat_messages` and `public.chat_message_actions`), so a dashboard
-      # promoted from `main` is wired straight to the schema being changed.
-      # frapp-landing has no Supabase client, so it is the one thing a
-      # database-only run can honestly skip.
-      #
-      # The identifiers are the ones the production steps below deploy to (the
-      # same step outputs), so the preflight asserts against the services this
-      # run ships.
+      # Render auto-deploy and a Vercel Git link both fail open, so check them before
+      # anything ships. migrations-only drops only frapp-landing's check, the one
+      # project with no Supabase client (production-guardrails.mjs).
       - name: Provider guardrail preflight
         if: inputs.environment == 'production'
         env:
@@ -393,18 +212,9 @@ jobs:
             node scripts/ci/production-guardrails.mjs --preflight
           fi
 
-      # The served-commit check runs after the detach, but it is the verdict on
-      # the deploy, so it comes from the trusted ref too. Run from the deployed
-      # tree, it would also set a floor on rollbacks: a commit from before the
-      # script existed (#2505) could ship its API and then fail here. The script
-      # and its `lib/` imports are Node built-ins only, so the copy needs no
-      # install. The client checks after it (#3113), the config check (#3112)
-      # and the source-map check at the end of the job (#2489) run from this
-      # copy for the same reasons, and so does production's rehearsal stack
-      # start (`supabase-start-disposable.sh`, bash, #2609), which runs on every
-      # production run, migrations-only included. So the copy takes all
-      # of `scripts/ci` and has no condition. The step keeps its name, which
-      # the deploy tests pin.
+      # The checks that give the verdict on the deploy run from this copy of the
+      # trusted ref's scripts/ci, so a rollback to a commit older than a script still
+      # runs it. The deploy tests pin this step's name.
       - name: Keep a trusted copy of the served-commit check
         env:
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
@@ -413,12 +223,8 @@ jobs:
           rm -rf "$TRUSTED_CI"
           cp -R scripts/ci "$TRUSTED_CI"
 
-      # Names only, never values. `deploy-vercel.mjs` runs every Vercel CLI
-      # process on these names alone and hands `vercel build` its project's app
-      # keys on top, so the rest of the store the next step injects stays out of
-      # them. It must run immediately BEFORE the injection: a baseline taken
-      # after it holds the whole store, and the script refuses one that
-      # contains an app key.
+      # Names only. It must run immediately before the injection: deploy-vercel.mjs
+      # refuses a baseline that holds an app key (lib/vercel-build-env.mjs).
       - name: Record the job's environment names before Infisical adds to them
         env:
           VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
@@ -441,12 +247,8 @@ jobs:
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
 
-      # Back to the commit being deployed: for production proven an ancestor of
-      # `main` with green CI, for staging the one CI just verified, so this is
-      # already-reviewed code. Everything below runs from it.
-      #
-      # Nothing after this point may call a local `./.github/actions/…` action:
-      # see the header. `infisical-secrets-action.test.mjs` enforces it.
+      # Already-reviewed code: production's commit was validated, staging's is CI's.
+      # No local `./.github/actions/…` after this (infisical-secrets-action.test.mjs).
       - name: Check out the commit being deployed
         env:
           DEPLOY_SHA: ${{ inputs.sha }}
@@ -454,22 +256,8 @@ jobs:
           git checkout --detach "$DEPLOY_SHA"
           git --no-pager log -1 --format='Deploying %H%n%s'
 
-      # Decide what this run ships, before anything is built. Read-only: git,
-      # `/health` and two Vercel lookups. The API: compare this commit with the
-      # one staging serves (`/health`'s `commit`) and with `main`'s tip;
-      # `deploy` when anything the API image is built from changed since the
-      # served commit, `current` when nothing did (both only for the tip),
-      # `forward` for a newer non-tip commit with changes, and `stale`
-      # otherwise. Web and landing, only behind an API that carries this
-      # commit's API, and only when something they are built from changed
-      # since what the staging hostnames serve (#2865): the tip uploads then;
-      # another commit uploads only when both hosts serve older commits, so an
-      # upload never rolls a host back and a green change whose tip run never
-      # comes still ships. A re-run of the tip's run uploads regardless. The
-      # reasoning is in the script header.
-      #
-      # First, so a run with nothing to upload doesn't build web and landing
-      # while it holds the queue. Staging only: it reads the staging hostnames.
+      # Read-only. Decides what this run ships before anything is built (#2865). The
+      # rules: plan-staging-deploy.mjs's header, and docs/ops/deployment/ci-cd.md step 3.
       - name: Plan the deploy
         id: plan
         if: inputs.environment == 'staging'
@@ -480,27 +268,9 @@ jobs:
           VERCEL_STAGING_HOSTS: app.staging.frapp.live staging.frapp.live
         run: node scripts/ci/plan-staging-deploy.mjs
 
-      # ── Refuse a config this run would fail on later (#3112) ─────────────
-      # Before anything is written, dry runs included. Each of these otherwise
-      # fails after the apply, with the schema already moved:
-      #   * the API's boot check, this commit's `validateEnv` (built above), on
-      #     the names Infisical injected, when the run deploys the API;
-      #   * `SUPABASE_FUNCTIONS_DEPLOY_TOKEN`, when it deploys a function;
-      #   * `API_HEALTHCHECK_URL`, when it checks the commit the API serves.
-      # Each environment's flags restate the `if:` of the steps they stand in
-      # for, so the check asks for nothing the run won't use. Names only, never
-      # values; the boot check runs in a child process with no store in its
-      # environment. The script header has both. What it checked, and anything
-      # it skipped, goes to the step summary.
-      #
-      # It proves what Infisical holds, the source the Render sync copies. It
-      # can't see a sync that failed or lags (SECRETS_MANAGEMENT.md § 5), or
-      # anything the API checks against a provider once it is up, such as the
-      # Stripe price lookup.
-      #
-      # From the trusted copy, like the served-commit check, so a rollback to a
-      # commit from before the script still runs it. A commit with no
-      # `env.validation.ts` skips the boot check with a warning.
+      # ── Refuse a config this run would fail on after the apply (#3112) ──────
+      # Each environment's flags restate the `if:` of the steps they stand in for.
+      # From the trusted copy. What it can't see: docs/ops/deployment/ci-cd.md step 4.
       - name: Check the config before anything is written (staging)
         if: inputs.environment == 'staging'
         env:
@@ -512,8 +282,7 @@ jobs:
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
         run: node "$TRUSTED_CI/check-deploy-config.mjs"
 
-      # A dry run checks what its real run would need: the API and the
-      # functions on a `full` run, and the served commit on every run.
+      # A dry run checks what its real run would need.
       - name: Check the config before anything is written (production)
         if: inputs.environment == 'production'
         env:
@@ -526,35 +295,17 @@ jobs:
         run: node "$TRUSTED_CI/check-deploy-config.mjs"
 
       # ── Production: rehearse the migration before touching the database ──
-      # The same stack migration-drift-gate.yml's `migration-replay` starts,
-      # through the same script: a different exclusion list is a different
-      # rehearsal. It retries when ghcr.io rate-limits an image pull (#2609),
-      # which would otherwise fail a production deploy before it began. Run
-      # from the trusted copy, like the served-commit check, so a rollback to a
-      # commit from before the script existed still starts the stack.
+      # The stack migration-replay starts, through the same script (#2609), from the
+      # trusted copy.
       - name: Start disposable Supabase stack
         if: inputs.environment == 'production'
         env:
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
         run: bash "$TRUSTED_CI/supabase-start-disposable.sh"
 
-      # The #1332 gate, run here against LIVE production state rather than at PR
-      # time: rebuild production's applied set on the disposable stack, then
-      # apply exactly the pending tail through the same CLI path the real apply
-      # uses. Read-only against production: one GET to the Management API,
-      # through `resilientFetch`, whose retry policy scripts/ci/lib/http.mjs
-      # states.
-      #
-      # Not gated on `dry_run` or `scope`: a migrations-only run is still a
-      # write to the production database, and the rehearsal is the only thing
-      # that has ever executed that write first. See deploy-production.yml's
-      # header for what that costs a migrations-only recovery.
-      #
-      # REPLAY_SUPABASE_CLI names the binary the apply below runs: the CLI
-      # `.github/actions/supabase-cli` put on PATH from the trusted ref. "The
-      # same CLI code path" is the entire premise of the rehearsal, so it is
-      # stated here rather than left to `resolveSupabaseCli`'s CI rule
-      # (scripts/ci/lib/supabase-cli-pin.mjs), which picks the same binary today.
+      # The #1332 gate, against live production state, which it only reads. Not
+      # gated on dry_run or scope: it is the only rehearsal of the write.
+      # REPLAY_SUPABASE_CLI pins it to the binary the apply runs.
       - name: Rehearse the migration against production's applied state
         id: replay
         if: inputs.environment == 'production'
@@ -568,11 +319,8 @@ jobs:
           fi
           node scripts/ci/check-migration-replay.mjs | tee "${RUNNER_TEMP:-/tmp}/replay.log"
 
-          # `nothing-pending` exits 0 having rehearsed NOTHING, and that must not
-          # read as "the apply was rehearsed" in the run summary. The script
-          # prints a machine-readable `replay_outcome=<code>` line for exactly
-          # this; do not go back to grepping its human message, which is where
-          # this went wrong the first time.
+          # `nothing-pending` exits 0 having rehearsed nothing. Read the
+          # machine-readable line, never the human message.
           OUTCOME="$(grep -oP '^replay_outcome=\K.*' "${RUNNER_TEMP:-/tmp}/replay.log" | tail -n1 || true)"
           if [ -z "$OUTCOME" ]; then
             echo "::error::The replay produced no replay_outcome line. Refusing to report an unknown rehearsal state as a pass."
@@ -581,20 +329,9 @@ jobs:
           echo "outcome=$OUTCOME" >> "$GITHUB_OUTPUT"
 
       # ── The fence ────────────────────────────────────────────────────────
-      # Its own step so that no `continue-on-error` anywhere can swallow it.
-      #
-      # `check-migration-replay.mjs` MOVES pending migrations out of
-      # `supabase/migrations/` into `supabase/.migrations-replay-parked/` and
-      # restores them in a `finally`. A `finally` survives a thrown error; it
-      # does not survive SIGKILL (job cancellation, a runner timeout, the OOM
-      # killer). In migration-drift-gate.yml that is harmless — a throwaway
-      # runner that never speaks to production. Here the apply below runs
-      # `supabase db push` against the real database, and `run-migration.mjs`
-      # counts the BASELINE files still on disk, sees a non-zero total, does not
-      # bail, pushes NOTHING, and prints "Migrations applied successfully".
-      #
-      # A production deploy that reports "migrations applied" having applied
-      # zero is worse than one that fails. So: prove the tree is intact first.
+      # Its own step, so no `continue-on-error` can swallow it. A killed replay
+      # leaves migrations parked, and the apply would then push none and report
+      # success: docs/ops/database/promotion.md § Production: one path, two scopes.
       - name: Fence — the working tree must be intact before anything is applied
         if: inputs.environment == 'production'
         run: |
@@ -624,45 +361,23 @@ jobs:
 
           echo "Fence holds: migrations intact, tree clean, DB password present."
 
-      # Not `|| true`. A local stack still running while the CLI is linked to a
-      # remote project is the one configuration where a CLI change could
-      # silently retarget, so a failure to tear down stops the deploy.
+      # Not `|| true`: a local stack left up while the CLI is linked to a remote
+      # project is where a CLI change could silently retarget.
       - name: Stop the disposable Supabase stack
         if: inputs.environment == 'production'
         run: supabase stop --no-backup
 
-      # Every run lists what WAS pending before the apply, so a failed apply's
-      # log says what it was trying to do. On a production dry run this listing
-      # is the output docs/ops/database/promotion.md says to read before promoting.
-      #
-      # Ahead of the builds, not after them: a `next build` the OOM killer takes
-      # would otherwise end a dry run before this ever ran, and the dry-run stop
-      # is gated on `inputs.dry_run` rather than `always()`, so the operator
-      # would get neither the pending list nor a summary. Nothing between here
-      # and the apply APPLIES A MIGRATION, so the list is still accurate when
-      # the apply runs. `vercel build` does run in the gap and does construct a
-      # Supabase client, so this is not a statement that the gap is inert, and
-      # it is not standing permission to add a step in it that writes.
-      #
-      # `run-migration.mjs` accepts only `staging` and `production`, and checks
-      # the injected `SUPABASE_PROJECT_REF` against `.github/environments.json`
-      # for that name, so a slug that doesn't match the environment fails here,
-      # before any write.
+      # Lists what is pending, so a failed apply's log says what it tried. On a
+      # production dry run this is the list promotion.md says to read. Before the
+      # builds, so a killed build can't end a dry run without it. Nothing between
+      # here and the apply may write.
       - name: Run migrations (dry-run)
         env:
           TARGET_ENVIRONMENT: ${{ inputs.environment }}
         run: node scripts/run-migration.mjs --env "$TARGET_ENVIRONMENT" --dry-run
 
-      # The dry run above has already run `supabase link`, the command that
-      # rewrites config.toml in some CLI lines, so production's check after
-      # the apply can be made here too, before anything is written. A CLI that
-      # rewrites it then fails the production dry run docs/ops/database/promotion.md
-      # starts from, rather than failing after production is migrated and
-      # before its API ships. Both environments, every run: staging deploys
-      # every merge, so a CLI bump that does this fails the bump's own merge
-      # instead of waiting for the next production deploy. Added when the pin
-      # moved off 2.77.0 (#723, #835) to a build whose `link` no CI run had
-      # exercised yet.
+      # The dry run's `supabase link` rewrites config.toml in some CLI lines. Catch
+      # that before anything is written, on every run (#723, #835).
       - name: Assert supabase config was not rewritten by link (before the apply)
         run: |
           if ! git diff --quiet HEAD -- supabase/config.toml; then
@@ -671,18 +386,12 @@ jobs:
             exit 1
           fi
 
-      # The time this run's builds begin, for the source-map check at the end
-      # (#2489): staging and production upload to the same Sentry projects
-      # under the same release, and only a bundle uploaded after this counts
-      # as this run's. Before both environments' builds, and before the Render
-      # deploy that builds the API.
+      # For the source-map check (#2489): only a bundle uploaded after this counts.
       - name: Note when this run's builds begin
         id: builds-start
         run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      # BUILD both bundles before anything is applied, so a failed build ships
-      # nothing. Each project's `.vercel` is stashed under $RUNNER_TEMP for the
-      # upload step (`scripts/ci/deploy-vercel.mjs`, `DEPLOY_PHASE`).
+      # Built before anything is applied, so a failed build ships nothing.
       - name: Build the Vercel preview bundles (web + landing)
         if: steps.plan.outputs.upload == 'true'
         env:
@@ -697,26 +406,9 @@ jobs:
           VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
         run: node scripts/ci/deploy-vercel.mjs
 
-      # The production BUILDS, before a single byte of production has changed.
-      # `vercel build` is the step most likely to die for reasons unrelated to
-      # the commit (the OOM killer taking `next build`, an app key missing from
-      # Infisical `prod`, a registry blip), and when it ran after the apply it
-      # failed there: run 33275321347 left a migrated database, a new API,
-      # six-month-old frontends and no tag. Each bundle compiles against exactly
-      # the keys its app reads, from the Infisical `prod` injection
-      # (NEXT_PUBLIC_* are inlined at build time; see deploy-vercel.mjs's header
-      # for why a promoted preview is not an option). `vercel pull
-      # --environment=production` still runs, for the project settings and
-      # `VERCEL_ENV=production`, but the file it writes keeps only Vercel's
-      # system variables (#2673, #2810, lib/vercel-build-env.mjs).
-      #
-      # NOT gated on `dry_run`, which is the point: all three `full` attempts on
-      # 2026-09-14 died on this step after a reviewer had approved (34894763676
-      # and 34896647837 inside `vercel build`, 34892839657 on a DEPLOY_SHA the
-      # script required, #2265). A dry run that builds proves this commit
-      # compiles against the app config in Infisical `prod` right now. It
-      # creates no deployment: `vercel deploy --prebuilt` lives in the upload
-      # step alone.
+      # Before anything is applied, dry runs included, because the build is what
+      # fails for reasons unrelated to the commit (run 33275321347, #2265):
+      # docs/ops/deployment/ci-cd.md § How Deployments Are Gated.
       - name: Build the Vercel production bundles (web + landing)
         if: ${{ inputs.environment == 'production' && inputs.scope != 'migrations-only' }}
         env:
@@ -729,28 +421,20 @@ jobs:
           DEPLOY_SHA: ${{ inputs.sha }}
           VERCEL_BUILD_STASH_DIR: ${{ runner.temp }}/vercel-builds
           VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
-          # A dry run's build must not mint a Sentry release for a commit that is
-          # not being deployed. `deploy-vercel.mjs` withholds SENTRY_AUTH_TOKEN
-          # from the build's app keys and strips it from the pulled env file, so
-          # neither channel can hand it to `next build` (#2275).
+          # A dry run mints no Sentry release (#2275).
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
-          # Kept although deploy-vercel.mjs withholds the token itself: that
-          # script runs from the DEPLOYED commit's tree, and a commit from before
-          # #2673 (a rollback rehearsal, say) carries a copy that ignores DRY_RUN
-          # and builds on the whole job env. This unset is the part of the guard
-          # that comes from the trusted ref, whatever commit is being built.
+          # Kept although deploy-vercel.mjs withholds it too: a pre-#2673
+          # commit's copy doesn't, and this line comes from the trusted ref.
           if [ "${DRY_RUN:-}" = "true" ]; then
             echo "Dry run: clearing SENTRY_AUTH_TOKEN so this build mints no Sentry release."
             unset SENTRY_AUTH_TOKEN
           fi
           node scripts/ci/deploy-vercel.mjs
 
-      # The summary states what the rehearsal DID and, as carefully, what it
-      # still did not. A dry run that overstates its own coverage is how the
-      # frontend half went unrehearsed while every run said "green". Only
-      # production reaches it: the first step refuses a staging dry run.
+      # Says what the dry run did and did not rehearse. A summary that overstated
+      # it is how the frontend went unrehearsed.
       - name: Stop here (dry run only)
         if: ${{ inputs.dry_run }}
         env:
@@ -797,10 +481,8 @@ jobs:
             echo "Re-run with the dry-run box (\`dry_run_only\`) unchecked to deploy it."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Every run migrates, not only runs whose commit touched
-      # `supabase/migrations/`: `supabase db push` applies whatever is pending
-      # and is a no-op when nothing is, so every staging merge retries a skipped
-      # or failed apply instead of waiting for the next migration-bearing push.
+      # Every run, so the next run retries a skipped or failed apply. `db push` is a
+      # no-op when nothing is pending.
       - name: Run migrations (apply)
         id: apply
         if: ${{ !inputs.dry_run }}
@@ -814,21 +496,9 @@ jobs:
         if: ${{ inputs.environment == 'production' && !inputs.dry_run }}
         run: git diff --quiet HEAD -- supabase/config.toml
 
-      # The Supabase Edge Functions (#2848, ADR-26): after the migrations,
-      # before the API, because the API is what calls them. A new API must not
-      # reach a project whose functions are older than it; a function deployed
-      # ahead of an API that doesn't call it yet is harmless.
-      #
-      # Staging: whenever this run moves staging forward or re-asserts the tip
-      # (`deploy`, `forward`, `current`), never on `stale`, which would roll a
-      # function back. Production: a real, full run, like the API.
-      #
-      # From the deployed tree, as the migrations are, with the same ref fence
-      # (`scripts/ci/deploy-edge-functions.mjs`). The `hashFiles` guard is what
-      # keeps a rollback to a commit from before the functions working: that
-      # commit has neither a function nor the script, so the step skips. The
-      # credential is Infisical's `SUPABASE_FUNCTIONS_DEPLOY_TOKEN`, not the
-      # read-only `SUPABASE_ACCESS_TOKEN` (ENV_REFERENCE.md § CD Secrets).
+      # After the migrations, before the API that calls them (#2848, ADR-26). Never
+      # on `stale`, which would roll a function back. The hashFiles guard keeps a
+      # rollback to a commit from before the functions working.
       - name: Deploy the Edge Functions (staging)
         if: ${{ inputs.environment == 'staging' && steps.plan.outputs.plan != 'stale' && hashFiles('supabase/functions/*/index.ts') != '' }}
         env:
@@ -841,10 +511,7 @@ jobs:
           TARGET_ENVIRONMENT: production
         run: node scripts/ci/deploy-edge-functions.mjs
 
-      # Deploy-by-commit through the Render API (#2505), not a deploy hook: a
-      # hook builds whatever is at the tip of the tracked branch, and `main`
-      # moves on every merge. The script polls the deploy it created to a
-      # terminal state, so a failed build fails this job.
+      # By commit through the Render API (#2505). A deploy hook builds `main`'s tip.
       - name: Deploy the commit to Render (staging)
         if: steps.plan.outputs.deploy == 'true'
         env:
@@ -868,18 +535,8 @@ jobs:
           ID="$(grep -oP '^render_deploy_id=\K.*' "${RUNNER_TEMP:-/tmp}/render.log" || true)"
           echo "deploy_id=$ID" >> "$GITHUB_OUTPUT"
 
-      # Render's `live` only means `GET /health` answered, which the previous
-      # instance also does while the new one switches in. The check polls
-      # `/health/ready` until it answers 2xx AND reports the expected commit,
-      # from the trusted copy taken before the detach. A missing
-      # `API_HEALTHCHECK_URL` fails it: a check that silently doesn't run is
-      # indistinguishable from one that passed.
-      #
-      # Staging: the planned commit (this run's when it deployed, else the one
-      # staging already served), whenever anything ships, a `current` plan and
-      # a `stale` one that uploads included, so the API is seen serving and
-      # ready before any frontend that calls it ships. `verify_sha` is empty
-      # when nothing does.
+      # Render's `live` can still be the old instance, so poll /health/ready for the
+      # commit, whenever anything ships and before any frontend: docs/ops/deployment/ci-cd.md § Deploy verification.
       - name: Verify staging serves the commit
         if: steps.plan.outputs.verify_sha != ''
         env:
@@ -888,28 +545,8 @@ jobs:
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
         run: node "$TRUSTED_CI/verify-served-commit.mjs"
 
-      # Then ask the API what its clients ask (#3113, #2990), from the runner,
-      # which reaches both environments where agent sandboxes can't reach
-      # production. Fails the job, before any frontend uploads, when:
-      #   * a preflight from this environment's dashboard origin doesn't get it
-      #     back in `Access-Control-Allow-Origin`, or one from the other
-      #     environment's gets the header at all;
-      #   * `GET /v1/client-policy` answers `update_required: true` for the
-      #     newest build installs can be running: the newest one recorded in
-      #     `apps/mobile/store/shipped-builds.json`, or `expo.version` in
-      #     `apps/mobile/app.json` while none is (staging only warns: a minimum
-      #     above it is how the update gate is tested there);
-      #   * the attachment-copy function refuses the API's own key, or answers
-      #     its probe with anything but a refusal made before any fetch.
-      # Every check runs and names what it saw; the script header has the
-      # reasoning. The origins and the builds come from the trusted ref
-      # (`TRUSTED_SHA`), not the deployed tree, so an older commit is judged
-      # against today's dashboards and today's installs. The function call
-      # uses `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, which every step
-      # since the Infisical injection already holds: no new secret reaches
-      # this job.
-      #
-      # Same condition as the served-commit check: whenever anything ships.
+      # What the API's clients ask (#3113, #2990), judged against the trusted ref:
+      # docs/ops/deployment/ci-cd.md § Deploy verification.
       - name: Check the API answers its clients (staging)
         if: steps.plan.outputs.verify_sha != ''
         env:
@@ -919,14 +556,8 @@ jobs:
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
         run: node "$TRUSTED_CI/smoke-deployed-api.mjs"
 
-      # Production: this commit, on every real run. NOT scope-gated: a
-      # migrations-only run changes the schema under an API that is already
-      # running and is not being redeployed, which makes "does production still
-      # answer?" more urgent, not less. A lock that wedges the pool, an object
-      # the running build reads on boot, an RLS change the service role now
-      # fails: each leaves the apply green and production down. So that run
-      # checks that the commit `/health` says production already serves (read
-      # with retries: `/health` answers even when degraded) is still ready.
+      # Not scope-gated: a migrations-only run moved the schema under the running
+      # API, so check that the commit production already serves is still ready.
       - name: Verify production serves the commit
         if: ${{ inputs.environment == 'production' && !inputs.dry_run }}
         env:
@@ -952,9 +583,7 @@ jobs:
           fi
           DEPLOY_SHA="$DEPLOY_SHA" node "$TRUSTED_CI/verify-served-commit.mjs"
 
-      # The client checks, as on staging (see that step), on every real run.
-      # A migrations-only run included, for the reason above: the schema moved
-      # under a running API, and its clients' answers are what matters.
+      # As on staging, on every real run, migrations-only included (see above).
       - name: Check the API answers its clients (production)
         if: ${{ inputs.environment == 'production' && !inputs.dry_run }}
         env:
@@ -964,12 +593,8 @@ jobs:
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
         run: node "$TRUSTED_CI/smoke-deployed-api.mjs"
 
-      # UPLOAD the bundles built above, only once the API they call is verified,
-      # and only when the plan says so: for `main`'s tip when web or landing
-      # changed since what the hosts serve, and always on a re-run of the tip's
-      # run (which is how a rotated build-time value reaches staging); for any
-      # other commit never over a host already serving it or a newer one. The
-      # deployment ids are captured from stdout for the alias step.
+      # Only once the API is verified, and only when the plan says so. The ids feed
+      # the alias step.
       - name: Upload web + landing to staging
         id: upload
         if: steps.plan.outputs.upload == 'true'
@@ -991,15 +616,8 @@ jobs:
             echo "landing_id=$(grep -oP '^vercel_deployment_id\[frapp-landing\]=\K.*' "${RUNNER_TEMP:-/tmp}/vercel.log" | tail -n1)"
           } >> "$GITHUB_OUTPUT"
 
-      # Upload the production bundles built before the apply. A fresh production
-      # build of this commit, not a promotion of its staging build: NEXT_PUBLIC_*
-      # are inlined at build time, so a promoted preview would put the
-      # production dashboard on the staging API and staging Supabase keys. The
-      # script restores each project's stashed `.vercel`, uploads it with
-      # `--prebuilt --prod`, and asserts the deployment's `target` is
-      # `production` and its `githubCommitSha` is this commit before calling it
-      # a release. A missing stash is a hard failure, not a fall-through to
-      # whatever `.vercel` happens to hold.
+      # A fresh production build, not a promoted preview: NEXT_PUBLIC_* are inlined
+      # at build time. deploy-vercel.mjs checks target and commit before release.
       - name: Deploy the commit to Vercel production (web + landing)
         if: ${{ inputs.environment == 'production' && !inputs.dry_run && inputs.scope != 'migrations-only' }}
         env:
@@ -1014,25 +632,9 @@ jobs:
           VERCEL_BUILD_ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
         run: node scripts/ci/deploy-vercel.mjs
 
-      # Vercel does not always attach the custom hostname to a new deployment,
-      # so the staging domain can lag a READY build.
-      #
-      # Keyed on the deployment IDs the upload created, NOT on a search by
-      # commit SHA. The search answers "no match" for reasons unrelated to the
-      # deployment being wrong (a list index that has not caught up, a lost
-      # `--meta` flag) and then exits 0, leaving the hostname on the previous
-      # build with this job green. It also has no channel filter, so for a
-      # commit deployed to both channels it could alias the staging hostname to
-      # the PRODUCTION build. See the header of the alias script.
-      #
-      # An empty id is a failure, not a skip, and the explicit `-z` check below
-      # is the only thing meant to make it one, so do not trim it as redundant.
-      # `set -u` does not help (the vars are set, to the empty string), and the
-      # upload step stays green when a `grep` matches nothing, because `echo`
-      # exits 0. Without the check the alias script would fall back to its
-      # SHA-search path. That path exits 1 today only because nothing sets its
-      # `VERCEL_PROJECT_ID`; a `VERCEL_PROJECT_ID` added to the staging store
-      # would let it exit 0 having aliased nothing.
+      # Keyed on the upload's deployment ids, never a search by SHA
+      # (ensure-vercel-staging-alias.mjs's header). The `-z` check below is what makes
+      # an empty id fail. Don't trim it as redundant.
       - name: Point the staging hostnames at the new deployments
         if: inputs.environment == 'staging' && steps.plan.outputs.upload == 'true'
         env:
@@ -1054,25 +656,8 @@ jobs:
             SERVICE_LABEL=frapp-landing \
             node scripts/ci/ensure-vercel-staging-alias.mjs
 
-      # LAST: ask Sentry whether this commit's source maps arrived, for each
-      # project whose build ran in this job or on Render (#2489). The uploads
-      # are best effort and never fail a build (#2431), so without this a
-      # revoked token, a renamed project or a token missing from Infisical
-      # shipped minified stack traces with every run green. From the trusted
-      # copy, like the served-commit check: it is a verdict on the deploy.
-      #
-      # It never fails the job. The script exits 0 on every verdict and every
-      # error of its own, asks the projects concurrently and re-asks for a
-      # minute at most, and writes one verdict word per project as the
-      # `sourcemaps` output, which each caller's `deploy-outcome` job turns
-      # into alerts (`sentry-sourcemaps-alert.mjs`). This job holds the Sentry
-      # token and no write scope; that one holds `issues: write` and no token.
-      #
-      # Staging: the API when this run deployed it, web and landing when it
-      # uploaded them. Production: all three on a real `full` run; a dry run
-      # withholds the token on purpose and uploads nothing, and a
-      # `migrations-only` run builds nothing. Only a bundle uploaded since
-      # `builds-start` counts; the script header says why.
+      # LAST, and it never fails the job: did Sentry get this commit's source maps
+      # (#2489)? From the trusted copy. docs/ops/deployment/ci-cd.md § Source maps.
       - name: Check Sentry has this commit's source maps (staging)
         id: sourcemaps-staging
         if: inputs.environment == 'staging' && (steps.plan.outputs.deploy == 'true' || steps.plan.outputs.upload == 'true')
