@@ -17,6 +17,13 @@ export interface UserDisplayIdentity {
   avatar_url: string | null;
 }
 
+/** A user's name and address, for officer-facing exports such as the roster. */
+export interface UserContact {
+  id: string;
+  display_name: string;
+  email: string;
+}
+
 export interface User {
   id: string;
   supabase_auth_id: string;

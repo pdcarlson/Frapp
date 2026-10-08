@@ -20,7 +20,7 @@ state, and topic teardown, see [`realtime-resilience`](../realtime-resilience/SK
 
 | Layer | Location | Notes |
 |-------|----------|-------|
-| `@repo/theme` | `packages/theme/src/` | Exports `./tailwind` (shared preset), `./signet.css` (both web surfaces), `./signet` (typed tokens, what mobile reads), `./accent` (chapter accent resolver). `src/tokens.ts` is internal only (the accent fallback and the motion scale) |
+| `@repo/theme` | `packages/theme/src/` | Exports `./tailwind` (shared preset), `./signet.css` (both web surfaces), `./signet` (typed tokens, what mobile reads). `src/motion.ts` is the motion scale, served through `./signet` and the preset |
 | ShadCN primitives | `apps/web/components/ui/` | Dashboard primitives and Radix composites. There is no shared web-component package |
 | Web features / pages | `apps/web/components/`, `apps/web/app/` | Next.js App Router |
 | Landing | `apps/landing/app/` | Separate Next.js app with inline Tailwind |
@@ -32,7 +32,7 @@ Primitives follow ShadCN conventions: CVA variants, `cn()` from `@/lib/utils`, a
 behavior. To add one, copy it into `components/ui/` and install its Radix package with
 `npm install @radix-ui/react-<primitive> -w apps/web`. Don't add a registry primitive for a single
 call site. Several were deleted for having only one, and the replacements are
-`components/shared/async-states.tsx` (skeletons), `components/ui/toast.tsx` + `hooks/use-toast.ts`
+`components/shared/async-states.tsx` (skeletons), `components/ui/toast.tsx` + `lib/hooks/use-toast.ts`
 (toasts), and `DropdownMenuSeparator`'s classes (a rule).
 
 Conventions that are easy to get wrong:
@@ -79,11 +79,11 @@ Rules:
   (`--text-hero`, `--text-display-lg`, `--text-lead`) are declared in `apps/landing/app/globals.css`
   and bound in `apps/landing/tailwind.config.ts`. They sit above `foundations.md` §7's locked six
   and are landing-only by decision, so using one on a product surface is an off-scale defect.
-- `@repo/theme/accent` (`resolveChapterAccentColor`) has no mobile importer: #2595 deleted
-  mobile's pre-Signet-map fallback, and `useChapterBranding` paints only the served palette's roles,
-  or house gold without them. Its one caller is the web Settings accent preview.
-  `grep -rn "@repo/theme/accent" apps/mobile` should print nothing, so a mobile importer is a
-  change you have to argue for, since it would bring the raw seed back as paint.
+- `resolveChapterAccentColor` lives in `apps/web/components/settings/resolve-chapter-accent.ts`,
+  beside its one caller, the Settings accent preview (#3227 moved it out of `@repo/theme`). Mobile
+  has no equivalent: #2595 deleted mobile's pre-Signet-map fallback, and `useChapterBranding`
+  paints only the served palette's roles, or house gold without them. Re-validating the stored seed
+  on another surface is a change you have to argue for, since it brings the raw seed back as paint.
 - Tokens hold complete color values, and the preset reads them as a plain `var(--token)`. Never
   write `hsl(var(--token))`, because it emits `hsl(hsl(...))`, which the browser drops, and
   `tailwind.config.spec.ts` fails on it. In an arbitrary value, use the type hint
@@ -97,7 +97,7 @@ Rules:
 - Landing has its own spec and binding reference boards, so read
   [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md) before changing it rather than
   restyling ad hoc. Its motion block in `apps/landing/app/globals.css` mirrors the
-  `packages/theme/src/tokens.ts` scale (`apps/landing/app/page.spec.ts` pins it), so don't declare
+  `packages/theme/src/motion.ts` scale (`apps/landing/app/page.spec.ts` pins it), so don't declare
   a second scale.
 - The web dashboard is desktop-first (layouts assume `lg`+) and must still hold the 375px floor
   (`test:floor`). The landing is mobile-first. Breakpoints are stock Tailwind.

@@ -1,68 +1,67 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  SearchService,
-  BACKWORK_SEARCH_COLUMNS,
-  EVENT_SEARCH_COLUMNS,
-} from './search.service';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { SearchService } from './search.service';
 import { RbacService } from './rbac.service';
 import { ChatBlockService } from './chat-block.service';
 import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import {
+  SEARCH_REPOSITORY,
+  type ISearchRepository,
+} from '#domain/repositories/search.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
-import { HttpException, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 
+/**
+ * `SearchService` decides what the caller may see; the queries are
+ * `SupabaseSearchRepository`'s, and their shape (the text-search parse mode,
+ * the explicit column lists, the uuid push-down, the one-query member join) is
+ * pinned in `supabase-search.repository.spec.ts`.
+ */
 describe('SearchService', () => {
   let service: SearchService;
-  let mockSupabase: jest.Mocked<Pick<FrappSupabaseClient, 'from'>>;
+  let repo: { [K in keyof ISearchRepository]: jest.Mock };
+  let members: { findByUserAndChapter: jest.Mock };
+  /** The caller's membership, as the member repository returns it. */
+  const membership = (roleIds: string[] = []) => ({
+    id: 'member-1',
+    role_ids: roleIds,
+  });
   let mockRbacService: {
     getEffectivePermissions: jest.Mock;
     memberHasAnyPermission: jest.Mock;
   };
   let mockChatBlocks: { listBlockedUserIds: jest.Mock };
 
-  const makeChain = (resolveValue: { data: unknown[]; error: unknown }) => {
-    const chain: Record<string, unknown> = {};
-    Object.assign(chain, {
-      select: jest.fn().mockReturnValue(chain),
-      eq: jest.fn().mockReturnValue(chain),
-      in: jest.fn().mockReturnValue(chain),
-      ilike: jest.fn().mockReturnValue(chain),
-      textSearch: jest.fn().mockReturnValue(chain),
-      or: jest.fn().mockReturnValue(chain),
-      limit: jest.fn().mockReturnValue(chain),
-      order: jest.fn().mockReturnValue(chain),
-      then: (resolve: (v: unknown) => void) =>
-        Promise.resolve(resolveValue).then(resolve),
-      catch: () => Promise.reject().catch(() => {}),
-    });
-    return chain;
-  };
+  const channel = (
+    id: string,
+    type: string,
+    access: {
+      member_ids?: string[] | null;
+      required_permissions?: string[] | null;
+    } = {},
+  ) => ({
+    id,
+    type,
+    member_ids: access.member_ids ?? null,
+    required_permissions: access.required_permissions ?? null,
+  });
 
-  /**
-   * `makeChain` with the `.eq()` calls recorded, so a test can assert which
-   * filters actually reached the query builder rather than only inspecting the
-   * rows that came back. A pushed-down filter is invisible in the result when
-   * the mock returns fixed data, so without this the push-down could silently
-   * disappear.
-   */
-  const makeRecordingChain = (
-    sink: Array<[string, unknown]>,
-    resolveValue: { data: unknown[]; error: unknown },
-  ) => {
-    const chain = makeChain(resolveValue);
-    chain.eq = jest.fn().mockImplementation((col: string, val: unknown) => {
-      sink.push([col, val]);
-      return chain;
-    });
-    return chain;
+  const noRepoCalls = () => {
+    for (const fn of [...Object.values(repo), members.findByUserAndChapter]) {
+      expect(fn).not.toHaveBeenCalled();
+    }
   };
 
   beforeEach(async () => {
-    mockSupabase = {
-      from: jest
-        .fn()
-        .mockImplementation(() => makeChain({ data: [], error: null })),
+    repo = {
+      searchBackwork: jest.fn().mockResolvedValue([]),
+      searchEvents: jest.fn().mockResolvedValue([]),
+      searchMembers: jest.fn().mockResolvedValue([]),
+      searchMessages: jest.fn().mockResolvedValue([]),
+      findChannelsForAccess: jest.fn().mockResolvedValue([]),
+    };
+    members = {
+      findByUserAndChapter: jest.fn().mockResolvedValue(membership()),
     };
 
     mockRbacService = {
@@ -75,10 +74,8 @@ describe('SearchService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SearchService,
-        {
-          provide: SUPABASE_CLIENT,
-          useValue: mockSupabase,
-        },
+        { provide: SEARCH_REPOSITORY, useValue: repo },
+        { provide: MEMBER_REPOSITORY, useValue: members },
         { provide: RbacService, useValue: mockRbacService },
         { provide: ChatBlockService, useValue: mockChatBlocks },
       ],
@@ -117,71 +114,32 @@ describe('SearchService', () => {
         messages: [],
       });
       // Spec default: shorter queries never touch the database.
-      expect(mockSupabase.from).not.toHaveBeenCalled();
+      noRepoCalls();
     });
 
     it('should return grouped results from all domains', async () => {
-      const backworkChain = makeChain({ data: [], error: null });
-      const eventsChain = makeChain({
-        data: [
-          {
-            id: 'ev-1',
-            chapter_id: 'ch-1',
-            name: 'Chapter Meeting',
-            description: 'Weekly meeting',
-            start_time: '2026-02-26T10:00:00Z',
-            end_time: '2026-02-26T11:00:00Z',
-            point_value: 10,
-            is_mandatory: false,
-          },
-        ],
-        error: null,
-      });
-      // Member search is one query now, so this chain carries the joined user
-      // rather than a bare roster row awaiting a second `users` lookup.
-      const membersChain = makeChain({
-        data: [
-          {
-            id: 'm-1',
-            user_id: 'user-1',
-            chapter_id: 'ch-1',
-            users: {
-              id: 'user-1',
-              display_name: 'Ann Meeting',
-              email: 'ann@test.dev',
-            },
-          },
-        ],
-        error: null,
-      });
-      const usersChain = makeChain({ data: [], error: null });
-      const rolesChain = makeChain({
-        data: [{ permissions: [] }],
-        error: null,
-      });
-      const channelsChain = makeChain({
-        data: [
-          {
-            id: 'pub',
-            type: 'PUBLIC',
-            member_ids: null,
-            required_permissions: null,
-          },
-        ],
-        error: null,
-      });
-      const messagesChain = makeChain({ data: [], error: null });
-
-      (mockSupabase.from as jest.Mock).mockImplementation((t: string) => {
-        if (t === 'backwork_resources') return backworkChain;
-        if (t === 'events') return eventsChain;
-        if (t === 'members') return membersChain;
-        if (t === 'users') return usersChain;
-        if (t === 'roles') return rolesChain;
-        if (t === 'chat_channels') return channelsChain;
-        if (t === 'chat_messages') return messagesChain;
-        return makeChain({ data: [], error: null });
-      });
+      repo.searchEvents.mockResolvedValue([
+        {
+          id: 'ev-1',
+          chapter_id: 'ch-1',
+          name: 'Chapter Meeting',
+          description: 'Weekly meeting',
+          start_time: '2026-02-26T10:00:00Z',
+          end_time: '2026-02-26T11:00:00Z',
+          point_value: 10,
+          is_mandatory: false,
+        },
+      ]);
+      repo.searchMembers.mockResolvedValue([
+        {
+          id: 'm-1',
+          user_id: 'user-1',
+          chapter_id: 'ch-1',
+          display_name: 'Ann Meeting',
+          email: 'ann@test.dev',
+        },
+      ]);
+      repo.findChannelsForAccess.mockResolvedValue([channel('pub', 'PUBLIC')]);
 
       const result = await service.search('ch-1', 'user-1', 'meeting');
 
@@ -193,100 +151,47 @@ describe('SearchService', () => {
       expect(result.messages).toHaveLength(0);
     });
 
-    it('a failed query surfaces as a SupabaseQueryError, not a 500 carrying its text', async () => {
-      // Search's own `throwIfError` used to throw
-      // `InternalServerErrorException(error.message)`, which put PostgREST's
-      // text in the response body. A `SupabaseQueryError` is not an
-      // HttpException, so `AllExceptionsFilter` answers it with the generic
-      // 500 body and sends the code and the query's stack to Sentry (#1264).
-      (mockSupabase.from as jest.Mock).mockImplementation((t: string) =>
-        t === 'backwork_resources'
-          ? makeChain({
-              data: [],
-              error: {
-                code: '42P01',
-                message: 'relation "backwork_resources" does not exist',
-              },
-            })
-          : makeChain({ data: [], error: null }),
+    it('hands every source the trimmed query, the chapter and the per-source cap', async () => {
+      repo.findChannelsForAccess.mockResolvedValue([channel('pub', 'PUBLIC')]);
+
+      await service.search('ch-1', 'user-1', '  meeting  ');
+
+      expect(repo.searchBackwork).toHaveBeenCalledWith('ch-1', 'meeting', 10);
+      expect(repo.searchEvents).toHaveBeenCalledWith('ch-1', 'meeting', 10);
+      expect(repo.searchMembers).toHaveBeenCalledWith('ch-1', 'meeting', 10);
+      expect(repo.searchMessages).toHaveBeenCalledWith(['pub'], 'meeting', 10);
+    });
+
+    it('lets a failed source propagate as the repository threw it', async () => {
+      // A `SupabaseQueryError` is not an HttpException, so `AllExceptionsFilter`
+      // answers it with the generic 500 body and sends the code to Sentry
+      // (#1264); the service must not rewrap it into one carrying PostgREST's
+      // text.
+      const failure = new SupabaseQueryError({
+        code: '42P01',
+        message: 'relation "backwork_resources" does not exist',
+      });
+      repo.searchBackwork.mockRejectedValue(failure);
+
+      await expect(service.search('ch-1', 'user-1', 'meeting')).rejects.toBe(
+        failure,
       );
-
-      const thrown: unknown = await service
-        .search('ch-1', 'user-1', 'meeting')
-        .catch((error: unknown) => error);
-
-      expect(thrown).toBeInstanceOf(SupabaseQueryError);
-      expect(thrown).not.toBeInstanceOf(HttpException);
-      expect(thrown).toMatchObject({ code: '42P01' });
     });
 
     it('should scope message search to channels the caller can access', async () => {
-      let searchedChannelIds: string[] = [];
+      repo.findChannelsForAccess.mockResolvedValue([
+        channel('pub', 'PUBLIC'),
+        channel('priv-in', 'PRIVATE', { member_ids: ['user-1'] }),
+        channel('priv-out', 'PRIVATE', { member_ids: ['user-2'] }),
+        channel('gated-yes', 'ROLE_GATED', {
+          required_permissions: ['alumni:view'],
+        }),
+        channel('gated-no', 'ROLE_GATED', {
+          required_permissions: ['secret:view'],
+        }),
+      ]);
 
-      (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
-        if (table === 'chat_channels') {
-          return makeChain({
-            data: [
-              {
-                id: 'pub',
-                type: 'PUBLIC',
-                member_ids: null,
-                required_permissions: null,
-              },
-              {
-                id: 'priv-in',
-                type: 'PRIVATE',
-                member_ids: ['user-1'],
-                required_permissions: null,
-              },
-              {
-                id: 'priv-out',
-                type: 'PRIVATE',
-                member_ids: ['user-2'],
-                required_permissions: null,
-              },
-              {
-                id: 'gated-yes',
-                type: 'ROLE_GATED',
-                member_ids: null,
-                required_permissions: ['alumni:view'],
-              },
-              {
-                id: 'gated-no',
-                type: 'ROLE_GATED',
-                member_ids: null,
-                required_permissions: ['secret:view'],
-              },
-            ],
-            error: null,
-          });
-        }
-        if (table === 'members') {
-          return makeChain({ data: [{ id: 'member-1' }], error: null });
-        }
-        if (table === 'chat_messages') {
-          const chain: Record<string, unknown> = {};
-          Object.assign(chain, {
-            select: jest.fn().mockReturnValue(chain),
-            in: jest.fn().mockImplementation((_col: string, ids: string[]) => {
-              searchedChannelIds = ids;
-              return chain;
-            }),
-            ilike: jest.fn().mockReturnValue(chain),
-            textSearch: jest.fn().mockReturnValue(chain),
-            eq: jest.fn().mockReturnValue(chain),
-            limit: jest.fn().mockReturnValue(chain),
-            order: jest.fn().mockReturnValue(chain),
-            then: (resolve: (v: unknown) => void) =>
-              Promise.resolve({ data: [], error: null }).then(resolve),
-            catch: () => Promise.reject().catch(() => {}),
-          });
-          return chain;
-        }
-        return makeChain({ data: [], error: null });
-      });
-
-      // The permission set now resolves through RbacService, so custom-role
+      // The permission set resolves through RbacService, so custom-role
       // capabilities gate search exactly as they gate chat channel access
       // (bridge model, spec/behavior/rbac.md).
       mockRbacService.getEffectivePermissions.mockResolvedValue([
@@ -299,16 +204,21 @@ describe('SearchService', () => {
         'ch-1',
         'user-1',
       );
+      expect(repo.findChannelsForAccess).toHaveBeenCalledWith(
+        'ch-1',
+        undefined,
+      );
+      expect(members.findByUserAndChapter).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+      );
+      const [searchedChannelIds] = repo.searchMessages.mock.calls[0] as [
+        string[],
+      ];
       expect(searchedChannelIds).toEqual(['pub', 'priv-in', 'gated-yes']);
-      expect(searchedChannelIds).not.toContain('priv-out');
-      expect(searchedChannelIds).not.toContain('gated-no');
     });
 
     describe('single-channel scope (#469)', () => {
-      // `chat_channels.id` is a uuid column and the candidate filter is pushed
-      // down to it, so these ids have to be real uuids — a fixture using
-      // 'pub-2' would silently exercise the non-uuid fallback path instead of
-      // the push-down these cases exist to pin.
       const PUB = '11111111-1111-4111-8111-111111111111';
       const PUB2 = '22222222-2222-4222-8222-222222222222';
       const PRIV_OUT = '33333333-3333-4333-8333-333333333333';
@@ -322,88 +232,36 @@ describe('SearchService', () => {
       // forwarding unexercised, and a refactor that dropped the argument there
       // would have degraded every channel-scoped search to chapter-wide with a
       // fully green suite.
-      let searchedChannelIds: string[] = [];
-      let tablesQueried: string[] = [];
-      // Every `.eq(col, val)` applied to the chat_channels candidate query, so
-      // the push-down can be asserted rather than assumed.
-      let channelSelectFilters: Array<[string, unknown]> = [];
-
-      const mockChannels = () => {
-        searchedChannelIds = [];
-        tablesQueried = [];
-        channelSelectFilters = [];
-        (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
-          tablesQueried.push(table);
-          if (table === 'chat_channels') {
-            return makeRecordingChain(channelSelectFilters, {
-              data: [
-                {
-                  id: PUB,
-                  type: 'PUBLIC',
-                  member_ids: null,
-                  required_permissions: null,
-                },
-                {
-                  id: PUB2,
-                  type: 'PUBLIC',
-                  member_ids: null,
-                  required_permissions: null,
-                },
-                {
-                  id: PRIV_OUT,
-                  type: 'PRIVATE',
-                  member_ids: ['user-2'],
-                  required_permissions: null,
-                },
-              ],
-              error: null,
-            });
-          }
-          if (table === 'members') {
-            return makeChain({ data: [{ id: 'member-1' }], error: null });
-          }
-          if (table === 'chat_messages') {
-            const chain: Record<string, unknown> = {};
-            Object.assign(chain, {
-              select: jest.fn().mockReturnValue(chain),
-              in: jest
-                .fn()
-                .mockImplementation((_col: string, ids: string[]) => {
-                  searchedChannelIds = ids;
-                  return chain;
-                }),
-              textSearch: jest.fn().mockReturnValue(chain),
-              eq: jest.fn().mockReturnValue(chain),
-              limit: jest.fn().mockReturnValue(chain),
-              order: jest.fn().mockReturnValue(chain),
-              then: (resolve: (v: unknown) => void) =>
-                Promise.resolve({
-                  data: [{ id: 'm-1', channel_id: PUB }],
-                  error: null,
-                }).then(resolve),
-              catch: () => Promise.reject().catch(() => {}),
-            });
-            return chain;
-          }
-          return makeChain({ data: [], error: null });
-        });
-        mockRbacService.getEffectivePermissions.mockResolvedValue([]);
-      };
+      //
+      // The double returns every channel whatever id it is handed, as a
+      // repository that dropped its push-down would. That is deliberate: the
+      // service's own intersection is the correctness guarantee, and these
+      // cases pin it independently of the push-down.
+      beforeEach(() => {
+        repo.findChannelsForAccess.mockResolvedValue([
+          channel(PUB, 'PUBLIC'),
+          channel(PUB2, 'PUBLIC'),
+          channel(PRIV_OUT, 'PRIVATE', { member_ids: ['user-2'] }),
+        ]);
+        repo.searchMessages.mockResolvedValue([{ id: 'm-1', channel_id: PUB }]);
+      });
 
       it('narrows the message scan to the one requested channel', async () => {
-        mockChannels();
-
         await service.searchWithinBudget('ch-1', 'user-1', 'hello', PUB2);
 
         // The whole point: the narrowing reaches SQL. Filtering client-side
         // would be wrong, because SEARCH_LIMIT is applied by the database
         // across every accessible channel before any client sees a row.
-        expect(searchedChannelIds).toEqual([PUB2]);
+        expect(repo.searchMessages).toHaveBeenCalledWith([PUB2], 'hello', 10);
+      });
+
+      it('passes the channel id down as the candidate narrowing', async () => {
+        await service.searchWithinBudget('ch-1', 'user-1', 'hello', PUB2);
+
+        expect(repo.findChannelsForAccess).toHaveBeenCalledWith('ch-1', PUB2);
       });
 
       it('returns nothing for a channel the caller cannot read, without a 403', async () => {
-        mockChannels();
-
         const { results: result } = await service.searchWithinBudget(
           'ch-1',
           'user-1',
@@ -413,13 +271,11 @@ describe('SearchService', () => {
 
         // Never queried: the id intersects the accessible set to nothing, so
         // the scan is skipped entirely rather than run against every channel.
-        expect(tablesQueried).not.toContain('chat_messages');
+        expect(repo.searchMessages).not.toHaveBeenCalled();
         expect(result.messages).toEqual([]);
       });
 
       it('returns nothing for a channel id that does not exist', async () => {
-        mockChannels();
-
         const { results: result } = await service.searchWithinBudget(
           'ch-1',
           'user-1',
@@ -429,13 +285,26 @@ describe('SearchService', () => {
 
         // Same empty answer as an inaccessible channel, deliberately: telling
         // the two apart would make search a channel-existence oracle.
-        expect(tablesQueried).not.toContain('chat_messages');
+        expect(repo.searchMessages).not.toHaveBeenCalled();
         expect(result.messages).toEqual([]);
       });
 
-      it('runs only the message source, leaving the other three empty', async () => {
-        mockChannels();
+      it('returns nothing for a malformed channel id', async () => {
+        // The repository skips the push-down for a non-uuid; the intersection
+        // then matches nothing, which is the "no matches" the contract
+        // promises rather than an error.
+        const { results } = await service.searchWithinBudget(
+          'ch-1',
+          'user-1',
+          'hello',
+          'general',
+        );
 
+        expect(repo.searchMessages).not.toHaveBeenCalled();
+        expect(results.messages).toEqual([]);
+      });
+
+      it('runs only the message source, leaving the other three empty', async () => {
         const { results: result } = await service.searchWithinBudget(
           'ch-1',
           'user-1',
@@ -450,65 +319,28 @@ describe('SearchService', () => {
         // A channel-scoped query is definitionally a chat search; firing the
         // other three would be work no such caller renders, once per
         // debounced keystroke on an @ThrottleExpensiveRead() route.
-        expect(tablesQueried).not.toContain('backwork_resources');
-        expect(tablesQueried).not.toContain('events');
+        expect(repo.searchBackwork).not.toHaveBeenCalled();
+        expect(repo.searchEvents).not.toHaveBeenCalled();
+        expect(repo.searchMembers).not.toHaveBeenCalled();
       });
 
       it('still fans out to all four sources when no channel is named', async () => {
-        mockChannels();
-
         await service.searchWithinBudget('ch-1', 'user-1', 'hello');
 
-        expect(tablesQueried).toContain('backwork_resources');
-        expect(tablesQueried).toContain('events');
-        expect(searchedChannelIds).toEqual([PUB, PUB2]);
-      });
-
-      it('narrows the candidate channel query itself, not just the result', async () => {
-        mockChannels();
-
-        await service.searchWithinBudget('ch-1', 'user-1', 'hello', PUB2);
-
-        // Without the push-down, validating one known channel still selects
-        // every channel row in the chapter — on an archive-imported chapter
-        // that is a chapter-wide scan per debounced keystroke, inside a 500ms
-        // per-source budget.
-        expect(channelSelectFilters).toContainEqual(['id', PUB2]);
-        // And still chapter-scoped: the narrowing must not replace that.
-        expect(channelSelectFilters).toContainEqual(['chapter_id', 'ch-1']);
-      });
-
-      it('does not push a non-uuid channelId down to a uuid column', async () => {
-        mockChannels();
-
-        const { results } = await service.searchWithinBudget(
+        expect(repo.searchBackwork).toHaveBeenCalled();
+        expect(repo.searchEvents).toHaveBeenCalled();
+        expect(repo.findChannelsForAccess).toHaveBeenCalledWith(
           'ch-1',
-          'user-1',
-          'hello',
-          'general',
+          undefined,
         );
-
-        // `chat_channels.id` is a uuid column: PostgREST answers a malformed
-        // comparison with 22P02, thrown as a `SupabaseQueryError` (a 500). So
-        // `?channelId=general` must skip the push-down and fall through to the
-        // intersection — "no matches", which is what the contract promises —
-        // rather than erroring. The filter is an optimisation and must never
-        // decide whether the request succeeds.
-        expect(channelSelectFilters.map(([col]) => col)).not.toContain('id');
-        expect(results.messages).toEqual([]);
-      });
-
-      it('does not narrow the candidate query for a chapter-wide search', async () => {
-        mockChannels();
-
-        await service.searchWithinBudget('ch-1', 'user-1', 'hello');
-
-        expect(channelSelectFilters.map(([col]) => col)).not.toContain('id');
+        expect(repo.searchMessages).toHaveBeenCalledWith(
+          [PUB, PUB2],
+          'hello',
+          10,
+        );
       });
 
       it('still refuses a sub-minimum query, channel or not', async () => {
-        mockChannels();
-
         const { results: result } = await service.searchWithinBudget(
           'ch-1',
           'user-1',
@@ -516,7 +348,7 @@ describe('SearchService', () => {
           PUB,
         );
 
-        expect(tablesQueried).toEqual([]);
+        noRepoCalls();
         expect(result.messages).toEqual([]);
       });
     });
@@ -529,31 +361,14 @@ describe('SearchService', () => {
         `spec/behavior/chat/README.md` § The masking contract.
       */
       const wireMessages = (rows: unknown[]) => {
-        (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
-          if (table === 'chat_channels') {
-            return makeChain({
-              data: [
-                {
-                  id: 'pub',
-                  type: 'PUBLIC',
-                  member_ids: null,
-                  required_permissions: null,
-                },
-              ],
-              error: null,
-            });
-          }
-          // `accessibleChannelIds` returns empty without a membership row, so
-          // the message source would never run and the mask would never be
-          // reached — the tests below would pass for the wrong reason.
-          if (table === 'members') {
-            return makeChain({ data: [{ id: 'mem-1' }], error: null });
-          }
-          if (table === 'chat_messages') {
-            return makeChain({ data: rows, error: null });
-          }
-          return makeChain({ data: [], error: null });
-        });
+        repo.findChannelsForAccess.mockResolvedValue([
+          channel('pub', 'PUBLIC'),
+        ]);
+        // `accessibleChannelIds` returns empty without a membership, so the
+        // message source would never run and the mask would never be reached —
+        // the tests below would pass for the wrong reason.
+        members.findByUserAndChapter.mockResolvedValue(membership());
+        repo.searchMessages.mockResolvedValue(rows);
       };
 
       const hit = (overrides: Record<string, unknown> = {}) => ({
@@ -633,9 +448,7 @@ describe('SearchService', () => {
         // The read is deliberately after the match rather than concurrent with
         // it: `searchMessages` returns early in several places, and a
         // `Promise.all` would pay for the block read on every one of them.
-        (mockSupabase.from as jest.Mock).mockImplementation(() =>
-          makeChain({ data: [], error: null }),
-        );
+        repo.findChannelsForAccess.mockResolvedValue([]);
 
         await service.search('ch-1', 'user-1', 'away');
 
@@ -644,92 +457,15 @@ describe('SearchService', () => {
     });
 
     it('should not query messages at all for a non-member', async () => {
-      const fromCalls: string[] = [];
-      (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
-        fromCalls.push(table);
-        if (table === 'chat_channels') {
-          return makeChain({
-            data: [
-              {
-                id: 'pub',
-                type: 'PUBLIC',
-                member_ids: null,
-                required_permissions: null,
-              },
-            ],
-            error: null,
-          });
-        }
-        // members → empty: caller is not in this chapter
-        return makeChain({ data: [], error: null });
-      });
+      repo.findChannelsForAccess.mockResolvedValue([channel('pub', 'PUBLIC')]);
+      // caller is not in this chapter
+      members.findByUserAndChapter.mockResolvedValue(null);
 
       const result = await service.search('ch-1', 'outsider', 'hello');
 
       expect(result.messages).toEqual([]);
-      expect(fromCalls).not.toContain('chat_messages');
-    });
-
-    /**
-     * These two replace a pair of tests that asserted `escapeFilterValue`
-     * quoting inside hand-built `.or(title.ilike.X,course_number.ilike.X)`
-     * strings. That construct is gone: backwork and events now match through a
-     * generated tsvector, so there is no filter expression to inject into.
-     *
-     * The property still worth pinning is the one that replaced it — the raw
-     * query reaches PostgREST as ONE opaque parameter value and is never
-     * concatenated into a filter grammar. Verified against the local stack: a
-     * `test,id.eq.secret` query serialises to
-     * `search_vector=wfts%28english%29.test%2Cid.eq.secret`, with the comma
-     * percent-encoded inside the single value, so it cannot become a second
-     * filter.
-     */
-    it('passes a hostile query to text search as one opaque value, never a filter expression', async () => {
-      const hostile = 'test,id.eq.secret';
-      const chains: Record<string, Record<string, unknown>> = {};
-
-      (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
-        const chain = makeChain({ data: [], error: null });
-        chains[table] = chain;
-        return chain;
-      });
-
-      await service.search('ch-1', 'user-1', hostile);
-
-      for (const [table, column] of [
-        ['backwork_resources', 'search_vector'],
-        ['events', 'search_vector'],
-        ['members', 'users.display_name_search'],
-      ] as const) {
-        expect(chains[table].textSearch).toHaveBeenCalledWith(
-          column,
-          // the raw query, unescaped and unwrapped — no `%…%`, no quoting
-          hostile,
-          { type: 'websearch', config: 'english' },
-        );
-        // the injection vector this replaces: no filter string is built at all
-        expect(chains[table].or).not.toHaveBeenCalled();
-        expect(chains[table].ilike).not.toHaveBeenCalled();
-      }
-    });
-
-    /**
-     * Regression: the first draft of the `select('*')` → explicit-list change
-     * silently dropped `check_in_zone` / `check_in_zone_name` from event search
-     * results. Rows are cast to `Event`, so the types kept claiming the fields
-     * were there while `event-editor-dialog.tsx` — which reads `check_in_zone`
-     * to populate the geofence editor — would have received `undefined`.
-     *
-     * `check-pglite-migrations.mjs` asserts the full list against the real
-     * schema; this pins the specific columns whose loss is most damaging, so
-     * the failure is legible without a database.
-     */
-    it('selects the geofence columns for event results', async () => {
-      expect(EVENT_SEARCH_COLUMNS).toContain('check_in_zone');
-      expect(EVENT_SEARCH_COLUMNS).toContain('check_in_zone_name');
-      // and the tsvector is still excluded, which is why the list is explicit
-      expect(EVENT_SEARCH_COLUMNS).not.toContain('search_vector');
-      expect(BACKWORK_SEARCH_COLUMNS).not.toContain('search_vector');
+      expect(repo.searchMessages).not.toHaveBeenCalled();
+      expect(mockRbacService.getEffectivePermissions).not.toHaveBeenCalled();
     });
 
     // Search must not become a side-channel around EventService's read
@@ -748,30 +484,24 @@ describe('SearchService', () => {
         required_role_ids: ['role-officer'],
       };
 
-      const mockFrom = (opts: { events: unknown[]; memberRow: unknown }) => {
-        (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
-          if (table === 'events') {
-            return makeChain({ data: opts.events, error: null });
-          }
-          if (table === 'chat_channels') {
-            // Short-circuits accessibleChannelIds before it queries `members`,
-            // so the `members` chain below is only ever read by
-            // `filterVisibleEvents` (and by `searchMembers`, whose join-shaped
-            // read of the same row simply yields no member match).
-            return makeChain({ data: [], error: null });
-          }
-          if (table === 'members') {
-            return makeChain({ data: [opts.memberRow], error: null });
-          }
-          return makeChain({ data: [], error: null });
-        });
-      };
-
       it('drops a role-targeted event for a viewer without a matching role', async () => {
-        mockFrom({
-          events: [targetedEvent],
-          memberRow: { role_ids: ['role-member'] },
-        });
+        repo.searchEvents.mockResolvedValue([targetedEvent]);
+        members.findByUserAndChapter.mockResolvedValue(
+          membership(['role-member']),
+        );
+
+        const result = await service.search('ch-1', 'user-1', 'exec');
+
+        expect(members.findByUserAndChapter).toHaveBeenCalledWith(
+          'user-1',
+          'ch-1',
+        );
+        expect(result.events).toEqual([]);
+      });
+
+      it('drops a role-targeted event for a caller with no membership', async () => {
+        repo.searchEvents.mockResolvedValue([targetedEvent]);
+        members.findByUserAndChapter.mockResolvedValue(null);
 
         const result = await service.search('ch-1', 'user-1', 'exec');
 
@@ -779,10 +509,10 @@ describe('SearchService', () => {
       });
 
       it('keeps a role-targeted event for a viewer with a matching role', async () => {
-        mockFrom({
-          events: [targetedEvent],
-          memberRow: { role_ids: ['role-officer'] },
-        });
+        repo.searchEvents.mockResolvedValue([targetedEvent]);
+        members.findByUserAndChapter.mockResolvedValue(
+          membership(['role-officer']),
+        );
 
         const result = await service.search('ch-1', 'user-1', 'exec');
 
@@ -791,138 +521,34 @@ describe('SearchService', () => {
       });
 
       it('keeps a role-targeted event for a viewer holding events:update, regardless of role', async () => {
-        mockFrom({
-          events: [targetedEvent],
-          memberRow: { role_ids: ['role-member'] },
-        });
+        repo.searchEvents.mockResolvedValue([targetedEvent]);
+        members.findByUserAndChapter.mockResolvedValue(
+          membership(['role-member']),
+        );
         mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
 
         const result = await service.search('ch-1', 'user-1', 'exec');
 
         expect(result.events).toHaveLength(1);
-        // The events:update check short-circuits before the `members` role
-        // lookup — no need to resolve the caller's own role_ids at all.
         expect(mockRbacService.memberHasAnyPermission).toHaveBeenCalledWith(
           'ch-1',
           'user-1',
           expect.arrayContaining(['events:update']),
         );
+        // The events:update check short-circuits before the role lookup.
+        expect(members.findByUserAndChapter).not.toHaveBeenCalled();
       });
 
-      it('does not query members at all when no matched event is role-targeted', async () => {
+      it('does not look up roles at all when no matched event is role-targeted', async () => {
         const untargeted = { ...targetedEvent, required_role_ids: null };
-        const fromCalls: string[] = [];
-        (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
-          fromCalls.push(table);
-          if (table === 'events') {
-            return makeChain({ data: [untargeted], error: null });
-          }
-          return makeChain({ data: [], error: null });
-        });
+        repo.searchEvents.mockResolvedValue([untargeted]);
 
         const result = await service.search('ch-1', 'user-1', 'exec');
 
         expect(result.events).toHaveLength(1);
         expect(mockRbacService.memberHasAnyPermission).not.toHaveBeenCalled();
+        expect(members.findByUserAndChapter).not.toHaveBeenCalled();
       });
-    });
-
-    it('never raises on punctuation that would break to_tsquery', async () => {
-      // `websearch` parse mode is what makes this true; `to_tsquery` would
-      // raise a syntax error and turn a stray "?" in the search box into a 500.
-      // Confirmed end to end against the local stack for `!!! ???`,
-      // `a & b | c`, a quoted phrase, `budget -draft` and `'; drop table
-      // users;--` — every one returned an empty result set, none an error.
-      (mockSupabase.from as jest.Mock).mockImplementation(() =>
-        makeChain({ data: [], error: null }),
-      );
-
-      await expect(
-        service.search('ch-1', 'user-1', "'; drop table users;--"),
-      ).resolves.toEqual({
-        backwork: [],
-        events: [],
-        members: [],
-        messages: [],
-      });
-    });
-
-    /**
-     * #1085. The old implementation selected EVERY `members` row for the
-     * chapter and then filtered `users` with `.in(rosterIds).ilike(...)`, so a
-     * search cost O(roster) before it could match anything.
-     */
-    it('member search never loads the chapter roster', async () => {
-      const fromCalls: string[] = [];
-      let membersChain: Record<string, unknown> | undefined;
-
-      (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
-        fromCalls.push(table);
-        const chain = makeChain({ data: [], error: null });
-        if (table === 'members') membersChain = chain;
-        return chain;
-      });
-
-      await service.search('ch-1', 'user-1', 'budgetson');
-
-      // one query, with the join and the match both pushed into SQL
-      expect(membersChain?.select).toHaveBeenCalledWith(
-        'id, user_id, chapter_id, users!inner(id, display_name, email)',
-      );
-      expect(membersChain?.eq).toHaveBeenCalledWith('chapter_id', 'ch-1');
-      expect(membersChain?.limit).toHaveBeenCalled();
-      // the roster fan-out is gone: no standalone `users` read, no `.in()` list
-      expect(fromCalls).not.toContain('users');
-      expect(membersChain?.in).not.toHaveBeenCalled();
-    });
-
-    it('maps the member embed whether it arrives as an object or an array', async () => {
-      // PostgREST returns a to-one embed as an object; looser typings and some
-      // client versions hand back a single-element array. Neither shape should
-      // decide whether member search returns anything.
-      const rows = [
-        {
-          id: 'm-1',
-          user_id: 'u-1',
-          chapter_id: 'ch-1',
-          users: { id: 'u-1', display_name: 'Bob Budgetson', email: 'b@x.dev' },
-        },
-        {
-          id: 'm-2',
-          user_id: 'u-2',
-          chapter_id: 'ch-1',
-          users: [
-            { id: 'u-2', display_name: 'Ann Budgetson', email: 'a@x.dev' },
-          ],
-        },
-        // an embed that came back empty must be dropped, not returned blank
-        { id: 'm-3', user_id: 'u-3', chapter_id: 'ch-1', users: null },
-      ];
-
-      (mockSupabase.from as jest.Mock).mockImplementation((table: string) =>
-        table === 'members'
-          ? makeChain({ data: rows, error: null })
-          : makeChain({ data: [], error: null }),
-      );
-
-      const result = await service.search('ch-1', 'user-1', 'budgetson');
-
-      expect(result.members).toEqual([
-        {
-          id: 'm-1',
-          user_id: 'u-1',
-          chapter_id: 'ch-1',
-          display_name: 'Bob Budgetson',
-          email: 'b@x.dev',
-        },
-        {
-          id: 'm-2',
-          user_id: 'u-2',
-          chapter_id: 'ch-1',
-          display_name: 'Ann Budgetson',
-          email: 'a@x.dev',
-        },
-      ]);
     });
   });
 
@@ -934,105 +560,43 @@ describe('SearchService', () => {
       messages: [],
     };
 
-    /** A query that never settles, for driving the budget. */
-    const makeHangingChain = () => {
-      const chain: Record<string, unknown> = {};
-      Object.assign(chain, {
-        select: jest.fn().mockReturnValue(chain),
-        eq: jest.fn().mockReturnValue(chain),
-        in: jest.fn().mockReturnValue(chain),
-        ilike: jest.fn().mockReturnValue(chain),
-        textSearch: jest.fn().mockReturnValue(chain),
-        or: jest.fn().mockReturnValue(chain),
-        limit: jest.fn().mockReturnValue(chain),
-        order: jest.fn().mockReturnValue(chain),
-        then: () => new Promise(() => {}),
-        catch: () => Promise.reject().catch(() => {}),
-      });
-      return chain;
-    };
+    /** A read that never settles, for driving the budget. */
+    const hanging = () => new Promise<never>(() => {});
 
-    /** A query that answers with an error only after `ms`. */
-    const makeLateFailingChain = (ms: number) => {
-      const chain: Record<string, unknown> = {};
-      Object.assign(chain, {
-        select: jest.fn().mockReturnValue(chain),
-        eq: jest.fn().mockReturnValue(chain),
-        in: jest.fn().mockReturnValue(chain),
-        ilike: jest.fn().mockReturnValue(chain),
-        textSearch: jest.fn().mockReturnValue(chain),
-        or: jest.fn().mockReturnValue(chain),
-        limit: jest.fn().mockReturnValue(chain),
-        order: jest.fn().mockReturnValue(chain),
-        then: (resolve: (v: unknown) => void) =>
-          new Promise((settle) =>
-            setTimeout(
-              () =>
-                settle({
-                  data: null,
-                  error: { code: '57014', message: 'canceling statement' },
-                }),
-              ms,
+    /** A read that fails only after `ms`. */
+    const failingAfter = (ms: number) =>
+      new Promise<never>((_resolve, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new SupabaseQueryError({
+                code: '57014',
+                message: 'canceling statement',
+              }),
             ),
-          ).then(resolve),
-      });
-      return chain;
-    };
+          ms,
+        ),
+      );
 
     const TIMEOUT_LINE = 'reported to the caller as a timeout';
     const loggedText = (spy: jest.SpyInstance) =>
       spy.mock.calls.flat().map(String).join('\n');
 
-    /** Wires the chapter/membership lookups the message source walks. */
-    const wireSources = (overrides: Record<string, unknown> = {}) => {
-      const defaults: Record<string, unknown> = {
-        backwork_resources: makeChain({ data: [], error: null }),
-        events: makeChain({
-          data: [
-            {
-              id: 'ev-1',
-              chapter_id: 'ch-1',
-              name: 'Chapter Meeting',
-              description: 'Weekly meeting',
-              start_time: '2026-02-26T10:00:00Z',
-              end_time: '2026-02-26T11:00:00Z',
-              point_value: 10,
-              is_mandatory: false,
-            },
-          ],
-          error: null,
-        }),
-        members: makeChain({
-          data: [
-            {
-              id: 'm-1',
-              user_id: 'user-1',
-              chapter_id: 'ch-1',
-              role_ids: ['role-1'],
-            },
-          ],
-          error: null,
-        }),
-        users: makeChain({ data: [], error: null }),
-        roles: makeChain({ data: [{ permissions: [] }], error: null }),
-        chat_channels: makeChain({
-          data: [
-            {
-              id: 'pub',
-              type: 'PUBLIC',
-              member_ids: null,
-              required_permissions: null,
-            },
-          ],
-          error: null,
-        }),
-        chat_messages: makeChain({ data: [], error: null }),
-        ...overrides,
-      };
-      (mockSupabase.from as jest.Mock).mockImplementation(
-        (table: string) =>
-          defaults[table] ?? makeChain({ data: [], error: null }),
-      );
+    /** One event hit and one readable channel, so every source has work. */
+    const wireSources = () => {
+      repo.searchEvents.mockResolvedValue([
+        {
+          id: 'ev-1',
+          chapter_id: 'ch-1',
+          name: 'Chapter Meeting',
+          description: 'Weekly meeting',
+          start_time: '2026-02-26T10:00:00Z',
+          end_time: '2026-02-26T11:00:00Z',
+          point_value: 10,
+          is_mandatory: false,
+        },
+      ]);
+      repo.findChannelsForAccess.mockResolvedValue([channel('pub', 'PUBLIC')]);
     };
 
     it('returns an untouched result when every source is inside the budget', async () => {
@@ -1067,12 +631,13 @@ describe('SearchService', () => {
         .spyOn(Logger.prototype, 'error')
         .mockImplementation(() => undefined);
       try {
-        wireSources({
-          backwork_resources: makeChain({
-            data: [],
-            error: { code: '42P01', message: 'relation does not exist' },
+        wireSources();
+        repo.searchBackwork.mockRejectedValue(
+          new SupabaseQueryError({
+            code: '42P01',
+            message: 'relation does not exist',
           }),
-        });
+        );
 
         await expect(
           service.searchWithinBudget('ch-1', 'user-1', 'meeting'),
@@ -1091,7 +656,8 @@ describe('SearchService', () => {
         .spyOn(Logger.prototype, 'error')
         .mockImplementation(() => undefined);
       try {
-        wireSources({ backwork_resources: makeLateFailingChain(1_000) });
+        wireSources();
+        repo.searchBackwork.mockImplementation(() => failingAfter(1_000));
 
         const promise = service.searchWithinBudget('ch-1', 'user-1', 'meeting');
         await jest.advanceTimersByTimeAsync(500);
@@ -1116,7 +682,8 @@ describe('SearchService', () => {
       // and the UI rendered it identically to a genuine miss.
       jest.useFakeTimers();
       try {
-        wireSources({ chat_messages: makeHangingChain() });
+        wireSources();
+        repo.searchMessages.mockImplementation(hanging);
 
         const promise = service.searchWithinBudget('ch-1', 'user-1', 'meeting');
         await jest.advanceTimersByTimeAsync(500);

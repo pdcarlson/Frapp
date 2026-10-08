@@ -55,7 +55,7 @@ import {
   useThreadBlockList,
 } from "@/lib/chat/use-thread-block-list";
 import { coldLoadDefaultChannelId } from "@/lib/chat/default-channel";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { vocab } from "@/lib/vocabulary";
@@ -103,7 +103,7 @@ import { ReconnectPill } from "./reconnect-pill";
 import { BlockListNotice } from "./block-list-notice";
 import { useUnblockFlow } from "./use-unblock-flow";
 import { compactControlClassName } from "@/components/shared/table-controls";
-import type { SlashCommand } from "@repo/chat-integrations";
+import type { SlashCommand } from "@repo/chat-core/integrations";
 import type { ChatNotificationLevel } from "@repo/hooks";
 
 interface DirectoryMember {

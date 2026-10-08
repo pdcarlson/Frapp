@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ChannelCacheService } from './channel-cache.service';
+import { ChannelCacheService } from '../../application/services/channel-cache.service';
 
 /**
  * Isolated so `ChannelCacheService` can be shared between `ChatPushWorkerModule`

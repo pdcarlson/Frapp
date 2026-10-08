@@ -155,6 +155,10 @@ When unit tests mock `createMany` results for `DEFAULT_SYSTEM_ROLES`, derive sta
 
 > **Tip:** Keep business logic in services small and focused. This makes unit tests much easier to write and maintain.
 
+### Stripe billing service tests
+
+Unit tests for `StripeBillingService` (`apps/api/src/infrastructure/billing/stripe.service.ts`) isolate the Stripe client using `jest.mock('stripe')` and manually mock-inject nested client instances for properties like `.customers` and `.checkout.sessions`. Mocked billing tests cannot catch a cross-account Infisical mismatch (`STRIPE_SECRET_KEY` vs `STRIPE_PRICE_ID`); `StripePriceConsistencyService` is the runtime gate (boot + `/health/ready`).
+
 ## 4. Guards and interceptors
 
 Guards to test:
@@ -189,8 +193,8 @@ and why.
 
 ## 4a. Repository tenant-scope tests
 
-The 33 Supabase repositories under `apps/api/src/infrastructure/supabase/repositories/` long had no
-direct behavioural tests; seven were covered indirectly through
+The Supabase repositories under `apps/api/src/infrastructure/supabase/repositories/` long had no
+direct behavioural tests; a few were covered indirectly through
 `test/cross-tenant-isolation.e2e-spec.ts`. Wiring the generated `Database` type into the client
 (#1083) closed the *type* hole and not the *column* one — a repository that filters
 `.eq('id', chapterId)` instead of `.eq('chapter_id', chapterId)`, or that loses a tenant filter in a
@@ -260,23 +264,26 @@ Negation follows Postgres three-valued logic rather than JavaScript truthiness, 
 reports `PGRST116` on multiple matches instead of picking one — matching `postgrest-js`, which
 synthesises that error client-side — both for the same reason.
 
-It is not a Postgres emulator, and two limits follow that a spec must not claim around: the
-`select()` projection is ignored, so dropping `!inner` from an embed is invisible here; and joins are
-not resolved, so an embed is whatever the seed row carries. Both belong to the live-PostgREST
-integration suite (§6a), which exists for exactly that class of defect.
+It is not a Postgres emulator, and three limits follow that a spec must not claim around: the
+`select()` projection is ignored, so dropping `!inner` from an embed is invisible here; joins are
+not resolved, so an embed is whatever the seed row carries; and `.textSearch()` is a stand-in that
+matches when every query term appears as a case-insensitive substring, with no stemming, parse mode
+or negation, so it answers which chapter's row comes back and nothing about what a `websearch`
+query matches. All three belong to the live-PostgREST integration suite (§6a), which exists for
+exactly that class of defect.
 
 **Two meta-specs keep this honest:**
 
 - `tenant-scope.harness.spec.ts` runs each guard against a deliberately broken repository stand-in,
   so a harness that can no longer fail is itself a failure. Extend it whenever you extend the harness.
-- `tenant-scope-coverage.spec.ts` is the coverage ledger: every `*.repository.ts` under `apps/api/src` (recursive; not just `supabase-*` in one directory) either has a sibling `*.repository.spec.ts` driving `createTenantHarness`, or a line in `TENANT_SCOPE_BACKLOG` giving the reason. A new repository added without either fails CI. Clearing a backlog entry means writing the spec and raising the pinned count. Module-local workers (`modules/scheduled-jobs/scheduled-jobs.repository.ts`, `modules/chat-push-worker/chat-notification-preference.repository.ts`) are in the denominator. Scheduled-jobs sweeps (`findEventsPendingAutoAbsent`, `findOpenInvoicesDueBetween`, `findIncompleteTasksDueBetween`) are characterised as unscoped (cross-chapter by design); `claimDispatch` and `releaseDispatch` are asserted tenant-scoped — chapter comes from the sweep row, and a colliding twin in another chapter is neither claimed nor released. The stale-palette pair works on `chapters` itself (`tenantColumns: { chapters: 'id' }`): `findChaptersWithStalePalette` is characterised as cross-chapter, and `writeRecomputedPalette` is asserted to write only the chapter its row names.
+- `tenant-scope-coverage.spec.ts` is the coverage ledger: every `*.repository.ts` under `apps/api/src` (recursive; not just `supabase-*` in one directory) either has a sibling `*.repository.spec.ts` driving `createTenantHarness`, or a line in `TENANT_SCOPE_BACKLOG` giving the reason. A new repository added without either fails CI. Clearing a backlog entry means writing the spec and raising the pinned count. The worker repositories (`supabase-scheduled-jobs.repository.ts`, `supabase-chat-notification-preference.repository.ts`) are in the denominator like any other. Scheduled-jobs sweeps (`findEventsPendingAutoAbsent`, `findOpenInvoicesDueBetween`, `findIncompleteTasksDueBetween`) are characterised as unscoped (cross-chapter by design); `claimDispatch` and `releaseDispatch` are asserted tenant-scoped — chapter comes from the sweep row, and a colliding twin in another chapter is neither claimed nor released. The stale-palette pair works on `chapters` itself (`tenantColumns: { chapters: 'id' }`): `findChaptersWithStalePalette` is characterised as cross-chapter, and `writeRecomputedPalette` is asserted to write only the chapter its row names.
 
 **What these tests do not replace.** Methods that take a row `id` and no chapter (`memberRepo.findById`,
 `roleRepo.update`, `attendanceRepo.update`) are scoped by their callers, not by the query. Those are
 characterised — asserted as unscoped, with a comment naming the enforcing service — and the route-level
 guarantee stays with `test/cross-tenant-isolation.e2e-spec.ts`.
 
-## 5. CI parity (lint job)
+## 5. CI parity (lint and API test jobs)
 
 The **`lint-and-typecheck`** job in `.github/workflows/ci.yml` runs ESLint, TypeScript, **`npm run check:brand-assets`**, and a set of per-workspace unit suites. That set is not restated here — it is in [`github-branch-protection-runbook.md`](../ops/github-branch-protection-runbook.md) § Required Status Checks. **Nothing asserts that copy against `ci.yml`** — `check:doc-tables` did, and it was deleted with the other docs gates, so the runbook's list is hand-kept and can lag this job. The validation suite includes a Zod 4 runtime smoke (`packages/validation/src/index.spec.ts`) for record maps plus the string-check, default, and strict APIs the package still uses. The `z.record(key, value)` TypeScript arity is enforced by `tsc` on `packages/validation/src/index.ts`, not by that spec (specs are excluded from the package `tsc`). `@repo/formatting` holds the shared locale date helpers plus tests that fail if a protected cluster (stopwatch padding, bare-date timezone parsing, minute-duration rounding) is folded into the generic formatter.
 
@@ -284,26 +291,7 @@ The four docs gates that covered structure, citations, references and rosters ar
 
 `lint` also surfaces the `nestjs-typed` response-schema rule as **warnings**, which do not fail ESLint, so this job stays green while the backlog stays visible. How to measure that backlog rather than copy a number, and when the rule flips to `error`: [`quality-gates.md` § nestjs-typed](../ci-cd/quality-gates.md#nestjs-typed--the-response-schema-rule).
 
-## 5a. Coverage
-
-Coverage runs on demand, not in CI, and has **no threshold** — it is a measurement, not a gate. This
-is a deliberate decision, not an oversight; `spec/architecture/README.md` § 11 states the current
-measured baseline instead of an unenforced minimum — see
-[`quality-gates.md` § Coverage](../ci-cd/quality-gates.md#coverage) for why it stays
-ungated.
-
-```bash
-npm run test:cov                  # every workspace, via turbo
-npm run test:cov -w apps/api      # Jest, v8 provider
-npm run test:cov -w packages/hooks # Vitest, @vitest/coverage-v8
-```
-
-Both runners report through the V8 engine. `apps/api` uses `coverageProvider: "v8"` rather than the
-Jest default specifically to route around a `minimatch`/`test-exclude` collision that made
-`test:cov` throw; the details are in [`quality-gates.md`](../ci-cd/quality-gates.md) and
-matter before anyone touches the root `overrides` block.
-
-The **`api-tests`** job runs **three** suites after building shared packages: the unit suite (`npm run test -w apps/api`), the E2E suite (`npm run test:e2e -w apps/api`), and the adversarial AI evals (`npm run test:ai-evals -w apps/api`). Because the E2E specs mock Supabase (§6) and the evals are pure fixtures, the job stays deterministic in GitHub Actions and requires no external services.
+The **`api-tests`** job runs the unit, E2E and AI-eval suites; see §2.
 
 The evals run unconditionally rather than path-gated. Spec §13 requires them on any change to prompts, retrieval or the tool registry; running them always is a superset, and costs ~1.5s against the minutes a separate job's checkout and install would burn (ADR-15). Their behavioural half currently **skips** — no agent exists yet — so a green `api-tests` is not evidence any agent was graded; see [`docs/security/ai-prompt-injection.md`](../security/ai-prompt-injection.md) and `apps/api/test/ai-evals/README.md`.
 
@@ -328,26 +316,7 @@ Both run under `npm run test -w apps/api`. The chat hot path has no Deno tier.
 
 ## 6. E2E scaffolding
 
-E2E config file: `apps/api/test/jest-e2e.json`:
-
-```json
-{
-  "moduleFileExtensions": ["js", "json", "ts"],
-  "rootDir": ".",
-  "testEnvironment": "node",
-  "testRegex": ".e2e-spec.ts$",
-  "setupFiles": ["<rootDir>/setup-e2e.ts"],
-  "transform": {
-    "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": { "module": "commonjs", "moduleResolution": "node", "resolvePackageJsonExports": false, "rootDir": ".", "ignoreDeprecations": "6.0" } }]
-  },
-  "moduleNameMapper": {
-    "^@repo/org-archetypes$": "<rootDir>/../../../packages/org-archetypes/src/index.ts",
-    "^@repo/chapter-theme$": "<rootDir>/../../../packages/chapter-theme/src/index.ts",
-    "^expo-server-sdk$": "<rootDir>/helpers/expo-server-sdk.stub.ts",
-    "^(\\.{1,2}/.*)\\.js$": "$1"
-  }
-}
-```
+E2E config file: [`apps/api/test/jest-e2e.json`](../../apps/api/test/jest-e2e.json) (not copied here; the file is the source).
 
 **Why the `commonjs` transform + `moduleNameMapper`:** booting the full `AppModule` in an E2E spec
 pulls in the `@repo/org-archetypes` and `@repo/chapter-theme` workspace packages, which are
@@ -486,7 +455,14 @@ Two conventions make the tests meaningful rather than decorative:
   delete each other's rows.
 
 Verify a new spec has teeth by breaking the code it covers and confirming it fails. The report specs
-were checked that way, against `report.service.ts`:
+were checked that way, against `report.service.ts` as it stood before its queries moved into
+repositories (#3221), and the counts below are from that run. Re-running a row now means mutating
+where that code lives today: the two embed rows in `supabase-report.repository.ts`, the paging row at
+`fetchCapped`'s call into the shared `fetchAllPages` (`supabase.utils.ts`), and the chunking row at
+the `chunkIds(ids)` call in `SupabaseUserRepository.findColumnsByIds`, the private read behind both
+`findContactsByIds` (the roster) and `findDisplayIdentitiesByIds`. Mutating that call, or the shared
+helpers themselves (`fetchAllPages`, `chunkIds` in `domain/utils/chunk-ids.ts`), reaches more than
+the roster, so more tests fail than the table says:
 
 | Mutation | Tests that fail |
 | --- | --- |
@@ -512,7 +488,7 @@ not exist, again with every test green.
 **Test through the subscription, not around it, and stay in the unit tier.** The integration tier
 (§6a) is deliberately not run by CI, so a recipient-filter proof placed there defends nothing while
 reading in the tracker as though it does. The pattern
-(`apps/api/src/modules/chat-push-worker/chat-push-worker.realtime.spec.ts`):
+(`apps/api/src/application/workers/chat-push-worker.realtime.spec.ts`):
 
 - Provide a Supabase stand-in whose `channel().on()` **captures** the callback the worker registers,
   asserting the event and table it registered for. Emit every case through that captured callback.
@@ -541,7 +517,7 @@ reading in the tracker as though it does. The pattern
   channel a seeded `off` changes no outcome, and the whole block passes with per-channel preferences
   disabled entirely.
 
-Teeth, verified against `apps/api/src/modules/chat-push-worker/chat-push-worker.service.ts` the same
+Teeth, verified against `apps/api/src/application/workers/chat-push-worker.service.ts` the same
 way §6a's table was:
 
 | Mutation | Tests that fail |
@@ -585,7 +561,24 @@ recurring shapes, all worth checking in any spec of this kind:
 - A double cast (`as unknown as Payload`) that disables checking of the very field the file exists
   to exercise.
 
-## 7. Coverage expectations
+## 7. Coverage
+
+Coverage runs on demand, not in CI, and has **no threshold** — it is a measurement, not a gate. This
+is a deliberate decision, not an oversight; `spec/architecture/README.md` § 11 states the current
+measured baseline instead of an unenforced minimum — see
+[`quality-gates.md` § Coverage](../ci-cd/quality-gates.md#coverage) for why it stays
+ungated.
+
+```bash
+npm run test:cov                  # every workspace, via turbo
+npm run test:cov -w apps/api      # Jest, v8 provider
+npm run test:cov -w packages/hooks # Vitest, @vitest/coverage-v8
+```
+
+Both runners report through the V8 engine. `apps/api` uses `coverageProvider: "v8"` rather than the
+Jest default specifically to route around a `minimatch`/`test-exclude` collision that made
+`test:cov` throw; the details are in [`quality-gates.md`](../ci-cd/quality-gates.md) and
+matter before anyone touches the root `overrides` block.
 
 For the API we aim for:
 
@@ -593,6 +586,3 @@ For the API we aim for:
 - **Integration/E2E** — at least one end-to-end flow per major domain
 
 > **Warning:** Do not chase 100% coverage at the expense of meaningful tests. Focus on critical business rules, security boundaries, and regressions we've actually seen.
-
-### Stripe Billing Service Tests
-Unit tests for `StripeBillingService` (`apps/api/src/infrastructure/billing/stripe.service.ts`) isolate the Stripe client using `jest.mock('stripe')` and manually mock-inject nested client instances for properties like `.customers` and `.checkout.sessions`. Mocked billing tests cannot catch a cross-account Infisical mismatch (`STRIPE_SECRET_KEY` vs `STRIPE_PRICE_ID`); `StripePriceConsistencyService` is the runtime gate (boot + `/health/ready`).

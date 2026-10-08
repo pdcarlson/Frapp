@@ -62,11 +62,13 @@
  *
  * So the allowlist does not keep hostile bytes out of a bucket — it constrains
  * the type they are served as. What stops a browser rendering them is decided
- * per call on the *download* side: `getSignedDownloadUrl`'s `downloadAs` sets
- * `Content-Disposition: attachment`, and the chat attachment path does pass it
- * (`ChatService.getMessageAttachments`). A URL minted **without** `downloadAs`
- * carried neither that header nor `X-Content-Type-Options: nosniff` in the
- * capture above, so for those the served type is all that is left.
+ * per call on the *download* side: `getSignedDownloadUrl`'s `downloadAs`, or
+ * `getSignedDownloadUrls`' `forceDownload`, sets `Content-Disposition:
+ * attachment`, and the chat attachment path does force it
+ * (`ChatAttachmentService.listMessageAttachments`, through `forceDownload`). A
+ * URL minted **without** either carried neither that header nor
+ * `X-Content-Type-Options: nosniff` in the capture above, so for those the
+ * served type is all that is left.
  *
  * Deliberately **not** measured, and so not claimed anywhere: any hosted
  * Supabase environment (this capture is local only, and an edge layer is
@@ -295,6 +297,10 @@ export function isWithinArchiveUploadSizeLimit(byteLength: number): boolean {
   );
 }
 
+/**
+ * Not re-exported from the package: no product code needs the raw list. The
+ * specs read it, and the `archive` spec holds it against its bucket migration.
+ */
 export function uploadMimeList(kind: UploadKind): readonly string[] {
   return KINDS[kind].mimeList;
 }

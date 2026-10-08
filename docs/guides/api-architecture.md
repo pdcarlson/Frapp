@@ -53,6 +53,7 @@ src/
 
   application/
     services/
+    workers/        # Realtime subscribers and @Cron sweeps
 
   infrastructure/
     supabase/
@@ -66,6 +67,8 @@ src/
     repositories/
     adapters/
     constants/permissions.ts
+
+  modules/          # Nest wiring only: *.module.ts files and their specs
 ```
 
 > **Note:** Controllers only handle HTTP concerns (routing, status codes, DTOs). They never talk to Supabase directly — they call application services instead.
@@ -148,11 +151,11 @@ Example: adding a `polls` module.
 
 1. **Domain layer**
    - Create `src/domain/entities/poll.entity.ts` with a TypeScript interface representing the table.
-   - Create `src/domain/repositories/poll.repository.ts` defining an interface (e.g. `IPollRepository`).
+   - Create `src/domain/repositories/poll.repository.interface.ts` defining an interface (e.g. `IPollRepository`) and its injection token.
 
 2. **Infrastructure layer**
-   - Implement `SupabasePollRepository` in `src/infrastructure/supabase/repositories/poll.repository.ts`.
-   - Use the shared `SupabaseClient` provider to query the `polls` table.
+   - Implement `SupabasePollRepository` in `src/infrastructure/supabase/repositories/supabase-poll.repository.ts`.
+   - Inject the shared client as `@Inject(SUPABASE_CLIENT) supabase: FrappSupabaseClient`, never the bare `SupabaseClient`, to query the `polls` table.
 
 3. **Application layer**
    - Add `PollService` in `src/application/services/poll.service.ts`.
@@ -167,6 +170,7 @@ Example: adding a `polls` module.
 
 5. **Module wiring**
    - Create `PollModule` in `src/modules/poll/poll.module.ts`, providing controller, service, and repository implementation.
+   - Put nothing else under `src/modules/`. A worker belongs in `src/application/workers/`, with its queries in a repository; the `api-modules-wiring-only` dependency-cruiser rules fail any other file there.
    - Import `PollModule` into `AppModule`.
 
 > **Tip:** Always start new features by updating the **specs** (`spec/product/`, `spec/behavior/`, `spec/architecture/README.md`). The API implementation should follow, not lead, the spec.
@@ -226,7 +230,7 @@ When a service loads the **same shape** of related rows for many parent records 
 
 Both paths fan those rows out through one private `groupTotalsByMessage` helper rather than each writing its own grouping. The helper only builds the `Map` — **it cannot enforce what you look up by, and that is the part that bites.** A `uuid` is 128 bits, so Postgres accepts any case on the way in and always renders it canonically lower-case on the way out: a route parameter can match every row inside the query and still fail `===` against every row that comes back, and the detail view then renders a real poll as every option at zero. Look tallies up by the id the database returned (`message.id`), never by the id the caller sent — a miss here is silent, because zero is a legitimate-looking tally.
 
-Collapsing rows into an aggregate shrinks a read but does not exempt it from paging. **An RPC result set is subject to `max_rows` exactly like a table read** — `ReportService.getPointsReport` pages one for that reason, and `listPolls` does not yet, which is [#1756](https://github.com/pdcarlson/Frapp/issues/1756): its RPCs emit a row per *(poll, option)*, so a full page of polls can overrun the cap and truncate with no error. `getPoll` is clear of this only because it passes a single message id. When you replace a row read with an aggregate, check the aggregate's own row count against the cap rather than assuming the shape made it safe.
+Collapsing rows into an aggregate shrinks a read but does not exempt it from paging. **An RPC result set is subject to `max_rows` exactly like a table read** — `SupabaseReportRepository.findPointsTotals` pages one for that reason, and `listPolls` does not yet, which is [#1756](https://github.com/pdcarlson/Frapp/issues/1756): its RPCs emit a row per *(poll, option)*, so a full page of polls can overrun the cap and truncate with no error. `getPoll` is clear of this only because it passes a single message id. When you replace a row read with an aggregate, check the aggregate's own row count against the cap rather than assuming the shape made it safe.
 
 The two paths differ deliberately on failure. `listPolls` guards each of its two reads **independently**: if either throws it still returns the poll list — with zero tallies, or without `userVotes` — and logs the failure with Nest's `Logger` so operators can diagnose storage or connectivity issues. `getPoll` lets either failure propagate: on a single-poll detail view, every option rendered at zero (or a voter shown as not having voted) is indistinguishable from a real result, so a degraded response there would be a silently wrong one rather than a visibly degraded one.
 

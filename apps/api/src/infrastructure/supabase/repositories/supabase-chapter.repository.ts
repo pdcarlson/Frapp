@@ -30,6 +30,16 @@ export class SupabaseChapterRepository implements IChapterRepository {
     return data;
   }
 
+  async isAnalyticsOptedOut(id: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('chapters')
+      .select('analytics_opt_out')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data?.analytics_opt_out ?? false;
+  }
+
   async findByIds(ids: string[]): Promise<Chapter[]> {
     if (!ids.length) return [];
     const { data, error } = await this.supabase
@@ -142,5 +152,23 @@ export class SupabaseChapterRepository implements IChapterRepository {
       .single();
     if (error) throw new SupabaseQueryError(error);
     return data;
+  }
+
+  async updatePaletteIfSeedUnchanged(
+    chapterId: string,
+    palette: TablesUpdate<'chapters'>,
+    seedAccent: string | undefined,
+  ): Promise<boolean> {
+    const update = this.supabase
+      .from('chapters')
+      .update(palette)
+      .eq('id', chapterId);
+    const guarded =
+      typeof seedAccent === 'string'
+        ? update.eq('branding->colors->>accent', seedAccent)
+        : update.is('branding->colors->>accent', null);
+    const { data, error } = await guarded.select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return (data?.length ?? 0) > 0;
   }
 }

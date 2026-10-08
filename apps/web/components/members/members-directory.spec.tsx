@@ -101,7 +101,7 @@ vi.mock("@/lib/providers/chapter-presence-provider", () => ({
   }),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
 /**
  * Stubbed because it fires six invite hooks this file's `@repo/hooks` mock has

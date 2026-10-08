@@ -7,16 +7,14 @@ import {
   ANALYTICS_PROVIDER,
   type IAnalyticsProvider,
 } from '#domain/adapters/analytics.interface';
-import {
-  FEATURE_FLAG_PROVIDER,
-  type IFeatureFlagProvider,
-} from '#domain/adapters/feature-flag.interface';
 import { parsePosthogConfig } from '../../infrastructure/analytics/posthog-config';
 import {
   ensurePosthogRuntime,
   shutdownPosthogRuntime,
 } from '../../infrastructure/analytics/posthog-runtime';
 import { AuthModule } from '../auth/auth.module';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 
@@ -82,12 +80,6 @@ export function selectAnalyticsProvider(
   return runtime.analytics;
 }
 
-export function selectFeatureFlagProvider(
-  config: ConfigService,
-): IFeatureFlagProvider {
-  return ensurePosthogRuntime(config).flags;
-}
-
 @Module({
   // MEMBER_REPOSITORY is provided directly rather than by importing
   // ChapterModule (which also exports it, and which this module used to
@@ -103,15 +95,12 @@ export function selectFeatureFlagProvider(
     AuthSyncInterceptor,
     AnalyticsService,
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
+    // The per-chapter opt-out read; provided directly for the same reason.
+    { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
     {
       provide: ANALYTICS_PROVIDER,
       inject: [ConfigService],
       useFactory: selectAnalyticsProvider,
-    },
-    {
-      provide: FEATURE_FLAG_PROVIDER,
-      inject: [ConfigService],
-      useFactory: selectFeatureFlagProvider,
     },
   ],
   exports: [AnalyticsService],

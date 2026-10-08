@@ -7,7 +7,7 @@ import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
-import type { EventPayload } from "@repo/chat-integrations";
+import type { EventPayload } from "@repo/chat-core/integrations";
 import { can } from "@repo/validation";
 import { parseInstant } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,7 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
 interface EventCardProps {

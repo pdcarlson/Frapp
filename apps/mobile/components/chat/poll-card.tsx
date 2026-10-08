@@ -41,17 +41,11 @@ import {
  *    mobile message kind has. `unconfirmed`/`recorded` are a muted note with
  *    no Discard; mobile has no slash replay path, so they are read-only.
  * 2. **`PollOption`/`POLL_VOTE_ACTION_TYPE`/payload-reading/tallying come from
- *    `@repo/chat-core/polls`**, not `@repo/chat-integrations` (the type
- *    definitions' canonical home, `packages/chat-integrations/src/
- *    payloads.ts`). `apps/mobile/lib/chat/use-chat-channel.ts`'s own doc
- *    comment names why `chat-integrations` itself is off-limits: that
- *    package's `exports` map points `require` at an unbuilt `dist/` (#989),
- *    which is the condition Metro's resolver uses. `chat-core/polls` mirrors
- *    the frozen wire contract (ADR-07's `action_type: "vote"` /
- *    `payload.option_id`) locally rather than importing it, for the same
- *    reason — but as the *one* shared copy web's `poll-card.tsx` also reads
- *    from, not a second mobile-local one, so a future fix to vote-parsing or
- *    tallying only has one place to land.
+ *    `@repo/chat-core/polls`**, the one shared copy web's `poll-card.tsx`
+ *    also reads from, so a future fix to vote-parsing or tallying only has
+ *    one place to land. The types themselves are re-exported there from
+ *    their canonical home, `@repo/chat-core/integrations` (the frozen wire
+ *    contract: ADR-07's `action_type: "vote"` / `payload.option_id`).
  *
  * Voting itself is the generic inline-card-action mechanism (`actOnCard` in
  * `@repo/chat-core/chat-client`, wired through `useChatChannel`'s `act`) —

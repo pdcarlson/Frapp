@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ChatService } from '../../application/services/chat.service';
+import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
+import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
 import { ChatBookmarkService } from '../../application/services/chat-bookmark.service';
 import { ChatReportService } from '../../application/services/chat-report.service';
 import { ChatSidebarService } from '../../application/services/chat-sidebar.service';
@@ -37,7 +39,8 @@ import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { ActivationModule } from '../activation/activation.module';
 import { ChapterModule } from '../chapter/chapter.module';
-import { ChatNotificationPreferenceRepository } from '../chat-push-worker/chat-notification-preference.repository';
+import { SupabaseChatNotificationPreferenceRepository } from '../../infrastructure/supabase/repositories/supabase-chat-notification-preference.repository';
+import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
 import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
 import { ChatBlockModule } from '../chat-block/chat-block.module';
 
@@ -51,7 +54,7 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
   // `ChannelCacheModule` → `ChannelCacheService`, so `updateChannel` can evict
   // the push worker's cached authorization inputs on write (#988) — imported
   // rather than `ChatPushWorkerModule` itself for the same reason
-  // `ChatNotificationPreferenceRepository` is provided directly below: that
+  // the preference repository is provided directly below: that
   // module's `OnApplicationBootstrap` opens a Realtime subscription, which has
   // no business starting up for a request-path module.
   // `ChatBlockModule` → `ChatBlockService` and the block repository. Imported
@@ -86,8 +89,16 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     // path for a stateless query helper. The class is the single home for
     // `chat_notification_preferences` reads and writes; a second repository for
     // the same table would be two places for one table's queries to drift.
-    ChatNotificationPreferenceRepository,
+    {
+      provide: CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
+      useClass: SupabaseChatNotificationPreferenceRepository,
+    },
     ChatService,
+    // Split out of `ChatService` (#1380): the chat buckets' objects, and a
+    // member's own notification levels. Neither touches the send hot path's
+    // ordering; `ChatService.sendMessage` calls into the first.
+    ChatAttachmentService,
+    ChatNotificationPreferenceService,
     // Bookmarks (#462) share this module's wiring but not `ChatService` — see
     // the service's own docblock for why they are a separate class.
     ChatBookmarkService,

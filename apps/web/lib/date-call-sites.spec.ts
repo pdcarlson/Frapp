@@ -32,7 +32,7 @@ import { describe, expect, it } from "vitest";
 const ROOT = join(__dirname, "..");
 
 /** Where product code lives. `tests/` is harness code and formats freely. */
-const SOURCE_DIRS = ["app", "components", "hooks", "lib"] as const;
+const SOURCE_DIRS = ["app", "components", "lib"] as const;
 
 const SOURCE_FILE = /\.tsx?$/;
 const IS_SPEC = /\.(spec|test)\.tsx?$/;

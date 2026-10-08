@@ -178,7 +178,7 @@ settled by whoever implements first. **None of them is settled spec.**
   Where that record lives has to be settled before the destructive path is built.
 - The destructive step is **never** the default path of a scheduled job on first release.
   `apps/api/src/application/services/report-retention.service.ts` and
-  `apps/api/src/modules/scheduled-jobs/` are the right *shape* for the sweep (including the
+  `apps/api/src/application/workers/scheduled-jobs.service.ts` are the right *shape* for the sweep (including the
   `@Cron`-fires-on-every-instance caveat), but that service reaps **derived artifacts that are
   regenerable by construction** — the premise its entire safety argument rests on. None of that
   argument transfers here, and the machinery must not be reused as though it did.

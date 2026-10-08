@@ -8,7 +8,7 @@ import { MemberService } from './member.service';
 import { ProfilePhotoUrlService } from './profile-photo-url.service';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
-import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
+import { ChannelCacheService } from './channel-cache.service';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
@@ -70,6 +70,7 @@ describe('MemberService', () => {
       findById: jest.fn(),
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
+      findContactsByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),

@@ -63,9 +63,6 @@ describeIntegration('One DM per pair against live PostgREST', () => {
       unused,
       unused,
       unused,
-      unused,
-      unused,
-      unused,
     );
 
     assertOk(

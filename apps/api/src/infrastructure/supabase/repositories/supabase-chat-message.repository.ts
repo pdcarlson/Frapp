@@ -22,6 +22,41 @@ import { SupabaseQueryError } from '../supabase-query-error';
 
 const DEFAULT_MESSAGE_LIMIT = 50;
 
+/** The `idx_chat_messages_dedupe` key, present on every field. */
+type DedupeKeyedInsert = TablesInsert<'chat_messages'> & {
+  channel_id: string;
+  sender_id: string | null;
+  client_message_id: string;
+};
+
+/**
+ * Whether a failed insert reads as a hit on `idx_chat_messages_dedupe`
+ * (`channel_id, sender_id, client_message_id`): a 23505 on a row that carries
+ * that whole key. Shared by `create` and `insertIdempotent` so the two cannot
+ * disagree about what "already landed" means.
+ *
+ * It infers the index from the row, not from the error, so a row that also
+ * supplies `id` or `external_message_id` and collides on one of those is
+ * misread as a dedupe hit. No writer does that today: the live send and the
+ * audit bridge set neither, and the importer sets no `client_message_id`.
+ *
+ * `sender_id` is checked for `undefined` rather than truthiness. A null sender
+ * is a legitimate insert (an imported archive row), and a truthiness guard
+ * would silently stop translating for any future null-sender writer that sets
+ * a `client_message_id`.
+ */
+function isDedupeHit(
+  error: { code?: string } | null,
+  data: TablesInsert<'chat_messages'>,
+): data is DedupeKeyedInsert {
+  return (
+    error?.code === PG_UNIQUE_VIOLATION &&
+    !!data.channel_id &&
+    data.sender_id !== undefined &&
+    !!data.client_message_id
+  );
+}
+
 function effectivePollListLimit(requested?: number): number {
   if (requested === undefined || !Number.isFinite(requested)) {
     return LIST_QUERY_LIMIT_DEFAULT;
@@ -260,18 +295,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       // and inserts only the rest, so a re-run never reaches this translation
       // at all. (It cannot upsert: PostgREST will not use a partial unique
       // index as an ON CONFLICT arbiter.)
-      //
-      // `sender_id` is still checked for `undefined` rather than truthiness. A
-      // null sender is a legitimate insert (an imported archive row), and while
-      // the importer no longer sets `client_message_id`, a truthiness guard
-      // would silently stop translating for any future null-sender writer that
-      // does.
-      if (
-        error.code === PG_UNIQUE_VIOLATION &&
-        data.channel_id &&
-        data.sender_id !== undefined &&
-        data.client_message_id
-      ) {
+      if (isDedupeHit(error, data)) {
         throw new ChatMessageDuplicateError(
           data.channel_id,
           data.sender_id,
@@ -281,6 +305,17 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       throw new SupabaseQueryError(error);
     }
     return created;
+  }
+
+  async insertIdempotent(
+    data: TablesInsert<'chat_messages'>,
+  ): Promise<'inserted' | 'duplicate'> {
+    const { error } = await this.supabase.from('chat_messages').insert(data);
+    // `create`'s guard: on a row without the whole dedupe key, a 23505 is
+    // some other unique index and an error, not a row that already landed.
+    if (isDedupeHit(error, data)) return 'duplicate';
+    if (error) throw new SupabaseQueryError(error);
+    return 'inserted';
   }
 
   async update(

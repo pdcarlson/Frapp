@@ -22,7 +22,7 @@ import {
   type SemesterArchive,
 } from "@repo/hooks";
 import { type PatchChapterConfig } from "@repo/validation";
-import { resolveChapterAccentColor } from "@repo/theme/accent";
+import { resolveChapterAccentColor } from "@/components/settings/resolve-chapter-accent";
 import { AA_NORMAL, normalizeHex } from "@repo/color";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { titleCase, vocab } from "@/lib/vocabulary";
@@ -56,7 +56,7 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import {
   can,
   canAll,
@@ -490,9 +490,9 @@ function SettingsPageContent() {
   const workflows = config?.workflows ?? [];
   const dues = config?.dues ?? DEFAULT_DUES;
 
-  // #1157: the preview swatch sits on a Signet card, so the WCAG check must
-  // run against that dark surface (with a dark-legible fallback), not the
-  // resolver's white default.
+  // #1157: the preview swatch sits on a Signet card, so the WCAG check runs
+  // against that dark surface, with a fallback legible on it. The resolver
+  // requires both and throws on a non-hex value, so these stay constants.
   const accent = resolveChapterAccentColor(accentDraft || undefined, {
     background: signetDarkTokens.color.surface.card,
     fallbackAccent: signetDarkTokens.color.gold.house,

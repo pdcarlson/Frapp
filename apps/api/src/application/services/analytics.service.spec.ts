@@ -8,15 +8,14 @@ import {
 } from '@repo/validation';
 import { isPseudonymHex } from '@repo/observability';
 import { AnalyticsService } from './analytics.service';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import {
+  CHAPTER_REPOSITORY,
+  type IChapterRepository,
+} from '#domain/repositories/chapter.repository.interface';
 import {
   ANALYTICS_PROVIDER,
   type IAnalyticsProvider,
 } from '#domain/adapters/analytics.interface';
-import {
-  FEATURE_FLAG_PROVIDER,
-  type IFeatureFlagProvider,
-} from '#domain/adapters/feature-flag.interface';
 import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
@@ -28,16 +27,24 @@ const USER_ID = 'user-123';
 const CHAPTER_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_CHAPTER_ID = '22222222-2222-4222-8222-222222222222';
 
-/** Builds a Supabase mock whose chapters lookup returns the given opt-out. */
-function makeSupabaseMock(result: {
-  data?: Record<string, unknown> | null;
+/**
+ * A chapter repository whose opt-out read answers `data.analytics_opt_out`
+ * (false when absent, as the repository reads a missing row), or rejects with
+ * `error` the way a failed read does.
+ */
+function makeChapterRepo(result: {
+  data?: { analytics_opt_out?: boolean } | null;
   error?: unknown;
 }) {
-  const maybeSingle = jest.fn().mockResolvedValue(result);
-  const eq = jest.fn().mockReturnValue({ maybeSingle });
-  const select = jest.fn().mockReturnValue({ eq });
-  const from = jest.fn().mockReturnValue({ select });
-  return { client: { from } as unknown, from, select, eq, maybeSingle };
+  const isAnalyticsOptedOut = jest.fn(() =>
+    result.error
+      ? Promise.reject(result.error)
+      : Promise.resolve(result.data?.analytics_opt_out ?? false),
+  );
+  return {
+    repo: { isAnalyticsOptedOut } as unknown as IChapterRepository,
+    isAnalyticsOptedOut,
+  };
 }
 
 /** A fully-stubbed member repository; tests wire only the methods they use. */
@@ -72,10 +79,9 @@ function makeMember(chapterId: string): Member {
 
 async function buildService(opts: {
   salt?: string;
-  supabase: unknown;
+  chapters: IChapterRepository;
   provider: IAnalyticsProvider;
   members?: IMemberRepository;
-  flags?: IFeatureFlagProvider;
 }) {
   const config = {
     get: jest.fn((key: string) =>
@@ -86,14 +92,8 @@ async function buildService(opts: {
     providers: [
       AnalyticsService,
       { provide: ConfigService, useValue: config },
-      { provide: SUPABASE_CLIENT, useValue: opts.supabase },
+      { provide: CHAPTER_REPOSITORY, useValue: opts.chapters },
       { provide: ANALYTICS_PROVIDER, useValue: opts.provider },
-      {
-        provide: FEATURE_FLAG_PROVIDER,
-        useValue: opts.flags ?? {
-          isEnabled: jest.fn().mockResolvedValue(false),
-        },
-      },
       {
         provide: MEMBER_REPOSITORY,
         useValue: opts.members ?? makeMemberRepo(),
@@ -112,10 +112,10 @@ describe('AnalyticsService', () => {
 
   describe('getDistinctId', () => {
     it('returns the HMAC of the user id, never the raw id', async () => {
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -127,10 +127,10 @@ describe('AnalyticsService', () => {
     });
 
     it('returns null when no salt is configured', async () => {
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: '',
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -140,10 +140,10 @@ describe('AnalyticsService', () => {
 
   describe('getChapterGroupId', () => {
     it('returns the HMAC of the chapter id, never the raw id', async () => {
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -155,10 +155,10 @@ describe('AnalyticsService', () => {
     });
 
     it('is stable for one chapter and distinct across chapters', async () => {
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -169,10 +169,10 @@ describe('AnalyticsService', () => {
     });
 
     it('lowercases a UUID so header case cannot split the group', async () => {
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -182,10 +182,10 @@ describe('AnalyticsService', () => {
     });
 
     it('returns null when no chapter is in context', async () => {
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -195,10 +195,10 @@ describe('AnalyticsService', () => {
     });
 
     it('returns null for a malformed chapter id instead of hashing it', async () => {
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -208,10 +208,10 @@ describe('AnalyticsService', () => {
     });
 
     it('returns null when no salt is configured', async () => {
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: '',
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -219,32 +219,32 @@ describe('AnalyticsService', () => {
     });
 
     it('still returns the chapter group when the chapter has opted out', async () => {
-      const { client, from } = makeSupabaseMock({
+      const { repo: chapters, isAnalyticsOptedOut } = makeChapterRepo({
         data: { analytics_opt_out: true },
         error: null,
       });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
       expect(service.getChapterGroupId(CHAPTER_ID)).toBe(
         hashChapterIdForAnalytics(SALT, CHAPTER_ID),
       );
-      expect(from).not.toHaveBeenCalled();
+      expect(isAnalyticsOptedOut).not.toHaveBeenCalled();
     });
   });
 
   describe('track', () => {
     it('captures a pseudonymous event when not opted out', async () => {
-      const { client } = makeSupabaseMock({
+      const { repo: chapters } = makeChapterRepo({
         data: { analytics_opt_out: false },
         error: null,
       });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -262,13 +262,13 @@ describe('AnalyticsService', () => {
     });
 
     it('suppresses events for an opted-out chapter (defense in depth)', async () => {
-      const { client } = makeSupabaseMock({
+      const { repo: chapters } = makeChapterRepo({
         data: { analytics_opt_out: true },
         error: null,
       });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -280,10 +280,10 @@ describe('AnalyticsService', () => {
     });
 
     it('does nothing when analytics is unconfigured (no salt)', async () => {
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: '',
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -293,10 +293,10 @@ describe('AnalyticsService', () => {
     });
 
     it('throws on a content/PII payload instead of leaking it', async () => {
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -310,10 +310,10 @@ describe('AnalyticsService', () => {
 
     it('swallows a provider failure so product requests are unaffected', async () => {
       provider.capture.mockRejectedValueOnce(new Error('provider down'));
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -324,22 +324,13 @@ describe('AnalyticsService', () => {
 
     it('reads the opt-out fresh per event so a toggle takes effect immediately', async () => {
       // First read: enabled → event sent. Second read: opted out → suppressed.
-      const maybeSingle = jest
+      const isAnalyticsOptedOut = jest
         .fn()
-        .mockResolvedValueOnce({
-          data: { analytics_opt_out: false },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: { analytics_opt_out: true },
-          error: null,
-        });
-      const eq = jest.fn().mockReturnValue({ maybeSingle });
-      const select = jest.fn().mockReturnValue({ eq });
-      const client = { from: jest.fn().mockReturnValue({ select }) } as unknown;
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true);
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters: { isAnalyticsOptedOut } as unknown as IChapterRepository,
         provider,
       });
 
@@ -347,18 +338,18 @@ describe('AnalyticsService', () => {
       await service.track('b', USER_ID, { chapterId: 'chapter-1' });
 
       // No caching: both events trigger a fresh lookup, and the flip is honored.
-      expect(maybeSingle).toHaveBeenCalledTimes(2);
+      expect(isAnalyticsOptedOut).toHaveBeenCalledTimes(2);
       expect(provider.capture).toHaveBeenCalledTimes(1);
     });
 
     it('fails closed (suppresses) when the opt-out lookup errors', async () => {
-      const { client } = makeSupabaseMock({
+      const { repo: chapters } = makeChapterRepo({
         data: null,
         error: { message: 'db down' },
       });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -373,13 +364,13 @@ describe('AnalyticsService', () => {
 
   describe('trackForChapter (chapter-keyed funnel events, #267)', () => {
     it('keys the event by the hashed chapter id, never the raw one', async () => {
-      const { client } = makeSupabaseMock({
+      const { repo: chapters } = makeChapterRepo({
         data: { analytics_opt_out: false },
         error: null,
       });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -401,13 +392,13 @@ describe('AnalyticsService', () => {
     });
 
     it('honours the per-chapter opt-out', async () => {
-      const { client } = makeSupabaseMock({
+      const { repo: chapters } = makeChapterRepo({
         data: { analytics_opt_out: true },
         error: null,
       });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -420,10 +411,12 @@ describe('AnalyticsService', () => {
     });
 
     it('fails closed when the opt-out lookup errors', async () => {
-      const { client } = makeSupabaseMock({ error: new Error('db down') });
+      const { repo: chapters } = makeChapterRepo({
+        error: new Error('db down'),
+      });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -436,8 +429,11 @@ describe('AnalyticsService', () => {
     });
 
     it('does nothing when analytics is unconfigured (no salt)', async () => {
-      const { client, from } = makeSupabaseMock({ data: null, error: null });
-      const service = await buildService({ supabase: client, provider });
+      const { repo: chapters, isAnalyticsOptedOut } = makeChapterRepo({
+        data: null,
+        error: null,
+      });
+      const service = await buildService({ chapters, provider });
 
       await service.trackForChapter(
         'activation-onboarding-submitted',
@@ -445,18 +441,18 @@ describe('AnalyticsService', () => {
       );
 
       expect(provider.capture).not.toHaveBeenCalled();
-      expect(from).not.toHaveBeenCalled();
+      expect(isAnalyticsOptedOut).not.toHaveBeenCalled();
     });
 
     it('swallows a provider failure', async () => {
-      const { client } = makeSupabaseMock({
+      const { repo: chapters } = makeChapterRepo({
         data: { analytics_opt_out: false },
         error: null,
       });
       provider.capture.mockRejectedValue(new Error('provider down'));
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -466,13 +462,13 @@ describe('AnalyticsService', () => {
     });
 
     it('throws on a content/PII payload instead of leaking it', async () => {
-      const { client } = makeSupabaseMock({
+      const { repo: chapters } = makeChapterRepo({
         data: { analytics_opt_out: false },
         error: null,
       });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
 
@@ -489,13 +485,13 @@ describe('AnalyticsService', () => {
     it('rejects an event for a chapter the caller does not belong to (403)', async () => {
       const members = makeMemberRepo();
       members.findByUserAndChapter.mockResolvedValue(null);
-      const { client } = makeSupabaseMock({
+      const { repo: chapters } = makeChapterRepo({
         data: { analytics_opt_out: false },
         error: null,
       });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
         members,
       });
@@ -515,13 +511,13 @@ describe('AnalyticsService', () => {
     it('captures when the caller is a member of an opted-in chapter', async () => {
       const members = makeMemberRepo();
       members.findByUserAndChapter.mockResolvedValue(makeMember('chapter-1'));
-      const { client } = makeSupabaseMock({
+      const { repo: chapters } = makeChapterRepo({
         data: { analytics_opt_out: false },
         error: null,
       });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
         members,
       });
@@ -545,13 +541,13 @@ describe('AnalyticsService', () => {
     it('suppresses for a member of an opted-out chapter (with chapter_id)', async () => {
       const members = makeMemberRepo();
       members.findByUserAndChapter.mockResolvedValue(makeMember('chapter-1'));
-      const { client } = makeSupabaseMock({
+      const { repo: chapters } = makeChapterRepo({
         data: { analytics_opt_out: true },
         error: null,
       });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
         members,
       });
@@ -570,13 +566,13 @@ describe('AnalyticsService', () => {
         makeMember('c1'),
         makeMember('c2'),
       ]);
-      const { client } = makeSupabaseMock({
+      const { repo: chapters } = makeChapterRepo({
         data: { analytics_opt_out: true },
         error: null,
       });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
         members,
       });
@@ -594,23 +590,13 @@ describe('AnalyticsService', () => {
         makeMember('c2'),
       ]);
       // One chapter opted out, one opted in → not every chapter is disabled.
-      const maybeSingle = jest
+      const isAnalyticsOptedOut = jest
         .fn()
-        .mockResolvedValueOnce({
-          data: { analytics_opt_out: true },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: { analytics_opt_out: false },
-          error: null,
-        });
-      const eq = jest.fn().mockReturnValue({ maybeSingle });
-      const select = jest.fn().mockReturnValue({ eq });
-      const from = jest.fn().mockReturnValue({ select });
-      const client = { from } as unknown;
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters: { isAnalyticsOptedOut } as unknown as IChapterRepository,
         provider,
         members,
       });
@@ -618,18 +604,17 @@ describe('AnalyticsService', () => {
       await service.trackFromClient('opened-channel', USER_ID, {});
 
       expect(provider.capture).toHaveBeenCalledTimes(1);
-      // Pin the query target so a future shape change in isChapterAnalyticsEnabled
-      // (e.g. a renamed table) breaks this test instead of silently drifting.
-      expect(from).toHaveBeenCalledWith('chapters');
+      // Each membership's own chapter is the one looked up.
+      expect(isAnalyticsOptedOut.mock.calls).toEqual([['c1'], ['c2']]);
     });
 
     it('captures a chapter-less event when the caller has no memberships', async () => {
       const members = makeMemberRepo();
       members.findByUser.mockResolvedValue([]);
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
         members,
       });
@@ -642,10 +627,10 @@ describe('AnalyticsService', () => {
     it('suppresses (fails closed) when membership resolution errors on the omit path', async () => {
       const members = makeMemberRepo();
       members.findByUser.mockRejectedValue(new Error('db down'));
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
         members,
       });
@@ -662,10 +647,10 @@ describe('AnalyticsService', () => {
       // non-member still 403s — see the rejection test above).
       const members = makeMemberRepo();
       members.findByUserAndChapter.mockRejectedValue(new Error('db down'));
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
         members,
       });
@@ -691,10 +676,10 @@ describe('AnalyticsService', () => {
       const warnSpy = jest
         .spyOn(Logger.prototype, 'warn')
         .mockImplementation(() => undefined);
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
         members,
       });
@@ -732,10 +717,10 @@ describe('AnalyticsService', () => {
 
     it('is a no-op when analytics is unconfigured (no salt), without touching the DB', async () => {
       const members = makeMemberRepo();
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: '',
-        supabase: client,
+        chapters,
         provider,
         members,
       });
@@ -752,13 +737,13 @@ describe('AnalyticsService', () => {
     it('rejects a content/PII payload up front, even on a path that would suppress', async () => {
       const members = makeMemberRepo();
       members.findByUser.mockResolvedValue([makeMember('c1')]);
-      const { client } = makeSupabaseMock({
+      const { repo: chapters } = makeChapterRepo({
         data: { analytics_opt_out: true },
         error: null,
       });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
         members,
       });
@@ -777,10 +762,10 @@ describe('AnalyticsService', () => {
       const members = makeMemberRepo();
       // Would be a non-member 403 if reached — but validation throws first.
       members.findByUserAndChapter.mockResolvedValue(null);
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
         members,
       });
@@ -798,10 +783,10 @@ describe('AnalyticsService', () => {
 
   describe('forgetUser', () => {
     it('forwards the pseudonymous id and reports the provider acknowledgement', async () => {
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
       provider.forget.mockResolvedValue(true);
@@ -814,10 +799,10 @@ describe('AnalyticsService', () => {
     });
 
     it('reports false when the provider does not acknowledge the forget', async () => {
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
       provider.forget.mockResolvedValue(false);
@@ -826,10 +811,10 @@ describe('AnalyticsService', () => {
     });
 
     it('reports false when the provider rejects, without throwing', async () => {
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
-        supabase: client,
+        chapters,
         provider,
       });
       provider.forget.mockRejectedValue(new Error('posthog down'));
@@ -838,80 +823,16 @@ describe('AnalyticsService', () => {
     });
 
     it('is a successful no-op when analytics is unconfigured (nothing was ever emitted)', async () => {
-      const { client } = makeSupabaseMock({ data: null, error: null });
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({
         salt: '',
-        supabase: client,
+        chapters,
         provider,
       });
 
       await expect(service.forgetUser(USER_ID)).resolves.toBe(true);
 
       expect(provider.forget).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('isProductFlagEnabled', () => {
-    it('evaluates with HMAC distinct id and chapter group, never raw ids', async () => {
-      const flags: IFeatureFlagProvider = {
-        isEnabled: jest.fn().mockResolvedValue(true),
-      };
-      const { client } = makeSupabaseMock({ data: null, error: null });
-      const service = await buildService({
-        salt: SALT,
-        supabase: client,
-        provider,
-        flags,
-      });
-
-      await expect(
-        service.isProductFlagEnabled('new-composer', USER_ID, CHAPTER_ID),
-      ).resolves.toBe(true);
-
-      expect(flags.isEnabled).toHaveBeenCalledWith(
-        'new-composer',
-        hashUserIdForAnalytics(SALT, USER_ID),
-        hashChapterIdForAnalytics(SALT, CHAPTER_ID),
-      );
-      const [, distinctId, chapterGroupId] = (flags.isEnabled as jest.Mock).mock
-        .calls[0] as [string, string, string];
-      expect(distinctId).not.toBe(USER_ID);
-      expect(chapterGroupId).not.toBe(CHAPTER_ID);
-    });
-
-    it('fails closed when analytics is unconfigured', async () => {
-      const flags: IFeatureFlagProvider = {
-        isEnabled: jest.fn().mockResolvedValue(true),
-      };
-      const { client } = makeSupabaseMock({ data: null, error: null });
-      const service = await buildService({
-        salt: '',
-        supabase: client,
-        provider,
-        flags,
-      });
-
-      await expect(
-        service.isProductFlagEnabled('new-composer', USER_ID, CHAPTER_ID),
-      ).resolves.toBe(false);
-      expect(flags.isEnabled).not.toHaveBeenCalled();
-    });
-
-    it('fails closed when the flag provider throws', async () => {
-      const flags: IFeatureFlagProvider = {
-        isEnabled: jest.fn().mockRejectedValue(new Error('flags down')),
-      };
-      const { client } = makeSupabaseMock({ data: null, error: null });
-      const service = await buildService({
-        salt: SALT,
-        supabase: client,
-        provider,
-        flags,
-      });
-
-      await expect(
-        service.isProductFlagEnabled('new-composer', USER_ID),
-      ).resolves.toBe(false);
     });
   });
 });

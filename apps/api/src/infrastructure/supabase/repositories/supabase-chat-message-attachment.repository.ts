@@ -159,7 +159,7 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
  * row that deliberately does not have one, and the first caller to read it would
  * be reading a join artefact.
  *
- * **`external_url`** is a disclosure boundary. `ChatService.listMessageAttachments`
+ * **`external_url`** is a disclosure boundary. `ChatAttachmentService.listMessageAttachments`
  * spreads whatever this returns straight into an API response, and that column
  * holds a source-system URL. A Discord CDN link is signed and time-limited
  * (`?ex=&is=&hm=`), so shipping one would hand every chapter member a working

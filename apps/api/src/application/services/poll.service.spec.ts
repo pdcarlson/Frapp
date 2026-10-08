@@ -93,6 +93,7 @@ describe('PollService', () => {
       update: jest.fn(),
       findByClientMessageId: jest.fn(),
       findAuthorAvatarPaths: jest.fn(),
+      insertIdempotent: jest.fn(),
     };
 
     mockChannelRepo = {
@@ -100,7 +101,10 @@ describe('PollService', () => {
       findByChapter: jest.fn(),
       findByIds: jest.fn(),
       findDm: jest.fn(),
+      findPushRouting: jest.fn(),
       createDm: jest.fn(),
+      findByName: jest.fn(),
+      createMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),

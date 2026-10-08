@@ -14,7 +14,7 @@ import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
-import type { TaskPayload } from "@repo/chat-integrations";
+import type { TaskPayload } from "@repo/chat-core/integrations";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
@@ -24,7 +24,7 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { actionStatus } from "@/lib/task-action-status";
 import { getErrorMessage } from "@/lib/utils";
 

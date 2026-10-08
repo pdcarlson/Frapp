@@ -180,7 +180,7 @@ The rollback migration replays in CI like any other. Where
 `check:pglite-migrations` asserts what the original added (a landmark or a smoke
 tier), the rollback fails that job until the same PR relaxes the assertion, and
 relaxing it is part of the rollback. Recipes don't name every such assertion, so
-before opening the PR, search `scripts/check-pglite-migrations.mjs` for each
+before opening the PR, search `scripts/pglite/` for each
 object the rollback drops or changes.
 
 **Restore the current definition, not an older file's.** Where a recipe says to
@@ -874,7 +874,7 @@ After any rollback event:
   resolving, and no API revision can observe the difference. There is no window in which
   a running API sees a shape it does not expect, in either direction.
 * **Data caveat**: none. Nothing is written, dropped, or backfilled.
-* **CI will stop you.** `scripts/check-pglite-migrations.mjs` asserts every
+* **CI will stop you.** `scripts/pglite/tiers/security-definer-search-path.mjs` asserts every
   `security definer` function in `public` pins `pg_temp` **last** (the
   `=== security definer search_path ===` tier), so a rollback committed as a *migration*
   fails the `pglite-migrations` job by design. That job is on the required roster (#2538):
@@ -1297,7 +1297,7 @@ After any rollback event:
   DROP INDEX IF EXISTS public.idx_chat_messages_content_search;
   ALTER TABLE public.chat_messages DROP COLUMN IF EXISTS content_search;
   ```
-* **Order**: **take the API off it first, then the database**: a forward revert, then the SQL as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). `SearchService`
+* **Order**: **take the API off it first, then the database**: a forward revert, then the SQL as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). `SupabaseSearchRepository`
   queries the column by name via `.textSearch('content_search', …)`, so dropping
   it under a running post-change API turns `GET /v1/search` into a 500 on every
   request — PostgREST `42703 column "content_search" does not exist`. The
@@ -1312,8 +1312,8 @@ After any rollback event:
   materialises per row under ACCESS EXCLUSIVE. If the archive has already been
   imported, treat a re-apply as a scheduled maintenance window, not a hotfix.
 * **Lighter option**: if the problem is search *results* rather than the schema
-  (stemming surprises, an unexpected match), forward-revert only the service change and
-  leave the column and index in place. They cost writes on insert and nothing on
+  (stemming surprises, an unexpected match), forward-revert only the query change (in
+  `SupabaseSearchRepository`) and leave the column and index in place. They cost writes on insert and nothing on
   read, and they will be needed again.
 
 ## Rollback the chat per-kind notification upsert target
@@ -1400,7 +1400,7 @@ After any rollback event:
   Dropping a column drops its index too; the explicit `DROP INDEX` lines are for
   a partial apply where the column never landed.
 * **Order**: **take the API off it first, then the database**: a forward revert, then the SQL as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)) — same rule and same
-  reason as the chat entry above. `SearchService` names all three columns
+  reason as the chat entry above. `SupabaseSearchRepository` names all three columns
   (`.textSearch('search_vector', …)` for backwork and events,
   `.textSearch('users.display_name_search', …)` for members), so dropping them
   under a running post-change API turns `GET /v1/search` into a 500 on every
@@ -1423,12 +1423,12 @@ After any rollback event:
   writes for every chapter at once, not just the one that prompted the rollback.
 * **Lighter option**: if the problem is search *results* rather than the schema
   (stemming surprises — `Budget` matches `Budgetson` but `udgets` no longer
-  does), forward-revert only the service change and leave the columns and indexes in
+  does), forward-revert only the query change (in `SupabaseSearchRepository`) and leave the columns and indexes in
   place. They cost writes on insert and nothing on read, and they will be needed
   again.
-* **If you forward-revert the service but keep the schema**, also revert
-  `EVENT_SEARCH_COLUMNS` / `BACKWORK_SEARCH_COLUMNS` together with it: the
-  `check-pglite-migrations.mjs` landmark asserts those lists match their table's
+* **If you forward-revert the queries but keep the schema**, also revert
+  `EVENT_SEARCH_COLUMNS` / `BACKWORK_SEARCH_COLUMNS` (in `supabase-search.repository.ts`) together with them: the
+  `scripts/pglite/landmarks.mjs` landmark asserts those lists match their table's
   columns minus the tsvector, so a half-revert fails that gate.
 
 ## Rollback the imported-kind semantics
@@ -1481,7 +1481,7 @@ After any rollback event:
   `DELETE` as the action.*
 * **Order**: **take the API off it first.** The live API names the bucket
   (`CHAT_ARCHIVE_BUCKET`): it registers every import file there, and its workers
-  and `ChatService` sign, list and delete objects in it. Delete the bucket only once
+  and `ChatAttachmentService` sign, list and delete objects in it. Delete the bucket only once
   a forward revert that stops using it is live ([§ 3) Undo one migration](#3-undo-one-migration)); an
   empty bucket is not an unused one while that API serves. Once an
   import has run, the objects in it are the only copy of the archive's media —
@@ -1571,7 +1571,7 @@ After any rollback event:
   difference either way.
 * **Data caveat**: none. Nothing is written, dropped, or backfilled; `raise warning` does not
   affect the surrounding transaction.
-* **CI will stop you.** `scripts/check-pglite-migrations.mjs`'s "Functional smoke" tier asserts
+* **CI will stop you.** `scripts/pglite/tiers/anonymize-user.mjs`'s "Functional smoke" tier asserts
   each of the three ping tables raises an observable `WARNING` when `realtime.send` fails (PGlite
   has no `realtime` schema, so every write there already exercises the swallow) — a rollback
   committed as a *migration* fails the `pglite-migrations` job by design. That job is on the
@@ -1680,7 +1680,7 @@ After any rollback event:
   DROP INDEX IF EXISTS idx_tasks_status_due_date;
   ```
   The three indexes are safe to keep — they are pure read optimizations for the sweep queries and nothing depends on their existence. Drop them only if you are fully reverting the migration.
-* **⚠️ Note**: Additive DDL only — no existing table's data is touched, so nothing that predates the migration can be lost. But **take the API off it first with a forward revert of FRA-24**, or disable the sweeps, then ship the drops as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). `ScheduledJobsService` claims a row before *every* unit of work, and `ScheduledJobsRepository` treats an unexpected insert error as "not claimed", so with the table gone **all three claim-based sweeps silently stop doing anything** (report retention takes no claim and is unaffected) — reminders send nothing, and attendance auto-absent stops marking. They fail safe (no crash, no double-send) but they also fail *quietly*: the only signal is a `dispatch claim failed` line per item. Auto-absent is not exempt — it claims under `entity_type = 'EVENT'` so it runs once per event instead of once per replica per hour.
+* **⚠️ Note**: Additive DDL only — no existing table's data is touched, so nothing that predates the migration can be lost. But **take the API off it first with a forward revert of FRA-24**, or disable the sweeps, then ship the drops as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). `ScheduledJobsService` claims a row before *every* unit of work, and `SupabaseScheduledJobsRepository` treats an unexpected insert error as "not claimed", so with the table gone **all three claim-based sweeps silently stop doing anything** (report retention takes no claim and is unaffected) — reminders send nothing, and attendance auto-absent stops marking. They fail safe (no crash, no double-send) but they also fail *quietly*: the only signal is a `dispatch claim failed` line per item. Auto-absent is not exempt — it claims under `entity_type = 'EVENT'` so it runs once per event instead of once per replica per hour.
 * **Data caveat**: the rows are delivery bookkeeping — which reminder has already gone out for which invoice/task. Dropping the table erases that memory, so **re-applying the migration (a new migration repeating it, [§ 3](#3-undo-one-migration)) and re-enabling the sweeps re-sends every reminder still inside the 7-day `OVERDUE_LOOKBACK_DAYS` window** (and any invoice/task due the next day). Members see duplicates for anything in that window; older items stay silent because the lookback bound excludes them. If that matters, snapshot the table before dropping and restore it alongside the re-apply.
 
 ## Rollback pre-event reminder dispatch support
@@ -1694,7 +1694,7 @@ After any rollback event:
   ```
   The narrowed `CHECK` will reject the `ADD CONSTRAINT` outright while any `threshold = 'EVENT_REMINDER'` row still exists, hence the `DELETE` first. Note the constraint above must be re-added with `'EXPIRED'` still in it — narrowing all the way back to the original three values would break the poll-expiry sweep as well; roll that back separately and in order if you intend to revert both.
 * **No index to drop.** Unlike the poll-expiry rollback above, there is nothing to `DROP INDEX` here. The sweep reads `events.start_time`, which `idx_events_start_time` already covers from `00000000000000_initial_schema.sql` — **do not drop it**; it predates this feature and `EventService.findByChapter`/`findChildren` order on that column.
-* **⚠️ Note**: Additive DDL only — no existing constraint value, table, or row is removed by the forward migration, so nothing that predates it can be lost. **Take the API off it first with a forward revert of #391**, or disable `ScheduledJobsService.handleEventReminderSweep`, then ship the SQL as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)) — with the narrowed `CHECK` back in place, `claimDispatch('EVENT', …, 'EVENT_REMINDER', …)` fails the insert (constraint violation, not `23505`) and `ScheduledJobsRepository` treats that as "not claimed", so the reminder sweep fails safe (no crash, no double-send) but silently stops reminding anyone — the only signal is a `dispatch claim failed` line per event. The auto-absent sweep is unaffected: it claims under the same `entity_type = 'EVENT'` but the untouched `'AUTO_ABSENT'` threshold.
+* **⚠️ Note**: Additive DDL only — no existing constraint value, table, or row is removed by the forward migration, so nothing that predates it can be lost. **Take the API off it first with a forward revert of #391**, or disable `ScheduledJobsService.handleEventReminderSweep`, then ship the SQL as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)) — with the narrowed `CHECK` back in place, `claimDispatch('EVENT', …, 'EVENT_REMINDER', …)` fails the insert (constraint violation, not `23505`) and `SupabaseScheduledJobsRepository` treats that as "not claimed", so the reminder sweep fails safe (no crash, no double-send) but silently stops reminding anyone — the only signal is a `dispatch claim failed` line per event. The auto-absent sweep is unaffected: it claims under the same `entity_type = 'EVENT'` but the untouched `'AUTO_ABSENT'` threshold.
 * **Data caveat**: the deleted rows record which events have already had a reminder sent. Unlike the invoice/task sweeps there is **no lookback window here** — the sweep only ever looks 30 minutes *forward* — so re-applying the migration (a new migration repeating it, [§ 3](#3-undo-one-migration)) and re-enabling the sweep re-sends a reminder only for events that are still more than zero and at most 30 minutes from starting at that moment. In practice that is at most a handful of events and is self-limiting; there is no risk of a backlog blast. Snapshot the `threshold = 'EVENT_REMINDER'` rows first only if you care about the audit trail.
 
 ## Rollback poll-expiry dispatch support
@@ -1710,7 +1710,7 @@ After any rollback event:
   DROP INDEX IF EXISTS idx_chat_messages_poll_expires_at;
   ```
   The narrowed `CHECK`s will reject the rollback outright while any `entity_type = 'POLL'` or `threshold = 'EXPIRED'` row still exists, hence the `DELETE` first.
-* **Note**: Additive DDL only — no existing constraint value, table, or row is removed by the forward migration, so nothing that predates it can be lost. **Take the API off it first with a forward revert of #404**, or disable `ScheduledJobsService.handlePollExpirySweep`, then ship the SQL as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)) — with the narrowed `CHECK` back in place, `claimDispatch('POLL', …, 'EXPIRED', …)` fails the insert (constraint violation, not `23505`) and `ScheduledJobsRepository` treats that as "not claimed," so the poll-expiry sweep fails safe (no crash, no double-post) but silently stops announcing expired polls — the only signal is a `dispatch claim failed` line per poll.
+* **Note**: Additive DDL only — no existing constraint value, table, or row is removed by the forward migration, so nothing that predates it can be lost. **Take the API off it first with a forward revert of #404**, or disable `ScheduledJobsService.handlePollExpirySweep`, then ship the SQL as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)) — with the narrowed `CHECK` back in place, `claimDispatch('POLL', …, 'EXPIRED', …)` fails the insert (constraint violation, not `23505`) and `SupabaseScheduledJobsRepository` treats that as "not claimed," so the poll-expiry sweep fails safe (no crash, no double-post) but silently stops announcing expired polls — the only signal is a `dispatch claim failed` line per poll.
 * **Data caveat**: same shape as the base `scheduled_notification_dispatches` rollback above — the deleted rows are delivery bookkeeping for which expired polls have already been announced. Re-applying the migration (a new migration repeating it, [§ 3](#3-undo-one-migration)) and re-enabling the sweep re-announces every poll still inside the 24-hour `POLL_EXPIRY_LOOKBACK_HOURS` window; polls that expired earlier stay silent. Snapshot the `entity_type = 'POLL'` rows before deleting if that matters.
 
 ## Rollback custom-role member assignment
@@ -1778,7 +1778,7 @@ After any rollback event:
   ALTER TABLE members DROP CONSTRAINT IF EXISTS members_id_chapter_id_key;
   ALTER TABLE chapter_custom_fields DROP CONSTRAINT IF EXISTS chapter_custom_fields_id_chapter_id_key;
   ```
-* **Note**: The table holds per-member values for the `chapter_custom_fields` definitions, carrying a `chapter_id` enforced by composite FKs so a row can never pair a member with a field from another chapter. Dropping it loses any stored custom-field values but does not touch the definitions. There is no value-write API yet (deferred to #581), so in most environments the table is empty. Empty is not unused, though: `CustomFieldService` reads the table for member detail and member search and throws on error. So **take the API off it first** (a forward revert of those reads), then ship the drop as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)); otherwise member detail and search fail in every chapter with a visible custom-field definition. *Corrected 2026-10-01 (#2606).*
+* **Note**: The table holds per-member values for the `chapter_custom_fields` definitions, carrying a `chapter_id` enforced by composite FKs so a row can never pair a member with a field from another chapter. Dropping it loses any stored custom-field values but does not touch the definitions. There is no value-write API yet (deferred to #581), so in most environments the table is empty. Empty is not unused, though: `SupabaseCustomFieldRepository` (`findValuesForMember`, `findValuesByFieldIds`, behind `CustomFieldService`) reads the table for member detail and member search and throws on error. So **take the API off it first** (a forward revert of those reads), then ship the drop as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)); otherwise member detail and search fail in every chapter with a visible custom-field definition. *Corrected 2026-10-01 (#2606).*
 
 ## Rollback Chunk 07d dues config alignment
 * **Migration**: `20260530193000_chapter_dues_config_align_spec.sql`
@@ -1796,7 +1796,7 @@ After any rollback event:
 ## Rollback analytics opt-out flag
 * **Migration**: `20260530180000_chapter_analytics_opt_out.sql`
 * **Action**: Run `ALTER TABLE chapters DROP COLUMN IF EXISTS analytics_opt_out;`
-* **Note**: Additive boolean with a default; dropping it loses only each chapter's opt-out preference. `AnalyticsService` reads it defensively and treats a missing/false value as "analytics enabled", but `ChapterConfigService.getConfig` names the column in its `select` and rethrows, so `GET /v1/chapters/:id/config` would 500 for every chapter. **Take the API off it first** (a forward revert of the config reads and writes), then ship the drop as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). *Corrected 2026-10-01 (#2606): this used to imply the server read it defensively everywhere.*
+* **Note**: Additive boolean with a default; dropping it loses only each chapter's opt-out preference. Analytics does not read it defensively: `SupabaseChapterRepository.isAnalyticsOptedOut` names the column and throws, and `AnalyticsService` fails closed on that error, so while the column is gone every event the opt-out applies to is suppressed: a server event that names a chapter, a chapter-level event, and a client event from a caller who belongs to a chapter. Events with no chapter to check still flow, namely a server event that names none and a client event from a caller with no memberships. And `ChapterConfigService.getConfig` names the column in its `select` and rethrows, so `GET /v1/chapters/:id/config` would 500 for every chapter. **Take the API off it first** (a forward revert of the config reads and writes), then ship the drop as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). *Corrected 2026-10-01 (#2606): this used to imply the server read it defensively everywhere. Corrected again 2026-10-07 (#3221): analytics' read was never defensive either; a missing column fails it closed.*
 
 ## Rollback default invite role (20260902170002)
 * **Migration**: `20260902170002_chapter_default_invite_role.sql`
@@ -1837,7 +1837,7 @@ After any rollback event:
 ## Rollback `get_points_report` RPC
 * **Migration**: `20260604140000_get_points_report_window_filter.sql` (supersedes `20250226120000_add_get_points_report_rpc.sql`)
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, timestamptz);`
-* **Note**: Additive/no data loss — the migration drops the old `(uuid, uuid, text)` overload and recreates the RPC with a `p_since timestamptz` window filter (FRA-31). The API calls the new overload from `ReportService.getPointsReport`, so a forward-fix (rather than a bare drop) is required to keep the points report working: ship a forward revert to the prior all-time call, and one new migration that drops the `timestamptz` overload and re-creates the original `(uuid, uuid, text)` body together, so the two never coexist ([§ 3) Undo one migration](#3-undo-one-migration)). Read the reverted `ReportService` call to choose the order. If it names only arguments the current function accepts (`p_chapter_id`, `p_user_id`), revert first and ship the migration in a later run, as the `p_until` entry below does; that order has no failure window. If it names `p_window`, which only the old body has, ship both in one run and accept the minutes between the migration and the reverted API going live. This entry applies only after the `p_until` rollback below, since that one recreates the 3-arg `timestamptz` overload. *Corrected 2026-10-01 (#2606).*
+* **Note**: Additive/no data loss — the migration drops the old `(uuid, uuid, text)` overload and recreates the RPC with a `p_since timestamptz` window filter (FRA-31). The API calls the new overload from `SupabaseReportRepository.findPointsTotals` (behind `ReportService.getPointsReport`), so a forward-fix (rather than a bare drop) is required to keep the points report working: ship a forward revert to the prior all-time call, and one new migration that drops the `timestamptz` overload and re-creates the original `(uuid, uuid, text)` body together, so the two never coexist ([§ 3) Undo one migration](#3-undo-one-migration)). Read the reverted `get_points_report` call (in `SupabaseReportRepository.findPointsTotals`) to choose the order. If it names only arguments the current function accepts (`p_chapter_id`, `p_user_id`), revert first and ship the migration in a later run, as the `p_until` entry below does; that order has no failure window. If it names `p_window`, which only the old body has, ship both in one run and accept the minutes between the migration and the reverted API going live. This entry applies only after the `p_until` rollback below, since that one recreates the 3-arg `timestamptz` overload. *Corrected 2026-10-01 (#2606).*
 
 ## Rollback `chat_message_actions` membership-scoped read RLS
 * **Migration**: `20260803150000_chat_message_actions_membership_rls.sql`
@@ -1877,17 +1877,17 @@ After any rollback event:
   END
   $$;
   ```
-* **Note**: Grant-only change, no data loss and no function body change — restores the pre-migration Postgres-default EXECUTE-to-PUBLIC behavior for `anon`/`authenticated`. Should not be needed: all three RPCs are `security invoker` (RLS still applies under the caller's own privileges) and both callers (`ReportService.getPointsReport`, `SupabasePollVoteRepository`) already go through the API's `service_role` client, which keeps EXECUTE regardless. Only relevant if some other caller was found to invoke these RPCs directly as `anon`/`authenticated` (e.g. via PostgREST) after this migration shipped — confirm that caller's actual need before rolling back, since re-opening the grant is exactly the convention gap #678 closed. Ship the grants as a new migration ([§ 3) Undo one migration](#3-undo-one-migration)).
+* **Note**: Grant-only change, no data loss and no function body change — restores the pre-migration Postgres-default EXECUTE-to-PUBLIC behavior for `anon`/`authenticated`. Should not be needed: all three RPCs are `security invoker` (RLS still applies under the caller's own privileges) and both callers (`SupabaseReportRepository`, `SupabasePollVoteRepository`) already go through the API's `service_role` client, which keeps EXECUTE regardless. Only relevant if some other caller was found to invoke these RPCs directly as `anon`/`authenticated` (e.g. via PostgREST) after this migration shipped — confirm that caller's actual need before rolling back, since re-opening the grant is exactly the convention gap #678 closed. Ship the grants as a new migration ([§ 3) Undo one migration](#3-undo-one-migration)).
 
 ## Rollback `get_points_leaderboard` RPC
 * **Migration**: `20260906120001_get_points_leaderboard.sql`
 * **Action**: `DROP FUNCTION IF EXISTS get_points_leaderboard(uuid, timestamptz, timestamptz);`
-* **Note**: Additive only — one new `security invoker` function, no table, column, row or existing-function change, so there is no data loss on drop. **A bare drop breaks `GET /v1/points/leaderboard` outright**, so this needs a forward-fix rather than a straight rollback: the API calls it from `SupabasePointTransactionRepository.leaderboard` on every leaderboard request, and #522 deleted the previous in-Node path (`IPointTransactionRepository.findByChapter`) in the same change per the cutover discipline — there is no fallback branch left to take. Ship a forward change that restores the `findByChapter` + reduce-in-Node aggregation **before** the drop, which ships as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)); otherwise every leaderboard request 500s. **Three surfaces break, not one** — size the blast radius on all of them: the web Points page, the web Members directory, and the **mobile Tasks tab's house-rank card**, which is on every member's home screen rather than an officer-only screen. The balance summary and the Audit tab keep working (they read `findByUser` and `findByChapterFiltered`, which this migration does not touch). Ordering aside, the RPC is pure read: dropping and recreating it at any time is safe for data. The migration creates no index, so there is nothing else to undo.
+* **Note**: Additive only — one new `security invoker` function, no table, column, row or existing-function change, so there is no data loss on drop. **A bare drop breaks `GET /v1/points/leaderboard` outright**, so this needs a forward-fix rather than a straight rollback: the API calls it from `SupabasePointTransactionRepository.leaderboard` on every leaderboard request and from `SupabaseReportRepository.findMemberBalances` on every roster report (both bounds null, #1743), and #522 deleted the previous in-Node path (`IPointTransactionRepository.findByChapter`) in the same change per the cutover discipline — there is no fallback branch left to take. Ship a forward change that restores the `findByChapter` + reduce-in-Node aggregation **before** the drop, which ships as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)); otherwise every leaderboard request 500s. The forward change must also take the roster report's balances off the RPC (restore a per-member sum for `findMemberBalances`), or every roster report and export fails once the function is gone. **Four surfaces break, not one** — size the blast radius on all of them: the web Points page, the web Members directory, the **mobile Tasks tab's house-rank card**, which is on every member's home screen rather than an officer-only screen, and the officer roster report. *Corrected 2026-10-07 (#3221): this named only the leaderboard caller; the roster report has called the same RPC since #1743.* The balance summary and the Audit tab keep working (they read `findByUser` and `findByChapterFiltered`, which this migration does not touch). Ordering aside, the RPC is pure read: dropping and recreating it at any time is safe for data. The migration creates no index, so there is nothing else to undo.
 
 ## Rollback `get_points_report` RPC `p_until` bound
 * **Migration**: `20260902010001_get_points_report_until.sql` (supersedes `20260604140000_get_points_report_window_filter.sql`)
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, timestamptz, timestamptz);`, then recreate the 3-arg `(uuid, uuid, timestamptz)` overload from `20260604140000`, and re-apply its EXECUTE lock-down (revoke from `public`/`anon`/`authenticated`, grant to `service_role`) per `20260901173000`.
-* **Note**: Additive/no data loss — the migration drops the 3-arg overload and recreates the RPC with an added `p_until timestamptz` upper bound (#377), used to filter to one specific archived semester's `[start_date, end_date]` calendar-day range rather than only "since the latest archive, through now". The API calls the new 4-arg overload from `ReportService.getPointsReport` on every path (the `window`-based path always passes `p_until: null`; the new `semester_archive_id` path passes a real bound), so a bare drop breaks every points report request. Ship a forward revert to the prior 3-arg call first, then one new migration that runs the Action above (drop the 4-arg overload, recreate the 3-arg one and its lock-down) in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). That order has no failure window. Until the migration, the reverted call (`p_chapter_id`, `p_user_id`, `p_since`) resolves to the 4-arg function, because `p_until` defaults to null. After it, the call resolves to the 3-arg one. Keep the drop and the recreate in one migration, so the two overloads never coexist. One run would open a window: the migration applies before the reverted API is live, and the current API's `p_until` argument matches no function. *Corrected 2026-10-01 (#2606).* The migration also re-applies the EXECUTE lock-down to the new signature, since `DROP FUNCTION` removes the old signature's grants along with it; a rollback that skips re-applying the lock-down leaves the recreated 3-arg function on Postgres's EXECUTE-to-PUBLIC default.
+* **Note**: Additive/no data loss — the migration drops the 3-arg overload and recreates the RPC with an added `p_until timestamptz` upper bound (#377), used to filter to one specific archived semester's `[start_date, end_date]` calendar-day range rather than only "since the latest archive, through now". The API calls the new 4-arg overload from `SupabaseReportRepository.findPointsTotals` on every path (the `window`-based path always passes `p_until: null`; the new `semester_archive_id` path passes a real bound), so a bare drop breaks every points report request. Ship a forward revert to the prior 3-arg call first, then one new migration that runs the Action above (drop the 4-arg overload, recreate the 3-arg one and its lock-down) in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). That order has no failure window. Until the migration, the reverted call (`p_chapter_id`, `p_user_id`, `p_since`) resolves to the 4-arg function, because `p_until` defaults to null. After it, the call resolves to the 3-arg one. Keep the drop and the recreate in one migration, so the two overloads never coexist. One run would open a window: the migration applies before the reverted API is live, and the current API's `p_until` argument matches no function. *Corrected 2026-10-01 (#2606).* The migration also re-applies the EXECUTE lock-down to the new signature, since `DROP FUNCTION` removes the old signature's grants along with it; a rollback that skips re-applying the lock-down leaves the recreated 3-arg function on Postgres's EXECUTE-to-PUBLIC default.
 
 ## Rollback Group DM leave + archive (20260901180000)
 * **Migration**: `20260901180000_chat_channels_archived_at.sql`
@@ -1918,14 +1918,14 @@ After any rollback event:
 
 ## Rollback Chunk 05 migration (20260527120000_chat_notification_preferences.sql)
 
-Migration is additive (one new table with its own indexes, policy, and trigger). The only data loss on rollback is per-user preference rows, but the live API depends on the table: see the note below for the order. The push worker tolerates an empty table (it falls back to channel-name defaults in `apps/api/src/modules/chat-push-worker/push-rules.ts`), so dropping the table degrades preferences gracefully without breaking fanout.
+Migration is additive (one new table with its own indexes, policy, and trigger). The only data loss on rollback is per-user preference rows, but the live API depends on the table: see the note below for the order. The push worker tolerates an empty table (it falls back to channel-name defaults in `apps/api/src/application/services/push-rules.ts`), so dropping the table degrades preferences gracefully without breaking fanout.
 
 ```sql
 -- The trigger and indexes drop automatically with the table.
 DROP TABLE IF EXISTS chat_notification_preferences;
 ```
 
-**Note:** The push worker needs no change after rollback. Its preference reads tolerate an empty result set and treat it as "no preference set", which falls back to the defaults table in [`spec/behavior/notifications.md`](../../spec/behavior/notifications.md). The API's preference routes do need a change. `ChatService` reads and writes the table for the channel mute and the per-kind preferences, and those repository calls throw on error, so they 500 for every member once the table is gone. **Take the API off it first** (a forward revert of those routes), then ship the drop as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). *Corrected 2026-10-01 (#2606): this used to say no NestJS change was required.*
+**Note:** The push worker needs no change after rollback. Its preference reads tolerate an empty result set and treat it as "no preference set", which falls back to the defaults table in [`spec/behavior/notifications.md`](../../spec/behavior/notifications.md). The API's preference routes do need a change. `ChatNotificationPreferenceService` reads and writes the table for the channel mute and the per-kind preferences, and those repository calls throw on error, so they 500 for every member once the table is gone. **Take the API off it first** (a forward revert of those routes), then ship the drop as a new migration in a later run ([§ 3) Undo one migration](#3-undo-one-migration)). *Corrected 2026-10-01 (#2606): this used to say no NestJS change was required.*
 
 ## Rollback Chunk 03 migration (20260524120000_chapter_directory_requests.sql)
 
@@ -2393,7 +2393,7 @@ $$;
 drop function if exists public.chat_viewer_has_blocked(uuid, uuid);
 ```
 
-That migration re-creates a policy, so the same PR bumps the entry's `creates` count in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` and sets the entry back to `open`. It also removes the PGlite block-enforcement tier and the two `chat_viewer_has_blocked` landmarks from `scripts/check-pglite-migrations.mjs`, which would fail against the old policy.
+That migration re-creates a policy, so the same PR bumps the entry's `creates` count in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` and sets the entry back to `open`. It also removes the PGlite block-enforcement tier from `scripts/pglite/tiers/chat-black-box.mjs` and the two `chat_viewer_has_blocked` landmarks from `scripts/pglite/rls-smoke.mjs`, which would fail against the old policy.
 
 **This is a safety regression, not a neutral rollback.** Afterwards a blocker's clients again receive every reaction the blocked member leaves, live as well. Both clients still hide them in every list state (`visibleReactions` in `@repo/chat-core/blocks`, #2313), but against their own list, so a ready list that predates a block made on another device shows them until it is re-read. Guideline 1.2 expects the block to hold, so don't roll back on a build that is under review or live in a store unless the same deploy puts something in its place.
 
@@ -2420,7 +2420,7 @@ A function body (#2521). It re-creates `get_channel_unread_counts` with one more
 
 **Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). Put the whole of section 1 of `20260823123000_chat_imported_kind_semantics.sql` (the `create or replace function public.get_channel_unread_counts` statement and the grant block after it) in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). Copy that body rather than retyping it: the rollback must keep `kind <> 'imported'`, `is distinct from` and `set search_path = public, pg_temp`, and dropping any of them is a different regression.
 
-The same PR removes the `#2521` landmark and the "Unread and mention counts skip a blocked sender" tier from `scripts/check-pglite-migrations.mjs`, which would fail against the old body, and sets `ChatController_getUnreadCounts_v1` in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` back to `open` against #2521, since its proof names a scenario that tier holds.
+The same PR removes the `#2521` landmark from `scripts/pglite/landmarks.mjs` and the "Unread and mention counts skip a blocked sender" tier, `scripts/pglite/tiers/unread-counts-blocked-sender.mjs` (with its `await import` line in `scripts/pglite/run.mjs`), which would fail against the old body, and sets `ChatController_getUnreadCounts_v1` in `apps/api/src/application/services/chat-read-surface-ledger.spec.ts` back to `open` against #2521, since its proof names a scenario that tier holds.
 
 **This is a safety regression, not a neutral rollback.** Afterwards a blocked member's messages and @-mentions raise the blocker's channel-row, mention and mobile app-icon badges again, onto threads that show only tombstones. Guideline 1.2 expects the block to hold, so don't roll back on a build that is under review or live in a store unless the same deploy puts something in its place.
 
@@ -2440,7 +2440,7 @@ drop function if exists public.remove_private_channel_member(uuid, uuid, uuid);
 drop function if exists public.remove_user_from_private_channels(uuid, uuid);
 ```
 
-The same PR removes the "Add and remove a PRIVATE channel's members (#1302)" block from `scripts/check-pglite-migrations.mjs`, which would fail without the functions.
+The same PR removes the "Add and remove a PRIVATE channel's members (#1302)" tier, `scripts/pglite/tiers/private-channel-members.mjs` (with its `await import` line in `scripts/pglite/run.mjs`), which would fail without the functions.
 
 **Membership written while the functions were live stays.** A rollback removes the way to change a PRIVATE channel's `member_ids`, not the members already added. They keep reading the channel, since every read goes through `canAccessChannel`'s `member_ids` check. Removing them afterwards would need a hand-written data migration, and nothing requires it. After the rollback, removing a member from the chapter no longer takes them off PRIVATE lists, so a re-invited member regains the channels they were in.
 

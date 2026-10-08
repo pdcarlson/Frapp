@@ -87,10 +87,11 @@
   **Every step updates, in the same PR, every test and gate that pins a string it changes.** That means:
   - the `scripts/ci/__tests__/signet-*.test.mjs` locks, which were written to keep "Frapp" out of exactly these strings, and whose headers still cite the cancelled deferred rename;
   - component and unit specs such as `onboarding-tutorial.spec.tsx` ("says Signet, not Frapp");
-  - `scripts/check-pglite-migrations.mjs`;
+  - the PGlite gate, `scripts/pglite/` (*2026-10-07: a single `scripts/check-pglite-migrations.mjs` until [#3226](https://github.com/pdcarlson/Frapp/issues/3226) split it*);
   - the conformance tests.
 
   An unflipped check fails CI. A lock that spans surfaces (calendar PRODID, export filenames, the auth wordmark and the ops-nudge copy) is split per surface by the first step that touches it.
+  *2026-10-07 ([#3225](https://github.com/pdcarlson/Frapp/issues/3225)): with the code steps 2 to 5 landed, the thirteen locks they left behind (`frapp-api-copy`, `frapp-auth-wordmark`, `frapp-invite-from`, `frapp-landing-copy`, `frapp-mailer-subjects`, `frapp-mobile-copy`, `frapp-mobile-permissions`, `frapp-ops-nudge-copy`, `frapp-public-title`, `frapp-smtp-sender-name`, `frapp-system-display-name`, `frapp-web-copy`, `frapp-web-titles`) were folded into one table-driven `scripts/ci/__tests__/frapp-naming.test.mjs`. Its walks, pinned sites, allowlists and floors are the locks' own, and a plant at each formerly pinned site fails it. Step 6 and the owner's console follow-ups above are unaffected.*
 
   **This is the one list of specs, docs and consoles each step moves.** `spec/ui/brand-identity.md` § 1 links here rather than keeping its own copy.
   - It was found by reading every Markdown line that says Signet: `spec/` at `ee9dd538`, and `docs/`, the root and package READMEs and `.claude/` at this ADR's branch. The read left out the reference boards (covered by `spec/ui/README.md` precedence rule 1), ADRs, and uses of the name that mean the design system or the product in general prose.

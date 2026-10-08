@@ -6,9 +6,10 @@ import { basename, join } from 'node:path';
  * `tenant-scope-coverage.spec.ts` and `no-as-never.spec.ts`.
  *
  * A repository is a `*.repository.ts` anywhere under `apps/api/src`, never a
- * directory or a filename prefix: the module-local ones
- * (`modules/scheduled-jobs`, `modules/chat-push-worker`) are repositories and
- * belong in both denominators. Discovery lives here so the two ledgers cannot
+ * directory or a filename prefix: one written outside
+ * `infrastructure/supabase/repositories/` (as the worker repositories once
+ * were, under `modules/`) is still a repository and belongs in both
+ * denominators. Discovery lives here so the two ledgers cannot
  * come to disagree about what they are counting — a guard whose discovery
  * excludes part of what it guards is a proof that cannot fail
  * (`spec/engineering.md` § Changing existing code).
@@ -26,7 +27,7 @@ interface RepositoryFile {
  * how many of them are covered, which is a different fact and moves with the
  * spec you write.
  */
-export const EXPECTED_REPOSITORY_COUNT = 46;
+export const EXPECTED_REPOSITORY_COUNT = 52;
 
 /** `apps/api/src` — the one root both ledgers walk, and what paths report against. */
 export const REPOSITORY_SRC_ROOT = join(__dirname, '..', '..', 'src');

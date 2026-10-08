@@ -1,5 +1,6 @@
 import { SupabaseChatChannelRepository } from './supabase-chat-channel.repository';
 import type { FrappSupabaseClient } from '../database.types';
+import { SupabaseQueryError } from '../supabase-query-error';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -65,6 +66,34 @@ describe('SupabaseChatChannelRepository — tenant scope', () => {
     );
 
     expect(channels.map((c) => c.id)).toEqual([CHANNEL_B]);
+  });
+
+  it('findByName resolves the caller chapter channel, not its same-named twin', async () => {
+    const channel = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByName(CHAPTER_B, 'general'),
+    );
+
+    expect(channel?.id).toBe(CHANNEL_B);
+  });
+
+  it('findByName returns null when the chapter has no such channel', async () => {
+    await expect(repo.findByName(CHAPTER_B, 'announcements')).resolves.toBe(
+      null,
+    );
+  });
+
+  it('createMany writes every row into the caller chapter', async () => {
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.createMany([
+        { chapter_id: CHAPTER_B, name: 'announcements', type: 'PUBLIC' },
+        { chapter_id: CHAPTER_B, name: 'exec', type: 'ROLE_GATED' },
+      ]),
+    );
+
+    const created = harness
+      .rows('chat_channels')
+      .filter((r) => r.name === 'announcements' || r.name === 'exec');
+    expect(created.map((r) => r.chapter_id)).toEqual([CHAPTER_B, CHAPTER_B]);
   });
 
   describe('findByIds', () => {
@@ -142,6 +171,24 @@ describe('SupabaseChatChannelRepository — tenant scope', () => {
     );
 
     expect(foreign).toBeNull();
+  });
+
+  it('findPushRouting reads the routing columns by id, with the row carrying its chapter', async () => {
+    // Keyed by id alone by design (the Realtime INSERT that triggers it has no
+    // chapter); the worker scopes everything after it by `chapter_id`, so
+    // that column has to come back.
+    const row = await repo.findPushRouting(CHANNEL_A);
+
+    expect(row).toMatchObject({ id: CHANNEL_A, chapter_id: CHAPTER_A });
+    expect(harness.ops[0].filters.map((f) => [f.column, f.value])).toEqual([
+      ['id', CHANNEL_A],
+    ]);
+  });
+
+  it('findPushRouting returns null for a channel that is gone', async () => {
+    await expect(
+      repo.findPushRouting('0c000000-0000-4000-8000-000000000080'),
+    ).resolves.toBeNull();
   });
 
   it('delete leaves another chapter channel in place', async () => {
@@ -297,5 +344,49 @@ describe('SupabaseChatChannelRepository — createDm when the pair already exist
     await expect(repo.createDm(CHAPTER, [LOW, HIGH])).rejects.toMatchObject({
       code: '23514',
     });
+  });
+});
+
+describe('SupabaseChatChannelRepository — a failed read throws', () => {
+  /**
+   * A `.select().eq()…maybeSingle()` chain that answers with `error`. The
+   * callers tell a failed read from a missing row only by the throw: the push
+   * worker warns `chat-push: channel lookup failed`, and the audit bridge warns
+   * that its `#chapter-audit` lookup failed. A `null` here would read as "gone"
+   * and drop the push or the mirror without a warning.
+   */
+  function clientAnswering(error: { code: string; message: string }) {
+    const builder: Record<string, unknown> = {};
+    builder.select = jest.fn(() => builder);
+    builder.eq = jest.fn(() => builder);
+    builder.maybeSingle = jest.fn(() => Promise.resolve({ data: null, error }));
+    return {
+      from: jest.fn(() => builder),
+    } as unknown as FrappSupabaseClient;
+  }
+
+  it('findPushRouting throws rather than reading the failure as a gone channel', async () => {
+    const repo = new SupabaseChatChannelRepository(
+      clientAnswering({ code: '08006', message: 'connection reset' }),
+    );
+
+    await expect(repo.findPushRouting('channel-1')).rejects.toBeInstanceOf(
+      SupabaseQueryError,
+    );
+  });
+
+  it('findByName throws when two channels share the name, rather than answering null', async () => {
+    // PostgREST's maybeSingle answer for more than one row: what a second
+    // `chapter-audit` channel makes the audit bridge's lookup return (#3264).
+    const repo = new SupabaseChatChannelRepository(
+      clientAnswering({
+        code: 'PGRST116',
+        message: 'JSON object requested, multiple (or no) rows returned',
+      }),
+    );
+
+    await expect(
+      repo.findByName('chapter-1', 'chapter-audit'),
+    ).rejects.toBeInstanceOf(SupabaseQueryError);
   });
 });

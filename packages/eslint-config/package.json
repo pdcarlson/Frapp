@@ -5,6 +5,7 @@
   "private": true,
   "exports": {
     "./base": "./base.js",
+    "./isomorphic": "./isomorphic.js",
     "./next-js": "./next.js",
     "./react-internal": "./react-internal.js"
   },
@@ -16,7 +17,7 @@
     "eslint-plugin-only-warn": "^1.1.0",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-turbo": "^2.11.6",
+    "eslint-plugin-turbo": "^2.11.7",
     "globals": "^17.13.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "typescript-eslint": "^8.71.0"

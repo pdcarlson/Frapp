@@ -6,7 +6,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SlashCommand } from "@repo/chat-integrations";
+import type { SlashCommand } from "@repo/chat-core/integrations";
 import type { OutboxStore } from "@repo/chat-core/adapters";
 import {
   emptyCache,
@@ -112,7 +112,7 @@ vi.mock("@/lib/chat/viewer-id", () => ({
   useChatViewerId: () => VIEWER,
 }));
 
-vi.mock("@/hooks/use-toast", () => ({
+vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mocks.toast }),
 }));
 

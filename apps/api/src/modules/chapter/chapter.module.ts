@@ -11,6 +11,16 @@ import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.inte
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import {
+  CHAT_CHANNEL_REPOSITORY,
+  CHAT_MESSAGE_REPOSITORY,
+} from '#domain/repositories/chat.repository.interface';
+import { CUSTOM_FIELD_REPOSITORY } from '#domain/repositories/custom-field.repository.interface';
+import { CHAPTER_DIRECTORY_REPOSITORY } from '#domain/repositories/chapter-directory.repository.interface';
+import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
+import { SupabaseChatMessageRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message.repository';
+import { SupabaseCustomFieldRepository } from '../../infrastructure/supabase/repositories/supabase-custom-field.repository';
+import { SupabaseChapterDirectoryRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-directory.repository';
 import { AuthModule } from '../auth/auth.module';
 import { ActivationModule } from '../activation/activation.module';
 // Exports `ChapterAuditLogService`, which `ChapterService` uses to audit
@@ -29,6 +39,24 @@ import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
     { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
+    // Chapter creation seeds the default channels and onboarding posts the
+    // welcome message, seeds custom fields and files directory requests.
+    {
+      provide: CHAT_CHANNEL_REPOSITORY,
+      useClass: SupabaseChatChannelRepository,
+    },
+    {
+      provide: CHAT_MESSAGE_REPOSITORY,
+      useClass: SupabaseChatMessageRepository,
+    },
+    {
+      provide: CUSTOM_FIELD_REPOSITORY,
+      useClass: SupabaseCustomFieldRepository,
+    },
+    {
+      provide: CHAPTER_DIRECTORY_REPOSITORY,
+      useClass: SupabaseChapterDirectoryRepository,
+    },
   ],
   exports: [CHAPTER_REPOSITORY, ROLE_REPOSITORY, MEMBER_REPOSITORY],
 })

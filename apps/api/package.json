@@ -53,7 +53,7 @@
     "@repo/observability": "*",
     "@repo/org-archetypes": "*",
     "@repo/validation": "*",
-    "@sentry/nestjs": "^11.2.0",
+    "@sentry/nestjs": "^11.4.0",
     "@supabase/supabase-js": "^2.117.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
@@ -64,7 +64,7 @@
     "posthog-node": "^5.55.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "stripe": "^22.6.2",
+    "stripe": "^23.0.0",
     "ws": "^8.22.0"
   },
   "devDependencies": {
@@ -87,7 +87,7 @@
     "globals": "^17.13.0",
     "jest": "^30.5.2",
     "prettier": "^3.9.9",
-    "supertest": "^7.3.0",
+    "supertest": "^7.3.1",
     "ts-jest": "^29.4.13",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",

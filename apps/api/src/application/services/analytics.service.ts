@@ -7,21 +7,19 @@ import {
   hashUserIdForAnalytics,
   type AnalyticsProperties,
 } from '@repo/validation';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import {
+  CHAPTER_REPOSITORY,
+  type IChapterRepository,
+} from '#domain/repositories/chapter.repository.interface';
 import {
   ANALYTICS_PROVIDER,
   type IAnalyticsProvider,
 } from '#domain/adapters/analytics.interface';
 import {
-  FEATURE_FLAG_PROVIDER,
-  type IFeatureFlagProvider,
-} from '#domain/adapters/feature-flag.interface';
-import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
 import type { Member } from '#domain/entities/member.entity';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /** Same shape ChapterGuard / billing use; identity refuses to HMAC anything else. */
@@ -65,10 +63,8 @@ export class AnalyticsService {
 
   constructor(
     private readonly config: ConfigService,
-    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    @Inject(CHAPTER_REPOSITORY) private readonly chapters: IChapterRepository,
     @Inject(ANALYTICS_PROVIDER) private readonly provider: IAnalyticsProvider,
-    @Inject(FEATURE_FLAG_PROVIDER)
-    private readonly flags: IFeatureFlagProvider,
     @Inject(MEMBER_REPOSITORY) private readonly members: IMemberRepository,
   ) {
     // Optional: when unset, the keying salt is empty and tracking is disabled
@@ -300,35 +296,6 @@ export class AnalyticsService {
   }
 
   /**
-   * Server-side product-flag evaluation. Distinct id and chapter group are
-   * HMAC hex; a missing salt or a flag-provider miss fails closed (`false`).
-   * Flags are not an authorization input — `can()` / guards still decide.
-   */
-  async isProductFlagEnabled(
-    flagKey: string,
-    userId: string,
-    chapterId?: string | null,
-  ): Promise<boolean> {
-    const distinctId = this.getDistinctId(userId);
-    if (!distinctId) return false;
-    try {
-      return await this.flags.isEnabled(
-        flagKey,
-        distinctId,
-        this.getChapterGroupId(chapterId),
-      );
-    } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Failed to evaluate product flag "${flagKey}"`,
-        error,
-      );
-      return false;
-    }
-  }
-
-  /**
    * Account-deletion propagation: add the user's pseudonym to the provider's
    * "deleted users" list so all their events are purged. Called from the
    * account-deletion flow (#281), which gates the irreversible Supabase Auth
@@ -367,13 +334,9 @@ export class AnalyticsService {
    * chapter that may have opted out.
    */
   private async isChapterAnalyticsEnabled(chapterId: string): Promise<boolean> {
-    const { data, error } = await this.supabase
-      .from('chapters')
-      .select('analytics_opt_out')
-      .eq('id', chapterId)
-      .maybeSingle();
-
-    if (error) {
+    try {
+      return !(await this.chapters.isAnalyticsOptedOut(chapterId));
+    } catch (error) {
       logThrowable(
         this.logger,
         'warn',
@@ -382,10 +345,5 @@ export class AnalyticsService {
       );
       return false; // fail closed: do not emit when opt-out state is unknown
     }
-
-    const optedOut =
-      ((data as Record<string, unknown> | null)?.['analytics_opt_out'] as
-        boolean | null) ?? false;
-    return !optedOut;
   }
 }

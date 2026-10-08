@@ -128,7 +128,7 @@ describe('tenant-scope harness', () => {
      *
      * A `Map`'s entries are not own enumerable properties, so `Object.values()`
      * on one returns `[]`. Before the walk handled `Map` explicitly, a
-     * repository that grouped its rows — `ChatNotificationPreferenceRepository.
+     * repository that grouped its rows — `SupabaseChatNotificationPreferenceRepository.
      * findForUsers` returns `Map<userId, rows>` — had its returned payload
      * inspected for nothing at all, while `expectTenantScoped` still reported
      * "scoped". A passing-direction test cannot catch that: it is green either
@@ -677,7 +677,7 @@ describe('tenant-scope harness', () => {
         },
       });
 
-      // The form already shipped in scheduled-jobs.repository.ts. Typing the
+      // The form already shipped in supabase-scheduled-jobs.repository.ts. Typing the
       // operand as a string would compare 'true' === true and match nothing.
       const { data } = await (harness.client as any)
         .from('widgets')
@@ -801,6 +801,57 @@ describe('tenant-scope harness', () => {
       });
 
       expect(rows).toHaveLength(1);
+    });
+
+    it('matches textSearch as every term, case-insensitively, as a substring', async () => {
+      const harness = createTenantHarness({
+        tables: {
+          widgets: [
+            inA({ id: ROW_A, name: 'Spring Formal' }),
+            inB({ id: ROW_B, name: 'Spring Formal' }),
+            inA({ id: 'a2', name: 'Spring Rush' }),
+            inB({ id: 'b2', name: 'Spring Rush' }),
+          ],
+        },
+      });
+      const search = async (query: string) => {
+        const { data } = await (harness.client as any)
+          .from('widgets')
+          .select('*')
+          .eq('chapter_id', CHAPTER_B)
+          .textSearch('name', query);
+        return (data as { id: string }[]).map((r) => r.id).sort();
+      };
+
+      expect(await search('spring')).toEqual(['b2', ROW_B].sort());
+      expect(await search('FORMAL spring')).toEqual([ROW_B]);
+      // A substring stand-in, not websearch: no stemming or negation.
+      expect(await search('form')).toEqual([ROW_B]);
+      expect(await search('gala')).toEqual([]);
+    });
+
+    it('orders and pages a canned RPC array as PostgREST would', async () => {
+      const harness = createTenantHarness({
+        tables: widgets(),
+        rpc: {
+          ranked: {
+            data: [{ k: 'c' }, { k: 'a' }, { k: 'd' }, { k: 'b' }],
+          },
+        },
+      });
+      const page = async (from: number, to: number) => {
+        const { data } = await (harness.client as any)
+          .rpc('ranked', { p_chapter_id: CHAPTER_B })
+          .order('k', { ascending: true })
+          .range(from, to);
+        return (data as { k: string }[]).map((r) => r.k);
+      };
+
+      // `range` is inclusive at both ends; an off-by-one here would let a
+      // paging spec skip or repeat the row at each boundary.
+      expect(await page(0, 1)).toEqual(['a', 'b']);
+      expect(await page(2, 3)).toEqual(['c', 'd']);
+      expect(await page(4, 5)).toEqual([]);
     });
   });
 

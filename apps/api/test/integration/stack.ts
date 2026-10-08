@@ -121,12 +121,12 @@ export async function probeStack(): Promise<boolean> {
  * A service-role client, which bypasses RLS.
  *
  * That is correct for this suite and worth being explicit about: these tests
- * exist to prove the *PostgREST request shapes* the report service builds are
- * accepted and correctly scoped. `ReportService` itself runs under the
+ * exist to prove the *PostgREST request shapes* the report repository builds are
+ * accepted and correctly scoped. `SupabaseReportRepository` runs under the
  * service-role client in production (`SUPABASE_CLIENT`), so chapter isolation
  * there is a property of the queries, not of RLS — which is precisely why it
  * needs testing. RLS policy coverage is a separate concern, and lives in the
- * PGlite harness (`scripts/check-pglite-migrations.mjs`), whose black-box tier
+ * PGlite harness (`scripts/pglite/`), whose black-box tier
  * reads four tables as a non-owner role — the two chat tables, plus `members`
  * and `financial_invoices` as default-deny. Every other table has policy
  * *presence* checked and its behaviour unexercised, so do not read this as

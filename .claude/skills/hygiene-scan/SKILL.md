@@ -114,7 +114,7 @@ year shifts it a day, accepted).
 | 0 | `apps/api/src/domain`, `apps/api/src/application` | `api-development` |
 | 1 | `apps/api/src/interface`, `apps/api/src/infrastructure`, `apps/api/src/modules`, `apps/api/src/config`, the `apps/api/src/*.ts` bootstrap files, `apps/api/test`, `packages/api-sdk` (hand-written code only), `packages/validation`; `supabase/` is read for context and is flag-only | `api-development` |
 | 2 | `apps/web`, `packages/theme`, `packages/color`, `packages/chapter-theme`, `packages/brand-assets`, `packages/formatting` | `ui-development`, `signet-cutover` |
-| 3 | `apps/mobile`, `packages/chat-core`, `packages/chat-integrations`, `packages/hooks` | `ui-development`, `signet-cutover`, `realtime-resilience` |
+| 3 | `apps/mobile`, `packages/chat-core`, `packages/hooks` | `ui-development`, `signet-cutover`, `realtime-resilience` |
 | 4 | `packages/org-archetypes`, `packages/observability`, `packages/eslint-config`, `packages/typescript-config`, `scripts/`, `apps/landing` (dead code and correctness only), and the gates' own baselines | `testing`, `quality-gates.md` |
 
 The slice bounds the deep read, not the fix: a pattern found there is fixed everywhere it occurs.
