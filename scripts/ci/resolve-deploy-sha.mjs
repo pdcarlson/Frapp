@@ -70,7 +70,7 @@
 //   * `prune-vercel-staging` is a separate housekeeping job whose failure reds
 //     the run without meaning the deploy failed, so it doesn't disqualify.
 //   * When GitHub replaces the deploy job while it is still queued
-//     (`_deploy.yml`'s concurrency note), the job ends `cancelled`, and the
+//     (promotion.md § Production: one path, two scopes), the job ends `cancelled`, and the
 //     commit is skipped with the run's link. The newer run that replaced it
 //     carries its changes, and the walk, newest first, normally reaches that
 //     newer commit before this one.
