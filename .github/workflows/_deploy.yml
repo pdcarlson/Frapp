@@ -61,11 +61,13 @@ jobs:
     environment: ${{ inputs.environment }}
     # The steps' own ceilings (Render 20, served commit 5, client checks under 5,
     # Vercel READY 30, source maps under 3: 63) plus the installs, builds and
-    # production's rehearsal. 75 bounds them all.
+    # production's rehearsal, which took about 5 of the job's 9 minutes on run
+    # 36873240684 (2026-10-01, before the API build). 75 bounds them all.
     timeout-minutes: 75
-    # The environment's migration lock. Never cancel a running deploy: it can leave
-    # a half-migrated database or hosts on different commits. Why, and the lock's
-    # limits: docs/ops/database/promotion.md § Production: one path, two scopes.
+    # The environment's migration lock, and a lock only while this job is the one
+    # thing that migrates either database. Never cancel a running deploy: it can
+    # leave a half-migrated database or hosts on different commits. Why, and what
+    # it can't see: docs/ops/database/promotion.md § Production: one path, two scopes.
     concurrency:
       group: db-migrate-${{ inputs.environment }}
       cancel-in-progress: false
@@ -83,7 +85,8 @@ jobs:
     steps:
       # Refuse bad inputs before any checkout. Also check that the environment's
       # secrets arrived, by name only: they need this job's `environment:` and the
-      # caller's `secrets: inherit`.
+      # caller's `secrets: inherit`. The SHA rule must stay validate-deploy-sha.mjs's
+      # SHA_PATTERN, or production passes validation and dies here after approval.
       - name: Check the inputs, and that the environment's secrets reached this job
         id: guard
         env:
@@ -134,7 +137,7 @@ jobs:
           fi
           echo "The '$TARGET_ENVIRONMENT' environment's secrets reached this called job (its environment: key, and the caller's secrets: inherit): INFISICAL_MACHINE_IDENTITY_ID, INFISICAL_CLIENT_SECRET, RENDER_API_KEY, VERCEL_API_KEY (names only)."
 
-      # The deployed commit, for the installs. Nothing trusted runs from it until the detach.
+      # The deployed commit, for the installs. Nothing trusted runs from it until the move to the trusted ref.
       - name: Checkout the commit to deploy
         uses: actions/checkout@v7
         with:
@@ -270,7 +273,8 @@ jobs:
 
       # ── Refuse a config this run would fail on after the apply (#3112) ──────
       # Each environment's flags restate the `if:` of the steps they stand in for.
-      # From the trusted copy. What it can't see: docs/ops/deployment/ci-cd.md step 4.
+      # From the trusted copy. What it can't see: docs/ops/deployment/ci-cd.md step 4,
+      # and docs/ops/database/promotion.md on values a provider checks (Stripe prices).
       - name: Check the config before anything is written (staging)
         if: inputs.environment == 'staging'
         env:
@@ -370,7 +374,8 @@ jobs:
       # Lists what is pending, so a failed apply's log says what it tried. On a
       # production dry run this is the list promotion.md says to read. Before the
       # builds, so a killed build can't end a dry run without it. Nothing between
-      # here and the apply may write.
+      # here and the apply may apply a migration. The gap is not inert: the builds
+      # construct a Supabase client and upload source maps to Sentry.
       - name: Run migrations (dry-run)
         env:
           TARGET_ENVIRONMENT: ${{ inputs.environment }}
@@ -634,7 +639,8 @@ jobs:
 
       # Keyed on the upload's deployment ids, never a search by SHA
       # (ensure-vercel-staging-alias.mjs's header). The `-z` check below is what makes
-      # an empty id fail. Don't trim it as redundant.
+      # an empty id fail (`echo` exits 0 on a failed grep; docs/ops/deployment/vercel.md).
+      # Don't trim it as redundant.
       - name: Point the staging hostnames at the new deployments
         if: inputs.environment == 'staging' && steps.plan.outputs.upload == 'true'
         env:

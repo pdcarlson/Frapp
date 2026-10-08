@@ -9,7 +9,7 @@ name: Deploy staging
 # This file only decides WHETHER to deploy, and reports the outcome. The
 # deploying itself is `_deploy.yml`, the job staging and production share
 # (epic #2802; since #2804), called with `environment: staging` and the commit
-# CI verified. Its header has the order and the plan. Production is
+# CI verified. The order and the plan: docs/ops/deployment/ci-cd.md step list. Production is
 # `deploy-production.yml`, a manual dispatch that names an exact commit.
 #
 # ── Why `workflow_run` and not `push` ───────────────────────────────────────

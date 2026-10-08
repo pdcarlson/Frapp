@@ -130,10 +130,12 @@ dispatches queue instead of interleaving two `db push` runs against one database
 `cancel-in-progress: false` is the half that matters. Cancelling mid-`db push` is how a
 database ends up half-migrated, and cancelling between the API and the upload leaves the
 hosts on different commits. GitHub still replaces a _pending_ run when a third arrives, and
-the replaced run ends `cancelled`. On staging, `deploy-outcome` reports that as a failure,
-and the next run closes it, because it plans from the served commit and so carries the
-replaced run's changes. On production, `deploy-alert.mjs` files nothing for a job that
-listed no steps. A `full` dry run holds the group through an install and two builds on top
+the replaced run ends `cancelled` (what staging does with it:
+[`ci-cd.md` § How Deployments Are Gated](../deployment/ci-cd.md#how-deployments-are-gated)).
+On production, `deploy-alert.mjs` files nothing for a job that listed no steps. The group
+is a lock only while that job is the one thing that migrates the database, and it covers
+GitHub Actions runs only: it cannot stop a `supabase db push` from a laptop, which the
+daily drift check catches after the fact. A `full` dry run holds the group through an install and two builds on top
 of the rehearsal, so a `migrations-only` recovery dispatch can queue behind a run that
 changes nothing. If that bites during an incident, wait, or cancel the dry run by hand.
 Never loosen `cancel-in-progress`.

@@ -198,9 +198,9 @@ human is actually looking at what is about to ship.
 
 ### The deploy job's trust split
 
-`_deploy.yml` is one job for two reasons. The built Vercel output lives in `$RUNNER_TEMP` between the
-build and upload phases, and every job that names `production` costs its own approval click. Inside
-that one job it uses two trees in turn ([#2805](https://github.com/pdcarlson/Frapp/issues/2805)):
+`_deploy.yml` is one job because the built Vercel output lives in `$RUNNER_TEMP` between the build and
+upload phases, and because of the one-approval rule in the 2026-09-06 note above. Inside that one job
+it uses two trees in turn ([#2805](https://github.com/pdcarlson/Frapp/issues/2805)):
 
 - **The deployed commit** (`inputs.sha`) is what gets installed, built, migrated and shipped.
 - **The trusted ref** (`github.sha`, the commit the workflow file was loaded from, which is `main` for
@@ -209,15 +209,13 @@ that one job it uses two trees in turn ([#2805](https://github.com/pdcarlson/Fra
 
 Each piece comes from the trusted ref for its own reason:
 
-- **Local actions.** `uses: ./…` resolves from the workspace when the step runs, so a local action after
-  the detach would load from the deployed commit. Rolling back to a commit older than the action dies
-  with `Can't find 'action.yml'`, and a newer commit's `supabase-cli` pin would silently differ from the
-  one the rehearsal used ([`.github/actions/README.md`](../../../.github/actions/README.md)).
-  `infisical-secrets-action.test.mjs` pins that no local action runs outside the trusted window.
-- **The verdicts on the deploy.** The provider preflight runs before the detach. The served-commit check,
+- **Local actions** would load from the deployed commit after the move back to it
+  ([`.github/actions/README.md`](../../../.github/actions/README.md) has the rule and its guard).
+- **The verdicts on the deploy.** The provider preflight runs at the trusted ref. The served-commit check,
   the client checks, the config check, the source-map check and production's rehearsal-stack start run
-  from a copy of `scripts/ci` taken before it. Run from the deployed tree, each would set a floor on
-  rollbacks: a commit from before the script existed would ship and then fail the check.
+  from a copy of `scripts/ci` taken there, before the move back to the deployed commit. Run from the
+  deployed tree, each would set a floor on rollbacks: a commit from before the script existed would
+  fail the check, after shipping in the case of the checks that run after the deploy.
 - **The provider ids** come from the trusted ref's `.github/environments.json`, so a rollback deploys to
   the services today's config names, not the ones an older commit named
   ([#2806](https://github.com/pdcarlson/Frapp/issues/2806)).
