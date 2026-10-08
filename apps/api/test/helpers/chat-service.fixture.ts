@@ -22,6 +22,7 @@ import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
 import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
+import { memberFixture } from './entity-fixtures';
 import { ChatService } from '../../src/application/services/chat.service';
 import { ChatAttachmentService } from '../../src/application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../src/application/services/chat-notification-preference.service';
@@ -41,16 +42,13 @@ import { ChannelCacheService } from '../../src/application/services/channel-cach
  * wires them. `ChannelAccessService` is real, over the mocked channel, member
  * and RBAC reads, so the access rejections run the actual predicate.
  */
-export const baseMember = {
+export const baseMember = memberFixture({
   id: 'mem-1',
-  user_id: 'user-1',
-  chapter_id: 'ch-1',
   role_ids: ['role-1'],
   has_completed_onboarding: true,
-  dismissed_ops_nudges: [],
   created_at: '2026-01-01T00:00:00.000Z',
   updated_at: '2026-01-01T00:00:00.000Z',
-};
+});
 
 export const baseChannel: ChatChannel = {
   id: 'ch-chan-1',

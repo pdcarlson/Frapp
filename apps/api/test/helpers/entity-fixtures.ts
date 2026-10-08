@@ -16,14 +16,26 @@ import type { User } from '#domain/entities/user.entity';
  * `supabase/migrations`: `subscription_status: 'incomplete'`,
  * `has_completed_onboarding: false`, `is_system: false`, empty arrays, null
  * nullable columns), plus stable placeholder ids that agree with one another
- * (`ch-1`, `user-1`, `member-1`, `role-1`). Anything a test depends on goes in
- * `overrides` at the call site, so a reader sees what the test exercises and a
- * change to a default can't silently move a test onto another path.
+ * (`ch-1`, `user-1`, `member-1`, `role-1`). One exception: `accent_color` is
+ * `null`, not its column default `'#2563EB'`, because most chapter fixtures
+ * model a chapter without one; a test of the default-accent path passes it.
+ *
+ * Prefer stating a value the test depends on in `overrides`, even when it
+ * equals the default, so a reader sees what the test exercises. The literals
+ * migrated here by codemod (#3005) dropped every default-valued field; the
+ * tests that lean on a default (billing's `'incomplete'` status, rbac's
+ * custom-role `is_system: false`) assert on it, so a changed default fails
+ * them rather than moving them.
  *
  * Optional columns (`Chapter`'s customization and legal columns, `User`'s
  * legal ones) are left out, not nulled: narrower projections omit them, and
  * code under test distinguishes `undefined` from `null` there. Pass them as
  * overrides when a test needs them.
+ *
+ * `Partial<T>` lets an override pass an explicit `undefined` for a required
+ * field (the API tsconfig has no `exactOptionalPropertyTypes`), which replaces
+ * the default and returns a row missing that field. Do it only on purpose, as
+ * the specs testing a legacy row without a column do.
  *
  * A fixture that deliberately reads only a field or two keeps the partial
  * idiom (`{ id: 'ch-1' } as Chapter`) instead of building a full row.
