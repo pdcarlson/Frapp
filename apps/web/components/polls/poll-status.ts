@@ -27,7 +27,7 @@ import type { BadgeKind } from "@/components/ui/badge";
  * rather than a re-cased version — but the server sends no token here. The
  * poll DTO carries `isExpired: boolean`, which the API derives from either
  * `expires_at` passing *or* the creator manually closing the poll early
- * (`PollService.isPollExpired`, #379 — `@repo/validation`'s `isPollClosed`
+ * (`PollService.isPollExpired`, #379 — the API's `isPollClosed`
  * only covers the deadline half; the manual-close half is server-side only),
  * and `spec/behavior/polls.md` describes the state as a lock rather than a
  * field. So this is §5's other branch, "a

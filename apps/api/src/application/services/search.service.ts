@@ -1,5 +1,5 @@
 import { Logger, Inject, Injectable } from '@nestjs/common';
-import { canAccessChannel } from '@repo/validation';
+import { canAccessChannel } from '#domain/utils/channel-access';
 import { RbacService } from './rbac.service';
 import { ChatBlockService } from './chat-block.service';
 import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
