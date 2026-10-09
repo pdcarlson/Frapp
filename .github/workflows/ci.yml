@@ -345,8 +345,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # BuildKit pulls docker.io images through Google's Docker Hub mirror first, falling back
+      # to Docker Hub itself. Anonymous pulls from shared runner IPs hit Docker Hub's rate
+      # limit: on 2026-10-09 every build here died resolving node:24-alpine with
+      # "429 Too Many Requests" before any repo step ran. CI only: Render builds the same
+      # Dockerfile with its own puller, and the image content is the same either way.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+        with:
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
 
       - name: Build API image (Dockerfile)
         uses: docker/build-push-action@v7
