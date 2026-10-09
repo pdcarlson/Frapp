@@ -607,8 +607,9 @@ Where each answer comes from:
 ## Google Play answers
 
 What Play Console asks under **Policy and programs → App content** before any release, including
-the Data safety form. These are the answers to enter; nothing has been entered yet, because the
-developer account doesn't exist ([#2556](https://github.com/pdcarlson/Frapp/issues/2556)). Written
+the Data safety form. These are the answers to enter. The developer account exists, and the app
+`live.frapp.mobile` was created in it on 2026-10-09
+([#2556](https://github.com/pdcarlson/Frapp/issues/2556)), so the forms can be filled in. Written
 2026-09-27 for [#2557](https://github.com/pdcarlson/Frapp/issues/2557). Where an answer rests on a
 Play rule, the rule comes from search-result snippets of Play Console Help, because
 support.google.com is blocked from the cloud sandbox. Those answers carry *(rule unverified)*: check
@@ -692,9 +693,6 @@ Contacts, Installed apps, Web browsing, and the remaining Personal info types.
 | Government app | No |
 | Financial features | **The app provides no financial features.** It shows a member the dues their chapter bills them, and no payment can be taken while EAS `production` has no Stripe key. The same conditional as the Financial info row: revisit if the key ships |
 | Health apps | No health features. Study hours are an academic record |
-
-Nothing on this page can be entered before the developer account exists (#2556), and the Data
-safety form asks for the app's package, so create the app as `live.frapp.mobile` first.
 
 ## Android-specific
 
