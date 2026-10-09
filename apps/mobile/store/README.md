@@ -607,8 +607,10 @@ Where each answer comes from:
 ## Google Play answers
 
 What Play Console asks under **Policy and programs → App content** before any release, including
-the Data safety form. These are the answers to enter; nothing has been entered yet, because the
-developer account doesn't exist ([#2556](https://github.com/pdcarlson/Frapp/issues/2556)). Written
+the Data safety form. These are the answers to enter. The developer account exists and the app
+`live.frapp.mobile` was created on 2026-10-09
+([#2556](https://github.com/pdcarlson/Frapp/issues/2556)); none of these forms had been filled in by
+then. Written
 2026-09-27 for [#2557](https://github.com/pdcarlson/Frapp/issues/2557). Where an answer rests on a
 Play rule, the rule comes from search-result snippets of Play Console Help, because
 support.google.com is blocked from the cloud sandbox. Those answers carry *(rule unverified)*: check
