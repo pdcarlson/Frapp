@@ -7,7 +7,7 @@ import { Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /*
- * The command menu, built on the §9 dialog and the §2 menu tokens.
+ * The command menu, built on the §2 menu tokens (hosts mount it inside their own popover or dialog).
  *
  * Its selected row takes the same `--accent-subtle` / `--accent-text` recipe as
  * `select.tsx` and `dropdown-menu.tsx`, and for the same reason: the scaffold's
