@@ -1,15 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { type DialogProps } from "@radix-ui/react-dialog"
 import { Command as CommandPrimitive } from "cmdk"
 import { Search } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { Dialog, DialogContent } from "@/components/ui/dialog"
 
 /*
- * The command menu, built on the §9 dialog and the §2 menu tokens.
+ * The command menu, built on the §2 menu tokens (hosts mount it inside their own popover or dialog).
  *
  * Its selected row takes the same `--accent-subtle` / `--accent-text` recipe as
  * `select.tsx` and `dropdown-menu.tsx`, and for the same reason: the scaffold's
@@ -32,33 +30,6 @@ const Command = React.forwardRef<
   />
 ))
 Command.displayName = CommandPrimitive.displayName
-
-type CommandDialogProps = DialogProps & {
-  /**
-   * Forwarded to the underlying `cmdk` `Command` root. Defaults to `true`
-   * (cmdk's own default) — pass `false` when every item in this menu is
-   * already filtered by its own source (a server-side search result, a
-   * caller-filtered list) and cmdk's naive substring re-filter would only
-   * risk hiding an item that matched by a rule cmdk's own scorer doesn't
-   * know about (e.g. Postgres full-text stemming).
-   */
-  shouldFilter?: boolean
-}
-
-const CommandDialog = ({ children, shouldFilter, ...props }: CommandDialogProps) => {
-  return (
-    <Dialog {...props}>
-      <DialogContent className="overflow-hidden p-0">
-        <Command
-          shouldFilter={shouldFilter}
-          className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5"
-        >
-          {children}
-        </Command>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 const CommandInput = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Input>,
@@ -137,29 +108,11 @@ const CommandItem = React.forwardRef<
 
 CommandItem.displayName = CommandPrimitive.Item.displayName
 
-const CommandShortcut = ({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLSpanElement>) => {
-  return (
-    <span
-      className={cn(
-        "ml-auto text-caption tracking-widest text-muted",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-CommandShortcut.displayName = "CommandShortcut"
-
 export {
   Command,
-  CommandDialog,
   CommandInput,
   CommandList,
   CommandEmpty,
   CommandGroup,
   CommandItem,
-  CommandShortcut,
 }
