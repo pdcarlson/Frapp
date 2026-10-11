@@ -26,11 +26,10 @@
 // A NOTE ON WHAT "EMPTY" MEANS PER FILE. The three layers that composite onto
 // transparency are not the same shape of thing, and one check does not fit them:
 //
-//   * `adaptive-icon.png` / `splash-icon.png` are an opaque charcoal TILE inset
-//     on transparency. Their alpha channel describes the inset square, not the
-//     mark — a tile with the crest entirely missing has exactly the same alpha.
-//     They are audited on the COLOUR of their visible pixels (`censusVisible`),
-//     which is the only thing that can tell a mark from a blank swatch.
+//   * `adaptive-icon.png` / `splash-icon.png` are the crest alone in gold on
+//     transparency (spec/ui/assets.md §7), so their alpha IS the mark and is
+//     audited like the glyph layer below. They composited an opaque charcoal tile
+//     until #2153, whose alpha described the inset square instead.
 //   * `signet-emblem-B-glyph-1024.png` is the crest alone in gold. Its alpha IS
 //     the mark, and its visible pixels must be gold and never field.
 //   * `adaptive-icon-monochrome.png` is the crest alone in white — deliberately
@@ -195,9 +194,8 @@ export function assertLockedPair(stats, label, { requireField = true, edge = 0 }
  * both and still cannot admit the two failures worth catching: an all
  * transparent layer and a solid slab.
  *
- * Deliberately NOT applied to `adaptive-icon.png` / `splash-icon.png`: their
- * alpha is an inset square, so it measures the same whether the crest is there
- * or not. See the note at the top of this file.
+ * Applied to every crest-on-transparency layer, `adaptive-icon.png` and
+ * `splash-icon.png` included. See the note at the top of this file.
  */
 export const GLYPH_COVERAGE_MIN = 0.04;
 export const GLYPH_COVERAGE_MAX = 0.6;
@@ -220,24 +218,6 @@ export function glyphCoverage(data, channels, width, height) {
     if (data[i + 3] >= ALPHA_VISIBLE) covered += 1;
   }
   return covered / (width * height);
-}
-
-/**
- * Bounds for the inset opaque tile behind an Android launcher mask. 17% inset
- * each side is (1 - 0.34)² = 43.6% of the canvas; the band allows the inset to
- * be retuned without allowing a full-bleed or a vanished tile.
- */
-export const INSET_TILE_MIN = 0.25;
-export const INSET_TILE_MAX = 0.75;
-
-export function assertInsetTile(fraction, label) {
-  if (!(fraction >= INSET_TILE_MIN) || !(fraction <= INSET_TILE_MAX)) {
-    throw new Error(
-      `${label}: opaque tile covers ${(fraction * 100).toFixed(2)}% of the canvas, outside the ` +
-        `${(INSET_TILE_MIN * 100).toFixed(0)}-${(INSET_TILE_MAX * 100).toFixed(0)}% band — ` +
-        `the glyph must stay inside the 66% launcher safe zone (spec/ui/assets.md §7)`,
-    );
-  }
 }
 
 /**
