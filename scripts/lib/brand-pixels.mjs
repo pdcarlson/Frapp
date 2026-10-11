@@ -23,8 +23,8 @@
 // So the pair lives here once, and the properties worth enforcing are stated as
 // predicates rather than as prose in a spec.
 //
-// A NOTE ON WHAT "EMPTY" MEANS PER FILE. The three layers that composite onto
-// transparency are not the same shape of thing, and one check does not fit them:
+// A NOTE ON WHAT "EMPTY" MEANS PER FILE. The layers that sit on transparency
+// differ in colour, so the colour check differs, but each one's alpha is the mark:
 //
 //   * `adaptive-icon.png` / `splash-icon.png` are the crest alone in gold on
 //     transparency (spec/ui/assets.md §7), so their alpha IS the mark and is
