@@ -53,22 +53,22 @@
     "@repo/observability": "*",
     "@repo/org-archetypes": "*",
     "@repo/validation": "*",
-    "@sentry/nestjs": "^11.4.0",
-    "@supabase/supabase-js": "^2.117.1",
+    "@sentry/nestjs": "^11.6.0",
+    "@supabase/supabase-js": "^2.117.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "discord-api-types": "^0.38.56",
     "expo-server-sdk": "^7.2.0",
     "helmet": "^8.3.0",
     "pdf-lib": "^1.17.1",
-    "posthog-node": "^5.55.0",
+    "posthog-node": "^5.55.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "stripe": "^23.0.0",
     "ws": "^8.22.0"
   },
   "devDependencies": {
-    "@darraghor/eslint-plugin-nestjs-typed": "^7.5.6",
+    "@darraghor/eslint-plugin-nestjs-typed": "^7.5.8",
     "@eslint/js": "^9.39.5",
     "@nestjs/cli": "^12.0.8",
     "@nestjs/schematics": "^12.0.6",
@@ -78,7 +78,7 @@
     "@swc/core": "^1.16.13",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "@types/supertest": "^7.2.1",
     "@types/ws": "^8.18.2",
     "eslint": "^9.39.5",
@@ -92,7 +92,7 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "typescript-eslint": "^8.71.0"
+    "typescript-eslint": "^8.71.1"
   },
   "jest": {
     "moduleFileExtensions": [
