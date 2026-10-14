@@ -81,7 +81,7 @@ spans through `@opentelemetry/api`, which is the only thing a provider would add
 itself stands: `@opentelemetry/sdk-node` is still not a dependency, and under v11 a
 user-installed provider would not compete with Sentry so much as be ignored by it (its spans
 never reach Sentry). v11 also streams spans by default, which skips `beforeSendTransaction`;
-every surface pins `traceLifecycle: 'static'` so the transaction scrubber keeps running. Static
+every v11 surface (API, web, landing) pins `traceLifecycle: 'static'` so the transaction scrubber keeps running. Static
 does not cover the browser's INP span, which v11 (like v10) sends standalone past both event hooks,
 named after the clicked element's selector. INP was therefore off on both Next browsers
 (`webVitals: { ignore: ['inp'] }`) until selector text was scrubbed (#2736); the other web vitals were unaffected
