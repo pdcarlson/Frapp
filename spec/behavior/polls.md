@@ -27,7 +27,7 @@
 Anonymity is not built, and the obvious fix does not work. The design position below is **intent for unscheduled work**; the code state it rests on is an **observation**, measured against `main` on 2026-09-05 by reading the migrations, RLS policies and tally paths named inline. The negatives are the part that ages fastest — re-run them rather than trusting this paragraph:
 
 ```sh
-# no sub-feature key is read anywhere — expect zero hits
+# no sub-feature key is read anywhere — expect only comments
 rg -n 'enabled_modules\.[a-z]+\.[a-z]|enabled_modules\[' apps packages
 # poll_votes reaches TS only through the API repository — expect every other
 # hit to be a comment, a type, or a test; a real query anywhere else falsifies
