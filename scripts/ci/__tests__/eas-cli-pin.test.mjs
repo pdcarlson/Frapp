@@ -204,14 +204,22 @@ test("the rename into place waits out Windows' transient refusals, and nothing e
   const clock = () => {
     let t = 0;
     const waits = [];
-    return { waits, now: () => t, wait: (ms) => (waits.push(ms), (t += ms)) };
+    return { waits, now: () => t, wait: (ms) => (waits.push(ms), (t += ms)), exists: () => false };
   };
   const quick = clock();
-  renameWithRetry("a", "b", { rename: failing(["EPERM", "EBUSY", "EACCES"]), ...quick });
+  const notes = [];
+  renameWithRetry("a", "b", { rename: failing(["EPERM", "EBUSY", "EACCES"]), ...quick, onWait: (err) => notes.push(err.code) });
   assert.deepEqual(quick.waits, [100, 200, 300]);
+  assert.deepEqual(notes, ["EPERM"], "told once, when waiting starts");
   assert.throws(() => renameWithRetry("a", "b", { rename: failing(["ENOTEMPTY"]), wait: () => assert.fail("no retry") }), /ENOTEMPTY/);
-  // A scan that holds the tree for 20 seconds (the EPERM seen on Windows, 2026-11-03) is waited out, where ten
-  // tries (4.5 s) used to give up on it.
+  // Windows answers EPERM for a directory renamed onto one that exists: once the target is there,
+  // stop at once, as graceful-fs does, and let the caller judge it.
+  assert.throws(
+    () => renameWithRetry("a", "b", { rename: failing(["EPERM"]), exists: () => true, wait: () => assert.fail("no retry") }),
+    /EPERM/,
+  );
+  // An assumed scan that holds the tree for 20 seconds is waited out, where ten tries (4.5 s) used
+  // to give up. How long the scan held it on 2026-11-03 wasn't measured, only that 4.5 s was short.
   const slow = clock();
   renameWithRetry("a", "b", { rename: failing(Array(29).fill("EPERM")), ...slow });
   assert.ok(slow.now() >= 20_000, `waited ${slow.now()} ms`);
@@ -222,21 +230,45 @@ test("the rename into place waits out Windows' transient refusals, and nothing e
   assert.ok(stuck.now() >= 60_000 && stuck.now() < 62_000, `gave up after ${stuck.now()} ms`);
 });
 
-test("a rename still refused after the retries runs eas from the proven temporary install, and the next run cleans it up", () =>
+const refuse = () => {
+  const err = new Error("EPERM: operation not permitted, rename");
+  err.code = "EPERM";
+  throw err;
+};
+const DEAD = 4194303; // a pid that isn't running
+
+test("a rename still refused after the retries runs eas from the proven temporary install, and the next run moves it into place", () =>
   withTmp((cacheRoot) => {
-    const { spawn } = fakeSpawn();
-    const refuse = () => {
-      const err = new Error("EPERM: operation not permitted, rename");
-      err.code = "EPERM";
-      throw err;
-    };
-    const tmp = `${pinDir(PIN, cacheRoot)}.tmp-4194303`; // a pid that isn't running
-    const bin = install(PIN, { cacheRoot, spawn, npm, pid: 4194303, rename: refuse });
-    assert.equal(bin, easBin(tmp, PIN.version), "this run still gets an eas to run");
+    const { spawn, calls } = fakeSpawn();
+    const tmp = `${pinDir(PIN, cacheRoot)}.tmp-${DEAD}`;
+    const bin = install(PIN, { cacheRoot, spawn, npm, pid: DEAD, rename: refuse });
+    assert.ok(bin, "this run still gets an eas to run");
+    assert.equal(bin, join(tmp, "node_modules", "eas-cli", "bin", "run"));
+    assert.ok(statSync(join(tmp, ".frapp-proven")).isFile(), "marked for the next run to adopt");
     assert.throws(() => statSync(pinDir(PIN, cacheRoot)), /ENOENT/, "nothing counts as installed");
-    // The next run sweeps the abandoned tree and installs into place.
+    // The next run adopts that tree without installing again.
     assert.equal(install(PIN, { cacheRoot, spawn, npm, pid: 12 }), easBin(pinDir(PIN, cacheRoot), PIN.version));
+    assert.equal(calls.length, 1, "npm ran once, for the first run only");
     assert.throws(() => statSync(tmp), /ENOENT/);
+  }));
+
+test("a dead run's unmarked tree is never adopted: a Ctrl-C mid-install can leave eas-cli's bin without its dependencies", () =>
+  withTmp((cacheRoot) => {
+    const cut = `${pinDir(PIN, cacheRoot)}.tmp-${DEAD}`;
+    fakeInstall(cut); // bin in place, no PROVEN mark
+    const { spawn, calls } = fakeSpawn();
+    assert.equal(install(PIN, { cacheRoot, spawn, npm, pid: 13 }), easBin(pinDir(PIN, cacheRoot), PIN.version));
+    assert.equal(calls.length, 1, "installed afresh");
+    assert.throws(() => statSync(cut), /ENOENT/, "and the cut-short tree is swept");
+  }));
+
+test("a damaged pin directory that can't be moved aside is reported, not run around", () =>
+  withTmp((cacheRoot) => {
+    fakeInstall(pinDir(PIN, cacheRoot), { writeBin: false });
+    const { spawn } = fakeSpawn();
+    const tmp = `${pinDir(PIN, cacheRoot)}.tmp-14`;
+    assert.equal(install(PIN, { cacheRoot, spawn, npm, pid: 14, rename: refuse }), null);
+    assert.throws(() => statSync(tmp), /ENOENT/, "the temporary install isn't left to run from");
   }));
 
 test("when another run finished the install first, its tree is used and ours is dropped", () =>

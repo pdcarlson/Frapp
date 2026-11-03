@@ -23,7 +23,9 @@
 // temporary directory and renamed into place only once it runs. So a bump never deletes a tree
 // an eas command started before the bump is still loading from, two first runs at once can't
 // interleave their installs, and an interrupted install is never mistaken for a finished one.
-// Old pins' directories stay until someone deletes `.cache/eas-cli/`.
+// Old pins' directories stay until someone deletes `.cache/eas-cli/`. On Windows an antivirus scan
+// can refuse that rename for a while: it is retried for a minute (renameWithRetry), and if it is
+// still refused, eas runs from the marked temporary tree and the next run adopts it (install).
 //
 // WHERE IT RUNS. eas reads `app.json`, `app.config.js` and `eas.json` from its working
 // directory, so the command always runs in `apps/mobile`, wherever npm was started. The
@@ -151,18 +153,18 @@ function pidAlive(pid) {
 }
 
 /** Temporary trees whose install died (Ctrl-C, a closed terminal): never the one still running. */
-function sweepAbandoned(dir, { alive = pidAlive } = {}) {
+function abandoned(dir, { alive = pidAlive } = {}) {
   const base = path.basename(dir);
   let names = [];
   try {
     names = readdirSync(path.dirname(dir));
   } catch {
-    return;
+    return [];
   }
-  for (const name of names) {
-    const m = name.startsWith(`${base}.`) && name.match(/\.(?:tmp|broken)-(\d+)$/);
-    if (m && !alive(Number(m[1]))) removeQuietly(path.join(path.dirname(dir), name));
-  }
+  return names
+    .map((name) => ({ name, m: name.startsWith(`${base}.`) && name.match(/\.(tmp|broken)-(\d+)$/) }))
+    .filter(({ m }) => m && !alive(Number(m[2])))
+    .map(({ name, m }) => ({ path: path.join(path.dirname(dir), name), kind: m[1] }));
 }
 
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -170,22 +172,26 @@ const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 
 /**
  * `renameSync`, retried while Windows refuses because an antivirus or indexer still holds one of
  * the files npm just wrote (EPERM / EACCES / EBUSY). Windows won't rename a directory while any
- * file inside it is open, and a scan of a fresh 527-package tree can outlast a few seconds, so this
- * keeps trying for up to a minute, the same budget npm's own graceful-fs gives a refused rename on
- * Windows. The wait grows by 100 ms a try, capped at a second. ENOTEMPTY or EEXIST means the
- * target is there: that is the caller's to judge, so it isn't retried.
+ * file inside it is open, and a scan of a fresh 527-package tree can outlast a few seconds. Like
+ * npm's own graceful-fs on Windows (`polyfills.js`, its `rename`), this keeps trying for up to a
+ * minute, and only while the target is still absent: Windows also answers EPERM for a directory
+ * renamed onto one that exists, and a target that appeared (another run finished first) is the
+ * caller's to judge, so that throws at once. Unlike graceful-fs the wait grows by 100 ms a try up
+ * to a second, not 10 ms up to 100 ms, and `onWait` is told once when waiting starts so a person
+ * isn't left looking at a silent minute.
  */
 export function renameWithRetry(
   from,
   to,
-  { rename = renameSync, wait = sleep, now = Date.now, budgetMs = 60_000 } = {},
+  { rename = renameSync, wait = sleep, now = Date.now, exists = existsSync, budgetMs = 60_000, onWait = () => {} } = {},
 ) {
   const start = now();
   for (let attempt = 1; ; attempt++) {
     try {
       return rename(from, to);
     } catch (err) {
-      if (!["EPERM", "EACCES", "EBUSY"].includes(err.code) || now() - start >= budgetMs) throw err;
+      if (!["EPERM", "EACCES", "EBUSY"].includes(err.code) || now() - start >= budgetMs || exists(to)) throw err;
+      if (attempt === 1) onWait(err);
       wait(Math.min(attempt * 100, 1000));
     }
   }
@@ -195,17 +201,47 @@ function log(message) {
   process.stderr.write(`[eas-cli] ${message}\n`);
 }
 
+/** Marks a finished temporary install that a later run may adopt. */
+const PROVEN = ".frapp-proven";
+
+const waitNote = (dir) => (err) =>
+  log(`${err.code} moving the install into ${dir}, most likely an antivirus scan of its files. Retrying for up to a minute...`);
+
 /**
  * Install the pin into its directory, or confirm another run already did. Returns the eas entry
  * point, or `null` after saying why it failed.
  */
 export function install(
   pin,
-  { cacheRoot = CACHE_ROOT, spawn = spawnSync, npm = npmCommand(), pid = process.pid, rename = renameWithRetry } = {},
+  {
+    cacheRoot = CACHE_ROOT,
+    spawn = spawnSync,
+    npm = npmCommand(),
+    pid = process.pid,
+    rename = renameWithRetry,
+    alive = pidAlive,
+  } = {},
 ) {
   const dir = pinDir(pin, cacheRoot);
   const tmp = `${dir}.tmp-${pid}`;
-  sweepAbandoned(dir);
+  const leftovers = abandoned(dir, { alive });
+  // A dead run's tree is adopted rather than installed again when that run fell back to it (below)
+  // and marked it PROVEN, so the cache still fills on a machine whose scanner outlasted that run's
+  // retries. Only the mark counts: a tree cut short by Ctrl-C mid-install can hold eas-cli's bin
+  // and still be missing dependencies.
+  if (!existsSync(dir)) {
+    for (const t of leftovers) {
+      if (t.kind !== "tmp" || !existsSync(path.join(t.path, PROVEN)) || !easBin(t.path, pin.version)) continue;
+      try {
+        rename(t.path, dir, { onWait: waitNote(dir) });
+        break;
+      } catch {
+        // Another run adopted it first, or it is still held: try the next, then install.
+      }
+    }
+  }
+  for (const t of leftovers) removeQuietly(t.path);
+  if (easBin(dir, pin.version)) return easBin(dir, pin.version);
   log(`Installing eas-cli ${pin.version} (dependencies published before ${pin.before}) into ${path.relative(ROOT, dir) || dir}...`);
   try {
     removeQuietly(tmp);
@@ -234,28 +270,31 @@ export function install(
   // was damaged after the fact (a delete cut short, a quarantined file): move it aside first.
   if (existsSync(dir) && !easBin(dir, pin.version)) {
     try {
-      rename(dir, `${dir}.broken-${pid}`);
+      rename(dir, `${dir}.broken-${pid}`, { onWait: waitNote(dir) });
       removeQuietly(`${dir}.broken-${pid}`);
     } catch {
       // Left for the rename below to report.
     }
   }
   try {
-    rename(tmp, dir);
+    rename(tmp, dir, { onWait: waitNote(dir) });
   } catch (err) {
     // Another run finished first and its tree is in place: use it, drop ours.
     if (easBin(dir, pin.version)) {
       removeQuietly(tmp);
       return easBin(dir, pin.version);
     }
-    // Still refused after the retries, and nothing is in place: the tree we just proved runs, so
-    // run eas from it this once rather than throw away a good install. The next run's
-    // sweepAbandoned removes it once this process has exited, and installs again.
+    // Still refused after a minute, and nothing is in place: the tree we just proved runs, so run
+    // eas from it this once rather than throw away a good install. The next run adopts it.
     if (!existsSync(dir)) {
+      try {
+        writeFileSync(path.join(tmp, PROVEN), "");
+      } catch {
+        // Unmarked, the next run installs again rather than adopting it.
+      }
       log(
-        `WARNING: could not move the install into ${dir} (${err.code ?? err.message}), most likely an ` +
-          "antivirus scan still holding its files. Running eas from the temporary install this time; the " +
-          "next run installs again.",
+        `WARNING: could not move the install into ${dir} (${err.code ?? err.message}). Running eas from ` +
+          `${path.basename(tmp)} this time; the next run moves it into place.`,
       );
       return easBin(tmp, pin.version);
     }
