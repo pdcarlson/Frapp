@@ -227,10 +227,11 @@ the ones a later reader would otherwise re-litigate.
   `scripts/ci/__tests__/branch-protection-diff.test.mjs` still reads that file as source text — but
   only to assert that the module stays free of entry points and side effects (no `process.argv`, no
   `fetch(`, no `main`, no module-scope statement), which is precisely what makes it safe to import
-  on the production deploy path. Nothing asserts what the arrays *hold*. Their only consumers are
-  `scripts/configure-branch-protection.mjs` and `scripts/ci/validate-deploy-sha.mjs`, both by
-  import, so a relocation touches three code sites — those two and that test's relative path — plus
-  the comments and docs that name the path by hand, none of which anything checks any more.
+  on the production deploy path. Nothing asserts what the arrays *hold*. Their code consumers are
+  `scripts/configure-branch-protection.mjs`, `scripts/ci/validate-deploy-sha.mjs` and
+  `scripts/ci/resolve-deploy-sha.mjs` (by import), plus several tests under
+  `scripts/ci/__tests__/`; grep `required-checks.mjs` for the current set. A relocation touches
+  each of those, plus the comments and docs that name the path by hand, none of which anything checks any more.
 
   **What the deletion costs, named rather than left to be rediscovered as a bug.** The deleted
   checker compared exactly one doc against these arrays:
