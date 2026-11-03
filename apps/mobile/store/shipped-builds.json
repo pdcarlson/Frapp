@@ -1,3 +1,12 @@
 {
-  "builds": []
+  "builds": [
+    {
+      "platform": "android",
+      "version": "0.9.0",
+      "build": "2",
+      "sha": "ea9bc12c836d3bbfb4c111ef0f4b9bdd00dc9211",
+      "recorded": "2026-11-03",
+      "note": "First Play upload, built by hand from tag v0.8.1 (EAS f9cfec8e) and released to the internal track on 2026-11-03."
+    }
+  ]
 }
