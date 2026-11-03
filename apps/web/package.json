@@ -54,7 +54,7 @@
     "dexie": "^4.4.7",
     "frimousse": "^0.4.0",
     "lucide-react": "^1.65.0",
-    "next": "^16.4.3",
+    "next": "^16.4.4",
     "posthog-js": "^1.442.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",

@@ -3,9 +3,12 @@
 > **Run `eas` as `npm run eas -- <command>`, from the repo root.** eas-cli is pinned to the
 > version CI's store build installs (`.github/workflows/_mobile-build.yml`, step "Install EAS CLI"),
 > and [`scripts/eas.mjs`](../../../scripts/eas.mjs) installs that version into the gitignored
-> `.cache/eas-cli/` on first use (about 10 seconds), with CI's flags, then runs it in `apps/mobile`,
-> where `app.json` and `eas.json` are. Nothing needs installing globally, and it works the same from
-> Windows Git Bash, PowerShell or cmd. Inside a workspace (`apps/mobile`, or any other `apps/*` or
+> `.cache/eas-cli/` on first use (under a minute; 28 seconds on a Windows laptop, 2026-11-03),
+> with CI's flags, then runs it in `apps/mobile`, where `app.json` and `eas.json` are. Nothing needs installing globally, and it works the same from
+> Windows Git Bash, PowerShell or cmd. On Windows the first run can pause for up to a minute after
+> npm finishes, printing `Retrying for up to a minute...`, while an antivirus scan holds the fresh
+> install; if the scan outlasts that, eas runs from the temporary install with a `WARNING:` and the
+> next run moves it into place. Inside a workspace (`apps/mobile`, or any other `apps/*` or
 > `packages/*` directory) npm reads that workspace's own `package.json` and answers
 > `Missing script: "eas"`, so run it from the root. Add `-s` (`npm run -s eas -- …`) when you parse
 > the output, so npm's own `> node scripts/eas.mjs` banner stays off stdout. To move the version,
