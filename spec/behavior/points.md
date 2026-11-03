@@ -77,7 +77,8 @@ When a user checks into an event:
   `GET /v1/points/leaderboard`, `GET /v1/points/members/:userId`, and
   `POST /v1/reports/points` all accept it; the web Points page's "Archived
   period" picker (backed by `useSemesters()`) drives the leaderboard and
-  balance summary. The Reports page and mobile do not yet expose it (#1526).
+  balance summary. Which clients expose it is tracked in
+  [Semester Rollover § Historical Data](semester-rollover.md#historical-data).
 - Visible to all members.
 - Admins see the full transaction ledger for all members. Members see only their own transactions plus the leaderboard rankings.
 

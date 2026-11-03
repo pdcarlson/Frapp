@@ -379,7 +379,7 @@ The web top-bar find field (`apps/web/components/layout/find-bar.tsx`) fires one
 
 ### PII exclusion
 
-**The raw query string is never sent, by construction — not merely because `assertContentFreeProperties` (`packages/validation/src/analytics.ts`) would catch it.** It would not: `"query"` is not in `FORBIDDEN_ANALYTICS_PROPERTY_KEYS`, and a query string is itself a scalar, so a property literally named `query` holding the raw text would pass the shared gate untouched. The design instead sends only `query_length`/`query_word_count` — shape, not content — and `dashboard-command-menu.spec.tsx`'s search-telemetry suite asserts both that every emitted event still passes `assertContentFreeProperties` (the generic backstop) and that no emitted property value ever equals the typed query text (the specific guarantee the generic gate cannot provide).
+**The raw query string is never sent, by construction — not merely because `assertContentFreeProperties` (`packages/validation/src/analytics.ts`) would catch it.** It would not: `"query"` is not in `FORBIDDEN_ANALYTICS_PROPERTY_KEYS`, and a query string is itself a scalar, so a property literally named `query` holding the raw text would pass the shared gate untouched. The design instead sends only `query_length`/`query_word_count` — shape, not content — and `apps/web/components/layout/find-bar.spec.tsx`'s search-telemetry suite asserts both that every emitted event still passes `assertContentFreeProperties` (the generic backstop) and that no emitted property value ever equals the typed query text (the specific guarantee the generic gate cannot provide).
 
 ### Building a zero-result taxonomy report
 
