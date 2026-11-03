@@ -29,8 +29,8 @@
       "ghsa": "GHSA-mrhx-c7xc-m3w5",
       "package": "zod",
       "severity": "high",
-      "reason": "Memory exhaustion in zod <4.6.6 when an unbounded array schema validates a huge array. The runtime copy (packages/validation) is on 4.6.7. This entry covers only the hoisted root zod@3.25.76: NO 3.x FIX EXISTS (3.25.76 is the newest 3.x), and its consumers are @expo/cli@57 (^3.25.76, still ^3.25.76 in @expo/cli 58.1.17), eslint-plugin-react-hooks and zod-validation-error, all dev or build-time tooling reading local config, never network input. No other workspace declares or imports zod. Checked 2026-11-03.",
-      "trackedBy": "#3338",
+      "reason": "Memory exhaustion in zod <4.6.6 when an unbounded array schema validates a huge array. Two copies are in the tree. The runtime one, packages/validation's (which the API and apps validate with), is on 4.6.7, held there by its ^4.6.7 floor. The other is the hoisted root zod@3.25.76, which NO 3.x RELEASE FIXES (3.25.76 is the newest 3.x); its consumers are @expo/cli@57 (^3.25.76), eslint-plugin-react-hooks and zod-validation-error, all dev or build-time tooling reading local config, never network input. CAUTION: the gate matches by GHSA id, so this entry also hides any later regression of the runtime copy below 4.6.6; check `npm ls zod` before renewing. @expo/cli 58.1.19 (Expo SDK 58, required by expo 58.0.23) drops zod, and the other two consumers accept ^4.0.0, so the SDK 58 upgrade (#2329) clears this: delete the entry then. Checked 2026-11-03.",
+      "trackedBy": "#2329",
       "expires": "2026-12-15"
     }
   ]
