@@ -69,10 +69,12 @@ export interface SentryDataCollection {
  * - `graphQL`: stricter. v10 always attached the document (literals
  *   redacted). No surface runs GraphQL, so this only matters if one is added.
  * - `genAI`, `databaseQueryData`: same as v10 (off).
- * - `mcp`: new in SDK 11.10, off. It covers MCP server tool inputs and
- *   outputs, and defaults to on rather than to `genAI`'s value once the
- *   object is set. No surface runs an MCP server, and tool arguments are
- *   payloads like task arguments.
+ * - `mcp`: new in `@sentry/core` 11.9, off. It covers MCP server tool
+ *   inputs and outputs. Left unset, the MCP instrumentation falls back to
+ *   `genAI` (off here), but the resolved options report it as on, so the
+ *   read-back specs flag it. It is named so the value doesn't rest on that
+ *   fallback. No surface runs an MCP server, and tool arguments are payloads
+ *   like task arguments.
  * - `queues`: new in v11, off. No surface enqueues through an instrumented
  *   queue client, and task arguments are exactly the payloads that must not
  *   leave.

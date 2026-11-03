@@ -821,8 +821,8 @@ describe('sentryCliBin', () => {
   });
 
   it('finds the copy nested under apps/api when the root has none (Docker deps stage)', () => {
-    // `npm ci --workspace=apps/api ...` installs only apps/api's nested copy;
-    // the root node_modules has no @sentry/cli at all.
+    // The layout the lockfile had before #3335, and can have again: apps/api's
+    // copy nested, and no @sentry/cli in the root node_modules at all.
     const root = mkdtempSync(join(tmpdir(), 'frapp-api-cli-'));
     const pkgDir = join(root, 'apps/api/node_modules/@sentry/cli');
     mkdirSync(join(pkgDir, 'js'), { recursive: true });
