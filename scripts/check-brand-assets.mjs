@@ -28,10 +28,10 @@
  *      `apps/web/app/favicon.ico` shipped Next's scaffold icon through green CI
  *      for as long as the file existed.
  *
- *   6. IOS ICON — the Icon Composer bundle `expo.ios.icon` names is exactly
- *      what `scripts/lib/ios-icon.mjs` writes: its `icon.json`, and a crest
- *      whose path is the glyph vector's in the locked gold. No raster exists
- *      until Xcode compiles it, so there are no pixels to check instead.
+ *   6. IOS ICON — the tinted appearance `expo.ios.icon` names is opaque grey
+ *      on black, carries a crest, and is still a render of the glyph vector.
+ *      Light and dark are `icon.png`, which section 3 already audits;
+ *      `scripts/ci/__tests__/ios-icon.test.mjs` holds `app.json` to the files.
  *
  *   7. STORE GRAPHICS — the Google Play icon and feature graphic under
  *      `apps/mobile/store/graphics/` are the shape Play takes, the icon is
@@ -48,7 +48,7 @@
  * because the gate has to hold for whatever is committed — including a file
  * someone dropped in by hand.
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,12 +70,9 @@ import {
   maskIou,
 } from "./lib/brand-pixels.mjs";
 import {
-  IOS_ICON_CREST,
-  IOS_ICON_DIR,
-  IOS_ICON_JSON,
-  crestSvg,
-  glyphPath,
-  iconJson,
+  IOS_ICON_TINTED,
+  assertTintedIcon,
+  tintedMask,
 } from "./lib/ios-icon.mjs";
 import {
   PLAY_FEATURE_GRAPHIC,
@@ -336,41 +333,37 @@ if (
   }
 }
 
-// ── 6. The iOS icon bundle ──────────────────────────────────────────────────
-// Exact equality with what `rasterize-brand-assets.mjs` writes, rather than a
-// looser shape check: the document has no pixels to measure, and a hand edit
-// to it (or to the crest's copy of the path) is exactly the drift this gate
-// exists for. Stray files in `Assets/` fail too: Xcode compiles what it finds.
-// Line endings are compared as LF, so a Windows checkout with `core.autocrlf`
-// does not read as drift; `glyphPath` refuses a glyph `crest.svg` cannot copy.
-const lf = (text) => text.replace(/\r\n/g, "\n");
-if (present(IOS_ICON_JSON, "run npm run rasterize:brand-assets")) {
-  if (lf(readFileSync(repo(IOS_ICON_JSON), "utf8")) !== iconJson()) {
-    fail(
-      `drift: ${IOS_ICON_JSON} is not what scripts/lib/ios-icon.mjs writes\n  run: npm run rasterize:brand-assets`,
-    );
-  }
-}
-if (present(IOS_ICON_CREST, "run npm run rasterize:brand-assets")) {
+// ── 6. The iOS tinted icon ──────────────────────────────────────────────────
+// Its own census, because it is off the brand axis by design (grey on black,
+// `lib/ios-icon.mjs` says why), and its own staleness check against the glyph
+// vector, because section 4 compares only the master raster: a vector edit
+// that skipped the rasterizer would otherwise leave iOS tinted on the old crest.
+if (present(IOS_ICON_TINTED, "run npm run rasterize:brand-assets")) {
   try {
-    const committed = lf(readFileSync(repo(IOS_ICON_CREST), "utf8"));
-    assertSvgLocked(committed, IOS_ICON_CREST, { requireField: false });
-    const glyph = readFileSync(
-      repo("packages/brand-assets/assets/signet-emblem-B-glyph.svg"),
-      "utf8",
-    );
-    if (committed !== crestSvg(glyphPath(glyph, "signet-emblem-B-glyph.svg"))) {
-      fail(
-        `stale: ${IOS_ICON_CREST} does not draw signet-emblem-B-glyph.svg's path\n  run: npm run rasterize:brand-assets`,
+    // Raw, not through `decode`: that adds an alpha channel, and this file
+    // must have none.
+    const buffer = readFileSync(repo(IOS_ICON_TINTED));
+    const meta = await sharp(buffer).metadata();
+    const { data, info } = await sharp(buffer)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    if (meta.channels !== 3) {
+      throw new Error(
+        `${IOS_ICON_TINTED}: has ${meta.channels} channels; it must be opaque RGB, because Expo's prebuild flattens a tinted icon's transparency onto white`,
       );
     }
-    // Dotfiles are skipped: a Finder `.DS_Store` is gitignored and never
-    // reaches CI or Xcode, and re-running the rasterizer cannot remove it.
-    const assets = readdirSync(repo(`${IOS_ICON_DIR}/Assets`)).filter(
-      (name) => !name.startsWith("."),
+    assertTintedIcon(data, info.channels, info.width, info.height, IOS_ICON_TINTED);
+    const glyph = await vectorMask(
+      readFileSync(repo("packages/brand-assets/assets/signet-emblem-B-glyph.svg")),
+      info.width,
     );
-    if (assets.length !== 1 || assets[0] !== "crest.svg") {
-      fail(`${IOS_ICON_DIR}/Assets: holds ${assets.join(", ")}; it holds crest.svg only`);
+    const agreement = maskIou(tintedMask(data, info.width, info.height), glyph);
+    if (agreement < RENDER_AGREEMENT_MIN) {
+      fail(
+        `stale: ${IOS_ICON_TINTED} agrees with signet-emblem-B-glyph.svg on only ` +
+          `${(agreement * 100).toFixed(3)}% of the glyph (floor ${(RENDER_AGREEMENT_MIN * 100).toFixed(1)}%)\n` +
+          `  run: npm run rasterize:brand-assets`,
+      );
     }
   } catch (error) {
     fail(String(error.message ?? error));
@@ -411,6 +404,6 @@ console.log(
     `${opaqueRasters.length} opaque rasters in the locked pair; ` +
     `${glyphLayers.length + monochromeLayers.length} glyph layers non-empty; ` +
     `favicon.ico holds the ${ICO_SIZES.join("/")} rasters as RGBA; ` +
-    `the iOS icon bundle draws the glyph; ` +
+    `the iOS tinted icon is the glyph in grey; ` +
     `the Play icon and feature graphic are the shape Play takes and current`,
 );

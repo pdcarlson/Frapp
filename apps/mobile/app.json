@@ -16,7 +16,11 @@
       "fallbackToCacheTimeout": 0
     },
     "ios": {
-      "icon": "./assets/frapp.icon",
+      "icon": {
+        "light": "./assets/images/icon.png",
+        "dark": "./assets/images/icon.png",
+        "tinted": "./assets/images/icon-tinted.png"
+      },
       "supportsTablet": false,
       "bundleIdentifier": "live.frapp.mobile",
       "usesAppleSignIn": true,

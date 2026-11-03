@@ -1,122 +1,137 @@
 /**
- * The iOS app icon: an Apple Icon Composer bundle, `apps/mobile/assets/frapp.icon`,
- * which `expo.ios.icon` names. `rasterize-brand-assets.mjs` writes it from the
- * glyph vector; `check-brand-assets.mjs` and `scripts/ci/__tests__/ios-icon.test.mjs`
- * hold the committed bundle to exactly what these functions produce.
+ * The iOS app icon: PNGs that `expo.ios.icon` names per appearance. Light and
+ * dark are `icon.png`, the full-bleed tile every other surface ships; tinted is
+ * `icon-tinted.png`, the crest in grey on black, which `rasterize-brand-assets.mjs`
+ * renders with `tintedFromGlyph`. `check-brand-assets.mjs` audits the committed
+ * tinted file with `assertTintedIcon`, and `scripts/ci/__tests__/ios-icon.test.mjs`
+ * holds `app.json` to `iosIconConfig()`.
  *
- * WHY A BUNDLE AND NOT PNG VARIANTS (owner, 2026-09-30). iOS 18+ shows icons in
- * default, dark, clear and tinted appearances, and iOS 26 renders them in
- * Liquid Glass. An Icon Composer bundle is Apple's format for that, and the
- * one Expo's own SDK 57 template ships: one layered document from which the
- * system derives every appearance. The owner accepted that Liquid Glass adds
- * its specular edge and a shadow to the crest; see `spec/ui/assets.md` §7.
+ * WHY PNGs AND NOT AN ICON COMPOSER BUNDLE (2026-11-03, #3319). From
+ * 2026-09-30 (#2941) the icon was an Icon Composer bundle,
+ * `apps/mobile/assets/frapp.icon`, for the Liquid Glass look. The first iOS
+ * store build that compiled it (EAS `30c8680b`, v0.8.1, SDK 26.5) died in
+ * `actool` on that bundle: "attempt to insert nil object from objects[0]" in
+ * `CompileAssetCatalogVariant`, with every other target built. Apple Developer
+ * Forums report the same assertion on any `.icon` from Xcode 26.5's `actool`,
+ * and nothing in this repo can run `actool` to tell an Xcode bug from a bundle
+ * fault, so the icon moved to the app-icon set every iOS app compiles. It
+ * keeps the gold crest in light, dark and tinted, and gives up the Liquid
+ * Glass specular edge and shadow.
  *
- * Apple publishes no schema for `icon.json`. The fields below follow the
- * reverse-engineered schemas in giginet/apple-icon-composer-skill and
- * dfabulich's, and the Expo template's own bundle, read on 2026-09-30. Nothing
- * in this repo can compile the bundle: `actool` runs only in Xcode 26+, so the
- * first EAS build is its first real test.
+ * THE APPEARANCES, as `@expo/prebuild-config` 57 writes them
+ * (`withIosIcons.js`: light and tinted are flattened onto white with their
+ * transparency removed; only dark keeps alpha):
+ *
+ *   - light: `icon.png`, opaque, gold on the field.
+ *   - dark: `icon.png` again. The field is already dark, so dark mode keeps
+ *     it, as the bundle's dark fill did. Naming it makes the dark appearance
+ *     this tile rather than leaving it to iOS.
+ *   - tinted: grey on black, opaque. iOS reads a tinted icon's luminance as
+ *     the tint mask and paints its own background, so the crest is white and
+ *     the field black; neither locked colour survives tinting. Opaque because
+ *     prebuild would flatten a transparent background onto white, and a white
+ *     crest on white is an empty icon.
  *
  * This file imports nothing that needs `npm ci`: `ios-icon.test.mjs` imports
  * it, and the `ci-scripts-tests` job runs without `npm ci`.
  */
-import { FIELD, GOLD_HEX, svgPath } from "./brand-pixels.mjs";
+import { GLYPH_COVERAGE_MAX, GLYPH_COVERAGE_MIN } from "./brand-pixels.mjs";
 
-export const IOS_ICON_DIR = "apps/mobile/assets/frapp.icon";
-export const IOS_ICON_JSON = `${IOS_ICON_DIR}/icon.json`;
-export const IOS_ICON_CREST = `${IOS_ICON_DIR}/Assets/crest.svg`;
-
-/** An 8-bit sRGB channel as Icon Composer writes it: five decimals. */
-const channel = (value) => (value / 255).toFixed(5);
-
-/** The mark's field, `#1A1A1A`, in Icon Composer's colour syntax. */
-export const FIELD_COLOUR = `extended-srgb:${channel(FIELD.r)},${channel(FIELD.g)},${channel(FIELD.b)},1.00000`;
-
-/**
- * The document, key by key:
- *
- *   - The fill is the mark's field in the default AND the dark appearance. An
- *     icon with no dark fill goes black in dark mode (WWDC25 session 361), and
- *     the field is already dark, so dark mode keeps it.
- *   - One layer, the crest, from `crest.svg`, with no `position`: a 1024 x 1024
- *     image on the 1024 x 1024 canvas lands exactly where the crest sits in
- *     `icon.png`, the same frame every brand SVG shares.
- *   - Glass and the specular edge are on: that is the Liquid Glass look the
- *     owner accepted. Translucency is OFF, so the crest stays exactly the
- *     locked gold instead of letting the field show through it. A neutral
- *     shadow at 0.3 lifts it off the field without a halo.
- *   - Clear and tinted have no overrides: the system renders the crest white
- *     or grey on its own background there, so neither the field nor the gold
- *     survives in those two modes. That is the platform's rule, not a choice.
- *   - `color-space-for-untagged-svg-colors: srgb`, so `#DDB844` is read as sRGB
- *     and not widened to Display P3.
- *   - `squares: shared` with no `circles`: iOS (and the shared square
- *     platforms), no watchOS.
- */
-export const ICON_DOCUMENT = {
-  "color-space-for-untagged-svg-colors": "srgb",
-  "fill-specializations": [
-    { value: { solid: FIELD_COLOUR } },
-    { appearance: "dark", value: { solid: FIELD_COLOUR } },
-  ],
-  groups: [
-    {
-      layers: [{ glass: true, "image-name": "crest.svg", name: "crest" }],
-      shadow: { kind: "neutral", opacity: 0.3 },
-      specular: true,
-      translucency: { enabled: false, value: 0.5 },
-    },
-  ],
-  "supported-platforms": { squares: "shared" },
+/** Each appearance's file, from the repo root. */
+export const IOS_ICON = {
+  light: "apps/mobile/assets/images/icon.png",
+  dark: "apps/mobile/assets/images/icon.png",
+  tinted: "apps/mobile/assets/images/icon-tinted.png",
 };
 
-/** `icon.json` as committed. */
-export function iconJson() {
-  return `${JSON.stringify(ICON_DOCUMENT, null, 2)}\n`;
+export const IOS_ICON_TINTED = IOS_ICON.tinted;
+
+/** The one size Expo's prebuild writes an iOS app icon at, in pixels. */
+export const IOS_ICON_SIZE = 1024;
+
+/** `expo.ios.icon` as `apps/mobile/app.json` holds it: the same files, relative to the app. */
+export function iosIconConfig() {
+  return Object.fromEntries(
+    Object.entries(IOS_ICON).map(([appearance, rel]) => [
+      appearance,
+      `./${rel.replace(/^apps\/mobile\//, "")}`,
+    ]),
+  );
 }
 
 /**
- * The glyph's one path, verbatim (`svgPath` in `brand-pixels.mjs`), refusing
- * any glyph `crestSvg` could not copy whole. `crest.svg` carries one path's
- * `d` and nothing else, so a glyph that gains another shape, or a path
- * attribute beyond `fill` and `d` (`fill-rule`, `transform`), would ship on
- * Android and Play and silently not on iOS. This throws instead, in the
- * rasterizer and in the gate, until `crestSvg` learns to carry it.
+ * The tinted icon from the crest rendered on transparency (RGBA): each
+ * pixel's grey level is the crest's alpha there, so the crest is white, its
+ * antialiased edge a ramp, and everything else black. Returns raw RGB.
  */
-export function glyphPath(svg, label) {
-  const d = svgPath(svg, label);
-  const shapes = svg.match(
-    /<(circle|ellipse|g|image|line|polygon|polyline|rect|text|use)\b/g,
-  );
-  if (shapes) {
-    throw new Error(
-      `${label}: draws ${[...new Set(shapes)].join(", ")}> besides its path; crest.svg copies one path only, so extend crestSvg in scripts/lib/ios-icon.mjs first`,
-    );
+export function tintedFromGlyph(data, channels) {
+  if (channels !== 4) {
+    throw new Error(`tintedFromGlyph: needs an RGBA render, got ${channels} channels`);
   }
-  const attributes = [
-    ...svg.match(/<path\b([^>]*)>/)[1].matchAll(/([\w:-]+)=/g),
-  ]
-    .map((m) => m[1])
-    .filter((name) => name !== "fill" && name !== "d");
-  if (attributes.length > 0) {
-    throw new Error(
-      `${label}: its path carries ${attributes.join(", ")}, which crest.svg would drop; extend crestSvg in scripts/lib/ios-icon.mjs first`,
-    );
+  const pixels = data.length / 4;
+  const out = Buffer.alloc(pixels * 3);
+  for (let p = 0; p < pixels; p += 1) {
+    const grey = data[p * 4 + 3];
+    out[p * 3] = grey;
+    out[p * 3 + 1] = grey;
+    out[p * 3 + 2] = grey;
   }
-  return d;
+  return out;
 }
 
 /**
- * `crest.svg`: the crest alone on transparency, in the brand frame, in the
- * plainest SVG there is. Apple lists no SVG features `actool` rejects, only
- * that text must be outlines and that unsupported features belong in a PNG,
- * so the bundle's copy carries no comment, `<title>`, style or effect: one
- * `<svg>` with its size and viewBox, and one filled path.
+ * What the committed `icon-tinted.png` must be: 1024² like every iOS app
+ * icon Expo writes, opaque RGB (see above for why opaque), grey in every
+ * pixel, black at all four corners, and a crest that covers as much of the
+ * canvas as any other glyph layer may. An empty or solid file fails, as it
+ * does for every glyph layer (#2153).
  */
-export function crestSvg(d) {
-  return (
-    `<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">\n` +
-    `  <path fill="${GOLD_HEX}" d="${d}"/>\n` +
-    `</svg>\n`
-  );
+export function assertTintedIcon(data, channels, width, height, label) {
+  if (width !== IOS_ICON_SIZE || height !== IOS_ICON_SIZE) {
+    throw new Error(
+      `${label}: is ${width}x${height}; it must be ${IOS_ICON_SIZE}x${IOS_ICON_SIZE}, the size Expo's prebuild writes every iOS app icon at`,
+    );
+  }
+  if (channels !== 3) {
+    throw new Error(
+      `${label}: has ${channels} channels; it must be opaque RGB, because Expo's prebuild flattens a tinted icon's transparency onto white`,
+    );
+  }
+  let lit = 0;
+  for (let i = 0; i < data.length; i += 3) {
+    if (data[i] !== data[i + 1] || data[i] !== data[i + 2]) {
+      const p = i / 3;
+      throw new Error(
+        `${label}: pixel (${p % width}, ${Math.floor(p / width)}) is not grey; iOS reads a tinted icon's luminance only`,
+      );
+    }
+    if (data[i] >= 128) lit += 1;
+  }
+  for (const [x, y] of [
+    [0, 0],
+    [width - 1, 0],
+    [0, height - 1],
+    [width - 1, height - 1],
+  ]) {
+    if (data[(y * width + x) * 3] !== 0) {
+      throw new Error(`${label}: corner (${x}, ${y}) is not black; the crest sits on black`);
+    }
+  }
+  const fraction = lit / (width * height);
+  if (!(fraction >= GLYPH_COVERAGE_MIN) || !(fraction <= GLYPH_COVERAGE_MAX)) {
+    throw new Error(
+      `${label}: the crest covers ${(fraction * 100).toFixed(2)}% of the icon, outside the ` +
+        `${(GLYPH_COVERAGE_MIN * 100).toFixed(0)}-${(GLYPH_COVERAGE_MAX * 100).toFixed(0)}% band — ` +
+        `an empty or solid glyph layer must never ship (#2153)`,
+    );
+  }
+}
+
+/** The crest's mask in a tinted icon: 1 where the grey is past half. */
+export function tintedMask(data, width, height) {
+  const mask = new Uint8Array(width * height);
+  for (let p = 0; p < mask.length; p += 1) {
+    mask[p] = data[p * 3] >= 128 ? 1 : 0;
+  }
+  return mask;
 }
