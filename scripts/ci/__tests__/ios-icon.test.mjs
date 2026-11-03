@@ -117,7 +117,7 @@ test("assertTintedIcon refuses another size, alpha, colour, a lit corner, and an
   );
   assert.throws(
     () => assertTintedIcon(Buffer.alloc(n * n * 3), 3, n, n, "empty"),
-    /covers 0\.00% of the icon/,
+    /covers 0\.00% of the layer/,
   );
   assert.throws(
     () => assertTintedIcon(tintedSquare(n, 0.9), 3, n, n, "solid"),

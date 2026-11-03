@@ -28,10 +28,12 @@
  *      `apps/web/app/favicon.ico` shipped Next's scaffold icon through green CI
  *      for as long as the file existed.
  *
- *   6. IOS ICON — the tinted appearance `expo.ios.icon` names is opaque grey
- *      on black, carries a crest, and is still a render of the glyph vector.
- *      Light and dark are `icon.png`, which section 3 already audits;
- *      `scripts/ci/__tests__/ios-icon.test.mjs` holds `app.json` to the files.
+ *   6. IOS ICON — the appearances `expo.ios.icon` names are current. Light
+ *      and dark are `icon.png`, byte-identical to the master raster section 4
+ *      holds to the vector. Tinted is opaque grey on black, exactly the glyph
+ *      raster's alpha in grey, carries a crest, and is still a render of the
+ *      glyph vector. `scripts/ci/__tests__/ios-icon.test.mjs` holds `app.json`
+ *      to the files.
  *
  *   7. STORE GRAPHICS — the Google Play icon and feature graphic under
  *      `apps/mobile/store/graphics/` are the shape Play takes, the icon is
@@ -70,8 +72,10 @@ import {
   maskIou,
 } from "./lib/brand-pixels.mjs";
 import {
+  IOS_ICON,
   IOS_ICON_TINTED,
   assertTintedIcon,
+  tintedFromGlyph,
   tintedMask,
 } from "./lib/ios-icon.mjs";
 import {
@@ -90,6 +94,7 @@ const repo = (rel) => join(root, rel);
 
 const MASTER_SVG = "packages/brand-assets/assets/signet-emblem-B.svg";
 const MASTER_RASTER = "packages/brand-assets/assets/signet-emblem-B-1024.png";
+const GLYPH_RASTER = "packages/brand-assets/assets/signet-emblem-B-glyph-1024.png";
 const FAVICON_ICO = "packages/brand-assets/assets/signet-emblem-B.ico";
 const canonicalRaster = (size) =>
   `packages/brand-assets/assets/signet-emblem-B-${size}.png`;
@@ -121,7 +126,7 @@ const opaqueRasters = [
  * charcoal square with the crest missing measured exactly the same 43.58%.
  */
 const glyphLayers = [
-  "packages/brand-assets/assets/signet-emblem-B-glyph-1024.png",
+  GLYPH_RASTER,
   "apps/mobile/assets/images/adaptive-icon.png",
   "apps/mobile/assets/images/splash-icon.png",
 ];
@@ -333,26 +338,53 @@ if (
   }
 }
 
-// ── 6. The iOS tinted icon ──────────────────────────────────────────────────
-// Its own census, because it is off the brand axis by design (grey on black,
-// `lib/ios-icon.mjs` says why), and its own staleness check against the glyph
-// vector, because section 4 compares only the master raster: a vector edit
-// that skipped the rasterizer would otherwise leave iOS tinted on the old crest.
-if (present(IOS_ICON_TINTED, "run npm run rasterize:brand-assets")) {
+// ── 6. The iOS icon ─────────────────────────────────────────────────────────
+// Light and dark are `icon.png`. Section 3 only censuses its colours, so a
+// different crest drawn in the locked pair would pass there; byte equality with
+// the master raster, which section 4 holds to the vector, is what keeps iOS
+// light and dark on the current mark. The rasterizer writes both from one buffer.
+for (const rel of new Set([IOS_ICON.light, IOS_ICON.dark])) {
+  if (
+    existsSync(repo(rel)) &&
+    existsSync(repo(MASTER_RASTER)) &&
+    !readFileSync(repo(rel)).equals(readFileSync(repo(MASTER_RASTER)))
+  ) {
+    fail(
+      `drift: ${rel} is not ${MASTER_RASTER}, so iOS light and dark draw another crest\n  run: npm run rasterize:brand-assets`,
+    );
+  }
+}
+
+// Tinted gets its own census, because it is off the brand axis by design (grey
+// on black, `lib/ios-icon.mjs` says why). Exact equality with the glyph raster's
+// alpha catches what a census and a mask cannot see: a faint grey plate or halo
+// below half grey, which iOS would tint. The mask check against the glyph vector
+// catches a vector edit that skipped the rasterizer, since section 4 compares
+// only the master raster.
+if (
+  present(IOS_ICON_TINTED, "run npm run rasterize:brand-assets") &&
+  existsSync(repo(GLYPH_RASTER))
+) {
   try {
     // Raw, not through `decode`: that adds an alpha channel, and this file
     // must have none.
-    const buffer = readFileSync(repo(IOS_ICON_TINTED));
-    const meta = await sharp(buffer).metadata();
-    const { data, info } = await sharp(buffer)
+    const { data, info } = await sharp(readFileSync(repo(IOS_ICON_TINTED)))
       .raw()
       .toBuffer({ resolveWithObject: true });
-    if (meta.channels !== 3) {
-      throw new Error(
-        `${IOS_ICON_TINTED}: has ${meta.channels} channels; it must be opaque RGB, because Expo's prebuild flattens a tinted icon's transparency onto white`,
+    assertTintedIcon(data, info.channels, info.width, info.height, IOS_ICON_TINTED);
+    const glyphRaster = await sharp(readFileSync(repo(GLYPH_RASTER)))
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    if (
+      glyphRaster.info.width !== info.width ||
+      glyphRaster.info.height !== info.height ||
+      !tintedFromGlyph(glyphRaster.data, glyphRaster.info.channels).equals(data)
+    ) {
+      fail(
+        `drift: ${IOS_ICON_TINTED} is not ${GLYPH_RASTER}'s alpha in grey\n  run: npm run rasterize:brand-assets`,
       );
     }
-    assertTintedIcon(data, info.channels, info.width, info.height, IOS_ICON_TINTED);
     const glyph = await vectorMask(
       readFileSync(repo("packages/brand-assets/assets/signet-emblem-B-glyph.svg")),
       info.width,
@@ -404,6 +436,6 @@ console.log(
     `${opaqueRasters.length} opaque rasters in the locked pair; ` +
     `${glyphLayers.length + monochromeLayers.length} glyph layers non-empty; ` +
     `favicon.ico holds the ${ICO_SIZES.join("/")} rasters as RGBA; ` +
-    `the iOS tinted icon is the glyph in grey; ` +
+    `the iOS icon is the master tile and the glyph in grey; ` +
     `the Play icon and feature graphic are the shape Play takes and current`,
 );

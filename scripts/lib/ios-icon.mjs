@@ -9,14 +9,16 @@
  * WHY PNGs AND NOT AN ICON COMPOSER BUNDLE (2026-11-03, #3319). From
  * 2026-09-30 (#2941) the icon was an Icon Composer bundle,
  * `apps/mobile/assets/frapp.icon`, for the Liquid Glass look. The first iOS
- * store build that compiled it (EAS `30c8680b`, v0.8.1, SDK 26.5) died in
- * `actool` on that bundle: "attempt to insert nil object from objects[0]" in
- * `CompileAssetCatalogVariant`, with every other target built. Apple Developer
- * Forums report the same assertion on any `.icon` from Xcode 26.5's `actool`,
- * and nothing in this repo can run `actool` to tell an Xcode bug from a bundle
- * fault, so the icon moved to the app-icon set every iOS app compiles. It
- * keeps the gold crest in light, dark and tinted, and gives up the Liquid
- * Glass specular edge and shadow.
+ * store build that compiled it (EAS `30c8680b`, v0.8.1, the pinned Xcode 26.6
+ * image with the iPhoneOS 26.5 SDK) died in `actool` on that bundle: "attempt
+ * to insert nil object from objects[0]" in `CompileAssetCatalogVariant`, with
+ * every other target built. Apple Developer Forums report the same assertion
+ * on `.icon` bundles from Xcode releases after 26.4.1, and nothing in this
+ * repo can run `actool` to tell an Xcode bug from a bundle fault, so the owner
+ * moved the icon to the app-icon set every iOS app compiles. Light and dark
+ * keep the gold crest on the field; tinted, and iOS 26's clear appearance,
+ * were always iOS's own colouring of the crest. The Liquid Glass specular
+ * edge and shadow are given up.
  *
  * THE APPEARANCES, as `@expo/prebuild-config` 57 writes them
  * (`withIosIcons.js`: light and tinted are flattened onto white with their
@@ -35,7 +37,7 @@
  * This file imports nothing that needs `npm ci`: `ios-icon.test.mjs` imports
  * it, and the `ci-scripts-tests` job runs without `npm ci`.
  */
-import { GLYPH_COVERAGE_MAX, GLYPH_COVERAGE_MIN } from "./brand-pixels.mjs";
+import { assertGlyphCoverage } from "./brand-pixels.mjs";
 
 /** Each appearance's file, from the repo root. */
 export const IOS_ICON = {
@@ -117,14 +119,7 @@ export function assertTintedIcon(data, channels, width, height, label) {
       throw new Error(`${label}: corner (${x}, ${y}) is not black; the crest sits on black`);
     }
   }
-  const fraction = lit / (width * height);
-  if (!(fraction >= GLYPH_COVERAGE_MIN) || !(fraction <= GLYPH_COVERAGE_MAX)) {
-    throw new Error(
-      `${label}: the crest covers ${(fraction * 100).toFixed(2)}% of the icon, outside the ` +
-        `${(GLYPH_COVERAGE_MIN * 100).toFixed(0)}-${(GLYPH_COVERAGE_MAX * 100).toFixed(0)}% band — ` +
-        `an empty or solid glyph layer must never ship (#2153)`,
-    );
-  }
+  assertGlyphCoverage(lit / (width * height), label);
 }
 
 /** The crest's mask in a tinted icon: 1 where the grey is past half. */
