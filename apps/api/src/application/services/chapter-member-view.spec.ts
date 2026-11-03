@@ -3,6 +3,7 @@ import {
   toChapterMemberView,
 } from './chapter-member-view';
 import type { Chapter } from '#domain/entities/chapter.entity';
+import { chapterFixture } from '#test/helpers/entity-fixtures';
 
 /**
  * A chapter row as `select('*')` actually returns it — every column populated,
@@ -11,10 +12,8 @@ import type { Chapter } from '#domain/entities/chapter.entity';
  * because the fields it should drop would be absent anyway.
  */
 function fullChapterRow(): Chapter {
-  return {
-    id: 'ch-1',
+  return chapterFixture({
     name: 'Alpha Beta',
-    university: 'State U',
     stripe_customer_id: 'cus_SENSITIVE',
     subscription_status: 'past_due',
     subscription_id: 'sub_SENSITIVE',
@@ -38,7 +37,7 @@ function fullChapterRow(): Chapter {
     legal_accepted_by: 'user-legal-signer',
     analytics_opt_out: false,
     needs_president: false,
-  };
+  });
 }
 
 describe('toChapterMemberView', () => {
@@ -157,21 +156,12 @@ describe('toChapterMemberView', () => {
       // Narrower repository projections select only some columns;
       // materialising `vocabulary: undefined` would flip `'vocabulary' in
       // chapter` for downstream readers.
-      const sparse = {
-        id: 'ch-1',
+      const sparse = chapterFixture({
         name: 'Alpha Beta',
-        university: 'State U',
-        stripe_customer_id: null,
         subscription_status: 'active',
-        subscription_id: null,
-        past_due_since: null,
-        last_stripe_webhook_at: null,
-        accent_color: null,
-        logo_path: null,
-        donation_url: null,
         created_at: '2026-01-01T00:00:00.000Z',
         updated_at: '2026-01-01T00:00:00.000Z',
-      } satisfies Chapter;
+      });
 
       const view = toChapterMemberView(sparse);
 

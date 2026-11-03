@@ -24,7 +24,10 @@ import {
 // environment, where `import.meta.url` is not a `file:` URL and
 // `fileURLToPath` throws. The node-environment specs in `packages/theme` use
 // the URL form and are fine; this one cannot.
-const settingsPage = readFileSync(`${__dirname}/settings-page.tsx`, "utf8");
+const settingsPage = readFileSync(
+  `${__dirname}/settings-accent-tab.tsx`,
+  "utf8",
+);
 
 /**
  * Compared with whitespace collapsed, not as a regex over the source lines.
@@ -48,7 +51,8 @@ const collapse = (text: string) => text.replace(/\s+/g, " ").trim();
  *
  * Two traps, both of which this originally fell into.
  *
- * 1. **`settings-page.tsx` has five `<CardDescription>` blocks.** A bare
+ * 1. **`settings-page.tsx` had five `<CardDescription>` blocks** (the card
+ *    lives in `settings-accent-tab.tsx` since #3272, and the anchor stays). A bare
  *    `/<CardDescription>([\s\S]*?)<\/CardDescription>/` matches the first one,
  *    which belongs to the chapter picker, so every negative assertion below ran
  *    against copy it was not about and passed no matter what the Accent card

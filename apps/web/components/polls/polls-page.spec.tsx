@@ -97,7 +97,7 @@ const { toastMock } = vi.hoisted(() => ({
   toastMock: vi.fn(() => ({ toast: vi.fn() })),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => toastMock() }));
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => toastMock() }));
 
 const { PollsPage } = await import("./polls-page");
 

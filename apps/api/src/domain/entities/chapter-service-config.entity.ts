@@ -21,3 +21,17 @@ export interface ChapterServiceConfig {
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * The service-hours policy as the config endpoint reads and writes it: the row
+ * without its key and timestamps. `SERVICE_CONFIG_FIELDS` is the column list
+ * the repository selects and the PATCH merge walks.
+ */
+export type ServiceConfig = Omit<
+  ChapterServiceConfig,
+  'chapter_id' | 'created_at' | 'updated_at'
+>;
+
+export const SERVICE_CONFIG_FIELDS = [
+  'minutes_per_point',
+] as const satisfies ReadonlyArray<keyof ServiceConfig>;

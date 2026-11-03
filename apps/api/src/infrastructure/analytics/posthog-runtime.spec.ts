@@ -1,5 +1,5 @@
 import { SENTRY_ERROR_CORRELATED_EVENT } from '@repo/observability';
-import { hashUserIdForAnalytics } from '@repo/validation';
+import { hashUserIdForAnalytics } from '#domain/utils/analytics-keying';
 import {
   enqueueSanitizedLog,
   PosthogRuntime,
@@ -171,22 +171,6 @@ describe('PosthogRuntime', () => {
     expect(logs?.decodedBody).toContain('request');
     expect(logs?.decodedBody).toContain(HEX);
     expect(logs?.decodedBody).not.toContain(USER_UUID);
-  });
-
-  it('evaluates flags only with hex distinct/chapter ids and fails closed otherwise', async () => {
-    const transport = new RecordingPosthogTransport(FIXTURES);
-    transport.flagValues = { 'new-composer': true };
-    const runtime = startRuntime(transport);
-
-    await expect(
-      runtime.isFeatureEnabled('new-composer', USER_UUID),
-    ).resolves.toBe(false);
-    await expect(
-      runtime.isFeatureEnabled('new-composer', HEX, USER_UUID),
-    ).resolves.toBe(false);
-    await expect(
-      runtime.isFeatureEnabled('new-composer', HEX, HEX),
-    ).resolves.toBe(true);
   });
 
   describe('log sampling (#2374)', () => {

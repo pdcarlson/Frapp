@@ -1,6 +1,6 @@
 // The stale-palette sweep (#1165) against a real PostgREST.
 //
-// `scheduled-jobs.repository.spec.ts` proves which filters the repository asks
+// `supabase-scheduled-jobs.repository.spec.ts` proves which filters the repository asks
 // for. It cannot prove PostgREST reads them the way the sweep depends on:
 // that `seed:branding->colors->>accent` comes back as text, that a JSON-path
 // `eq`/`is` filter applies to an UPDATE, and that the `or()` staleness filter
@@ -21,8 +21,8 @@
 import { randomUUID } from 'node:crypto';
 import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
 import { buildChapterPalette } from '../../src/application/services/chapter-palette';
-import { ScheduledJobsRepository } from '../../src/modules/scheduled-jobs/scheduled-jobs.repository';
-import { ScheduledJobsService } from '../../src/modules/scheduled-jobs/scheduled-jobs.service';
+import { SupabaseScheduledJobsRepository } from '../../src/infrastructure/supabase/repositories/supabase-scheduled-jobs.repository';
+import { ScheduledJobsService } from '../../src/application/workers/scheduled-jobs.service';
 import type { FrappSupabaseClient } from '../../src/infrastructure/supabase/database.types';
 import { createServiceRoleClient, describeIntegration } from './stack';
 
@@ -42,7 +42,7 @@ const STALE_CRIMSON = {
 
 describeIntegration('Stale-palette sweep against live PostgREST', () => {
   let supabase: FrappSupabaseClient;
-  let repo: ScheduledJobsRepository;
+  let repo: SupabaseScheduledJobsRepository;
   let service: ScheduledJobsService;
 
   const crimson = randomUUID(); // branding accent, unstamped, stale fill
@@ -89,7 +89,7 @@ describeIntegration('Stale-palette sweep against live PostgREST', () => {
 
   beforeAll(async () => {
     supabase = createServiceRoleClient();
-    repo = new ScheduledJobsRepository(supabase);
+    repo = new SupabaseScheduledJobsRepository(supabase);
     // Only the repository is reached by `sweepStalePalettes`.
     service = new ScheduledJobsService(
       repo,

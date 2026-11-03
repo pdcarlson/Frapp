@@ -7,6 +7,7 @@ import type {
 } from '#domain/repositories/chat.repository.interface';
 import { ChatMessageAttachment } from '#domain/entities/chat.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { omitColumns } from '../supabase.utils';
 
 /**
  * `chat_message_attachments` reads and writes.
@@ -159,7 +160,7 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
  * row that deliberately does not have one, and the first caller to read it would
  * be reading a join artefact.
  *
- * **`external_url`** is a disclosure boundary. `ChatService.listMessageAttachments`
+ * **`external_url`** is a disclosure boundary. `ChatAttachmentService.listMessageAttachments`
  * spreads whatever this returns straight into an API response, and that column
  * holds a source-system URL. A Discord CDN link is signed and time-limited
  * (`?ex=&is=&hm=`), so shipping one would hand every chapter member a working
@@ -178,10 +179,8 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
  * property that actually matters.
  */
 function stripAttachmentRow(row: ChatMessageAttachment): ChatMessageAttachment {
-  const { ...rest } = row as ChatMessageAttachment & {
-    chat_channels?: unknown;
-  };
-  delete (rest as { chat_channels?: unknown }).chat_channels;
-  delete (rest as { external_url?: unknown }).external_url;
-  return rest;
+  return omitColumns<ChatMessageAttachment>(row, [
+    'chat_channels',
+    'external_url',
+  ]);
 }

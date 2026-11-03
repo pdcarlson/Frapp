@@ -54,7 +54,7 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 vi.mock("./event-detail-sheet", () => ({ EventDetailSheet: () => null }));
 
 const toastSpy = vi.fn();
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: toastSpy }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: toastSpy }) }));
 
 // The realtime subscription needs a QueryClientProvider and a Supabase
 // client; neither is part of what this file covers.

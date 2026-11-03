@@ -21,8 +21,7 @@ Backlog promotion to it.
 The shared contract is
 [`routines.md` → Shared ownership boundary](../../../docs/ci-cd/routines.md#shared-ownership-boundary-all-routines)
 and [→ Tracker access](../../../docs/ci-cd/routines.md#tracker-access-shared-by-all-routines):
-GitHub MCP only (stop and report if it's unavailable), Linear is retired, no product code, comment
-once. On top of that:
+GitHub MCP only (stop and report if it's unavailable), no product code, comment once. On top of that:
 
 - Destructive writes happen only on `suggestion`-labeled issues. Check with `issue_read
   get_labels` before each write; if `suggestion` is absent, skip and log it. This routine applies
@@ -31,9 +30,8 @@ once. On top of that:
 - When a suggestion duplicates a non-`suggestion` issue, close your suggestion as `duplicate`
   with `duplicate_of` the other one. Leave the other issue alone, apart from at most one
   back-reference comment.
-- `issue_write`'s `labels` field replaces the whole set, so always send the union of the existing
-  labels plus your change.
-- Never print secret values.
+- Label writes are read-modify-write ([`AGENTS.md` § Work tracking](../../../AGENTS.md#work-tracking)).
+- Secrets by name and presence only ([`AGENTS.md` § Credentials and secrets](../../../AGENTS.md#credentials-and-secrets)).
 - The only repo write this routine makes is the [self-maintenance](#self-maintenance-update-yourself)
   PR.
 

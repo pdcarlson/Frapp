@@ -1,11 +1,11 @@
 // The verdict both production backup-freshness watches share: is one job of
 // Nightly Backup (`db-backup.yml`) recent, successful, and not hung?
 //
-// `production-backup-freshness.mjs` (the Postgres dump) and
-// `production-backup-storage-freshness.mjs` (the Storage mirror) watch two
-// jobs of the same workflow with the same rules, so the rules live here once
-// and each script passes its own job name and windows. The constants stay in
-// the scripts, where their source-text locks pin them. Rule tests:
+// `production-backup-freshness.mjs` runs two watches, the Postgres dump and
+// the Storage mirror, over two jobs of the same workflow with the same rules,
+// so the rules live here and the script passes each watch's job name and
+// windows. The constants stay in the script, where its source-text locks pin
+// them. Rule tests:
 // `scripts/ci/__tests__/backup-job-freshness.test.mjs`.
 //
 // THE RULES (the canonical statement; the docs and scripts link here)

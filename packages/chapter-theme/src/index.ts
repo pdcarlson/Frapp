@@ -16,8 +16,9 @@
  * deleted in the #920 slice-9 cutover. Nothing read its output: the web
  * dashboard stopped applying its tokens at the shell slice, and mobile only
  * ever read the `--signet-*` half. `resolveChapterAccentColor`
- * (`@repo/theme/accent`) is a different unit and is still live — it re-validates
- * a stored accent against a real background, and did not depend on this engine.
+ * (`apps/web/components/settings/resolve-chapter-accent.ts`) is a different
+ * unit and is still live — it re-validates a stored accent against a real
+ * background, and did not depend on this engine.
  */
 
 export {

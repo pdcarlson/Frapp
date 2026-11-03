@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import { AdjustGlyph } from "@/components/points/points-glyphs";
 import { useAdjustPoints, useMembers } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

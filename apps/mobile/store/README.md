@@ -56,13 +56,13 @@ listing text below (description, review notes) with them. A build made before
 step 2 merged still says Signet. Before submitting, check that `expo.name` is
 `Frapp` in `app.json` at the build's commit, or that the installed TestFlight
 build's home-screen name reads Frapp.
-[`frapp-mobile-copy.test.mjs`](../../../scripts/ci/__tests__/frapp-mobile-copy.test.mjs)
+[`frapp-naming.test.mjs`](../../../scripts/ci/__tests__/frapp-naming.test.mjs)
 fails CI when a line of `apps/mobile`'s source says Signet outside the comment
 the line starts with. It can't see Signet on a line that itself starts like a
 comment (a template or JSX text line beginning `*` or `//`), it reads the
-source rather than the built binary, and text the server sends (API messages,
-the system actor's name) moves with ADR-25's later steps, so look at the build
-itself too. The bundle id and Android package (`live.frapp.mobile`), slug,
+source rather than the built binary, so look at the build itself too. Text the
+server sends (API messages, the system actor's name) moved in ADR-25's step 3,
+and the same test's API walk and system-actor pins keep it there. The bundle id and Android package (`live.frapp.mobile`), slug,
 scheme, and every public URL are **frapp** permanently; the full list is
 [`brand-identity.md` § 1](../../../spec/ui/brand-identity.md#1-identity). The
 trademark record is on #1901; this file is the listing paste.
@@ -549,7 +549,7 @@ Where each answer comes from:
   be built on the same picker, and neither is claimed here as shipped.
 - **User ID carries Analytics** because PostHog identifies members with
   `distinct_id = hmac_sha256(salt, user_id)`. The derivation lives in
-  `hashUserIdForAnalytics` (`packages/validation/src/analytics.ts`), called from
+  `hashUserIdForAnalytics` (`apps/api/src/domain/utils/analytics-keying.ts`), called from
   `apps/api/src/application/services/analytics.service.ts`; it is server-side because
   the salt is API-only. `packages/observability/src/correlation.ts` only *names* the
   shape and states that clients never compute it — this file used to cite it as the
@@ -607,8 +607,9 @@ Where each answer comes from:
 ## Google Play answers
 
 What Play Console asks under **Policy and programs → App content** before any release, including
-the Data safety form. These are the answers to enter; nothing has been entered yet, because the
-developer account doesn't exist ([#2556](https://github.com/pdcarlson/Frapp/issues/2556)). Written
+the Data safety form. These are the answers to enter. The developer account exists, and the app
+`live.frapp.mobile` was created in it on 2026-10-09
+([#2556](https://github.com/pdcarlson/Frapp/issues/2556)), so the forms can be filled in. Written
 2026-09-27 for [#2557](https://github.com/pdcarlson/Frapp/issues/2557). Where an answer rests on a
 Play rule, the rule comes from search-result snippets of Play Console Help, because
 support.google.com is blocked from the cloud sandbox. Those answers carry *(rule unverified)*: check
@@ -692,9 +693,6 @@ Contacts, Installed apps, Web browsing, and the remaining Personal info types.
 | Government app | No |
 | Financial features | **The app provides no financial features.** It shows a member the dues their chapter bills them, and no payment can be taken while EAS `production` has no Stripe key. The same conditional as the Financial info row: revisit if the key ships |
 | Health apps | No health features. Study hours are an academic record |
-
-Nothing on this page can be entered before the developer account exists (#2556), and the Data
-safety form asks for the app's package, so create the app as `live.frapp.mobile` first.
 
 ## Android-specific
 

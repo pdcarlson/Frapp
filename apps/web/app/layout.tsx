@@ -30,7 +30,7 @@ const figtree = localFont({
  * while the product was named Signet) until the #920 slice corrected that one
  * by hand, which is the whole argument for spelling it once. ADR-25 step 4
  * then moved the name from Signet to Frapp by changing the two strings below,
- * and `scripts/ci/__tests__/frapp-web-titles.test.mjs` pins them.
+ * and `scripts/ci/__tests__/frapp-naming.test.mjs` pins them.
  *
  * The default was `"Signet Admin Dashboard"`. It is the only string in the
  * product that calls this surface an admin dashboard, and it is wrong on the

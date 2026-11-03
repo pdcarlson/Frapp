@@ -3,10 +3,12 @@ import { DiscordImportController } from '../../interface/controllers/discord-imp
 import { DiscordConnectionController } from '../../interface/controllers/discord-connection.controller';
 import { DiscordAuthorLinkController } from '../../interface/controllers/discord-author-link.controller';
 import { DiscordImportService } from '../../application/services/discord-import.service';
+import { DiscordImportChannelMappingService } from '../../application/services/discord-import-channel-mapping.service';
+import { DiscordImportRoleMappingService } from '../../application/services/discord-import-role-mapping.service';
 import { DiscordOAuthService } from '../../application/services/discord-oauth.service';
 import { DiscordAuthorLinkService } from '../../application/services/discord-author-link.service';
-import { DiscordImportWorkerService } from '../discord-import-worker/discord-import-worker.service';
-import { DiscordExportWorkerService } from '../discord-import-worker/discord-export-worker.service';
+import { DiscordImportWorkerService } from '../../application/workers/discord-import-worker.service';
+import { DiscordExportWorkerService } from '../../application/workers/discord-export-worker.service';
 import { SupabaseDiscordImportRepository } from '../../infrastructure/supabase/repositories/supabase-discord-import.repository';
 import { SupabaseDiscordConnectionRepository } from '../../infrastructure/supabase/repositories/supabase-discord-connection.repository';
 import { SupabaseDiscordAuthorLinkRepository } from '../../infrastructure/supabase/repositories/supabase-discord-author-link.repository';
@@ -69,6 +71,8 @@ import {
   ],
   providers: [
     DiscordImportService,
+    DiscordImportChannelMappingService,
+    DiscordImportRoleMappingService,
     DiscordOAuthService,
     DiscordAuthorLinkService,
     DiscordImportWorkerService,

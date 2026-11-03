@@ -18,7 +18,7 @@ import { SupabaseQueryError } from '../supabase-query-error';
  *
  * That trade is only safe *per poll*. These RPCs emit one row per (poll,
  * option), and an RPC result set is subject to `max_rows` exactly like a table
- * read (`report.service.ts` says the same of `get_points_report`), so a
+ * read (`supabase-report.repository.ts` says the same of `get_points_report`), so a
  * 200-poll `listPolls` page can still overrun the 1000-row cap and truncate
  * silently — **#1756**, which pages them. `getPoll` passes a single message id
  * and reads at most `options.length` rows, so it is structurally clear of that.

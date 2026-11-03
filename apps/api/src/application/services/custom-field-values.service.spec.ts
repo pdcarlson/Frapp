@@ -2,59 +2,34 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CustomFieldService } from './custom-field.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { createAuditLogServiceMock } from '#test/helpers/audit-log.mock';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { CUSTOM_FIELD_REPOSITORY } from '#domain/repositories/custom-field.repository.interface';
 import type { CustomFieldVisibility } from '#domain/entities/chapter-custom-field.entity';
 
 const CHAPTER_ID = 'chapter-1';
 const MEMBER_ID = 'member-1';
 
 /**
- * Per-table thenable builder: every chain method (select/eq/in/order) returns
- * the same builder, and awaiting it resolves with the configured result. This
- * covers both terminal shapes `findVisibleValuesForMember` uses — `.order()`
- * (definitions) and `.eq()` (values).
+ * Repository double for the two reads `findVisibleValuesForMember` makes: the
+ * visibility-filtered definitions, then the member's values for those ids.
  */
-function makeSupabase(opts: {
+function makeRepo(opts: {
   defs?: unknown[];
   values?: { field_id: string; value: string | null }[];
 }) {
-  // Capture the `.in('visibility', [...])` argument so tests can assert that
-  // out-of-tier definitions are never even queried.
-  const inCalls: { column: string; values: unknown }[] = [];
-
-  function builder(result: { data: unknown; error: unknown }) {
-    const b: Record<string, unknown> = {};
-    const chain = () => b;
-    b.select = jest.fn(chain);
-    b.eq = jest.fn(chain);
-    b.order = jest.fn(chain);
-    b.in = jest.fn((column: string, values: unknown) => {
-      inCalls.push({ column, values });
-      return b;
-    });
-    b.then = (resolve: (v: unknown) => unknown) => resolve(result);
-    return b;
-  }
-
-  const from = jest.fn((table: string) => {
-    if (table === 'chapter_custom_fields') {
-      return builder({ data: opts.defs ?? [], error: null });
-    }
-    if (table === 'member_custom_field_values') {
-      return builder({ data: opts.values ?? [], error: null });
-    }
-    throw new Error(`unexpected table ${table}`);
-  });
-
-  return { client: { from } as never, inCalls };
+  return {
+    findByVisibility: jest.fn().mockResolvedValue(opts.defs ?? []),
+    findValuesForMember: jest.fn().mockResolvedValue(opts.values ?? []),
+  };
 }
 
 describe('CustomFieldService.findVisibleValuesForMember', () => {
-  async function build(supabase: never): Promise<CustomFieldService> {
+  async function build(
+    repo: ReturnType<typeof makeRepo>,
+  ): Promise<CustomFieldService> {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CustomFieldService,
-        { provide: SUPABASE_CLIENT, useValue: supabase },
+        { provide: CUSTOM_FIELD_REPOSITORY, useValue: repo },
         // Read-only path: nothing here audits, but the service now injects the
         // one audit writer (#2167), so the container needs it bound.
         {
@@ -67,14 +42,15 @@ describe('CustomFieldService.findVisibleValuesForMember', () => {
   }
 
   it('only queries definitions in the allowed visibility set', async () => {
-    const { client, inCalls } = makeSupabase({ defs: [], values: [] });
-    const service = await build(client);
+    const repo = makeRepo({ defs: [], values: [] });
+    const service = await build(repo);
 
     const allowed = new Set<CustomFieldVisibility>(['chapter']);
     await service.findVisibleValuesForMember(CHAPTER_ID, MEMBER_ID, allowed);
 
-    expect(inCalls).toHaveLength(1);
-    expect(inCalls[0]).toEqual({ column: 'visibility', values: ['chapter'] });
+    expect(repo.findByVisibility).toHaveBeenCalledWith(CHAPTER_ID, ['chapter']);
+    // No visible definitions, so no value lookup at all.
+    expect(repo.findValuesForMember).not.toHaveBeenCalled();
   });
 
   it('joins each visible definition to the member value (null when unset)', async () => {
@@ -94,11 +70,9 @@ describe('CustomFieldService.findVisibleValuesForMember', () => {
         visibility: 'chapter',
       },
     ];
-    const { client } = makeSupabase({
-      defs,
-      values: [{ field_id: 'f1', value: '3.9' }],
-    });
-    const service = await build(client);
+    const service = await build(
+      makeRepo({ defs, values: [{ field_id: 'f1', value: '3.9' }] }),
+    );
 
     const result = await service.findVisibleValuesForMember(
       CHAPTER_ID,
@@ -145,8 +119,8 @@ describe('CustomFieldService.findVisibleValuesForMember', () => {
         visibility: 'chapter',
       },
     ];
-    const { client, inCalls } = makeSupabase({ defs, values: [] });
-    const service = await build(client);
+    const repo = makeRepo({ defs, values: [] });
+    const service = await build(repo);
 
     await service.findVisibleValuesForMember(
       CHAPTER_ID,
@@ -154,15 +128,15 @@ describe('CustomFieldService.findVisibleValuesForMember', () => {
       new Set<CustomFieldVisibility>(['chapter']),
     );
 
-    expect(inCalls).toContainEqual({
-      column: 'field_id',
-      values: ['f1', 'f2'],
-    });
+    expect(repo.findValuesForMember).toHaveBeenCalledWith(MEMBER_ID, [
+      'f1',
+      'f2',
+    ]);
   });
 
   it('short-circuits to empty (no query) when no visibility tier is allowed', async () => {
-    const { client, inCalls } = makeSupabase({ defs: [{ id: 'f1' }] });
-    const service = await build(client);
+    const repo = makeRepo({ defs: [{ id: 'f1' }] });
+    const service = await build(repo);
 
     const result = await service.findVisibleValuesForMember(
       CHAPTER_ID,
@@ -171,6 +145,7 @@ describe('CustomFieldService.findVisibleValuesForMember', () => {
     );
 
     expect(result).toEqual([]);
-    expect(inCalls).toHaveLength(0);
+    expect(repo.findByVisibility).not.toHaveBeenCalled();
+    expect(repo.findValuesForMember).not.toHaveBeenCalled();
   });
 });

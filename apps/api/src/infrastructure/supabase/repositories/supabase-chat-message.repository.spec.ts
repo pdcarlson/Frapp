@@ -221,7 +221,7 @@ describe('SupabaseChatMessageRepository — tenant scope', () => {
   });
 
   it('findAuthorAvatarPaths ignores a message id belonging to another channel (#1231)', async () => {
-    // `ChatService.resolveAuthorAvatars` never trusts a caller-supplied
+    // `ChatAttachmentService.resolveAuthorAvatars` never trusts a caller-supplied
     // storage path — it derives the path set from message ids the caller
     // already proved access to via `channelId`. A POLL_A id handed to
     // channel B's lookup must contribute nothing, or that boundary is a lie.
@@ -345,5 +345,77 @@ describe('SupabaseChatMessageRepository — findByChannel since, a failed pivot 
 
     expect(failure).toBeInstanceOf(SupabaseQueryError);
     expect(failure).not.toBeInstanceOf(ChatMessageCursorNotFoundError);
+  });
+});
+
+describe('SupabaseChatMessageRepository — insertIdempotent', () => {
+  function clientAnswering(error: unknown) {
+    const insert = jest.fn(() => Promise.resolve({ error }));
+    const client = {
+      from: jest.fn(() => ({ insert })),
+    } as unknown as FrappSupabaseClient;
+    return { client, insert };
+  }
+
+  const row = {
+    channel_id: 'channel-1',
+    sender_id: 'sender-1',
+    content: 'mirrored',
+    client_message_id: 'audit:audit-1',
+  };
+
+  it('inserts without reading the row back', async () => {
+    const { client, insert } = clientAnswering(null);
+
+    await expect(
+      new SupabaseChatMessageRepository(client).insertIdempotent(row),
+    ).resolves.toBe('inserted');
+    expect(insert).toHaveBeenCalledWith(row);
+  });
+
+  it('reports a unique violation as a duplicate rather than throwing', async () => {
+    const { client } = clientAnswering({ code: '23505', message: 'dup' });
+
+    await expect(
+      new SupabaseChatMessageRepository(client).insertIdempotent(row),
+    ).resolves.toBe('duplicate');
+  });
+
+  it('throws a unique violation on a row without the dedupe key', async () => {
+    // Only the dedupe triple makes a 23505 mean "already landed"; without a
+    // `client_message_id` it is some other unique index, and the row is lost.
+    const { client } = clientAnswering({ code: '23505', message: 'dup' });
+    const withoutKey = {
+      channel_id: row.channel_id,
+      sender_id: row.sender_id,
+      content: row.content,
+    };
+
+    await expect(
+      new SupabaseChatMessageRepository(client).insertIdempotent(withoutKey),
+    ).rejects.toBeInstanceOf(SupabaseQueryError);
+  });
+
+  it('treats a null sender as part of the dedupe key, and a missing one as not', async () => {
+    // The index is NULLS NOT DISTINCT, so a null-sender row collides on the
+    // triple like any other; only an absent `sender_id` leaves the key unknown.
+    const { client } = clientAnswering({ code: '23505', message: 'dup' });
+    const repo = new SupabaseChatMessageRepository(client);
+    const { sender_id: _omitted, ...withoutSender } = row;
+
+    await expect(
+      repo.insertIdempotent({ ...row, sender_id: null }),
+    ).resolves.toBe('duplicate');
+    await expect(repo.insertIdempotent(withoutSender)).rejects.toBeInstanceOf(
+      SupabaseQueryError,
+    );
+  });
+
+  it('throws any other error as a SupabaseQueryError', async () => {
+    const { client } = clientAnswering({ code: '42501', message: 'denied' });
+
+    await expect(
+      new SupabaseChatMessageRepository(client).insertIdempotent(row),
+    ).rejects.toBeInstanceOf(SupabaseQueryError);
   });
 });

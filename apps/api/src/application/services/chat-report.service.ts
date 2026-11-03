@@ -26,6 +26,7 @@ import {
   ReportedMessageGrant,
 } from './channel-access.service';
 import { ChatService } from './chat.service';
+import { ChatAttachmentService } from './chat-attachment.service';
 import type {
   ReportedMessageRemoval,
   ReportedMessageState,
@@ -66,7 +67,7 @@ export const REPORT_QUEUE_PERMISSIONS = CHAT_REPORT_QUEUE_PERMISSIONS;
  * if the delete fails, all inside one request. So for this long after a
  * report resolves, its evidence is treated as possibly still needed: the
  * sweep leaves the report alone, and another report's release keeps what it
- * holds and waits ({@link ChatService.releaseReportEvidence}). Past it, a
+ * holds and waits ({@link ChatAttachmentService.releaseReportEvidence}). Past it, a
  * resolved report can't reopen, and its unfinished release holds nothing
  * back. The resolution path releases the evidence itself, so this only ever
  * delays a release that did not finish, and a quarter of an hour late costs
@@ -158,6 +159,7 @@ export class ChatReportService {
     private readonly reportRepo: IChatMessageReportRepository,
     private readonly channelAccess: ChannelAccessService,
     private readonly chatService: ChatService,
+    private readonly attachments: ChatAttachmentService,
     private readonly rbac: RbacService,
     private readonly notificationService: NotificationService,
   ) {}
@@ -245,7 +247,7 @@ export class ChatReportService {
     }
 
     const reportedAttachments =
-      await this.chatService.reportedAttachmentsSnapshot(
+      await this.attachments.reportedAttachmentsSnapshot(
         input.message_id,
         chapterId,
       );
@@ -638,7 +640,7 @@ export class ChatReportService {
       await this.releaseClaim(reportId, chapterId, officerUserId, claimedAt);
       return;
     }
-    await this.chatService.purgeRemovedMessageAttachments(messageId, chapterId);
+    await this.attachments.purgeRemovedMessageAttachments(messageId, chapterId);
     try {
       const swept = await this.reportRepo.resolveOpenForMessage(
         chapterId,
@@ -831,7 +833,7 @@ export class ChatReportService {
     if (!evidence) throw new NotFoundException('Report not found');
     if (evidence.status !== 'open') throw reportNoLongerOpen();
     if (evidence.reported_attachments.length === 0) return [];
-    return this.chatService.signReportEvidence(
+    return this.attachments.signReportEvidence(
       evidence.id,
       evidence.reported_attachments,
     );
@@ -943,7 +945,7 @@ export class ChatReportService {
     reports: readonly ReportEvidence[],
     now: Date,
   ): Promise<number> {
-    const finished = await this.chatService.releaseReportEvidence(
+    const finished = await this.attachments.releaseReportEvidence(
       chapterId,
       reports,
       new Date(now.getTime() - EVIDENCE_CLAIM_WINDOW_MS),

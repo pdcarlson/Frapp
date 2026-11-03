@@ -21,7 +21,7 @@ import {
   type AnnouncementPayload,
   type PollPayload,
   type SlashCommand,
-} from "@repo/chat-integrations";
+} from "./integrations";
 import {
   sendMessage,
   insertLocalPlaceholder,

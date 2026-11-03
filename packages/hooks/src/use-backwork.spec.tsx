@@ -11,7 +11,6 @@ import {
   useProfessors,
   useRequestBackworkUploadUrl,
   useConfirmBackworkUpload,
-  useDeleteBackworkResource,
   useUpdateDepartment,
   useUpdateProfessor,
   useMergeDepartments,
@@ -316,40 +315,6 @@ const CHAPTER_ID = "chapter-abc";
       };
 
       await expect(result.current.mutateAsync(body)).rejects.toThrowError(mockError);
-    });
-  });
-
-  describe("useDeleteBackworkResource", () => {
-    it("deletes a backwork resource and invalidates queries", async () => {
-      const mockData = { success: true };
-      const mockDelete = vi.fn().mockResolvedValue({ data: mockData, error: null });
-      const mockClient = { DELETE: mockDelete };
-      const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
-
-      const { result } = renderHook(() => useDeleteBackworkResource(), {
-        wrapper: createWrapper(mockClient),
-      });
-
-      await expect(result.current.mutateAsync("res1")).resolves.toEqual(mockData);
-
-      expect(mockDelete).toHaveBeenCalledWith("/v1/backwork/{id}", {
-        params: { path: { id: "res1" } },
-      });
-      expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-        queryKey: BACKWORK_KEY,
-      });
-    });
-
-    it("surfaces an error when delete fails", async () => {
-      const mockError = new Error("Delete failed");
-      const mockDelete = vi.fn().mockResolvedValue({ data: null, error: mockError });
-      const mockClient = { DELETE: mockDelete };
-
-      const { result } = renderHook(() => useDeleteBackworkResource(), {
-        wrapper: createWrapper(mockClient),
-      });
-
-      await expect(result.current.mutateAsync("res1")).rejects.toThrowError(mockError);
     });
   });
 

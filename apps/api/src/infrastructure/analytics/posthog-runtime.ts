@@ -6,16 +6,13 @@ import {
   POSTHOG_EXCEPTION_AUTOCAPTURE,
   SENTRY_ERROR_CORRELATED_EVENT,
   formatSampleRateWarning,
-  isPseudonymHex,
   parseSampleRate,
   pickSentryErrorCorrelatedProperties,
 } from '@repo/observability';
 import type { AnalyticsEvent } from '@repo/validation';
 import { PostHog, type EventMessage } from 'posthog-node';
 import type { IAnalyticsProvider } from '#domain/adapters/analytics.interface';
-import type { IFeatureFlagProvider } from '#domain/adapters/feature-flag.interface';
 import { NoopAnalyticsProvider } from './noop-analytics.provider';
-import { NoopFeatureFlagProvider } from './noop-feature-flags.provider';
 import { parsePosthogConfig, type PosthogConfig } from './posthog-config';
 import type { PosthogFetch } from './posthog-transport';
 import { logThrowable } from '../observability/log-throwable';
@@ -39,8 +36,8 @@ export interface PosthogRuntimeOptions {
 }
 
 /**
- * One PostHog Node client for the process: product events, sanitized logs,
- * and server-side flags. Init once. No-op without a valid project key.
+ * One PostHog Node client for the process: product events and sanitized
+ * logs. Init once. No-op without a valid project key.
  *
  * Do **not** install `@opentelemetry/sdk-node` here. Sentry owns the API's
  * tracing (ADR-22). Logs are an independent HTTP transform to
@@ -60,7 +57,6 @@ export class PosthogRuntime {
   private lastBatchHttpStatus: number | undefined;
 
   readonly analytics: IAnalyticsProvider;
-  readonly flags: IFeatureFlagProvider;
 
   constructor(private readonly options: PosthogRuntimeOptions) {
     const userFetch = options.fetch ?? defaultFetch;
@@ -90,7 +86,6 @@ export class PosthogRuntime {
       before_send: (event) => this.beforeSend(event),
     });
     this.analytics = new PosthogAnalyticsProvider(this);
-    this.flags = new PosthogFeatureFlagAdapter(this);
   }
 
   get logsSampleRate(): number {
@@ -184,30 +179,6 @@ export class PosthogRuntime {
     const rate = this.logsSampleRate;
     if (rate >= 1) return true;
     return shouldSample(getRequestId() || randomUUID(), rate);
-  }
-
-  async isFeatureEnabled(
-    flagKey: string,
-    distinctId: string,
-    chapterGroupId?: string | null,
-  ): Promise<boolean> {
-    if (!isPseudonymHex(distinctId)) return false;
-    if (chapterGroupId && !isPseudonymHex(chapterGroupId)) return false;
-    try {
-      const enabled = await this.client.isFeatureEnabled(flagKey, distinctId, {
-        groups: chapterGroupId ? { chapter: chapterGroupId } : undefined,
-        sendFeatureFlagEvents: false,
-      });
-      return enabled === true;
-    } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `PostHog flag "${flagKey}" evaluation failed; failing closed`,
-        error,
-      );
-      return false;
-    }
   }
 
   async flush(): Promise<void> {
@@ -311,21 +282,8 @@ export class PosthogAnalyticsProvider implements IAnalyticsProvider {
   }
 }
 
-class PosthogFeatureFlagAdapter implements IFeatureFlagProvider {
-  constructor(private readonly runtime: PosthogRuntime) {}
-
-  isEnabled(
-    flagKey: string,
-    distinctId: string,
-    chapterGroupId?: string | null,
-  ): Promise<boolean> {
-    return this.runtime.isFeatureEnabled(flagKey, distinctId, chapterGroupId);
-  }
-}
-
 class DisabledPosthogRuntime {
   readonly analytics = new NoopAnalyticsProvider();
-  readonly flags = new NoopFeatureFlagProvider();
 
   captureSentryErrorCorrelated(): void {}
   enqueueSanitizedLog(): void {}

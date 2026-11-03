@@ -100,10 +100,10 @@
  * The durations and easings are the legacy `@repo/theme` motion scale carried
  * forward (foundations §11: the discipline is settled, the numbers are
  * provisional). They are restated as custom properties here only because that
- * scale has no CSS form — `packages/theme/src/tokens.ts` is JavaScript, the
+ * scale has no CSS form — `packages/theme/src/motion.ts` is JavaScript, the
  * Tailwind preset interpolates it at build time, and `signet.css` declares no
  * motion token at all. This is a mirror, not a second scale: `app/page.spec.ts`
- * reads both files and fails if a number here stops matching `tokens.ts`.
+ * reads both files and fails if a number here stops matching `motion.ts`.
  */
 @layer base {
   :root {

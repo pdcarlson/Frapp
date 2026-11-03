@@ -1,9 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { type AnalyticsProperties } from '@repo/validation';
 import {
   activationMilestoneStep,
   type ActivationMilestone,
-  type AnalyticsProperties,
-} from '@repo/validation';
+} from '#domain/constants/activation-milestones';
 import {
   ACTIVATION_MILESTONE_REPOSITORY,
   type IActivationMilestoneRepository,

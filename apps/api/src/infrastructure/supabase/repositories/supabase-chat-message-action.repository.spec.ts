@@ -12,7 +12,7 @@ import {
  * Tenant scope for `chat_message_actions`.
  *
  * No method here takes a chapter, and the table has no `chapter_id` — an
- * action's chapter is its message's channel's. `ChatService.recordMessageAction`
+ * action's chapter is its message's channel's. `ChatReactionService.recordMessageAction`
  * establishes that first via `assertMessageAccess`, so every call is already
  * scoped to a message the caller can see.
  *

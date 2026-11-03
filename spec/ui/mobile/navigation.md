@@ -219,7 +219,9 @@ surface. `scripts/ci/__tests__/frapp-mobile-permissions.test.mjs` (then
 prompt floor from two to three with this slice, which is exactly what that file's block on
 the floor going three to two (#2296) and back to three (#2464) said the raise was for.
 *2026-09-30 (#2343):* the floor is gone. The introspected gate pins which prompts exist,
-and the copy lock asserts only that they name Frapp.
+and the copy lock asserts only that they name Frapp. *2026-10-07 (#3225):* that copy lock is
+now a row in `scripts/ci/__tests__/frapp-naming.test.mjs`, which replaced the thirteen per-surface
+rename locks.
 
 **`app.json` also gained `ios.privacyManifests`** (#2294, same PR as the removal above) —
 the iOS privacy manifest, without which App Store Connect returns an automated

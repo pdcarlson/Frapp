@@ -6,7 +6,7 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
-import { escapeFilterValue } from '../supabase.utils';
+import { escapeFilterValue, omitColumns } from '../supabase.utils';
 import type {
   CreateChatReportInput,
   CreateChatReportResult,
@@ -524,16 +524,15 @@ function resolutionPatch(
  * surface, API route, or repository method that answers 'who reported me'."
  */
 function stripReportRow(row: Record<string, unknown>): ChatMessageReportView {
-  // `delete` on a copy rather than a discarded destructuring binding — an
-  // unused `_reporterUserId` binding is a lint error here.
-  const rest = { ...row };
-  delete (rest as { reporter_user_id?: unknown }).reporter_user_id;
   // The held attachments leave as summaries, without their storage location
   // (#2481): the queue names the files, and an officer reaches the bytes only
   // through the report's own signing route. The release stamp is the API's
   // bookkeeping. The same boundary as the reporter: nothing here is filtered
   // on the way out by anything else.
-  delete (rest as { evidence_released_at?: unknown }).evidence_released_at;
+  const rest = omitColumns<Record<string, unknown>>(row, [
+    'reporter_user_id',
+    'evidence_released_at',
+  ]);
   rest.reported_attachments = readAttachments(row.reported_attachments).map(
     ({ filename, content_type, byte_size }) => ({
       filename,

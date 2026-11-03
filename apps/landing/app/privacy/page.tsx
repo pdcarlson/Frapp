@@ -10,7 +10,7 @@ export const metadata: Metadata = routeMetadata({
 });
 
 // A material change here moves `lastUpdated` below and bumps
-// `LEGAL_POLICY_VERSION` in `@repo/validation`, which asks every user to accept
+// `LEGAL_POLICY_VERSION` in the API, which asks every user to accept
 // again. Any change to the text updates this page's pin in
 // scripts/ci/__tests__/legal-policy-version.test.mjs, which enforces both. The
 // rule: spec/behavior/legal.md § Acceptance record.

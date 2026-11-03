@@ -45,7 +45,7 @@ import {
 import { Can } from "@/components/shared/can";
 import { RolesGlyph } from "@/components/layout/nav-glyphs";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
   asArray,

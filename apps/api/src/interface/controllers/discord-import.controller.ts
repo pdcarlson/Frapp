@@ -18,6 +18,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { DiscordImportService } from '../../application/services/discord-import.service';
+import { DiscordImportChannelMappingService } from '../../application/services/discord-import-channel-mapping.service';
+import { DiscordImportRoleMappingService } from '../../application/services/discord-import-role-mapping.service';
 import { toDiscordImportView } from '../../application/services/discord-import-view';
 import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
@@ -72,6 +74,8 @@ import {
 export class DiscordImportController {
   constructor(
     private readonly importService: DiscordImportService,
+    private readonly channelMapping: DiscordImportChannelMappingService,
+    private readonly roleMapping: DiscordImportRoleMappingService,
     private readonly rbacService: RbacService,
   ) {}
 
@@ -210,7 +214,7 @@ export class DiscordImportController {
     @CurrentChapterId() chapterId: string,
     @Body() dto: SetDiscordChannelMappingDto,
   ) {
-    return this.importService.setChannelMapping(id, chapterId, dto.channels);
+    return this.channelMapping.setChannelMapping(id, chapterId, dto.channels);
   }
 
   @Put(':id/roles')
@@ -237,7 +241,7 @@ export class DiscordImportController {
       [SystemPermissions.ROLES_MANAGE],
     );
     return toDiscordImportView(
-      await this.importService.setRoleMapping(
+      await this.roleMapping.setRoleMapping(
         id,
         chapterId,
         dto.roles,
@@ -259,7 +263,7 @@ export class DiscordImportController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
   ) {
-    return this.importService.discoverBotChannels(id, chapterId);
+    return this.channelMapping.discoverBotChannels(id, chapterId);
   }
 
   @Put(':id/discovered-channels')
@@ -275,7 +279,7 @@ export class DiscordImportController {
     @CurrentChapterId() chapterId: string,
     @Body() dto: SetDiscordChannelMappingDto,
   ) {
-    return this.importService.applyDiscoveredChannelMapping(
+    return this.channelMapping.applyDiscoveredChannelMapping(
       id,
       chapterId,
       dto.channels,

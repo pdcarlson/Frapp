@@ -1,6 +1,6 @@
 # Getting Started with Frapp
 
-This guide walks you through setting up the Frapp monorepo and running the full stack locally with Supabase.
+This guide walks you through setting up the Frapp monorepo and running the full stack locally with Supabase. It is the one step-by-step setup; other docs link here rather than restating it. Alternatives to the default path (per-app terminals, no Infisical, mobile) and the port table live in [`LOCAL_DEV.md`](../internal/environment/LOCAL_DEV.md).
 
 > **Using Claude Code web?** That agent environment
 > sets itself up — skip this guide and see
@@ -10,11 +10,12 @@ This guide walks you through setting up the Frapp monorepo and running the full 
 
 ## Prerequisites
 
-- **Node.js** at or above the root `package.json` `engines.node` (`nvm use` reads `.nvmrc`, which pins only the major, so check `node -v` against `engines.node`)
+- **Node.js** at or above the root `package.json` `engines.node`, which is the one statement of the floor. `.nvmrc`, CI's `node-version:` and `apps/api/Dockerfile` pin only the major, so whichever release of it they land on (an older install under `nvm use`, the runner's cached toolchain, a cached image layer) can sit below the floor. Check `node -v` against `engines.node`.
 - **npm** 10+
-- **Docker Desktop** (for Supabase)
-- **Supabase CLI**: nothing to install. The repo pins the version CI deploys with, and `npm run supabase -- <args>` runs it (the bootstrap below uses the same one)
+- **Docker** available to your shell (Docker Desktop with WSL integration on Windows/WSL, or Docker Engine on Linux)
+- **Supabase CLI**: nothing to install. The repo pins the version CI deploys with, and `npm run supabase -- <args>` runs it, installing it into the gitignored `.cache/supabase-cli/` on first use (`scripts/lib/supabase-cli.sh`); the bootstrap below uses the same one
 - **Git**
+- **Expo Go** on an iOS or Android device, only if you will run the mobile app
 
 ## 1. Clone the repository
 
@@ -82,9 +83,10 @@ From the repo root, if you skipped the script:
 npm install
 npm run supabase -- start
 npm run supabase -- db push --local
+bash -c '. scripts/lib/supabase-cli.sh && . scripts/lib/local-postgres-acl.sh && frapp_repair_local_acls "$PWD" frapp_supabase'
 ```
 
-This spins up the local Supabase stack (Postgres, Auth, Storage, Realtime, Studio) using Docker and applies our migrations from `supabase/migrations/`.
+This spins up the local Supabase stack (Postgres, Auth, Storage, Realtime, Studio) using Docker and applies our migrations from `supabase/migrations/`. The last line is the default-ACL repair the bootstrap script runs for you; skip it and every API query fails with `42501 permission denied` (see step 2).
 
 You can open Supabase Studio at:
 
@@ -102,7 +104,7 @@ You can open Supabase Studio at:
 
 When `supabase start` finishes, it prints the local project URL and keys (`API URL`, `anon key`, `service_role key`) — use those when filling Infisical `dev` or when building `.env.local` manually.
 
-**Fallback:** create `.env.local` per app from those values and `docs/internal/environment/ENV_REFERENCE.md`, then run the non-Infisical commands in [`docs/internal/environment/LOCAL_DEV.md`](../internal/environment/LOCAL_DEV.md).
+**Fallback:** create `.env.local` per app from those values and `docs/internal/environment/ENV_REFERENCE.md`, then follow [`LOCAL_DEV.md` § Fallback without Infisical](../internal/environment/LOCAL_DEV.md#fallback-without-infisical) (the required Stripe values and the non-Infisical commands).
 
 > **Warning:** Never commit `.env.local` files. They contain real secrets. All staging and production secrets are managed in Infisical — see `docs/internal/environment/SECRETS_MANAGEMENT.md`.
 

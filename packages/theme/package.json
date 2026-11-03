@@ -6,7 +6,6 @@
   "exports": {
     "./tailwind": "./src/tailwind.config.ts",
     "./signet.css": "./src/signet.css",
-    "./accent": "./src/accent.ts",
     "./signet": "./src/signet.ts"
   },
   "scripts": {
@@ -15,15 +14,13 @@
     "test": "vitest run",
     "test:cov": "vitest run --coverage"
   },
-  "dependencies": {
-    "@repo/color": "*"
-  },
   "devDependencies": {
+    "@repo/color": "*",
     "@repo/chapter-theme": "*",
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
     "@tailwindcss/postcss": "^4.3.3",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.4",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.3.3",
     "typescript": "npm:@typescript/typescript6@6.0.2",

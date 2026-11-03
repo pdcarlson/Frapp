@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { getMetadataStorage, validate, ValidationTypes } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
-import { INT4_MAX } from '@repo/validation';
+import { INT4_MAX } from '#domain/constants/field-limits';
 import { loadDtoClasses, type DtoClass } from '#test/helpers/dto-corpus';
 
 /**

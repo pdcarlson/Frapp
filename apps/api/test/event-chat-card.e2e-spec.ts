@@ -44,9 +44,10 @@ const createdEvent = {
 /**
  * Verifies the `/event` slash command's server entry point: the controller
  * forwards `channel_id` / `client_message_id` into `EventService.create` (which
- * posts the server-originated card), and the UUID fields are validated by the
- * global pipe. The card-posting + forgery-guard behaviour itself is unit-tested
- * in `event.service.spec.ts` / `chat.service.spec.ts`.
+ * posts the server-originated card through `EventAnnouncementService`), and
+ * the UUID fields are validated by the global pipe. The card-posting +
+ * forgery-guard behaviour itself is unit-tested in
+ * `event-announcement.service.spec.ts` / `chat.service.spec.ts`.
  */
 describe('Event chat card — create endpoint wiring (e2e)', () => {
   let app: INestApplication;

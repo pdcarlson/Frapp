@@ -37,7 +37,7 @@ import {
 } from "@/components/shared/nested-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { AttachGlyph } from "@/components/chat/chat-glyphs";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";

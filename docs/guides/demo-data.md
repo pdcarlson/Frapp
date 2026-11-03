@@ -25,12 +25,12 @@ rebuilds the chapter from scratch. It refuses any non-loopback `SUPABASE_URL`;
 [Seed a hosted project](#seed-a-hosted-project) covers those.
 
 It seeds one chapter (**Beta Theta Omega**, Westfield University, all modules on,
-Signet gold accent) with 26 members across the seven system roles, 12 events with
-attendance, 16 tasks (two of them the demo login's own), service hours in every
-review state, a points ledger, dues config plus paid/open invoices, five chat
-channels with conversation, three polls with vote spreads, study geofences and
-sessions, ten documents, and an eleven-item backwork archive. Every document and
-backwork row opens: its file is a one-page PDF saying it is demo content.
+Signet gold accent) with a roster across the system roles, events with
+attendance, tasks, service hours in every review state, a points ledger, dues
+config plus paid/open invoices, chat channels with conversation, polls, study
+geofences and sessions, documents and a backwork archive; the exact contents are
+in `scripts/demo/demo-seed.sql`. Every document and backwork row opens: its file
+is a one-page PDF saying it is demo content.
 
 Sign in at <http://localhost:3000/sign-in> as:
 

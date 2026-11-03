@@ -15,7 +15,7 @@ import { useContext, useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "@repo/hooks";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 import {
   browserKeyValueStore,

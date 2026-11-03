@@ -16,7 +16,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { ErrorState, LoadingState } from "@/components/shared/async-states";
-import { filterSlashCommands, type SlashCommand } from "@repo/chat-integrations";
+import { filterSlashCommands, type SlashCommand } from "@repo/chat-core/integrations";
 
 export interface SlashPaletteProps {
   open: boolean;

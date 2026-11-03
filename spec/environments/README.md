@@ -34,77 +34,25 @@ with green CI. The `production` branch that used to occupy this table was retire
 
 ## 2. Local Development
 
-### Prerequisites
+The local environment is a developer machine running the apps against a local Supabase stack
+(Postgres, Auth, Storage, Realtime) in Docker, on the repo's pinned Supabase CLI, with migrations
+from `supabase/migrations/` applied by `db push --local`. Secrets come from Infisical's `dev`
+environment, injected by the root `npm run dev:*` scripts; a `.env.local` per app built from
+`npm run -s supabase -- status -o env` and
+[`ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md) is the fallback. Mobile is
+the exception: Infisical `dev` holds no `EXPO_PUBLIC_*` name, so `apps/mobile/.env.local` always
+carries those values ([`LOCAL_DEV.md` § Mobile](../../docs/internal/environment/LOCAL_DEV.md#mobile)). The
+Claude Code cloud sandbox brings up the same stack itself
+([`CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md)).
 
-- Node.js at or above the root `package.json` `engines.node`, which is the one statement of the floor. `.nvmrc`, CI's `node-version:` and `apps/api/Dockerfile` pin only the major, so whichever release of it they land on (an older install under `nvm use`, the runner's cached toolchain, a cached image layer) can sit below the floor. Check `node -v` against `engines.node`.
-- npm v10+
-- Docker available to your shell (Docker Desktop with **WSL integration** on Windows/WSL, or Docker Engine on Linux)
-- Supabase CLI: none to install. The repo pins one version, the one CI deploys with, and `npm run supabase -- <args>` runs it, installing it into the gitignored `.cache/supabase-cli/` on first use (`scripts/lib/supabase-cli.sh`)
-- Expo Go app on iOS/Android device
-
-### Setup
-
-**One-shot bootstrap (recommended on WSL/Ubuntu):** from the repo root, with Docker already running:
-
-```bash
-bash scripts/local-dev-setup.sh
-# Skip typecheck / migration-safety for a faster loop:
-# bash scripts/local-dev-setup.sh --quick
-# Stuck or exited Supabase containers (this repo only; keeps volumes):
-# bash scripts/local-dev-setup.sh --reset-supabase
-# Wipe local Supabase data volumes (destructive; confirm in terminal):
-# bash scripts/local-dev-setup.sh --reset-supabase-data
-```
-
-The script runs `npm install`, then `supabase start` and `supabase db push --local` on the pinned CLI, the local Postgres default-ACL repair (fatal if it fails; `FRAPP_SKIP_ACL_REPAIR=1` overrides), optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)). It does **not** start `dockerd` (the Claude Code cloud sandbox does — see [`CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md)). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
-
-**Manual sequence** (equivalent):
-
-```bash
-# 1. Install dependencies
-npm install
-
-# 2. Start Supabase local (Postgres, Auth, Storage, Realtime), on the pinned CLI
-npm run supabase -- start
-
-# 3. Apply database migrations (--local targets the local Supabase instance)
-npm run supabase -- db push --local
-
-# 4. Repair the local Postgres default ACLs. The pinned supabase/postgres image ships
-#    schema `public` without DML grants for anon/authenticated/service_role, so skipping
-#    this leaves every API query failing with `42501 permission denied for table ...`.
-#    Not needed if you ran scripts/local-dev-setup.sh above — it does this for you.
-bash -c '. scripts/lib/supabase-cli.sh && . scripts/lib/local-postgres-acl.sh && frapp_repair_local_acls "$PWD" frapp_supabase'
-
-# 5. Start apps — default (with Infisical — see docs/internal/environment/LOCAL_DEV.md):
-npm run dev:stack
-# Per-app, no Infisical, Turbo caveats: docs/internal/environment/LOCAL_DEV.md
-```
-
-### Environment Variables
-
-If you are not using Infisical CLI injection, create a `.env.local` file for each app. Local Supabase keys come from `npm run -s supabase -- status -o env`.
-
-See **[`docs/internal/environment/ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
-
-**Alternative (Infisical CLI):** Skip `.env.local` files entirely by injecting from Infisical:
-
-```bash
-npx infisical run --env=dev -- npm run start:dev -w apps/api
-```
+Prerequisites and the step-by-step setup:
+[`docs/guides/getting-started.md`](../../docs/guides/getting-started.md). Per-app commands,
+mobile, and the no-Infisical fallback:
+[`LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md).
 
 ### Accessing Services
 
 Ports and URLs for web, API, Swagger, landing and Supabase Studio: [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md) § Ports and URLs.
-
-### Running Mobile
-
-```bash
-cd apps/mobile
-npm start
-```
-
-Scan the QR code with Expo Go. Phone and PC must be on the same network.
 
 ### Updating the API Contract
 
@@ -166,7 +114,7 @@ docs gates, so the roster now stays true only because whoever edits the arrays r
 runbook in the same change. Where they disagree, `required-checks.mjs` is the source and the runbook
 is the stale one. What follows is the CI *model* those checks implement.
 
-`web-tests` and `web-responsive-floor` are **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave both satisfiable without ever running. See the ADR-15 amendment in [`../architecture/adr/adr-15.md`](../architecture/adr/adr-15.md) and the comments in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).
+`web-tests` and `web-responsive-floor` are **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave both satisfiable without ever running. See the ADR-15 amendment in [`../architecture/adr/adr-15.md`](../architecture/adr/adr-15.md).
 
 The runbook's roster states the *intended* set — every entry in it is a line in `CI_CHECKS` /
 `DOCS_CHECKS` / `DRIFT_CHECKS` in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs),
@@ -224,8 +172,7 @@ demoted out of `DRIFT_CHECKS` — are in
 Four docs gates used to run here — `docs-structure`, `doc-paths`, `doc-refs` and `doc-tables` — and
 all four are **deleted**, with their scripts, their allowlists and their `check:doc-*` npm scripts.
 `doc-paths` was the only one ever promoted to required, which is why `DOCS_CHECKS` is now an empty
-array; the comment on that array in
-[`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs) records the trade,
+array; [`docs-ci.md`](../../docs/ci-cd/docs-ci.md#what-runs) records the trade,
 and what replaced them is the standard in
 [`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md) plus the docs
 angle in `.claude/skills/diff-review/angles.md`. No gate reads the docs corpus for documentation
@@ -239,8 +186,8 @@ defects now. `link-check` still resolves its links and anchors, and `env-slugs` 
 
 ### Key Design Decisions
 
-- **The frontend build gate is production-shaped, not preview-shaped.** `web-production-build` builds `apps/web` and `apps/landing` under `npm ci --omit=dev`, matching Vercel's production install, because nothing in CI ran `next build` before #1374 and that gap took production down twice (#1331, #1372). Staging frontends are still verified through Vercel preview deployments off `main`; production deployments are created by `deploy-production.yml`. The build-shape difference between the two is a recorded trade-off — ADR-20 decision 3. **The staging half of that has not run since the unlink** (landing 2026-09-01, web 2026-09-02): with both Vercel projects unlinked from Git (ADR-21) no push produces a preview, so no Vercel build of either frontend happens on merge any more — see §6 **Web and Landing (Vercel)**.
-- **No placeholder secrets.** CI never sets `NEXT_PUBLIC_SUPABASE_URL` or similar to dummy values. All env-dependent builds happen in the provider (Vercel/Render).
+- **The frontend build gate is production-shaped, not preview-shaped.** `web-production-build` builds `apps/web` and `apps/landing` under `npm ci --omit=dev`, matching Vercel's production install, because nothing in CI ran `next build` before #1374 and that gap took production down twice (#1331, #1372). Staging and production frontends are both built on the runner by `_deploy.yml` (`vercel build`, Preview target for staging, `--prod` for production) and uploaded with `vercel deploy --prebuilt`; the build-shape difference ADR-20 decision 3 records was between that production build and the Git-integration previews staging used to get. *Corrected 2026-10-07 (#3214): this entry said no Vercel build of either frontend happens on merge. That was true from the Git unlink (ADR-21) until #1578 (2026-09-04), when CI started building and uploading staging web and landing.* See §6 **Web and Landing (Vercel)**.
+- **No placeholder secrets.** CI reads no runtime secret. Where a job needs a value only to exist, it sets a deliberately fake stand-in that lets the program run and ships nowhere: `web-production-build`'s `NEXT_PUBLIC_*` and `api-docker-build`'s boot values in `ci.yml`. What ships gets real values from Infisical: web and landing at build time, injected by `_deploy.yml`; the API at runtime, through Infisical's Render sync (§7). *Corrected 2026-10-07 (#3214): this entry said CI never sets dummy values and that env-dependent builds happen in the provider; neither is true.*
 - **The API contract check regenerates; it is not a git-diff heuristic.** `npm run check:api-contract` (`scripts/check-api-contract-drift.mjs`) builds the shared packages, rebuilds `apps/api/openapi.json` and `packages/api-sdk/src/types.ts`, and fails on any difference from the committed copies — the git-diff heuristic it replaced false-positived on contract-neutral controller edits. The Swagger export does bootstrap NestJS, but only to build the document, so placeholder credentials suffice and no Supabase/Stripe secrets are needed in CI. Details: [`../architecture/README.md`](../architecture/README.md) § 10 API Contract Strategy.
 - **Mobile CI stops short of a native build** (`mobile-validate` in `ci.yml` runs, among other steps, `npm run check:expo-sdk-line`, which fails an Expo package installed off the SDK line or missing from Dependabot's ignore list; `npm run lint`, `check-types`, `test` for `apps/mobile`; an iOS production Metro bundle (`expo export`) on a tree with no prebuilt packages; `npm run check:mobile-native-declarations`, which checks the purpose strings, Android permissions and required-reason declarations the config plugins resolve, and fails a linked iOS pod that declares a Swift package while pods link statically (the 0.78 Stripe break, which `pod install` would otherwise first hit on EAS); and `expo prebuild --no-install`, which generates the native projects without compiling them). EAS builds are expensive and slow; they run on-demand, not per-PR.
 
@@ -418,14 +365,7 @@ environments and current state:
 
 ### Local Development
 
-**Primary method (no `.env.local` files):**
-
-```bash
-npx infisical login       # One-time setup
-npm run dev:stack         # Default: API + web + landing (repo root)
-```
-
-Per-app Infisical commands, mobile, and no-Infisical fallback: **[`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)**.
+How local runs get their secrets, including the mobile exception: [§ 2](#2-local-development).
 
 ### Rules
 

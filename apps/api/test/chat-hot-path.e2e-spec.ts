@@ -11,6 +11,7 @@ import {
 } from './helpers/supabase-mock.factory';
 import { configureApp } from '../src/bootstrap';
 import { createGuardStubs, AllowAllGuard } from './helpers/guard-stubs.factory';
+import { memberFixture } from './helpers/entity-fixtures';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_CATEGORY_REPOSITORY,
@@ -37,8 +38,8 @@ import { SUPABASE_CLIENT } from '../src/infrastructure/supabase/supabase.provide
 import { NotificationService } from '../src/application/services/notification.service';
 import { ActivationService } from '../src/application/services/activation.service';
 import { RbacService } from '../src/application/services/rbac.service';
-import { ChatNotificationPreferenceRepository } from '../src/modules/chat-push-worker/chat-notification-preference.repository';
-import { ChannelCacheService } from '../src/modules/chat-push-worker/channel-cache.service';
+import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '../src/domain/repositories/chat-notification-preference.repository.interface';
+import { ChannelCacheService } from '../src/application/services/channel-cache.service';
 import type {
   ChatChannel,
   ChatMessage,
@@ -56,14 +57,15 @@ const { AuthGuardStub, ChapterGuardStub } = createGuardStubs({
 
 /**
  * HTTP-level coverage for the NestJS chat hot path — `ChatController` wired to
- * the REAL `ChatService` and `ChannelAccessService` (only their repository /
- * collaborator dependencies are mocked, exactly as `chat.service.spec.ts`
- * does), so the authorization decisions this suite asserts on are the actual
+ * the REAL `ChatService`, `ChatReactionService` and `ChannelAccessService`
+ * (only their repository / collaborator dependencies are mocked, exactly as
+ * `chat.service.spec.ts` does), so the authorization decisions this suite asserts on are the actual
  * production code path, not a stand-in. `attendance-points-flow.e2e-spec.ts`
  * is the harness pattern this follows; unlike that suite, the service under
  * test is not itself mocked, because the point here is the authz surface
  * (channel access, read-only-channel gating, cross-channel reply rejection),
- * which lives inside `ChatService`/`ChannelAccessService`, not the controller.
+ * which lives inside the chat services and `ChannelAccessService`, not the
+ * controller.
  */
 describe('Chat hot path (e2e)', () => {
   let app: INestApplication;
@@ -122,23 +124,24 @@ describe('Chat hot path (e2e)', () => {
     content: 'From a different channel',
   });
 
-  const baseMember = {
+  const baseMember = memberFixture({
     id: 'mem-1',
-    user_id: 'user-1',
     chapter_id: 'chapter-1',
     role_ids: ['role-member'],
     has_completed_onboarding: true,
-    dismissed_ops_nudges: [],
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
-  };
+  });
 
   const channelRepoMock: jest.Mocked<IChatChannelRepository> = {
     findById: jest.fn(),
     findByChapter: jest.fn(),
     findByIds: jest.fn(),
     findDm: jest.fn(),
+    findPushRouting: jest.fn(),
     createDm: jest.fn(),
+    findByName: jest.fn(),
+    createMany: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
@@ -163,6 +166,7 @@ describe('Chat hot path (e2e)', () => {
     findPollsByChapter: jest.fn(),
     findByClientMessageId: jest.fn(),
     findAuthorAvatarPaths: jest.fn(),
+    insertIdempotent: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
   };
@@ -261,7 +265,7 @@ describe('Chat hot path (e2e)', () => {
       .useValue(rbacServiceMock)
       .overrideProvider(ActivationService)
       .useValue(activationServiceMock)
-      .overrideProvider(ChatNotificationPreferenceRepository)
+      .overrideProvider(CHAT_NOTIFICATION_PREFERENCE_REPOSITORY)
       .useValue(chatNotificationPrefsMock)
       .overrideProvider(ChannelCacheService)
       .useValue(channelCacheMock)

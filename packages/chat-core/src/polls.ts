@@ -1,5 +1,10 @@
 import { moduleRefusalFromServerMessage } from "@repo/validation";
 import type { ChatMessage } from "./types";
+import {
+  POLL_VOTE_ACTION_TYPE,
+  type PollOption,
+  type PollPayload,
+} from "./integrations/payloads";
 
 /**
  * Poll payload parsing and vote-tally logic, shared by web's
@@ -7,29 +12,12 @@ import type { ChatMessage } from "./types";
  * `apps/mobile/components/chat/poll-card.tsx` (#528) so a future fix to
  * either only has one place to land.
  *
- * `PollOption`/`PollPayload`/`POLL_VOTE_ACTION_TYPE` mirror the canonical
- * definitions in `packages/chat-integrations/src/payloads.ts` rather than
- * importing them: `@repo/chat-core` is a mobile dependency, and
- * `chat-integrations`'s `exports` map points the `require` condition — the
- * one Metro's resolver uses — at an unbuilt `dist/` (#989), so nothing
- * `chat-core` exports can afford to pull that package in, even transitively.
- * The shape is small and frozen by the wire contract (ADR-07's
- * `action_type: "vote"` / `payload.option_id`), so duplicating it here —
- * once, rather than once per platform — is safe.
+ * `PollOption`/`PollPayload`/`POLL_VOTE_ACTION_TYPE` are re-exported from
+ * their canonical definitions in `./integrations/payloads`, so mobile's poll
+ * card can keep importing everything poll-shaped from this one subpath.
  */
 
-export interface PollOption {
-  id: string;
-  label: string;
-}
-
-export interface PollPayload {
-  question: string;
-  options: PollOption[];
-  closes_at: string;
-}
-
-export const POLL_VOTE_ACTION_TYPE = "vote";
+export { POLL_VOTE_ACTION_TYPE, type PollOption, type PollPayload };
 
 /**
  * Member copy for the Polls module refusal: `spec/ui/design-system/writing.md`

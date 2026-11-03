@@ -1,7 +1,7 @@
 // These are behavioural test doubles, not a module-resolution workaround: the
-// `@repo/*` dists are CJS and import fine here (the `@repo/validation` mock
-// below spreads the real module, and custom-field-provisioning.spec.ts imports
-// CUSTOM_FIELDS_SEED directly). An earlier version of this comment claimed they
+// `@repo/*` dists are CJS and import fine here (the `@repo/chapter-theme` mock
+// below spreads the real module, `@repo/validation` loads unmocked, and
+// custom-field-provisioning.spec.ts imports CUSTOM_FIELDS_SEED directly). An earlier version of this comment claimed they
 // were ESM-only and untransformable — they are not; the symptom behind that was
 // an unbuilt `dist`, fixed by building the packages.
 //
@@ -52,11 +52,10 @@ jest.mock('@repo/chapter-theme', () => ({
     '@repo/chapter-theme',
   ).SIGNET_ENGINE_VERSION,
 }));
-// Only the policy version is stubbed. The rest must stay real: the seeding path
-// validates every candidate row with the actual `CreateCustomFieldSchema`, so a
-// bare stub here would silently make that validation a no-op.
-jest.mock('@repo/validation', () => ({
-  ...jest.requireActual('@repo/validation'),
+// Only the policy version is stubbed; `@repo/validation` stays real, because
+// the seeding path validates every candidate row with the actual
+// `CreateCustomFieldSchema`.
+jest.mock('#domain/constants/legal', () => ({
   LEGAL_POLICY_VERSION: 'test-version',
 }));
 
@@ -66,9 +65,16 @@ import { ChapterOnboardingService } from './chapter-onboarding.service';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import {
+  CHAT_CHANNEL_REPOSITORY,
+  CHAT_MESSAGE_REPOSITORY,
+} from '#domain/repositories/chat.repository.interface';
+import { CUSTOM_FIELD_REPOSITORY } from '#domain/repositories/custom-field.repository.interface';
+import { CHAPTER_DIRECTORY_REPOSITORY } from '#domain/repositories/chapter-directory.repository.interface';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import type { Chapter } from '#domain/entities/chapter.entity';
 import type { ChapterOnboardingInput } from './chapter-onboarding.service';
+import { chapterFixture } from '#test/helpers/entity-fixtures';
 
 // Read from the real package, not the mock above: compared against the mocked
 // value, a mock that dropped the constant would make both sides `undefined`.
@@ -79,31 +85,18 @@ const { SIGNET_ENGINE_VERSION } = jest.requireActual<{
 const SYSTEM_SENDER_ID = '00000000-0000-0000-0000-000000000000';
 
 function makeChapter(): Chapter {
-  return {
-    id: 'ch-1',
+  return chapterFixture({
     name: 'Sigma Phi Epsilon',
     university: 'UCLA',
-    stripe_customer_id: null,
-    subscription_status: 'incomplete',
-    subscription_id: null,
-    past_due_since: null,
-    last_stripe_webhook_at: null,
-    accent_color: null,
-    logo_path: null,
-    donation_url: null,
     created_at: '2026-05-24',
     updated_at: '2026-05-24',
-  };
+  });
 }
 
 describe('ChapterOnboardingService', () => {
   let service: ChapterOnboardingService;
   let chapterService: { create: jest.Mock };
-  let channelQuery: {
-    select: jest.Mock;
-    eq: jest.Mock;
-    maybeSingle: jest.Mock;
-  };
+  let findChannelByName: jest.Mock;
   let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
   let mockLegalAcceptance: jest.Mocked<
     Pick<LegalAcceptanceService, 'requireOrAccept'>
@@ -111,7 +104,6 @@ describe('ChapterOnboardingService', () => {
   let messageInsert: jest.Mock;
   let requestInsert: jest.Mock;
   let fieldsUpsert: jest.Mock;
-  let from: jest.Mock;
 
   beforeEach(async () => {
     chapterService = { create: jest.fn().mockResolvedValue(makeChapter()) };
@@ -120,30 +112,31 @@ describe('ChapterOnboardingService', () => {
       requireOrAccept: jest.fn().mockResolvedValue(undefined),
     };
 
-    channelQuery = {
-      select: jest.fn().mockReturnThis(),
-      eq: jest.fn().mockReturnThis(),
-      maybeSingle: jest
-        .fn()
-        .mockResolvedValue({ data: { id: 'chan-general' }, error: null }),
-    };
-    messageInsert = jest.fn().mockResolvedValue({ error: null });
-    requestInsert = jest.fn().mockResolvedValue({ error: null });
-    fieldsUpsert = jest.fn().mockResolvedValue({ error: null });
-    from = jest.fn((table: string) => {
-      if (table === 'chat_channels') return channelQuery;
-      if (table === 'chat_messages') return { insert: messageInsert };
-      if (table === 'chapter_directory_requests')
-        return { insert: requestInsert };
-      if (table === 'chapter_custom_fields') return { upsert: fieldsUpsert };
-      return {};
-    });
+    findChannelByName = jest.fn().mockResolvedValue({ id: 'chan-general' });
+    messageInsert = jest.fn().mockResolvedValue({ id: 'msg-welcome' });
+    requestInsert = jest.fn().mockResolvedValue(undefined);
+    fieldsUpsert = jest.fn().mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChapterOnboardingService,
         { provide: ChapterService, useValue: chapterService },
-        { provide: SUPABASE_CLIENT, useValue: { from } },
+        {
+          provide: CHAT_CHANNEL_REPOSITORY,
+          useValue: { findByName: findChannelByName },
+        },
+        {
+          provide: CHAT_MESSAGE_REPOSITORY,
+          useValue: { create: messageInsert },
+        },
+        {
+          provide: CUSTOM_FIELD_REPOSITORY,
+          useValue: { seedDefaults: fieldsUpsert },
+        },
+        {
+          provide: CHAPTER_DIRECTORY_REPOSITORY,
+          useValue: { createRequest: requestInsert },
+        },
         { provide: ActivationService, useValue: mockActivation },
         { provide: LegalAcceptanceService, useValue: mockLegalAcceptance },
       ],
@@ -387,7 +380,7 @@ describe('ChapterOnboardingService', () => {
   it('posts a welcome system_audit message into #general', async () => {
     await service.onboard('user-1', directoryDto);
 
-    expect(from).toHaveBeenCalledWith('chat_channels');
+    expect(findChannelByName).toHaveBeenCalledWith('ch-1', 'general');
     expect(messageInsert).toHaveBeenCalledTimes(1);
     expect(messageInsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -505,13 +498,39 @@ describe('ChapterOnboardingService', () => {
     );
   });
 
+  it('still onboards, and warns, when the directory request insert fails', async () => {
+    // The repository throws on a PostgREST error now, so `onboard`'s catch is
+    // the only thing between a failed backfill row and a 500 for a chapter
+    // that already exists.
+    const warned = jest
+      .spyOn(service['logger'], 'warn')
+      .mockImplementation(() => undefined);
+    requestInsert.mockRejectedValueOnce(
+      new SupabaseQueryError({ message: 'boom' }),
+    );
+
+    await expect(
+      service.onboard('user-1', {
+        name: 'Made Up Chapter Name',
+        university: 'Nowhere State',
+        accept_terms_privacy: true,
+      }),
+    ).resolves.toMatchObject({ id: 'ch-1' });
+
+    expect(warned).toHaveBeenCalledWith(
+      'Failed to record chapter directory request: boom',
+    );
+  });
+
   it('does not record a directory request when a directory match is provided', async () => {
     await service.onboard('user-1', directoryDto);
     expect(requestInsert).not.toHaveBeenCalled();
   });
 
   it('does not fail onboarding when the welcome message insert errors', async () => {
-    messageInsert.mockResolvedValueOnce({ error: { message: 'boom' } });
+    messageInsert.mockRejectedValueOnce(
+      new SupabaseQueryError({ message: 'boom' }),
+    );
     await expect(
       service.onboard('user-1', directoryDto),
     ).resolves.toMatchObject({ id: 'ch-1' });
@@ -582,30 +601,6 @@ describe('ChapterOnboardingService', () => {
       ]);
     });
 
-    it('asks PostgREST to skip existing (chapter_id, key) rows', async () => {
-      seedFields([
-        {
-          id: 'cf_1',
-          label: 'Major',
-          type: 'text',
-          required: true,
-          visibleTo: 'chapter',
-        },
-      ]);
-
-      await service.onboard('user-1', directoryDto);
-
-      // Named for what it asserts: the upsert options reaching the client. That
-      // this yields true idempotency is a PostgREST/Postgres property of the
-      // `unique (chapter_id, key)` constraint, which a mocked client cannot
-      // demonstrate — only an integration test against a real DB could.
-      const [, options] = fieldsUpsert.mock.calls[0];
-      expect(options).toEqual({
-        onConflict: 'chapter_id,key',
-        ignoreDuplicates: true,
-      });
-    });
-
     it('writes nothing when the archetype seeds no fields', async () => {
       // The module-level mock already returns `customFields: []`.
       await service.onboard('user-1', directoryDto);
@@ -613,11 +608,11 @@ describe('ChapterOnboardingService', () => {
     });
 
     it('logs at error level, and still onboards, when the seed insert fails', async () => {
-      // Asserting only that onboard() resolves would pass even if the `error`
-      // branch were deleted outright — the outer .catch() guarantees resolution
-      // either way. The log is the only observable effect of that branch, so it
-      // is what this pins. `error` not `warn`: onboarding still returns 201, so
-      // a broken seed is invisible to the officer and fails for every chapter.
+      // Asserting only that onboard() resolves would pass even if the outer
+      // .catch() logged nothing — it guarantees resolution either way. The log
+      // is the only observable effect, so it is what this pins. `error` not
+      // `warn`: onboarding still returns 201, so a broken seed is invisible to
+      // the officer and fails for every chapter.
       const logged = jest
         .spyOn(service['logger'], 'error')
         .mockImplementation(() => undefined);
@@ -630,14 +625,17 @@ describe('ChapterOnboardingService', () => {
           visibleTo: 'chapter',
         },
       ]);
-      fieldsUpsert.mockResolvedValueOnce({ error: { message: 'boom' } });
+      fieldsUpsert.mockRejectedValueOnce(
+        new SupabaseQueryError({ message: 'boom' }),
+      );
 
       await expect(
         service.onboard('user-1', directoryDto),
       ).resolves.toMatchObject({ id: 'ch-1' });
 
       expect(logged).toHaveBeenCalledWith(
-        'chapter_custom_fields seed insert failed: boom',
+        'Failed to provision archetype custom fields: boom',
+        expect.stringMatching(/\n\s+at /),
       );
     });
 

@@ -1,6 +1,6 @@
 /**
  * Pins the ADR-10 cross-service contract between this manager and the API's
- * push worker (`apps/api/src/modules/chat-push-worker/chat-push-worker.service.ts`):
+ * push worker (`apps/api/src/application/workers/chat-push-worker.service.ts`):
  *
  *   - the channel topic is exactly `chat:channel:<id>`, with the exact
  *     channel config

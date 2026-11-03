@@ -26,7 +26,9 @@ name: Production backup freshness
 #
 # Rules: scripts/ci/lib/backup-job-freshness.mjs (tests:
 # scripts/ci/__tests__/backup-job-freshness.test.mjs). This watch's wiring:
-# scripts/ci/production-backup-freshness.mjs (tests: scripts/ci/__tests__/production-backup-freshness.test.mjs).
+# scripts/ci/production-backup-freshness.mjs, which serves both freshness watches
+# and reads `BACKUP_WATCH` to know it is this one (`dump`). Its tests:
+# scripts/ci/__tests__/production-backup-freshness.test.mjs.
 # (`npm run test:ci-scripts`).
 #
 # Not a required PR check.
@@ -83,5 +85,7 @@ jobs:
           # branch (#2518).
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          # Required: the script serves both freshness watches and has no default.
+          BACKUP_WATCH: dump
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node scripts/ci/production-backup-freshness.mjs

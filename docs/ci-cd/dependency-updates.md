@@ -3,7 +3,7 @@
 Facts for Dependabot's schedule and grouping, the npm it resolves the lockfile with, the rule behind its ignore list, the write-ups behind several ignore entries, and the dependency-tree traps they guard against. The full ignore list is [`.github/dependabot.yml`](../../.github/dependabot.yml), where every entry sits under a comment giving its reason; an entry with no section here (the NestJS 12 hold, the `postcss` pin) is explained only there. Router: [`agent-infra.md`](agent-infra.md). Cite this file and a heading, never `§N`.
 
 Config: [`.github/dependabot.yml`](../../.github/dependabot.yml). This is the automated half of
-the supply-chain story; the blocking half is `npm run check:npm-audit` ([`agent-infra.md` → Lint, test, build](agent-infra.md#lint-test-build-repo-root)), which fails CI on any
+the supply-chain story; the blocking half is `npm run check:npm-audit` (CI job `dependency-audit`; [`testing` skill → CI parity checklist](../../.claude/skills/testing/SKILL.md#ci-parity-checklist)), which fails CI on any
 non-allowlisted high/critical advisory.
 
 **One ecosystem entry, at the root.** `apps/*` and `packages/*` are npm workspaces resolving through
@@ -15,11 +15,14 @@ patch updates are grouped into **one** PR (`npm-minor-and-patch`); majors are de
 ungrouped so each arrives as its own reviewable diff. Every Dependabot PR costs a babysit cycle under
 the [Autonomous PR lifecycle](../../AGENTS.md), which is why grouping is aggressive.
 
-**The exceptions to "majors arrive alone": the `vitest` and `sentry` groups.** The `sentry` group
+**The exceptions to "majors arrive alone": the `vitest`, `sentry` and `stripe-js` groups.** The `sentry` group
 (`@sentry/nestjs` + `@sentry/nextjs`, which pin `@sentry/core` and `@sentry/node` exactly) groups
 majors only, since their minors already share `npm-minor-and-patch`; its `sentry-security` twin
 covers the security lane at every update type. It replaced the Sentry 11 hold when #2722 landed:
 Sentry 11 had arrived as two single-package PRs (#2712, #2714), and neither could go green.
+The `stripe-js` group (`@stripe/stripe-js` + `@stripe/react-stripe-js`, whose peer range admits one
+stripe-js major) has the same shape, majors-only plus a `stripe-js-security` twin, for the same
+reason: Stripe.js 10 arrived as #3191 and #3192, and each left a second stripe-js in the tree.
 
 **The `vitest` group.** `vitest` and
 `@vitest/coverage-v8` are grouped at *every* update type, because they peer-require each other at an
@@ -454,7 +457,7 @@ file. **The read half is answered as of 2026-09-02: alerts are DISABLED on this 
 `GET /repos/pdcarlson/Frapp/vulnerability-alerts` returns **404 `"disabled"`** when called direct
 (node `fetch`) — not the `403` this paragraph used to record, which was the agent proxy's
 GitHub-credential layer answering rather than GitHub, and therefore said nothing about the toggle
-either way (see **The `api.github.com` route rule** under [`agent-infra.md` → Work status](agent-infra.md#work-status)). A session can now read this
+either way (see [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule)). A session can now read this
 setting; it still cannot flip it — the GitHub MCP exposes no repo-security-settings tool and the
 REST route above is a read channel. So #921 stays open as `[human]`, now scoped to the write half:
 turning alerts (and security updates) on in repo Settings. The alerts toggle is the half that was
@@ -463,4 +466,4 @@ itself read. Read that alongside § *The ignore list is a runtime constraint, no
 above: security PRs for the React/RN/Expo set are suppressed there deliberately, and with the
 repo-level toggle off no alert is being raised for anything else either — so `npm run
 check:npm-audit` in CI is the only vulnerability signal this repo actually has today, and unlike a
-Dependabot alert it is a **blocking** CI gate (see the `check:npm-audit` row in [`agent-infra.md` → Lint, test, build](agent-infra.md#lint-test-build-repo-root)).
+Dependabot alert it is a **blocking** CI gate (see the `dependency-audit` row in the [`testing` skill → CI parity checklist](../../.claude/skills/testing/SKILL.md#ci-parity-checklist)).

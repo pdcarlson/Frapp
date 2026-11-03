@@ -54,7 +54,7 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import {
   asArray,
   getErrorMessage,

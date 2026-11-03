@@ -1,4 +1,8 @@
-import { User, UserDisplayIdentity } from '../entities/user.entity';
+import {
+  User,
+  UserContact,
+  UserDisplayIdentity,
+} from '../entities/user.entity';
 
 export const USER_REPOSITORY = 'USER_REPOSITORY';
 
@@ -15,6 +19,12 @@ export interface IUserRepository {
    * client (#1000). Two methods, two intents.
    */
   findDisplayIdentitiesByIds(ids: string[]): Promise<UserDisplayIdentity[]>;
+  /**
+   * `id, display_name, email`, chunked like {@link findDisplayIdentitiesByIds}.
+   * For officer exports (the roster report) that print an address; a separate
+   * method so the display path above never gains `email`.
+   */
+  findContactsByIds(ids: string[]): Promise<UserContact[]>;
   findBySupabaseAuthId(authId: string): Promise<User | null>;
   create(data: Partial<User>): Promise<User>;
   update(id: string, data: Partial<User>): Promise<User>;

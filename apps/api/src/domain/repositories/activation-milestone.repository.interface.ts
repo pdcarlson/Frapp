@@ -1,4 +1,4 @@
-import type { ActivationMilestone } from '@repo/validation';
+import type { ActivationMilestone } from '../constants/activation-milestones';
 
 export const ACTIVATION_MILESTONE_REPOSITORY =
   'ACTIVATION_MILESTONE_REPOSITORY';

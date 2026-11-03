@@ -9,7 +9,7 @@
 // lock was signet-calendar-prodid, and each step took its surface's PRODID
 // and filename fallback to that surface's own copy lock: step 2 to
 // frapp-mobile-copy, step 3 to frapp-api-copy, and step 4 (the web fallback)
-// to frapp-web-copy. The UID host is a permanent identifier (ADR-25), not
+// to frapp-web-copy. Those three are now rows of frapp-naming. The UID host is a permanent identifier (ADR-25), not
 // copy, so it is all that stays here.
 //
 // SCOPE. The UID host only. Do not assert the scheme, the bundle id, a PRODID

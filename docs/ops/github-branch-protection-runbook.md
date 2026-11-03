@@ -63,7 +63,7 @@ echo 'GITHUB_PAT=<token>' >> .env
 > `curl --noproxy '*'` go direct and return **200** from GitHub itself. Requests that honour
 > `HTTPS_PROXY` take the agent proxy route instead, whose results say nothing about the PAT. The
 > rule and its measurements live in
-> [`agent-infra.md` — the `api.github.com` route rule](../ci-cd/agent-infra.md#work-status); this
+> [`agent-infra.md` — the `api.github.com` route rule](../ci-cd/agent-infra.md#the-apigithubcom-route-rule); this
 > runbook only consumes the rule. The 2026-08-27 403 once recorded here — against
 > `GET /repos/pdcarlson/Frapp/branches/main/protection` — was a `curl` probe, so it measured the
 > proxy route, not the PAT. [#680](https://github.com/pdcarlson/Frapp/issues/680)'s evidence table
@@ -77,7 +77,7 @@ echo 'GITHUB_PAT=<token>' >> .env
 > PAT. It looked like one because `GET /user` *through* the proxy returns 200, so the token
 > appeared to work everywhere except the paths that mattered. Judge a 403 by its route, not its
 > headers: only a 403 on the direct route is a permission answer about the PAT (why:
-> [`agent-infra.md` → Work status](../ci-cd/agent-infra.md#work-status)). And **do not set
+> [`agent-infra.md` → The `api.github.com` route rule](../ci-cd/agent-infra.md#the-apigithubcom-route-rule)). And **do not set
 > `NODE_USE_ENV_PROXY=1`** for these scripts: that puts node back on the proxy route. Check with
 > `npm run configure:branch-protection:verify`, which **fails loudly** rather than passing when a
 > read is refused — see `--verify` below for the dated result.
@@ -227,14 +227,14 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 | `api-contract-check` | openapi.json + api-sdk freshness, and compatibility with every shipped mobile build ([`quality-gates.md` § Two comparisons, two postures](../ci-cd/quality-gates.md#two-comparisons-two-postures)) |
 | `migration-safety`   | Migration filename + docs validation                                                            |
 | `mobile-validate`    | Expo SDK-line check (`check:expo-sdk-line`) + mobile iOS production bundle (`expo export`, no prebuilt packages) + lint + typecheck + Vitest unit tests + native declarations over the introspected config (`check:mobile-native-declarations`) + `expo prebuild` |
-| `ci-scripts-tests`   | `node --test` over `scripts/ci/__tests__/` (`npm run test:ci-scripts`), covering the gate and deploy scripts under both `scripts/` and `scripts/ci/` |
+| `ci-scripts-tests`   | `node --test` over `scripts/ci/__tests__/` (`npm run test:ci-scripts`), covering the gate and deploy scripts under both `scripts/` and `scripts/ci/`, plus every `*.test.sh` shell suite (`shell-suites.test.mjs`) |
 | `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                     |
 | `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`) |
 | `dependency-audit`   | npm audit gate: any high/critical advisory not allowlisted in `scripts/npm-audit-allowlist.json` fails (issue #618) |
 | `chapter-directory-seed` | `supabase/seed/chapter_directory.csv`: canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (issue #840) |
-| `web-tests`          | `apps/web` + the shared packages only this suite covers (`packages/hooks`, `packages/chat-core`, `packages/chat-integrations`) |
+| `web-tests`          | `apps/web` + the shared packages only this suite covers (`packages/hooks`, `packages/chat-core`) |
 | `changes`            | Path filter deciding whether `web-tests`, `web-responsive-floor`, `landing-fold` and `pglite-migrations` run; required only because they need it |
-| `pglite-migrations`  | Every migration applied from empty to PGlite, with the RLS posture asserted on the result (`scripts/check-pglite-migrations.mjs`), then the change-ping contract checked against the same replay (`apps/web/lib/realtime/change-topics.spec.ts`). Added to the roster by [#2538](https://github.com/pdcarlson/Frapp/issues/2538). `validate-deploy-sha` requires it for production deploys from the roster alone; a PR can merge past a red run until an admin applies the roster, which `--verify` shows |
+| `pglite-migrations`  | Every migration applied from empty to PGlite, with the RLS posture asserted on the result (`scripts/pglite/`), then the change-ping contract checked against the same replay (`apps/web/lib/realtime/change-topics.spec.ts`). Added to the roster by [#2538](https://github.com/pdcarlson/Frapp/issues/2538). `validate-deploy-sha` requires it for production deploys from the roster alone; a PR can merge past a red run until an admin applies the roster, which `--verify` shows |
 | `dependency-cruiser` | Architectural boundaries (API layer direction, package/app separation, cycles) against a committed baseline — [`quality-gates.md`](../ci-cd/quality-gates.md) |
 | `web-production-build` | Builds web and landing on a devDependency-pruned tree, matching the Vercel production install — [`agent-infra.md`](../ci-cd/agent-infra.md) |
 | `web-responsive-floor` | Every dashboard route renders without horizontal scroll at 375px ([`responsive-floor.spec.ts`](../../apps/web/tests/visual/responsive-floor.spec.ts)). Playwright, but no baseline and no pixel comparison |

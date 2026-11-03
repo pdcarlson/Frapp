@@ -61,7 +61,7 @@ vi.mock("@repo/hooks", () => ({
   useUploadSignedUrl: () => ({ mutateAsync: mockUploadSignedUrl }),
   useChapterRoster: () => ({ data: [] }),
 }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
 
 const { captureException } = vi.hoisted(() => ({
   captureException: vi.fn(),
@@ -81,7 +81,7 @@ import {
   uploadFailureDescription,
 } from "./composer";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
-import type { SlashCommand } from "@repo/chat-integrations";
+import type { SlashCommand } from "@repo/chat-core/integrations";
 
 type ComposerProps = Parameters<typeof Composer>[0];
 

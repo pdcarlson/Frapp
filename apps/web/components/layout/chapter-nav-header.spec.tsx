@@ -53,7 +53,7 @@ vi.mock("@/lib/auth/select-chapter", () => ({
   useSelectChapter: () => selectChapter,
 }));
 
-vi.mock("@/hooks/use-toast", () => ({
+vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast }),
 }));
 

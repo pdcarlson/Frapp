@@ -32,12 +32,10 @@
  * 3. **No outbox `get`.** That is a web-only extra on the Dexie store; the
  *    port itself only offers `listForChannel`, so retry/discard look the row up
  *    through it.
- * 4. **No slash dispatch.** `@repo/chat-core/dispatch` pulls in
- *    `@repo/chat-integrations`, whose `types`/`require` conditions point at an
- *    unbuilt `dist/` (#989), and slash commands are not a mobile surface.
- *    `unconfirmed`/`recorded` rows therefore have no replay path; the thread
- *    presents them read-only (#1910) until one exists. Do not invent a slash
- *    dispatch from here. Web's `dispatchSlash`, `retryUnconfirmed` and the
+ * 4. **No slash dispatch.** Slash commands are not a mobile surface
+ *    (`@repo/chat-core/dispatch` is web's), so `unconfirmed`/`recorded` rows
+ *    have no replay path; the thread presents them read-only (#1910) until one
+ *    exists. Do not invent a slash dispatch from here. Web's `dispatchSlash`, `retryUnconfirmed` and the
  *    persisted-notice merge in its channel query all hang off it.
  * 5. **The draft and the staged attachments live here.** Web's draft has its
  *    own hook (`useChannelDraft`, #2176) and its composer owns the attachments

@@ -21,7 +21,6 @@ export const REPO = join(__dirname, "..", "..", "..");
 export const ROOTS = [
   "apps/web/app",
   "apps/web/components",
-  "apps/web/hooks",
   "apps/web/lib",
   "apps/landing/app",
   "apps/landing/components",

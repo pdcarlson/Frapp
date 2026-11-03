@@ -84,7 +84,7 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
 
 // `useFrappUser` reads `useCurrentUser`/`useViewerUserId` out of `@repo/hooks`,
 // which is stubbed wholesale above, so it is stubbed at its own module instead.

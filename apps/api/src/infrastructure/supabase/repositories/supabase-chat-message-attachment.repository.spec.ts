@@ -128,7 +128,7 @@ describe('SupabaseChatMessageAttachmentRepository — tenant scope', () => {
   });
 
   it('never returns external_url, which would leak a source-system URL', async () => {
-    // `ChatService.listMessageAttachments` spreads whatever this returns into an
+    // `ChatAttachmentService.listMessageAttachments` spreads whatever this returns into an
     // API response, so this is a disclosure boundary. A Discord CDN link is
     // signed and time-limited, so shipping one would hand every chapter member a
     // working read of the source object that bypasses the private-bucket,

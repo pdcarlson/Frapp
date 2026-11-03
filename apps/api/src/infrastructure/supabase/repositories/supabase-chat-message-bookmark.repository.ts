@@ -7,6 +7,7 @@ import type {
   StoredChatMessageBookmark,
 } from '#domain/entities/chat.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { omitColumns } from '../supabase.utils';
 /**
  * The message columns this endpoint serves — deliberately NOT
  * `CHAT_MESSAGE_COLUMNS`.
@@ -173,9 +174,5 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
  * DTO will still say it is not there.
  */
 function stripBookmarkRow<T>(row: Record<string, unknown>): T {
-  // `delete` on a copy rather than a discarded destructuring binding, matching
-  // `stripAttachmentRow` — an unused `_userId` binding is a lint error here.
-  const rest = { ...row };
-  delete (rest as { user_id?: unknown }).user_id;
-  return rest as unknown as T;
+  return omitColumns<T>(row, ['user_id']);
 }

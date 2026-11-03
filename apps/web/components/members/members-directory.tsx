@@ -49,7 +49,7 @@ import {
   dashboardTableCheckboxClassName,
   denseListClassName,
 } from "@/components/shared/table-controls";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import { useNetwork } from "@/lib/providers/network-provider";

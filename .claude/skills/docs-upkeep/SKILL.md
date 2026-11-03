@@ -127,9 +127,8 @@ Otherwise:
    is the CI `link-check` invocation and the only check on markdown links and heading anchors.
    Renaming a heading or collapsing a duplicate can break a link in a file you never opened, so
    read its output beyond your slice. Resolve every backticked path you write or move.
-2. **Review** with [`/diff-review`](../diff-review/SKILL.md). The pre-push hook refuses a push
-   without review evidence for the pushed commit; retrying doesn't help, and `--no-verify` is
-   never an option.
+2. **Review** with [`/diff-review`](../diff-review/SKILL.md), the pre-push gate
+   ([`AGENTS.md` § Claude Code web sandbox](../../../AGENTS.md#claude-code-web-sandbox)).
 3. **Push and open** the PR against `main` with `mcp__github__create_pull_request`. If the GitHub
    MCP is unavailable, push the branch, report its name, and stop; `gh` and raw REST are not
    sanctioned paths. If `git push` itself fails, stop and report.
@@ -144,7 +143,7 @@ Otherwise:
 
 - Never manufacture edits or rewrite prose that was already true. Churn in the docs reads as drift
   to the next reader.
-- Never print secret values; names and presence only.
+- Secrets by name and presence only ([`AGENTS.md` § Credentials and secrets](../../../AGENTS.md#credentials-and-secrets)).
 - When a provider is unreachable, say "unverified". A guess presented as a verification launders
   an assumption into something that reads as checked.
 

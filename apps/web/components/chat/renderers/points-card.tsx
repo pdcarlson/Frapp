@@ -5,7 +5,7 @@ import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
-import type { PointsPayload } from "@repo/chat-integrations";
+import type { PointsPayload } from "@repo/chat-core/integrations";
 
 interface PointsCardProps {
   message: ChatMessage;

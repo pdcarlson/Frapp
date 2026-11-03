@@ -38,7 +38,7 @@ import { SupabaseQueryError } from '../supabase-query-error';
  * rather than correctness ones. An earlier version of this note argued they had
  * to keep headroom below the cap because "a short page then unambiguously means
  * the rows ran out" — that rule was the bug (#1628), not the safeguard, and it
- * also named a class (`SupabaseScheduledJobsRepository`) that does not exist.
+ * named a class (`SupabaseScheduledJobsRepository`) that did not exist yet.
  *
  * `MESSAGE_BATCH_SIZE` is the narrower case and still carries a real
  * assumption: besides chunking inserts it bounds the `.in()` slice in

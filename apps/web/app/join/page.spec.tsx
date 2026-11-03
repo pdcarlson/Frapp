@@ -28,7 +28,7 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/lib/auth/select-chapter", () => ({
   useSelectChapter: () => vi.fn().mockResolvedValue(true),
 }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => ({ isOffline: false }),
 }));

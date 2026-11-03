@@ -91,12 +91,10 @@ Three things about it are load-bearing:
   > The job is listed in `scripts/ci/lib/required-checks.mjs`, but listing it is
   > not the same as enforcing it: required checks only change when an admin runs
   > `npm run configure:branch-protection` (a human step; an agent session runs
-  > `npm run configure:branch-protection:verify`, which writes nothing). Until that happens this job runs and reports
-  > on every PR without blocking a merge — the same rollout state as `secret-scan`,
-  > `clean-checkout-typecheck`, and `dependency-audit` (#813).
+  > `npm run configure:branch-protection:verify`, which writes nothing). Whether the
+  > live ruleset requires it yet is a provider question, not something this guide records.
 
-The current file is a 50-row placeholder covering 41 universities. Growing it to
-the full dataset is tracked in #232.
+The CSV is a placeholder subset, not the full dataset; growing it is tracked in #232.
 
 ## 3. Conventions
 
@@ -177,7 +175,7 @@ npm run supabase -- db push --local
   Do not add a generic base repository; keep each repository's query
   logic and only parameterize the write methods.
   `no-as-never.spec.ts` guards every `*.repository.ts` under
-  `apps/api/src`, module-local ones included (repository count,
+  `apps/api/src`, wherever it lives (repository count,
   `FrappSupabaseClient` injection, and no cast, `@ts-expect-error`, or
   erased `.from()`/client binding on a write path). It names its own
   gaps in its docblock — read them there before reading a green run as

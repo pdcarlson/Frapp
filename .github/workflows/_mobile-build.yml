@@ -56,7 +56,7 @@ name: Mobile build
 #     production against the pre-ship snapshot all that time
 #     (`download-migration-snapshot`'s header).
 #
-# ── The trust split (`_deploy.yml`'s header, #2801, #2824) ─────────────────
+# ── The trust split (ci-cd.md § The deploy job's trust split, #2801, #2824) ─
 # `build` checks out the deployed commit and runs nothing local from it as a
 # check: no `./.github/actions/…` action (it would load from the deployed
 # tree), and the steps that judge the result are inline shell. `npm ci` and the
@@ -64,7 +64,7 @@ name: Mobile build
 # steps that call `eas` name it, so no install script runs with it in its
 # environment; the eas-cli install runs no install scripts at all. Honest
 # limits: an install script from `npm ci` can still leave something a later
-# step runs (the one `_deploy.yml` states), and, on a hosted runner with
+# step runs (the one ci-cd.md states), and, on a hosted runner with
 # sudo, read a secret the job references from the runner's memory; a later
 # `eas` step runs eas-cli's dependencies with the token, and those are
 # resolved at install time, not from a lockfile (#3118). Isolating the

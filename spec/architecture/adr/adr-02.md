@@ -1,5 +1,7 @@
 ### ADR-02: Why Supabase Realtime Broadcast for presence/typing
 
+> **Superseded for presence by [ADR-10](adr-10.md) (corrected 2026-10-07).** Presence now uses Realtime's built-in Presence API on the chat channel topic, not Broadcast. Typing indicators still use Broadcast (`packages/chat-core/src/realtime-manager.ts`), so this decision stands for typing.
+
 **Decision:** Typing indicators and presence (online/offline) use Supabase Realtime Broadcast, not Postgres Changes.
 
 **Rationale:** Broadcast is ephemeral (not persisted to DB), avoiding write amplification on every keystroke. A 200-member chapter where everyone is typing would generate ~200 rows/second to `presence` if DB-backed. Broadcast routes through the Realtime server without touching Postgres. On disconnect, the presence state naturally evaporates — no cleanup job needed.

@@ -30,7 +30,8 @@
 //   (ADR-25 step 5, #2580), so it moved only their pins.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
-// `@repo/validation` (`'test-version'`, `'current-version'`) can't satisfy it.
+// `#domain/constants/legal` (`'test-version'`, `'current-version'`) can't
+// satisfy it.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -41,7 +42,7 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
-const VALIDATION = "packages/validation/src/index.ts";
+const POLICY_VERSION_SOURCE = "apps/api/src/domain/constants/legal.ts";
 
 /** The pages the acceptance checkbox covers. The constant follows the newer. */
 const ACCEPTED_PAGES = ["terms", "privacy"];
@@ -162,7 +163,7 @@ function readPages() {
 }
 
 test("LEGAL_POLICY_VERSION is the month of the newer Terms or Privacy date", () => {
-  const version = readPolicyVersion(readRepo(VALIDATION));
+  const version = readPolicyVersion(readRepo(POLICY_VERSION_SOURCE));
   const parsed = parsePolicyVersion(version);
   assert.ok(parsed, `LEGAL_POLICY_VERSION must be YYYY-MM, or YYYY-MM.N (N ≥ 2) for a later revision in the same month; got ${JSON.stringify(version)}`);
   const pages = readPages();
@@ -181,7 +182,7 @@ test("LEGAL_POLICY_VERSION is the month of the newer Terms or Privacy date", () 
 
 test("LEGAL_POLICY_VERSION matches its pin", () => {
   assert.equal(
-    readPolicyVersion(readRepo(VALIDATION)),
+    readPolicyVersion(readRepo(POLICY_VERSION_SOURCE)),
     PINNED_POLICY_VERSION,
     "LEGAL_POLICY_VERSION differs from PINNED_POLICY_VERSION. If a material change to Terms or Privacy moved it, " +
       "move the pin in the same commit as that page's row. If a merge brought back an older value, keep the pinned one: " +

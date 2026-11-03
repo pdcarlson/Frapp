@@ -9,8 +9,8 @@ import {
   ACCOUNT_DELETED_MESSAGE,
   LEGAL_ACCEPTANCE_REQUIRED_CODE,
   LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
-  LEGAL_POLICY_VERSION,
 } from '@repo/validation';
+import { LEGAL_POLICY_VERSION } from '#domain/constants/legal';
 import {
   USER_REPOSITORY,
   type IUserRepository,

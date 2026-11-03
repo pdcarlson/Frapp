@@ -39,7 +39,7 @@ vi.mock("@repo/hooks", () => ({
 }));
 
 vi.mock("@/lib/auth/select-chapter", () => ({ useSelectChapter: () => vi.fn() }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("@/lib/hooks/use-chapter-theme", () => ({ useChapterTheme: () => {} }));
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (

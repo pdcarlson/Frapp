@@ -220,7 +220,7 @@ Server-originated, using the mechanism the `event` / `task` / `points` cards alr
 `SERVER_ONLY_KINDS` so a client cannot forge one. No migration is required —
 `chat_messages.kind` is an unconstrained `text` column.
 
-Cadence is weekly, posted by a sweep in `apps/api/src/modules/scheduled-jobs/` following the
+Cadence is weekly, posted by a sweep in `apps/api/src/application/workers/scheduled-jobs.service.ts` following the
 existing `@Cron` handlers and their per-chapter failure isolation. Those run on the server clock in
 UTC: there is no chapter-level timezone in the schema (`quiet_hours_tz` is per-user, on
 `user_settings`), so a chapter-local posting time depends on

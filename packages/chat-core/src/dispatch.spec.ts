@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import type { SlashCommand } from "@repo/chat-integrations";
+import type { SlashCommand } from "./integrations";
 import { dispatchSlashCommand, retryPointsDispatch } from "./dispatch";
 import { RATE_LIMITED_COPY, type ChatActionContext } from "./chat-client";
 import type { KeyValueStore, OutboxStore } from "./adapters";

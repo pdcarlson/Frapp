@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { UploadStep } from "./upload-step";
 
 const toast = vi.hoisted(() => vi.fn());
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
 
 /**
  * How the upload step behaves when the server REFUSES to register files.

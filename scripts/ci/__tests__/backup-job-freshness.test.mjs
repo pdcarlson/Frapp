@@ -12,8 +12,9 @@ import {
 
 import { makeFetchMock } from "./helpers.mjs";
 
-// The rules both production backup-freshness watches share (#2332). Each
-// watch's own suite checks that it passes its job name and windows; this one
+// The rules both production backup-freshness watches share (#2332).
+// production-backup-freshness.test.mjs checks that each watch passes its own
+// job name and windows; this one
 // checks the rules, with a job name neither watch uses so no rule can lean on
 // one watch's name.
 
@@ -63,7 +64,7 @@ function cancelledAfter(ranMs, { steps } = {}) {
 }
 
 /** `jobs` maps run id to that run's jobs (or `{ status }` for an unreadable read). */
-function evaluate({ runs, jobs }) {
+function evaluate({ runs, jobs, runsStatus = 200 }) {
   const jobsByRunId = new Map(
     Object.entries(jobs).map(([id, entry]) => [
       Number(id),
@@ -76,7 +77,7 @@ function evaluate({ runs, jobs }) {
     staleAfterMs: STALE,
     hungAfterMs: HUNG,
     timeoutMs: TIMEOUT,
-    runsStatus: 200,
+    runsStatus,
     runs,
     jobsByRunId,
     now: NOW,
@@ -84,6 +85,18 @@ function evaluate({ runs, jobs }) {
 }
 
 describe("the newest run decides alone", () => {
+  // The newest run is chosen by created_at, not list order. The runs disagree
+  // here, so reading the first-listed run instead would pass on an old
+  // success and close an open P1 over tonight's failure.
+  it("is the newest by created_at, even when listed last", () => {
+    const verdict = evaluate({
+      runs: [run(1, { hours: 16.2 }), run(2, { hours: 2 })],
+      jobs: { 1: [job()], 2: [job({ conclusion: "failure", completedHours: 1.5 })] },
+    });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /concluded failure/);
+  });
+
   it("a success within 36h is fresh", () => {
     const verdict = evaluate({ runs: [run(1, { hours: 16.2 })], jobs: { 1: [job()] } });
     assert.deepEqual(verdict, { ok: true, fresh: true, reason: `${JOB} succeeded within 36h` });
@@ -459,6 +472,15 @@ describe("readJobFreshness", () => {
 
   const cancelled = run(9, { hours: 2, conclusion: "cancelled" });
 
+  it("reads the newest run by created_at, even when listed last", async () => {
+    const { verdict, reads } = await read({
+      runs: [run(8, { hours: 16.2 }), run(9, { hours: 2 })],
+      jobs: { 8: [job()], 9: [job({ conclusion: "failure", completedHours: 1.5 })] },
+    });
+    assert.equal(verdict.ok, false);
+    assert.deepEqual(reads, ["runs", "9"]);
+  });
+
   it("reads no earlier run when the newest run decides alone", async () => {
     for (const newest of [
       { run: run(9, { hours: 16.2 }), jobs: [job()] },
@@ -516,5 +538,40 @@ describe("what the scripts share besides the verdict", () => {
 
   it("lists 30 runs, so a burst of dispatches can't easily hide the last success", () => {
     assert.equal(RUNS_PER_PAGE, 30);
+  });
+});
+
+// Moved here from the two per-watch suites when they merged (#2328), where they
+// ran once per watch against these same rules. Each was found by mutation: the
+// rule it pins could be removed with every other test in this file green.
+describe("unreadable or malformed input fails closed", () => {
+  it("unreadable runs fail", () => {
+    const verdict = evaluate({ runsStatus: 500, runs: null, jobs: {} });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /unreadable \(HTTP 500\)/);
+  });
+
+  it("no runs at all fail", () => {
+    const verdict = evaluate({ runs: [], jobs: {} });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /no db-backup.yml runs found/);
+  });
+
+  it("the newest run's jobs unreadable fails", () => {
+    const verdict = evaluate({ runs: [run(1, { hours: 16.2 })], jobs: { 1: { status: 502, jobs: null } } });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /jobs unreadable \(HTTP 502\)/);
+  });
+
+  // ageMs's NaN guard. Inverting `Number.isNaN(at) ? POSITIVE_INFINITY` to
+  // `: 0` doesn't merely green the run: it reports the job fresh and CLOSES
+  // an open P1.
+  it("a success with no completed_at, or an unparseable one, is not fresh", () => {
+    for (const completed_at of [null, "not-a-date"]) {
+      const verdict = evaluate({ runs: [run(1, { hours: 16.2 })], jobs: { 1: [{ ...job(), completed_at }] } });
+      assert.equal(verdict.ok, false, String(completed_at));
+      assert.equal(verdict.fresh, false, String(completed_at));
+      assert.match(verdict.reason, /older than 36h/);
+    }
   });
 });

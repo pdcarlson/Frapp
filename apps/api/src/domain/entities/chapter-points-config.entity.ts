@@ -31,3 +31,18 @@ export interface ChapterPointsConfig {
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * The anti-fraud limits as the config endpoint reads and writes them: the row
+ * without its key and timestamps. `POINTS_CONFIG_FIELDS` is the column list
+ * the repository selects and the PATCH merge walks.
+ */
+export type PointsConfig = Omit<
+  ChapterPointsConfig,
+  'chapter_id' | 'created_at' | 'updated_at'
+>;
+
+export const POINTS_CONFIG_FIELDS = [
+  'adjustment_rate_limit_per_hour',
+  'anomaly_threshold',
+] as const satisfies ReadonlyArray<keyof PointsConfig>;

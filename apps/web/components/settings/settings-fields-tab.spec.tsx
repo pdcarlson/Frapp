@@ -22,7 +22,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useDeleteCustomField: () => ({ mutateAsync: mockDelete, isPending: false }),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({
+vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 

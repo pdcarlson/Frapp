@@ -46,7 +46,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 | Identities   | 5     | 1 (admin)                      |
 | Projects     | 3     | 1 (Frapp)                      |
 | Environments | 3     | 3 — [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#infisical-environments) |
-| Integrations | 10    | 2 secret syncs — see §5        |
+| Integrations | 10    | the secret syncs in §5         |
 
 The integration count is derived from the sync inventory in §5, not tracked independently — this row
 and `ENV_REFERENCE.md` previously disagreed (7 vs 6) because both counted by hand. Infisical's own
@@ -417,7 +417,7 @@ Note that while `Deploy API` had a `check-changes` path gate, a run was reported
 
 ### 7. Update `.infisical.json`
 
-Replace `REPLACE_WITH_INFISICAL_PROJECT_ID` in `.infisical.json` with the actual project ID.
+`.infisical.json` is committed with the project's `workspaceId` already filled in; nothing to edit. Check that it matches the project from step 1 (Project Settings → Project ID).
 
 ### 8. Test Local Development
 

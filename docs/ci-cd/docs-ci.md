@@ -13,9 +13,26 @@ Two workflows, one job each.
 Both are ASSERTIVE: each checks a fact, costs nothing when you are right, and cannot be satisfied by
 noise. Keep it that way. A COERCIVE check — one that requires a doc *write* rather than checking
 anything — cannot tell truth from filler, so it gets filler. This repo had exactly one,
-`docs-spec-sync`, and deleted it in #1597. Do not add one back. The measured account sits at the
-site where the temptation is acted on: `DOCS_CHECKS` in
-[`required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).
+`docs-spec-sync`, and deleted it in #1597. Do not add one back.
+
+The measured account. `docs-spec-sync` was required, and it demanded a write under `docs/` or
+`spec/` on any PR touching anything else. Filler was the cheapest way to satisfy it, so it
+manufactured the debt it was built to prevent: `docs/guides/README.md` grew an unowned prose chain
+of about 22 unrelated facts, added across seven PRs by authors who needed somewhere to write. The
+`no-doc-change-needed` waiver label did not rescue it. Applying a label is visible and reviewable,
+while appending a paragraph is neither, so an author optimising for green picked the paragraph.
+Measured at `0cf0a650`:
+- 579 of 835 commits on `main` touched `docs/` or `spec/` (561 of 784 excluding merges). That is
+  `git rev-list --count <ref> -- docs/ spec/` over `git rev-list --count <ref>`.
+- Only 28 of 619 merged PRs carried the waiver.
+- The waiver did not exist for the gate's first 174 days.
+
+`doc-paths`, the only other docs gate ever required (promoted 2026-08-21), was retired later with
+the three advisory docs gates. The repo chose to state the standard once and review each diff
+against it. What that gives up: a whole-tree scanner sees a reference in a file the diff never
+touches, and a reviewer does not ([What none of these check](#what-none-of-these-check)).
+`DOCS_CHECKS` in [`required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs) is therefore
+empty, and must stay that way.
 
 ## Env slugs (`check-env-slugs.mjs`)
 

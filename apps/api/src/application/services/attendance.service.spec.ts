@@ -21,6 +21,7 @@ import type { IMemberRepository } from '#domain/repositories/member.repository.i
 import type { Event } from '#domain/entities/event.entity';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import type { Member } from '#domain/entities/member.entity';
+import { memberFixture } from '#test/helpers/entity-fixtures';
 
 describe('AttendanceService', () => {
   let service: AttendanceService;
@@ -146,17 +147,12 @@ describe('AttendanceService', () => {
         ...baseEvent,
         required_role_ids: ['role-alumni'],
       };
-      const alumniMember: Member = {
-        id: 'member-1',
-        user_id: 'user-1',
-        chapter_id: 'ch-1',
+      const alumniMember: Member = memberFixture({
         role_ids: ['role-alumni'],
-        custom_role_ids: [],
         has_completed_onboarding: true,
-        dismissed_ops_nudges: [],
         created_at: '2026-02-01T00:00:00.000Z',
         updated_at: '2026-02-01T00:00:00.000Z',
-      };
+      });
 
       mockRbac.isAlumni.mockResolvedValue(true);
       mockEventRepo.findById.mockResolvedValue(alumniEvent);
@@ -180,17 +176,13 @@ describe('AttendanceService', () => {
         is_mandatory: true,
         required_role_ids: null,
       };
-      const activeMember: Member = {
-        id: 'member-1',
+      const activeMember: Member = memberFixture({
         user_id: 'user-active',
-        chapter_id: 'ch-1',
         role_ids: ['role-member'],
-        custom_role_ids: [],
         has_completed_onboarding: true,
-        dismissed_ops_nudges: [],
         created_at: '2026-02-01T00:00:00.000Z',
         updated_at: '2026-02-01T00:00:00.000Z',
-      };
+      });
       const alumniMember: Member = {
         ...activeMember,
         id: 'member-2',
@@ -227,17 +219,13 @@ describe('AttendanceService', () => {
   // whole contract both callers rely on, and the role-targeted one doubles as
   // the reminder's visibility guarantee.
   describe('resolveRequiredMembers', () => {
-    const activeMember: Member = {
-      id: 'member-1',
+    const activeMember: Member = memberFixture({
       user_id: 'user-active',
-      chapter_id: 'ch-1',
       role_ids: ['role-member'],
-      custom_role_ids: [],
       has_completed_onboarding: true,
-      dismissed_ops_nudges: [],
       created_at: '2026-02-01T00:00:00.000Z',
       updated_at: '2026-02-01T00:00:00.000Z',
-    };
+    });
     const alumniMember: Member = {
       ...activeMember,
       id: 'member-2',
@@ -391,17 +379,12 @@ describe('AttendanceService', () => {
         ...baseEvent,
         required_role_ids: ['role-exec'],
       };
-      const member: Member = {
-        id: 'member-1',
-        user_id: 'user-1',
-        chapter_id: 'ch-1',
+      const member: Member = memberFixture({
         role_ids: ['role-member'],
-        custom_role_ids: [],
         has_completed_onboarding: true,
-        dismissed_ops_nudges: [],
         created_at: '2026-02-01T00:00:00.000Z',
         updated_at: '2026-02-01T00:00:00.000Z',
-      };
+      });
 
       jest.useFakeTimers();
       jest.setSystemTime(duringEvent);
@@ -616,39 +599,28 @@ describe('AttendanceService', () => {
     };
 
     const members: Member[] = [
-      {
-        id: 'member-1',
-        user_id: 'user-1',
-        chapter_id: 'ch-1',
+      memberFixture({
         role_ids: ['role-member'],
-        custom_role_ids: [],
         has_completed_onboarding: true,
-        dismissed_ops_nudges: [],
         created_at: '2020-01-01T00:00:00.000Z',
         updated_at: '2020-01-01T00:00:00.000Z',
-      },
-      {
+      }),
+      memberFixture({
         id: 'member-2',
         user_id: 'user-2',
-        chapter_id: 'ch-1',
         role_ids: ['role-member'],
-        custom_role_ids: [],
         has_completed_onboarding: true,
-        dismissed_ops_nudges: [],
         created_at: '2020-01-01T00:00:00.000Z',
         updated_at: '2020-01-01T00:00:00.000Z',
-      },
-      {
+      }),
+      memberFixture({
         id: 'member-3',
         user_id: 'user-3',
-        chapter_id: 'ch-1',
         role_ids: ['role-exec'],
-        custom_role_ids: [],
         has_completed_onboarding: true,
-        dismissed_ops_nudges: [],
         created_at: '2020-01-01T00:00:00.000Z',
         updated_at: '2020-01-01T00:00:00.000Z',
-      },
+      }),
     ];
 
     it('should mark ABSENT for mandatory event (members without attendance)', async () => {

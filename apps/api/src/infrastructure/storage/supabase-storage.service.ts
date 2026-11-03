@@ -4,7 +4,6 @@ import {
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { parseInstant } from '@repo/formatting';
 import { SUPABASE_CLIENT } from '../supabase/supabase.provider';
 import type {
@@ -67,7 +66,7 @@ const MAX_LISTED_OBJECTS = 100_000;
  */
 type StorageListEntry = NonNullable<
   Awaited<
-    ReturnType<ReturnType<SupabaseClient['storage']['from']>['list']>
+    ReturnType<ReturnType<FrappSupabaseClient['storage']['from']>['list']>
   >['data']
 >[number];
 

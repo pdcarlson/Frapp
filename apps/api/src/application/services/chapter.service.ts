@@ -45,12 +45,13 @@ import {
   DEFAULT_CHANNELS,
   SystemRoleKeys,
 } from '#domain/constants/permissions';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type {
-  FrappSupabaseClient,
-  TablesInsert,
-} from '../../infrastructure/supabase/database.types';
+import {
+  CHAT_CHANNEL_REPOSITORY,
+  type IChatChannelRepository,
+} from '#domain/repositories/chat.repository.interface';
+import type { ChatChannel } from '#domain/entities/chat.entity';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /**
  * The core `chapters` columns `PATCH /v1/chapters/current` can write, and so
@@ -138,7 +139,8 @@ export class ChapterService {
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
-    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    @Inject(CHAT_CHANNEL_REPOSITORY)
+    private readonly channelRepo: IChatChannelRepository,
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     private readonly auditLog: ChapterAuditLogService,
   ) {}
@@ -295,8 +297,8 @@ export class ChapterService {
     // `required_permissions` must be persisted, not defaulted: a ROLE_GATED
     // channel seeded without one is denied by `canAccessChannel`, and before
     // that gate closed it fell open to every chapter member instead (FRA-321).
-    const defaultChannels: TablesInsert<'chat_channels'>[] =
-      DEFAULT_CHANNELS.map((channelDef) => ({
+    const defaultChannels: Partial<ChatChannel>[] = DEFAULT_CHANNELS.map(
+      (channelDef) => ({
         chapter_id: chapter.id,
         name: channelDef.name,
         type: channelDef.type,
@@ -304,18 +306,21 @@ export class ChapterService {
         required_permissions: channelDef.required_permissions
           ? [...channelDef.required_permissions]
           : null,
-      }));
+      }),
+    );
 
-    const { error } = await this.supabase
-      .from('chat_channels')
-      .insert(defaultChannels);
-
-    if (error) {
-      this.logger.error(
+    try {
+      await this.channelRepo.createMany(defaultChannels);
+    } catch (err) {
+      logThrowable(
+        this.logger,
+        'error',
         `Failed to insert default chat channels for chapter ${chapter.id}`,
-        error.message,
+        err,
       );
-      throw new InternalServerErrorException(CHANNEL_SEEDING_ERROR_MESSAGE);
+      throw new InternalServerErrorException(CHANNEL_SEEDING_ERROR_MESSAGE, {
+        cause: toReportableError(err),
+      });
     }
 
     return chapter;

@@ -29,12 +29,10 @@ import { ChatService } from './chat.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
 import { EMAIL_PROVIDER } from '#domain/adapters/email.interface';
 import type { IEmailProvider } from '#domain/adapters/email.interface';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { CHAT_MESSAGE_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
+import type { ChatMessage } from '#domain/entities/chat.entity';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
-import type {
-  FrappSupabaseClient,
-  TablesInsert,
-} from '../../infrastructure/supabase/database.types';
 import {
   resolveAppOrigin,
   buildJoinUrl,
@@ -93,7 +91,8 @@ export class InviteService {
     private readonly chatService: ChatService,
     @Inject(EMAIL_PROVIDER) private readonly emailProvider: IEmailProvider,
     private readonly config: ConfigService,
-    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    @Inject(CHAT_MESSAGE_REPOSITORY)
+    private readonly chatMessages: IChatMessageRepository,
     private readonly legalAcceptance: LegalAcceptanceService,
   ) {}
 
@@ -423,10 +422,10 @@ export class InviteService {
 
   /**
    * Posts a `system_audit` DM to the inviter naming who accepted, per
-   * spec/behavior/chat/README.md. Mirrors the raw-insert pattern
-   * `chapter-onboarding.service.ts` uses for its welcome message —
-   * `ChatService.sendMessage` would reject `SYSTEM_SENDER_ID` as a poster in a
-   * DM it isn't one of the two members of, so this bypasses it the same way.
+   * spec/behavior/chat/README.md. Writes through the message repository, as
+   * `PollService` does for its closing notice — `ChatService.sendMessage` would
+   * reject `SYSTEM_SENDER_ID` as a poster in a DM it isn't one of the two
+   * members of, so this bypasses it.
    * Never allowed to fail the redemption itself: an inviter who left the
    * chapter, a missing accepter profile, or any insert error is logged and
    * swallowed, not thrown.
@@ -451,16 +450,15 @@ export class InviteService {
         member_ids: [invite.created_by, accepterUserId],
       });
 
-      const message: TablesInsert<'chat_messages'> = {
+      const message: Partial<ChatMessage> = {
         channel_id: dm.id,
         sender_id: SYSTEM_SENDER_ID,
         content: `${accepter.display_name} accepted your invite.`,
         kind: 'system_audit',
       };
-      const { error } = await this.supabase
-        .from('chat_messages')
-        .insert(message);
-      if (error) {
+      try {
+        await this.chatMessages.create(message);
+      } catch (error) {
         logThrowable(
           this.logger,
           'warn',

@@ -15,7 +15,7 @@ import {
   Skeleton,
 } from "@/components/shared/async-states";
 import { Button } from "@/components/ui/button";
-import { useTapRevealedMessage } from "@/hooks/use-tap-revealed-message";
+import { useTapRevealedMessage } from "@/lib/hooks/use-tap-revealed-message";
 import { cn } from "@/lib/utils";
 import { COLD_LOAD_MARKS, markColdLoad } from "@/lib/chat/cold-load-marks";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";

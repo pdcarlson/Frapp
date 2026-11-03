@@ -674,14 +674,6 @@ export function getArchetype(key: string): Archetype {
 }
 
 /**
- * Returns the role pack array for `packKey`, falling back to ifc_standard.
- * Never returns undefined.
- */
-export function getRolePack(packKey: string): readonly RoleEntry[] {
-  return (ROLE_PACKS as Record<string, readonly RoleEntry[]>)[packKey] ?? ROLE_PACKS.ifc_standard;
-}
-
-/**
  * Returns the MODULE_CATALOG entry for `key`, falling back to the "chat"
  * (always-on) entry so callers always get a valid object.
  * Never returns undefined.

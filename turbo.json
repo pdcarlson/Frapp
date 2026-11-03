@@ -1,6 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "stream",
+  "agentGuidance": false,
   "globalEnv": [
     "CI",
     "NODE_ENV",

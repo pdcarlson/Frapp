@@ -6,7 +6,7 @@
  *
  * Kebab-case to match the existing client-event convention (`opened-channel`,
  * `ran-slash-command`, the `activation-*` funnel names in
- * `packages/validation/src/analytics.ts`).
+ * `apps/api/src/domain/constants/activation-milestones.ts`).
  *
  * Every property passed alongside these events must be behavioral, never
  * content — `ctx.track` ultimately posts through `POST /v1/analytics/events`,

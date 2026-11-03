@@ -14,7 +14,7 @@ import {
   INVOICE_AMOUNT_MAX_CENTS,
   INVOICE_DESCRIPTION_MAX_LENGTH,
   INVOICE_TITLE_MAX_LENGTH,
-} from '@repo/validation';
+} from '#domain/constants/field-limits';
 
 export class ListInvoicesQueryDto {
   @ApiPropertyOptional({

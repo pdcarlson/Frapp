@@ -10,7 +10,7 @@ description: >
 # each again, with the action reduced to a wrapper that dedupes nothing. The reason
 # the version is single-sourced is that those copies have to AGREE: the
 # production apply and the migration-replay rehearsal exist to be "the same CLI
-# code path" (see `_deploy.yml`'s Rehearse step), and a rehearsal on a
+# code path" (check-migration-replay.mjs, REPLAY_SUPABASE_CLI), and a rehearsal on a
 # different CLI build than the apply proves nothing about the apply. Drift there
 # fails silently -- both runs go green, on different binaries.
 #

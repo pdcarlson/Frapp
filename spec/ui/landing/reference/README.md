@@ -4,8 +4,9 @@
 > ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) and the composition in slice 2
 > ([#2367](https://github.com/pdcarlson/Frapp/issues/2367)) — so the boards under [`canvas/`](canvas/)
 > are the rank-1 visual truth for the landing surface ([`../../README.md`](../../README.md)
-> § Precedence, rule 1). Drift between them and
-> [`apps/landing/app/page.tsx`](../../../../apps/landing/app/page.tsx) is a filable bug now rather
+> § Precedence, rule 1). Drift between them and the page,
+> [`apps/landing/app/page.tsx`](../../../../apps/landing/app/page.tsx) and the sections and frames it
+> composes from [`apps/landing/components/home/`](../../../../apps/landing/components/home/), is a filable bug now rather
 > than an expected gap, with six standing exceptions, none of them drift:
 >
 > - the two decisions below that supersede what the boards draw (D8 and D9);

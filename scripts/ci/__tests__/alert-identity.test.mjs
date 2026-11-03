@@ -17,7 +17,6 @@ import * as prBaseSync from "../pr-base-sync.mjs";
 import * as productionAuthConformance from "../production-auth-conformance.mjs";
 import * as productionBackupEnv from "../production-backup-env.mjs";
 import * as productionBackupFreshness from "../production-backup-freshness.mjs";
-import * as productionBackupStorageFreshness from "../production-backup-storage-freshness.mjs";
 import * as productionGuardrails from "../production-guardrails.mjs";
 import * as productionReleasePin from "../production-release-pin.mjs";
 import * as productionUptime from "../production-uptime.mjs";
@@ -52,15 +51,14 @@ function codeLines(source) {
     .join("\n");
 }
 
-// One row per alert. deploy-alert.mjs serves two workflows from one table, and
-// sentry-sourcemaps-alert.mjs one alert per project and environment.
+// One row per alert. deploy-alert.mjs and production-backup-freshness.mjs each
+// serve two workflows from one table, and sentry-sourcemaps-alert.mjs one alert
+// per project and environment.
 const FLAT = {
   "check-migration-drift": checkMigrationDrift,
   "pr-base-sync": prBaseSync,
   "production-auth-conformance": productionAuthConformance,
   "production-backup-env": productionBackupEnv,
-  "production-backup-freshness": productionBackupFreshness,
-  "production-backup-storage-freshness": productionBackupStorageFreshness,
   "production-guardrails": productionGuardrails,
   "production-release-pin": productionReleasePin,
   "production-uptime": productionUptime,
@@ -74,6 +72,12 @@ const ALERTS = [
     name: `deploy-alert:${config.name}`,
     script: "deploy-alert",
     alert: config.alert,
+  })),
+  // One alert per backup job: the dump and the Storage mirror (#2328).
+  ...Object.entries(productionBackupFreshness.WATCHES).map(([key, watch]) => ({
+    name: `production-backup-freshness:${key}`,
+    script: "production-backup-freshness",
+    alert: watch.alert,
   })),
   // One alert per Sentry project and environment (#2489).
   ...Object.entries(sentrySourcemapsAlert.ALERTS).map(([key, alert]) => ({

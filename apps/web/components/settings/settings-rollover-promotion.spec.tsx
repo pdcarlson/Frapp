@@ -70,7 +70,7 @@ vi.mock("@/components/shared/can", () => ({
     ) : null,
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
 const { SettingsPage } = await import("./settings-page");
 

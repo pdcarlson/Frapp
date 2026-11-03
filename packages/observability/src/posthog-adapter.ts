@@ -284,9 +284,8 @@ export function getPostHogReplayId(): string | undefined {
  * `@repo/validation` is the authorization input.
  *
  * Fail closed unless the bound adapter's distinct id is 64-char lowercase
- * hex — the same bar as identify / API `isFeatureEnabled`. A UUID, email,
- * or missing id must not call through as enabled even if the vendor would
- * return true.
+ * hex — the same bar as identify. A UUID, email, or missing id must not
+ * call through as enabled even if the vendor would return true.
  */
 export function isProductFlagEnabled(flag: string): boolean {
   if (optedOut) return false;

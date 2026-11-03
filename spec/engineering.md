@@ -22,7 +22,7 @@ This document is the canonical statement of Frapp's engineering standard: first 
 
 ## Catalog lookups and defaults
 
-- **Every lookup against a shared catalog (`ARCHETYPES`, `MODULE_CATALOG`, `ROLE_PACKS`, etc.) guards for a missing key with a defined fallback** — typically the `ifc` archetype, the always-on module set, or the archetype-default role pack. Direct subscript like `ARCHETYPES[org.archetype]` without a fallback is forbidden; every consumer goes through a helper (`getArchetype(key)`, `getRolePack(key)`, `getModuleCatalogEntry(key)`) whose fallback is documented in its JSDoc.
+- **Every lookup against a shared catalog (`ARCHETYPES`, `MODULE_CATALOG`, `ROLE_PACKS`, etc.) guards for a missing key with a defined fallback** — typically the `ifc` archetype, the always-on module set, or the archetype-default role pack. Direct subscript like `ARCHETYPES[org.archetype]` without a fallback is forbidden; every consumer goes through a helper (`getArchetype(key)`, `getModuleCatalogEntry(key)`) whose fallback is documented in its JSDoc.
 - **Components that render derived columns or rows from a configurable source pull from that source at render time.** Permission matrices, kanban columns, dashboard tabs, etc. derive their column/row key list from the active `pack.roleKeys` (or equivalent) — never a hardcoded local array. Adding a custom role or column must extend the rendered set without a code change.
 
 ## Seeds and shared state

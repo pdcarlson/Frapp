@@ -3,7 +3,7 @@
 // One implementation, three consumers, deliberately:
 //   * scripts/check-chapter-directory-seed.mjs — the CI gate (no database)
 //   * scripts/load-chapter-directory.mjs       — the loader (needs a database)
-//   * scripts/check-pglite-migrations.mjs      — the CI job that HAS a database
+//   * scripts/pglite/                          — the CI job that HAS a database
 //
 // They must agree on what a valid row is. A validator that accepts a row the
 // loader then rejects (or vice versa) is worse than no validator, so the parse

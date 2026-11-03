@@ -21,7 +21,7 @@ import { can, ROLE_NAME_MAX_LENGTH } from "@repo/validation";
 import { parseBareDateLocalMidnight } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import { StepDots } from "@/components/onboarding/step-dots";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import { ConsentStep } from "./consent-step";
 import { SourceStep, type ImportSource } from "./source-step";

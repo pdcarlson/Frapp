@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, join } from "node:path";
 
@@ -19,7 +19,8 @@ import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
 //
 // So the filter's coverage is derived here from the script, not restated: every
 // path its modules name by `join(...)` or `resolve(...)` on `REPO_ROOT` or
-// `process.cwd()` (the same directory in the entry), by `new URL(...,
+// `process.cwd()` (the same directory: `harness.mjs` defines `REPO_ROOT` as
+// `process.cwd()`, and the other modules import it), by `new URL(...,
 // import.meta.url)`, or by a relative `import`/`export ... from`/`import()`.
 // Each path is resolved as its form resolves it at runtime (a `join` segment is
 // file-system text, a `new URL` or import target is a URL) and then routed the
@@ -46,7 +47,8 @@ import { SEED_RELATIVE_PATH } from "../../lib/chapter-directory-seed.mjs";
 // seed, is imported from its module below rather than restated.
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const ENTRY = "scripts/check-pglite-migrations.mjs";
+const HARNESS = "scripts/pglite";
+const ENTRY = `${HARNESS}/run.mjs`;
 
 // Inputs the job depends on that the forms above cannot derive: the job's own
 // definition, the npm script it runs, the lockfile, and the seed CSV that
@@ -59,8 +61,19 @@ const STRUCTURAL = [
 ];
 
 const REGEX_AFTER_WORD = new Set([
-  "return", "typeof", "case", "in", "of", "void", "delete", "throw", "new",
-  "yield", "await", "else", "do",
+  "return",
+  "typeof",
+  "case",
+  "in",
+  "of",
+  "void",
+  "delete",
+  "throw",
+  "new",
+  "yield",
+  "await",
+  "else",
+  "do",
 ]);
 
 /**
@@ -158,7 +171,8 @@ export function mask(src) {
         i = end;
       } else if (c === "/" && next === "*") {
         const close = src.indexOf("*/", i + 2);
-        if (close === -1) throw new Error(`unterminated block comment at offset ${i}`);
+        if (close === -1)
+          throw new Error(`unterminated block comment at offset ${i}`);
         blank(i, close + 2, " ");
         i = close + 2;
       } else if (c === '"' || c === "'") {
@@ -269,7 +283,10 @@ export function scan(src, file) {
   // Every form routes through here: follow a JavaScript module, record the rest.
   const route = (path, call) => {
     assert.ok(path !== "", `${file}: \`${call}\` names the repo root itself`);
-    assert.ok(path !== ".." && !path.startsWith("../"), `${file}: \`${call}\` names a path outside the repo`);
+    assert.ok(
+      path !== ".." && !path.startsWith("../"),
+      `${file}: \`${call}\` names a path outside the repo`,
+    );
     (/\.[cm]?js$/.test(path) ? follow : found).push(path);
   };
   // A path is never resolved against the checkout's real path, or against a
@@ -320,24 +337,36 @@ export function scan(src, file) {
       const url = new URL(target, new URL(moduleHref, `file:///${root}/`));
       if (url.protocol !== "file:") return null;
       if (url.host !== "" || !url.pathname.startsWith(`/${root}/`)) return "..";
-      return url.pathname
-        .slice(root.length + 2)
-        .split("/")
-        .map((segment) => decodeSegment(segment, call))
-        // WHATWG keeps empty segments (`a//b`, a trailing `/`); a path doesn't.
-        .filter((segment) => segment !== "")
-        .join("/");
+      return (
+        url.pathname
+          .slice(root.length + 2)
+          .split("/")
+          .map((segment) => decodeSegment(segment, call))
+          // WHATWG keeps empty segments (`a//b`, a trailing `/`); a path doesn't.
+          .filter((segment) => segment !== "")
+          .join("/")
+      );
     });
     if (paths[0] === null) return;
-    assert.ok(paths[0] === paths[1], `${file}: \`${call}\` names a path outside the repo`);
+    assert.ok(
+      paths[0] === paths[1],
+      `${file}: \`${call}\` names a path outside the repo`,
+    );
     route(paths[0], call);
   };
 
-  for (const { call, args } of callArgs(src, masked, /\b(?:join|resolve)\s*\(/g)) {
+  for (const { call, args } of callArgs(
+    src,
+    masked,
+    /\b(?:join|resolve)\s*\(/g,
+  )) {
     const [root, ...rest] = args;
     if (root !== "REPO_ROOT" && root !== "process.cwd()") continue;
     const parts = rest.map(literal);
-    assert.ok(parts.length > 0 && parts.every((p) => p !== null), unresolved(call));
+    assert.ok(
+      parts.length > 0 && parts.every((p) => p !== null),
+      unresolved(call),
+    );
     // As in Node, `join` treats a leading `/` as a separator; `resolve`
     // restarts at an absolute segment, which here leaves the repo.
     for (const part of parts) {
@@ -381,11 +410,13 @@ export function scan(src, file) {
       }),
     ),
     // Dynamic: the first argument is the specifier; a second is its attributes.
-    ...callArgs(src, masked, /(?<![.\w$])import\s*\(/g).map(({ call, args }) => {
-      const target = literal(args[0] ?? "");
-      assert.ok(target !== null, unresolved(call));
-      return target;
-    }),
+    ...callArgs(src, masked, /(?<![.\w$])import\s*\(/g).map(
+      ({ call, args }) => {
+        const target = literal(args[0] ?? "");
+        assert.ok(target !== null, unresolved(call));
+        return target;
+      },
+    ),
   ];
   for (const specifier of specifiers) {
     // ESM resolves only `./`, `../` and `/` as paths; anything else is a package.
@@ -414,9 +445,39 @@ function inputs() {
   return [...found];
 }
 
+/**
+ * The tiers `run.mjs` runs: each `await import("./tiers/<name>.mjs")` in its
+ * live code, as harness-relative paths. Read from the masked source, so an
+ * import inside a comment or string is no import, and an `import()` that is not
+ * awaited does not count: `run.mjs` reads the failure count and closes the
+ * database once its last await returns, so an unawaited tier could still be
+ * running then.
+ */
+function awaitedTiers(src) {
+  return callArgs(src, mask(src), /\bawait\s+import\s*\(/g)
+    .map(({ call, args }) => {
+      const target = literal(args[0] ?? "");
+      assert.ok(target !== null, `run.mjs: cannot resolve \`${call}\``);
+      return target;
+    })
+    .filter((target) => target.startsWith("./tiers/"))
+    .map((target) => target.slice(2));
+}
+
+/** Every `.mjs` under `scripts/pglite/`, harness-relative and `/`-separated. */
+function harnessModules() {
+  return readdirSync(join(REPO, HARNESS), { recursive: true, encoding: "utf8" })
+    .map((rel) => rel.split("\\").join("/"))
+    .filter((rel) => rel.endsWith(".mjs"))
+    .sort();
+}
+
 /** The `changes.pglite` filter's patterns, in order. */
 function pgliteFilter() {
-  const lines = readFileSync(join(REPO, ".github/workflows/ci.yml"), "utf8").split("\n");
+  const lines = readFileSync(
+    join(REPO, ".github/workflows/ci.yml"),
+    "utf8",
+  ).split("\n");
   const start = lines.findIndex((line) => /^\s+pglite:\s*$/.test(line));
   assert.ok(start > 0, "no `pglite:` filter in ci.yml — re-point this test");
   const indent = lines[start].search(/\S/);
@@ -427,7 +488,10 @@ function pgliteFilter() {
     const m = line.match(/^\s*-\s*['"]?([^'"#]+?)['"]?\s*(#.*)?$/);
     if (m) patterns.push(m[1].trim());
   }
-  assert.ok(patterns.length > 0, "the `pglite:` filter parsed empty — the parser broke");
+  assert.ok(
+    patterns.length > 0,
+    "the `pglite:` filter parsed empty — the parser broke",
+  );
   return patterns;
 }
 
@@ -438,7 +502,8 @@ function pgliteFilter() {
  */
 function covered(path, patterns) {
   const abs = join(REPO, path);
-  const probe = existsSync(abs) && statSync(abs).isDirectory() ? `${path}/x` : path;
+  const probe =
+    existsSync(abs) && statSync(abs).isDirectory() ? `${path}/x` : path;
   return patterns.some((p) =>
     p.endsWith("/**") ? probe.startsWith(p.slice(0, -2)) : probe === p,
   );
@@ -457,7 +522,7 @@ describe("pglite-migrations: required, and its path filter covers what it reads"
     // shrinks and the coverage assertion below passes over nothing.
     const found = inputs();
     for (const expected of [
-      "apps/api/src/application/services/search.service.ts",
+      "apps/api/src/infrastructure/supabase/repositories/supabase-search.repository.ts",
       "supabase/migrations",
       "supabase/seed/chapter_directory.csv",
       "scripts/demo/seed-demo.mjs",
@@ -467,7 +532,10 @@ describe("pglite-migrations: required, and its path filter covers what it reads"
       "scripts/load-chapter-directory.mjs",
       "scripts/lib/chapter-directory-seed.mjs",
     ]) {
-      assert.ok(found.includes(expected), `derivation no longer finds ${expected}`);
+      assert.ok(
+        found.includes(expected),
+        `derivation no longer finds ${expected}`,
+      );
     }
   });
 
@@ -482,6 +550,49 @@ describe("pglite-migrations: required, and its path filter covers what it reads"
   });
 });
 
+// A tier runs only when `run.mjs` imports it: each tier's body executes on
+// import, and `run.mjs` lists them by hand, in order (#3226). A tier file that
+// is never imported, or whose import line is deleted, commented out or left
+// unawaited, stops running without failing anything: the job reports fewer
+// assertions and stays green. `chat-read-surface-ledger.spec.ts` also resolves a
+// `{ pglite: '<name>' }` proof by finding that `name:` in any module here, so an
+// orphaned module would keep a proof alive. These hold every module loaded. They
+// cannot prove a loaded module's code runs every scenario it names.
+describe("pglite-migrations: every module under scripts/pglite is loaded", () => {
+  it("run.mjs awaits every tier", () => {
+    const awaited = new Set(awaitedTiers(readFileSync(join(REPO, ENTRY), "utf8")));
+    const tiers = harnessModules().filter((rel) => rel.startsWith("tiers/"));
+    assert.ok(tiers.length > 0, "found no tiers — re-point this test");
+    assert.deepEqual(
+      tiers.filter((rel) => !awaited.has(rel)),
+      [],
+      'these tiers never run: add `await import("./tiers/<name>.mjs");` to scripts/pglite/run.mjs, in order',
+    );
+  });
+
+  it("every other module is one the check reads", () => {
+    const read = new Set(inputs());
+    assert.deepEqual(
+      harnessModules().filter((rel) => !read.has(`${HARNESS}/${rel}`)),
+      [],
+      "nothing run.mjs loads imports these",
+    );
+  });
+
+  it("counts an awaited import in live code, and nothing else", () => {
+    const src = [
+      '// run.mjs replays `supabase/migrations/*.sql` (an opener with no closer)',
+      'await import("./tiers/on.mjs"); // await import("./tiers/trailing.mjs");',
+      '/* await import("./tiers/block.mjs"); */',
+      'import("./tiers/unawaited.mjs");',
+      'const s = \'await import("./tiers/string.mjs")\';',
+      'await import("./tiers/last.mjs");',
+      "/** a doc comment after the list */",
+    ].join("\n");
+    assert.deepEqual(awaitedTiers(src), ["tiers/on.mjs", "tiers/last.mjs"]);
+  });
+});
+
 describe("the scanner reads each form as what it is", () => {
   // Every case here is one an earlier regex version of this test misread.
   const at = "scripts/ci/lib/example.mjs";
@@ -489,7 +600,7 @@ describe("the scanner reads each form as what it is", () => {
   it("takes any quote style and any number of literal arguments", () => {
     const { found, follow } = scan(
       [
-        'readFileSync(join(REPO_ROOT, "apps", \'api\', `x.ts`));',
+        "readFileSync(join(REPO_ROOT, \"apps\", 'api', `x.ts`));",
         'spawn(join(process.cwd(), "scripts", "y.mjs"));',
       ].join("\n"),
       at,
@@ -531,7 +642,7 @@ describe("the scanner reads each form as what it is", () => {
   it("fails on a target it cannot resolve: computed, nested or escaped", () => {
     for (const src of [
       "new URL(name(), import.meta.url);",
-      "new URL(join(\"..\", \"x.sql\"), import.meta.url);",
+      'new URL(join("..", "x.sql"), import.meta.url);',
       "join(REPO_ROOT, dir);",
       "await import(`./${name}.mjs`);",
       // An encoded `/`, and an escape that decodes to nothing.
@@ -549,7 +660,8 @@ describe("the scanner reads each form as what it is", () => {
   });
 
   it("reads import attributes as attributes, not as a second path", () => {
-    const src = 'const d = await import("./data.json", { with: { type: "json" } });';
+    const src =
+      'const d = await import("./data.json", { with: { type: "json" } });';
     assert.deepEqual(scan(src, at).found, ["scripts/ci/lib/data.json"]);
   });
 
@@ -570,7 +682,10 @@ describe("the scanner reads each form as what it is", () => {
       "const q = (v) => `'${String(v).replace(/'/g, \"''\")}'`;",
       'const s = "join(REPO_ROOT, x)"; import("./y.mjs");',
     ].join("\n");
-    assert.deepEqual(scan(src, at), { found: [], follow: ["scripts/ci/lib/y.mjs"] });
+    assert.deepEqual(scan(src, at), {
+      found: [],
+      follow: ["scripts/ci/lib/y.mjs"],
+    });
   });
 
   it("finds every static form, two to a line included", () => {
@@ -582,7 +697,9 @@ describe("the scanner reads each form as what it is", () => {
     ].join("\n");
     assert.deepEqual(scan(src, at), {
       found: ["scripts/ci/lib/cfg.json"],
-      follow: ["a", "b", "d", "e", "c", "f"].map((n) => `scripts/ci/lib/${n}.mjs`),
+      follow: ["a", "b", "d", "e", "c", "f"].map(
+        (n) => `scripts/ci/lib/${n}.mjs`,
+      ),
     });
   });
 
@@ -642,23 +759,56 @@ describe("the scanner reads each form as what it is", () => {
       assert.throws(() => scan(src, at), /outside the repo/, src);
     }
     // The root itself is no file to cover.
-    assert.throws(() => scan('join(REPO_ROOT, "a", "..");', at), /repo root itself/);
+    assert.throws(
+      () => scan('join(REPO_ROOT, "a", "..");', at),
+      /repo root itself/,
+    );
   });
 
   it("tells a division from a regex after `++`, a property, a spread and a condition", () => {
     // Each misread would blank the `join` between the two slashes.
     for (const [src, path] of [
-      ['const n = i++ / 2; join(REPO_ROOT, "b.sql"); const q = n / 3;', "b.sql"],
-      ['const h = o.return / 2; join(REPO_ROOT, "c.sql"); const k = h / 4;', "c.sql"],
-      ['const h = o. return / 2; join(REPO_ROOT, "m.sql"); const k = h / 4;', "m.sql"],
-      ['const h = this.#in / 2; join(REPO_ROOT, "n.sql"); const k = h / 4;', "n.sql"],
+      [
+        'const n = i++ / 2; join(REPO_ROOT, "b.sql"); const q = n / 3;',
+        "b.sql",
+      ],
+      [
+        'const h = o.return / 2; join(REPO_ROOT, "c.sql"); const k = h / 4;',
+        "c.sql",
+      ],
+      [
+        'const h = o. return / 2; join(REPO_ROOT, "m.sql"); const k = h / 4;',
+        "m.sql",
+      ],
+      [
+        'const h = this.#in / 2; join(REPO_ROOT, "n.sql"); const k = h / 4;',
+        "n.sql",
+      ],
       ['if (ok) /\\/\\//.test(u); join(REPO_ROOT, "d.sql");', "d.sql"],
-      ['for await (const x of y) /a"b/.test(x); join(REPO_ROOT, "e.sql");', "e.sql"],
-      ['const r = a.if(b) / 2; join(REPO_ROOT, "f.sql"); const q = 1 / 2;', "f.sql"],
-      ['const s = Symbol.for(k) / 2; join(REPO_ROOT, "g.sql"); const t = 1 / 2;', "g.sql"],
-      ['const s = this.#for(k) / 2; join(REPO_ROOT, "h.sql"); const t = 1 / 2;', "h.sql"],
-      ['const s = o. for(k) / 2; join(REPO_ROOT, "i.sql"); const t = 1 / 2;', "i.sql"],
-      ['const v = await (p) / 2; join(REPO_ROOT, "j.sql"); const w = 1 / 2;', "j.sql"],
+      [
+        'for await (const x of y) /a"b/.test(x); join(REPO_ROOT, "e.sql");',
+        "e.sql",
+      ],
+      [
+        'const r = a.if(b) / 2; join(REPO_ROOT, "f.sql"); const q = 1 / 2;',
+        "f.sql",
+      ],
+      [
+        'const s = Symbol.for(k) / 2; join(REPO_ROOT, "g.sql"); const t = 1 / 2;',
+        "g.sql",
+      ],
+      [
+        'const s = this.#for(k) / 2; join(REPO_ROOT, "h.sql"); const t = 1 / 2;',
+        "h.sql",
+      ],
+      [
+        'const s = o. for(k) / 2; join(REPO_ROOT, "i.sql"); const t = 1 / 2;',
+        "i.sql",
+      ],
+      [
+        'const v = await (p) / 2; join(REPO_ROOT, "j.sql"); const w = 1 / 2;',
+        "j.sql",
+      ],
       ['while (ok) /a"b/.test(u); join(REPO_ROOT, "k.sql");', "k.sql"],
       ['for (const x of y) /a"b/.test(x); join(REPO_ROOT, "l.sql");', "l.sql"],
       ['x = [... await /a"b/.test(u)]; join(REPO_ROOT, "o.sql");', "o.sql"],

@@ -3,7 +3,8 @@ import {
   ChapterWorkflowsService,
   ORG_WORKFLOWS_SEED,
 } from './chapter-workflows.service';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { CHAPTER_CONFIG_REPOSITORY } from '#domain/repositories/chapter-config.repository.interface';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 const CHAPTER_ID = 'ch-1';
 
@@ -25,31 +26,25 @@ const TEST_SEED = [
 type WorkflowRow = { enabled: boolean; threshold: number | null } | null;
 
 /**
- * Supabase stub: `chapter_workflows` resolves `workflowRow` through
- * `maybeSingle()`. Pass an `error` to exercise the read-failure fallback.
+ * Repository stub: `findWorkflow` resolves `workflowRow`, or rejects the way
+ * the repository does on a query error when `error` is passed.
  */
-function makeSupabase(
+function makeConfigRepo(
   workflowRow: WorkflowRow,
   error: { message: string } | null = null,
 ) {
-  const from = jest.fn(() => {
-    const builder: Record<string, jest.Mock> = {};
-    builder.select = jest.fn().mockReturnValue(builder);
-    builder.eq = jest.fn().mockReturnValue(builder);
-    builder.maybeSingle = jest.fn().mockResolvedValue({
-      data: error ? null : workflowRow,
-      error,
-    });
-    return builder;
-  });
-  return { from };
+  return {
+    findWorkflow: error
+      ? jest.fn().mockRejectedValue(new SupabaseQueryError(error))
+      : jest.fn().mockResolvedValue(workflowRow),
+  };
 }
 
-async function buildService(supabase: { from: jest.Mock }) {
+async function buildService(configRepo: { findWorkflow: jest.Mock }) {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       ChapterWorkflowsService,
-      { provide: SUPABASE_CLIENT, useValue: supabase },
+      { provide: CHAPTER_CONFIG_REPOSITORY, useValue: configRepo },
       { provide: ORG_WORKFLOWS_SEED, useValue: TEST_SEED },
     ],
   }).compile();
@@ -59,7 +54,7 @@ async function buildService(supabase: { from: jest.Mock }) {
 describe('ChapterWorkflowsService', () => {
   describe('getWorkflow', () => {
     it('returns seed defaults when the chapter has no override row', async () => {
-      const service = await buildService(makeSupabase(null));
+      const service = await buildService(makeConfigRepo(null));
 
       const result = await service.getWorkflow(CHAPTER_ID, 'wf_dues_grace');
 
@@ -72,7 +67,7 @@ describe('ChapterWorkflowsService', () => {
 
     it('returns the chapter override when a row exists', async () => {
       const service = await buildService(
-        makeSupabase({ enabled: false, threshold: 10 }),
+        makeConfigRepo({ enabled: false, threshold: 10 }),
       );
 
       const result = await service.getWorkflow(CHAPTER_ID, 'wf_dues_grace');
@@ -86,7 +81,7 @@ describe('ChapterWorkflowsService', () => {
 
     it('falls back to the seed threshold when the row leaves it null', async () => {
       const service = await buildService(
-        makeSupabase({ enabled: true, threshold: null }),
+        makeConfigRepo({ enabled: true, threshold: null }),
       );
 
       const result = await service.getWorkflow(CHAPTER_ID, 'wf_dues_grace');
@@ -99,7 +94,7 @@ describe('ChapterWorkflowsService', () => {
     });
 
     it('treats an unknown key with no row as disabled', async () => {
-      const service = await buildService(makeSupabase(null));
+      const service = await buildService(makeConfigRepo(null));
 
       const result = await service.getWorkflow(CHAPTER_ID, 'wf_unknown');
 
@@ -112,7 +107,7 @@ describe('ChapterWorkflowsService', () => {
 
     it('falls back to seed defaults and logs when the read errors', async () => {
       const service = await buildService(
-        makeSupabase(
+        makeConfigRepo(
           { enabled: false, threshold: null },
           {
             message: 'connection reset',
@@ -140,12 +135,24 @@ describe('ChapterWorkflowsService', () => {
         expect.stringContaining('chapter_workflows read failed'),
       );
     });
+
+    it('reads the override for the requested chapter and key', async () => {
+      const repo = makeConfigRepo(null);
+      const service = await buildService(repo);
+
+      await service.getWorkflow(CHAPTER_ID, 'wf_dues_grace');
+
+      expect(repo.findWorkflow).toHaveBeenCalledWith(
+        CHAPTER_ID,
+        'wf_dues_grace',
+      );
+    });
   });
 
   describe('getDuesGraceDays', () => {
     it('returns 0 when wf_dues_grace is disabled for the chapter', async () => {
       const service = await buildService(
-        makeSupabase({ enabled: false, threshold: 10 }),
+        makeConfigRepo({ enabled: false, threshold: 10 }),
       );
 
       await expect(service.getDuesGraceDays(CHAPTER_ID)).resolves.toBe(0);
@@ -153,7 +160,7 @@ describe('ChapterWorkflowsService', () => {
 
     it('returns the chapter workflow threshold when set', async () => {
       const service = await buildService(
-        makeSupabase({ enabled: true, threshold: 10 }),
+        makeConfigRepo({ enabled: true, threshold: 10 }),
       );
 
       await expect(service.getDuesGraceDays(CHAPTER_ID)).resolves.toBe(10);
@@ -161,21 +168,21 @@ describe('ChapterWorkflowsService', () => {
 
     it('honors an explicit zero-day grace', async () => {
       const service = await buildService(
-        makeSupabase({ enabled: true, threshold: 0 }),
+        makeConfigRepo({ enabled: true, threshold: 0 }),
       );
 
       await expect(service.getDuesGraceDays(CHAPTER_ID)).resolves.toBe(0);
     });
 
     it('falls back to the seed threshold when unconfigured', async () => {
-      const service = await buildService(makeSupabase(null));
+      const service = await buildService(makeConfigRepo(null));
 
       await expect(service.getDuesGraceDays(CHAPTER_ID)).resolves.toBe(7);
     });
 
     it('clamps an absurd threshold instead of overflowing date arithmetic', async () => {
       const service = await buildService(
-        makeSupabase({ enabled: true, threshold: 999_999_999_999 }),
+        makeConfigRepo({ enabled: true, threshold: 999_999_999_999 }),
       );
 
       await expect(service.getDuesGraceDays(CHAPTER_ID)).resolves.toBe(365);

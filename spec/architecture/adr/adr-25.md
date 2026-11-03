@@ -55,7 +55,7 @@
   4. **Web dashboard and third-party sign-in and billing.**
      - *Code:*
        - Tab titles, the auth headings, onboarding, settings and roles copy, the invite share text and the CSV and ICS filenames, plus the `packages/validation` and `packages/hooks` strings the dashboard renders.
-       - Everything that names the Discord application or bot, on both sides: the web import copy, and the API's Discord error messages (`discord-import.service.ts`, `discord-bot-gateway.service.ts`, `discord-api-message.ts`).
+       - Everything that names the Discord application or bot, on both sides: the web import copy, and the API's Discord error messages (`discord-import.service.ts`, `discord-bot-gateway.service.ts`, `discord-api-message.ts`). *2026-10-08: every one of these messages in `discord-import.service.ts` (the server scan's errors and the channel step's "Frapp bot" refusal) moved to `discord-import-channel-mapping.service.ts` ([#3271](https://github.com/pdcarlson/Frapp/issues/3271)).*
      - *Specs and docs:*
        - the web half of `writing.md` § 7's Sign in title;
        - the tab-title template and title-lock description in `spec/ui/web-greenfield/deletion-checklist.md` § Copy, with a dated note (*2026-10-01:* that file is deleted, and the rule it recorded is [`spec/ui/web-dashboard/README.md` § Errors and tab titles](../../ui/web-dashboard/README.md#errors-and-tab-titles), [#2743](https://github.com/pdcarlson/Frapp/issues/2743));
@@ -87,10 +87,11 @@
   **Every step updates, in the same PR, every test and gate that pins a string it changes.** That means:
   - the `scripts/ci/__tests__/signet-*.test.mjs` locks, which were written to keep "Frapp" out of exactly these strings, and whose headers still cite the cancelled deferred rename;
   - component and unit specs such as `onboarding-tutorial.spec.tsx` ("says Signet, not Frapp");
-  - `scripts/check-pglite-migrations.mjs`;
+  - the PGlite gate, `scripts/pglite/` (*2026-10-07: a single `scripts/check-pglite-migrations.mjs` until [#3226](https://github.com/pdcarlson/Frapp/issues/3226) split it*);
   - the conformance tests.
 
   An unflipped check fails CI. A lock that spans surfaces (calendar PRODID, export filenames, the auth wordmark and the ops-nudge copy) is split per surface by the first step that touches it.
+  *2026-10-07 ([#3225](https://github.com/pdcarlson/Frapp/issues/3225)): with the code steps 2 to 5 landed, the thirteen locks they left behind (`frapp-api-copy`, `frapp-auth-wordmark`, `frapp-invite-from`, `frapp-landing-copy`, `frapp-mailer-subjects`, `frapp-mobile-copy`, `frapp-mobile-permissions`, `frapp-ops-nudge-copy`, `frapp-public-title`, `frapp-smtp-sender-name`, `frapp-system-display-name`, `frapp-web-copy`, `frapp-web-titles`) were folded into one table-driven `scripts/ci/__tests__/frapp-naming.test.mjs`. Its walks, pinned sites, allowlists and floors are the locks' own, and a plant at each formerly pinned site fails it. Step 6 and the owner's console follow-ups above are unaffected.*
 
   **This is the one list of specs, docs and consoles each step moves.** `spec/ui/brand-identity.md` § 1 links here rather than keeping its own copy.
   - It was found by reading every Markdown line that says Signet: `spec/` at `ee9dd538`, and `docs/`, the root and package READMEs and `.claude/` at this ADR's branch. The read left out the reference boards (covered by `spec/ui/README.md` precedence rule 1), ADRs, and uses of the name that mean the design system or the product in general prose.

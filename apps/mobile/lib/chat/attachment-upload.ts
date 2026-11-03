@@ -23,7 +23,7 @@ import {
  * URL, PUT the bytes, hand back an `OutboxAttachment` for the send to claim.
  * Nothing changes server-side for this: `POST /v1/channels/{id}/upload-url`
  * already authorizes with the same `assertChannelAccess(… 'post')` the send
- * uses, and `ChatService.persistAttachments` already turns a claimed
+ * uses, and `ChatAttachmentService.persistAttachments` already turns a claimed
  * `storage_path` into a `chat_message_attachments` row.
  *
  * ## Why this is not a hook

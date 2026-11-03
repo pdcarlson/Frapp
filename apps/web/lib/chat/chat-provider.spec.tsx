@@ -44,7 +44,7 @@ vi.mock("@/lib/auth/use-frapp-user", () => ({
 }));
 vi.mock("./chat-scope", () => ({ useChatOutboundScope: () => null }));
 vi.mock("./offline-queue", () => ({ createDexieOutboxStore: () => ({}) }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("@/lib/realtime/supabase-realtime", () => ({
   getRealtimeClient: () => ({}),
 }));

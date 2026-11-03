@@ -51,7 +51,7 @@
 //   than that (".onrender" + ".com") is beyond a text scan.
 //
 // WHAT OTHER LOCKS OWN. Not restated here:
-// - `expo.name` is `Frapp`: frapp-mobile-copy.test.mjs. This lock checks only
+// - `expo.name` is `Frapp`: frapp-naming.test.mjs. This lock checks only
 //   that app.config.js doesn't change it.
 // - The exact API origin production and preview bake in:
 //   eas-production-profile.test.mjs pins it, and `app.config.js` refuses a
@@ -171,7 +171,7 @@ export function identityProblems(expo) {
 /**
  * app.config.js may add fields (a Google services path, the git SHA), but it
  * must hand back every identifier, and the home-screen name, as app.json has
- * them. The values themselves are identityProblems' and frapp-mobile-copy's.
+ * them. The values themselves are identityProblems' and frapp-naming's.
  */
 export function dynamicLayerProblems(staticExpo, resolved) {
   const fields = [

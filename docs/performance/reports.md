@@ -60,7 +60,7 @@ Five consequences worth remembering when editing these queries:
   which is used for ordering and need not be projected. Offset paging over a
   non-unique sort key has no guaranteed order between statements, so rows
   sharing a sort value across a page boundary can be returned twice or
-  skipped. `getServiceReport` sorts `date desc, id asc` for exactly this
+  skipped. `SupabaseReportRepository.findServiceEntries` sorts `date desc, id asc` for exactly this
   reason. The one read that cannot do this is the points RPC, which exposes no
   key — tracked in #747.
 - **A total order is not a snapshot.** The pages are separate statements, so a

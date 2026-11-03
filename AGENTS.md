@@ -61,7 +61,7 @@ The repo is mid-rebuild (legacy Frapp → the Signet design system; the product 
 
 ## Project overview
 
-Turborepo + npm workspaces: 4 apps, 14 shared packages. Product and architecture: `spec/`. Developer guides: [`docs/guides/`](docs/guides/README.md). Documentation map: [`docs/README.md`](docs/README.md).
+Turborepo + npm workspaces: 4 apps, 13 shared packages. Product and architecture: `spec/`. Developer guides: [`docs/guides/`](docs/guides/README.md). Documentation map: [`docs/README.md`](docs/README.md).
 
 ## Branch model
 
@@ -77,7 +77,7 @@ Turborepo + npm workspaces: 4 apps, 14 shared packages. Product and architecture
 | Step | Command |
 | ---- | ------- |
 | Lint | `npm run lint` / `npm run lint:api` (read-only) |
-| Lint autofix | `npm run lint:api:fix`, the only lint script that writes; see [contributing.md §5](docs/guides/contributing.md#5-linting-types-and-tests) |
+| Lint autofix | `npm run lint:api:fix`, the only lint script that writes; see [`CONTRIBUTING.md` § Linting, types, and tests](CONTRIBUTING.md#linting-types-and-tests) |
 | Tests | `npm run test -w apps/api` |
 | Build | `npm run build` |
 | Types | `npm run check-types` (for the API, specs included: [what it runs](docs/ci-cd/agent-infra.md#typescript-7-is-native-tsc-plus-a-typescript-6-compiler-api)) |
@@ -86,7 +86,7 @@ Turborepo + npm workspaces: 4 apps, 14 shared packages. Product and architecture
 | API contract | `npm run check:api-contract` |
 | Doc links | `npm run check:links` (links and heading anchors); run `npm run install:lychee` first |
 | Migrations | `npm run check:migration-safety` |
-| Boundaries | `npm run check:dep-cruiser`, a required gate. `scripts/dependency-cruiser-known-violations.json` grandfathers pre-existing violations and only shrinks: read it to tell whether a violation is yours, and don't re-record it to pass ([why](docs/ci-cd/quality-gates.md#the-baseline)) |
+| Boundaries | `npm run check:dep-cruiser`, a required gate; `npm run check:dep-cruiser:rules` proves its rules still fire. `scripts/dependency-cruiser-known-violations.json` grandfathers pre-existing violations and only shrinks: read it to tell whether a violation is yours, and don't re-record it to pass ([why](docs/ci-cd/quality-gates.md#the-baseline)) |
 | Duplication | `npm run check:duplication`, advisory; the threshold only ratchets down |
 | API breaking changes | `npm run check:api-breaking:shipped` blocks against every shipped mobile build; `npm run check:api-breaking -- --base origin/main` is advisory. Run `bash scripts/install-oasdiff.sh` first |
 | Coverage | `npm run test:cov`, a measurement, not a gate |

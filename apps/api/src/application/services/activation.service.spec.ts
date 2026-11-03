@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ACTIVATION_MILESTONES } from '@repo/validation';
+import { ACTIVATION_MILESTONES } from '#domain/constants/activation-milestones';
 import { ActivationService } from './activation.service';
 import { AnalyticsService } from './analytics.service';
 import {

@@ -7,7 +7,10 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
-import { ChatChannel } from '#domain/entities/chat.entity';
+import type {
+  ChatChannel,
+  ChatChannelPushRouting,
+} from '#domain/entities/chat.entity';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { SupabaseQueryError } from '../supabase-query-error';
 
@@ -87,6 +90,20 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
     return data || [];
   }
 
+  async findPushRouting(
+    channelId: string,
+  ): Promise<ChatChannelPushRouting | null> {
+    const { data, error } = await this.supabase
+      .from('chat_channels')
+      .select(
+        'id, chapter_id, name, is_read_only, type, member_ids, required_permissions, default_notification_level',
+      )
+      .eq('id', channelId)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
   async findDm(
     chapterId: string,
     memberIds: string[],
@@ -146,6 +163,25 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
     }
 
     return data;
+  }
+
+  async findByName(
+    chapterId: string,
+    name: string,
+  ): Promise<ChatChannel | null> {
+    const { data, error } = await this.supabase
+      .from('chat_channels')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('name', name)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async createMany(rows: TablesInsert<'chat_channels'>[]): Promise<void> {
+    const { error } = await this.supabase.from('chat_channels').insert(rows);
+    if (error) throw new SupabaseQueryError(error);
   }
 
   async create(data: TablesInsert<'chat_channels'>): Promise<ChatChannel> {

@@ -6,7 +6,11 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import { IUserRepository } from '#domain/repositories/user.repository.interface';
-import { User, UserDisplayIdentity } from '#domain/entities/user.entity';
+import {
+  User,
+  UserContact,
+  UserDisplayIdentity,
+} from '#domain/entities/user.entity';
 import { chunkIds } from '#domain/utils/chunk-ids';
 import { SupabaseQueryError } from '../supabase-query-error';
 
@@ -40,19 +44,29 @@ export class SupabaseUserRepository implements IUserRepository {
   async findDisplayIdentitiesByIds(
     ids: string[],
   ): Promise<UserDisplayIdentity[]> {
+    return this.findColumnsByIds(ids, 'id, display_name, avatar_url');
+  }
+
+  async findContactsByIds(ids: string[]): Promise<UserContact[]> {
+    return this.findColumnsByIds(ids, 'id, display_name, email');
+  }
+
+  /**
+   * `columns` for each id, read in chunks. Chunked, unlike `findByIds` above: a
+   * chapter-sized id list in one `in (...)` overflows the request line and
+   * returns 414 with nothing worth reading (see the measurement in
+   * `domain/utils/chunk-ids`). A failed chunk fails the whole read.
+   */
+  private async findColumnsByIds<
+    C extends 'id, display_name, avatar_url' | 'id, display_name, email',
+  >(ids: string[], columns: C) {
     if (!ids.length) return [];
-    // Chunked, unlike `findByIds` above: a chapter-sized id list in one
-    // `in (...)` overflows the request line and returns 414 with nothing worth
-    // reading (see the measurement in `domain/utils/chunk-ids`).
     const pages = await Promise.all(
       chunkIds(ids).map((chunk) =>
-        this.supabase
-          .from('users')
-          .select('id, display_name, avatar_url')
-          .in('id', chunk),
+        this.supabase.from('users').select(columns).in('id', chunk),
       ),
     );
-    const rows: UserDisplayIdentity[] = [];
+    const rows = [];
     for (const { data, error } of pages) {
       if (error) throw new SupabaseQueryError(error);
       rows.push(...(data ?? []));

@@ -14,12 +14,8 @@
  * `destroy()` — with no single owning provider, one screen unmounting must not
  * tear the manager out from under another.
  *
- * Imports are **subpath-only** (`@repo/chat-core/adapters`, `/chat-client`,
- * `/realtime-manager`). The barrel additionally re-exports `./dispatch` →
- * `@repo/chat-integrations`, a package whose `types` and `require` conditions
- * point at a `dist/` that is never built (#989). It resolves today, but slash
- * commands are out of scope for this slice and there is no reason to pull that
- * edge in.
+ * Imports are by subpath (`@repo/chat-core/adapters`, `/chat-client`,
+ * `/realtime-manager`); the package has no barrel (#3228).
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";

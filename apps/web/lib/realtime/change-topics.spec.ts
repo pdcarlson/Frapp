@@ -57,7 +57,7 @@ const MIGRATIONS_DIR = join(__dirname, "../../../../supabase/migrations");
  * policies only `if exists (select 1 from pg_roles where rolname = …)`, and a
  * statement skipped here is one this test can't see. Attributes follow the
  * local Supabase image, as in the other harness.
- * `scripts/check-pglite-migrations.mjs` builds its own, different substrate
+ * `scripts/pglite/` builds its own, different substrate
  * (`auth.*` stubbed per scenario, its own probe roles) for its own tiers: a
  * migration that needs a new extension or role has to be registered in both.
  */

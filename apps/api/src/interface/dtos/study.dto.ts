@@ -12,7 +12,8 @@ import {
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { INT4_MAX, POINTS_ADJUSTMENT_MAX } from '@repo/validation';
+import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
+import { INT4_MAX } from '#domain/constants/field-limits';
 
 export class GeofenceCoordinateDto {
   @ApiProperty()

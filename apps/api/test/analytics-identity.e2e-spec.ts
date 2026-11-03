@@ -9,7 +9,7 @@ import { isPseudonymHex } from '@repo/observability';
 import {
   hashChapterIdForAnalytics,
   hashUserIdForAnalytics,
-} from '@repo/validation';
+} from '#domain/utils/analytics-keying';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/application/services/auth.service';
 import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';

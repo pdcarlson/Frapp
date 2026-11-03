@@ -72,6 +72,8 @@ lists them and says what a phone needs instead of `127.0.0.1`.
 
 Build `.env.local` per app using `npm run -s supabase -- status -o env` and [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Then run the “Without Infisical” commands in the table above. NestJS reads `.env.local` then `.env`.
 
+The API's `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `STRIPE_PRICE_ID` are required to boot. Use real test-mode values to exercise billing; where each comes from (including the webhook secret `stripe listen` prints), and which placeholder values skip the boot-time Stripe check, is in [`ENV_REFERENCE.md` § Core App Secrets](./ENV_REFERENCE.md#core-app-secrets).
+
 ## Cloud sandbox (Claude Code web)
 
 Claude Code web is the cloud agent environment; its bringup is
@@ -105,9 +107,9 @@ Run it from the repo root:
 npm run test:floor -w apps/web
 ```
 
-That runs every spec under `apps/web/tests/visual/` — today just
+That runs every spec under `apps/web/tests/visual/` (the 375px floor specs, e.g.
 `responsive-floor.spec.ts`, which asserts each dashboard route renders without
-horizontal scroll at 375px. It stores no baseline and compares no pixels, so
+horizontal scroll, plus `nav-fit.spec.ts`). It stores no baseline and compares no pixels, so
 there is no regeneration ritual and no browser-revision sensitivity: any
 Chromium Playwright will launch gives the same answer. Prefix with `CI=true` to
 match CI's `workers: 1` and `forbidOnly` exactly when reproducing a failure.
@@ -117,8 +119,8 @@ width against the budget, and its classes, so there is no artifact to download �
 the log is the diagnosis.
 
 The gate runs as **`web-responsive-floor`**, a required check. It is path-gated:
-every push to `main`, and on pull requests only when the `web` filter matches
-(`apps/web/**`, `packages/**`, `package-lock.json`, `turbo.json`), so a docs- or
+every push to `main`, and on pull requests only when the `web` filter in `ci.yml` matches
+(`apps/web/**`, `packages/**` and the other build-affecting paths listed there), so a docs- or
 API-only PR skips it.
 
 > **The `web-visual-regression` snapshot job is gone.** It compared each route
@@ -147,7 +149,8 @@ cloud sandbox's [`cloud-sandbox-up.sh`](../../../scripts/cloud-sandbox-up.sh) so
 paths cannot drift. Its behaviour is pinned by
 [`local-postgres-acl.test.sh`](../../../scripts/lib/local-postgres-acl.test.sh) — hermetic (docker
 is stubbed, no daemon or database needed), run it with
-`bash scripts/lib/local-postgres-acl.test.sh`. **No CI job runs it yet.** Sandbox-specific failures (network policy, image registry, sentinels) are in
+`bash scripts/lib/local-postgres-acl.test.sh`. CI runs it, with every other `*.test.sh`, through
+[`shell-suites.test.mjs`](../../../scripts/ci/__tests__/shell-suites.test.mjs) in `npm run test:ci-scripts`. Sandbox-specific failures (network policy, image registry, sentinels) are in
 [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md#when-bringup-fails--stop-and-report).
 
 ## Related docs

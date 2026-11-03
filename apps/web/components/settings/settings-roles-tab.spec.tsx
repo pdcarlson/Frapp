@@ -47,7 +47,7 @@ vi.mock("@/components/roles/roles-page", () => ({
 }));
 
 const mockToast = vi.fn();
-vi.mock("@/hooks/use-toast", () => ({
+vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 

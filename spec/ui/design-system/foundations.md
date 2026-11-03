@@ -258,7 +258,7 @@ The grid as CSS custom properties. Every value is 4 × an integer; that is the w
 Panel 4h defines no motion tokens, so **no Signet motion values are locked yet (TODO-DESIGN)**. What that does and does not put in question:
 
 - **Settled — the discipline.** The three-class taxonomy (micro-feedback, standard transition, context shift), the budget each class is held to, and the requirements that motion stay subtle, functional, and reduced-motion-compatible bind every surface today. They are owned by [`README.md`](README.md) §7 and are not restated here.
-- **Provisional — the numbers only.** The durations and easing curves in use are carried forward from the legacy `@repo/theme` system (`packages/theme/src/tokens.ts`, `motion.duration` / `motion.easing`) and are listed in README §7. Implementations SHOULD keep using them so motion stays consistent across the app, but they are placeholders, not Signet canon: a Signet motion spec MAY replace every value without changing any rule above.
+- **Provisional — the numbers only.** The durations and easing curves in use are carried forward from the legacy `@repo/theme` system, now in `packages/theme/src/motion.ts` (`duration` / `easing`) and are listed in README §7. Implementations SHOULD keep using them so motion stays consistent across the app, but they are placeholders, not Signet canon: a Signet motion spec MAY replace every value without changing any rule above.
 
 ---
 

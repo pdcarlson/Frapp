@@ -99,7 +99,7 @@ vi.mock("@/components/shared/can", () => ({
   },
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
 const { PlanPanel } = await import("./plan-panel");
 

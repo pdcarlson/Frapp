@@ -10,7 +10,7 @@ export const metadata: Metadata = routeMetadata({
 });
 
 // Owner-approved wording, 2026-09-23 (#2261, #2302, #1562). A material change
-// here also bumps `LEGAL_POLICY_VERSION` in `@repo/validation`, which asks every
+// here also bumps `LEGAL_POLICY_VERSION` in the API, which asks every
 // user to accept again, and moves `lastUpdated` below to match. Any change to
 // the text updates this page's pin in
 // scripts/ci/__tests__/legal-policy-version.test.mjs, which enforces both. The

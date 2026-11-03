@@ -73,9 +73,8 @@ issue, and the fresh session can't tell which is current.
 
 If you learned something the tracker doesn't know, it belongs in the tracker. This skill requests no
 GitHub tools, so when you can't update it, say so in one line of the handoff ("the tracker is stale
-on X; update it before relying on that section") and let the fresh session fix it. Don't route
-around this with `gh` or raw REST; the GitHub MCP is the only sanctioned tracker path (`AGENTS.md`
-§ Work tracking).
+on X; update it before relying on that section") and let the fresh session fix it. No `gh` or raw
+REST fallback ([`AGENTS.md` § Work tracking](../../../AGENTS.md#work-tracking)).
 
 ## Gather live state
 

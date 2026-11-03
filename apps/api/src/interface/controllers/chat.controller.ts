@@ -20,6 +20,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ChatService } from '../../application/services/chat.service';
+import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
+import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
+import { ChatCategoryService } from '../../application/services/chat-category.service';
+import { ChatReactionService } from '../../application/services/chat-reaction.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -68,6 +72,10 @@ import type { ChannelType } from '#domain/entities/chat.entity';
 export class ChatController {
   constructor(
     private readonly chatService: ChatService,
+    private readonly attachments: ChatAttachmentService,
+    private readonly notificationPreferences: ChatNotificationPreferenceService,
+    private readonly categories: ChatCategoryService,
+    private readonly reactions: ChatReactionService,
     private readonly rbacService: RbacService,
   ) {}
 
@@ -111,7 +119,7 @@ export class ChatController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ): Promise<ChannelNotificationPreferenceDto[]> {
-    return this.chatService.getChannelNotificationPreferences(
+    return this.notificationPreferences.getChannelNotificationPreferences(
       chapterId,
       userId,
     );
@@ -131,7 +139,10 @@ export class ChatController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ): Promise<KindNotificationPreferenceDto[]> {
-    return this.chatService.getKindNotificationPreferences(chapterId, userId);
+    return this.notificationPreferences.getKindNotificationPreferences(
+      chapterId,
+      userId,
+    );
   }
 
   @Put('notification-preferences/kinds/:kind')
@@ -145,7 +156,7 @@ export class ChatController {
     @CurrentUser('id') userId: string,
     @Body() dto: SetKindNotificationLevelDto,
   ): Promise<KindNotificationPreferenceDto> {
-    return this.chatService.setKindNotificationLevel(
+    return this.notificationPreferences.setKindNotificationLevel(
       chapterId,
       userId,
       kind,
@@ -164,7 +175,11 @@ export class ChatController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ): Promise<ClearedKindNotificationPreferenceDto> {
-    return this.chatService.clearKindNotificationLevel(chapterId, userId, kind);
+    return this.notificationPreferences.clearKindNotificationLevel(
+      chapterId,
+      userId,
+      kind,
+    );
   }
 
   @Get(':id')
@@ -313,7 +328,7 @@ export class ChatController {
   @Get('categories/list')
   @ApiOperation({ summary: 'List channel categories' })
   async listCategories(@CurrentChapterId() chapterId: string) {
-    return this.chatService.getCategories(chapterId);
+    return this.categories.getCategories(chapterId);
   }
 
   @Post('categories')
@@ -323,7 +338,7 @@ export class ChatController {
     @CurrentChapterId() chapterId: string,
     @Body() dto: CreateCategoryDto,
   ) {
-    return this.chatService.createCategory({
+    return this.categories.createCategory({
       chapter_id: chapterId,
       name: dto.name,
       display_order: dto.display_order,
@@ -338,7 +353,7 @@ export class ChatController {
     @CurrentChapterId() chapterId: string,
     @Body() dto: UpdateCategoryDto,
   ) {
-    return this.chatService.updateCategory(id, chapterId, dto);
+    return this.categories.updateCategory(id, chapterId, dto);
   }
 
   @Delete('categories/:id')
@@ -348,7 +363,7 @@ export class ChatController {
     @Param('id') id: string,
     @CurrentChapterId() chapterId: string,
   ) {
-    await this.chatService.deleteCategory(id, chapterId);
+    await this.categories.deleteCategory(id, chapterId);
     return { success: true };
   }
 
@@ -424,7 +439,7 @@ export class ChatController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.chatService.listMessageAttachments(
+    return this.attachments.listMessageAttachments(
       channelId,
       chapterId,
       userId,
@@ -439,7 +454,7 @@ export class ChatController {
    * URLs expire, so they mint on request rather than riding a cacheable
    * message field. Nested under `:id` like `listMessageAttachments` — the
    * avatar path set is derived server-side from the given message ids
-   * (`ChatService.resolveAuthorAvatars` → `findAuthorAvatarPaths`), never
+   * (`ChatAttachmentService.resolveAuthorAvatars` → `findAuthorAvatarPaths`), never
    * from a caller-supplied storage path, so the ordinary channel-access
    * check applies exactly as it does for attachments.
    */
@@ -453,7 +468,7 @@ export class ChatController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.chatService.resolveAuthorAvatars(
+    return this.attachments.resolveAuthorAvatars(
       channelId,
       chapterId,
       userId,
@@ -559,7 +574,7 @@ export class ChatController {
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
     @Body() dto: ChatMessageActionDto,
   ) {
-    return this.chatService.recordMessageAction(
+    return this.reactions.recordMessageAction(
       messageId,
       chapterId,
       userId,
@@ -578,7 +593,7 @@ export class ChatController {
     @CurrentUser('id') userId: string,
     @Body() dto: ReactionDto,
   ) {
-    return this.chatService.toggleReaction(
+    return this.reactions.toggleReaction(
       messageId,
       chapterId,
       userId,
@@ -593,7 +608,7 @@ export class ChatController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.chatService.getReactions(messageId, chapterId, userId);
+    return this.reactions.getReactions(messageId, chapterId, userId);
   }
 
   // ── File Upload ────────────────────────────────────────────────────
@@ -615,7 +630,7 @@ export class ChatController {
     // used to pass the service object straight through with no response DTO,
     // so OpenAPI documented it as empty and the composer had to read it
     // through an `as unknown as` cast.
-    const ticket = await this.chatService.requestChatUploadUrl(
+    const ticket = await this.attachments.requestChatUploadUrl(
       channelId,
       chapterId,
       userId,
@@ -670,7 +685,7 @@ export class ChatController {
     @CurrentUser('id') userId: string,
     @Body() dto: SetChannelNotificationLevelDto,
   ): Promise<ChannelNotificationPreferenceDto> {
-    return this.chatService.setChannelNotificationLevel(
+    return this.notificationPreferences.setChannelNotificationLevel(
       channelId,
       chapterId,
       userId,

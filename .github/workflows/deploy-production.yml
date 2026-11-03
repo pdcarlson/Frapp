@@ -124,7 +124,7 @@ run-name: "${{ inputs.dry_run_only == true && 'DRY RUN · ' || '' }}${{ inputs.s
 # Every environment-scoped job costs its own Approve click. Migrate + deploy +
 # verify live in ONE `environment: production` job so a production release is
 # one approval, not four. That job is `_deploy.yml`'s, the one staging runs
-# too (epic #2802, #2805): its header has the order and the trust split, and
+# too (epic #2802, #2805): ci-cd.md has the order and the trust split, and
 # production's layers are its steps named `inputs.environment ==
 # 'production'`. The `release`, `mobile` and `deploy-outcome` jobs name no
 # environment and add no clicks; the jobs `release` and `mobile` call name
@@ -180,9 +180,10 @@ on:
         type: choice
         options: [auto, patch, minor, major]
       mobile_build:
-        # A choice, not a box: Android can't upload until the Play account
-        # exists (#2556), and an Android build until then would only spend EAS
-        # quota on a binary that fails its upload. `none` is the unticked box.
+        # A choice, not a box: Android can't upload until EAS holds a Play
+        # service-account key (#938) and GOOGLE_SERVICES_JSON (#1826), and an
+        # Android build until then would only spend EAS quota on a binary that
+        # fails its build or its upload. `none` is the unticked box.
         description: "After a live 'full' ship and its tag, build this SHA on EAS, upload it to TestFlight / Play internal (not released), and open the shipped-builds.json PR. 'none' builds nothing."
         required: false
         default: none

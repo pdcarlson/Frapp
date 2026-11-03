@@ -5,25 +5,21 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PostgrestError } from '@supabase/supabase-js';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type {
-  FrappSupabaseClient,
-  TablesInsert,
-  TablesUpdate,
-} from '../../infrastructure/supabase/database.types';
 import type {
   ChapterCustomField,
   CustomFieldVisibility,
   MemberCustomFieldValue,
 } from '#domain/entities/chapter-custom-field.entity';
-import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
+import {
+  CUSTOM_FIELD_REPOSITORY,
+  CustomFieldKeyConflictError,
+  type ICustomFieldRepository,
+} from '#domain/repositories/custom-field.repository.interface';
 import type { CreateCustomField, UpdateCustomField } from '@repo/validation';
 import {
   ChapterAuditLogService,
   type AuditDiff,
 } from './chapter-audit-log.service';
-import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 /**
  * What `create` and `update` accept.
@@ -52,21 +48,6 @@ export type UpdateCustomFieldInput = UpdateCustomField;
  */
 const AUDIT_TARGET_TYPE = 'chapter_custom_field';
 
-/** Shape of a Supabase row response after the (untyped) query builder. */
-type RowResponse = {
-  data: ChapterCustomField | null;
-  error: PostgrestError | null;
-};
-type ListResponse = {
-  data: ChapterCustomField[] | null;
-  error: PostgrestError | null;
-};
-type ValuesResponse = {
-  data: { field_id: string; value: string | null }[] | null;
-  error: PostgrestError | null;
-};
-type MutateResponse = { error: PostgrestError | null };
-
 /**
  * CRUD over `chapter_custom_fields`, scoped to the active chapter (Settings →
  * Fields). Part of the settings family: every mutation appends a
@@ -78,19 +59,13 @@ type MutateResponse = { error: PostgrestError | null };
 @Injectable()
 export class CustomFieldService {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    @Inject(CUSTOM_FIELD_REPOSITORY)
+    private readonly fields: ICustomFieldRepository,
     private readonly auditLog: ChapterAuditLogService,
   ) {}
 
   async findByChapter(chapterId: string): Promise<ChapterCustomField[]> {
-    const { data, error }: ListResponse = await this.supabase
-      .from('chapter_custom_fields')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .order('sort', { ascending: true })
-      .order('created_at', { ascending: true });
-    if (error) throw new SupabaseQueryError(error);
-    return data ?? [];
+    return this.fields.findByChapter(chapterId);
   }
 
   /**
@@ -109,31 +84,24 @@ export class CustomFieldService {
   ): Promise<MemberCustomFieldValue[]> {
     if (allowed.size === 0) return [];
 
-    const { data: defs, error: defsError }: ListResponse = await this.supabase
-      .from('chapter_custom_fields')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .in('visibility', Array.from(allowed))
-      .order('sort', { ascending: true })
-      .order('created_at', { ascending: true });
-    if (defsError) throw new SupabaseQueryError(defsError);
-    if (!defs || defs.length === 0) return [];
+    const defs = await this.fields.findByVisibility(
+      chapterId,
+      Array.from(allowed),
+    );
+    if (defs.length === 0) return [];
 
     // Restrict the value lookup to the already visibility-filtered field IDs so
     // out-of-tier / `sensitive` values are never even selected server-side —
     // not merely dropped after the fact (spec/behavior/members.md: values are
     // queried against the allowed tiers, never post-fetch scrubbed).
     const visibleFieldIds = defs.map((def) => def.id);
-    const { data: values, error: valuesError }: ValuesResponse =
-      await this.supabase
-        .from('member_custom_field_values')
-        .select('field_id, value')
-        .eq('member_id', memberId)
-        .in('field_id', visibleFieldIds);
-    if (valuesError) throw new SupabaseQueryError(valuesError);
+    const values = await this.fields.findValuesForMember(
+      memberId,
+      visibleFieldIds,
+    );
 
     const valueByFieldId = new Map(
-      (values ?? []).map((row) => [row.field_id, row.value]),
+      values.map((row) => [row.field_id, row.value]),
     );
 
     return defs.map((def) => ({
@@ -158,17 +126,7 @@ export class CustomFieldService {
     allowed: Set<CustomFieldVisibility>,
   ): Promise<{ id: string; visibility: CustomFieldVisibility }[]> {
     if (allowed.size === 0) return [];
-
-    const { data, error } = (await this.supabase
-      .from('chapter_custom_fields')
-      .select('id, visibility')
-      .eq('chapter_id', chapterId)
-      .in('visibility', Array.from(allowed))) as {
-      data: { id: string; visibility: CustomFieldVisibility }[] | null;
-      error: PostgrestError | null;
-    };
-    if (error) throw new SupabaseQueryError(error);
-    return data ?? [];
+    return this.fields.findIdsByVisibility(chapterId, Array.from(allowed));
   }
 
   /**
@@ -181,18 +139,7 @@ export class CustomFieldService {
   async findValuesByFieldIds(
     fieldIds: string[],
   ): Promise<{ member_id: string; field_id: string; value: string | null }[]> {
-    if (!fieldIds.length) return [];
-
-    const { data, error } = (await this.supabase
-      .from('member_custom_field_values')
-      .select('member_id, field_id, value')
-      .in('field_id', fieldIds)) as {
-      data:
-        { member_id: string; field_id: string; value: string | null }[] | null;
-      error: PostgrestError | null;
-    };
-    if (error) throw new SupabaseQueryError(error);
-    return data ?? [];
+    return this.fields.findValuesByFieldIds(fieldIds);
   }
 
   async create(
@@ -208,7 +155,7 @@ export class CustomFieldService {
       );
     }
 
-    const row: TablesInsert<'chapter_custom_fields'> = {
+    const row: Partial<ChapterCustomField> = {
       chapter_id: chapterId,
       key: dto.key,
       label: dto.label,
@@ -226,22 +173,18 @@ export class CustomFieldService {
       // the Fields tab sends no `sort`, so that was every field an officer adds.
       sort: dto.sort ?? (await this.nextSort(chapterId)),
     };
-    const { data, error }: RowResponse = await this.supabase
-      .from('chapter_custom_fields')
-      .insert(row)
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === PG_UNIQUE_VIOLATION) {
+    let field: ChapterCustomField;
+    try {
+      field = await this.fields.create(row);
+    } catch (error) {
+      if (error instanceof CustomFieldKeyConflictError) {
         throw new ConflictException(
           'A custom field with this key already exists in this chapter',
         );
       }
-      throw new SupabaseQueryError(error);
+      throw error;
     }
 
-    const field = data as ChapterCustomField;
     await this.auditLog.record({
       chapterId,
       actorUserId,
@@ -277,7 +220,7 @@ export class CustomFieldService {
 
     // `key` and `type` are immutable — only presentation attrs and options are
     // patchable.
-    const patch: TablesUpdate<'chapter_custom_fields'> = {};
+    const patch: Partial<ChapterCustomField> = {};
     if (dto.label !== undefined) patch.label = dto.label;
     if (dto.required !== undefined) patch.required = dto.required;
     if (dto.visibility !== undefined) patch.visibility = dto.visibility;
@@ -293,16 +236,9 @@ export class CustomFieldService {
       return existing;
     }
 
-    const { data, error }: RowResponse = await this.supabase
-      .from('chapter_custom_fields')
-      .update(patch)
-      .eq('id', id)
-      .eq('chapter_id', chapterId)
-      .select()
-      .single();
-    if (error || !data) throw new NotFoundException('Custom field not found');
+    const field = await this.fields.update(id, chapterId, patch);
+    if (!field) throw new NotFoundException('Custom field not found');
 
-    const field = data;
     await this.auditLog.record({
       chapterId,
       actorUserId,
@@ -324,12 +260,7 @@ export class CustomFieldService {
     // what was removed and a stray id 404s.
     const existing = await this.findOne(id, chapterId);
 
-    const { error }: MutateResponse = await this.supabase
-      .from('chapter_custom_fields')
-      .delete()
-      .eq('id', id)
-      .eq('chapter_id', chapterId);
-    if (error) throw new SupabaseQueryError(error);
+    await this.fields.delete(id, chapterId);
 
     await this.auditLog.record({
       chapterId,
@@ -349,31 +280,16 @@ export class CustomFieldService {
    * to the same value is a cosmetic tie that `created_at` already breaks.
    */
   private async nextSort(chapterId: string): Promise<number> {
-    const { data, error } = (await this.supabase
-      .from('chapter_custom_fields')
-      .select('sort')
-      .eq('chapter_id', chapterId)
-      .order('sort', { ascending: false })
-      .limit(1)
-      .maybeSingle()) as {
-      data: { sort: number } | null;
-      error: PostgrestError | null;
-    };
-    if (error) throw new SupabaseQueryError(error);
-    return data ? data.sort + 1 : 0;
+    const max = await this.fields.findMaxSort(chapterId);
+    return max === null ? 0 : max + 1;
   }
 
   private async findOne(
     id: string,
     chapterId: string,
   ): Promise<ChapterCustomField> {
-    const { data, error }: RowResponse = await this.supabase
-      .from('chapter_custom_fields')
-      .select('*')
-      .eq('id', id)
-      .eq('chapter_id', chapterId)
-      .maybeSingle();
-    if (error || !data) throw new NotFoundException('Custom field not found');
-    return data;
+    const field = await this.fields.findById(id, chapterId);
+    if (!field) throw new NotFoundException('Custom field not found');
+    return field;
   }
 }

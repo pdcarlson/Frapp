@@ -78,7 +78,7 @@ export function normalizeSha(value) {
 // GitHub counts all three as satisfying a required check, and so does branch
 // protection. `skipped` is the load-bearing one: this repo path-gates several
 // required jobs with a job-level `if:`, and a job skipped that way reports
-// Success. See the long note in `lib/required-checks.mjs`.
+// Success (spec/architecture/adr/adr-15.md, amendment 2026-08-19).
 export const ACCEPTED_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
 
 /**

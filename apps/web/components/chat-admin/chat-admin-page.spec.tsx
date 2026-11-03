@@ -55,7 +55,7 @@ vi.mock("./chat-reports-card", () => ({
 
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
-vi.mock("@/hooks/use-toast", () => ({
+vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 

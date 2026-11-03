@@ -14,8 +14,8 @@ docs, and earlier sessions describe what was intended, and deployed reality drif
 You're done when every claim you make about deploys, CI, secrets, or service health rests on a
 provider read you ran, or is reported as unverified with the reason.
 
-Never print secret values. Reference only variable names and whether they're present. Anything you
-print can end up in a PR, an issue, or a log.
+Report secrets by name and presence only
+([`AGENTS.md` § Credentials and secrets](../../../AGENTS.md#credentials-and-secrets)).
 
 Credential env var names and legacy aliases:
 [`AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md). Canonical variable
@@ -62,7 +62,7 @@ From a cloud sandbox:
   the proxy route.
 
 Measurements and the canonical statement:
-[`agent-infra.md` → Work status](../../../docs/ci-cd/agent-infra.md#work-status).
+[`agent-infra.md` → The `api.github.com` route rule](../../../docs/ci-cd/agent-infra.md#the-apigithubcom-route-rule).
 
 ### Repo settings the MCP has no tool for (direct REST read)
 

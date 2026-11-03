@@ -40,13 +40,6 @@ export function shouldEnablePostHogReplay(opts: {
   return false;
 }
 
-export const OBSERVABILITY_PROVIDERS = {
-  exceptions: "sentry",
-  traces: "sentry",
-  productAnalytics: "posthog",
-  replay: "posthog",
-} as const;
-
 /**
  * Content-free PostHog timeline marker named in
  * `spec/behavior/observability.md` § Privacy and replay. Emitted from the

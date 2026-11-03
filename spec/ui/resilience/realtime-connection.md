@@ -116,13 +116,12 @@ useEffect(() => {
 > `packages/chat-core/src/realtime-manager.ts`).
 >
 > **Maintenance (Item 4 / #1076, follow-up):** web chat and non-chat realtime
-> import `@repo/chat-core` by subpath (the `exports` map in
-> `packages/chat-core/package.json` lists them). The six #937
+> import `@repo/chat-core` by subpath
+> ([its package row](../../architecture/README.md#4-shared-packages)). The six #937
 > S3 re-export shims are deleted. `packages/chat-core/src/topic-registry.ts` is
 > imported directly (`@repo/chat-core/topic-registry`); the #937 web
 > topic-registry re-export shim is gone. `apps/web/lib/chat/offline-queue.ts` type-
-> imports `OutboxStore` from `@repo/chat-core/adapters`, not the package
-> barrel.
+> imports `OutboxStore` from `@repo/chat-core/adapters`.
 >
 > **The same rule binds every non-chat subscription.** `useRealtimeTable`
 > derives its topic from `table` + `scopeId` alone, so an effect re-run driven by

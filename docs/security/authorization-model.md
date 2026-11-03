@@ -42,7 +42,7 @@ Every route uses one of these. Anything that matches none of them is a bug.
 | --- | --- | --- | --- |
 | **A** | **Guard-resolved chapter** — the handler takes `@CurrentChapterId()` and never a client chapter id | `ChapterGuard` verified membership | `tasks`, `events`, `invoices` — the majority |
 | **B** | **Scoped repository read** — `findById(id, chapterId)`; a foreign id simply returns no row | Query predicate | `task.service.ts:78`, `event.service.ts`, `financial-invoice.service.ts:103` |
-| **C** | **Fetch-then-compare** — unscoped `findById(id)` followed by an explicit `chapter_id !== chapterId` throw | Post-fetch check | `member.service.ts:112`, `rbac.service.ts:71`, `invite.service.ts:148` |
+| **C** | **Fetch-then-compare** — unscoped `findById(id)` followed by an explicit `chapter_id !== chapterId` throw | Post-fetch check | `member.service.ts:112`, `rbac.service.ts:71`, `InviteService.revoke` |
 | **D** | **Self-scoped** — the row is keyed by the caller's own user id, no chapter involved | `@CurrentUser('id')` | `users/me`, `settings`, `push-tokens`, `notifications` |
 
 Idiom **C** is the fragile one: the check is a separate statement that a refactor can drop without
@@ -100,7 +100,7 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 | `POST /webhooks/stripe` | none (throttler skipped) | **HMAC signature** verified against `STRIPE_WEBHOOK_SECRET` before the body is parsed; an invalid signature is `401` (`webhook.controller.ts:52-66`). Not user-authenticated by design |
 | `GET /chapter-directory/search` | A | Public reference dataset (Greek orgs + universities). Contains no chapter-owned data |
 | `GET /analytics/identity` | A | **D** — returns the caller's own pseudonymous id |
-| `POST /analytics/events` | A | Body carries `chapter_id`; `trackFromClient` resolves `members.findByUserAndChapter(userId, chapterId)` and **403s a non-member**; a DB error fails closed (`analytics.service.ts:157-170`) |
+| `POST /analytics/events` | A | Body carries `chapter_id`; `trackFromClient` resolves `members.findByUserAndChapter(userId, chapterId)` and **403s a non-member**; a DB error fails closed (`AnalyticsService.trackFromClient`) |
 | `POST /chapters/onboard` | A | Creates a new chapter for the caller; no existing row is addressed |
 | `GET /chapters` | A | **D** — lists only the caller's own memberships. Each embedded chapter is the member-safe projection (`toChapterMemberView`), not the raw row: this route carries no billing permission, and before #930 it shipped `stripe_customer_id` / `subscription_id` for every chapter the caller belongs to |
 | `POST /chapters/:id/activate` | A | Client-supplied `:id`, but `setActiveChapter` requires a membership row and throws `403` otherwise (`chapter.service.ts:81-87`) |
@@ -178,7 +178,7 @@ migration `20260930030000`, which added `discord_import_created_channels`
 migration `20260915210100`, when it had drifted by four: `rush_candidates` and
 `rush_candidate_votes` (#494) had never been added, and `chat_member_blocks` /
 `chat_message_reports` (#2257) arrived with the same gap. Nothing in CI checks
-this list — `scripts/check-pglite-migrations.mjs` reconciles the *policy*
+this list — `scripts/pglite/tiers/policy-inventory.mjs` reconciles the *policy*
 inventory in § "The policies that do exist" and never the table one — so it
 drifts silently and only a re-derivation catches it.
 
@@ -224,7 +224,7 @@ than drift: `realtime.messages` needs a `realtime` schema PGlite does not have.
 `auth_admin_can_read_users` and `auth_admin_can_read_members`, created only inside
 `if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin')`
 (`20260802120000_active_chapter_jwt_claim.sql:137`), are present since the harness creates that
-role before applying migrations (#1557). `scripts/check-pglite-migrations.mjs` pins the `public`
+role before applying migrations (#1557). `scripts/pglite/tiers/policy-inventory.mjs` pins the `public`
 set **by name, command and roles**, so each of these fails CI: adding or dropping one of those 10,
 flipping one from `SELECT` to `ALL`, or changing its `TO` clause. The last case is dropping
 `to authenticated` from `chat_messages_select`, which would bind it to `anon` on hosted. Because
@@ -279,7 +279,7 @@ set search_path = public, pg_temp
 resolution order instead of its implicit position at the front. `search_path = pg_temp, public` is
 not a partial fix — it is the original defect spelled out.
 
-This is checked, not just conventional: `scripts/check-pglite-migrations.mjs` applies every migration
+This is checked, not just conventional: `scripts/pglite/` applies every migration
 and fails the `pglite-migrations` job if any `SECURITY DEFINER` function in `public` does not pin
 `pg_temp` last. Whether that job blocks a merge is set in
 [the branch protection runbook § Required Status Checks](../ops/github-branch-protection-runbook.md#required-status-checks)
@@ -348,7 +348,7 @@ today, so it is the norm rather than a quirk:
 | Bucket | Route guard | What actually gates the mint |
 | --- | --- | --- |
 | `chat` | `members:view` | `assertChannelAccess(…, 'post')` in `requestChatUploadUrl` — the same gate `sendMessage` applies, so mint and send cannot diverge (#2186) |
-| `chat-archive` | `members:view` | `assertChannelAccess` in the attachment and author-avatar download mints (`chat.service.ts:1742,1876`) |
+| `chat-archive` | `members:view` | `assertChannelAccess` in the attachment and author-avatar download mints (`ChatAttachmentService.listMessageAttachments` and `resolveAuthorAvatars`) |
 | `service` | `members:view` | the owner-or-admin check in `ServiceEntryService.getProofDownloadUrl`, so one member cannot pull another's proof |
 
 The general rule the first of these came from: **every step of a multi-step write authorizes as the
@@ -466,7 +466,7 @@ managing permission) *on top of* chapter scoping, so their fixtures are owned by
 
 The rest of the e2e suite stubs `ChapterGuard`; this spec must not, or it tests nothing.
 
-### RLS enforcement (`scripts/check-pglite-migrations.mjs`)
+### RLS enforcement (`scripts/pglite/`)
 
 Four tables are covered black-box, by reading them as unprivileged probe roles rather than by
 pattern-matching the policy expression: `rls_probe`, a member of `authenticated`, for a signed-in

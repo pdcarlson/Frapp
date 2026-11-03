@@ -1,6 +1,6 @@
 # @repo/theme
 
-Shared Tailwind preset, CSS variables, design tokens, and chapter accent helpers for Frapp apps.
+Shared Tailwind preset, CSS variables and design tokens for Frapp apps.
 
 ## Signet tokens (`./signet`)
 
@@ -28,11 +28,12 @@ in that same cutover — a cutover deletes what it replaces, and a stylesheet no
 surface imports is not a migration window. `src/tailwind.config.spec.ts` was
 re-pointed at `signet.css` in the same change.
 
-The `./tokens` **export** is removed with it — nothing outside the package ever
-imported it. The module itself **stays**, and is not dead:
-`accent.ts` reads `frappTokens.color.brand.bronze` as the accent engine's
-fallback, and both the preset and `signet.ts` read its motion scale. What went
-is the stylesheet, not the token module.
+The `./tokens` **export** went with it, and the legacy bone/bronze/ink
+`tokens.ts` module itself followed in
+[#3227](https://github.com/pdcarlson/Frapp/issues/3227): its last readers were
+the motion scale, now `src/motion.ts`, and the bronze default of the accent
+resolver, which moved to its one caller in `apps/web/components/settings/` with
+its `./accent` export removed.
 
 ## Fonts
 

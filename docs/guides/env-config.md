@@ -6,12 +6,11 @@ This guide explains how Frapp is configured across local, staging, and productio
 
 We maintain three main environments:
 
-- **Local** — developer machine, Supabase CLI + Docker, `.env.local` files
-- **Staging** — Supabase Cloud (staging project), containerized API, Vercel-hosted frontends —
-  but the frontends are **frozen since 2026-09-02**: both Vercel projects were unlinked from Git
-  (`frapp-landing` 2026-09-01, `frapp-web` 2026-09-02), so no merge deploys web or landing.
-  Canonical record: ADR-21 in [`spec/architecture/adr/adr-21.md`](../../spec/architecture/adr/adr-21.md)
-- **Production** — Supabase Cloud (prod project), API + frontends on production infrastructure
+- **Local** — developer machine, Supabase CLI + Docker, secrets from Infisical `dev` (`.env.local` as fallback; see §3)
+- **Staging** — Supabase Cloud (staging project), the API on Render, web and landing on Vercel. A merge to `main` whose CI passes runs its deploy, which ships what the merge changed.
+- **Production** — Supabase Cloud (prod project), the API on Render, web and landing on Vercel. Deployed only from a named commit, by the **Deploy production** workflow.
+
+How each deploy runs, in order: [`docs/ops/deployment/ci-cd.md` § How Deployments Are Gated](../ops/deployment/ci-cd.md#how-deployments-are-gated). Why it is shaped that way: [`spec/environments/README.md` § 6](../../spec/environments/README.md#6-continuous-deployment-cd).
 
 ## 2. Secrets management
 
@@ -23,30 +22,12 @@ Key principles:
 
 - **Infisical is the single source of truth** for all non-local secrets.
 - **No `.env.example` files** — the centralized `ENV_REFERENCE.md` replaces them.
-- **No placeholder secrets in CI** — CI only runs lint, typecheck, and tests (no runtime secrets needed).
+- **No placeholder secrets in CI** — CI (`ci.yml`) reads no runtime secrets. Where a job needs a value only to exist, it sets a deliberately fake stand-in that ships nowhere; what ships gets real values from Infisical (the frontends at build time, the API through its Render sync) ([`ci-cd.md` § Secrets in CI vs CD](../ops/deployment/ci-cd.md#secrets-in-ci-vs-cd)).
 - **Provider-native syncs** — Infisical pushes secrets to its sync destinations automatically (inventory linked above). Mobile EAS credentials are managed in Expo/EAS.
 
 ## 3. Local development setup
 
-**Recommended:** use the **Infisical CLI** as the primary local flow so secrets stay centralized (same source as staging/prod). Authenticate once with `npx infisical login`, then run apps with secrets injected:
-
-```bash
-npx infisical run --env=dev -- npm run start:dev -w apps/api
-npx infisical run --env=dev -- npm run dev -w apps/web
-```
-
-For all three apps in one terminal, use `npm run dev:stack` from the repo root (it wraps the same Infisical pattern). Populate the Infisical **`dev`** environment using values from `npm run -s supabase -- status -o env` plus the app-specific keys listed in [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md).
-
-### Fallback: Supabase CLI + `.env.local`
-
-If Infisical is unavailable, generate local env files from Supabase and merge in app vars from `ENV_REFERENCE.md`:
-
-```bash
-npm run supabase -- start
-npm run -s supabase -- status -o env
-```
-
-Create `.env.local` per app from that output, then add remaining variables (for the API, include `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` — placeholders are fine unless you are testing billing). Treat `.env.local` as a **fallback**; prefer Infisical when possible.
+How local runs get their secrets (Infisical `dev`, a `.env.local` fallback, and the mobile exception) is in [`spec/environments/README.md` § 2](../../spec/environments/README.md#2-local-development). The steps are in [`getting-started.md` § 4](getting-started.md#4-configure-environment-variables); per-app commands and the no-Infisical fallback are in [`LOCAL_DEV.md`](../internal/environment/LOCAL_DEV.md).
 
 ## 4. Config module in the API
 

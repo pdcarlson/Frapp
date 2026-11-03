@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
-import type { RushPayload } from "@repo/chat-integrations";
+import type { RushPayload } from "@repo/chat-core/integrations";
 import {
   useBidRushCandidate,
   useRushCandidate,
@@ -15,7 +15,7 @@ import {
 } from "@repo/hooks";
 import { vocab } from "@/lib/vocabulary";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
 interface RushCardProps {

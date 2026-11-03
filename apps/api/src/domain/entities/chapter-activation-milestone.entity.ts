@@ -1,4 +1,4 @@
-import type { ActivationMilestone } from '@repo/validation';
+import type { ActivationMilestone } from '../constants/activation-milestones';
 
 /**
  * First time a chapter reached an activation-funnel milestone (#267).

@@ -123,23 +123,6 @@ export function useConfirmBackworkUpload() {
   });
 }
 
-export function useDeleteBackworkResource() {
-  const client = useFrappClient();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const { data, error } = await client.DELETE("/v1/backwork/{id}", {
-        params: { path: { id } },
-      });
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["backwork"] });
-    },
-  });
-}
-
 /**
  * Merges an updated row into a cached `["backwork", "departments" | "professors"]`
  * list in place, keyed by `id`.

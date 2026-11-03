@@ -107,7 +107,7 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 }));
 
 
-vi.mock("@/hooks/use-toast", () => ({
+vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 

@@ -43,7 +43,7 @@ It holds only while every run is grounded, whole-pattern, verified, reviewed, an
   Hygiene Scan PR at a time: reviewer bandwidth is scarce and stacked hygiene PRs conflict.
 - File no more net-new issues per run than the Curator's
   [net-growth budget](../issue-curator/SKILL.md#net-growth-budget) allows; it binds here too.
-- Never print secret values; names and presence only.
+- Secrets by name and presence only ([`AGENTS.md` § Credentials and secrets](../../../AGENTS.md#credentials-and-secrets)).
 
 **May edit:** `apps/**` and `packages/**` code and tests; in `scripts/**`, dead code and stale
 allowlist entries only (the check, CI and deploy scripts are the gates); gate baselines, downward
@@ -114,7 +114,7 @@ year shifts it a day, accepted).
 | 0 | `apps/api/src/domain`, `apps/api/src/application` | `api-development` |
 | 1 | `apps/api/src/interface`, `apps/api/src/infrastructure`, `apps/api/src/modules`, `apps/api/src/config`, the `apps/api/src/*.ts` bootstrap files, `apps/api/test`, `packages/api-sdk` (hand-written code only), `packages/validation`; `supabase/` is read for context and is flag-only | `api-development` |
 | 2 | `apps/web`, `packages/theme`, `packages/color`, `packages/chapter-theme`, `packages/brand-assets`, `packages/formatting` | `ui-development`, `signet-cutover` |
-| 3 | `apps/mobile`, `packages/chat-core`, `packages/chat-integrations`, `packages/hooks` | `ui-development`, `signet-cutover`, `realtime-resilience` |
+| 3 | `apps/mobile`, `packages/chat-core`, `packages/hooks` | `ui-development`, `signet-cutover`, `realtime-resilience` |
 | 4 | `packages/org-archetypes`, `packages/observability`, `packages/eslint-config`, `packages/typescript-config`, `scripts/`, `apps/landing` (dead code and correctness only), and the gates' own baselines | `testing`, `quality-gates.md` |
 
 The slice bounds the deep read, not the fix: a pattern found there is fixed everywhere it occurs.
@@ -285,14 +285,15 @@ pass; manufacturing a change to show work is a failure.
 4. When a fix moves or renames a file a doc cites, fix the doc in the same PR. `check:links` catches
    only markdown links, not backticked paths, so grep the old name before moving it. Otherwise a
    mechanical PR changes no doc.
-5. End with the "debt spotted" note `AGENTS.md` requires: one line per item seen and not taken, with
-   its issue or ledger reference.
+5. End with the "debt spotted" note
+   ([`AGENTS.md` § Tech debt protocol](../../../AGENTS.md#tech-debt-protocol)), citing each item's
+   issue or ledger reference.
 
 ## Phase 4 — Review, push, open the PR
 
 1. Run [`/diff-review`](../diff-review/SKILL.md) after the final commit and act on every finding.
-   The pre-push hook (`.githooks/pre-push`) refuses a push of unreviewed work without the review
-   marker for HEAD, and any commit that changes something invalidates it.
+   Any later commit needs a fresh review before the
+   [pre-push gate](../../../AGENTS.md#claude-code-web-sandbox) lets it through.
 2. Open the PR against `main` with `mcp__github__create_pull_request`, filling the PR template. Per
    fix, the body gives the rule restored (cited), the consumers checked, and the verification run
    (commands, outcomes, what couldn't run); a behaviour change gets its own heading. Use `Fixes #N`

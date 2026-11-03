@@ -16,8 +16,8 @@ export interface DtoClass {
  *
  * Discovered from disk rather than listed by hand: a new `*.dto.ts` is covered
  * the moment it lands. It walks all of `src` through `collectApiSources`, not
- * just `interface/dtos`, so a module-local DTO is audited too; a guard whose
- * discovery excludes part of what it guards cannot fail.
+ * just `interface/dtos`, so a DTO written anywhere else is audited too; a
+ * guard whose discovery excludes part of what it guards cannot fail.
  */
 export function loadDtoClasses(): DtoClass[] {
   const classes: DtoClass[] = [];

@@ -35,7 +35,7 @@ import {
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage, guardIntDraft, parseGuardedInt } from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useNetwork } from "@/lib/providers/network-provider";

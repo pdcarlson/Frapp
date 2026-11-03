@@ -8,6 +8,7 @@ import {
   type LinkedDiscordAuthor,
 } from '#domain/repositories/discord-author-link.repository.interface';
 import type { DiscordAuthorLink } from '#domain/entities/discord-connection.entity';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { SupabaseQueryError } from '../supabase-query-error';
 
 /**
@@ -59,7 +60,7 @@ export class SupabaseDiscordAuthorLinkRepository implements IDiscordAuthorLinkRe
       const ours =
         typeof error.message === 'string' &&
         error.message.startsWith('link_discord_author:');
-      if (ours && error.code === '23505') {
+      if (ours && error.code === PG_UNIQUE_VIOLATION) {
         throw new DiscordAuthorLinkConflictError();
       }
       if (ours && error.code === '42501') {

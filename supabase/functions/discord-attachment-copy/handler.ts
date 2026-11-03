@@ -21,7 +21,7 @@ export const ALLOWED_BUCKETS: ReadonlySet<string> = new Set(["chat-archive"]);
 /**
  * The largest object this function copies: the `chat-archive` bucket's own
  * `file_size_limit` (100 MB), which is also `MAX_ARCHIVE_UPLOAD_BYTES` in
- * `@repo/validation`. The bucket enforces it on the upload regardless; checking
+ * `apps/api/src/domain/constants/discord-archive-limits.ts`. The bucket enforces it on the upload regardless; checking
  * the CDN's `Content-Length` first saves pulling an object Storage will refuse.
  */
 export const MAX_OBJECT_BYTES = 100 * 1024 * 1024;

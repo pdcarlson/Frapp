@@ -9,7 +9,7 @@ name: Deploy staging
 # This file only decides WHETHER to deploy, and reports the outcome. The
 # deploying itself is `_deploy.yml`, the job staging and production share
 # (epic #2802; since #2804), called with `environment: staging` and the commit
-# CI verified. Its header has the order and the plan. Production is
+# CI verified. The order and the plan: docs/ops/deployment/ci-cd.md step list. Production is
 # `deploy-production.yml`, a manual dispatch that names an exact commit.
 #
 # ── Why `workflow_run` and not `push` ───────────────────────────────────────
@@ -108,8 +108,8 @@ jobs:
     # `always()` rather than `!cancelled()`, deliberately: a CANCELLED deploy
     # raises the alert, because `FAILED_RESULTS` in deploy-alert.mjs counts
     # `cancelled` as a failure ("a cancelled deploy is not a deploy"). The cost:
-    # cancelling a superseded queued run by hand files an alert, which closes as
-    # soon as the run behind it deploys.
+    # cancelling a superseded queued run by hand files an alert, which closes
+    # when the run for main's tip deploys or finds the API up to date.
     if: |
       always() &&
       github.event.workflow_run.conclusion == 'success' &&

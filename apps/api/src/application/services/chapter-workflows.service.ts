@@ -1,7 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import type { WorkflowEntry } from '@repo/org-archetypes';
+import type { ChapterWorkflow } from '#domain/entities/chapter-workflow.entity';
+import {
+  CHAPTER_CONFIG_REPOSITORY,
+  type IChapterConfigRepository,
+} from '#domain/repositories/chapter-config.repository.interface';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
  * DI token for the workflow catalog (`WORKFLOWS_SEED`), bound in
@@ -54,7 +58,8 @@ export class ChapterWorkflowsService {
   private readonly logger = new Logger(ChapterWorkflowsService.name);
 
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    @Inject(CHAPTER_CONFIG_REPOSITORY)
+    private readonly configRepo: IChapterConfigRepository,
     @Inject(ORG_WORKFLOWS_SEED)
     private readonly workflowsSeed: readonly WorkflowEntry[],
   ) {}
@@ -64,13 +69,10 @@ export class ChapterWorkflowsService {
     key: string,
   ): Promise<EffectiveWorkflow> {
     const seed = this.workflowsSeed.find((wf) => wf.key === key);
-    const { data, error } = await this.supabase
-      .from('chapter_workflows')
-      .select('enabled, threshold')
-      .eq('chapter_id', chapterId)
-      .eq('key', key)
-      .maybeSingle();
-    if (error) {
+    let row: Pick<ChapterWorkflow, 'enabled' | 'threshold'> | null = null;
+    try {
+      row = await this.configRepo.findWorkflow(chapterId, key);
+    } catch (err) {
       // Fall back to the seed default — but say so: for a chapter whose
       // explicit setting differs from the seed, this substitutes the wrong
       // policy until reads recover.
@@ -83,11 +85,13 @@ export class ChapterWorkflowsService {
       // degrades one decision rather than 500ing it. `ChapterPointsConfigService`
       // models the same split explicitly as `getConfig` / `getConfigOrThrow`.
       // Do not "restore consistency" by making either side match the other.
-      this.logger.warn(
-        `chapter_workflows read failed for chapter ${chapterId} key ${key}; applying seed default (enabled=${seed?.enabled ?? false}): ${error.message}`,
+      logThrowable(
+        this.logger,
+        'warn',
+        `chapter_workflows read failed for chapter ${chapterId} key ${key}; applying seed default (enabled=${seed?.enabled ?? false})`,
+        err,
       );
     }
-    const row = data;
     if (!row) {
       return {
         key,

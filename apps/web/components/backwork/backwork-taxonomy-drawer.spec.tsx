@@ -43,7 +43,7 @@ vi.mock("@repo/hooks", () => ({
   useMergeProfessors: () => ({ mutateAsync: mockMergeProfessors }),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({
+vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 

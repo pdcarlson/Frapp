@@ -25,7 +25,7 @@ describe("isRecurrenceRule", () => {
 });
 
 describe("recurrenceChildCount", () => {
-  // These are the numbers EventService.buildOccurrencePayloads materializes.
+  // These are the numbers EventSeriesService.buildOccurrencePayloads materializes.
   // If one changes, the RRULE COUNT below must move with it — that coupling is
   // the reason both live in this module.
   it("returns the generator's child counts", () => {

@@ -102,8 +102,8 @@ window.
 - Don't add a parallel token set next to the one a surface already uses.
 - Don't leave a shim that still serves the old look after the new one ships.
 - Don't carry `apps/web/components/ui` (shadcn/Radix) patterns onto mobile.
-- Confirm real consumers before extending anything ([`AGENTS.md`](../../../AGENTS.md) tech-debt
-  protocol). A definition or an `index.ts` re-export is not evidence that anything calls it.
+- Confirm real consumers before extending anything
+  ([`AGENTS.md` § Tech debt protocol](../../../AGENTS.md#tech-debt-protocol)).
 
 ## Before you ship a visual change
 

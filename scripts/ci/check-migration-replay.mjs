@@ -7,7 +7,7 @@
 // applied to?"
 //
 // ── Why `pglite-migrations` is not this ─────────────────────────────────────
-// `scripts/check-pglite-migrations.mjs` applies every migration to an EMPTY
+// `scripts/pglite/run.mjs` applies every migration to an EMPTY
 // database. That proves the corpus is internally consistent from zero. It
 // cannot prove an INCREMENTAL apply works, and those are different questions:
 // production is not an empty database, it is a database sitting at some

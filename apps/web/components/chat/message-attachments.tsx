@@ -119,7 +119,7 @@ export function MessageAttachments({
                 target="_blank"
                 rel="noreferrer"
                 // The server still forces `Content-Disposition: attachment`
-                // on every signed URL (`ChatService.listMessageAttachments`
+                // on every signed URL (`ChatAttachmentService.listMessageAttachments`
                 // passes `forceDownload: true` — spec/behavior/chat/README.md's
                 // "trust boundary" section is explicit this is a security
                 // mitigation, not a UX one: it's what keeps a member-uploaded

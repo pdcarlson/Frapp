@@ -45,7 +45,7 @@ import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 // any outcome added later — which is exactly what happened at the
 // `use-chat-channel` boundary before #544 added `warning`.
 import type { DispatchResult } from "@repo/chat-core/dispatch";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import {
   COLD_LOAD_MARKS,
   markColdLoad,
@@ -68,7 +68,7 @@ import {
   getSlashCommand,
   parseSlashInput,
   type SlashCommand,
-} from "@repo/chat-integrations";
+} from "@repo/chat-core/integrations";
 import { MODULE_CATALOG } from "@repo/org-archetypes";
 
 /**

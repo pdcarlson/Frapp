@@ -57,10 +57,10 @@ export interface MessageRendererProps {
  * fall back to the text renderer (master-plan guard-on-missing-key rule):
  * a future kind that ships server-first never blanks the timeline.
  *
- * Renderer registry intentionally lives in `apps/web` (not the
- * `@repo/chat-integrations` package) — the package is framework-free.
- * The wire contract (kind enum + payload shapes) is shared via the
- * package; the React rendering is per-app.
+ * Renderer registry intentionally lives in `apps/web` (not
+ * `@repo/chat-core/integrations`) — that module is framework-free.
+ * The wire contract (kind enum + payload shapes) is shared via it; the
+ * React rendering is per-app.
  */
 export function MessageRenderer({
   message,

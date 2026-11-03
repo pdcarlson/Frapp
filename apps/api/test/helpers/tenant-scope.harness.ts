@@ -242,6 +242,20 @@ function readColumn(row: Row, column: string): unknown {
   return current;
 }
 
+/**
+ * A stand-in for `.textSearch()`: every whitespace-separated term of the query
+ * appears, case-insensitively, in the seeded column value. No stemming, no
+ * parse modes, no negation — enough for a tenancy spec whose twins carry the
+ * same text, where the only question is which chapter's row comes back. What
+ * a real `websearch` query matches belongs to the live-PostgREST suite.
+ */
+function matchesTextSearch(value: unknown, query: string): boolean {
+  if (typeof value !== 'string') return false;
+  const haystack = value.toLowerCase();
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return terms.length > 0 && terms.every((term) => haystack.includes(term));
+}
+
 function compare(a: unknown, b: unknown): number {
   if (typeof a === 'number' && typeof b === 'number') return a - b;
   return String(a).localeCompare(String(b));
@@ -332,6 +346,8 @@ function applyFilter(row: Row, filter: Filter): boolean {
         Array.isArray(actual) &&
         (expected as unknown[]).some((item) => actual.includes(item))
       );
+    case 'fts':
+      return matchesTextSearch(actual, String(expected));
     default:
       throw new Error(
         `tenant-scope harness: unsupported PostgREST operator "${filter.op}" on ` +
@@ -724,6 +740,9 @@ export function createTenantHarness(
       ilike: jest.fn((c: string, v: unknown) => addFilter('ilike', c, v)),
       contains: jest.fn((c: string, v: unknown) => addFilter('contains', c, v)),
       overlaps: jest.fn((c: string, v: unknown) => addFilter('overlaps', c, v)),
+      textSearch: jest.fn((c: string, query: string) =>
+        addFilter('fts', c, query),
+      ),
       filter: jest.fn((c: string, op: string, v: unknown) =>
         addFilter(op, c, v),
       ),
@@ -816,10 +835,44 @@ export function createTenantHarness(
     rpc: jest.fn((fn: string, args: Record<string, unknown>) => {
       rpcCalls.push({ fn, args: clone(args ?? {}) });
       const canned = options.rpc?.[fn];
-      return Promise.resolve({
-        data: canned?.data ?? null,
-        error: canned?.error ?? null,
-      });
+      // A set-returning function can be ordered and paged like a table read
+      // (PostgREST applies both outside the call), so a canned array honours
+      // `.order()` and `.range()`; any other canned value passes through.
+      const orderBy: { column: string; ascending: boolean }[] = [];
+      let range: [number, number] | null = null;
+      const settle = () => {
+        let data = clone(canned?.data ?? null);
+        if (Array.isArray(data)) {
+          let rows = data as Row[];
+          for (const { column, ascending } of [...orderBy].reverse()) {
+            rows = [...rows].sort((left, right) => {
+              const order = compare(
+                readColumn(left, column),
+                readColumn(right, column),
+              );
+              return ascending ? order : -order;
+            });
+          }
+          if (range) rows = rows.slice(range[0], range[1] + 1);
+          data = rows;
+        }
+        return { data, error: canned?.error ?? null };
+      };
+      const call: Record<string, unknown> = {
+        order: jest.fn((column: string, opts?: { ascending?: boolean }) => {
+          orderBy.push({ column, ascending: opts?.ascending !== false });
+          return call;
+        }),
+        range: jest.fn((from: number, to: number) => {
+          range = [from, to];
+          return call;
+        }),
+        then: (
+          resolve: (v: { data: unknown; error: unknown }) => unknown,
+          reject?: (e: unknown) => unknown,
+        ) => Promise.resolve(settle()).then(resolve, reject),
+      };
+      return call;
     }),
   };
 

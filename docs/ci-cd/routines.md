@@ -97,7 +97,7 @@ path `/next` uses, with no keys to manage. Start each run by loading the GitHub 
 tracker. Routines 4 and 5 are the exception in rule 4.
 
 Direct REST to `api.github.com` is reachable from these sandboxes (a 403 on a proxied `curl` says
-nothing about the PAT; see [`agent-infra.md` → Work status](agent-infra.md#work-status)),
+nothing about the PAT; see [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule)),
 and rule 4 limits it to the two reads it names.
 
 Whether an MCP read is faithful enough to rewrite a body from is a measurement that has flipped
@@ -187,7 +187,7 @@ and keeps only the tracker rules built on these labels. Labels auto-create on fi
 - **Legacy:** `bug`, `Improvement` and `release:*` persist on old issues; don't add them to new
   issues. On PRs, `release:*` is live: every PR should carry one (Dependabot's carry none), and a
   PR with no label counts as `release:patch` in the production version bump
-  ([`agent-infra.md` → Release labels](agent-infra.md#release-labels)).
+  ([`spec/environments` → Release labels for version tags](../../spec/environments/README.md#release-labels-for-version-tags)).
 
 ## Run record (all routines)
 

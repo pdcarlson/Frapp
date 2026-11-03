@@ -5,6 +5,10 @@ Shared ESLint flat configs used across the monorepo.
 ## Exports
 
 - `@repo/eslint-config/base` — baseline TypeScript + Turbo rules.
+- `@repo/eslint-config/isomorphic` — `base` plus a ban on DOM globals, for packages that must
+  never touch one because the NestJS API or React Native loads them. A package that
+  feature-detects the browser on purpose (`@repo/chat-core`) stays on `base`. Why: the comment
+  in [`isomorphic.js`](./isomorphic.js).
 - `@repo/eslint-config/next-js` — Next.js + React + hooks config.
 - `@repo/eslint-config/react-internal` — React library config for shared packages.
 
@@ -35,7 +39,11 @@ export default config;
 ### TypeScript package
 
 ```js
-import { config as baseConfig } from "@repo/eslint-config/base";
+export { config as default } from "@repo/eslint-config/base";
+```
 
-export default baseConfig;
+### Package that must never touch a DOM global
+
+```js
+export { isomorphicConfig as default } from "@repo/eslint-config/isomorphic";
 ```

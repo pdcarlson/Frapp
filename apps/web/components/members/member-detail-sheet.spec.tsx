@@ -47,7 +47,7 @@ vi.mock("@/lib/auth/use-frapp-user", () => ({
   }),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({
+vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 

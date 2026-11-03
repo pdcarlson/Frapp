@@ -16,7 +16,7 @@ import { can } from "@repo/validation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import { useChapterSubscription } from "@/lib/hooks/use-subscription-write-state";
 import {
@@ -234,7 +234,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
    * Before it existed, an active chapter could not land on `?checkout=returned`
    * at all: the card this panel replaces offered the Portal only in its lapsed
    * branch, and the one other portal in the app
-   * (`settings-page.tsx`) returns to `/settings`. So `active + returned` could
+   * (`settings-danger-tab.tsx`) returns to `/settings`. So `active + returned` could
    * only mean the intended dunning recovery — lapsed chapter fixes its card,
    * webhook lands, status flips — and printing "Payment cleared" for it was
    * true by construction.

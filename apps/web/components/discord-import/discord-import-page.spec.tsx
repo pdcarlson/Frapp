@@ -78,7 +78,7 @@ vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => ({ isOffline: hooks.offline, probeOnce: vi.fn() }),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({
+vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 

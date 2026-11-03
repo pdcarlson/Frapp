@@ -117,7 +117,7 @@ For each of the three gate classes the API enforces, the client must mirror the 
 | --- | --- | --- |
 | Permission | `@RequirePermissions` → `PermissionsGuard` (`apps/api/src/interface/guards/permissions.guard.ts`) | Hide or disable the control (`<Can>`, `apps/web/components/shared/can.tsx`) — but say so, not hide, while the check itself cannot be made (§4) |
 | Subscription | `ChapterGuard.enforceSubscription` (`apps/api/src/interface/guards/chapter.guard.ts`) | Disable the control and name the reason (`useSubscriptionGate`, `apps/web/components/shared/subscription-gate.tsx`) — the hook answers "may this surface write", so it also refuses queueless writes while OFFLINE with `title="Reconnect to make changes."` on the control, not via `SubscriptionNotice` |
-| Module enabled | `ChapterGuard.enforceModule` for a `@RequireModule` route; `assertModuleEnabled` in the service for a module write that shares a route with an always-on module (a poll card sent or voted on through chat, `ChatService`, #2993) | Hide the surface. A chat poll card stays readable (reads are never gated), so it withdraws its Vote control instead and says why, on web and mobile ([#3012](https://github.com/pdcarlson/Frapp/issues/3012)) |
+| Module enabled | `ChapterGuard.enforceModule` for a `@RequireModule` route; `assertModuleEnabled` in the service for a module write that shares a route with an always-on module (a poll card sent or voted on through chat, `ChatService` / `ChatReactionService`, #2993) | Hide the surface. A chat poll card stays readable (reads are never gated), so it withdraws its Vote control instead and says why, on web and mobile ([#3012](https://github.com/pdcarlson/Frapp/issues/3012)) |
 
 All three gate classes now have a client counterpart — `<Can>` for permissions, the sidebar and slash-command filtering, and the poll card's withdrawn Vote, for modules (module semantics: [`../../product/modules.md`](../../product/modules.md)), and `useSubscriptionGate` for whether a surface may write (subscription plus connectivity). The chat composer is the outbox carve-out (`spec/ui/resilience/connection-state.md`) and does not go through this hook.
 
@@ -161,7 +161,7 @@ A controller is subscription-gated only if `ChapterGuard` is in its guard chain 
 | --- | --- | --- |
 | `attendance` | 3 | `components/events/attendance-panel.tsx` · `components/chat/renderers/event-card.tsx` (check-in) |
 | `backwork` | 9 | `components/backwork/backwork-page.tsx` · `components/backwork/backwork-taxonomy-drawer.tsx` (department/professor edit, delete, merge; **not mirrored**) |
-| `chapter-document` | 6 | `components/documents/documents-page.tsx` |
+| `chapter-document` | 6 | `components/documents/documents-page.tsx` (notice) · `components/documents/upload-document-dialog.tsx` (upload) · `components/documents/document-row.tsx` (delete) · `components/documents/folder-rail.tsx` and `components/documents/folder-management.tsx` (folder create, rename, reorder, delete) |
 | `event` | 3 | `components/events/events-page.tsx` (both create triggers) · `components/events/event-editor-dialog.tsx` · `components/events/event-detail-sheet.tsx` (edit + delete) · the `/event` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 | `financial-invoice` | 3 (+1 exempt) | `components/billing/invoice-list.tsx` |
 | `points` | 1 | `app/(dashboard)/points/page.tsx` (trigger) · `components/points/points-adjustment-dialog.tsx` · the `/points` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
@@ -170,7 +170,7 @@ A controller is subscription-gated only if `ChapterGuard` is in its guard chain 
 | `discord-import` | 11 | `components/discord-import/*` (**not mirrored**) |
 | `report` | 4 | `components/reports/reports-page.tsx` |
 | `rush` | 3 | `components/chat/renderers/rush-card.tsx` (vote, bid; **not mirrored**) · the `/rush` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
-| `semester-rollover` | 1 | `components/settings/settings-page.tsx` (rollover only) |
+| `semester-rollover` | 1 | `components/settings/settings-semester-tab.tsx` (rollover only) |
 | `service-entry` | 4 | `components/service/service-page.tsx` · the `/hours` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 | `study` → `StudyGeofenceController` | 3 | `components/geofences/geofences-admin-page.tsx` |
 | `study` → `StudySessionController` | 5 | `components/study/study-page.tsx` |
@@ -180,7 +180,7 @@ Where a dialog's `open` state lives in a parent, the **parent** carries the gate
 
 The table is hand-kept, so re-derive it before trusting it: list the `ChapterGuard` controllers in `apps/api/src/interface/controllers/` and count their non-GET routes without `@FreeTier` / `@SubscriptionExempt`. `financial-invoice`'s exempt route is the payment-intent. `study.controller.ts` holds two controller classes behind different modules. `alumni` carries the guard but has no non-GET route, so it contributes no write surface.
 
-Three of `chapter-document`'s six writes — folder create, rename and delete — have no client counterpart yet: the documents page derives its folder list from the loaded documents and its folder buttons are pure filters. A folder-management UI must adopt the gate when it lands.
+All six of `chapter-document`'s writes have a web client. The upload URL and confirm sit behind the upload sheet, document delete behind each row, and folder create, update (rename and reorder) and delete behind the folder rail and its dialog. The rail's "All files" and "No folder" rows stay ungated because they are client-side filters, not writes. (Corrected 2026-10-08: this paragraph used to say the three folder writes had no client, which stopped being true when folder management shipped with #791.)
 
 **Free-tier** (writes survive `incomplete`, and `past_due` inside grace): every controller class or handler marked `@FreeTier()`; the rules are [`api-architecture.md` § Subscription enforcement (ChapterGuard)](../../../docs/guides/api-architecture.md#subscription-enforcement-chapterguard). The three `@GraceBlocked` routes are `POST /invites`, `POST /invites/batch` and `POST /invites/email`.
 
@@ -248,7 +248,7 @@ Discipline, not palette — these rules bind **every** surface, and they govern 
 | Hover | Color and border transitions only. Avoid scale transforms on primary chrome (buttons, nav) unless a component spec calls for one explicitly |
 | Duration | Prefer the standard duration for UI chrome; the context duration is the ceiling for section entrances |
 
-Token source: `packages/theme/src/tokens.ts` (`motion.duration`, `motion.easing`).
+Token source: `packages/theme/src/motion.ts` (`duration`, `easing`), served as `SignetTokens.motion`.
 
 ---
 

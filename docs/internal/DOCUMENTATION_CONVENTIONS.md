@@ -36,7 +36,8 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | Landing-site UI requirements | `spec/ui/landing/` |
 | Design-system (tokens, typography, icons, microcopy, accent engine) | `spec/ui/design-system/` |
 | Visual design reference (committed design exports) | `spec/ui/design-system/reference/` for the boards every surface shares; a board that governs one surface sits in that surface's `reference/` (`spec/ui/landing/reference/`, `spec/ui/web-dashboard/reference/`) |
-| How to run locally / test / contribute, including the UI accessibility protocol | `docs/guides/` |
+| How to run locally / test, including the UI accessibility protocol | `docs/guides/` |
+| How to contribute: branches, commits, pull requests, merge checks | root `CONTRIBUTING.md` |
 | Documentation conventions and internal reference that is not a runbook | `docs/internal/` |
 | CI / agent infra / automations | `docs/ci-cd/` — wake/babysit facts: [`pr-babysitting.md`](../ci-cd/pr-babysitting.md); Dependabot facts: [`dependency-updates.md`](../ci-cd/dependency-updates.md) |
 | Ops runbooks (DB rollback and backups, incidents, branch protection) | `docs/ops/` |
@@ -45,7 +46,7 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | Env reference / secrets / local-dev / cloud sandbox / agent credentials | `docs/internal/environment/` |
 | Security implementation notes / fixes log | `docs/security/` |
 | Mobile testing / smoke | `docs/mobile/` |
-| Performance notes (one file per optimization or per service) | `docs/performance/` |
+| Performance measurements the code cannot carry (benchmarks, ceilings and why), one file per service; an optimization the code and its specs already show gets a code comment, not a note | `docs/performance/` |
 | Data-layer hook conventions (query keys, chapter scope, optimistic mutations) | `docs/hooks/` |
 | Work status / planning | **GitHub Issues** — not a doc; see [`../ci-cd/github-pm.md`](../ci-cd/github-pm.md) |
 

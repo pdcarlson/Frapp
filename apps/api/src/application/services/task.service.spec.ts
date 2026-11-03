@@ -16,6 +16,7 @@ import type { Member } from '#domain/entities/member.entity';
 import type { User } from '#domain/entities/user.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
+import { memberFixture } from '#test/helpers/entity-fixtures';
 
 describe('TaskService', () => {
   let service: TaskService;
@@ -50,17 +51,12 @@ describe('TaskService', () => {
    */
   const asView = (task: Task) => ({ ...task, stored_status: task.status });
 
-  const baseMember: Member = {
-    id: 'member-1',
-    user_id: 'user-1',
-    chapter_id: 'ch-1',
+  const baseMember: Member = memberFixture({
     role_ids: ['role-1'],
-    custom_role_ids: [],
     has_completed_onboarding: true,
-    dismissed_ops_nudges: [],
     created_at: '2026-02-01T00:00:00.000Z',
     updated_at: '2026-02-01T00:00:00.000Z',
-  };
+  });
 
   beforeEach(async () => {
     mockTaskRepo = {

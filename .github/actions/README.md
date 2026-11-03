@@ -47,7 +47,7 @@ action file is not on disk yet when the runner resolves it.
   `turbo-packages-build`.** Each exists to fail when the shared packages cannot build
   from a cold tree — `clean-checkout-typecheck` on a dev install, `web-production-build`
   under the pruned `npm ci --omit=dev` shape — and prebuilt `dist/` on disk hides
-  exactly that. Same test enforces it.
+  exactly that. `scripts/ci/__tests__/turbo-packages-build-action.test.mjs` enforces it.
 - **Gate the filter, not just the workflow.** A job path-gated by `dorny/paths-filter`
   that calls an action here needs `.github/actions/**` in *that* filter list.
   Without it a PR editing only the action skips the job, and a job skipped by a
@@ -111,7 +111,8 @@ action file is not on disk yet when the runner resolves it.
   that point is loaded from the deployed commit's tree**: deploying a commit older than the action
   dies with `Can't find 'action.yml'` — that is the rollback path, failing exactly when it is
   reached for — and deploying a newer one silently uses *that commit's* copy of whatever the action
-  pins. Call local actions from the trusted ref, which is what the job's own header argues for. A
+  pins. Call local actions from the trusted ref
+  ([`ci-cd.md` § The deploy job's trust split](../../docs/ops/deployment/ci-cd.md#the-deploy-jobs-trust-split)). A
   later `actions/checkout`, a first one with a `ref:`, `git switch`, `git reset --hard` and
   `git worktree` all count as moving the tree, and the guard rejects a local-action call after any
   of them. The one move back it accepts is `_deploy.yml`'s: `git checkout --force --detach

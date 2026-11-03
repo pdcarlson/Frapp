@@ -8,9 +8,10 @@
 # Noise floor: every Dependabot PR costs agent babysitting (the normal PR
 # lifecycle in AGENTS.md), so minor+patch updates are collapsed into a single
 # weekly PR. Majors stay individual — they need to be read one at a time —
-# EXCEPT two families whose packages pin each other exactly: vitest (grouped
-# at every level) and `@sentry/nestjs` + `@sentry/nextjs` (majors grouped;
-# their minors already share the weekly PR). See those groups below.
+# EXCEPT three families whose packages pin each other: vitest (grouped at
+# every level), `@sentry/nestjs` + `@sentry/nextjs`, and `@stripe/stripe-js` +
+# `@stripe/react-stripe-js` (majors grouped; their minors already share the
+# weekly PR). See those groups below.
 #
 # Safety net: CI (`npm ci`, lint, type-check, unit + E2E suites) plus the
 # blocking high/critical audit gate (`npm run check:npm-audit`, #618) is what
@@ -27,10 +28,10 @@ updates:
       timezone: Etc/UTC
     # Grouped minor+patch = 1 PR; anything left is a major, and majors are
     # deliberately ungrouped so each gets its own reviewable diff — except the
-    # `vitest` group (every level) and the `sentry` group (majors); see their
-    # comments.
+    # `vitest` group (every level) and the `sentry` and `stripe-js` groups
+    # (majors); see their comments.
     #
-    # Raised 5 -> 6 when that group landed. It is guaranteed to fire on any
+    # Raised 5 -> 6 when the `vitest` group landed. It is guaranteed to fire on any
     # week vitest ships, so it permanently consumes one slot; at 5, a week with
     # four PRs already open plus a vitest release hit the cap, and Dependabot
     # drops the overflow SILENTLY — no error, no comment, nothing in a log that
@@ -128,6 +129,26 @@ updates:
         patterns:
           - "@sentry/nestjs"
           - "@sentry/nextjs"
+      # `@stripe/react-stripe-js` peer-requires `@stripe/stripe-js` inside ONE
+      # major (6.12.0: `>=9.16.0 <10.0.0`; 7.0.0: `>=10.0.0 <11.0.0`, checked
+      # 2026-10-05), and both are apps/web dependencies. Moving one major alone
+      # makes npm nest a second stripe-js beside the hoisted one, and
+      # `pay-invoice-dialog.tsx`'s `<Elements stripe=…>` stops type-checking:
+      # #3191 and #3192 arrived as two single-package PRs and neither could
+      # go green. Majors only, so no package can match two groups.
+      stripe-js:
+        patterns:
+          - "@stripe/stripe-js"
+          - "@stripe/react-stripe-js"
+        update-types:
+          - major
+      # Same patterns, security lane; see `sentry-security`. Dormant while
+      # Dependabot alerts are disabled (#921).
+      stripe-js-security:
+        applies-to: security-updates
+        patterns:
+          - "@stripe/stripe-js"
+          - "@stripe/react-stripe-js"
       npm-minor-and-patch:
         patterns:
           - "*"

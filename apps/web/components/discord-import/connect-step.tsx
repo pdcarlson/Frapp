@@ -20,7 +20,7 @@ import {
 } from "@/components/shared/table-controls";
 import { readIsOffline } from "@/components/shared/async-states";
 import { StaleReadNotice } from "@/components/shared/stale-read-notice";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { getErrorMessage } from "@/lib/utils";
 

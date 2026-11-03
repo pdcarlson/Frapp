@@ -41,7 +41,7 @@ export interface ChapterDirectoryEntry {
    * checked against `keyof Row`, so an undeclared column is a compile error
    * at those call sites.
    *
-   * Note this does *not* check `ChapterDirectoryService.search`, the one
+   * Note this does *not* check `SupabaseChapterDirectoryRepository.search`, the one
    * place that names the column: `textSearch` carries a permissive
    * `(column: string, …)` overload alongside the `keyof Row` one, so that
    * call site resolves to the untyped overload either way.

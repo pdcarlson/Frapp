@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 import { MessageItem, type MessageItemProps } from "./message-item";
 import { reactionActionType, type ChatMessage } from "@repo/chat-core/types";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
-import { reducer } from "@/hooks/use-toast";
+import { reducer } from "@/lib/hooks/use-toast";
 import { NOBODY_BLOCKED } from "@/tests/block-list";
 
 // The real list resolves signed URLs through `useFrappClient`, a provider this

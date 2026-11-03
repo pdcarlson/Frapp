@@ -9,7 +9,7 @@ vi.mock("@repo/hooks", () => ({
 vi.mock("@/lib/auth/select-chapter", () => ({
   useSelectChapter: () => vi.fn(),
 }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (
     selector: (s: { activeChapterId: string | null }) => unknown,

@@ -25,7 +25,7 @@ import {
   OfflineState,
   SkeletonText,
 } from "@/components/shared/async-states";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { getSessionUser } from "@/lib/auth/session";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { useNetwork } from "@/lib/providers/network-provider";

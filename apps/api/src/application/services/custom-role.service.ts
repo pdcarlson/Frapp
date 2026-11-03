@@ -6,22 +6,18 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PostgrestError } from '@supabase/supabase-js';
-import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type {
-  FrappSupabaseClient,
-  TablesInsert,
-  TablesUpdate,
-} from '../../infrastructure/supabase/database.types';
 import type { ChapterCustomRole } from '#domain/entities/chapter-custom-role.entity';
 import { WILDCARD } from '#domain/constants/permissions';
-import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
+import {
+  CUSTOM_ROLE_REPOSITORY,
+  CustomRoleKeyConflictError,
+  type ICustomRoleRepository,
+} from '#domain/repositories/custom-role.repository.interface';
 import type { CreateCustomRole, UpdateCustomRole } from '@repo/validation';
 import {
   ChapterAuditLogService,
   type AuditDiff,
 } from './chapter-audit-log.service';
-import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 
 /**
  * What `create` and `update` accept.
@@ -52,17 +48,6 @@ export type UpdateCustomRoleInput = UpdateCustomRole;
  */
 const AUDIT_TARGET_TYPE = 'chapter_custom_role';
 
-/** Shape of a Supabase row response after the (untyped) query builder. */
-type RowResponse = {
-  data: ChapterCustomRole | null;
-  error: PostgrestError | null;
-};
-type ListResponse = {
-  data: ChapterCustomRole[] | null;
-  error: PostgrestError | null;
-};
-type MutateResponse = { error: PostgrestError | null };
-
 /**
  * CRUD over `chapter_custom_roles`, scoped to the active chapter. Part of the
  * settings family: every mutation appends a `chapter_audit_log` row (mirrored to
@@ -76,18 +61,13 @@ type MutateResponse = { error: PostgrestError | null };
 @Injectable()
 export class CustomRoleService {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    @Inject(CUSTOM_ROLE_REPOSITORY)
+    private readonly roles: ICustomRoleRepository,
     private readonly auditLog: ChapterAuditLogService,
   ) {}
 
   async findByChapter(chapterId: string): Promise<ChapterCustomRole[]> {
-    const { data, error }: ListResponse = await this.supabase
-      .from('chapter_custom_roles')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .order('rank', { ascending: true });
-    if (error) throw new SupabaseQueryError(error);
-    return data ?? [];
+    return this.roles.findByChapter(chapterId);
   }
 
   /**
@@ -99,14 +79,7 @@ export class CustomRoleService {
     ids: string[],
     chapterId: string,
   ): Promise<ChapterCustomRole[]> {
-    if (!ids.length) return [];
-    const { data, error }: ListResponse = await this.supabase
-      .from('chapter_custom_roles')
-      .select('*')
-      .in('id', ids)
-      .eq('chapter_id', chapterId);
-    if (error) throw new SupabaseQueryError(error);
-    return data ?? [];
+    return this.roles.findByIds(ids, chapterId);
   }
 
   async create(
@@ -115,7 +88,7 @@ export class CustomRoleService {
     dto: CreateCustomRoleInput,
   ): Promise<ChapterCustomRole> {
     this.assertNoWildcard(dto.capabilities);
-    const row: TablesInsert<'chapter_custom_roles'> = {
+    const row: Partial<ChapterCustomRole> = {
       chapter_id: chapterId,
       key: dto.key,
       label: dto.label,
@@ -126,22 +99,18 @@ export class CustomRoleService {
       // always non-core so they remain deletable.
       core: false,
     };
-    const { data, error }: RowResponse = await this.supabase
-      .from('chapter_custom_roles')
-      .insert(row)
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === PG_UNIQUE_VIOLATION) {
+    let role: ChapterCustomRole;
+    try {
+      role = await this.roles.create(row);
+    } catch (error) {
+      if (error instanceof CustomRoleKeyConflictError) {
         throw new ConflictException(
           'A custom role with this key already exists in this chapter',
         );
       }
-      throw new SupabaseQueryError(error);
+      throw error;
     }
 
-    const role = data as ChapterCustomRole;
     await this.auditLog.record({
       chapterId,
       actorUserId,
@@ -162,7 +131,7 @@ export class CustomRoleService {
     this.assertNoWildcard(dto.capabilities);
     const existing = await this.findOne(id, chapterId);
 
-    const patch: TablesUpdate<'chapter_custom_roles'> = {};
+    const patch: Partial<ChapterCustomRole> = {};
     if (dto.label !== undefined) patch.label = dto.label;
     if (dto.rank !== undefined) patch.rank = dto.rank;
     if (dto.capabilities !== undefined) patch.capabilities = dto.capabilities;
@@ -171,16 +140,9 @@ export class CustomRoleService {
       return existing;
     }
 
-    const { data, error }: RowResponse = await this.supabase
-      .from('chapter_custom_roles')
-      .update(patch)
-      .eq('id', id)
-      .eq('chapter_id', chapterId)
-      .select()
-      .single();
-    if (error || !data) throw new NotFoundException('Custom role not found');
+    const role = await this.roles.update(id, chapterId, patch);
+    if (!role) throw new NotFoundException('Custom role not found');
 
-    const role = data;
     await this.auditLog.record({
       chapterId,
       actorUserId,
@@ -202,12 +164,7 @@ export class CustomRoleService {
       throw new ForbiddenException('Core roles cannot be deleted');
     }
 
-    const { error }: MutateResponse = await this.supabase
-      .from('chapter_custom_roles')
-      .delete()
-      .eq('id', id)
-      .eq('chapter_id', chapterId);
-    if (error) throw new SupabaseQueryError(error);
+    await this.roles.delete(id, chapterId);
 
     await this.auditLog.record({
       chapterId,
@@ -235,13 +192,8 @@ export class CustomRoleService {
     id: string,
     chapterId: string,
   ): Promise<ChapterCustomRole> {
-    const { data, error }: RowResponse = await this.supabase
-      .from('chapter_custom_roles')
-      .select('*')
-      .eq('id', id)
-      .eq('chapter_id', chapterId)
-      .maybeSingle();
-    if (error || !data) throw new NotFoundException('Custom role not found');
-    return data;
+    const role = await this.roles.findById(id, chapterId);
+    if (!role) throw new NotFoundException('Custom role not found');
+    return role;
   }
 }

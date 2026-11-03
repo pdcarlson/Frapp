@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import {
-  chatMessagesKey,
   emptyCache,
   mergeServerRow,
-  optimisticMessage,
   selectMessages,
   upsertOptimistic,
+} from "@repo/chat-core/cache";
+import {
+  chatMessagesKey,
+  optimisticMessage,
   type ChannelCache,
   type RawChatMessage,
-} from "@repo/chat-core";
+} from "@repo/chat-core/types";
 import { readsRemovedMessage } from "@repo/hooks";
 import { reportedMessageTimeline } from "./reported-message-reads";
 

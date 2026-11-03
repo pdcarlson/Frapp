@@ -59,9 +59,6 @@ function defaultOkBody(url: string): unknown {
   ) {
     return { status: 1 };
   }
-  if (url.includes('/flags') || url.includes('/decide')) {
-    return { featureFlags: {}, featureFlagPayloads: {} };
-  }
   return {};
 }
 
@@ -73,7 +70,6 @@ function defaultOkBody(url: string): unknown {
 export class RecordingPosthogTransport {
   readonly calls: RecordedPosthogCall[] = [];
   mode: RecordingTransportMode = { type: 'ok' };
-  flagValues: Record<string, boolean | string> = {};
   private remainingFails = 0;
 
   constructor(private readonly fixtures: string[] = []) {}
@@ -119,13 +115,6 @@ export class RecordingPosthogTransport {
         throw new Error('posthog-test-network-error');
       }
       return jsonResponse(this.mode.status, { status: 0 });
-    }
-
-    if (url.includes('/flags') || url.includes('/decide')) {
-      return jsonResponse(200, {
-        featureFlags: this.flagValues,
-        featureFlagPayloads: {},
-      });
     }
 
     return jsonResponse(200, defaultOkBody(url));
