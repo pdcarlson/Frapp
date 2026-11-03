@@ -1191,7 +1191,8 @@ describe("reduceTouchBreadcrumb (#2982)", () => {
 });
 
 /**
- * Breadcrumbs as `@sentry/browser` 10.75's breadcrumbs integration records
+ * Breadcrumbs as the `@sentry/browser` 10.x that `@sentry/react-native` 8
+ * nests (10.75 when written, 10.77 since #3335) records
  * them in React Native (#3104): `_getFetchBreadcrumbHandler` (the app's
  * `fetch` is `expo/fetch`), `_getXhrBreadcrumbHandler` and
  * `_getConsoleBreadcrumbHandler`, after `@sentry/core`'s `addBreadcrumb` has
