@@ -29,7 +29,7 @@ guards compose, in this order:
 **The header is never trusted on its own.** `ChapterGuard` re-reads the membership row for whatever
 chapter was requested (`chapter.guard.ts:68-76`), and a JWT/header disagreement is a hard
 `403 chapter.context.mismatch` (`:130-136`) — the header cannot override the claim. A user with no
-chapter context is auto-resolved only when they hold exactly one membership (`:143-153`).
+chapter context is auto-resolved only when they hold exactly one membership (`resolveChapterContext`).
 
 Below the guards, the API talks to Postgres with the **service-role key, which bypasses RLS**. So for
 almost every table the *API is the enforcing layer* and RLS is a default-deny backstop. See §4.
@@ -41,8 +41,8 @@ Every route uses one of these. Anything that matches none of them is a bug.
 | # | Idiom | Proof | Example |
 | --- | --- | --- | --- |
 | **A** | **Guard-resolved chapter** — the handler takes `@CurrentChapterId()` and never a client chapter id | `ChapterGuard` verified membership | `tasks`, `events`, `invoices` — the majority |
-| **B** | **Scoped repository read** — `findById(id, chapterId)`; a foreign id simply returns no row | Query predicate | `task.service.ts:78`, `event.service.ts`, `financial-invoice.service.ts:103` |
-| **C** | **Fetch-then-compare** — unscoped `findById(id)` followed by an explicit `chapter_id !== chapterId` throw | Post-fetch check | `member.service.ts:112`, `rbac.service.ts:71`, `InviteService.revoke` |
+| **B** | **Scoped repository read** — `findById(id, chapterId)`; a foreign id simply returns no row | Query predicate | `TaskService.findById`, `event.service.ts`, `financial-invoice.service.ts` `findById` |
+| **C** | **Fetch-then-compare** — unscoped `findById(id)` followed by an explicit `chapter_id !== chapterId` throw | Post-fetch check | `member.service.ts` (`member.chapter_id !== chapterId`), `rbac.service.ts` (`role.chapter_id !== chapterId`), `InviteService.revoke` |
 | **D** | **Self-scoped** — the row is keyed by the caller's own user id, no chapter involved | `@CurrentUser('id')` | `users/me`, `settings`, `push-tokens`, `notifications` |
 
 Idiom **C** is the fragile one: the check is a separate statement that a refactor can drop without
@@ -74,18 +74,18 @@ composed with **B** or **C** for per-row reads.
 | `custom-roles` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id` | A+C+P `chapter-config:view` on `GET`; the three writes override to `…:manage`\|`*` | B — `findByIds(ids, chapterId)` |
 | `audit-log` | `GET` | A+C+P `chapter-config:view` **and** `members:view` (route-level, merged via `PermissionsGuard`'s AND); **row visibility by role identity, not permission** — callers who do not hold the chapter's seeded `PRESIDENT` role get `member_visible = true` rows only (#1773) | A — chapter is the subject; read-only, `chapter_audit_log`'s RLS carries no SELECT policy so only this service-role-backed query can ever return rows, and `ChapterAuditLogService.list` is where the member-visibility filter the migration comment promised is actually applied |
 | `events` | `GET`, `GET /:id`, `POST`, `PATCH /:id`, `GET /:id/ics`, `DELETE /:id` | A+C+P `members:view`, `events:create/update/delete` | B — `eventRepo.findById(id, chapterId)`. The three read routes (`GET`, `GET /:id`, `GET /:id/ics`) additionally filter out a role-targeted event (`required_role_ids` non-empty) unless the caller's `member.role_ids` intersects it — `event.service.ts`'s `isVisibleToViewer`, keyed on the optional `viewerId` param the controller passes only on reads; `update`/`delete`/series internals omit it and are unfiltered, since those already require `events:update`/`events:delete` (#1463). **`findByChapter` has a fourth, non-controller caller:** `ActivityFeedService.eventItems` passes the viewer too, because a feed row carries the event's name and location — its `members:view` gate is the same one `GET /v1/events` carries and is not a substitute for the filter (#1469). Any new caller of `findByChapter` that omits `viewerId` reopens this |
-| `events/:eventId/attendance` | `POST /check-in`, `GET /`, `PATCH /:userId`, `POST /auto-absent` | A+C (+P `events:update` on writes) | B — event fetched as `findById(eventId, chapterId)` first (`attendance.service.ts:43,136,152,176`); `:userId` only ever writes inside that event |
+| `events/:eventId/attendance` | `POST /check-in`, `GET /`, `PATCH /:userId`, `POST /auto-absent` | A+C (+P `events:update` on writes) | B — event fetched as `findById(eventId, chapterId)` first (`attendance.service.ts`, every `eventRepo.findById(eventId, chapterId)`); `:userId` only ever writes inside that event |
 | `invoices` | `GET`, `GET /overdue`, `GET /:id`, `POST`, `PATCH /:id`, `POST /:id/status`, `POST /:id/payment-intent`, `GET /:id/transactions` | A+C+P `members:view`, `billing:view` / `billing:manage` | B — `invoiceRepo.findById(id, chapterId)` |
-| `members` | `GET`, `GET /search`, `GET /:id`, `PATCH /:id/roles`, `PATCH /me/onboarding`, `PATCH /me/ops-nudges/dismiss`, `DELETE /:id` | A+C+P `members:view`, `roles:manage`, `members:remove` | **C** — `memberRepo.findById(id)` then `member.chapter_id !== chapterId → 403` (`member.service.ts:112,205,218`). The two `me/*` writes are the exception: they carry no handler-level permission, so they run on the class-level `members:view`, and their row proof is `@CurrentMember()` rather than an id comparison — `ChapterGuard.findMembership` resolves `request.member` filtered by **both** `user_id` and `chapter_id`, so no caller-supplied id reaches the write. |
+| `members` | `GET`, `GET /search`, `GET /:id`, `PATCH /:id/roles`, `PATCH /me/onboarding`, `PATCH /me/ops-nudges/dismiss`, `DELETE /:id` | A+C+P `members:view`, `roles:manage`, `members:remove` | **C** — `memberRepo.findById(id)` then `member.chapter_id !== chapterId → 403` (`member.service.ts`, every `member.chapter_id !== chapterId` check). The two `me/*` writes are the exception: they carry no handler-level permission, so they run on the class-level `members:view`, and their row proof is `@CurrentMember()` rather than an id comparison — `ChapterGuard.findMembership` resolves `request.member` filtered by **both** `user_id` and `chapter_id`, so no caller-supplied id reaches the write. |
 | `points` | `GET /me`, `GET /leaderboard`, `GET /transactions`, `GET /members/:userId`, `POST /adjust` | A+C+P `members:view`, `points:view_all`, `points:adjust` | B — `pointTxnRepo.findByUser(chapterId, userId)`; a foreign `:userId` yields an empty summary, not another chapter's rows |
-| `polls` | `POST /channels/:channelId/polls`, `POST/DELETE /polls/:messageId/vote`, `GET /polls`, `GET /polls/:messageId` | A+C+P `members:view`, `polls:create`, `polls:view_all` | **C** — `messageRepo.findById()` then `channelAccess.assertChannelAccess(channel_id, chapterId, …)` before any poll field is read (`poll.service.ts:110,178,208`) |
-| `roles` | `GET`, `GET /permissions-catalog`, `POST`, `PATCH /:id`, `DELETE /:id`, `POST /transfer-presidency` | A+C+P `members:view`, `roles:manage`, `*` for transfer | **C** — `roleRepo.findById()` then `role.chapter_id !== chapterId → 403` (`rbac.service.ts:71,124`) |
+| `polls` | `POST /channels/:channelId/polls`, `POST/DELETE /polls/:messageId/vote`, `GET /polls`, `GET /polls/:messageId` | A+C+P `members:view`, `polls:create`, `polls:view_all` | **C** — `messageRepo.findById()` then `channelAccess.assertChannelAccess(channel_id, chapterId, …)` before any poll field is read (`poll.service.ts`, every `assertChannelAccess` call) |
+| `roles` | `GET`, `GET /permissions-catalog`, `POST`, `PATCH /:id`, `DELETE /:id`, `POST /transfer-presidency` | A+C+P `members:view`, `roles:manage`, `*` for transfer | **C** — `roleRepo.findById()` then `role.chapter_id !== chapterId → 403` (`rbac.service.ts`, every `role.chapter_id !== chapterId` check) |
 | `reports` | `POST /attendance`, `POST /points`, `POST /roster`, `POST /service` | A+C+P `reports:export` | A |
 | `search` | `GET /` | A+C+P `members:view` | A |
 | `semesters` / `chapters/current/rollover` | `POST /chapters/current/rollover`, `GET /semesters` | A+C+P `members:view`, `semester:rollover` | A |
-| `service-entries` | `GET`, `GET /leaderboard`, `GET /:id`, `POST /proof-upload-url`, `GET /:id/proof-url`, `POST`, `PATCH /:id/review`, `DELETE /:id` | A+C, +P per route: `members:view`, `service:log`, `service:approve` | B — `serviceEntryRepo.findById(id, chapterId)` (`service-entry.service.ts:183,221,376,439,470`) |
-| `geofences` / `study-sessions` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id`; `POST /start|heartbeat|pause|resume|stop`, `GET /` | A+C+P `members:view`, `geofences:manage` | B — `geofenceRepo.findById(id, chapterId)` at all 8 call sites |
-| `tasks` | `GET`, `GET /:id`, `POST`, `PATCH /:id/status`, `POST /:id/confirm`, `POST /:id/reject`, `DELETE /:id` | A+C+P `members:view`, `tasks:manage` | B — `taskRepo.findById(id, chapterId)`; `GET /:id` additionally narrows to **assignee or `tasks:manage`** (`task.controller.ts:64-72`) — a per-row ACL on top of chapter scoping |
+| `service-entries` | `GET`, `GET /leaderboard`, `GET /:id`, `POST /proof-upload-url`, `GET /:id/proof-url`, `POST`, `PATCH /:id/review`, `DELETE /:id` | A+C, +P per route: `members:view`, `service:log`, `service:approve` | B — `serviceEntryRepo.findById(id, chapterId)` (`service-entry.service.ts`, every `findById` call) |
+| `geofences` / `study-sessions` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id`; `POST /start|heartbeat|pause|resume|stop`, `GET /` | A+C+P `members:view`, `geofences:manage` | B — `geofenceRepo.findById(id, chapterId)` at every call site |
+| `tasks` | `GET`, `GET /:id`, `POST`, `PATCH /:id/status`, `POST /:id/confirm`, `POST /:id/reject`, `DELETE /:id` | A+C+P `members:view`, `tasks:manage` | B — `taskRepo.findById(id, chapterId)`; `GET /:id` additionally narrows to **assignee or `tasks:manage`** (`TaskController.getOne`) — a per-row ACL on top of chapter scoping |
 
 ### Controllers without `ChapterGuard`
 
@@ -97,22 +97,22 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 | `GET /health/ready` | none | Readiness probe for deploy smoke checks; no tenant data |
 | `GET /v1/client-policy` | none (the read throttle bucket: per IP for an anonymous call, per user when the app sends a signed-in member's token) | Mobile minimum-version check (#2526). The app asks before anyone signs in, so it can't require a token. It reads only the `X-Client-Version` header and the `MOBILE_*` env, and returns whether that build is still served plus a store link: no user, chapter or row data. `Cache-Control: no-store`, because the answer varies by header. [`spec/ui/mobile/patterns.md`](../../spec/ui/mobile/patterns.md) § Minimum version |
 | `GET /v1/discord/connect/callback` | none | OAuth redirect target, so it cannot carry a bearer token. Its capability is the single-use `state` row it consumes, which binds the chapter. `code` and `state` never reach a log — `LoggingInterceptor` strips the query string via `pathOnly` — though `error` / `error_description` are logged through `logSafe`, which caps and strips control characters rather than redacting |
-| `POST /webhooks/stripe` | none (throttler skipped) | **HMAC signature** verified against `STRIPE_WEBHOOK_SECRET` before the body is parsed; an invalid signature is `401` (`webhook.controller.ts:52-66`). Not user-authenticated by design |
+| `POST /webhooks/stripe` | none (throttler skipped) | **HMAC signature** verified against `STRIPE_WEBHOOK_SECRET` before the body is parsed; an invalid signature is `401` (`webhook.controller.ts`, the `UnauthorizedException` on an invalid signature). Not user-authenticated by design |
 | `GET /chapter-directory/search` | A | Public reference dataset (Greek orgs + universities). Contains no chapter-owned data |
 | `GET /analytics/identity` | A | **D** — returns the caller's own pseudonymous id |
 | `POST /analytics/events` | A | Body carries `chapter_id`; `trackFromClient` resolves `members.findByUserAndChapter(userId, chapterId)` and **403s a non-member**; a DB error fails closed (`AnalyticsService.trackFromClient`) |
 | `POST /chapters/onboard` | A | Creates a new chapter for the caller; no existing row is addressed |
 | `GET /chapters` | A | **D** — lists only the caller's own memberships. Each embedded chapter is the member-safe projection (`toChapterMemberView`), not the raw row: this route carries no billing permission, and before #930 it shipped `stripe_customer_id` / `subscription_id` for every chapter the caller belongs to |
-| `POST /chapters/:id/activate` | A | Client-supplied `:id`, but `setActiveChapter` requires a membership row and throws `403` otherwise (`chapter.service.ts:81-87`) |
+| `POST /chapters/:id/activate` | A | Client-supplied `:id`, but `setActiveChapter` requires a membership row and throws `403` otherwise (`ChapterService.setActiveChapter`) |
 | `POST /invites/redeem` | A | Redeems by opaque invite code; the code *is* the capability. Chapter comes from the invite row, not the caller — which is also why the subscription hard lock is evaluated in `InviteService.redeem` against `invite.chapter_id` (#1546) rather than by `ChapterGuard`, which never sees that chapter |
 | `GET/PATCH /users/me`, `DELETE /users/me` | A | **D** |
 | `GET/POST /users/me/legal-acceptance` | A | **D** — reads and stamps the caller's own row only; no chapter context, because a user accepts before they join one (#2302) |
 | `GET /users/me/permissions`, `POST /users/me/avatar-url` | A+C | Chapter context needed; guard supplies it |
 | `POST /users/me/avatar` | A+C | **D** — `confirmAvatarUpload` accepts only a path directly in the caller's own `chapters/<active>/profiles/<uid>/` folder, and only once the object exists (#732) |
 | `DELETE /users/me/avatar` | A | **D** — clears the caller's own photo; deletes the object only when the stored path is in the caller's own folder |
-| `POST /push-tokens`, `DELETE /push-tokens/:id` | A | **D** — `removePushToken` checks `existing.user_id !== userId → 404` (`notification.service.ts:299`) |
-| `GET /notifications`, `PATCH /notifications/:id/read` | A | **D** — `markNotificationRead` checks `existing.user_id !== userId → 404` (`:271`) |
-| `GET /notifications/preferences?chapterId=`, `PATCH /notifications/preferences` | A | Client-supplied chapter id with **no** `ChapterGuard` — verified explicitly by `assertChapterMembership(userId, chapterId)` (`notification.service.ts:309,319,334`) |
+| `POST /push-tokens`, `DELETE /push-tokens/:id` | A | **D** — `removePushToken` checks `existing.user_id !== userId → 404` (`notification.service.ts`, `removePushToken`) |
+| `GET /notifications`, `PATCH /notifications/:id/read` | A | **D** — `markNotificationRead` checks `existing.user_id !== userId → 404` (`markNotificationRead`) |
+| `GET /notifications/preferences?chapterId=`, `PATCH /notifications/preferences` | A | Client-supplied chapter id with **no** `ChapterGuard` — verified explicitly by `assertChapterMembership(userId, chapterId)` (`notification.service.ts`, every `assertChapterMembership` call) |
 | `GET/PATCH /settings` | A | **D** |
 
 ---
@@ -122,8 +122,8 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 **No route returns another chapter's data.** Every id-taking route resolves to one of the four
 idioms above. Specifically checked and clear:
 
-- **All 10 unscoped `findById(id)` repositories** — `attendance`, `chapter`, `chat-message`,
-  `invite`, `member`, `notification`, `push-token`, `role`, `study-session`, `user` — have callers
+- **All 7 unscoped `findById(id)` repositories** — `chapter`, `chat-message`,
+  `invite`, `member`, `push-token`, `role`, `user` — have callers
   that re-check tenancy (idiom C) or are self-scoped (idiom D).
 - **`x-chapter-id` swap** — rejected by `ChapterGuard`'s membership re-read, and a mismatch against
   the JWT claim is a distinct `403` before any query runs.
@@ -215,9 +215,9 @@ number drift unnoticed before, so it is now stated rather than derived.
 Reconciled against hosted `frapp-staging` on 2026-08-27
 (`select schemaname, count(*) from pg_policies group by schemaname`):
 **10 in `public` + 1 in `realtime` = 11** at that read. Migration `20260906203000` (#1552)
-adds a second `realtime` policy, so once it is applied the hosted figure is **10 + 2 = 12** — the
-count the heading and the PGlite check now carry; re-read the hosted catalog after the deploy that
-carries it and re-stamp this line.
+adds a second `realtime` policy, so the expected hosted figure is **10 + 2 = 12** — the
+count the heading and the PGlite check now carry. The promotion log records that migration as
+applied; the hosted catalog has not been re-read since 2026-08-27 (unverified).
 
 The PGlite CI substrate sees **10**, every `public` one. The two absences are schema-gated rather
 than drift: `realtime.messages` needs a `realtime` schema PGlite does not have.
