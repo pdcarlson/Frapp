@@ -200,12 +200,44 @@ test("the rename into place waits out Windows' transient refusals, and nothing e
       }
     };
   };
-  const waits = [];
-  renameWithRetry("a", "b", { rename: failing(["EPERM", "EBUSY", "EACCES"]), wait: (ms) => waits.push(ms) });
-  assert.deepEqual(waits, [100, 200, 300]);
+  // A clock the waits advance, so the budget is measured in waited time, not in tries.
+  const clock = () => {
+    let t = 0;
+    const waits = [];
+    return { waits, now: () => t, wait: (ms) => (waits.push(ms), (t += ms)) };
+  };
+  const quick = clock();
+  renameWithRetry("a", "b", { rename: failing(["EPERM", "EBUSY", "EACCES"]), ...quick });
+  assert.deepEqual(quick.waits, [100, 200, 300]);
   assert.throws(() => renameWithRetry("a", "b", { rename: failing(["ENOTEMPTY"]), wait: () => assert.fail("no retry") }), /ENOTEMPTY/);
-  assert.throws(() => renameWithRetry("a", "b", { rename: failing(Array(10).fill("EPERM")), wait: () => {} }), /EPERM/);
+  // A scan that holds the tree for 20 seconds (the EPERM seen on Windows, 2026-11-03) is waited out, where ten
+  // tries (4.5 s) used to give up on it.
+  const slow = clock();
+  renameWithRetry("a", "b", { rename: failing(Array(29).fill("EPERM")), ...slow });
+  assert.ok(slow.now() >= 20_000, `waited ${slow.now()} ms`);
+  assert.ok(Math.max(...slow.waits) <= 1000, "no single wait passes a second");
+  // A refusal that never ends gives up after about a minute.
+  const stuck = clock();
+  assert.throws(() => renameWithRetry("a", "b", { rename: failing(Array(1000).fill("EPERM")), ...stuck }), /EPERM/);
+  assert.ok(stuck.now() >= 60_000 && stuck.now() < 62_000, `gave up after ${stuck.now()} ms`);
 });
+
+test("a rename still refused after the retries runs eas from the proven temporary install, and the next run cleans it up", () =>
+  withTmp((cacheRoot) => {
+    const { spawn } = fakeSpawn();
+    const refuse = () => {
+      const err = new Error("EPERM: operation not permitted, rename");
+      err.code = "EPERM";
+      throw err;
+    };
+    const tmp = `${pinDir(PIN, cacheRoot)}.tmp-4194303`; // a pid that isn't running
+    const bin = install(PIN, { cacheRoot, spawn, npm, pid: 4194303, rename: refuse });
+    assert.equal(bin, easBin(tmp, PIN.version), "this run still gets an eas to run");
+    assert.throws(() => statSync(pinDir(PIN, cacheRoot)), /ENOENT/, "nothing counts as installed");
+    // The next run sweeps the abandoned tree and installs into place.
+    assert.equal(install(PIN, { cacheRoot, spawn, npm, pid: 12 }), easBin(pinDir(PIN, cacheRoot), PIN.version));
+    assert.throws(() => statSync(tmp), /ENOENT/);
+  }));
 
 test("when another run finished the install first, its tree is used and ours is dropped", () =>
   withTmp((cacheRoot) => {

@@ -169,16 +169,24 @@ const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 
 
 /**
  * `renameSync`, retried while Windows refuses because an antivirus or indexer still holds one of
- * the files npm just wrote (EPERM / EACCES / EBUSY), as npm's own graceful-fs does. ENOTEMPTY or
- * EEXIST means the target is there: that is the caller's to judge, so it isn't retried.
+ * the files npm just wrote (EPERM / EACCES / EBUSY). Windows won't rename a directory while any
+ * file inside it is open, and a scan of a fresh 527-package tree can outlast a few seconds, so this
+ * keeps trying for up to a minute, the same budget npm's own graceful-fs gives a refused rename on
+ * Windows. The wait grows by 100 ms a try, capped at a second. ENOTEMPTY or EEXIST means the
+ * target is there: that is the caller's to judge, so it isn't retried.
  */
-export function renameWithRetry(from, to, { rename = renameSync, wait = sleep, tries = 10 } = {}) {
+export function renameWithRetry(
+  from,
+  to,
+  { rename = renameSync, wait = sleep, now = Date.now, budgetMs = 60_000 } = {},
+) {
+  const start = now();
   for (let attempt = 1; ; attempt++) {
     try {
       return rename(from, to);
     } catch (err) {
-      if (attempt >= tries || !["EPERM", "EACCES", "EBUSY"].includes(err.code)) throw err;
-      wait(attempt * 100);
+      if (!["EPERM", "EACCES", "EBUSY"].includes(err.code) || now() - start >= budgetMs) throw err;
+      wait(Math.min(attempt * 100, 1000));
     }
   }
 }
@@ -191,7 +199,10 @@ function log(message) {
  * Install the pin into its directory, or confirm another run already did. Returns the eas entry
  * point, or `null` after saying why it failed.
  */
-export function install(pin, { cacheRoot = CACHE_ROOT, spawn = spawnSync, npm = npmCommand(), pid = process.pid } = {}) {
+export function install(
+  pin,
+  { cacheRoot = CACHE_ROOT, spawn = spawnSync, npm = npmCommand(), pid = process.pid, rename = renameWithRetry } = {},
+) {
   const dir = pinDir(pin, cacheRoot);
   const tmp = `${dir}.tmp-${pid}`;
   sweepAbandoned(dir);
@@ -223,21 +234,34 @@ export function install(pin, { cacheRoot = CACHE_ROOT, spawn = spawnSync, npm = 
   // was damaged after the fact (a delete cut short, a quarantined file): move it aside first.
   if (existsSync(dir) && !easBin(dir, pin.version)) {
     try {
-      renameWithRetry(dir, `${dir}.broken-${pid}`);
+      rename(dir, `${dir}.broken-${pid}`);
       removeQuietly(`${dir}.broken-${pid}`);
     } catch {
       // Left for the rename below to report.
     }
   }
   try {
-    renameWithRetry(tmp, dir);
+    rename(tmp, dir);
   } catch (err) {
     // Another run finished first and its tree is in place: use it, drop ours.
-    removeQuietly(tmp);
-    if (!easBin(dir, pin.version)) {
-      log(`ERROR: could not move the install into ${dir}: ${err.message}. Delete ${dir} and run it again.`);
-      return null;
+    if (easBin(dir, pin.version)) {
+      removeQuietly(tmp);
+      return easBin(dir, pin.version);
     }
+    // Still refused after the retries, and nothing is in place: the tree we just proved runs, so
+    // run eas from it this once rather than throw away a good install. The next run's
+    // sweepAbandoned removes it once this process has exited, and installs again.
+    if (!existsSync(dir)) {
+      log(
+        `WARNING: could not move the install into ${dir} (${err.code ?? err.message}), most likely an ` +
+          "antivirus scan still holding its files. Running eas from the temporary install this time; the " +
+          "next run installs again.",
+      );
+      return easBin(tmp, pin.version);
+    }
+    removeQuietly(tmp);
+    log(`ERROR: could not move the install into ${dir}: ${err.message}. Delete ${dir} and run it again.`);
+    return null;
   }
   return easBin(dir, pin.version);
 }
