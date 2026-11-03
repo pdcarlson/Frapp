@@ -173,24 +173,34 @@ const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 
  * `renameSync`, retried while Windows refuses because an antivirus or indexer still holds one of
  * the files npm just wrote (EPERM / EACCES / EBUSY). Windows won't rename a directory while any
  * file inside it is open, and a scan of a fresh 527-package tree can outlast a few seconds. Like
- * npm's own graceful-fs on Windows (`polyfills.js`, its `rename`), this keeps trying for up to a
- * minute, and only while the target is still absent: Windows also answers EPERM for a directory
- * renamed onto one that exists, and a target that appeared (another run finished first) is the
- * caller's to judge, so that throws at once. Unlike graceful-fs the wait grows by 100 ms a try up
+ * npm's own graceful-fs (`polyfills.js`, its `rename`), this keeps trying for up to a minute, on
+ * Windows only, and only while the target is still absent: Windows also answers EPERM for a
+ * directory renamed onto one that exists, and a target that appeared (another run finished first)
+ * is the caller's to judge, so that throws at once. Unlike graceful-fs the wait grows by 100 ms a try up
  * to a second, not 10 ms up to 100 ms, and `onWait` is told once when waiting starts so a person
  * isn't left looking at a silent minute.
  */
 export function renameWithRetry(
   from,
   to,
-  { rename = renameSync, wait = sleep, now = Date.now, exists = existsSync, budgetMs = 60_000, onWait = () => {} } = {},
+  {
+    rename = renameSync,
+    wait = sleep,
+    now = Date.now,
+    exists = existsSync,
+    budgetMs = 60_000,
+    onWait = () => {},
+    platform = process.platform,
+  } = {},
 ) {
   const start = now();
   for (let attempt = 1; ; attempt++) {
     try {
       return rename(from, to);
     } catch (err) {
-      if (!["EPERM", "EACCES", "EBUSY"].includes(err.code) || now() - start >= budgetMs || exists(to)) throw err;
+      // Elsewhere these codes are lasting (a read-only parent, say), so a minute would only hang.
+      if (platform !== "win32" || !["EPERM", "EACCES", "EBUSY"].includes(err.code)) throw err;
+      if (now() - start >= budgetMs || exists(to)) throw err;
       if (attempt === 1) onWait(err);
       wait(Math.min(attempt * 100, 1000));
     }

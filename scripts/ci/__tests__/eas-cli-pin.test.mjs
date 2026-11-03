@@ -204,18 +204,27 @@ test("the rename into place waits out Windows' transient refusals, and nothing e
   const clock = () => {
     let t = 0;
     const waits = [];
-    return { waits, now: () => t, wait: (ms) => (waits.push(ms), (t += ms)), exists: () => false };
+    return { waits, now: () => t, wait: (ms) => (waits.push(ms), (t += ms)), exists: () => false, platform: "win32" };
   };
   const quick = clock();
   const notes = [];
   renameWithRetry("a", "b", { rename: failing(["EPERM", "EBUSY", "EACCES"]), ...quick, onWait: (err) => notes.push(err.code) });
   assert.deepEqual(quick.waits, [100, 200, 300]);
   assert.deepEqual(notes, ["EPERM"], "told once, when waiting starts");
-  assert.throws(() => renameWithRetry("a", "b", { rename: failing(["ENOTEMPTY"]), wait: () => assert.fail("no retry") }), /ENOTEMPTY/);
+  assert.throws(
+    () => renameWithRetry("a", "b", { rename: failing(["ENOTEMPTY"]), platform: "win32", wait: () => assert.fail("no retry") }),
+    /ENOTEMPTY/,
+  );
+  // Off Windows the same codes are lasting, so they throw at once.
+  assert.throws(
+    () => renameWithRetry("a", "b", { rename: failing(["EACCES"]), platform: "linux", wait: () => assert.fail("no retry") }),
+    /EACCES/,
+  );
   // Windows answers EPERM for a directory renamed onto one that exists: once the target is there,
   // stop at once, as graceful-fs does, and let the caller judge it.
   assert.throws(
-    () => renameWithRetry("a", "b", { rename: failing(["EPERM"]), exists: () => true, wait: () => assert.fail("no retry") }),
+    () =>
+      renameWithRetry("a", "b", { rename: failing(["EPERM"]), exists: () => true, platform: "win32", wait: () => assert.fail("no retry") }),
     /EPERM/,
   );
   // An assumed scan that holds the tree for 20 seconds is waited out, where ten tries (4.5 s) used
