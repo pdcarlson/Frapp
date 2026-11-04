@@ -315,7 +315,7 @@ The fingerprint is fixed per worker, so every outage of one worker lands in one 
 
 ### Client query and mutation failures
 
-Source: the `warning`-level events web and mobile send when a React Query query or mutation fails ([#3377](https://github.com/pdcarlson/Frapp/issues/3377)), fingerprint `['react-query', <kind>, <query-key root>, <status class or network>]`, at most one per fingerprint per 10 minutes per client. What is reported and what each event carries: [`observability.md` § Error Tracking](../../spec/behavior/observability.md#error-tracking).
+Source: the `warning`-level events web and mobile send when a React Query query or mutation fails ([#3377](https://github.com/pdcarlson/Frapp/issues/3377)). What is reported, what each event carries, how events are grouped and how often they repeat: [`observability.md` § Error Tracking](../../spec/behavior/observability.md#error-tracking).
 
 **No rule pages on these, by design.** They land in `frapp-web` and `frapp-mobile` for triage, not as alerts: an API 5xx behind one is already an error-level event in `frapp-api`, which its `request_id` tag joins. Sentry gives a `warning` event's new issue **medium** priority, and `frapp-web`'s default rule `3855503` (read 2026-11-04) emails only when an issue is or becomes high priority. So a client failure emails no one unless Sentry marks its issue escalating. `frapp-mobile`'s default rule `3914865` has the same name and was not re-read that day.
 

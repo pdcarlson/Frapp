@@ -13,10 +13,17 @@ import { createQueryErrorReporter } from "@repo/observability";
  * `spec/behavior/observability.md` § Error Tracking owns them.
  *
  * Online is TanStack's `onlineManager`, which
- * `lib/connection/query-connectivity.ts` drives from the connection monitor:
- * offline once a link drop is confirmed by a failed `/health` probe. A fetch
- * that fails in the seconds before that confirmation reads online, and is
- * reported as a `network` failure, at most once per root per interval.
+ * `lib/connection/query-connectivity.ts` drives from the connection monitor.
+ * The monitor reads offline once a link drop is confirmed by a failed
+ * `/health` probe, and also after three failed probes with the link up, which
+ * is what an API outage, or a build pointed at the wrong API, looks like from
+ * the device. So:
+ * - a fetch that fails before the monitor reads offline is reported as a
+ *   `network` failure, once per root per interval. That covers the failures
+ *   at launch, before the first probes have answered;
+ * - once it reads offline, status-less failures are not reported until it
+ *   reads online again, even when the device's link is up. The API's own
+ *   uptime check is what reports an outage; this side sees only its start.
  */
 export function createReportingCaches(): {
   queryCache: QueryCache;

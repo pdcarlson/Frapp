@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createQueryErrorReporter,
   DEFAULT_REPORT_INTERVAL_MS,
+  MAX_REMEMBERED_FINGERPRINTS,
+  QUERY_KEY_PLACEHOLDER,
   type QueryErrorReport,
   type QueryErrorReporterOptions,
 } from "./query-errors";
@@ -31,8 +33,11 @@ function harness(overrides: Partial<QueryErrorReporterOptions> = {}) {
     advance: (ms: number) => {
       clock += ms;
     },
-    query: (error: unknown, queryKey: readonly unknown[] = ["members", CHAPTER_ID]) =>
-      reporter.onQueryError(error, { queryKey }),
+    query: (
+      error: unknown,
+      queryKey: readonly unknown[] = ["members", CHAPTER_ID],
+      queryHash?: string,
+    ) => reporter.onQueryError(error, { queryKey, queryHash }),
     mutation: (error: unknown, mutationKey?: readonly unknown[]) =>
       reporter.onMutationError(error, { body: "member text" }, undefined, {
         options: { mutationKey },
@@ -148,11 +153,14 @@ describe("createQueryErrorReporter", () => {
   describe("a fetch that got no response, while online", () => {
     it.each([
       "Failed to fetch",
-      "Failed to fetch (api.frapp.live)",
       "Load failed",
       "NetworkError when attempting to fetch resource.",
       "Network request failed",
       "Network request timed out",
+      // Sentry's fetch instrumentation appends the host to the browser three.
+      "Failed to fetch (api.frapp.live)",
+      "Load failed (api.frapp.live)",
+      "NetworkError when attempting to fetch resource. (api.frapp.live)",
     ])("reports %j as a network failure", (message) => {
       const h = harness();
       h.query(new TypeError(message));
@@ -165,6 +173,20 @@ describe("createQueryErrorReporter", () => {
       expect(report!.fingerprint).toEqual(["react-query", "query", "members", "network"]);
       expect(report!.tags.query_failure).toBe("network");
       expect(report!.tags).not.toHaveProperty("http.status_code");
+    });
+  });
+
+  describe("a fetch-shaped message that is not a dead fetch", () => {
+    it.each([
+      ["a chunk that failed to load", new TypeError("Failed to fetch dynamically imported module: https://app.frapp.live/_next/a.js")],
+      ["a plain Error with a dead-fetch message", new Error("Network request failed")],
+      ["a TypeError with text after the message", new TypeError("Load failed for good")],
+    ])("reports %s as an exception", (_label, error) => {
+      const h = harness();
+      h.query(error);
+      expect(h.reports).toHaveLength(1);
+      expect(h.reports[0]!.tags.query_failure).toBe("exception");
+      expect(h.reports[0]!.error).toBe(error);
     });
   });
 
@@ -195,12 +217,40 @@ describe("createQueryErrorReporter", () => {
       expect(h.reports.every((r) => r.error.name === "QueryError")).toBe(true);
     });
 
-    it("limits per error type, so a second bug under one root still reports", () => {
+    it("limits per error type and message, so a second bug under one root still reports", () => {
       const h = harness();
-      h.query(new TypeError("first"));
-      h.query(new TypeError("first, again"));
-      h.query(new RangeError("second"));
-      expect(h.reports.map((r) => r.error.message)).toEqual(["first", "second"]);
+      h.query(new TypeError("Cannot read properties of undefined (reading 'map')"));
+      h.query(new TypeError("Cannot read properties of undefined (reading 'map')"));
+      h.query(new TypeError("Cannot read properties of null (reading 'id')"));
+      h.query(new RangeError("Cannot read properties of null (reading 'id')"));
+      expect(h.reports.map((r) => `${r.error.name}: ${r.error.message}`)).toEqual([
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "TypeError: Cannot read properties of null (reading 'id')",
+        "RangeError: Cannot read properties of null (reading 'id')",
+      ]);
+    });
+
+    it("takes the query hash out of TanStack's own errors, leaving the original alone", () => {
+      const h = harness();
+      const queryKey = ["backwork", CHAPTER_ID, { search: "jamie's lost jacket" }];
+      const queryHash = JSON.stringify(queryKey);
+      const thrown = new Error(`${queryHash} data is undefined`);
+      h.query(thrown, queryKey, queryHash);
+
+      const sent = h.reports[0]!.error;
+      expect(sent).not.toBe(thrown);
+      expect(sent.name).toBe("Error");
+      expect(sent.message).toBe(`${QUERY_KEY_PLACEHOLDER} data is undefined`);
+      expect(sent.stack).toContain(QUERY_KEY_PLACEHOLDER);
+      expect(sent.stack).not.toContain("jacket");
+      expect(thrown.message).toContain("jacket");
+    });
+
+    it("passes the Error itself on when its message holds no query hash", () => {
+      const h = harness();
+      const thrown = new TypeError("x is not a function");
+      h.query(thrown, ["polls"], '["polls"]');
+      expect(h.reports[0]!.error).toBe(thrown);
     });
   });
 
@@ -282,6 +332,34 @@ describe("createQueryErrorReporter", () => {
       h.advance(1_000);
       h.query(apiBody(500));
       expect(h.reports).toHaveLength(2);
+    });
+
+    it("forgets the oldest fingerprint past its memory, not the newest", () => {
+      const h = harness();
+      for (let i = 0; i <= MAX_REMEMBERED_FINGERPRINTS; i += 1) {
+        h.query(new TypeError(`bug ${i}`));
+      }
+      expect(h.reports).toHaveLength(MAX_REMEMBERED_FINGERPRINTS + 1);
+      // The newest is still remembered; the first was forgotten.
+      h.query(new TypeError(`bug ${MAX_REMEMBERED_FINGERPRINTS}`));
+      expect(h.reports).toHaveLength(MAX_REMEMBERED_FINGERPRINTS + 1);
+      h.query(new TypeError("bug 0"));
+      expect(h.reports).toHaveLength(MAX_REMEMBERED_FINGERPRINTS + 2);
+    });
+
+    it("counts a fingerprint reported again as the newest", () => {
+      const h = harness({ intervalMs: 1_000 });
+      h.query(new TypeError("recurring"));
+      for (let i = 1; i < MAX_REMEMBERED_FINGERPRINTS; i += 1) {
+        h.query(new TypeError(`bug ${i}`));
+      }
+      h.advance(1_000);
+      h.query(new TypeError("recurring"));
+      // One more pushes the memory past its limit: "bug 1" goes, not "recurring".
+      h.query(new TypeError("one more"));
+      const before = h.reports.length;
+      h.query(new TypeError("recurring"));
+      expect(h.reports).toHaveLength(before);
     });
 
     it("keeps its own state per reporter", () => {

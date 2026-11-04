@@ -81,6 +81,22 @@ describe("mobile query-error reporting", () => {
     });
   });
 
+  it("does not report a query TanStack cancelled", async () => {
+    // A cancel without a revert is the one that reaches the cache's onError;
+    // the binding's isCancelledError is what keeps it out.
+    const client = queryClient;
+    const pending = client
+      .fetchQuery({
+        queryKey: ["chapters"],
+        queryFn: () => new Promise<never>(() => undefined),
+        retry: false,
+      })
+      .catch((error: unknown) => error);
+    await client.cancelQueries({ queryKey: ["chapters"] }, { revert: false });
+    expect(await pending).toMatchObject({ message: "CancelledError" });
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
   it("reports a failed mutation", async () => {
     const observer = new MutationObserver(queryClient, {
       mutationFn: () => Promise.reject(apiBody(500)),

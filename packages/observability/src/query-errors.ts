@@ -7,11 +7,11 @@ import { httpStatusClass } from "./sentry-http";
  *
  * Each app binds it once, in `lib/sentry/query-errors.ts`, and hands the
  * handlers to its `QueryCache` and `MutationCache`. The app supplies the three
- * pieces this package cannot reach: its Sentry SDK's `captureException` (web is
- * on SDK 11, mobile on React Native 8, and `@sentry/*` is never imported here,
- * not even as a type: `sentry-scrubbing.ts`), whether it believes it is
- * online, and TanStack's `isCancelledError`. Query and mutation are read
- * structurally, so this package takes no `@tanstack` dependency either.
+ * pieces this package cannot reach: its Sentry SDK's `captureException` (web
+ * and mobile run different SDKs, and `@sentry/*` is never imported here, not
+ * even as a type: `sentry-scrubbing.ts`), whether it believes it is online,
+ * and TanStack's `isCancelledError`. Query and mutation are read structurally,
+ * so this package takes no `@tanstack` dependency either.
  *
  * **What is reported.** Every final failure (after retries), at `warning`
  * level, except:
@@ -30,16 +30,19 @@ import { httpStatusClass } from "./sentry-http";
  * - the query key's first element, when it is identifier-shaped. Later
  *   elements hold chapter, channel and entity ids, and `["search", chapterId,
  *   query]` holds the text a member typed, so neither they nor `queryHash` are
- *   ever read. A mutation without a `mutationKey` (most of them) reports under
+ *   ever sent. A mutation without a `mutationKey` (most of them) reports under
  *   `unkeyed`;
  * - the status, its class, the API's machine `code` and the body's
  *   `requestId`, each kept only when it has the shape those fields have;
  * - for an HTTP failure or a dead fetch, an `Error` this module builds from
  *   those identifiers. The API's body is never passed on: its `message` is
  *   free text and can echo what a member sent. An `Error` thrown inside a
- *   `queryFn` is passed on as it is, stack and message, the same way the
- *   route boundaries report what they catch, and the shared scrubber sweeps
- *   its message like any other.
+ *   `queryFn` is passed on with its stack and message, the same way the route
+ *   boundaries report what they catch, and the shared scrubber sweeps its
+ *   message like any other. TanStack's own errors put the whole `queryHash` in
+ *   the message (`<queryHash> data is undefined`, `Missing queryFn:
+ *   '<queryHash>'`), so a copy with the hash replaced by
+ *   {@link QUERY_KEY_PLACEHOLDER} is sent instead whenever it appears.
  *
  * Tags carry those identifiers because the scrubber drops `extra` and custom
  * contexts, and keeps tags and the fingerprint (swept).
@@ -52,8 +55,11 @@ import { httpStatusClass } from "./sentry-http";
  *
  * **Rate limit.** One report per fingerprint per {@link DEFAULT_REPORT_INTERVAL_MS}
  * for each reporter, so a query that fails on every focus, reconnect or retry
- * loop can't flood the project. It is a deliberate drop beside § Sampling's
- * `1.0` for error events, and the spec records it as one.
+ * loop can't flood the project. An `exception`'s fingerprint leaves the split
+ * to Sentry, so it is limited per error type and message instead. It is a
+ * deliberate drop beside § Sampling's `1.0` for error events, and the spec
+ * records it as one. The reporter remembers at most
+ * {@link MAX_REMEMBERED_FINGERPRINTS} fingerprints, forgetting the oldest.
  *
  * **It never throws.** `MutationCache` awaits its `onError` before the
  * mutation's own, so a throw here would surface as the caller's error.
@@ -62,21 +68,40 @@ import { httpStatusClass } from "./sentry-http";
 /** One report per fingerprint per this long, per reporter. */
 export const DEFAULT_REPORT_INTERVAL_MS = 10 * 60_000;
 
+/**
+ * How many fingerprints one reporter remembers. Key roots and status classes
+ * are few, but an exception's message is part of its limit, so this bounds a
+ * session that throws many different ones.
+ */
+export const MAX_REMEMBERED_FINGERPRINTS = 500;
+
+/** What replaces the `queryHash` in a TanStack error's message and stack. */
+export const QUERY_KEY_PLACEHOLDER = "[query-key]";
+
+/** How much of an exception's message its rate limit reads. */
+const RATE_KEY_MESSAGE_CHARS = 200;
+
 /** Statuses the auth flow answers with: a sign-in redirect or a refusal screen. */
 const AUTH_FLOW_STATUSES: ReadonlySet<number> = new Set([401, 403]);
 
 /**
  * What `fetch` rejects with when no response arrived, per runtime: Chromium,
  * Safari, Firefox, then React Native's two (`whatwg-fetch`). openapi-fetch
- * rethrows it unchanged, so this is what a `queryFn` throws.
+ * rethrows it unchanged, so this is what a `queryFn` throws. Sentry's fetch
+ * instrumentation appends the host to the browser three by default
+ * (`enhanceFetchErrorMessages`: `Load failed (api.frapp.live)`), so each
+ * pattern allows one parenthesized suffix. Each is anchored at both ends:
+ * `Failed to fetch dynamically imported module: …` is a chunk that failed to
+ * load, a bug report, not a dead request.
  */
+const HOST_SUFFIX = String.raw`(?: \([^()]*\))?`;
 const DEAD_FETCH_MESSAGES: readonly RegExp[] = [
-  /^Failed to fetch\b/,
-  /^Load failed$/,
-  /^NetworkError when attempting to fetch resource\.?$/,
-  /^Network request failed$/,
-  /^Network request timed out$/,
-];
+  "Failed to fetch",
+  "Load failed",
+  String.raw`NetworkError when attempting to fetch resource\.?`,
+  "Network request failed",
+  "Network request timed out",
+].map((message) => new RegExp(`^${message}${HOST_SUFFIX}$`));
 
 /** A query-key root or a mutation-key root, as the hooks write them. */
 const KEY_ROOT_RE = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
@@ -116,6 +141,8 @@ export interface QueryErrorReporterOptions {
 /** The part of TanStack's `Query` read here. */
 export interface ReportedQuery {
   readonly queryKey: readonly unknown[];
+  /** Read only to remove it from a TanStack error's message, never sent. */
+  readonly queryHash?: string;
 }
 
 /** The part of TanStack's `Mutation` read here. */
@@ -150,18 +177,25 @@ export function createQueryErrorReporter(
     error: unknown,
     kind: QueryErrorKind,
     key: readonly unknown[] | undefined,
+    queryHash?: string,
   ): void => {
     try {
       const failure = classify(error, options);
       if (!failure) return;
       const root = keyRoot(key);
-      const built = buildReport(failure, error, kind, root);
+      const built = buildReport(failure, error, kind, root, queryHash);
       const at = now();
       const last = lastReportedAt.get(built.rateKey);
       if (last !== undefined && at - last < intervalMs) return;
       // Recorded before the capture, so a capture that throws is not retried
-      // on every refetch either.
+      // on every refetch either. Deleted first so the newest is last in the
+      // Map's order and the oldest is the one forgotten.
+      lastReportedAt.delete(built.rateKey);
       lastReportedAt.set(built.rateKey, at);
+      if (lastReportedAt.size > MAX_REMEMBERED_FINGERPRINTS) {
+        const oldest = lastReportedAt.keys().next();
+        if (!oldest.done) lastReportedAt.delete(oldest.value);
+      }
       options.capture(built.report);
     } catch {
       // Reporting is a side channel: a broken reporter loses the report, never
@@ -171,7 +205,7 @@ export function createQueryErrorReporter(
 
   return {
     onQueryError: (error, query) => {
-      report(error, "query", query.queryKey);
+      report(error, "query", query.queryKey, query.queryHash);
     },
     onMutationError: (error, _variables, _onMutateResult, mutation) => {
       report(error, "mutation", mutation.options.mutationKey);
@@ -199,6 +233,7 @@ function buildReport(
   error: unknown,
   kind: QueryErrorKind,
   root: string,
+  queryHash: string | undefined,
 ): { report: QueryErrorReport; rateKey: string } {
   const tags: Record<string, string> = {
     query_kind: kind,
@@ -253,7 +288,7 @@ function buildReport(
 
   const thrown =
     failure.error instanceof Error
-      ? failure.error
+      ? withoutQueryHash(failure.error, queryHash)
       : namedError("QueryError", `${kind} "${root}" threw a non-Error value`);
   return {
     report: {
@@ -262,9 +297,17 @@ function buildReport(
       fingerprint: ["{{ default }}", "react-query", kind, root],
       tags,
     },
-    // Sentry splits these by stack, so the limit is per error type rather than
-    // per root: a second bug under one root is not held back by the first.
-    rateKey: ["react-query", kind, root, "exception", thrown.name].join("\u0000"),
+    // Sentry splits these by stack, so the limit is per error type and
+    // message rather than per root: a second bug under one root is not held
+    // back by the first.
+    rateKey: [
+      "react-query",
+      kind,
+      root,
+      "exception",
+      thrown.name,
+      String(thrown.message).slice(0, RATE_KEY_MESSAGE_CHARS),
+    ].join("\u0000"),
   };
 }
 
@@ -311,6 +354,24 @@ function deadFetchMessage(error: unknown): string | undefined {
   return DEAD_FETCH_MESSAGES.some((pattern) => pattern.test(message))
     ? message
     : undefined;
+}
+
+/**
+ * The error as it is, or, when its message or stack holds the query's hash
+ * (TanStack writes the whole key there), a copy with the hash replaced. The
+ * original is never changed: the screen that caught it still reads it.
+ */
+function withoutQueryHash(error: Error, queryHash: string | undefined): Error {
+  if (!queryHash) return error;
+  const message = String(error.message);
+  const stack = typeof error.stack === "string" ? error.stack : undefined;
+  if (!message.includes(queryHash) && !stack?.includes(queryHash)) return error;
+  const copy = new Error(message.split(queryHash).join(QUERY_KEY_PLACEHOLDER));
+  copy.name = error.name;
+  if (stack !== undefined) {
+    copy.stack = stack.split(queryHash).join(QUERY_KEY_PLACEHOLDER);
+  }
+  return copy;
 }
 
 function namedError(name: string, message: string): Error {
