@@ -876,10 +876,11 @@ The Preferences card is a **second query** on the same screen (`GET /v1/settings
 | Auth error | `Unable to sign in` | The Supabase message, verbatim. It is deliberately non-enumerating ("Invalid login credentials" whether or not the address exists), so passing it through leaks nothing and says more than a generic line would. |
 | Magic link sent | `Magic link sent` | `Check your inbox to continue signing in.` |
 | Magic link, no email | `Email required` | `Enter your email address to request a magic link.` |
-| Continue with Apple / Google | — | Button labels. Equal Secondary size; Apple first. Each button carries the official brand mark at 20px (Apple silhouette in `currentColor`, Google four-color G) beside the label. |
-| Identity collision | `Unable to sign in` | `An account with this email already exists. Sign in with your password or a magic link. Google or Apple can attach to that same account on later visits.` |
-| Provider not enabled | `Unable to sign in` | `This sign-in method isn't available yet. Use your password or a magic link.` |
-| Membership hint | — | `Invited at a university address? Open that link after you sign in. Membership follows this account, including Apple Hide My Email.` |
+| Continue with Apple / Google | — | Button labels. Each carries the official brand mark at 20px (Apple silhouette in `currentColor`, Google four-color G) beside the label. Web: equal Secondary size, Apple first. Mobile s01 (#3349): the phone's own account leads as the one filled button (Apple on iOS with Google beside it, Google elsewhere), and off iOS Apple sits behind `Other ways to sign in`. The board's equal-size, Apple-first pair is superseded on mobile, not drift. |
+| Continue with email (mobile s01) | — | Button label that opens the email form (password or magic link), titled `Sign in with email`, with a back chevron to the providers (#3349). |
+| Identity collision | `Unable to sign in` | `An account with this email already exists. Sign in with your password or a magic link. Google or Apple can attach to that same account on later visits.` Mobile s01, where the form sits behind a button (#3349): `An account with this email already exists. Tap Continue with email and sign in with your password or a magic link. Google or Apple can attach to that same account on later visits.` |
+| Provider not enabled | `Unable to sign in` | `This sign-in method isn't available yet. Use your password or a magic link.` Mobile s01: `This sign-in method isn't available yet. Tap Continue with email to use your password or a magic link.` |
+| Membership hint | — | `Invited at a university address? Open that link after you sign in. Membership follows this account, including Apple Hide My Email.` On mobile s01 it sits under the buttons whenever a Continue with Apple button is showing (always on iOS; off iOS once `Other ways to sign in` is opened). |
 
 ### Sign up (pre-auth)
 

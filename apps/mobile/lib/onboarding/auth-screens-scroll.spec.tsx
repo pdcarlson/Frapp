@@ -140,6 +140,10 @@ describe("sign-in (s01)", () => {
 
   it("puts the whole form, down to the Sign in button, inside one scroll container", () => {
     const tree = render(<SignIn />);
+    // The email form sits behind "Continue with email" (#3349).
+    act(() => {
+      pressableLabelled(tree.root, "Continue with email")!.props.onPress();
+    });
 
     const signIn = pressableLabelled(tree.root, "Sign in");
     const email = tree.root.findAll(
@@ -162,6 +166,19 @@ describe("sign-in (s01)", () => {
     // iOS: insets the scroll view by the keyboard and scrolls the focused
     // field above it (the screen's comment has the RN source for that).
     expect(scroll.props.automaticallyAdjustKeyboardInsets).toBe(true);
+  });
+
+  it("keeps the folded view's actions inside the one scroll container", () => {
+    // The first view a person sees (#3349): on an iPhone SE or at a large
+    // text size it has to scroll, so the buttons can't be a pinned footer.
+    const tree = render(<SignIn />);
+    const actions = [
+      "Continue with Apple",
+      "Continue with Google",
+      "Continue with email",
+    ].map((label) => pressableLabelled(tree.root, label));
+    expect(actions.every((action) => action !== undefined)).toBe(true);
+    expectScrollingColumn(tree.root, actions as Node[]);
   });
 
   it("breaks the tagline after “needs”, whatever the screen width", () => {
