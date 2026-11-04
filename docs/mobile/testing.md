@@ -28,7 +28,7 @@ Per-environment values are in
 `EXPO_PUBLIC_API_URL` is the **bare API origin** — the SDK paths already carry
 `/v1`, so a trailing `/v1` doubles it.
 
-Without the two Supabase values the sign-in card renders
+Without the two Supabase values the sign-in screen renders
 "EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are not set for this
 build, so sign-in is unavailable." and every auth row in the smoke checklist
 fails by construction.
@@ -125,9 +125,12 @@ the native modules most specs reach, plus `react-native` with the stand-ins in
 `test/react-native-stub.ts` (the platform globals, `StyleSheet`, and string
 component stand-ins for Signet token-factory tests). Read the files for which
 ones: they don't cover them all. A spec that
-loads a native module it leaves out, such as `expo-secure-store` or
-`expo-constants`, mocks that module itself, as `lib/auth-session.spec.tsx` does;
-otherwise the import fails under Vitest.
+loads a native module it leaves out, such as `expo-secure-store`, mocks that
+module itself, as `lib/auth-session.spec.tsx` does; otherwise the import fails
+under Vitest. `expo-constants` is mocked for the whole suite as Expo Go
+(`storeClient`), so anything gated on `isExpoGo` takes its Expo Go path by
+default. A spec that tests a store-build path re-mocks it with another
+`executionEnvironment`, as `lib/keyboard-avoiding-area.spec.tsx` does.
 
 A tab screen renders under test like any component: `lib/events/check-in-screen.spec.tsx`
 and `lib/study/study-screen.spec.tsx` show how, and the spec lives under `lib/`

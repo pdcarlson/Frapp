@@ -119,6 +119,22 @@ describe("MessageItem author rendering", () => {
     expect(screen.getByText("Member 222222")).toBeInTheDocument();
   });
 
+  it("names the system actor Frapp, not a truncated id (#3347)", () => {
+    // `SYSTEM_SENDER_ID`: on no roster, so the resolver misses it as it would
+    // here. The chapter welcome post used to read "Member 000000" beside "00".
+    renderItem(
+      message({ sender_id: "00000000-0000-0000-0000-000000000000" }),
+      () => null,
+    );
+
+    expect(screen.getByText("Frapp")).toBeInTheDocument();
+    expect(screen.queryByText(/^Member /)).not.toBeInTheDocument();
+    // The crest takes the avatar (#3357); no letter tile from either the id
+    // ("00") or the name ("F").
+    expect(screen.queryByText("00")).not.toBeInTheDocument();
+    expect(screen.queryByText("F")).not.toBeInTheDocument();
+  });
+
   it("says 'You' on the viewer's own card", () => {
     // A card starts a run, so it carries the author line whoever sent it.
     renderItem(message({ sender_id: VIEWER, kind: "announcement" }));

@@ -256,7 +256,6 @@ export default function ChatHomeScreen() {
     <ScreenShell
       title={chapterName ?? "Frapp"}
       titleMark={<ChapterMark />}
-      subtitle="Your chapter's channels and direct messages."
       headerAction={
         // No pill at all in a build without Ask (#2259): `AskSheet` renders
         // nothing then, so the pill would be a control with nothing behind it.

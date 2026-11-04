@@ -3,8 +3,6 @@ import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import * as Linking from "expo-linking";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   joinErrorCopy,
   redeemChapterId,
@@ -30,6 +29,7 @@ import {
   rememberInviteToken,
 } from "@/lib/onboarding/invite-token";
 import { useSelectChapter } from "@/lib/select-chapter";
+import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -198,149 +198,159 @@ export default function JoinChapter() {
   const redeeming = redeemInvite.isPending;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    // Safe area on every edge (#3345): `(auth)` renders with `headerShown:
+    // false`, and Android draws the app edge to edge, so nothing else keeps
+    // this screen off the status bar or its last control off the swipe bar.
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={["top", "right", "bottom", "left"]}
     >
-      {/*
+      <KeyboardAvoidingArea style={styles.flex}>
+        {/*
         The card scrolls. It stays centred while it fits and scrolls when it
         does not — which it does not on a 375x667 device once the keyboard is
         up: `justifyContent: "center"` lets Yoga overflow *both* ends rather
         than clamping, so the last child is lost first, and that child is the
         delete control this screen exists to guarantee (#2295).
       */}
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text style={styles.title}>Join your chapter</Text>
-        <Text style={styles.subtitle}>
-          Enter the invite your officer sent. Invites expire after 24 hours and
-          work once.
-        </Text>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={styles.title}>Join your chapter</Text>
+          <Text style={styles.subtitle}>
+            Enter the invite your officer sent. Invites expire after 24 hours
+            and work once.
+          </Text>
 
-        <View style={styles.card}>
-          <Text style={styles.inputLabel}>Invite</Text>
-          <TextInput
-            value={token}
-            onChangeText={(value) => {
-              setToken(value);
-              setError(null);
-            }}
-            placeholder="Paste invite or link"
-            placeholderTextColor={tokens.color.text.muted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="off"
-            textContentType="none"
-            accessibilityLabel="Invite token"
-            style={styles.input}
-          />
-
-          {terms.needed ? (
-            <TermsAcceptance
-              accepted={terms.accepted}
-              onAcceptedChange={(next) => {
-                terms.setAccepted(next);
+          <View style={styles.card}>
+            <Text style={styles.inputLabel}>Invite</Text>
+            <TextInput
+              value={token}
+              onChangeText={(value) => {
+                setToken(value);
                 setError(null);
               }}
-              disabled={submitting}
+              placeholder="Paste invite or link"
+              placeholderTextColor={tokens.color.text.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="off"
+              textContentType="none"
+              accessibilityLabel="Invite token"
+              style={styles.input}
             />
-          ) : null}
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {terms.needed ? (
+              <TermsAcceptance
+                accepted={terms.accepted}
+                onAcceptedChange={(next) => {
+                  terms.setAccepted(next);
+                  setError(null);
+                }}
+                disabled={submitting}
+              />
+            ) : null}
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ disabled: submitting }}
-            disabled={submitting}
-            onPress={() => {
-              void handleJoin();
-            }}
-            style={[
-              styles.primaryButton,
-              submitting ? styles.primaryButtonDisabled : null,
-            ]}
-          >
-            {redeeming ? (
-              <ActivityIndicator color={tokens.color.gold.onHouse} />
-            ) : (
-              <Text style={styles.primaryButtonText}>Join chapter</Text>
-            )}
-          </Pressable>
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-          <View style={styles.linkHint}>
-            <Text style={styles.helperText}>
-              Got an invite link? Paste it here, or open it and this page fills itself in.
-            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: submitting }}
+              disabled={submitting}
+              onPress={() => {
+                void handleJoin();
+              }}
+              style={[
+                styles.primaryButton,
+                submitting ? styles.primaryButtonDisabled : null,
+              ]}
+            >
+              {redeeming ? (
+                <ActivityIndicator color={tokens.color.gold.onHouse} />
+              ) : (
+                <Text style={styles.primaryButtonText}>Join chapter</Text>
+              )}
+            </Pressable>
+
+            <View style={styles.linkHint}>
+              <Text style={styles.helperText}>
+                Got an invite link? Paste it here, or open it and this page
+                fills itself in.
+              </Text>
+            </View>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityHint="Open the first-officer chapter creation wizard."
+              accessibilityState={{ disabled: submitting }}
+              disabled={submitting}
+              onPress={() => {
+                router.push("/create-chapter");
+              }}
+              style={styles.secondaryButton}
+            >
+              <Text
+                style={[
+                  styles.secondaryButtonText,
+                  submitting ? styles.disabledButtonText : null,
+                ]}
+              >
+                Create a chapter
+              </Text>
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: submitting }}
+              disabled={submitting}
+              onPress={() => {
+                void handleSignOut();
+              }}
+              style={styles.secondaryButton}
+            >
+              <Text
+                style={[
+                  styles.secondaryButtonText,
+                  submitting ? styles.disabledButtonText : null,
+                ]}
+              >
+                Sign out
+              </Text>
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
+              accessibilityState={{ disabled: submitting, busy: deleting }}
+              disabled={submitting}
+              onPress={handleDeleteAccount}
+              style={styles.secondaryButton}
+            >
+              <Text
+                style={[
+                  styles.destructiveButtonText,
+                  submitting ? styles.disabledButtonText : null,
+                ]}
+              >
+                {deleting ? "Deleting account…" : "Delete account"}
+              </Text>
+            </Pressable>
           </View>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityHint="Open the first-officer chapter creation wizard."
-            accessibilityState={{ disabled: submitting }}
-            disabled={submitting}
-            onPress={() => {
-              router.push("/create-chapter");
-            }}
-            style={styles.secondaryButton}
-          >
-            <Text
-              style={[
-                styles.secondaryButtonText,
-                submitting ? styles.disabledButtonText : null,
-              ]}
-            >
-              Create a chapter
-            </Text>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ disabled: submitting }}
-            disabled={submitting}
-            onPress={() => {
-              void handleSignOut();
-            }}
-            style={styles.secondaryButton}
-          >
-            <Text
-              style={[
-                styles.secondaryButtonText,
-                submitting ? styles.disabledButtonText : null,
-              ]}
-            >
-              Sign out
-            </Text>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
-            accessibilityState={{ disabled: submitting, busy: deleting }}
-            disabled={submitting}
-            onPress={handleDeleteAccount}
-            style={styles.secondaryButton}
-          >
-            <Text
-              style={[
-                styles.destructiveButtonText,
-                submitting ? styles.disabledButtonText : null,
-              ]}
-            >
-              {deleting ? "Deleting account…" : "Delete account"}
-            </Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingArea>
+    </SafeAreaView>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     flex: { flex: 1 },
+    safeArea: {
+      flex: 1,
+      backgroundColor: tokens.color.surface.background,
+    },
     // The surface colour has to sit on the scroll view as well as its content
     // container: an iOS overscroll bounce reveals what is behind the content,
     // and the root Stack ships no navigation theme, so that is react-navigation's

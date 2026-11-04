@@ -269,10 +269,7 @@ export default function DuesScreen() {
   }
 
   return (
-    <ScreenShell
-      title="Dues"
-      subtitle="What you owe your chapter, and what you've already paid."
-    >
+    <ScreenShell title="Dues">
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       {failure ? <Text style={styles.failure}>{failure}</Text> : null}
 

@@ -295,3 +295,19 @@ one mobile surface ([`../../behavior/branding.md`](../../behavior/branding.md) ย
 mark). Four screens opt out of the shell. s05 and s13 took the top inset themselves in
 this change. s18 (`check-in.tsx`) and s22 (`host-check-in.tsx`) already took it, and
 their own titles took the heading role the header's title used to carry.
+
+**#3344 touched `app/(tabs)/_layout.tsx`, as an integrator change** (2026-11-04). The
+first Play build drew the tab bar under Android's swipe bar: a fixed
+`tabBarStyle.height` replaces the height React Navigation computes, so the bottom inset
+it would have added was lost, and Android draws edge to edge. The layout now reads
+`useSafeAreaInsets()` and adds the bottom inset to the bar's height and bottom padding,
+so the 62pt row sits above the system bar. `lib/tab-layout.spec.tsx` pins the sum.
+
+**#3023 touched `components/screen-shell.tsx`, as an integrator change.** `subtitle`
+became optional and the shell draws no line when it is absent, and every caller was reviewed in
+the same change. The lines that only said what a screen is for ("What you owe the
+chapter, and what it has earned you.") were deleted (owner decision, 2026-11-04), and so
+was the same kind of line in s13's own header, Directory's "Actives and alumni.". The board
+draws neither. Event details is the one screen that still passes a subtitle, the event's
+time, because s07 is the one screen the board draws one on. Its loading, empty and error
+states pass none. The rule itself lives in [`patterns.md` ยง Screen headers](patterns.md#screen-headers).

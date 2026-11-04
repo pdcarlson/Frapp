@@ -52,17 +52,6 @@ vi.mock("react-native", async () => {
   return { ...reactNativeStub, FlatList: RenderingFlatList };
 });
 
-// `getKeyboardPath()` reaches `expo-constants` through `lib/expo-go.ts`. The
-// suite leaves that module to each spec; this one runs as Expo Go.
-vi.mock("expo-constants", () => ({
-  default: { executionEnvironment: "storeClient" },
-  ExecutionEnvironment: {
-    Bare: "bare",
-    Standalone: "standalone",
-    StoreClient: "storeClient",
-  },
-}));
-
 vi.mock("@/components/chat/thread-message-row", async () => {
   const { createElement } = await import("react");
   const { useOpenImageViewer } = await import("@/components/chat/image-viewer");

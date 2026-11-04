@@ -8,12 +8,9 @@ import {
   Text,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  useChannels,
-  useListChapters,
-  useUpdateOnboarding,
-} from "@repo/hooks";
+import { useChannels, useListChapters, useUpdateOnboarding } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { PushPrimerCard } from "@/components/notifications/push-primer-card";
 import { useAuthSession } from "@/lib/auth-session";
@@ -123,7 +120,13 @@ export default function Welcome() {
   }
 
   return (
-    <View style={styles.container}>
+    // Safe area on every edge (#3345): `(auth)` renders with `headerShown:
+    // false`, and Android draws the app edge to edge, so nothing else keeps
+    // this screen off the status bar or its last control off the swipe bar.
+    <SafeAreaView
+      style={styles.container}
+      edges={["top", "right", "bottom", "left"]}
+    >
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
@@ -204,7 +207,7 @@ export default function Welcome() {
           <Text style={styles.secondaryButtonText}>Skip</Text>
         </Pressable>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
