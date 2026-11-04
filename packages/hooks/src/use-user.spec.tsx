@@ -5,6 +5,7 @@ import React from "react";
 import {
   PROFILE_QUERY_FILTERS,
   useConfirmAvatar,
+  useCurrentUser,
   useMyPermissions,
   useRemoveAvatar,
   useRequestAvatarUploadUrl,
@@ -291,6 +292,48 @@ describe("profile mutations (#732, #3387)", () => {
       harness.release();
     },
   );
+
+  // A GET of the profile that left before the PATCH landed must not answer
+  // last and put the pre-save row back. Real invalidation, no harness: the
+  // save's refetch has to cancel the held GET.
+  it("keeps the saved row over a profile GET that was already in flight", async () => {
+    const before = { id: "u-1", display_name: "Old Name" };
+    const saved = { id: "u-1", display_name: "Alex Rivera" };
+    let answerHeldGet!: () => void;
+    const GET = vi
+      .fn()
+      .mockResolvedValueOnce({ data: before, error: undefined })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answerHeldGet = () => resolve({ data: before, error: undefined });
+          }),
+      )
+      .mockResolvedValue({ data: saved, error: undefined });
+    const mockClient = {
+      GET,
+      PATCH: vi.fn().mockResolvedValue({ data: saved, error: undefined }),
+    };
+    const { result } = renderHook(
+      () => ({ me: useCurrentUser(), update: useUpdateUser() }),
+      { wrapper: createWrapper(queryClient, mockClient) },
+    );
+    await waitFor(() => expect(result.current.me.data).toEqual(before));
+
+    // A focus refetch leaves, and is held.
+    void result.current.me.refetch();
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+    await result.current.update.mutateAsync({ display_name: "Alex Rivera" });
+    answerHeldGet();
+
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(3));
+    await waitFor(() =>
+      expect(queryClient.getQueryData(["user", "me"])).toEqual(saved),
+    );
+    // Settled, and still the saved row.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(queryClient.getQueryData(["user", "me"])).toEqual(saved);
+  });
 
   it("confirm sends the path and surfaces an API refusal", async () => {
     const refusal = {

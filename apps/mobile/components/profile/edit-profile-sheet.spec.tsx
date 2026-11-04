@@ -321,6 +321,27 @@ describe("EditProfileSheet (#3387)", () => {
     expect(screenText(tree)).toContain("Your name can't be empty.");
   });
 
+  // The sheet stays mounted across visits, so a save must leave it able to
+  // send the next one.
+  it("sends the next save after one succeeds", () => {
+    const save = heldSave();
+    const tree = render();
+
+    type(tree, "City", "Albany, NY");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    refetch(tree, { ...PROFILE, currentCity: "Albany, NY" });
+    act(() => save.succeed());
+    type(tree, "Company", "Acme");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+
+    expect(mutate).toHaveBeenCalledTimes(2);
+    expect(mutate.mock.calls[1]![0]).toEqual({ current_company: "Acme" });
+  });
+
   it("lets the member retry once a failed save settles", () => {
     const save = heldSave();
     const tree = render();
@@ -374,8 +395,9 @@ describe("EditProfileSheet (#3387)", () => {
     expect(saveButton(tree).props.disabled).toBe(true);
   });
 
-  // `useUpdateUser` caches the row the server saved before
-  // it settles, so the screen hands the sheet the saved profile first.
+  // Before it settles, `useUpdateUser` writes the row the server saved over
+  // the same account's cached profile (a loaded s15 always has one), so the
+  // screen hands the sheet the saved profile first.
   it("closes onto the saved values and drops the edits", () => {
     const save = heldSave();
     const tree = render();

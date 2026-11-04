@@ -601,10 +601,11 @@ export function ProfilePanel() {
                   value={profile.graduation_year ?? ""}
                   onChange={(event) => {
                     const raw = event.target.value;
-                    // Cleared means "no year". The range is refused at
-                    // submit, by the input's `min`/`max` and by the API, not
-                    // here: guarding it on change would refuse the "2" on
-                    // the way to "2026".
+                    // Cleared means "no year". The range
+                    // (`GRADUATION_YEAR_MIN`–`GRADUATION_YEAR_MAX`) is refused
+                    // at submit, by the input's `min`/`max` and by the API,
+                    // not here: guarding it on change would refuse the "2"
+                    // on the way to "2026".
                     const next =
                       raw.trim() === "" ? null : parseGuardedInt(raw);
                     if (next === undefined) return;
