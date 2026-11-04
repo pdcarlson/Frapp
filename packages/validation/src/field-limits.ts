@@ -86,6 +86,14 @@ export const CHAPTER_SHORT_NAME_MAX_LENGTH = 6;
  */
 export const YEAR_MAX = 9_999;
 
+/**
+ * A member's graduation year (`users.graduation_year`), which they set
+ * themselves on web `/profile` and mobile s15 (#3387). The API refuses
+ * anything outside it, and both clients refuse it before sending.
+ */
+export const GRADUATION_YEAR_MIN = 1900;
+export const GRADUATION_YEAR_MAX = 2100;
+
 /** Options on one poll, and the fewest a poll may have. */
 export const POLL_OPTIONS_MAX = 10;
 export const POLL_OPTIONS_MIN = 2;

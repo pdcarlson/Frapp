@@ -962,6 +962,29 @@ The minimum-version gate (#2526, [`../mobile/patterns.md`](../mobile/patterns.md
 | Progress | — | `Step N of 4`, stated in words beside the bars and never only by them |
 | Have an invite | — | `I have an invite` (find-step secondary; opens `/join`) |
 
+### Chapter setup (mobile)
+
+Mobile's first-officer setup, `(auth)/create-chapter.tsx` (#3351). Titles are `SETUP_TITLES` and `liveTitle` in that file. `<name>` is the chapter's short name, else its name.
+
+| State | Title | Description |
+|---|---|---|
+| Find | `Find your chapter` | `Search by organization or school. We'll fill in the rest.` Field placeholder `Organization or school`. A result reads `<letters> · <organization>`, without the letters for an organization that doesn't display them. |
+| Find, no match | — | `No match for "<query>". Add your chapter by hand below.` |
+| Find, directory error | — | `We couldn't reach the directory.` with `Retry` |
+| Find, by hand | — | `Not in our directory?` + `New colony or a smaller group. Add it by hand.` |
+| Confirm, a match | `Is this your chapter?` | The match as a card. `Edit details` / `Hide details` opens the fields. |
+| Confirm, by hand | `Tell us about your chapter` | `We'll add it to our directory so the next officer finds it.` `More details (optional)` / `Hide more details` opens the rest. |
+| Confirm, archetype | — | `What kind of organization?`, asked only by hand or when the match's kind is unknown, with nothing preselected. |
+| Letters switch | — | `Show Greek letters` + `Turn off if your organization doesn't display its letters. Your short name or logo stands in for them.` For an organization that hides its letters, neither the switch nor the letters field is drawn; in their place: `<organization> doesn't display its Greek letters, so your short name stands in for them.` |
+| Color | `Pick your color` | `Your color tints buttons, badges and your chapter mark. You can change it later in Settings.` Then the Terms checkbox (the Join chapter row) and `Create <name>`. |
+| Create failed | — | The server's message, else `Couldn't create that chapter. Check the details and try again.` |
+| Live | `<name> is live` | `Your channels are ready. Invite your members next.` Then the seeded public channels, each marked `ready`. |
+| Live, chapter not made active | `<name> is live` | `Your chapter is ready. Open chat to see its channels and invite your members.` No channel list, no invite step: both act on the active chapter. |
+| Live, logo | — | `Add your chapter's logo` (`Change logo` once set) + `Optional. A logo stands in for your letter mark everywhere.` A refusal shows `uploadFailureReason`'s sentence, or `Logos can be JPEG, PNG, GIF or WebP.` / `Logos can be up to <limit>.` When the new chapter couldn't be made active: `You can add a logo later from the web dashboard's Settings.` |
+| Primer | `Stay in the loop` | `Members will start posting soon. Hear about it when they do.` Then the push primer card. Only when this build can push. |
+| Invite | `Invite your chapter` | `Share a link and your members land in #general. You can invite more people later.` `Create invite link`, then the link, `Anyone with this link can join as a member. It works once and expires after 24 hours.` and `Share invite`. The primary reads `Skip for now`, then `Go to chat` once a link exists. |
+| Invite failed | — | The server's message, else `Couldn't create an invite. You can invite members from the web dashboard.` |
+
 ### App error boundary (`global-error`)
 
 | State | Title | Description |

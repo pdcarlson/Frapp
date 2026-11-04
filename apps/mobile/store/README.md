@@ -521,6 +521,16 @@ Advertising Data, Browsing History, Search History.
 > re-enters this row in App Store Connect before the build that carries #2897 is
 > submitted, with the values above.
 >
+> **The chapter logo uses this row too (#3351, 2026-11-04).** Chapter setup's live
+> step lets the officer who created the chapter pick a logo from the library
+> (`lib/onboarding/chapter-wizard/chapter-logo.ts`, the same pipeline). It is the
+> chapter's image rather than the member's, but the upload is still a *Photos or
+> Videos* item collected for *App Functionality*, so the row's values don't change.
+> The purpose string and the privacy policy's permissions clause both name it. The
+> owner ruled the policy edit non-material on 2026-11-04 ([#3395](https://github.com/pdcarlson/Frapp/issues/3395)),
+> so it moved only the page's pin and nobody is asked to accept again. Deploy the
+> landing before submitting a binary that carries #3351.
+>
 > ‡ **`Linked: No` on Crash Data and Performance Data is wrong, and this table's own
 > reasoning is what proves it (owner action — console change).** Found 2026-09-21. The
 > argument for calling User ID *linked* is that `distinct_id` is a pseudonym whose salt
@@ -642,7 +652,7 @@ Two of Play's definitions differ from Apple's, and they change answers:
 | Personal info → Phone number | Yes | No | Optional | App functionality | Deleted | A chapter's `phone` member field, as in the App Store row |
 | Personal info → User IDs | Yes | No | Required | App functionality, Analytics | Kept as an anonymous tombstone; the analytics id is forgotten | Member and account ids; the pseudonymous analytics `distinct_id` (see *User ID carries Analytics* above) |
 | Messages → Other in-app messages | Yes | No | Optional | App functionality | **Kept, anonymised** | Chat channels and DMs |
-| Photos and videos → Photos | Yes | No | Optional | App functionality | **Mixed**: chat photos are kept, anonymised, with their messages; the profile photo is deleted | Chat photo attachments (`lib/chat/attachment-upload.ts`), kept with their messages, and the member's profile photo (`lib/more/profile-photo.ts`, #2897), deleted when it is replaced or removed (best effort: a failed delete there is logged, not retried), when the member leaves the chapter, and on account deletion ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion)). The camera only reads check-in codes on the device, and no frame leaves the phone. Play's Data safety form isn't filled in yet (#2720); the owner enters this row as written here, profile photo included (#2895) |
+| Photos and videos → Photos | Yes | No | Optional | App functionality | **Mixed**: chat photos are kept, anonymised, with their messages; the profile photo is deleted; a chapter logo stays with the chapter | Chat photo attachments (`lib/chat/attachment-upload.ts`), kept with their messages; the chapter logo an officer adds in chapter setup (`lib/onboarding/chapter-wizard/chapter-logo.ts`, #3351), which belongs to the chapter and stays until an officer replaces or removes it; and the member's profile photo (`lib/more/profile-photo.ts`, #2897), deleted when it is replaced or removed (best effort: a failed delete there is logged, not retried), when the member leaves the chapter, and on account deletion ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion)). The camera only reads check-in codes on the device, and no frame leaves the phone. Play's Data safety form isn't filled in yet (#2720); the owner enters this row as written here, profile photo included (#2895) |
 | App activity → App interactions | Yes | No | Required | Analytics | Forgotten (the analytics forget) | The server-side product events behind the App Store *Product Interaction* row. Required because the only opt-out is a chapter setting, not the member's choice |
 | App activity → In-app search history | Yes | **Yes** | Optional | App functionality | Nothing stored to delete | The directory and chapter-finder queries (`GET /v1/members/search`, `GET /v1/chapter-directory/search`). Ephemeral only while the App Store table's open question holds: if the API keeps query strings in its access logs, this answer is No |
 | App activity → Other user-generated content | Yes | No | Optional | App functionality | **Kept, anonymised** | Free text a member writes outside chat: service-hour entries, tasks they create, the details of a report they file (kept whole, as moderation history), and a chapter they create |
