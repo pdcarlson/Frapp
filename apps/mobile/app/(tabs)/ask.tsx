@@ -75,7 +75,6 @@ function AskRoute() {
   return (
     <ScreenShell
       title="Ask"
-      subtitle="Ask about your chapter's bylaws, minutes and announcements."
       headerAction={<AskPill onPress={present} />}
     >
       <AskSheet ref={sheetRef} />

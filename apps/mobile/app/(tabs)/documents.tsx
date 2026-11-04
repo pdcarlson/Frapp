@@ -155,7 +155,7 @@ export default function DocumentsScreen() {
   }
 
   return (
-    <ScreenShell title="Documents" subtitle="The chapter's document library.">
+    <ScreenShell title="Documents">
       <SearchField
         value={search}
         onChangeText={setSearch}

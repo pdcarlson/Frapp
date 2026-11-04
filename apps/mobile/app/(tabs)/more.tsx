@@ -134,10 +134,7 @@ export default function MoreScreen() {
   }, [invoicesQuery.data, viewerUserId, now]);
 
   return (
-    <ScreenShell
-      title="More"
-      subtitle="Secondary chapter tools, notifications, and account controls."
-    >
+    <ScreenShell title="More">
       <NavTile
         href="/profile"
         title="Profile"

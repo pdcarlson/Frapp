@@ -438,10 +438,7 @@ export default function PreferencesScreen() {
   }
 
   return (
-    <ScreenShell
-      title="Settings"
-      subtitle="Notifications, chapter details, and your account."
-    >
+    <ScreenShell title="Settings">
       <SectionHeader>Notifications</SectionHeader>
 
       <ListSection>

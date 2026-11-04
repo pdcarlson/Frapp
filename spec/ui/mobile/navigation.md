@@ -294,3 +294,12 @@ one mobile surface ([`../../behavior/branding.md`](../../behavior/branding.md) Â
 mark). Four screens opt out of the shell. s05 and s13 took the top inset themselves in
 this change. s18 (`check-in.tsx`) and s22 (`host-check-in.tsx`) already took it, and
 their own titles took the heading role the header's title used to carry.
+
+**#3023 touched `components/screen-shell.tsx`, as an integrator change.** `subtitle`
+became optional and the shell draws no line when it is absent. Every call site was updated
+in the same change: the board draws no subtitle on any shell screen, so the lines that only
+said what a screen is for ("What you owe the chapter, and what it has earned you.") were
+deleted (owner decision, 2026-11-04). So was the same kind of line in s13's own header,
+Directory's "Actives and alumni.", which the board doesn't draw either. Event details is the one screen that still passes a
+subtitle, because it carries a fact the title can't: the event's time window. Its loading,
+empty and error states pass none, since each state block already says the same thing.

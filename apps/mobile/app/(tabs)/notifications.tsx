@@ -162,7 +162,6 @@ export default function NotificationsScreen() {
   return (
     <ScreenShell
       title="Notifications"
-      subtitle="Recent chapter activity, and what you haven't read."
       headerAction={
         unreadIds.length > 0 ? (
           <Pressable

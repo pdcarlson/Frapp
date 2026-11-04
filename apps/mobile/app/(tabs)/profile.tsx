@@ -85,10 +85,7 @@ export default function ProfileScreen() {
 
   if (userQuery.isPending) {
     return (
-      <ScreenShell
-        title="Profile"
-        subtitle="Your membership and chapter record."
-      >
+      <ScreenShell title="Profile">
         <SkeletonLines lines={4} showTile />
       </ScreenShell>
     );
@@ -96,10 +93,7 @@ export default function ProfileScreen() {
 
   if (userQuery.isError) {
     return (
-      <ScreenShell
-        title="Profile"
-        subtitle="Your membership and chapter record."
-      >
+      <ScreenShell title="Profile">
         <ErrorState
           title="Couldn't load your profile"
           body="You're signed in, but we couldn't reach the server."
@@ -111,7 +105,7 @@ export default function ProfileScreen() {
   }
 
   return (
-    <ScreenShell title="Profile" subtitle="Your membership and chapter record.">
+    <ScreenShell title="Profile">
       <View style={styles.identity}>
         <ProfilePhoto
           photoUrl={profile?.photoUrl ?? null}

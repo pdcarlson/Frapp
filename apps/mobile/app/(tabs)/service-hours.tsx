@@ -232,7 +232,6 @@ export default function ServiceHoursScreen() {
   return (
     <ScreenShell
       title="Service hours"
-      subtitle="Philanthropy work you've logged, and where it stands."
       headerAction={
         <Pressable
           accessibilityRole="button"
