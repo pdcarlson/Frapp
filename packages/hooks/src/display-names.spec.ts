@@ -11,10 +11,9 @@ import {
   memberFallbackLabel,
   memberLabel,
   resolveDisplayName,
-  SYSTEM_AUTHOR_LABEL,
   type DisplayNameMap,
 } from "./display-names";
-import { SYSTEM_SENDER_ID } from "@repo/validation";
+import { SYSTEM_AUTHOR_LABEL, SYSTEM_SENDER_ID } from "@repo/validation";
 
 const VIEWER = "user-viewer";
 const DM_NAME =

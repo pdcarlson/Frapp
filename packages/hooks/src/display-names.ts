@@ -242,11 +242,6 @@ export interface MessageAuthor {
 /** Resolves a `users.id` to a display name, or `null`. Matches `nameFor`. */
 export type NameResolver = (userId: string) => string | null;
 
-// The system actor's name lives in `@repo/validation` beside its id, so the
-// API's activity feed names it the same way (#3347). Re-exported here because
-// `resolveAuthorName` is where clients meet it.
-export { SYSTEM_AUTHOR_LABEL };
-
 /**
  * The best available human name for a message's author, or `null`.
  *
