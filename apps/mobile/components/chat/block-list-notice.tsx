@@ -15,6 +15,7 @@ import {
   blockListNotice,
 } from "@repo/chat-core/block-copy";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 /**
  * The s05 thread's report on a block list it could not confirm
@@ -49,7 +50,8 @@ export function BlockListNotice({
   isPaused: boolean;
 }) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
   const notice = blockListNotice(status, heldCount);
   const announcement = notice ? `${notice.title}. ${notice.body}` : null;
 
@@ -89,7 +91,7 @@ export function BlockListNotice({
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     notice: {
       flexDirection: "row",
@@ -115,7 +117,7 @@ function createStyles(tokens: SignetTokens) {
     },
     retry: {
       ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.askText,
+      color: brand.accent,
     },
     waiting: {
       ...typeRole(tokens.typography.role.caption),

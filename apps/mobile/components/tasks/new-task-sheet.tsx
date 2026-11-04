@@ -15,7 +15,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
-import { useChapterBranding } from "@/lib/chapter-branding";
+import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
 import { initialsFor } from "@/lib/more/narrow";
 import { FilterChips } from "@/components/filter-chips";
 import {
@@ -100,8 +100,9 @@ function selectRoster(
 export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
   function NewTaskSheet({ now, onCreated }, ref) {
     const { tokens } = useFrappTheme();
-    const { accent } = useChapterBranding();
-    const styles = createStyles(tokens);
+    const brand = useChapterBranding();
+    const { accent } = brand;
+    const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
     const pickerRef = useRef<BottomSheetModal>(null);
 
@@ -428,7 +429,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
   },
 );
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     body: {
       paddingHorizontal: tokens.spacing.lg,
@@ -441,7 +442,7 @@ function createStyles(tokens: SignetTokens) {
       borderColor: "transparent",
     },
     ringActive: {
-      borderColor: tint(tokens.color.gold.house, tokens.focus.ringOpacity),
+      borderColor: tint(brand.accent, tokens.focus.ringOpacity),
     },
     field: {
       flexDirection: "row",
@@ -458,7 +459,7 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
     },
     fieldFocused: {
-      borderColor: tokens.color.gold.house,
+      borderColor: brand.accent,
     },
     splitRow: {
       flexDirection: "row",

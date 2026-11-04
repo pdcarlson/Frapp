@@ -7,6 +7,7 @@ import {
 } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 export const OLDER_LOADING_COPY = "Loading earlier messages…";
 export const OLDER_FAILED_COPY = "Couldn't load earlier messages.";
@@ -41,7 +42,8 @@ export function ThreadHistoryEdge({
   onLoadOlder: () => void;
 }) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
 
   if (isLoadingOlder) {
     return (
@@ -88,7 +90,7 @@ export function ThreadHistoryEdge({
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     edge: {
       flexDirection: "row",
@@ -104,7 +106,7 @@ function createStyles(tokens: SignetTokens) {
     },
     action: {
       ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.askText,
+      color: brand.accent,
     },
     pressed: {
       opacity: 0.6,

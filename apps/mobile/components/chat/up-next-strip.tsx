@@ -8,6 +8,7 @@ import {
 } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 /**
  * The UP NEXT strip at the top of Chat home (s04).
@@ -210,7 +211,8 @@ export function UpNextStrip({
   now,
 }: UpNextStripProps) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
   const router = useRouter();
 
   // `now` is read once per render rather than per row, so the two rows cannot
@@ -286,7 +288,7 @@ export function UpNextStrip({
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     strip: {
       gap: tokens.spacing.xs,
@@ -316,7 +318,7 @@ function createStyles(tokens: SignetTokens) {
       width: 9,
       height: 9,
       borderRadius: tokens.radius.chip,
-      backgroundColor: tokens.color.gold.house,
+      backgroundColor: brand.accent,
     },
     taskGlyph: {
       width: 9,
@@ -337,7 +339,7 @@ function createStyles(tokens: SignetTokens) {
     },
     eventTime: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.gold.askText,
+      color: brand.accent,
     },
     dueUrgent: {
       ...typeRole(tokens.typography.role.caption),

@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import {
   formatDoneSubtitle,
@@ -15,7 +16,8 @@ import type { TaskRowModel } from "@/lib/tasks/board";
  *
  * A card with a leading checkbox, a title, a due/done subtitle, and an optional
  * trailing points chip. The finished row is drawn at `opacity:.62` with a
- * line-through title and a gold-filled box.
+ * line-through title and a box filled with the chapter accent (Canvas draws
+ * it gold, the house accent).
  *
  * ## The checkbox is a three-state control, not a two-state one
  *
@@ -41,7 +43,8 @@ export interface TaskRowProps {
 
 export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
 
   const chip = formatPointsChip(row.pointReward, row.pointsAwarded);
   const started = row.storedStatus === "IN_PROGRESS";
@@ -142,7 +145,7 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     row: {
       flexDirection: "row",
@@ -180,11 +183,11 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
     },
     checkboxStarted: {
-      borderColor: tokens.color.gold.house,
+      borderColor: brand.accent,
     },
     checkboxDone: {
-      borderColor: tokens.color.gold.house,
-      backgroundColor: tokens.color.gold.house,
+      borderColor: brand.accent,
+      backgroundColor: brand.accent,
     },
     body: {
       flex: 1,
@@ -215,14 +218,14 @@ function createStyles(tokens: SignetTokens) {
     offeredChip: {
       borderRadius: tokens.radius.chip,
       borderWidth: 1,
-      borderColor: tokens.color.gold.askBorder,
-      backgroundColor: tokens.color.gold.askFill,
+      borderColor: brand.accentBorder,
+      backgroundColor: brand.accentSubtle,
       paddingHorizontal: tokens.spacing.sm,
       paddingVertical: 2,
     },
     offeredChipText: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.gold.askText,
+      color: brand.accent,
     },
     awardedChip: {
       ...typeRole(tokens.typography.role.caption),

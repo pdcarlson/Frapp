@@ -16,6 +16,8 @@ import {
 import {
   ARCHETYPES,
   getArchetype,
+  orgDefaultAccent,
+  orgMarkFields,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import {
@@ -142,18 +144,22 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
     const resolvedArchetype = getArchetype(row.archetype).key;
     setDirectoryId(row.id);
     setArchetype(resolvedArchetype);
+    const mark = orgMarkFields(row.org_name, identity.name, identity);
     setIdentity({
       name: row.org_name ?? "",
       university: row.university ?? "",
       greekLetters: row.org_letters ?? "",
-      // The directory knows letters, not whether an organization shows them,
-      // so these two keep whatever the founder already chose.
-      shortName: identity.shortName,
-      showGreekLetters: identity.showGreekLetters,
+      // The directory knows letters, not whether an organization shows them:
+      // FIJI's profile switches them off (`orgMarkFields`).
+      ...mark,
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
-      colorAccent: normalizeAccentInput(row.default_colors?.accent),
+      // The organization's own first color wins over the directory's: most
+      // directory rows hold one placeholder gold (`orgDefaultAccent`).
+      colorAccent: normalizeAccentInput(
+        orgDefaultAccent(row.org_name) ?? row.default_colors?.accent,
+      ),
     });
     // A different chapter identity invalidates any prior consent — re-affirm.
     setAcceptedLegal(false);
