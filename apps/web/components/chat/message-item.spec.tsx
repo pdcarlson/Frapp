@@ -147,6 +147,10 @@ describe("MessageItem system post avatar", () => {
     expect((avatar as HTMLElement).style.backgroundColor).toBe(
       "rgb(26, 26, 26)",
     );
+    // jsdom never loads the image, so this is the fallback Radix draws until
+    // it does: the crest's field, never the id-prefix initials "00".
+    expect(avatar?.textContent).toBe("");
+    expect(screen.queryByText("00")).not.toBeInTheDocument();
   });
 
   it("leaves a member's avatar alone", () => {

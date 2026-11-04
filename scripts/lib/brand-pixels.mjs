@@ -602,8 +602,9 @@ export const SYNCED = [
     targets: [
       "apps/landing/app/apple-icon.png",
       "apps/web/app/apple-icon.png",
-      // The avatar mobile chat draws for Frapp's own posts (#3347): 32pt at up
-      // to 3x is 96px, so the 180 export, not the 1024 app icon.
+      // The avatar web and mobile chat draw for Frapp's own posts (#3347): a
+      // 32px tile, at up to 3x on a phone, so the 180 export, not the 1024.
+      "apps/web/public/brand/system-avatar.png",
       "apps/mobile/assets/images/system-avatar.png",
     ],
   },

@@ -13,7 +13,7 @@ Behavior and boundaries for per-chapter branding. Visual design tokens (palette,
 
 ## Chapter mark
 
-The chapter mark is what stands for a chapter wherever the product shows its identity in a small space: the web nav's 28px chapter tile, and Chat home's title row on mobile, beside the chapter name. The welcome message onboarding posts to `#general` is not one of them: it names the chapter in words only, the short name or else the organization's name, and never its letters, whatever the switch below says ([`onboarding.md`](onboarding.md), #3347; corrected 2026-11-04, it used the mark from #2876 until then). In precedence order:
+The chapter mark is what stands for a chapter wherever the product shows its identity in a small space: the web nav's 28px chapter tile, and Chat home's title row on mobile, beside the chapter name. The welcome message onboarding posts to `#general` is not a mark surface and never shows the letters; [`onboarding.md`](onboarding.md) owns its wording (#3347; corrected 2026-11-04, it used the mark from #2876 until then). In precedence order:
 
 1. **The uploaded logo.**
 2. **The short name** (`branding.short_name`), a few characters the chapter chooses: "FIJI", say. Capped at `CHAPTER_SHORT_NAME_MAX_LENGTH` in `@repo/validation`, which the tile's width sets. The API's DTO enforces the cap, and the inputs that write a short name carry it as `maxLength`. No zod schema restates it, because class-validator and zod count some emoji differently. A client reads `branding` as served and skips a value of the wrong type rather than refusing the payload: a read that refused one stored value would blank the nav for every member (#2844).

@@ -353,25 +353,52 @@ export class ChapterOnboardingService {
   }
 }
 
+/** Greek and Coptic, plus Greek Extended: any of them means letters. */
+const GREEK_LETTER = /[\u0370-\u03FF\u1F00-\u1FFF]/;
+
 /**
  * The welcome post's first sentence: designation first, then the chapter's
- * mark, as "Welcome to the Tau Nu chapter of FIJI." (owner's call, #3347).
- * A designation typed as "Tau Nu Chapter" loses its own trailing "chapter"
- * so the sentence never reads "chapter chapter".
+ * name, as "Welcome to the Tau Nu chapter of FIJI." (owner's call, #3347).
+ *
+ * `name` is free text (the short name, else the wizard's "Chapter /
+ * organization name", which manual entry seeds from the raw search), so it is
+ * cleaned rather than trusted:
+ * - a name with any Greek letter in it is dropped, because some organizations
+ *   (Phi Gamma Delta) don't allow their letters to be shown;
+ * - a name that repeats the designation ("FIJI Tau Nu" with "Tau Nu") loses
+ *   it, and one that is only the designation is dropped.
+ * A designation typed as "Tau Nu Chapter" (or "Tau Nu chapter.") loses its own
+ * trailing "chapter", so the sentence doesn't say it twice.
  */
 export function welcomeGreeting(
-  mark: string | undefined,
+  name: string | undefined,
   rawDesignation: string | undefined,
 ): string {
-  const markText = mark?.trim();
   const designation = rawDesignation
     ?.trim()
-    .replace(/(^|\s+)chapter$/i, '')
+    .replace(/(^|\s+)chapter[\s.,;:!]*$/i, '')
     .trim();
-  if (designation && markText) {
-    return `Welcome to the ${designation} chapter of ${markText}.`;
+  const nameText = cleanName(name, designation);
+  if (designation && nameText) {
+    return `Welcome to the ${designation} chapter of ${nameText}.`;
   }
   if (designation) return `Welcome to the ${designation} chapter.`;
-  if (markText) return `Welcome to ${markText}.`;
+  if (nameText) return `Welcome to ${nameText}.`;
   return 'Welcome to your chapter.';
+}
+
+function cleanName(
+  name: string | undefined,
+  designation: string | undefined,
+): string | undefined {
+  const text = name?.trim();
+  if (!text || GREEK_LETTER.test(text)) return undefined;
+  if (!designation) return text;
+  const lower = text.toLowerCase();
+  const d = designation.toLowerCase();
+  if (lower === d) return undefined;
+  let stripped = text;
+  if (lower.endsWith(` ${d}`)) stripped = text.slice(0, -d.length - 1);
+  else if (lower.startsWith(`${d} `)) stripped = text.slice(d.length + 1);
+  return stripped.trim() || undefined;
 }

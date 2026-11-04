@@ -296,9 +296,9 @@ export function MessageRowFrame({
       <View style={styles.main}>
         {startsRun ? (
           message.sender_id === SYSTEM_SENDER_ID ? (
-            // Frapp's own posts (the welcome, poll results, the audit bridge)
-            // wear the crest, not initials: the sender is the product, not a
-            // member (#3347).
+            // Frapp's own posts (the welcome, the audit bridge, a poll's
+            // closing notice, an invite-accept DM) wear the crest, not
+            // initials: the sender is the product, not a member (#3347).
             <View
               style={[styles.avatar, styles.systemAvatar]}
               testID="system-avatar"

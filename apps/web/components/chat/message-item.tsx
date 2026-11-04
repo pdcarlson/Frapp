@@ -41,8 +41,12 @@ import {
 import { formatTimeOfDay, formatTimeOfDayShort } from "@repo/formatting";
 import { cn, initials } from "@/lib/utils";
 
-/** The crest tile `SignetMark` loads; `spec/ui/brand-identity.md` §2. */
-const SYSTEM_AVATAR_SRC = "/brand/signet-emblem-B.png";
+/**
+ * The crest at 180², synced from `@repo/brand-assets` by `SYNCED` in
+ * `scripts/lib/brand-pixels.mjs` (gated by `check:brand-assets`): a 32px tile
+ * needs no more, and the 1024² master would be a 27 KB download per client.
+ */
+const SYSTEM_AVATAR_SRC = "/brand/system-avatar.png";
 /** The crest raster's field colour ("Mark field", brand-identity.md §2). */
 const CREST_FIELD = "#1A1A1A";
 
@@ -260,9 +264,9 @@ export function MessageItem({
   // `message.sender_id.slice(...)` fallbacks below threw on it.
   const authorName = resolveAuthorName(message, nameFor);
   const authorLabel = resolveAuthorLabel(message, nameFor, viewerId);
-  // Frapp's own posts (the welcome, poll results, the audit bridge) wear the
-  // crest, not initials: the sender is the product, not a member (#3347). The
-  // tile the auth screens already load, so it is usually cached.
+  // Frapp's own posts (the welcome, the audit bridge, a poll's closing notice,
+  // an invite-accept DM) wear the crest, not initials: the sender is the
+  // product, not a member (#3347).
   const isSystemPost = message.sender_id === SYSTEM_SENDER_ID;
   const avatarSrc = isSystemPost ? SYSTEM_AVATAR_SRC : avatarUrl;
   const isPending = message._status === "pending";
@@ -864,10 +868,21 @@ export function MessageItem({
               }
             >
               {avatarSrc ? <AvatarImage src={avatarSrc} alt="" /> : null}
-              <AvatarFallback>
-                {authorName
-                  ? initials(authorName)
-                  : authorInitialsFallback(message)}
+              {/*
+                Radix draws the fallback until the image loads, and for good if
+                it fails. A system post's fallback is the crest's own field with
+                no text: its id-prefix initials would read "00".
+              */}
+              <AvatarFallback
+                style={
+                  isSystemPost ? { backgroundColor: CREST_FIELD } : undefined
+                }
+              >
+                {isSystemPost
+                  ? null
+                  : authorName
+                    ? initials(authorName)
+                    : authorInitialsFallback(message)}
               </AvatarFallback>
             </Avatar>
           ) : (

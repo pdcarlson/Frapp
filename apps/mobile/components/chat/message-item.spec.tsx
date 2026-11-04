@@ -230,8 +230,8 @@ describe("an imported author's row", () => {
   });
 });
 
-// Frapp's own posts (the welcome, poll results, the audit bridge) wear the
-// crest rather than initials (#3347).
+// Frapp's own posts (the welcome, the audit bridge, a poll's closing notice,
+// an invite-accept DM) wear the crest rather than initials (#3347).
 describe("a system post's avatar", () => {
   const hasSystemAvatar = (tree: ReactTestRenderer) =>
     tree.root.findAll((node) => node.props.testID === "system-avatar").length >
