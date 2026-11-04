@@ -32,6 +32,14 @@ async function importKeyboard() {
   return await import("./keyboard");
 }
 
+/** Which path the module took, read off what the guarded provider renders. */
+function pathOf(keyboard: Awaited<ReturnType<typeof importKeyboard>>) {
+  const element = keyboard.KeyboardProviderGuarded({ children: null });
+  return (element.type as unknown) === "KeyboardProvider"
+    ? "native"
+    : "fallback";
+}
+
 describe("keyboard isolation module", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -43,7 +51,7 @@ describe("keyboard isolation module", () => {
     const loader = vi.fn(() => FAKE_MODULE);
     keyboard.setKeyboardControllerLoaderForTests(loader);
 
-    expect(keyboard.getKeyboardPath()).toBe("fallback");
+    expect(pathOf(keyboard)).toBe("fallback");
     // The crash-prevention property itself: in Expo Go the package must never
     // be loaded, not merely reported as unavailable.
     expect(loader).not.toHaveBeenCalled();
@@ -54,7 +62,7 @@ describe("keyboard isolation module", () => {
     const keyboard = await importKeyboard();
     keyboard.setKeyboardControllerLoaderForTests(() => FAKE_MODULE);
 
-    expect(keyboard.getKeyboardPath()).toBe("native");
+    expect(pathOf(keyboard)).toBe("native");
   });
 
   it("caches the fallback decision across calls", async () => {
@@ -63,11 +71,11 @@ describe("keyboard isolation module", () => {
     const loader = vi.fn(() => FAKE_MODULE);
     keyboard.setKeyboardControllerLoaderForTests(loader);
 
-    expect(keyboard.getKeyboardPath()).toBe("fallback");
+    expect(pathOf(keyboard)).toBe("fallback");
     // Flipping the environment after the first read must not change the
     // answer — the decision is made once per app launch.
     constantsState.executionEnvironment = "bare";
-    expect(keyboard.getKeyboardPath()).toBe("fallback");
+    expect(pathOf(keyboard)).toBe("fallback");
     expect(loader).not.toHaveBeenCalled();
   });
 
@@ -77,8 +85,8 @@ describe("keyboard isolation module", () => {
     const loader = vi.fn(() => FAKE_MODULE);
     keyboard.setKeyboardControllerLoaderForTests(loader);
 
-    expect(keyboard.getKeyboardPath()).toBe("native");
-    expect(keyboard.getKeyboardPath()).toBe("native");
+    expect(pathOf(keyboard)).toBe("native");
+    expect(pathOf(keyboard)).toBe("native");
     expect(loader).toHaveBeenCalledTimes(1);
   });
 

@@ -31,6 +31,20 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63" }),
 }));
 
+/** The device's bottom inset, set per test (the suite-wide stub is all zeros). */
+const device = vi.hoisted(() => ({ bottomInset: 0 }));
+
+vi.mock("react-native-safe-area-context", () => ({
+  SafeAreaProvider: "SafeAreaProvider",
+  SafeAreaView: "SafeAreaView",
+  useSafeAreaInsets: () => ({
+    top: 0,
+    right: 0,
+    bottom: device.bottomInset,
+    left: 0,
+  }),
+}));
+
 import TabLayout from "@/app/(tabs)/_layout";
 
 type Node = ReactTestRenderer["root"];
@@ -98,5 +112,43 @@ describe("tab layout (#2485)", () => {
       expect(options, screen.props.name).not.toHaveProperty("header");
       expect(options, screen.props.name).not.toHaveProperty("headerTitle");
     }
+  });
+});
+
+/**
+ * #3344 — the bar reserves the bottom inset.
+ *
+ * Android draws the app edge to edge, so the swipe bar sits over the bottom of
+ * the window. The bar sets a fixed `height`, which replaces the inset React
+ * Navigation would add, so on the first store build the Events and Tasks
+ * labels sat under the swipe bar. The bar has to add the inset itself, below
+ * its drawn 62pt row.
+ */
+describe("tab bar inset (#3344)", () => {
+  function barStyle(): Record<string, unknown> {
+    const tree = render();
+    const [tabs] = hosts(tree.root, "Tabs");
+    return resolved(tabs.props.screenOptions).tabBarStyle as Record<
+      string,
+      unknown
+    >;
+  }
+
+  it("grows by the bottom inset and pads its row above it", () => {
+    device.bottomInset = 24;
+    try {
+      const style = barStyle();
+      expect(style.height).toBe(62 + 24);
+      expect(style.paddingTop).toBe(6);
+      expect(style.paddingBottom).toBe(6 + 24);
+    } finally {
+      device.bottomInset = 0;
+    }
+  });
+
+  it("keeps the drawn 62pt bar where there is no inset", () => {
+    const style = barStyle();
+    expect(style.height).toBe(62);
+    expect(style.paddingBottom).toBe(6);
   });
 });

@@ -43,6 +43,18 @@ export default [
       "no-restricted-imports": [
         "error",
         {
+          // Not a native-module guard: a screen that picks React Native's
+          // avoiding view itself is how the chat thread came to switch it off
+          // on Android, where the app-wide KeyboardProvider stops the window
+          // resizing (#3346). `KeyboardAvoidingArea` makes that choice once.
+          paths: [
+            {
+              name: "react-native",
+              importNames: ["KeyboardAvoidingView"],
+              message:
+                "Use KeyboardAvoidingArea from @/lib/keyboard. On Android store builds React Native's view does nothing under the app-wide KeyboardProvider.",
+            },
+          ],
           patterns: [
             {
               group: [

@@ -871,7 +871,8 @@ export function MessageItem({
               {/*
                 Radix draws the fallback until the image loads, and for good if
                 it fails. A system post's fallback is the crest's own field with
-                no text: its id-prefix initials would read "00".
+                no text, never a letter tile: its name resolves to "Frapp"
+                (#3347), so initials would draw an "F" where the crest goes.
               */}
               <AvatarFallback
                 style={
