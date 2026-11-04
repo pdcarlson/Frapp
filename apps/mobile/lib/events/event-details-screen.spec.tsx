@@ -35,11 +35,14 @@ const EVENT = {
 };
 
 let event = EVENT;
+// Swapped by the back-row specs for s07's loading and no-event states.
+let eventPending = false;
+let routeId: string | undefined = EVENT.id;
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useEvent: () => ({
-    isPending: false,
+    isPending: eventPending,
     isError: false,
     isFetching: false,
     data: event,
@@ -51,9 +54,9 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
 
-vi.mocked(expoRouter.useLocalSearchParams).mockImplementation(() => ({
-  id: EVENT.id,
-}));
+vi.mocked(expoRouter.useLocalSearchParams).mockImplementation(
+  (): Record<string, string> => (routeId === undefined ? {} : { id: routeId }),
+);
 
 import EventDetailsScreen from "@/app/(tabs)/event-details";
 
@@ -136,10 +139,14 @@ describe("Event details back row (#3022)", () => {
       for (const tree of mounted.splice(0)) tree.unmount();
     });
     event = EVENT;
+    eventPending = false;
+    routeId = EVENT.id;
   });
 
   it("draws ‹ Events over a loaded event", () => {
-    expectBackRow(render(), "Events", "/events");
+    const tree = render();
+    expect(screenText(tree).startsWith("‹ Events\nChapter meeting")).toBe(true);
+    expectBackRow(tree, "Events", "/events");
   });
 
   it("draws ‹ Events over the error state", () => {
@@ -147,6 +154,22 @@ describe("Event details back row (#3022)", () => {
 
     const tree = render();
     expect(screenText(tree)).toContain("Couldn't load this event");
+    expectBackRow(tree, "Events", "/events");
+  });
+
+  it("draws ‹ Events while the event loads", () => {
+    eventPending = true;
+
+    const tree = render();
+    expect(screenText(tree)).toContain("Loading event");
+    expectBackRow(tree, "Events", "/events");
+  });
+
+  it("draws ‹ Events when the route carries no event id", () => {
+    routeId = undefined;
+
+    const tree = render();
+    expect(screenText(tree)).toContain("Nothing to show");
     expectBackRow(tree, "Events", "/events");
   });
 });

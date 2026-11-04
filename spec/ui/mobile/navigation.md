@@ -84,9 +84,9 @@ A screen reached from another one draws a back row above its title, as the board
 
 - **It goes to the place it names, not back through history.** These routes are hidden tabs (`href: null`), and a notification tap or a `frapp://` link can open one with nothing behind it, so `router.back()` could land nowhere or somewhere the label doesn't say. The row calls `router.navigate` with its fixed destination, as s05's `‹` goes to Chat home. Android's back button keeps the history behavior.
 - **Every state of a screen draws it**, the loading and error states included: a link to an event that's gone lands on s07's error state, and that state still needs a way out.
-- **s14 draws `‹ Chat`, not the board's `‹ More`**, because its entry moved to the bell on Chat home ([#3362](https://github.com/pdcarlson/Frapp/issues/3362)). Service hours, which the board never drew, opens from a More row and draws `‹ More` like its neighbours.
+- **s14 draws `‹ Chat`, not the board's `‹ More`**, because its entry moved to the bell on Chat home ([§ Global entries outside the tab bar](#global-entries-outside-the-tab-bar), [#3362](https://github.com/pdcarlson/Frapp/issues/3362)). Service hours, which the board never drew, opens from a More row and draws `‹ More` like its neighbours.
 - It is drawn in the board's back-row gold (`gold.askText`, `#F4CB63`), the token s05's `‹` uses, not the chapter accent: it is navigation chrome, like the tab bar.
-- Pinned by `components/back-row.spec.tsx` and `components/screen-shell.spec.tsx`, and per screen by the screen specs (`lib/events/event-details-screen.spec.tsx`, `lib/more/back-rows.spec.tsx` and the other `lib/**/*-screen.spec.tsx` files), through `test/back-row.ts`. s16 has no screen spec yet.
+- Pinned by `components/back-row.spec.tsx` and `components/screen-shell.spec.tsx`, and per screen by the screen specs (`lib/events/event-details-screen.spec.tsx`, `lib/more/back-rows.spec.tsx` and the other `lib/**/*-screen.spec.tsx` files, s07's and s15's loading and error states included), through `test/back-row.ts`.
 
 ## Deep links
 

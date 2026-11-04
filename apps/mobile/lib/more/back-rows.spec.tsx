@@ -10,9 +10,7 @@ import { expectBackRow } from "@/test/back-row";
  * #3022. Two More destinations with no screen spec of their own, s11 Dues and
  * s12 Documents, render here with every query still loading, to pin that they
  * draw the board's `‹ More` and that it goes there. The others are pinned in
- * their own screen specs. s16 Settings is not: it renders only under a full
- * auth session and the preference-sync hook's dozen fields, which no spec
- * builds yet, so its row rests on `ScreenShell`'s own back-row spec. It lives under `lib/`
+ * their own screen specs (s16's in `settings-screen.spec.tsx`). It lives under `lib/`
  * because a spec under `app/` ships as a route module (`lib/routes.spec.ts`).
  *
  * Every `use*` export of `@repo/hooks` becomes a query that hasn't answered

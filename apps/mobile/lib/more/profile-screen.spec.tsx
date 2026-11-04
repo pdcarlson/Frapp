@@ -2,9 +2,10 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { beforeEach, describe, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
+import { screenText } from "@/test/screen-text";
 import { expectViewerScopedReads } from "@/test/service-entry-reads";
 
 /**
@@ -21,6 +22,14 @@ import { expectViewerScopedReads } from "@/test/service-entry-reads";
  */
 
 let viewerUserId: string | null = "user-1";
+const LOADED_USER = {
+  isPending: false,
+  isError: false,
+  refetch: () => undefined,
+  data: { id: "user-1", email: "member@example.test", display_name: "Alex" },
+};
+// Swapped by the back-row specs for s15's loading and error states.
+let currentUser: Record<string, unknown> = LOADED_USER;
 const useServiceEntries = vi.fn<(...args: unknown[]) => unknown>(() => ({
   data: [],
   isPending: false,
@@ -30,11 +39,7 @@ const useServiceEntries = vi.fn<(...args: unknown[]) => unknown>(() => ({
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => "chapter-1",
-  useCurrentUser: () => ({
-    isPending: false,
-    isError: false,
-    data: { id: "user-1", email: "member@example.test", display_name: "Alex" },
-  }),
+  useCurrentUser: () => currentUser,
   useViewerUserId: () => viewerUserId,
   useMyPoints: () => ({ data: undefined, isPending: true, isError: false }),
   useServiceEntries: (...args: unknown[]) => useServiceEntries(...args),
@@ -87,10 +92,27 @@ describe("Profile reads only the viewer's service entries", () => {
   });
 });
 
-/** #3022. s15 is opened from More's profile card and draws `‹ More`. */
+/**
+ * #3022. s15 is opened from More's profile card and draws `‹ More`, in its
+ * loading and error states too, so a profile that won't load still has a way
+ * out.
+ */
 describe("Profile back row (#3022)", () => {
-  it("draws ‹ More above the title", () => {
+  afterEach(() => {
+    currentUser = LOADED_USER;
+  });
+
+  it.each([
+    ["loaded", LOADED_USER],
+    ["loading", { isPending: true, isError: false, data: undefined }],
+    [
+      "failed",
+      { isPending: false, isError: true, data: undefined, refetch: vi.fn() },
+    ],
+  ])("draws ‹ More above the title when %s", (_state, user) => {
+    currentUser = user;
     const tree = render();
+    expect(screenText(tree).startsWith("‹ More\nProfile")).toBe(true);
     expectBackRow(tree, "More", "/more");
     tree.unmount();
   });

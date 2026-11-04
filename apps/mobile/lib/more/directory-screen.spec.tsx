@@ -5,6 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
+import { screenText } from "@/test/screen-text";
 import type { DirectoryRow } from "@/lib/more/directory";
 
 /**
@@ -250,6 +251,8 @@ describe("s13's back row (#3022)", () => {
         </FrappThemeProvider>,
       );
     });
+    // Above the title: the header reads the row first, then "Directory".
+    expect(screenText(header).startsWith("‹ More\nDirectory")).toBe(true);
     expectBackRow(header, "More", "/more");
     header.unmount();
     tree.unmount();
