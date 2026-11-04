@@ -230,10 +230,13 @@ vi.mock("@repo/hooks", async () => ({
   // The shared helpers run for real, so the shell's use of them is under test.
   ...(await vi
     .importActual<typeof import("@repo/hooks")>("@repo/hooks")
-    .then(({ sidebarMutedChannelIds, sidebarUnreadCounts }) => ({
-      sidebarMutedChannelIds,
-      sidebarUnreadCounts,
-    }))),
+    .then(
+      ({ resolveAuthorName, sidebarMutedChannelIds, sidebarUnreadCounts }) => ({
+        resolveAuthorName,
+        sidebarMutedChannelIds,
+        sidebarUnreadCounts,
+      }),
+    )),
   useBlockedUserIds: () => blockListState.value,
   useChannels: () => ({
     data: CHANNELS,
@@ -3061,6 +3064,28 @@ describe("ChatShell block list (#2313)", () => {
     rerender(<ChatShell initialChannelId="chan-general" />);
 
     expect(screen.getByText(/new message from someone/i)).toBeInTheDocument();
+  });
+
+  it("announces the system actor as Frapp, as its row reads (#3347)", () => {
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-3",
+            // `SYSTEM_SENDER_ID`, on no roster: a poll-expiry notice, say.
+            sender_id: "00000000-0000-0000-0000-000000000000",
+            content: "Poll closed",
+            created_at: "2026-01-01T00:02:00Z",
+          },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByText("New message from Frapp")).toBeInTheDocument();
   });
 
   it("keeps a blocked member's message out of the Pinned panel, even when an echo put its words back", () => {

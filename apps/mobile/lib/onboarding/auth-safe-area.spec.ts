@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
  * first Play build.
  *
  * A static read rather than six renders: the property is "this file wraps its
- * screen in a `SafeAreaView` that covers the top and bottom edges", and a new
+ * screen in a `SafeAreaView` that covers every edge", and a new
  * screen added to the folder is covered without anyone writing it a spec.
  */
 
@@ -45,7 +45,7 @@ describe("(auth) screens take the safe area (#3345)", () => {
   });
 
   it.each(screens)(
-    "%s wraps its screen in a SafeAreaView covering the top and bottom",
+    "%s wraps its screen in a SafeAreaView covering every edge",
     (file) => {
       const source = readFileSync(join(AUTH_DIR, file), "utf8");
 
@@ -57,8 +57,9 @@ describe("(auth) screens take the safe area (#3345)", () => {
       ];
       expect(edges.length).toBeGreaterThan(0);
       for (const [, list] of edges) {
-        expect(list).toContain('"top"');
-        expect(list).toContain('"bottom"');
+        for (const edge of ["top", "right", "bottom", "left"]) {
+          expect(list).toContain(`"${edge}"`);
+        }
       }
     },
   );

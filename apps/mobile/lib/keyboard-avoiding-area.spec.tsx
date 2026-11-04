@@ -52,7 +52,11 @@ afterEach(async () => {
   (Platform as { OS: string }).OS = originalOS;
 });
 
-async function renderArea(os: string, path: "native" | "expo-go") {
+async function renderArea(
+  os: string,
+  path: "native" | "expo-go",
+  iosInsetFromScrollView = false,
+) {
   const { Platform } = await import("react-native");
   (Platform as { OS: string }).OS = os;
   env.executionEnvironment = path === "expo-go" ? "storeClient" : "bare";
@@ -64,7 +68,11 @@ async function renderArea(os: string, path: "native" | "expo-go") {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
-      <keyboard.KeyboardAvoidingArea style={{ flex: 1 }} collapsable={false}>
+      <keyboard.KeyboardAvoidingArea
+        style={{ flex: 1 }}
+        collapsable={false}
+        iosInsetFromScrollView={iosInsetFromScrollView}
+      >
         <React.Fragment />
       </keyboard.KeyboardAvoidingArea>,
     );
@@ -106,5 +114,26 @@ describe("KeyboardAvoidingArea (#3346)", () => {
     expect(view.props.behavior).toBeUndefined();
     expect(only(tree, "LibraryKeyboardAvoidingView")).toHaveLength(0);
     expect(loader).not.toHaveBeenCalled();
+  });
+
+  // Sign-in's scroll view takes the keyboard inset itself on iOS
+  // (`automaticallyAdjustKeyboardInsets`); padding around it would count the
+  // keyboard twice. That prop does nothing on Android.
+  it("is a plain view on iOS when the scroll view takes the inset itself", async () => {
+    const { tree, loader } = await renderArea("ios", "native", true);
+
+    expect(only(tree, "KeyboardAvoidingView")).toHaveLength(0);
+    expect(only(tree, "LibraryKeyboardAvoidingView")).toHaveLength(0);
+    const [view] = only(tree, "View");
+    expect(view.props.style).toEqual({ flex: 1 });
+    expect(loader).not.toHaveBeenCalled();
+  });
+
+  it("still pads on an Android store build when the scroll view takes the iOS inset", async () => {
+    const { tree } = await renderArea("android", "native", true);
+
+    const [view] = only(tree, "LibraryKeyboardAvoidingView");
+    expect(view.props.behavior).toBe("padding");
+    expect(view.props.iosInsetFromScrollView).toBeUndefined();
   });
 });

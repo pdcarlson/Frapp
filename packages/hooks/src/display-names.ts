@@ -4,7 +4,8 @@
  * Deliberately pure: no `"use client"`, no React, no react-query. Mobile's
  * `lib/chat/channel-list.ts` selectors are plain functions with a plain-node
  * spec, and they must be able to import this rule without dragging a query
- * client into that graph.
+ * client into that graph. Its one import is `@repo/validation`'s
+ * `SYSTEM_SENDER_ID` (#3347), a constant from a package with no React in it.
  *
  * ## Why names are resolved by id rather than joined onto the message
  *
@@ -224,7 +225,7 @@ export function directChannelDisplayName(
  * The identity fields a chat message carries about whoever wrote it.
  *
  * Structural rather than an import of `@repo/chat-core`'s `ChatMessage`: this
- * module is deliberately dependency-free (see the header), and every caller —
+ * module deliberately imports almost nothing (see the header), and every caller —
  * the web timeline, the pins popover, the mobile message row — passes a different
  * concrete row shape.
  */
