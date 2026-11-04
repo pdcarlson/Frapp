@@ -137,9 +137,12 @@ A tab screen renders under test like any component: `lib/events/check-in-screen.
 and `lib/study/study-screen.spec.tsx` show how, and the spec lives under `lib/`
 (see [§ Gotchas](#gotchas)). A tab screen is never unmounted, so state that
 must clear when the member comes back is tested with `__refocus()`, inside
-`act`, which re-runs every mounted `useFocusEffect`. It is an export of the
-mocked `expo-router` module, not a method on the router, so the specs reach it
-through `import * as expoRouter from "expo-router"`.
+`act`, which re-runs every mounted `useFocusEffect`. Its other half is
+`__blur()`, which runs only the cleanups, for a screen that must go quiet while
+another is pushed over it (`lib/onboarding/join-screen.spec.tsx` holds Android
+back that way). Both are exports of the mocked `expo-router` module, not
+methods on the router, so the specs reach them through
+`import * as expoRouter from "expo-router"`.
 
 The suite's `FlatList` is a string stand-in that never calls `renderItem`, so a
 spec that asserts on one row renders that row's component directly. A spec

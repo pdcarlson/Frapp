@@ -118,9 +118,13 @@ export default function JoinChapter() {
     // the process, so an invite already redeemed would otherwise fill the
     // field, and skip the question, on every later visit.
     const fromLink = takeInviteTokenFromLink(deepLinkUrl);
-    const next = fromParams ?? fromLink ?? consumeRememberedInviteToken();
+    const fresh = fromParams ?? fromLink;
+    // Only a fresh invite is remembered, for the signed-out bounce onto
+    // sign-in. One taken back out of memory stays out, or it would fill the
+    // field and skip the question on every later visit until a redeem.
+    if (fresh) rememberInviteToken(fresh);
+    const next = fresh ?? consumeRememberedInviteToken();
     if (next) {
-      rememberInviteToken(next);
       // eslint-disable-next-line react-hooks/set-state-in-effect -- seed an empty field from the invite URL; keep text the member already typed
       setToken((current) => (current.length > 0 ? current : next));
       // An opened invite link has already answered the question, so it goes
@@ -189,6 +193,8 @@ export default function JoinChapter() {
     // Held while a join or deletion runs, so the result lands on the view
     // that started it.
     if (submitting) return;
+    // Backing out declines an opened invite: the next visit asks again.
+    consumeRememberedInviteToken();
     setView("choose");
     setError(null);
   }, [submitting]);
@@ -199,16 +205,19 @@ export default function JoinChapter() {
   useBackToClose(focused && menuVisible, closeMenu);
   useBackToClose(focused && !menuVisible && view === "invite", backToChoices);
 
-  // The menu takes a screen reader's focus when it opens
-  // (`spec/ui/mobile/patterns.md` § Overlays).
-  const menuRef = useRef<ComponentRef<typeof View>>(null);
-  useFocusOnOpen(menuRef, menuVisible);
+  // The menu's title takes a screen reader's focus when it opens
+  // (`spec/ui/mobile/patterns.md` § Overlays). A `Text`, as in the worked
+  // examples there: TalkBack may not land on a plain container `View`.
+  const menuTitleRef = useRef<ComponentRef<typeof Text>>(null);
+  useFocusOnOpen(menuTitleRef, menuVisible);
 
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;
   }
 
   async function handleSignOut() {
+    // An invite remembered for this account is not the next account's.
+    consumeRememberedInviteToken();
     await signOut();
     // `signOut` drops the query cache itself (`lib/auth-session.tsx`), so every
     // sign-out path gets it without each screen remembering to.
@@ -455,12 +464,16 @@ export default function JoinChapter() {
               onPress={closeMenu}
               style={styles.backdrop}
             />
-            <View ref={menuRef} style={styles.menu} accessibilityViewIsModal>
-              {email ? (
-                <Text style={styles.menuCaption} numberOfLines={1}>
-                  Signed in as {email}
-                </Text>
-              ) : null}
+            <View style={styles.menu} accessibilityViewIsModal>
+              {/* Always drawn: it is where a screen reader's focus lands. */}
+              <Text
+                ref={menuTitleRef}
+                accessibilityRole="header"
+                style={styles.menuCaption}
+                numberOfLines={1}
+              >
+                {email ? `Signed in as ${email}` : "Your account"}
+              </Text>
               <Pressable
                 accessibilityRole="button"
                 accessibilityState={{ disabled: submitting }}

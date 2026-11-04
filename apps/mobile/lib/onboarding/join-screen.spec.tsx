@@ -2,8 +2,10 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { Alert, BackHandler } from "react-native";
+import { AccessibilityInfo, Alert, BackHandler } from "react-native";
+import * as expoRouter from "expo-router";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as Linking from "expo-linking";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import {
@@ -86,7 +88,10 @@ import type { ComponentProps } from "react";
 import { FrappClientProvider } from "@repo/hooks";
 import { LEGAL_ACCEPTANCE_REQUIRED_MESSAGE } from "@repo/validation";
 import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
-import { consumeRememberedInviteToken } from "@/lib/onboarding/invite-token";
+import {
+  consumeRememberedInviteToken,
+  rememberInviteToken,
+} from "@/lib/onboarding/invite-token";
 import JoinChapter, {
   JOIN_CHOICE_TITLE,
   JOIN_INVITE_TITLE,
@@ -116,6 +121,13 @@ function render(): ReactTestRenderer {
           </FrappThemeProvider>
         </FrappClientProvider>
       </QueryClientProvider>,
+      // A host ref is null under the test renderer without this; with it, a
+      // focus event's target names the element it was sent to. Not
+      // enumerable, so `tree.toJSON()` still serializes.
+      {
+        createNodeMock: (element) =>
+          Object.defineProperty({}, "element", { value: element }),
+      },
     );
   });
   return tree;
@@ -473,6 +485,30 @@ describe("join screen — the question (#3350)", () => {
     return last[1];
   }
 
+  /** Back listeners not yet removed, as React Native would still call them. */
+  function liveBackHandlers(): (() => boolean)[] {
+    const results = (
+      BackHandler.addEventListener as unknown as {
+        mock: {
+          results: { value: { remove: { mock: { calls: unknown[] } } } }[];
+        };
+      }
+    ).mock.results;
+    return addListener.mock.calls
+      .map(([event, handler], index) => ({ event, handler, index }))
+      .filter(
+        ({ event, index }) =>
+          event === "hardwareBackPress" &&
+          results[index].value.remove.mock.calls.length === 0,
+      )
+      .map(({ handler }) => handler);
+  }
+
+  const { __blur, __refocus } = expoRouter as unknown as {
+    __blur: () => void;
+    __refocus: () => void;
+  };
+
   const hasField = (root: Node) =>
     root.findAllByType("TextInput" as never, { deep: true }).length > 0;
 
@@ -487,7 +523,9 @@ describe("join screen — the question (#3350)", () => {
 
   afterEach(() => {
     params.mockReturnValue({});
+    vi.mocked(Linking.useURL).mockReturnValue(null);
     redeemPending = false;
+    consumeRememberedInviteToken();
   });
 
   it("asks how the member is getting in, with the account controls tucked away", () => {
@@ -598,5 +636,154 @@ describe("join screen — the question (#3350)", () => {
     });
     expect(handled).toBe(true);
     expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+  });
+  it("ignores the Go key while a join is running", async () => {
+    params.mockReturnValue({ token: "invite-token-11" });
+    const tree = render();
+    // Terms answered, so only the guard can stop the send.
+    await settle();
+    redeemPending = true;
+    act(() => {
+      tree.root
+        .findByType("TextInput" as never)
+        .props.onChangeText("invite-token-11 ");
+    });
+
+    act(() => {
+      tree.root.findByType("TextInput" as never).props.onSubmitEditing();
+    });
+    expect(redeemMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("hides the screen from a screen reader under the Account menu, and focuses the menu's title", () => {
+    vi.useFakeTimers();
+    try {
+      const tree = render();
+      const focus = vi.mocked(AccessibilityInfo.sendAccessibilityEvent);
+      focus.mockClear();
+      const underlay = () =>
+        tree.root
+          .findAllByType("View" as never, { deep: true })
+          .find(
+            (view) =>
+              view.props.collapsable === false &&
+              view.findAllByType("ScrollView" as never, { deep: true }).length >
+                0,
+          );
+      expect(underlay()?.props.accessibilityElementsHidden).toBe(false);
+      expect(underlay()?.props.importantForAccessibility).toBe("auto");
+
+      openAccount(tree.root);
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(underlay()?.props.accessibilityElementsHidden).toBe(true);
+      expect(underlay()?.props.importantForAccessibility).toBe(
+        "no-hide-descendants",
+      );
+      expect(focus).toHaveBeenCalledTimes(1);
+      const [target, eventType] = focus.mock.calls[0] as unknown as [
+        { element: { props: { children?: unknown } } },
+        string,
+      ];
+      expect(eventType).toBe("focus");
+      expect(target.element.props.children).toBe(
+        "Signed in as brother@westfield.edu",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves Android back alone while another screen covers it", () => {
+    // An opened link puts /join on its invite step; "I'm starting our
+    // chapter" can't be reached from there, but any pushed screen blurs it.
+    params.mockReturnValue({ token: "invite-token-12" });
+    const tree = render();
+    expect(liveBackHandlers()).toHaveLength(1);
+
+    act(() => {
+      __blur();
+    });
+    expect(liveBackHandlers()).toHaveLength(0);
+
+    // Focus comes back. Other specs' screens stay mounted and refocus too,
+    // but this one's listener is the newest, which is the one Android calls.
+    act(() => {
+      __refocus();
+    });
+    const live = liveBackHandlers();
+    let handled = false;
+    act(() => {
+      handled = live[live.length - 1]();
+    });
+    expect(handled).toBe(true);
+    expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
+
+    // The same for the Account menu.
+    openAccount(tree.root);
+    act(() => {
+      __blur();
+    });
+    expect(liveBackHandlers()).toHaveLength(0);
+    act(() => {
+      __refocus();
+    });
+    const menuLive = liveBackHandlers();
+    act(() => {
+      handled = menuLive[menuLive.length - 1]();
+    });
+    expect(handled).toBe(true);
+    expect(control(tree.root, "Sign out")).toBeUndefined();
+  });
+
+  it("reads an opened link once, so a later visit asks the question again", () => {
+    vi.mocked(Linking.useURL).mockReturnValue(
+      "frapp://join?token=link-token-13",
+    );
+    const first = render();
+    expect(allText(first.root)).toContain(JOIN_INVITE_TITLE);
+    act(() => {
+      first.unmount();
+    });
+    // The member backed out of that invite rather than redeeming it.
+    consumeRememberedInviteToken();
+
+    const second = render();
+    expect(allText(second.root)).toContain(JOIN_CHOICE_TITLE);
+  });
+
+  it("forgets an invite the member backed out of", () => {
+    params.mockReturnValue({ token: "invite-token-14" });
+    const first = render();
+    const back = first.root
+      .findAllByType("Pressable" as never, { deep: true })
+      .find((p) => p.props.accessibilityLabel === "Back to the choices");
+    act(() => {
+      back?.props.onPress();
+    });
+    act(() => {
+      first.unmount();
+    });
+
+    params.mockReturnValue({});
+    const second = render();
+    expect(allText(second.root)).toContain(JOIN_CHOICE_TITLE);
+  });
+
+  it("uses a remembered invite once, after the sign-in bounce, then asks again", () => {
+    // Remembered by a signed-out visit that bounced to sign-in.
+    rememberInviteToken("invite-token-15");
+    const first = render();
+    expect(first.root.findByType("TextInput" as never).props.value).toBe(
+      "invite-token-15",
+    );
+    act(() => {
+      first.unmount();
+    });
+
+    const second = render();
+    expect(allText(second.root)).toContain(JOIN_CHOICE_TITLE);
   });
 });
