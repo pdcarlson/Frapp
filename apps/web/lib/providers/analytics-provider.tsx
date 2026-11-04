@@ -93,7 +93,12 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   const track = useCallback<TrackFn>(
     (name, properties) => {
       if (optedOutRef.current) return;
-      const body = namedAnalyticsEventBody({ name, chapterId, properties });
+      const body = namedAnalyticsEventBody({
+        name,
+        app: "web",
+        chapterId,
+        properties,
+      });
       if (!body) return;
       void client
         .POST("/v1/analytics/events", { body })

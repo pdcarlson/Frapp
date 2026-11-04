@@ -1,4 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
+import { createReportingCaches } from "@/lib/sentry/query-errors";
 
 /**
  * `networkMode: "offlineFirst"` is load-bearing, not a tuning knob.
@@ -41,8 +42,12 @@ import { QueryClient } from "@tanstack/react-query";
  * provider and the module singleton is the only seam available. That layout
  * file is one of #937's frozen seven, so this module is what keeps the fix off
  * it.
+ *
+ * Its caches report every final failure to Sentry (`lib/sentry/query-errors.ts`,
+ * #3377).
  */
 export const queryClient = new QueryClient({
+  ...createReportingCaches(),
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: true,

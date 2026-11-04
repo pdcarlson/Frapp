@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { QueryClient, useQuery } from "@tanstack/react-query";
+import { throwUnlessOk } from "@repo/api-sdk";
 import { useFrappClient } from "@repo/hooks";
+import { createReportingCaches } from "@/lib/sentry/query-errors";
 
 /**
  * Is this build still supported? (#2526)
@@ -35,8 +37,10 @@ export const CLIENT_POLICY_STALE_MS = 60_000;
 // These defaults are this client's own, not a copy to keep in step with
 // `lib/query-client.ts`: the check has no spinner and fails open, so it only
 // needs to ask on focus, retry once, and try even when connectivity detection
-// says offline.
+// says offline. Its failures reach Sentry like the product client's, through
+// caches of its own (`lib/sentry/query-errors.ts`).
 export const clientPolicyQueryClient = new QueryClient({
+  ...createReportingCaches(),
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: true,
@@ -93,16 +97,17 @@ export function useClientPolicy(
     {
       queryKey: CLIENT_POLICY_QUERY_KEY,
       queryFn: async () => {
-        const { data: body, response } = await client.GET("/v1/client-policy");
+        const result = await client.GET("/v1/client-policy");
         // Thrown, not returned, so TanStack keeps the previous answer. A
         // non-2xx is never an answer, whatever its body. openapi-fetch 0.17
         // already leaves `data` undefined there, so the shape check below
         // would throw too; checking the status means this doesn't rest on that.
         // (`error` can't be the test: it is undefined for an empty-bodied 5xx.)
-        if (!response.ok) {
-          throw new Error(`client-policy answered ${response.status}`);
-        }
-        const policy = readClientPolicy(body);
+        // `throwUnlessOk` throws the body with its status, request id and code,
+        // so a report groups it by status class and joins the API's own event
+        // (`lib/sentry/query-errors.ts`).
+        throwUnlessOk(result);
+        const policy = readClientPolicy(result.data);
         if (!policy) throw new Error("client-policy answered in an unknown shape");
         return policy;
       },

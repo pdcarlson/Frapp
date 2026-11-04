@@ -75,13 +75,14 @@ export class AnalyticsController {
       await this.analytics.trackFromClient(dto.name, userId, {
         chapterId: dto.chapter_id,
         properties: dto.properties,
+        app: dto.app,
       });
     } catch (error) {
-      // Only a content/PII payload is a caller error → 400. A non-member
-      // attributing to a foreign chapter raises ForbiddenException, which (being
-      // an HttpException) propagates untouched → 403. Anything else is an
-      // unexpected server fault; rethrow so Nest maps it to 500 rather than
-      // masking it as a client mistake.
+      // Only a content/PII payload, or one setting a reserved key, is a caller
+      // error → 400. A non-member attributing to a foreign chapter raises
+      // ForbiddenException, which (being an HttpException) propagates
+      // untouched → 403. Anything else is an unexpected server fault; rethrow
+      // so Nest maps it to 500 rather than masking it as a client mistake.
       if (error instanceof ContentFreePropertyError) {
         throw new BadRequestException(error.message);
       }

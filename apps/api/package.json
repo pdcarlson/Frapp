@@ -58,14 +58,14 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "discord-api-types": "^0.38.57",
-    "expo-server-sdk": "^7.2.0",
+    "expo-server-sdk": "^8.0.0",
     "helmet": "^8.3.0",
     "pdf-lib": "^1.17.1",
     "posthog-node": "^5.60.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "stripe": "^23.1.0",
-    "ws": "^8.22.0"
+    "ws": "^8.22.1"
   },
   "devDependencies": {
     "@darraghor/eslint-plugin-nestjs-typed": "^7.5.8",
@@ -84,7 +84,7 @@
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.5.7",
-    "globals": "^17.13.0",
+    "globals": "^17.14.0",
     "jest": "^30.5.2",
     "prettier": "^3.9.10",
     "supertest": "^7.3.1",

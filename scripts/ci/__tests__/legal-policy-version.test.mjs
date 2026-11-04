@@ -27,9 +27,11 @@
 //   PR says so. This lock doesn't judge what is material. It makes someone
 //   decide. A name-only change doesn't bump the constant: the owner ruled the
 //   Signet-to-Frapp rename of Privacy and FERPA non-material on 2026-09-28
-//   (ADR-25 step 5, #2580), so it moved only their pins. Naming the
-//   document-photo upload as a photo-library use was ruled non-material on
-//   2026-11-04 (#3399), so it moved only the Privacy pin.
+//   (ADR-25 step 5, #2580), so it moved only their pins. The owner ruled the
+//   Privacy clause naming the chapter-logo photo pick non-material on
+//   2026-11-04 (#3395), so it moved only the Privacy pin.
+//   Naming the document-photo upload as a photo-library use was ruled
+//   non-material on 2026-11-04 too (#3399), so it moved only the Privacy pin.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
 // `#domain/constants/legal` (`'test-version'`, `'current-version'`) can't
@@ -68,7 +70,7 @@ export const PINNED_PAGES = {
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",
     lastUpdated: "September 2026",
-    fingerprint: "4d1c848066519283",
+    fingerprint: "3dc11b28b3ee095a",
   },
   ferpa: {
     path: "apps/landing/app/ferpa/page.tsx",

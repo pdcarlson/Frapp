@@ -84,6 +84,7 @@ describe("AnalyticsProvider client-side opt-out", () => {
       expect.objectContaining({
         body: expect.objectContaining({
           name: "opened-channel",
+          app: "web",
           chapter_id: "chap-1",
         }),
       }),
