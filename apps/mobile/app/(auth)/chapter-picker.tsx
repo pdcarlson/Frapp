@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useListChapters } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { useAuthSession } from "@/lib/auth-session";
+import { ChoiceRow } from "@/components/auth/choice-row";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -167,37 +168,23 @@ export default function ChapterPicker() {
               {data.map((membership) => {
                 const isPendingRow = pendingId === membership.chapter_id;
                 return (
-                  <Pressable
+                  <ChoiceRow
                     key={membership.chapter_id}
-                    accessibilityRole="button"
-                    accessibilityState={{
-                      disabled: pendingId !== null,
-                      busy: isPendingRow,
-                    }}
+                    title={membership.chapter.name}
+                    body={membership.chapter.university}
                     accessibilityHint={`Open ${membership.chapter.name}.`}
                     disabled={pendingId !== null}
+                    dimmed={pendingId !== null && !isPendingRow}
+                    busy={isPendingRow}
+                    trailing={
+                      isPendingRow ? (
+                        <ActivityIndicator color={tokens.color.gold.house} />
+                      ) : undefined
+                    }
                     onPress={() => {
                       void handleSelect(membership.chapter_id);
                     }}
-                    style={[
-                      styles.chapterRow,
-                      pendingId !== null && !isPendingRow
-                        ? styles.chapterRowDimmed
-                        : null,
-                    ]}
-                  >
-                    <View style={styles.chapterRowText}>
-                      <Text style={styles.chapterName}>
-                        {membership.chapter.name}
-                      </Text>
-                      <Text style={styles.chapterMeta}>
-                        {membership.chapter.university}
-                      </Text>
-                    </View>
-                    {isPendingRow ? (
-                      <ActivityIndicator color={tokens.color.gold.house} />
-                    ) : null}
-                  </Pressable>
+                  />
                 );
               })}
             </View>
@@ -268,35 +255,6 @@ function createStyles(tokens: SignetTokens) {
     },
     list: {
       gap: tokens.spacing.sm,
-    },
-    // The same row s02 draws for its two answers (`join.tsx`): a lighter
-    // surface, never a shadow (foundations.md §10).
-    chapterRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.md,
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-      paddingHorizontal: tokens.spacing.lg,
-      paddingVertical: tokens.spacing.md,
-      minHeight: 64,
-    },
-    chapterRowDimmed: {
-      opacity: 0.5,
-    },
-    chapterRowText: {
-      flex: 1,
-      gap: 2,
-    },
-    chapterName: {
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.foreground,
-    },
-    chapterMeta: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
     },
     helperText: {
       ...typeRole(tokens.typography.role.body),

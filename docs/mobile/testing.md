@@ -74,8 +74,9 @@ except the on-screen readout of the keyboard path, which a unit test covers:
       the sign-in screen (s01): its title is 700, its button labels 600 and its body
       copy 400. Android is the honest test, because it can't fake weights from
       one file. Screens built on `ScreenShell` show no 700 text, so they can't
-      prove it. The invite field on the join screen (s02), which an account
-      with no chapter lands on, renders in a monospace face.
+      prove it. The invite field on the join screen (s02), behind its "I have an
+      invite" answer (an account with no chapter lands on the question
+      first), renders in a monospace face.
 - [ ] **Sheets and the keyboard.** More → Service hours, then **Log** in the
       header, presents the s20 "Log service hours" sheet with its grabber,
       header and Cancel. It drags and

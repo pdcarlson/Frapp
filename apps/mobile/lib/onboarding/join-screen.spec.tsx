@@ -51,6 +51,8 @@ vi.mock("@/lib/select-chapter", () => ({
 }));
 
 const redeemMutateAsync = vi.fn();
+/** A redeem in flight, as `useRedeemInvite` reports it. */
+let redeemPending = false;
 let legalRequired: boolean | undefined = false;
 
 // The Terms checkbox runs the real `useJoinTermsCheckbox`, against a mock API
@@ -59,7 +61,7 @@ let legalRequired: boolean | undefined = false;
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useRedeemInvite: () => ({
-    isPending: false,
+    isPending: redeemPending,
     isSuccess: false,
     mutateAsync: redeemMutateAsync,
   }),
@@ -479,11 +481,13 @@ describe("join screen — the question (#3350)", () => {
     isPending = false;
     isSuccess = false;
     legalRequired = false;
+    redeemPending = false;
     addListener.mockClear();
   });
 
   afterEach(() => {
     params.mockReturnValue({});
+    redeemPending = false;
   });
 
   it("asks how the member is getting in, with the account controls tucked away", () => {
@@ -567,5 +571,32 @@ describe("join screen — the question (#3350)", () => {
     });
     expect(handled).toBe(true);
     expect(allText(tree.root)).toContain("Deleting account");
+  });
+
+  it("keeps the member on the invite step while the join is running", () => {
+    // A link lands on the invite step, then the redeem starts.
+    params.mockReturnValue({ token: "invite-token-10" });
+    const tree = render();
+    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+
+    redeemPending = true;
+    // Any state change re-reads the hook; an edit is the cheapest one.
+    act(() => {
+      tree.root
+        .findByType("TextInput" as never)
+        .props.onChangeText("invite-token-10 ");
+    });
+
+    const back = tree.root
+      .findAllByType("Pressable" as never, { deep: true })
+      .find((p) => p.props.accessibilityLabel === "Back to the choices");
+    expect(back?.props.disabled).toBe(true);
+
+    let handled = false;
+    act(() => {
+      handled = latestBackHandler()();
+    });
+    expect(handled).toBe(true);
+    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
   });
 });

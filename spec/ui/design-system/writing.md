@@ -903,9 +903,9 @@ The Preferences card is a **second query** on the same screen (`GET /v1/settings
 | Session check failed, offline | `Can't check your session` | `Reconnect to confirm you're signed in, then redeem the invite.` |
 | Session check failed, error | `Couldn't check your session` | `We couldn't reach the API to confirm you're signed in. Retry in a moment.` |
 | Redeemed | `Chapter joined` | `You're in. Opening chat.` |
-| Mobile s02, the question (#3350) | `How are you getting in?` | `Members join with an invite from an officer. The first officer sets the chapter up.` The rows above are web `/join`; mobile s02 asks this first and offers two answers instead of a field. |
+| Mobile s02, the question (#3350) | `How are you getting in?` | `Members join with an invite from an officer. The first officer sets the chapter up.` The rows above are web `/join`'s, except Unparseable paste, which mobile shares word for word; mobile s02 asks this first and offers two answers instead of a field. |
 | Mobile s02 answers | — | `I have an invite` + `Use the link your officer sent.`, then `I'm starting our chapter` + `Set it up, then invite everyone.` |
-| Mobile s02 invite step | `Join with an invite` | `Paste the invite link or code your officer sent. Invites work once and expire after 24 hours.` The button is `Join chapter`, with the membership hint (§ Sign in) under it. An opened invite link lands here with the field filled. |
+| Mobile s02 invite step | `Join with an invite` | `Paste the invite link or code your officer sent. Invites work once and expire after 24 hours.` The button is `Join chapter`, with the membership hint ([§ Sign in (pre-auth)](#sign-in-pre-auth)) under it. An opened invite link lands here with the field filled. |
 | Mobile s02 Account menu | — | `Account` in the top corner opens `Signed in as <email>`, `Sign out` and `Delete account` (`Deleting account…` while it runs). |
 | **410** — expired, used, or missing | — | `This invite has expired or already been used. Ask an officer for a new one.` |
 | **409** — already a member | — | `You're already a member of this chapter. Open it from your chapter list.` |

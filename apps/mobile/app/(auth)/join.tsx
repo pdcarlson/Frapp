@@ -1,9 +1,19 @@
-import { useEffect, useState } from "react";
-import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
+import {
+  type ComponentRef,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import {
+  Redirect,
+  useFocusEffect,
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
 import * as Linking from "expo-linking";
 import {
   ActivityIndicator,
-  BackHandler,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,6 +30,7 @@ import {
   useRedeemInvite,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { ChoiceRow } from "@/components/auth/choice-row";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
@@ -29,7 +40,9 @@ import {
   extractInviteToken,
   extractInviteTokenFromQuery,
   rememberInviteToken,
+  takeInviteTokenFromLink,
 } from "@/lib/onboarding/invite-token";
+import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
@@ -101,7 +114,10 @@ export default function JoinChapter() {
         }
       }),
     );
-    const fromLink = extractInviteToken(deepLinkUrl);
+    // Once per link: `useURL` keeps returning the launch URL for the life of
+    // the process, so an invite already redeemed would otherwise fill the
+    // field, and skip the question, on every later visit.
+    const fromLink = takeInviteTokenFromLink(deepLinkUrl);
     const next = fromParams ?? fromLink ?? consumeRememberedInviteToken();
     if (next) {
       rememberInviteToken(next);
@@ -152,28 +168,41 @@ export default function JoinChapter() {
   // are locked for the same window.
   const menuVisible = accountOpen || deleting;
 
-  // Android's back button and back gesture step back inside this screen
-  // before leaving it: they close the Account menu, then return from the
-  // invite step to the question, as the chevron does. While a join or a
-  // deletion is in flight both are held, so the result lands on the view that
-  // started it. On the question itself back is left alone.
-  useEffect(() => {
-    if (!menuVisible && view === "choose") return undefined;
-    const subscription = BackHandler.addEventListener(
-      "hardwareBackPress",
-      () => {
-        if (submitting) return true;
-        if (menuVisible) {
-          setAccountOpen(false);
-        } else {
-          setView("choose");
-          setError(null);
-        }
-        return true;
-      },
-    );
-    return () => subscription.remove();
-  }, [menuVisible, view, submitting]);
+  // Only the focused screen answers Android's back button. `/join` stays
+  // mounted under a pushed `/create-chapter`, and an invite link opened then
+  // still moves it to the invite step; holding back from there would swallow
+  // presses meant for the screen on top.
+  const [focused, setFocused] = useState(true);
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      return () => setFocused(false);
+    }, []),
+  );
+
+  const closeMenu = useCallback(() => {
+    // A deletion in flight holds the menu, so its progress stays on screen.
+    if (!submitting) setAccountOpen(false);
+  }, [submitting]);
+
+  const backToChoices = useCallback(() => {
+    // Held while a join or deletion runs, so the result lands on the view
+    // that started it.
+    if (submitting) return;
+    setView("choose");
+    setError(null);
+  }, [submitting]);
+
+  // Android's back button steps back inside this screen before leaving it:
+  // it closes the Account menu, then returns from the invite step to the
+  // question, as the chevron does. On the question itself it is left alone.
+  useBackToClose(focused && menuVisible, closeMenu);
+  useBackToClose(focused && !menuVisible && view === "invite", backToChoices);
+
+  // The menu takes a screen reader's focus when it opens
+  // (`spec/ui/mobile/patterns.md` § Overlays).
+  const menuRef = useRef<ComponentRef<typeof View>>(null);
+  useFocusOnOpen(menuRef, menuVisible);
 
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;
@@ -214,6 +243,9 @@ export default function JoinChapter() {
   }
 
   async function handleJoin() {
+    // The Go key reaches here as well as the button, and a field that already
+    // has focus can still send it after `editable` turns false.
+    if (submitting) return;
     const extracted = extractInviteToken(token);
     if (!extracted) {
       setError("Paste the invite your officer sent, or open the invite link.");
@@ -240,12 +272,6 @@ export default function JoinChapter() {
       terms.onJoinError(caught);
       setError(joinErrorCopy(caught));
     }
-  }
-
-  function backToChoices() {
-    if (submitting) return;
-    setView("choose");
-    setError(null);
   }
 
   const header = (
@@ -296,141 +322,128 @@ export default function JoinChapter() {
           invite step does not fit, and a non-scrolling column would clip its
           last control.
         */}
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.container}
-          keyboardShouldPersistTaps="handled"
+        {/*
+          What the menu covers leaves the accessibility tree while it is up:
+          `accessibilityViewIsModal` is iOS-only, so without this TalkBack
+          would still reach the controls underneath (patterns.md § Overlays).
+        */}
+        <View
+          style={styles.flex}
+          collapsable={false}
+          accessibilityElementsHidden={menuVisible}
+          importantForAccessibility={
+            menuVisible ? "no-hide-descendants" : "auto"
+          }
         >
-          {header}
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.container}
+            keyboardShouldPersistTaps="handled"
+          >
+            {header}
 
-          {view === "choose" ? (
-            <View style={styles.body}>
-              <Text style={styles.title}>{JOIN_CHOICE_TITLE}</Text>
-              <Text style={styles.subtitle}>
-                Members join with an invite from an officer. The first officer
-                sets the chapter up.
-              </Text>
+            {view === "choose" ? (
+              <View style={styles.body}>
+                <Text style={styles.title}>{JOIN_CHOICE_TITLE}</Text>
+                <Text style={styles.subtitle}>
+                  Members join with an invite from an officer. The first officer
+                  sets the chapter up.
+                </Text>
 
-              <View style={styles.choices}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: submitting }}
-                  disabled={submitting}
-                  onPress={() => {
-                    setAccountOpen(false);
-                    setView("invite");
-                  }}
-                  style={({ pressed }) => [
-                    styles.choice,
-                    pressed ? styles.choicePressed : null,
-                    submitting ? styles.disabled : null,
-                  ]}
-                >
-                  <View style={styles.choiceCopy}>
-                    <Text style={styles.choiceTitle}>I have an invite</Text>
-                    <Text style={styles.choiceBody}>
-                      Use the link your officer sent.
-                    </Text>
-                  </View>
-                  <Text style={styles.choiceChevron}>›</Text>
-                </Pressable>
-
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityHint="Opens chapter setup."
-                  accessibilityState={{ disabled: submitting }}
-                  disabled={submitting}
-                  onPress={() => {
-                    setAccountOpen(false);
-                    router.push("/create-chapter");
-                  }}
-                  style={({ pressed }) => [
-                    styles.choice,
-                    pressed ? styles.choicePressed : null,
-                    submitting ? styles.disabled : null,
-                  ]}
-                >
-                  <View style={styles.choiceCopy}>
-                    <Text style={styles.choiceTitle}>
-                      I&apos;m starting our chapter
-                    </Text>
-                    <Text style={styles.choiceBody}>
-                      Set it up, then invite everyone.
-                    </Text>
-                  </View>
-                  <Text style={styles.choiceChevron}>›</Text>
-                </Pressable>
+                <View style={styles.choices}>
+                  <ChoiceRow
+                    title="I have an invite"
+                    body="Use the link your officer sent."
+                    disabled={submitting}
+                    dimmed={submitting}
+                    onPress={() => {
+                      setAccountOpen(false);
+                      setView("invite");
+                    }}
+                  />
+                  <ChoiceRow
+                    title="I'm starting our chapter"
+                    body="Set it up, then invite everyone."
+                    accessibilityHint="Opens chapter setup."
+                    disabled={submitting}
+                    dimmed={submitting}
+                    onPress={() => {
+                      setAccountOpen(false);
+                      router.push("/create-chapter");
+                    }}
+                  />
+                </View>
               </View>
-            </View>
-          ) : (
-            <View style={styles.body}>
-              <Text style={styles.title}>{JOIN_INVITE_TITLE}</Text>
-              <Text style={styles.subtitle}>
-                Paste the invite link or code your officer sent. Invites work
-                once and expire after 24 hours.
-              </Text>
+            ) : (
+              <View style={styles.body}>
+                <Text style={styles.title}>{JOIN_INVITE_TITLE}</Text>
+                <Text style={styles.subtitle}>
+                  Paste the invite link or code your officer sent. Invites work
+                  once and expire after 24 hours.
+                </Text>
 
-              <Text style={styles.inputLabel}>Invite</Text>
-              <TextInput
-                value={token}
-                onChangeText={(value) => {
-                  setToken(value);
-                  setError(null);
-                }}
-                placeholder="Paste invite or link"
-                placeholderTextColor={tokens.color.text.muted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="off"
-                // A filled field came from a link; the next step is Join, not
-                // typing, so the keyboard stays down.
-                autoFocus={token.length === 0}
-                textContentType="none"
-                accessibilityLabel="Invite token"
-                editable={!submitting}
-                returnKeyType="go"
-                onSubmitEditing={() => {
-                  void handleJoin();
-                }}
-                style={styles.input}
-              />
-
-              {terms.needed ? (
-                <TermsAcceptance
-                  accepted={terms.accepted}
-                  onAcceptedChange={(next) => {
-                    terms.setAccepted(next);
+                <Text style={styles.inputLabel}>Invite</Text>
+                <TextInput
+                  value={token}
+                  onChangeText={(value) => {
+                    setToken(value);
                     setError(null);
                   }}
-                  disabled={submitting}
+                  placeholder="Paste invite or link"
+                  placeholderTextColor={tokens.color.text.muted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="off"
+                  // A filled field came from a link; the next step is Join, not
+                  // typing, so the keyboard stays down.
+                  autoFocus={token.length === 0}
+                  textContentType="none"
+                  accessibilityLabel="Invite token"
+                  editable={!submitting}
+                  returnKeyType="go"
+                  onSubmitEditing={() => {
+                    void handleJoin();
+                  }}
+                  style={styles.input}
                 />
-              ) : null}
 
-              {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                {terms.needed ? (
+                  <TermsAcceptance
+                    accepted={terms.accepted}
+                    onAcceptedChange={(next) => {
+                      terms.setAccepted(next);
+                      setError(null);
+                    }}
+                    disabled={submitting}
+                  />
+                ) : null}
 
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ disabled: submitting }}
-                disabled={submitting}
-                onPress={() => {
-                  void handleJoin();
-                }}
-                style={[
-                  styles.primaryButton,
-                  submitting ? styles.disabled : null,
-                ]}
-              >
-                {redeeming ? (
-                  <ActivityIndicator color={tokens.color.gold.onHouse} />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Join chapter</Text>
-                )}
-              </Pressable>
+                {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-              <Text style={styles.hintText}>{OAUTH_MEMBERSHIP_HINT}</Text>
-            </View>
-          )}
-        </ScrollView>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: submitting }}
+                  disabled={submitting}
+                  onPress={() => {
+                    void handleJoin();
+                  }}
+                  style={[
+                    styles.primaryButton,
+                    submitting ? styles.disabled : null,
+                  ]}
+                >
+                  {redeeming ? (
+                    <ActivityIndicator color={tokens.color.gold.onHouse} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Join chapter</Text>
+                  )}
+                </Pressable>
+
+                <Text style={styles.hintText}>{OAUTH_MEMBERSHIP_HINT}</Text>
+              </View>
+            )}
+          </ScrollView>
+        </View>
 
         {menuVisible ? (
           <>
@@ -439,12 +452,10 @@ export default function JoinChapter() {
               accessibilityRole="button"
               accessibilityLabel="Close account menu"
               disabled={submitting}
-              onPress={() => {
-                setAccountOpen(false);
-              }}
+              onPress={closeMenu}
               style={styles.backdrop}
             />
-            <View style={styles.menu} accessibilityViewIsModal>
+            <View ref={menuRef} style={styles.menu} accessibilityViewIsModal>
               {email ? (
                 <Text style={styles.menuCaption} numberOfLines={1}>
                   Signed in as {email}
@@ -564,40 +575,6 @@ function createStyles(tokens: SignetTokens) {
     },
     choices: {
       gap: tokens.spacing.md,
-    },
-    // Elevation is a lighter surface, never a shadow (foundations.md §10).
-    choice: {
-      minHeight: 76,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.md,
-      paddingHorizontal: tokens.spacing.lg,
-      paddingVertical: tokens.spacing.md,
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-    },
-    choicePressed: {
-      backgroundColor: tokens.color.surface.surface1,
-    },
-    choiceCopy: {
-      flex: 1,
-      minWidth: 0,
-      gap: 2,
-    },
-    choiceTitle: {
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.foreground,
-    },
-    choiceBody: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
-    },
-    choiceChevron: {
-      fontSize: 26,
-      lineHeight: 28,
-      color: tokens.color.text.muted,
     },
     inputLabel: {
       ...typeRole(tokens.typography.role.label),
