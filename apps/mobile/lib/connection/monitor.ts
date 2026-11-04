@@ -39,7 +39,9 @@
  *   network event happened to fire. A `/health` probe cut off by the suspension
  *   also counted as a failure. So the monitor now ignores link events and probe
  *   results while the app is in the background, and on return to the
- *   foreground re-reads the link and probes at once.
+ *   foreground re-reads the link and probes at once. That first probe gets one
+ *   retry (`WAKE_RETRY_MS`) before a failure counts, because the first request
+ *   after a long Doze can time out while the radio wakes.
  * - **A link drop waits `LINK_DOWN_GRACE_MS`, then asks `/health`.** A Wi-Fi
  *   network that re-associates on wake, or a Wi-Fi to cellular handoff,
  *   reports no network for a second or two. Any "link up" event inside the
@@ -49,7 +51,9 @@
  * - **A successful probe clears a down link.** `/health` answering proves the
  *   device can reach the API, whatever the last link event said, so the poll
  *   keeps probing while the link reads as down. That is the way back when
- *   `expo-network` never reports the recovery.
+ *   `expo-network` never reports the recovery, and the only way back: a
+ *   link-up event alone leaves OFFLINE in place until the probe answers, as
+ *   the spec's recovery edge says.
  *
  * ## `/health` is not under `/v1`
  *
@@ -79,6 +83,13 @@ export const HEALTH_TIMEOUT_MS = 5_000;
  * drop still reaches the banner and the chat outbox within a few seconds.
  */
 export const LINK_DOWN_GRACE_MS = 3_000;
+/**
+ * The first probe after the app returns to the foreground gets one retry
+ * after this long before its failure counts. The first request after a long
+ * Doze can time out while the radio or Wi-Fi power-save wakes, and one
+ * failure is enough to show "Slow connection".
+ */
+export const WAKE_RETRY_MS = 2_000;
 
 export function healthUrl(): string | null {
   const apiUrl = process.env.EXPO_PUBLIC_API_URL;
@@ -151,6 +162,13 @@ export function createConnectionMonitor(
   let probeGeneration = 0;
   /** The generation of the probe in flight, if it still counts. */
   let inFlightGeneration: number | null = null;
+  /** Whether this poll interval has spent its suspicion probe. */
+  let suspicionProbed = false;
+  /**
+   * Bumped by `stop()`, so an async `getState()` read that resolves after it
+   * cannot schedule a timer, probe or publish on a stopped monitor.
+   */
+  let lifecycle = 0;
   let state: ConnectionState = "ONLINE";
 
   let started = false;
@@ -169,6 +187,8 @@ export function createConnectionMonitor(
   let linkEvents = 0;
   /** A link drop waiting out `LINK_DOWN_GRACE_MS`. */
   let pendingLinkDown: TimerHandle | null = null;
+  /** The retry of a failed first probe after the foreground. */
+  let wakeRetry: TimerHandle | null = null;
   let poll: ReturnType<typeof setInterval> | null = null;
   let unsubscribeLink: (() => void) | null = null;
   let unsubscribeAppState: (() => void) | null = null;
@@ -210,7 +230,7 @@ export function createConnectionMonitor(
    * `/health` settles it (`spec/ui/resilience/connection-state.md`).
    */
   function applyLink(next: ExpoNetworkState) {
-    if (suspended) return;
+    if (!started || suspended) return;
 
     if (next.isConnected === false) {
       if (linkOffline || pendingLinkDown !== null) return;
@@ -236,24 +256,48 @@ export function createConnectionMonitor(
     // dropped: a link is not a reachable API, and flashing ONLINE while
     // `/health` is still dead re-enables writes. Probe; a reachable
     // response is what clears the count (`spec/ui/resilience/connection-state.md`).
+    //
+    // For the same reason a confirmed link drop stays OFFLINE when the link
+    // returns: the spec's way out of OFFLINE is "link back AND a /health probe
+    // succeeds", and only the probe clears `linkOffline`. Clearing it here
+    // would show ONLINE, or "Slow connection" from failures the down-link
+    // polls left behind, before the API has said anything.
     const cameBack = linkOffline;
     const blip = cancelPendingLinkDown();
-    linkOffline = false;
-    publish();
 
-    const unreachable = next.isInternetReachable === false;
-    // A blip discarded the probe in flight, so ask again.
-    if (cameBack || blip || unreachable) kickProbe();
+    if (cameBack || blip) {
+      // A fresh probe, never the one in flight: that one was sent while the
+      // link was down (or was discarded by the blip), and its failure is not
+      // news about the API now that the link is back.
+      void probeOnce();
+      return;
+    }
+    if (next.isInternetReachable === false) askAboutSuspicion();
   }
 
-  /** A probe on demand, unless one that still counts is already in flight. */
-  function kickProbe() {
+  /**
+   * One extra probe per poll interval for `isInternetReachable === false`.
+   *
+   * Not one per event: Android emits several while a reconnected network
+   * validates, and if `/health` fails fast in that window a probe per event
+   * would reach three failures in under a second. The three-failure threshold
+   * exists so that one bad moment is not an outage.
+   */
+  function askAboutSuspicion() {
+    if (suspicionProbed) return;
     if (inFlightGeneration === probeGeneration) return;
+    suspicionProbed = true;
     void probeOnce();
   }
 
-  async function probeOnce() {
-    if (suspended) return;
+  function cancelWakeRetry() {
+    if (wakeRetry === null) return;
+    deps.clearTimeout(wakeRetry);
+    wakeRetry = null;
+  }
+
+  async function probeOnce({ afterWake = false } = {}) {
+    if (!started || suspended) return;
     // Wait for the link-drop verdict: a probe now would fail for a reason the
     // drop already explains and count it against the API.
     if (pendingLinkDown !== null) return;
@@ -295,9 +339,17 @@ export function createConnectionMonitor(
     if (reachable) {
       consecutiveFailures = 0;
       linkOffline = false;
-    } else if (!linkOffline) {
-      // With the link down the state is already OFFLINE, and a failed
-      // recovery probe is not news about the API.
+    } else if (afterWake && !linkOffline) {
+      // Not counted yet: one retry first (see `WAKE_RETRY_MS`).
+      cancelWakeRetry();
+      wakeRetry = deps.setTimeout(() => {
+        wakeRetry = null;
+        void probeOnce();
+      }, WAKE_RETRY_MS);
+      return;
+    } else {
+      // With the link down this changes nothing on screen: only a reachable
+      // probe clears `linkOffline`, and it resets the count too.
       consecutiveFailures += 1;
     }
     publish();
@@ -305,7 +357,10 @@ export function createConnectionMonitor(
 
   function startPolling() {
     if (poll !== null) return;
-    poll = deps.setInterval(() => void probeOnce(), HEALTH_POLL_INTERVAL_MS);
+    poll = deps.setInterval(() => {
+      suspicionProbed = false;
+      void probeOnce();
+    }, HEALTH_POLL_INTERVAL_MS);
   }
 
   function stopPolling() {
@@ -321,6 +376,7 @@ export function createConnectionMonitor(
     // decides both.
     discardInFlightProbe();
     cancelPendingLinkDown();
+    cancelWakeRetry();
     stopPolling();
   }
 
@@ -330,19 +386,21 @@ export function createConnectionMonitor(
     // The last link event may have been read while the network was blocked
     // for this app, and nothing re-emits when the block lifts. Read it fresh,
     // then probe: the probe also clears a down link that the read gets wrong.
-    // The screen keeps what it showed until then; flashing ONLINE first would
-    // re-enable writes on a guess.
+    // The screen keeps what it showed until the probe answers.
     const eventsBefore = linkEvents;
+    const run = lifecycle;
+    suspicionProbed = false;
     void deps
       .getState()
       .then((next) => {
-        if (linkEvents === eventsBefore) applyLink(next);
+        if (run === lifecycle && linkEvents === eventsBefore) applyLink(next);
       })
       .catch(() => {
         // Keep what we had; the probe below still settles it.
       })
       .finally(() => {
-        if (!suspended) void probeOnce();
+        // `probeOnce` itself skips a stopped or re-suspended monitor.
+        if (run === lifecycle) void probeOnce({ afterWake: true });
       });
     startPolling();
   }
@@ -380,12 +438,13 @@ export function createConnectionMonitor(
       if (suspended) return;
 
       const eventsBefore = linkEvents;
+      const run = lifecycle;
       void deps
         .getState()
         .then((state) => {
           // Superseded by a listener event that arrived while this was in
-          // flight — see `linkEvents`.
-          if (linkEvents !== eventsBefore) return;
+          // flight — see `linkEvents` — or by `stop()`.
+          if (run !== lifecycle || linkEvents !== eventsBefore) return;
           applyLink(state);
         })
         .catch(() => {
@@ -403,14 +462,17 @@ export function createConnectionMonitor(
     stop() {
       started = false;
       suspended = false;
+      lifecycle += 1;
+      discardInFlightProbe();
       cancelPendingLinkDown();
+      cancelWakeRetry();
       unsubscribeLink?.();
       unsubscribeLink = null;
       unsubscribeAppState?.();
       unsubscribeAppState = null;
       stopPolling();
     },
-    probeOnce,
+    probeOnce: () => probeOnce(),
   };
 }
 

@@ -5,6 +5,7 @@ import {
   healthUrl,
   LINK_DOWN_GRACE_MS,
   type MonitorDeps,
+  WAKE_RETRY_MS,
 } from "./monitor";
 import type { ConnectionState } from "./state";
 
@@ -274,14 +275,133 @@ describe("connection monitor", () => {
     expect(monitor.get()).toBe("ONLINE");
   });
 
+  it("does not count a probe sent while the link was down once the link is back", async () => {
+    const { monitor, fetchMock, link, elapse } = harness();
+    fetchMock.mockResolvedValue(OK);
+    monitor.start();
+    await settle();
+
+    // The confirmation probe hangs, as it does for a network Android is
+    // still blocking for the app.
+    let rejectStale: (error: Error) => void = () => {};
+    fetchMock.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectStale = reject;
+      }),
+    );
+    link()?.({ isConnected: false });
+    elapse(LINK_DOWN_GRACE_MS);
+
+    fetchMock.mockResolvedValue(OK);
+    link()?.({ isConnected: true, isInternetReachable: true });
+    rejectStale(new Error("network unreachable"));
+    await settle();
+    expect(monitor.get()).toBe("ONLINE");
+  });
+
+  it("asks /health about unreachable readings at most once per poll interval", async () => {
+    // If `/health` fails fast while a reconnected network validates, a probe
+    // per event would reach three failures in under a second.
+    const { monitor, deps, fetchMock, link } = harness();
+    fetchMock.mockResolvedValue(OK);
+    monitor.start();
+    await settle();
+    fetchMock.mockClear();
+    fetchMock.mockRejectedValue(new Error("network request failed"));
+
+    for (let i = 0; i < 3; i += 1) {
+      link()?.({ isConnected: true, isInternetReachable: false });
+      await settle();
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(monitor.get()).toBe("DEGRADED");
+
+    // The next poll tick spends the interval's probe and re-arms suspicion.
+    const tick = vi.mocked(deps.setInterval).mock.calls[0]?.[0] as () => void;
+    tick();
+    await settle();
+    link()?.({ isConnected: true, isInternetReachable: false });
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does nothing after stop(), even when a read started before it resolves late", async () => {
+    let resolveRead: (state: { isConnected: boolean }) => void = () => {};
+    const { monitor, deps, fetchMock, seen, pendingTimers } = harness({
+      getState: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveRead = resolve;
+          }),
+      ) as unknown as MonitorDeps["getState"],
+    });
+    fetchMock.mockResolvedValue(OK);
+    monitor.start();
+    monitor.stop();
+    fetchMock.mockClear();
+
+    resolveRead({ isConnected: false });
+    await settle();
+    expect(pendingTimers()).toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(seen).toEqual([]);
+    expect(deps.clearInterval).toHaveBeenCalled();
+  });
+
+  it("stays OFFLINE when the link returns until /health answers, and then goes straight to ONLINE", async () => {
+    const { monitor, fetchMock, link, elapse } = harness();
+    fetchMock.mockResolvedValue(OK);
+    monitor.start();
+    await settle();
+
+    fetchMock.mockRejectedValue(new Error("network unreachable"));
+    link()?.({ isConnected: false });
+    elapse(LINK_DOWN_GRACE_MS);
+    await settle();
+    // Two polls while the link is down.
+    await monitor.probeOnce();
+    await monitor.probeOnce();
+    expect(monitor.get()).toBe("OFFLINE");
+
+    // Back, but the API does not answer yet: still OFFLINE, not ONLINE over
+    // a dead API.
+    link()?.({ isConnected: true, isInternetReachable: true });
+    expect(monitor.get()).toBe("OFFLINE");
+    await settle();
+    expect(monitor.get()).toBe("OFFLINE");
+
+    // The first answer goes straight to ONLINE: the down-link polls left no
+    // failures behind to show as "Slow connection".
+    fetchMock.mockResolvedValue(OK);
+    await monitor.probeOnce();
+    expect(monitor.get()).toBe("ONLINE");
+  });
+
+  it("re-probes after a link blip inside the grace", async () => {
+    const { monitor, fetchMock, link } = harness();
+    fetchMock.mockResolvedValue(OK);
+    monitor.start();
+    await settle();
+    fetchMock.mockClear();
+
+    link()?.({ isConnected: false });
+    link()?.({ isConnected: true, isInternetReachable: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   describe("lock and unlock", () => {
-    it("ignores link events while the app is in the background", async () => {
+    it("ignores link events and probes while the app is in the background", async () => {
       const { monitor, fetchMock, seen, link, appState, elapse } = harness();
       fetchMock.mockResolvedValue(OK);
       monitor.start();
       await settle();
 
       appState("background");
+      // Android blocks a backgrounded app's network: every request fails.
+      fetchMock.mockClear();
+      fetchMock.mockRejectedValue(new Error("network blocked"));
+      await monitor.probeOnce();
+      expect(fetchMock).not.toHaveBeenCalled();
       // What Android reports for a network it is blocking for this app.
       link()?.({ isConnected: false, isInternetReachable: false });
       elapse(LINK_DOWN_GRACE_MS);
@@ -337,6 +457,71 @@ describe("connection monitor", () => {
       appState("active");
       await settle();
       expect(monitor.get()).toBe("ONLINE");
+    });
+
+    it("still reaches OFFLINE within the grace when the network really went away while locked", async () => {
+      const { monitor, deps, fetchMock, appState, elapse } = harness();
+      fetchMock.mockResolvedValue(OK);
+      monitor.start();
+      await settle();
+
+      appState("background");
+      vi.mocked(deps.getState).mockResolvedValue({
+        isConnected: false,
+        isInternetReachable: false,
+      } as never);
+      fetchMock.mockRejectedValue(new Error("network unreachable"));
+      appState("active");
+      await settle();
+      expect(monitor.get()).toBe("ONLINE");
+      elapse(LINK_DOWN_GRACE_MS);
+      await settle();
+      expect(monitor.get()).toBe("OFFLINE");
+    });
+
+    it("gives the first probe after unlock one retry before it shows the slow banner", async () => {
+      // The first request after a long Doze can time out while the radio wakes.
+      const { monitor, fetchMock, seen, appState, elapse } = harness();
+      fetchMock.mockResolvedValue(OK);
+      monitor.start();
+      await settle();
+
+      appState("background");
+      fetchMock.mockRejectedValueOnce(new Error("timeout"));
+      appState("active");
+      await settle();
+      expect(monitor.get()).toBe("ONLINE");
+
+      elapse(WAKE_RETRY_MS);
+      await settle();
+      expect(monitor.get()).toBe("ONLINE");
+      expect(seen).toEqual([]);
+    });
+
+    it("counts the retry when the API really is down after unlock", async () => {
+      const { monitor, fetchMock, appState, elapse } = harness();
+      fetchMock.mockResolvedValue(OK);
+      monitor.start();
+      await settle();
+
+      appState("background");
+      fetchMock.mockRejectedValue(new Error("timeout"));
+      appState("active");
+      await settle();
+      elapse(WAKE_RETRY_MS);
+      await settle();
+      expect(monitor.get()).toBe("DEGRADED");
+    });
+
+    it("drops a pending link drop and a wake retry when the screen locks again", async () => {
+      const { monitor, fetchMock, link, appState, pendingTimers } = harness();
+      fetchMock.mockResolvedValue(OK);
+      monitor.start();
+      await settle();
+      link()?.({ isConnected: false });
+      expect(pendingTimers()).toBe(1);
+      appState("background");
+      expect(pendingTimers()).toBe(0);
     });
 
     it("stops polling in the background and resumes in the foreground", async () => {

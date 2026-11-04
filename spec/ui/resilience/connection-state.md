@@ -61,8 +61,9 @@ type ConnectionState = 'ONLINE' | 'DEGRADED' | 'OFFLINE';
 > outbox reads this same monitor (#1072), so folding it into OFFLINE would
 > disable check-in at the door: a chapter house whose captive-portal
 > validation probe is blocked reports `isInternetReachable: false` while the
-> API is perfectly reachable. It asks `/health` at once and counts nothing
-> itself; the probe's answer is what moves the state. (Corrected 2026-11-04:
+> API is perfectly reachable. It asks `/health` at once (at most once per
+> poll interval) and counts nothing itself; the probe's answer is what moves
+> the state. (Corrected 2026-11-04:
 > it used to count as one probe failure, but Android emits it once per
 > capability change while a reconnected network validates, and the monitor
 > counted each event, so a reconnect alone could reach three.)
@@ -76,9 +77,12 @@ type ConnectionState = 'ONLINE' | 'DEGRADED' | 'OFFLINE';
 > monitor ignores link events and discards probe results, because Android's
 > `getActiveNetwork()` returns null for a network it is blocking for a
 > backgrounded app and `expo-network` never re-emits when the block lifts. On
-> return to the foreground it re-reads the link and probes at once. A probe
-> still runs on each poll while the link reads as down, and a reachable answer
-> clears it. The mechanism is in `apps/mobile/lib/connection/monitor.ts`.
+> return to the foreground it re-reads the link and probes at once, and that
+> first probe gets one retry 2s later before its failure counts. A probe still
+> runs on each poll while the link reads as down, and only a reachable answer
+> clears it: a link-up event alone leaves OFFLINE in place, which is the
+> diagram's "onLine → true AND a /health probe succeeds". The mechanism is in
+> `apps/mobile/lib/connection/monitor.ts`.
 
 **Two inputs, not one.** A device link is not reachability, which is why `DEGRADED`
 exists at all: an API that is up, routable and failing leaves the member connected
