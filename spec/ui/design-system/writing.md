@@ -975,7 +975,7 @@ Mobile's first-officer setup, `(auth)/create-chapter.tsx` (#3351). Titles are `S
 | Confirm, a match | `Is this your chapter?` | The match as a card. `Edit details` / `Hide details` opens the fields. |
 | Confirm, by hand | `Tell us about your chapter` | `We'll add it to our directory so the next officer finds it.` `More details (optional)` / `Hide more details` opens the rest. |
 | Confirm, archetype | — | `What kind of organization?`, asked only by hand or when the match's kind is unknown, with nothing preselected. |
-| Letters switch | — | `Show Greek letters` + `Turn off if your organization doesn't display its letters. Your short name or logo stands in for them.` |
+| Letters switch | — | `Show Greek letters` + `Turn off if your organization doesn't display its letters. Your short name or logo stands in for them.` For an organization that hides its letters, neither the switch nor the letters field is drawn; in their place: `<organization> doesn't display its Greek letters, so your short name stands in for them.` |
 | Color | `Pick your color` | `Your color tints buttons, badges and your chapter mark. You can change it later in Settings.` Then the Terms checkbox (the Join chapter row) and `Create <name>`. |
 | Create failed | — | The server's message, else `Couldn't create that chapter. Check the details and try again.` |
 | Live | `<name> is live` | `Your channels are ready. Invite your members next.` Then the seeded public channels, each marked `ready`. |

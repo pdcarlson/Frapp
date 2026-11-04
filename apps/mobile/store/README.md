@@ -527,7 +527,7 @@ Advertising Data, Browsing History, Search History.
 > chapter's image rather than the member's, but the upload is still a *Photos or
 > Videos* item collected for *App Functionality*, so the row's values don't change.
 > The purpose string names it. Whether the privacy policy's permissions clause does is
-> the owner's call (#3351's PR), since that text is pinned to the acceptance version.
+> the owner's call ([#3395](https://github.com/pdcarlson/Frapp/issues/3395)), since that text is pinned to the acceptance version.
 >
 > ‡ **`Linked: No` on Crash Data and Performance Data is wrong, and this table's own
 > reasoning is what proves it (owner action — console change).** Found 2026-09-21. The

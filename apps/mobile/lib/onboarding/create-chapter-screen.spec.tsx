@@ -204,6 +204,12 @@ function inputValues(root: Node): string {
   );
 }
 
+function lettersSwitch(root: Node) {
+  return root
+    .findAllByType("Switch" as never, { deep: true })
+    .find((s) => s.props.accessibilityLabel === "Show Greek letters");
+}
+
 function typeInto(root: Node, label: string, value: string): void {
   const input = root
     .findAllByType("TextInput" as never, { deep: true })
@@ -375,15 +381,14 @@ describe("chapter setup — Greek letters", () => {
     ).toBeGreaterThan(0);
 
     await press(root, "Edit details");
-    const toggle = root
-      .findAllByType("Switch" as never, { deep: true })
-      .find((s) => s.props.accessibilityLabel === "Show Greek letters");
-    expect(toggle?.props.value).toBe(false);
+    // Neither the letters field nor a switch that could turn them back on.
+    expect(lettersSwitch(root)).toBeUndefined();
+    expect(allText(root)).toContain("doesn't display its Greek letters");
     const shortName = root
       .findAllByType("TextInput" as never, { deep: true })
       .find((i) => i.props.accessibilityLabel === "Short name");
     expect(shortName?.props.value).toBe("FIJI");
-    // Nor in any field: the letters field isn't drawn, and nothing holds them.
+    // Nor in any field.
     expect(inputValues(root)).not.toContain("ΦΓΔ");
     expect(inputValues(root)).not.toContain("Greek letters");
     expect(allText(root)).not.toContain("ΦΓΔ");
@@ -394,6 +399,7 @@ describe("chapter setup — Greek letters", () => {
     await pickRow(root, "Sigma Phi Epsilon");
     await press(root, "Edit details");
     expect(inputValues(root)).toContain("ΣΦΕ");
+    expect(lettersSwitch(root)?.props.value).toBe(true);
   });
 
   it("applies the same rule when FIJI is typed by hand", async () => {
@@ -403,10 +409,7 @@ describe("chapter setup — Greek letters", () => {
     typeInto(root, "School", "Rensselaer Polytechnic Institute");
     await press(root, "More details (optional)");
 
-    const toggle = root
-      .findAllByType("Switch" as never, { deep: true })
-      .find((s) => s.props.accessibilityLabel === "Show Greek letters");
-    expect(toggle?.props.value).toBe(false);
+    expect(lettersSwitch(root)).toBeUndefined();
     expect(inputValues(root)).toContain('["Short name","FIJI"]');
     expect(inputValues(root)).not.toContain("Greek letters");
 
@@ -417,16 +420,34 @@ describe("chapter setup — Greek letters", () => {
     expect(allText(root)).toContain("Create FIJI");
   });
 
+  it("applies it to a name carried over from the search", async () => {
+    directoryRows = [];
+    const { root } = await render();
+    typeInto(root, "Search the chapter directory", "Phi Gamma Delta");
+    await press(root, "Not in our directory?");
+    expect(inputValues(root)).toContain('["Organization","Phi Gamma Delta"]');
+    await press(root, "More details (optional)");
+    expect(inputValues(root)).toContain('["Short name","FIJI"]');
+    expect(lettersSwitch(root)).toBeUndefined();
+  });
+
   it("sends FIJI's branding with the letters switched off", async () => {
     const { root } = await render();
     await createFromMatch(root);
     const body = onboard.mock.calls[0]?.[0] as {
-      branding: { show_greek_letters?: boolean; short_name?: string };
+      branding: {
+        show_greek_letters?: boolean;
+        short_name?: string;
+        greek_letters?: string;
+      };
     };
+    // Stored but hidden, as web's wizard stores them: the switch hides, it
+    // doesn't delete (branding.md).
     expect(body.branding).toEqual(
       expect.objectContaining({
         show_greek_letters: false,
         short_name: "FIJI",
+        greek_letters: "ΦΓΔ",
       }),
     );
     // The live mark is the short name, not the letters.
@@ -509,6 +530,19 @@ describe("chapter setup — push primer for the founder", () => {
 
     await press(root, "Not now");
     expect(title(root)).toBe(SETUP_TITLES.invite);
+  });
+
+  it("ends at chat after the primer when the new chapter isn't active", async () => {
+    pushAvailable = true;
+    permission = { granted: false };
+    selectChapter.mockResolvedValue(false);
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.primer);
+    await press(root, "Not now");
+    expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(control(root, "Create invite link")).toBeUndefined();
   });
 
   it("moves on to the invite even when the OS prompt fails", async () => {

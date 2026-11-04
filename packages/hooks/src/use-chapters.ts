@@ -175,12 +175,8 @@ export function useActivateChapter() {
  * What every write to the current chapter does on success: refetch the
  * chapter queries, so the shell (the nav tile, the accent) repaints. The
  * `["chapters"]` prefix covers `["chapters", "current", id]` and the
- * memberships list alike.
- */
-/**
- * What every write to the current chapter does on success. Returns the
- * refetch, for a caller that must not resolve before it lands; the others
- * fire and forget.
+ * memberships list alike. Returns the refetch, for a caller that must not
+ * resolve before it lands; the others fire and forget.
  */
 function useInvalidateCurrentChapter() {
   const queryClient = useQueryClient();

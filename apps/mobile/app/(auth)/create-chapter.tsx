@@ -128,8 +128,9 @@ function hidesLetters(orgName: string | null | undefined): boolean {
 
 /**
  * The identity after the organization's name changes: a profile's short name
- * and letters switch follow it (`orgMarkFields`), and an organization that
- * hides its letters keeps none in the form, so none can show or be sent.
+ * and letters switch follow it (`orgMarkFields`). Letters an organization
+ * hides are still stored, as web's wizard stores them (branding.md: the
+ * switch hides, it doesn't delete); setup just never draws them.
  */
 function withOrgName(
   identity: ChapterIdentityForm,
@@ -139,7 +140,6 @@ function withOrgName(
     ...identity,
     name,
     ...orgMarkFields(name, identity.name, identity),
-    greekLetters: hidesLetters(name) ? "" : identity.greekLetters,
   };
 }
 
@@ -209,11 +209,12 @@ export default function CreateChapter() {
     setArchetype(known);
     setAsksArchetype(known === null);
     // The directory knows letters, not whether an organization shows them:
-    // FIJI's profile switches them off, drops them and fills the short name.
-    const named = withOrgName(
-      { ...identity, greekLetters: row.org_letters ?? "" },
-      row.org_name ?? "",
-    );
+    // FIJI's profile switches them off and fills the short name.
+    const seeded: ChapterIdentityForm = {
+      ...identity,
+      greekLetters: row.org_letters ?? "",
+    };
+    const named = withOrgName(seeded, row.org_name ?? "");
     setIdentity({
       name: named.name,
       university: row.university ?? "",
@@ -239,7 +240,8 @@ export default function CreateChapter() {
     setDirectoryId(null);
     setArchetype(null);
     setAsksArchetype(true);
-    setIdentity({ ...EMPTY_CHAPTER_IDENTITY, name: rawQuery.trim() });
+    // A name carried over from the search gets its profile, as a typed one does.
+    setIdentity(withOrgName(EMPTY_CHAPTER_IDENTITY, rawQuery.trim()));
     setDetailsOpen(false);
     setAcceptedLegal(false);
     setError(null);
@@ -1005,40 +1007,50 @@ function ConfirmStep({
         styles={styles}
         tokens={tokens}
       />
-      {/* No letters field for an organization that hides its letters. */}
-      {lettersHidden ? null : (
-        <Field
-          label="Greek letters"
-          value={identity.greekLetters}
-          onChangeText={(value) => set("greekLetters", value)}
-          placeholder="ΣΦΕ"
-          styles={styles}
-          tokens={tokens}
-        />
+      {/*
+        An organization that hides its letters gets neither the field nor the
+        switch: its letters stay off (#3351). The short name stands in.
+      */}
+      {lettersHidden ? (
+        <Text style={styles.helperText}>
+          {identity.name.trim()} doesn&apos;t display its Greek letters, so your
+          short name stands in for them.
+        </Text>
+      ) : (
+        <>
+          <Field
+            label="Greek letters"
+            value={identity.greekLetters}
+            onChangeText={(value) => set("greekLetters", value)}
+            placeholder="ΣΦΕ"
+            styles={styles}
+            tokens={tokens}
+          />
+          <View style={styles.switchRow}>
+            <View style={styles.switchText}>
+              <Text style={styles.inputLabel}>Show Greek letters</Text>
+              <Text style={styles.helperText}>
+                Turn off if your organization doesn&apos;t display its letters.
+                Your short name or logo stands in for them.
+              </Text>
+            </View>
+            <Switch
+              value={identity.showGreekLetters}
+              onValueChange={(value) => set("showGreekLetters", value)}
+              accessibilityLabel="Show Greek letters"
+              trackColor={{
+                false: tokens.color.border.input,
+                true: tint(tokens.color.gold.house, 0.3),
+              }}
+              thumbColor={
+                identity.showGreekLetters
+                  ? tokens.color.gold.house
+                  : tokens.color.surface.card
+              }
+            />
+          </View>
+        </>
       )}
-      <View style={styles.switchRow}>
-        <View style={styles.switchText}>
-          <Text style={styles.inputLabel}>Show Greek letters</Text>
-          <Text style={styles.helperText}>
-            Turn off if your organization doesn&apos;t display its letters. Your
-            short name or logo stands in for them.
-          </Text>
-        </View>
-        <Switch
-          value={identity.showGreekLetters}
-          onValueChange={(value) => set("showGreekLetters", value)}
-          accessibilityLabel="Show Greek letters"
-          trackColor={{
-            false: tokens.color.border.input,
-            true: tint(tokens.color.gold.house, 0.3),
-          }}
-          thumbColor={
-            identity.showGreekLetters
-              ? tokens.color.gold.house
-              : tokens.color.surface.card
-          }
-        />
-      </View>
       <Field
         label="School short name"
         value={identity.schoolShort}
