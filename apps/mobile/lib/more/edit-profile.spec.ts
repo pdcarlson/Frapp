@@ -138,6 +138,15 @@ describe("applyEdit and rebaseEdits (#3387)", () => {
     expect(rebaseEdits(edits, ORIGINAL, MOVED)).toEqual({});
   });
 
+  it("keeps spaces as typed in a field whose profile value didn't move", () => {
+    const edits = applyEdit(null, ORIGINAL, "city", "Troy, NY ");
+    const bioMoved = { ...ORIGINAL, bio: "Changed elsewhere" };
+
+    expect(rebaseEdits(edits, ORIGINAL, bioMoved)).toEqual({
+      city: "Troy, NY ",
+    });
+  });
+
   it("drops a field the refetch brought to the typed value", () => {
     const edits = applyEdit(null, ORIGINAL, "city", "Albany, NY");
 

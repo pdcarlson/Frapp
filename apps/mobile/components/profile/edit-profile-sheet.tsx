@@ -41,13 +41,14 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * `edits` holds the fields the member has typed into, and every other field
  * shows the profile as it stands. So the sheet always opens on the latest
- * profile, with no "reset on present" step to forget, and a refetch that lands
- * mid-edit (a return to the app refetches `/v1/users/me`) updates the fields
- * the member left alone instead of freezing them. Those fields equal the
- * profile, so `profilePatch` leaves them out of the save, and a value another
- * device set is written back over only in a field the member changed. A field
- * typed to the profile's value leaves the edits, and on a refetch a field that
- * held no change (spaces aside) follows the new profile
+ * profile, with no "reset on present" step to forget, and a `/v1/users/me`
+ * refetch that lands mid-edit (such as on a return to the app once the profile
+ * is stale) updates the fields the member left alone instead of freezing them.
+ * Those fields equal the profile, so `profilePatch` leaves them out of the
+ * save, and a value another device set is written back over only in a field
+ * the member changed. A field typed to the profile's value leaves the edits,
+ * and on a refetch a moved field that held no change (spaces aside) follows
+ * the new profile
  * (`lib/more/edit-profile.ts` `applyEdit`, `rebaseEdits`, which says how this
  * differs from the web form's `seededFrom` merge).
  *

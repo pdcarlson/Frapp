@@ -240,23 +240,26 @@ describe("profile mutations (#732, #3387)", () => {
     harness.release();
   });
 
-  it("leaves the cached profile alone when the PATCH answers with no row", async () => {
-    const harness = photoMutationHarness();
-    harness.mockClient.PATCH.mockResolvedValue({
-      data: undefined,
-      error: undefined,
-    });
-    const cached = { id: "u-1", display_name: "Old Name" };
-    queryClient.setQueryData(["user", "me"], cached);
-    const { result } = renderHook(() => useUpdateUser(), {
-      wrapper: harness.wrapper,
-    });
+  it.each([null, undefined])(
+    "leaves the cached profile alone when the PATCH answers %s",
+    async (row) => {
+      const harness = photoMutationHarness();
+      harness.mockClient.PATCH.mockResolvedValue({
+        data: row,
+        error: undefined,
+      });
+      const cached = { id: "u-1", display_name: "Old Name" };
+      queryClient.setQueryData(["user", "me"], cached);
+      const { result } = renderHook(() => useUpdateUser(), {
+        wrapper: harness.wrapper,
+      });
 
-    await result.current.mutateAsync({ display_name: "Alex Rivera" });
+      await result.current.mutateAsync({ display_name: "Alex Rivera" });
 
-    expect(queryClient.getQueryData(["user", "me"])).toEqual(cached);
-    harness.release();
-  });
+      expect(queryClient.getQueryData(["user", "me"])).toEqual(cached);
+      harness.release();
+    },
+  );
 
   it("confirm sends the path and surfaces an API refusal", async () => {
     const refusal = {

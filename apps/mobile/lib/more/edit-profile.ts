@@ -142,9 +142,10 @@ export function applyEdit(
 
 /**
  * `edits` carried over a profile that moved from `previous` to `next` (a
- * return to the app refetches `/v1/users/me`): a field stays typed only while
- * it changes `previous`, the profile it was typed against, so a field that
- * held no change follows `next`.
+ * refetch of `/v1/users/me`, such as a return to the app once the cached
+ * profile is five minutes stale): a field whose profile value moved stays
+ * typed only while it changes `previous`, the value it was typed against, so
+ * one that held no change follows `next`.
  *
  * "No change" is `profilePatch`'s: trimmed. So a stray trailing space doesn't
  * pin the old value for a later save to write back over the newer one. The
@@ -163,7 +164,12 @@ export function rebaseEdits(
     ProfileDraftField,
     string,
   ][]) {
-    if (value.trim() !== previous[field].trim() && value !== next[field]) {
+    // A field whose own profile value didn't move keeps what was typed, spaces
+    // and all: only a moved field re-bases, or a trailing space the member is
+    // about to type past would vanish under their cursor.
+    const moved = previous[field] !== next[field];
+    const changes = value.trim() !== previous[field].trim();
+    if ((changes || !moved) && value !== next[field]) {
       kept[field] = value;
     }
   }
