@@ -37,6 +37,7 @@ vi.mock("@repo/hooks", () => {
     useCategories: () => empty,
     useChannelUnreadCounts: () => empty,
     useEvents: () => empty,
+    useNotifications: () => empty,
     useTasks: () => empty,
     useViewerUserId: () => "viewer-1",
     useMemberDisplayNames: () => ({ byId: {} }),

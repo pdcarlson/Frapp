@@ -35,6 +35,7 @@ const {
   setFilter,
   writeOptions,
   queryErrors,
+  notificationsData,
 } = vi.hoisted(() => ({
   channelsData: { value: [] as unknown[] },
   categoriesData: { value: [] as unknown },
@@ -66,6 +67,10 @@ const {
   },
   // Loaded-but-failed state for the two reads the filters depend on.
   queryErrors: { unread: false, levels: false },
+  // The inbox rows behind the title row's bell (#3362).
+  notificationsData: {
+    value: [] as { id: string; read_at: string | null }[],
+  },
 }));
 
 vi.mock("@repo/hooks", async () => {
@@ -132,6 +137,7 @@ vi.mock("@repo/hooks", async () => {
       isError: queryErrors.unread,
     }),
     useEvents: () => query([]),
+    useNotifications: () => query(notificationsData.value),
     useTasks: () => query([]),
     useViewerUserId: () => VIEWER,
     useMemberDisplayNames: () => ({
@@ -160,6 +166,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import ChatHomeScreen from "@/app/(tabs)/index";
 import { ChannelRow } from "@/components/chat/channel-row";
+import { CountBadge } from "@/components/more/count-badge";
 
 const general = { id: "c-general", name: "general", type: "PUBLIC" };
 const dmAlice = {
@@ -238,6 +245,7 @@ beforeEach(() => {
   categoriesData.value = [];
   unreadData.value = [];
   levelsData.value = [];
+  notificationsData.value = [];
   queryErrors.unread = false;
   queryErrors.levels = false;
   sidebarPrefs.value = {
@@ -785,5 +793,49 @@ describe("Chat home's title (#2485)", () => {
   it("falls back to Frapp while the chapter's name is unknown", () => {
     const tree = render();
     expect(heading(tree).props.children).toBe("Frapp");
+  });
+});
+
+/**
+ * #3362 — the notification inbox moved off More onto a bell on this screen's
+ * title row (owner decision 2026-11-04), where the web keeps it too.
+ */
+describe("Chat home notifications bell (#3362)", () => {
+  it("draws the bell in every build, with no badge while nothing is unread", () => {
+    const tree = render();
+    const bell = pressableLabelled(tree, "Notifications");
+
+    expect(bell.props.accessibilityValue).toBeUndefined();
+    expect(bell.findAllByType(CountBadge)).toHaveLength(0);
+  });
+
+  it("badges the unread count in the accent fill and reads it out", () => {
+    notificationsData.value = [
+      { id: "n-1", read_at: null },
+      { id: "n-2", read_at: null },
+      { id: "n-3", read_at: "2026-09-25T10:00:00Z" },
+    ];
+    const tree = render();
+    const bell = pressableLabelled(tree, "Notifications");
+
+    expect(bell.findByType(CountBadge).props.count).toBe(2);
+    expect(bell.props.accessibilityValue).toEqual({ text: "2 unread" });
+    const fill = bell.findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        JSON.stringify(node.props.style).includes(
+          branding.current.accentPrimary,
+        ),
+    );
+    expect(fill.length).toBeGreaterThan(0);
+  });
+
+  it("opens the inbox", () => {
+    const tree = render();
+    act(() => {
+      pressableLabelled(tree, "Notifications").props.onPress();
+    });
+
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/notifications");
   });
 });

@@ -218,7 +218,6 @@ describe("More hub anatomy (#1048)", () => {
       "Dues",
       "Documents",
       "Directory",
-      "Notifications",
       "Settings",
       "Switch chapter",
     ]) {
@@ -241,14 +240,7 @@ describe("More hub anatomy (#1048)", () => {
         section.findAllByType(ListRow).map((row) => row.props.label),
       );
     expect(sections).toEqual([
-      [
-        "Study hours",
-        "Service hours",
-        "Dues",
-        "Documents",
-        "Directory",
-        "Notifications",
-      ],
+      ["Study hours", "Service hours", "Dues", "Documents", "Directory"],
       ["Settings", "Switch chapter"],
       ["Host check-in"],
     ]);
@@ -272,27 +264,13 @@ describe("More hub anatomy (#1048)", () => {
     }
   });
 
-  it("badges unread notifications in the chapter's accent fill, and reads the count", () => {
-    notifications = [
-      { id: "n-1", read_at: null },
-      { id: "n-2", read_at: null },
-      { id: "n-3", read_at: "2026-11-04T10:00:00Z" },
-    ];
+  it("has no Notifications row: the inbox is the bell on Chat home (#3362)", () => {
+    notifications = [{ id: "n-1", read_at: null }];
     const tree = render();
-    const badge = tree.root.findByType(CountBadge);
-    expect(badge.props.count).toBe(2);
-    const fill = badge.findAll(
-      (node) =>
-        (node.type as unknown) === "View" &&
-        JSON.stringify(node.props.style).includes("#2D7BFF"),
-    );
-    expect(fill.length).toBeGreaterThan(0);
-    const row = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityLabel === "Notifications",
-    );
-    expect(row.props.accessibilityValue).toEqual({ text: "2 unread" });
+    expect(
+      tree.root.findAllByType(ListRow).map((row) => row.props.label),
+    ).not.toContain("Notifications");
+    expect(tree.root.findAllByType(CountBadge)).toHaveLength(0);
   });
 
   it("gives every row a chevron and a press target", () => {
@@ -310,7 +288,6 @@ describe("More hub anatomy (#1048)", () => {
       "Dues",
       "Documents",
       "Directory",
-      "Notifications",
       "Settings",
       "Switch chapter",
     ]);
