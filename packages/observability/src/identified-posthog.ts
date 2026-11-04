@@ -33,11 +33,11 @@ export {
   getPostHogReplayId,
   isProductFlagEnabled,
   captureSentryErrorCorrelated,
-  captureAnalyticsEvent,
 } from "./posthog-adapter";
 export type {
   PostHogAdapter,
   MemoryPostHogCall,
+  NamedAnalyticsEventApp,
   NamedAnalyticsEventBody,
   NamedAnalyticsEventProperties,
 } from "./posthog-adapter";

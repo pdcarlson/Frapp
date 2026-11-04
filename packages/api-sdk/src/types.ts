@@ -3304,7 +3304,12 @@ export interface components {
             name: string;
             /** @description Chapter the event is attributed to (enables the opt-out gate) */
             chapter_id?: string;
-            /** @description Behavioral, content-free properties. Values must be scalars (string/number/boolean/null); keys that look like content/PII (content, body, email, name, …) are rejected. */
+            /**
+             * @description The app sending the event. The API stamps it on the event as the `app` property; a client may not set `app` in `properties`.
+             * @enum {string}
+             */
+            app?: "web" | "mobile";
+            /** @description Behavioral, content-free properties. Values must be scalars (string/number/boolean/null); keys that look like content/PII (content, body, email, name, …) are rejected, and so are `app` and `$`-prefixed keys, which the API sets itself. */
             properties?: {
                 [key: string]: (string | number | boolean) | null;
             };

@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { isPseudonymHex } from '@repo/observability';
 import {
   assertContentFreeProperties,
+  type AnalyticsApp,
+  type AnalyticsEvent,
   type AnalyticsProperties,
 } from '@repo/validation';
 import {
@@ -35,6 +37,14 @@ function canonicalChapterId(
   return chapterId.toLowerCase();
 }
 
+/** `properties` with the API's own `app` stamp, when there is one. */
+function withApp(
+  properties: AnalyticsProperties | undefined,
+  app: AnalyticsApp | undefined,
+): AnalyticsProperties | undefined {
+  return app ? { ...properties, app } : properties;
+}
+
 export interface TrackOptions {
   /**
    * Chapter the event is attributed to. Required so the per-chapter opt-out can
@@ -42,6 +52,13 @@ export interface TrackOptions {
    */
   chapterId?: string;
   properties?: AnalyticsProperties;
+  /**
+   * The app the event came from, stamped as the `app` property after the
+   * properties are checked (they may not set it themselves). A client names
+   * itself as `web` or `mobile` (validated by `TrackEventDto`); an event from a
+   * client that names no app carries none.
+   */
+  app?: AnalyticsApp;
 }
 
 /**
@@ -109,10 +126,14 @@ export class AnalyticsService {
   }
 
   /**
-   * Record a server-originated behavioral event. Best-effort: a provider or
+   * Record a user-keyed behavioral event. Best-effort: a provider or
    * opt-out lookup failure is logged and swallowed so product requests are
    * never affected. A *content/PII* payload, by contrast, throws — that is a
    * programming error the author must fix, caught at the boundary.
+   *
+   * When the chapter is known, the event carries the chapter group
+   * (`groups.chapter`, the {@link getChapterGroupId} digest), so PostHog can
+   * split it by chapter.
    */
   async track(
     eventName: string,
@@ -122,11 +143,19 @@ export class AnalyticsService {
     const distinctId = this.getDistinctId(userId);
     if (!distinctId) return;
 
-    const event = assertContentFreeProperties({
+    // Checked before the API's own `app` stamp, which the check reserves.
+    assertContentFreeProperties({
       name: eventName,
       distinctId,
       properties: options.properties,
     });
+    const chapterGroup = this.getChapterGroupId(options.chapterId);
+    const event: AnalyticsEvent = {
+      name: eventName,
+      distinctId,
+      properties: withApp(options.properties, options.app),
+      ...(chapterGroup ? { groups: { chapter: chapterGroup } } : {}),
+    };
 
     try {
       if (
@@ -270,6 +299,11 @@ export class AnalyticsService {
    * Best-effort like {@link track}: never throws for a delivery or lookup
    * failure. A content/PII payload still throws, for the same reason it does
    * there — that is an authoring bug, not a runtime condition.
+   *
+   * Stamped `app: 'api'`. It carries no chapter group: the chapter is already
+   * its distinct id, and PostHog links a group only on a person-processed
+   * event, which would make each chapter a PostHog person
+   * (`spec/behavior/observability.md` § Correlation schema).
    */
   async trackForChapter(
     eventName: string,
@@ -278,11 +312,13 @@ export class AnalyticsService {
   ): Promise<void> {
     if (!this.salt) return;
 
-    const event = assertContentFreeProperties({
+    const distinctId = hashChapterIdForAnalytics(this.salt, chapterId);
+    assertContentFreeProperties({ name: eventName, distinctId, properties });
+    const event: AnalyticsEvent = {
       name: eventName,
-      distinctId: hashChapterIdForAnalytics(this.salt, chapterId),
-      properties,
-    });
+      distinctId,
+      properties: withApp(properties, 'api'),
+    };
 
     try {
       if (!(await this.isChapterAnalyticsEnabled(chapterId))) return;

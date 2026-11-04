@@ -19,6 +19,7 @@ import {
 function asTrackEventDto(body: NamedAnalyticsEventBody): {
   name: string;
   chapter_id?: string;
+  app?: "web" | "mobile";
   properties?: { [key: string]: (string | number | boolean) | null };
 } {
   return body;
@@ -248,17 +249,21 @@ describe("identity, groups, logout, opt-out", () => {
 });
 
 describe("namedAnalyticsEventBody", () => {
-  it("omits chapter and properties when they are absent", () => {
+  it("names the app, and omits chapter and properties when they are absent", () => {
     expect(
-      asTrackEventDto(namedAnalyticsEventBody({ name: "opened-channel" })!),
+      asTrackEventDto(
+        namedAnalyticsEventBody({ name: "opened-channel", app: "web" })!,
+      ),
     ).toEqual({
       name: "opened-channel",
+      app: "web",
     });
   });
 
   it("types properties as SDK scalar values, not unknown", () => {
     const body = namedAnalyticsEventBody({
       name: "opened-channel",
+      app: "web",
       properties: { minutes: 60, opted_in: true, note: null },
     });
     const properties: { [key: string]: string | number | boolean | null } =
@@ -270,18 +275,21 @@ describe("namedAnalyticsEventBody", () => {
     expect(
       namedAnalyticsEventBody({
         name: "logged-hours",
+        app: "mobile",
         requireChapter: true,
       }),
     ).toBeNull();
     expect(
       namedAnalyticsEventBody({
         name: "logged-hours",
+        app: "mobile",
         chapterId: "chap-1",
         properties: { minutes: 60 },
         requireChapter: true,
       }),
     ).toEqual({
       name: "logged-hours",
+      app: "mobile",
       chapter_id: "chap-1",
       properties: { minutes: 60 },
     });

@@ -572,11 +572,19 @@ export type UpdateCustomField = z.infer<typeof UpdateCustomFieldSchema>;
 
 // ── Analytics payload hygiene (issue #464) ───────────────────────────────────
 export {
+  ANALYTICS_APPS,
   assertContentFreeProperties,
+  CLIENT_ANALYTICS_APPS,
   ContentFreePropertyError,
   FORBIDDEN_ANALYTICS_PROPERTY_KEYS,
+  RESERVED_ANALYTICS_PROPERTY_KEYS,
 } from "./analytics";
-export type { AnalyticsEvent, AnalyticsProperties } from "./analytics";
+export type {
+  AnalyticsApp,
+  AnalyticsEvent,
+  AnalyticsProperties,
+  ClientAnalyticsApp,
+} from "./analytics";
 
 // ── `@`-mention resolution (C1 of #937) ──────────────────────────────────────
 // Shared because the API's authoritative pass and any client-side preview must

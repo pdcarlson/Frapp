@@ -92,14 +92,27 @@ export class PosthogRuntime {
     return this.options.logsSampleRate ?? DEFAULT_POSTHOG_LOGS_SAMPLE_RATE;
   }
 
+  /**
+   * An event with groups is person-processed, because PostHog links a group
+   * only on such an event; its distinct id is the user pseudonym the client
+   * identifies with, so it lands on the same person. Every other event stays
+   * personless (`$process_person_profile: false`): PostHog still attributes
+   * it to an identified person with that distinct id, without creating or
+   * updating one (`spec/behavior/observability.md` § Correlation schema).
+   */
   captureEvent(event: AnalyticsEvent): void {
+    const groups =
+      event.groups && Object.keys(event.groups).length > 0
+        ? { ...event.groups }
+        : undefined;
     this.client.capture({
       distinctId: event.distinctId,
       event: event.name,
       properties: {
         ...(event.properties ?? {}),
-        $process_person_profile: false,
+        ...(groups ? {} : { $process_person_profile: false }),
       },
+      ...(groups ? { groups } : {}),
       sendFeatureFlags: false,
     });
   }
