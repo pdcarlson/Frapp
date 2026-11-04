@@ -38,8 +38,11 @@ came with #2302 (PR #2611).
 | Terms (`/(auth)/terms`) | Sign out / Delete account | Sign out routes to sign-in; Delete account confirms, deletes, and signs out (Settings is unreachable from here) |
 | Welcome (`/(auth)/welcome`) | Go to chat / Skip | PATCHes `has_completed_onboarding: true` and replaces into `/(tabs)` |
 | Chapter picker (empty) | Join or start a chapter | Opens join (s02), which asks invite or start |
-| Create chapter (`/(auth)/create-chapter`) | Directory row / Manual entry → archetype → identity + legal → Create chapter | `POST /v1/chapters/onboard`; invite step stays on this route |
-| Create chapter (`/(auth)/create-chapter`) | Generate invite / Share / Skip for now | Optional `POST /v1/invites`; Finish replaces into `/(tabs)` |
+| Create chapter (`/(auth)/create-chapter`) | Directory row → Continue → color + Terms → Create; or Not in our directory? → fields + archetype → Continue | `POST /v1/chapters/onboard`; the later steps stay on this route. A FIJI row shows no letters anywhere |
+| Create chapter (`/(auth)/create-chapter`) | Back chevron / Android back on confirm and color | Steps back one; on find, leaves for join |
+| Create chapter (`/(auth)/create-chapter`) | Live: Add your chapter's logo / Continue | Optional picker → `POST /v1/chapters/current/logo-url`, PUT, `POST /v1/chapters/current/logo`; the mark becomes the logo. A success haptic plays on arrival |
+| Create chapter (`/(auth)/create-chapter`) | Primer, only when the build can push: Turn on / Not now | OS prompt on Turn on; either answer opens the invite step, or chat when the new chapter couldn't be made active |
+| Create chapter (`/(auth)/create-chapter`) | Create invite link / Share invite / Skip for now / Go to chat | Optional `POST /v1/invites`; the primary replaces into `/(tabs)` |
 
 Magic-link rows additionally need `frapp://` allowlisted in Supabase Auth →
 URL Configuration (#765), or the link opens the web app instead.
@@ -125,8 +128,8 @@ Availability and local-notification checks:
 | Study hours | Background the app mid-session (installed build) | A local "Study session paused" notification appears; returning clears it. **Local** notifications need the native module but no project id and can be tested independently of remote-push setup — this does nothing in Expo Go |
 | Study hours | End a session while paused | The paused notification is cleared rather than left inviting the member back to a session that no longer exists |
 
-On an installed build meeting those prerequisites, verify: the s03 primer card
-(hosted on `(auth)/welcome.tsx`), the OS
+On an installed build meeting those prerequisites, verify: the primer card on s03
+(`(auth)/welcome.tsx`) and on chapter setup's primer step (`(auth)/create-chapter.tsx`), the OS
 prompt firing **only** after the primer's "Turn on", token register on sign-in /
 deregister on sign-out, a tap deep-linking from a cold start, and a foregrounded
 notification actually presenting.

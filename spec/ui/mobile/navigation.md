@@ -19,7 +19,7 @@ Visual truth: [`../design-system/reference/canvas-screens.dc.html`](../design-sy
 - Tab icons are duotone per [`../design-system/iconography.md`](../design-system/iconography.md); active/inactive treatment and colors per [`../design-system/foundations.md`](../design-system/foundations.md). They are custom `react-native-svg` components in `apps/mobile/components/tab-glyphs.tsx`, transcribed from the tab bar drawn in the Canvas reference — not an off-the-shelf icon pack.
 - Every route outside these four is hidden from the bar (`href: null`) and reached by navigation.
 - **No screen draws the tab navigator's header** (`headerShown: false`, [#2485](https://github.com/pdcarlson/Frapp/issues/2485)). The board draws none: each screen's top is its own, through `ScreenShell` or its own bar (s05's `‹ #name`, s22's `✕ End`), so the header only said the screen's title again above it. It supplied no way back either, because a tab route's header renders without a `back`. A pushed route's way back is whatever it draws itself: s05's `‹`, and the close controls on s18 and s22. The board also draws a `‹ More` row on s10–s16 and `‹ Events` on s07, and the app draws them, except that s14 now draws `‹ Chat` ([§ Back rows](#back-rows)). `apps/mobile/lib/tab-layout.spec.tsx` renders the layout and fails if the layout turns the header back on, for the whole navigator or for any registration in it, whether its options are an object or a function. It renders no route, so an override a route sets for itself (a `<Tabs.Screen options>` inside the route file, or `navigation.setOptions`) is outside what it can see; don't add one.
-- **Chat home (s04) is the one title the board doesn't draw.** The board opens s04 on its UP NEXT row. The app titles it with the chapter's name and mark instead, because [`../../behavior/branding.md`](../../behavior/branding.md) § Chapter mark makes that row the mark's one mobile surface. That is a recorded departure, not drift to restore from the board. Before #2485 the screen drew two title rows there, the header's chapter name and the shell's "Chat".
+- **Chat home (s04) is the one title the board doesn't draw.** The board opens s04 on its UP NEXT row. The app titles it with the chapter's name and mark instead, because [`../../behavior/branding.md`](../../behavior/branding.md) § Chapter mark makes that row the mark's one mobile surface inside a chapter (chapter setup previews it before the chapter exists, #3351). That is a recorded departure, not drift to restore from the board. Before #2485 the screen drew two title rows there, the header's chapter name and the shell's "Chat".
 
 ## More hub (s09)
 
@@ -206,6 +206,13 @@ as an integrator change so `photosPermission` names both uses ("set your profile
 and send photos in chapter chat"), with the privacy policy and the store records in the
 same PR.
 
+*2026-11-04:* chapter setup's live step (#3351,
+`lib/onboarding/chapter-wizard/chapter-logo.ts`) is the third caller, adding the chapter's
+logo. `photosPermission` names it too ("add your chapter's logo"), as do the store records
+and the privacy policy's permissions clause. The owner ruled that policy edit non-material
+([#3395](https://github.com/pdcarlson/Frapp/issues/3395)), so it moved only the page's pin
+(`legal.md` § Acceptance record).
+
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`
 key at all**. Each of those three is load-bearing:
@@ -309,7 +316,7 @@ lost the header styling and Chat home's `headerTitle` with it. The shell took ov
 the header had been doing: it takes the top safe-area inset, marks its title as the
 screen's heading, and gained an optional `titleMark` slot before the title. Chat home
 fills that slot with the chapter mark, which had been the header's title and is the mark's
-one mobile surface ([`../../behavior/branding.md`](../../behavior/branding.md) § Chapter
+one mobile surface inside a chapter (chapter setup previews it too, #3351) ([`../../behavior/branding.md`](../../behavior/branding.md) § Chapter
 mark). Four screens opt out of the shell. s05 and s13 took the top inset themselves in
 this change. s18 (`check-in.tsx`) and s22 (`host-check-in.tsx`) already took it, and
 their own titles took the heading role the header's title used to carry.

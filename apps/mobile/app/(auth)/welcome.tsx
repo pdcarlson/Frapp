@@ -1,36 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Redirect, useRouter } from "expo-router";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
-import { useChannels, useListChapters, useUpdateOnboarding } from "@repo/hooks";
+import { useListChapters, useUpdateOnboarding } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { PushPrimerCard } from "@/components/notifications/push-primer-card";
+import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
 import { useAuthSession } from "@/lib/auth-session";
 import { selectOnboardingMembership } from "@/lib/onboarding/membership";
-import {
-  displayChannelLabel,
-  selectJoinedPublicChannels,
-} from "@/lib/onboarding/welcome-channels";
-import {
-  getPushPermission,
-  isPushAvailable,
-  requestPushPermission,
-} from "@/lib/notifications/push";
-import {
-  readPrimerDecision,
-  recordPrimerDecision,
-  shouldOfferPrimer,
-  type PrimerDecision,
-} from "@/lib/notifications/primer";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { usePushPrimer } from "@/lib/notifications/use-push-primer";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s03 — First-run + notification primer (`spec/ui/mobile/screens.md`).
@@ -47,25 +27,9 @@ export default function Welcome() {
   const { status, chapterId } = useAuthSession();
   const queryClient = useQueryClient();
   const chapters = useListChapters({ enabled: status === "authenticated" });
-  const channels = useChannels();
   const updateOnboarding = useUpdateOnboarding();
-
-  const [decision, setDecision] = useState<PrimerDecision>("unasked");
-  const [permissionGranted, setPermissionGranted] = useState<boolean | null>(
-    null,
-  );
-  const [isRequesting, setIsRequesting] = useState(false);
+  const primer = usePushPrimer();
   const [leaving, setLeaving] = useState(false);
-
-  useEffect(() => {
-    void readPrimerDecision().then(setDecision);
-  }, []);
-
-  useEffect(() => {
-    void getPushPermission().then((result) => {
-      setPermissionGranted(result ? result.granted : null);
-    });
-  }, []);
 
   const membership = useMemo(() => {
     const rows = Array.isArray(chapters.data) ? chapters.data : [];
@@ -74,34 +38,6 @@ export default function Welcome() {
 
   const chapterName = membership?.chapter.name ?? "your chapter";
   const university = membership?.chapter.university ?? null;
-
-  const joinedChannels = useMemo(
-    () => selectJoinedPublicChannels(channels.data),
-    [channels.data],
-  );
-
-  const showPrimer = shouldOfferPrimer({
-    isAvailable: isPushAvailable(),
-    permissionGranted,
-    decision,
-  });
-
-  const handleTurnOn = useCallback(() => {
-    setIsRequesting(true);
-    void (async () => {
-      await recordPrimerDecision("accepted");
-      setDecision("accepted");
-      const granted = await requestPushPermission();
-      setPermissionGranted(granted);
-      setIsRequesting(false);
-    })();
-  }, []);
-
-  const handleNotNow = useCallback(() => {
-    void recordPrimerDecision("declined").then(() => {
-      setDecision("declined");
-    });
-  }, []);
 
   async function finish() {
     if (leaving) return;
@@ -136,43 +72,20 @@ export default function Welcome() {
           {university ? `${chapterName} · ${university}` : chapterName}
         </Text>
 
-        <View style={styles.channelCard}>
-          {channels.isPending ? (
-            <View style={styles.channelRow}>
-              <ActivityIndicator color={tokens.color.gold.house} />
-              <Text style={styles.channelHint}>Loading your channels…</Text>
-            </View>
-          ) : channels.isError ? (
-            <Text style={styles.channelHint}>
-              We couldn&apos;t load your channels. They&apos;ll be waiting in
-              chat.
-            </Text>
-          ) : joinedChannels.length === 0 ? (
-            <Text style={styles.channelHint}>
-              You&apos;re in the chapter. Open chat to see your channels.
-            </Text>
-          ) : (
-            joinedChannels.map((channel, index) => (
-              <View key={channel.id}>
-                {index > 0 ? <View style={styles.channelRule} /> : null}
-                <View style={styles.channelRow}>
-                  <Text style={styles.channelHash}>#</Text>
-                  <Text style={styles.channelName}>
-                    {displayChannelLabel(channel.name).replace(/^#/, "")}
-                  </Text>
-                  <Text style={styles.channelJoined}>joined</Text>
-                </View>
-              </View>
-            ))
-          )}
+        <View style={styles.channels}>
+          <JoinedChannelsCard />
         </View>
 
-        {showPrimer ? (
+        {primer.showPrimer ? (
           <View style={styles.primerWrap}>
             <PushPrimerCard
-              isRequesting={isRequesting}
-              onTurnOn={handleTurnOn}
-              onNotNow={handleNotNow}
+              isRequesting={primer.isRequesting}
+              onTurnOn={() => {
+                void primer.turnOn();
+              }}
+              onNotNow={() => {
+                void primer.notNow();
+              }}
             />
           </View>
         ) : null}
@@ -232,45 +145,8 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
     },
-    channelCard: {
+    channels: {
       marginTop: tokens.spacing.lg,
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-      paddingVertical: tokens.spacing.xs,
-    },
-    channelRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.md,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-    },
-    channelRule: {
-      height: StyleSheet.hairlineWidth,
-      backgroundColor: tint(tokens.color.text.foreground, 0.08),
-      marginHorizontal: tokens.spacing.md,
-    },
-    channelHash: {
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.gold.house,
-    },
-    channelName: {
-      flex: 1,
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
-    channelJoined: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-    },
-    channelHint: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.md,
     },
     primerWrap: {
       marginTop: tokens.spacing.md,
