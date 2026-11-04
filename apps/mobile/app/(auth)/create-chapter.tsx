@@ -147,7 +147,11 @@ export default function CreateChapter() {
 
   function goBack() {
     const prev = STEP_ORDER[stepIndex - 1];
-    if (prev) setStep(prev);
+    if (!prev) return;
+    // Leaving identity unmounts the picker and drops a half-typed hex with
+    // it; the picker opens on swatches again, so the accent is valid again.
+    setAccentValid(true);
+    setStep(prev);
   }
 
   async function submitChapter() {
