@@ -297,8 +297,8 @@ this change. s18 (`check-in.tsx`) and s22 (`host-check-in.tsx`) already took it,
 their own titles took the heading role the header's title used to carry.
 
 **#3023 touched `components/screen-shell.tsx`, as an integrator change.** `subtitle`
-became optional and the shell draws no line when it is absent. Every call site was updated
-in the same change. The lines that only said what a screen is for ("What you owe the
+became optional and the shell draws no line when it is absent, and every caller was reviewed in
+the same change. The lines that only said what a screen is for ("What you owe the
 chapter, and what it has earned you.") were deleted (owner decision, 2026-11-04), and so
 was the same kind of line in s13's own header, Directory's "Actives and alumni.". The board
 draws neither. Event details is the one screen that still passes a subtitle, the event's

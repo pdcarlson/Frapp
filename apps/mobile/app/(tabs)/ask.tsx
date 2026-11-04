@@ -73,10 +73,7 @@ function AskRoute() {
   useFocusEffect(present);
 
   return (
-    <ScreenShell
-      title="Ask"
-      headerAction={<AskPill onPress={present} />}
-    >
+    <ScreenShell title="Ask" headerAction={<AskPill onPress={present} />}>
       <AskSheet ref={sheetRef} />
     </ScreenShell>
   );
