@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text } from "react-native";
+import type { ReactNode } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -37,30 +38,45 @@ export const BACK_TO_CHAT: BackTarget = { label: "Chat", href: "/" };
  * chevron uses, not the chapter accent: it is the app's navigation chrome, as
  * the tab bar is.
  */
-export function BackRow({ label, href }: BackTarget) {
+export function BackRow({
+  label,
+  href,
+  trailing,
+}: BackTarget & {
+  /**
+   * A control at the row's far end, where the board draws s15's Edit
+   * (`‹ More` … `Edit`). Optional; every other screen draws the row alone.
+   */
+  trailing?: ReactNode;
+}) {
   const router = useRouter();
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Back to ${label}`}
-      // The drawn row is a 16pt line of text; the slop brings the target to
-      // the 44pt minimum without moving the title down.
-      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-      onPress={() => router.navigate(href)}
-      style={({ pressed }) => [styles.row, pressed ? styles.pressed : null]}
-    >
-      <Text style={styles.text}>{`‹ ${label}`}</Text>
-    </Pressable>
+    <View style={styles.row}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Back to ${label}`}
+        // The drawn row is a 16pt line of text; the slop brings the target to
+        // the 44pt minimum without moving the title down.
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        onPress={() => router.navigate(href)}
+        style={({ pressed }) => (pressed ? styles.pressed : null)}
+      >
+        <Text style={styles.text}>{`‹ ${label}`}</Text>
+      </Pressable>
+      {trailing}
+    </View>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     row: {
-      alignSelf: "flex-start",
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
       marginBottom: tokens.spacing.sm,
     },
     pressed: {

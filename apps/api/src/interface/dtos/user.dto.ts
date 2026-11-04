@@ -10,7 +10,11 @@ import {
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { LEGAL_ACCEPTANCE_LABEL } from '@repo/validation';
+import {
+  GRADUATION_YEAR_MAX,
+  GRADUATION_YEAR_MIN,
+  LEGAL_ACCEPTANCE_LABEL,
+} from '@repo/validation';
 
 export class MyPermissionsDto {
   @ApiProperty({
@@ -135,8 +139,8 @@ export class UpdateUserDto {
   @IsOptional()
   @ValidateIf((_obj, value) => value !== null)
   @IsInt()
-  @Min(1900)
-  @Max(2100)
+  @Min(GRADUATION_YEAR_MIN)
+  @Max(GRADUATION_YEAR_MAX)
   graduation_year?: number | null;
 
   @ApiPropertyOptional()
