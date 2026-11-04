@@ -183,9 +183,8 @@ const OBJECT_KEY_SEGMENT =
  * and a trailing space through. storage-js puts the key into the request URL
  * unencoded, so `{path}?x`, `{path}#x`, `{path} ` or a percent-encoded
  * spelling names the same object as `{path}` while comparing unequal to it as
- * a string, and anything keyed on
- * the string (a unique index, a filed-row lookup) would treat it as a new one
- * (#3399).
+ * a string, and anything keyed on the string (a unique index, a filed-row
+ * lookup) would treat it as a new one (#3399).
  */
 export function isObjectKeySegment(segment: string): boolean {
   return OBJECT_KEY_SEGMENT.test(segment);
