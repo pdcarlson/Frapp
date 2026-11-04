@@ -117,27 +117,38 @@ import JoinChapter, {
 type Node = ReactTestRenderer["root"];
 type AlertButton = { text: string; style?: string; onPress?: () => void };
 
+/** The screen under its providers. A new element each call, so a rerender renders. */
+function app(queryClient: QueryClient) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <FrappClientProvider
+        client={
+          statusClient as unknown as ComponentProps<
+            typeof FrappClientProvider
+          >["client"]
+        }
+        chapterId={null}
+      >
+        <FrappThemeProvider>
+          <JoinChapter />
+        </FrappThemeProvider>
+      </FrappClientProvider>
+    </QueryClientProvider>
+  );
+}
+
+/** The client the latest `render()` used, for `rerender`. */
+let lastQueryClient: QueryClient | null = null;
+
 function render(): ReactTestRenderer {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  lastQueryClient = queryClient;
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
-      <QueryClientProvider client={queryClient}>
-        <FrappClientProvider
-          client={
-            statusClient as unknown as ComponentProps<
-              typeof FrappClientProvider
-            >["client"]
-          }
-          chapterId={null}
-        >
-          <FrappThemeProvider>
-            <JoinChapter />
-          </FrappThemeProvider>
-        </FrappClientProvider>
-      </QueryClientProvider>,
+      app(queryClient),
       // A host ref is null under the test renderer without this; with it, a
       // focus event's target names the element it was sent to. Not
       // enumerable, so `tree.toJSON()` still serializes.
@@ -148,6 +159,13 @@ function render(): ReactTestRenderer {
     );
   });
   return tree;
+}
+
+/** Renders the same screen again, as a new route param or link would. */
+function rerender(tree: ReactTestRenderer): void {
+  act(() => {
+    tree.update(app(lastQueryClient!));
+  });
 }
 
 /** Let the status read settle, so the screen shows what the server said. */
@@ -999,5 +1017,63 @@ describe("join screen — the confirm card's chapter (#3352)", () => {
       token: "invite-token-22",
       accept_terms_privacy: true,
     });
+  });
+
+  it("disables Join once the redeem itself finds the invite dead", async () => {
+    previewAnswer = {
+      data: {
+        chapter_name: "FIJI Tau Nu",
+        university: "Rensselaer Polytechnic Institute",
+        mark_text: "FIJI",
+        accent_color: null,
+        invited_by: null,
+        role: "Member",
+        expires_at: "2026-11-05T20:00:00.000Z",
+      },
+    };
+    legalRequired = false;
+    // Live when previewed, used by someone else before the tap.
+    redeemMutateAsync.mockRejectedValueOnce({
+      statusCode: 410,
+      message: "Invite already used",
+    });
+    params.mockReturnValue({ token: "invite-token-23" });
+    const tree = render();
+    await settle();
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(false);
+
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+    expect(allText(tree.root)).toContain("expired or already been used");
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(true);
+  });
+
+  it("joins the link just opened, not the invite the field already held", async () => {
+    previewAnswer = null;
+    const tree = render();
+    openInvite(tree.root);
+    typeToken(tree.root, "old-invite-24");
+
+    params.mockReturnValue({ token: "new-invite-24" });
+    rerender(tree);
+    await settle();
+
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
+    expect(previewPost).toHaveBeenLastCalledWith("/v1/invites/preview", {
+      body: { token: "new-invite-24" },
+    });
+  });
+
+  it("reads the preview only on the confirm step, not while typing", async () => {
+    const tree = render();
+    openInvite(tree.root);
+    typeToken(tree.root, "invite-token-25");
+    await settle();
+    expect(previewPost).not.toHaveBeenCalled();
+
+    continueToConfirm(tree.root);
+    await settle();
+    expect(previewPost).toHaveBeenCalledTimes(1);
   });
 });

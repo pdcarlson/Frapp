@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Redirect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   ScrollView,
   Share,
@@ -45,6 +44,7 @@ import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { ChoiceRow } from "@/components/auth/choice-row";
 import { AccentPicker } from "@/components/chapter/accent-picker";
 import { PushPrimerCard } from "@/components/notifications/push-primer-card";
+import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
 import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
 import {
   EMPTY_CHAPTER_IDENTITY,
@@ -462,12 +462,12 @@ export default function CreateChapter() {
                 )}
                 style={styles.liveMark}
               >
-                <MarkTile
+                <ChapterMarkTile
+                  testID="setup-mark-text"
                   logoUrl={mark.logoUrl}
                   text={mark.text}
                   accent={accent}
                   size={72}
-                  styles={styles}
                 />
               </Animated.View>
             ) : null}
@@ -505,12 +505,12 @@ export default function CreateChapter() {
                 archetype={archetype}
                 onArchetype={setArchetype}
                 mark={
-                  <MarkTile
+                  <ChapterMarkTile
+                    testID="setup-mark-text"
                     logoUrl={null}
                     text={mark.text}
                     accent={accent}
                     size={48}
-                    styles={styles}
                   />
                 }
                 styles={styles}
@@ -525,12 +525,12 @@ export default function CreateChapter() {
                   can change it later in Settings.
                 </Text>
                 <View style={styles.previewRow}>
-                  <MarkTile
+                  <ChapterMarkTile
+                    testID="setup-mark-text"
                     logoUrl={null}
                     text={mark.text}
                     accent={accent}
                     size={48}
-                    styles={styles}
                   />
                   <Text style={styles.cardTitle} numberOfLines={2}>
                     {identity.name}
@@ -766,65 +766,6 @@ function Footer({
           </Text>
         )}
       </Pressable>
-    </View>
-  );
-}
-
-/**
- * The chapter's mark as setup draws it: the logo once there is one, else the
- * text `resolveChapterMark` chose (short name, shown letters, or initials) on
- * a tint of the chosen color. A tint rather than a fill, so any color the
- * officer picks keeps the text readable.
- */
-function MarkTile({
-  logoUrl,
-  text,
-  accent,
-  size,
-  styles,
-}: {
-  logoUrl: string | null;
-  text: string;
-  accent: string;
-  size: number;
-  styles: Styles;
-}) {
-  // The URL that failed to load, so a new logo gets its own try.
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const logoFailed = logoUrl !== null && failedUrl === logoUrl;
-  const frame = {
-    width: size,
-    height: size,
-    borderRadius: Math.round(size / 4),
-  };
-  if (logoUrl && !logoFailed) {
-    return (
-      <Image
-        accessibilityIgnoresInvertColors
-        accessibilityLabel="Chapter logo"
-        source={{ uri: logoUrl }}
-        resizeMode="contain"
-        onError={() => setFailedUrl(logoUrl)}
-        style={[styles.markLogo, frame]}
-      />
-    );
-  }
-  return (
-    <View
-      testID="setup-mark-text"
-      style={[
-        styles.markTile,
-        frame,
-        { backgroundColor: tint(accent, 0.18), borderColor: accent },
-      ]}
-    >
-      <Text
-        style={[styles.markText, { fontSize: Math.round(size * 0.3) }]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-      >
-        {text}
-      </Text>
     </View>
   );
 }
@@ -1368,20 +1309,6 @@ function createStyles(tokens: SignetTokens) {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.md,
-    },
-    markTile: {
-      borderWidth: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: 4,
-    },
-    markLogo: {
-      backgroundColor: tokens.color.surface.surface1,
-    },
-    markText: {
-      fontFamily: typeRole(tokens.typography.role.title).fontFamily,
-      fontWeight: "700",
-      color: tokens.color.text.foreground,
     },
     liveMark: {
       alignSelf: "flex-start",

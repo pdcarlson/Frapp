@@ -15,9 +15,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * s03, "You're in." (`spec/ui/mobile/screens.md`).
  *
- * The first screen after a member joins, and the first that can name the
- * chapter: the confirm step on `/join` can't, because an invite is a random
- * token (#3352). It shows the auto-joined public channels and, when this
+ * The first screen after a member joins: the chapter and its school under the
+ * title, read from the membership this time, not from the invite preview the
+ * confirm step on `/join` showed (#3352). It shows the auto-joined public
+ * channels and, when this
  * build can push, the C7 push primer card inline (`shouldOfferPrimer`,
  * #2299). Go to chat PATCHes `has_completed_onboarding`, so the gate will not
  * send the member here again.

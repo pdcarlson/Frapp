@@ -36,6 +36,7 @@ import { chapterInitials } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChoiceRow } from "@/components/auth/choice-row";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
+import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
 import { useAuthSession } from "@/lib/auth-session";
@@ -73,7 +74,7 @@ import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * the role it grants, read by `POST /v1/invites/preview` without using the
  * invite up), the Terms checkbox when it's needed, and Join chapter pinned at
  * the bottom. A preview that fails leaves a card for the bare invite, which
- * can still be joined; a dead invite (410) says so and offers no Join.
+ * can still be joined; a dead invite (410), found by the preview or by the redeem, says so and disables Join.
  */
 
 type JoinView = "choose" | "invite" | "confirm";
@@ -114,6 +115,14 @@ export default function JoinChapter() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
+  /**
+   * An invite the redeem itself found dead (410), with the sentence to show:
+   * a preview read a minute earlier can still say it was live.
+   */
+  const [deadRedeem, setDeadRedeem] = useState<{
+    token: string;
+    copy: string;
+  } | null>(null);
 
   useEffect(() => {
     const paramValue = (
@@ -148,8 +157,12 @@ export default function JoinChapter() {
     if (fresh) rememberInviteToken(fresh);
     const next = fresh ?? consumeRememberedInviteToken();
     if (next) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- seed an empty field from the invite URL; keep text the member already typed
-      setToken((current) => (current.length > 0 ? current : next));
+      // A link just opened wins over whatever the field holds: the confirm
+      // step hides the field, so a kept value would be joined unseen. A
+      // remembered invite only fills an empty field.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- seed the field from the invite URL
+      setToken((current) => (fresh || current.length === 0 ? next : current));
+      setError(null);
       // An opened invite link has already answered the question and filled
       // the field, so it goes straight to the confirm step.
       setView("confirm");
@@ -246,8 +259,15 @@ export default function JoinChapter() {
   const invite = extractInviteToken(token);
   const preview = useInvitePreview(view === "confirm" ? invite : null);
   const chapter = preview.data ?? null;
-  // A dead link can't be joined, so the step says so instead of offering it.
-  const deadInvite = preview.isError && isDeadInviteError(preview.error);
+  // A dead link can't be joined, so the step says so and disables Join,
+  // whether the preview or the redeem found it dead.
+  const deadCopy =
+    preview.isError && isDeadInviteError(preview.error)
+      ? joinErrorCopy(preview.error)
+      : deadRedeem && deadRedeem.token === invite
+        ? deadRedeem.copy
+        : null;
+  const deadInvite = deadCopy !== null;
   const stepBlocked = submitting || (view === "confirm" && deadInvite);
 
   if (status === "unauthenticated") {
@@ -332,6 +352,10 @@ export default function JoinChapter() {
       router.replace("/welcome");
     } catch (caught) {
       terms.onJoinError(caught);
+      if (isDeadInviteError(caught)) {
+        setDeadRedeem({ token: extracted, copy: joinErrorCopy(caught) });
+        return;
+      }
       setError(joinErrorCopy(caught));
     }
   }
@@ -486,23 +510,20 @@ export default function JoinChapter() {
                   // One object, so one card: the chapter this invite joins.
                   <View style={styles.inviteCard}>
                     <View style={styles.chapterRow}>
+                      {/* The name beside it says who this is, so a screen
+                          reader skips the mark. */}
                       <View
-                        style={[
-                          styles.markTile,
-                          {
-                            backgroundColor: tint(
-                              normalizeAccentInput(chapter.accent_color),
-                              0.24,
-                            ),
-                          },
-                        ]}
                         accessibilityElementsHidden
                         importantForAccessibility="no-hide-descendants"
                       >
-                        <Text style={styles.markText} numberOfLines={1}>
-                          {chapter.mark_text ??
-                            chapterInitials(chapter.chapter_name)}
-                        </Text>
+                        <ChapterMarkTile
+                          text={
+                            chapter.mark_text ??
+                            chapterInitials(chapter.chapter_name)
+                          }
+                          accent={normalizeAccentInput(chapter.accent_color)}
+                          size={44}
+                        />
                       </View>
                       <View style={styles.chapterText}>
                         <Text style={styles.inviteCardTitle}>
@@ -555,10 +576,8 @@ export default function JoinChapter() {
                   </View>
                 )}
 
-                {deadInvite ? (
-                  <Text style={styles.errorText}>
-                    {joinErrorCopy(preview.error)}
-                  </Text>
+                {deadCopy ? (
+                  <Text style={styles.errorText}>{deadCopy}</Text>
                 ) : null}
 
                 {terms.needed && !deadInvite ? (
@@ -773,21 +792,6 @@ function createStyles(tokens: SignetTokens) {
     chapterText: {
       flex: 1,
       gap: 2,
-    },
-    // The chapter mark as setup draws it (`create-chapter.tsx`): its text on
-    // a tint of the chapter color, so any color keeps the text readable.
-    markTile: {
-      minWidth: 44,
-      height: 44,
-      paddingHorizontal: tokens.spacing.xs,
-      borderRadius: 11,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    markText: {
-      ...typeRole(tokens.typography.role.label),
-      fontWeight: "700",
-      color: tokens.color.text.foreground,
     },
     cardRule: {
       height: StyleSheet.hairlineWidth,

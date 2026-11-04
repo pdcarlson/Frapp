@@ -162,4 +162,26 @@ describe("s03 welcome, screen rules (#3352)", () => {
     });
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
   });
+
+  it("draws the primer inside the scroll, so Go to chat stays the one pinned control", async () => {
+    pushAvailable = true;
+    permission = { granted: false };
+    const { root } = await render();
+
+    const scroll = root.findByType("ScrollView" as never);
+    expect(
+      scroll
+        .findAllByType("Pressable" as never, { deep: true })
+        .some((p) => p.props.accessibilityLabel === "Turn on notifications"),
+    ).toBe(true);
+    const outside = root
+      .findAllByType("Pressable" as never, { deep: true })
+      .filter(
+        (p) =>
+          !scroll
+            .findAllByType("Pressable" as never, { deep: true })
+            .includes(p),
+      );
+    expect(outside).toHaveLength(1);
+  });
 });
