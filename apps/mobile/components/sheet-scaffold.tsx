@@ -184,13 +184,15 @@ export function useSheetVisit(ref: ForwardedRef<BottomSheetModal>) {
 }
 
 /**
- * The text field every sheet form draws (s15's profile edit, s20's new task,
+ * The text field a sheet form draws (s15's profile edit, s19's new task,
  * s21's upload), as plain style objects for the caller's own
  * `StyleSheet.create`, so a sheet can add its own layout to `field`. Focus
  * swaps the border to the chapter accent, as every focusable control does
- * (`spec/ui/design-system/components.md` § States). Shared because the three
+ * (`spec/ui/design-system/components.md` § States). Shared because those
  * sheets had grown three copies, and the focus border had already drifted to
- * house gold in two of them.
+ * house gold in two of them. s20's log sheet (`app/(tabs)/service-hours.tsx`)
+ * still carries its own copy, with no focus border, along with the rest of
+ * its chrome (#1060).
  */
 export function sheetFieldStyles(tokens: SignetTokens, accent: string) {
   return {

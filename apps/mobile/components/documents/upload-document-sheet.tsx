@@ -122,7 +122,10 @@ export const UploadDocumentSheet = forwardRef<
   const [stored, setStored] = useState<SentUpload | null>(null);
   const draftHeld = uploading || stored !== null;
 
-  const folder = chosenFolder === undefined ? initialFolder : chosenFolder;
+  // A held retry files into the folder it was sent with, so the chips show
+  // that one; a new pick drops the hold and the chips follow the draft again.
+  const draftFolder = chosenFolder === undefined ? initialFolder : chosenFolder;
+  const folder = stored ? stored.folder : draftFolder;
   const canUpload = picked !== null && !uploading && !picking && !refusal;
 
   const reset = useCallback(() => {
@@ -210,13 +213,13 @@ export const UploadDocumentSheet = forwardRef<
       onUploaded?.(result.title);
       return;
     }
-    if (result.sent) {
-      setStored(result.sent);
-      // Show the folder the retry will file into, which the sent draft fixed.
-      setChosenFolder(result.sent.folder);
-    }
-    if (result.final) setRefusal(result.reason);
-    else setFailure(result.reason);
+    if (result.sent) setStored(result.sent);
+    // An officer-only refusal is for the visit it was sent from. One that
+    // lands after the sheet closed is dropped, as a close drops one already
+    // shown: the officer may have lifted it by the next visit.
+    if (result.final) {
+      if (isSameVisit(sentFrom)) setRefusal(result.reason);
+    } else setFailure(result.reason);
   };
 
   const sourceLine = picked

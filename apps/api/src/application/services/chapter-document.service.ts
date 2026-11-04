@@ -125,8 +125,8 @@ export class ChapterDocumentService {
       throw new BadRequestException((error as Error).message);
     }
     // The rest must be the `{documentId}/{filename}` that `requestUploadUrl`
-    // mints. The traversal guard above lets `?`, `#` and `%` through, and a
-    // suffixed or percent-encoded spelling of a filed path names the same
+    // mints. The traversal guard above lets `?`, `#`, `%` and a trailing space
+    // through, and a suffixed or percent-encoded spelling of a filed path names the same
     // object while comparing unequal to it, so it would get past the filed-row
     // read and the unique index below and file that object a second time.
     const segments = input.storage_path.slice(prefix.length).split('/');

@@ -32,13 +32,16 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({ accent: "#F4CB63" }),
+  // Not house gold, so a focus border that drifts back to it shows.
+  useChapterBranding: () => ({ accent: "#7A3FC2" }),
 }));
 
 import {
   RETRY_KEEPS_DRAFT,
   UploadDocumentSheet,
 } from "./upload-document-sheet";
+
+const ACCENT = "#7A3FC2";
 
 const PHOTO: PickedImage = {
   uri: "file:///IMG_2041.jpg",
@@ -461,6 +464,50 @@ describe("UploadDocumentSheet (#3399)", () => {
     });
     open(tree);
     expect(folderChips(tree).props.selected).toBe("Minutes");
+
+    // A new photo gives the held retry up, and the chips follow s12 again.
+    pickDocumentPhoto.mockResolvedValue({
+      status: "picked",
+      image: {
+        ...PHOTO,
+        uri: "file:///IMG_2042.jpg",
+        filename: "IMG_2042.jpg",
+      },
+    });
+    await act(async () => {
+      pressable(tree, "Change photo, IMG_2041.jpg").props.onPress();
+    });
+    expect(folderChips(tree).props.selected).toBe("Bylaws");
+  });
+
+  it("drops an officer-only refusal that lands after the sheet closed", async () => {
+    const tree = render();
+    await choose(tree);
+    const settle = heldUpload();
+    await pressUpload(tree);
+    // Swiped away while the confirm is out.
+    closed(tree);
+
+    await settle({
+      status: "refused",
+      reason: "Uploads are paused until the subscription is renewed.",
+      final: true,
+      sent: SENT,
+    });
+    open(tree);
+    expect(screenText(tree)).not.toContain("subscription is renewed");
+    expect(uploadButton(tree).props.disabled).toBe(false);
+  });
+
+  it("focuses the title field in the chapter accent", () => {
+    const tree = render();
+    act(() => {
+      titleInput(tree).props.onFocus();
+    });
+    const style = [titleInput(tree).props.style].flat(Infinity);
+    expect(style).toContainEqual(
+      expect.objectContaining({ borderColor: ACCENT }),
+    );
   });
 
   it("caps the title at the API's document title limit", () => {

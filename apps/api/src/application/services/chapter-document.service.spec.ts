@@ -464,6 +464,8 @@ describe('ChapterDocumentService', () => {
       'chapters/ch-1/documents/doc-1/bylaws.pdf?alias',
       'chapters/ch-1/documents/doc-1/bylaws.pdf#alias',
       'chapters/ch-1/documents/doc-1/bylaw%73.pdf',
+      // The URL parser strips a trailing space, so this signs the filed object.
+      'chapters/ch-1/documents/doc-1/bylaws.pdf ',
       // Not the `{documentId}/{filename}` the mint builds.
       'chapters/ch-1/documents/bylaws.pdf',
       'chapters/ch-1/documents/doc-1/extra/bylaws.pdf',

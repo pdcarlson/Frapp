@@ -55,12 +55,18 @@ describe('isObjectKeySegment', () => {
     expect(isObjectKeySegment(segment)).toBe(true);
   });
 
-  it.each(['', 'a?b.pdf', 'a#b.pdf', 'a%41.pdf', 'a/b.pdf', 'Résumé.pdf'])(
-    'refuses a segment a minted key never holds (%p)',
-    (segment) => {
-      expect(isObjectKeySegment(segment)).toBe(false);
-    },
-  );
+  it.each([
+    '',
+    ' ',
+    'a?b.pdf',
+    'a#b.pdf',
+    'a%41.pdf',
+    'a/b.pdf',
+    'Résumé.pdf',
+    'bylaws.pdf ',
+  ])('refuses a segment a minted key never holds (%p)', (segment) => {
+    expect(isObjectKeySegment(segment)).toBe(false);
+  });
 
   it('accepts whatever safeObjectFilename produces', () => {
     for (const name of [
