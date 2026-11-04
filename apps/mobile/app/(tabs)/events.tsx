@@ -61,7 +61,6 @@ export default function EventsScreen() {
   return (
     <ScreenShell
       title="Events"
-      subtitle="What's coming up, and what you can check in to right now."
       headerAction={
         // No pill in a build without Ask (#2259) — see `app/(tabs)/index.tsx`.
         isAskAvailable() ? (

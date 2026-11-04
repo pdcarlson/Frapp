@@ -869,10 +869,7 @@ export default function StudyScreen() {
   }
 
   return (
-    <ScreenShell
-      title="Study hours"
-      subtitle="Tracked sessions inside your chapter's study zones."
-    >
+    <ScreenShell title="Study hours">
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       {/* Under the module-off screen no failure line applies: each one is about
           a card, an End or a Start that screen has replaced, and its body

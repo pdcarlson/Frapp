@@ -13,7 +13,14 @@ type ScreenShellProps = {
    * navigator's header, which no screen has since #2485.
    */
   titleMark?: ReactNode;
-  subtitle: string;
+  /**
+   * A line under the title, for a fact about this one item that the title
+   * can't carry. Optional since #3023: the board draws one only on s07, where
+   * Event details passes the event's time. A line that says what the screen is
+   * for ("What you owe the chapter…") never belongs here; the owner dropped
+   * those on 2026-11-04 (`spec/ui/mobile/patterns.md` § Screen headers).
+   */
+  subtitle?: string;
   /**
    * Trailing control rendered on the title row, right-aligned and vertically
    * centred against the title.
@@ -29,12 +36,12 @@ type ScreenShellProps = {
 };
 
 /**
- * The screen frame most tab screens share: its title row, subtitle and
- * scrolling body. s05, s13, s18 and s22 draw their own. The title is the
- * only heading the shell draws; a screen may add its own below it, as Chat
- * home's section headers do. The tab layout draws
- * no navigator header (#2485), so the shell also takes the top safe-area inset
- * the header used to absorb.
+ * The screen frame most tab screens share: its title row, an optional
+ * subtitle and the scrolling body. s05, s13, s18 and s22 draw their own. The
+ * title is the only heading the shell draws; a screen may add its own below
+ * it, as Chat home's section headers do. The tab layout draws no navigator
+ * header (#2485), so the shell also takes the top safe-area inset the header
+ * used to absorb.
  */
 export function ScreenShell({
   title,
@@ -62,7 +69,7 @@ export function ScreenShell({
               <View style={styles.headerAction}>{headerAction}</View>
             ) : null}
           </View>
-          <Text style={styles.subtitle}>{subtitle}</Text>
+          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
         {children}
       </ScrollView>

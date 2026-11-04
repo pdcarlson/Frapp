@@ -257,7 +257,6 @@ export default function ChatHomeScreen() {
     <ScreenShell
       title={chapterName ?? "Frapp"}
       titleMark={<ChapterMark />}
-      subtitle="Your chapter's channels and direct messages."
       headerAction={
         <View style={styles.headerActions}>
           {/* No pill at all in a build without Ask (#2259): `AskSheet`

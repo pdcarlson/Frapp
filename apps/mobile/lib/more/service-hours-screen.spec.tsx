@@ -286,8 +286,8 @@ describe("Service hours on a module-off refusal (#2718)", () => {
 
 /**
  * `GET /v1/service-entries` is not scoped by the endpoint alone, so this
- * screen, which lists "Philanthropy work you've logged" and totals it as the
- * viewer's own, must ask for the viewer's entries. It once didn't, and an
+ * screen, which lists the entries and totals them as the viewer's own hours,
+ * must ask for the viewer's entries. It once didn't, and an
  * officer saw the chapter's entries, unnamed, totalled as their own.
  * `profile-screen.spec.tsx` pins the same for s12.
  */

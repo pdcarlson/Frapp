@@ -107,7 +107,7 @@ export default function EventDetailsScreen() {
 
   if (!eventId) {
     return (
-      <ScreenShell title="Event" subtitle="No event selected.">
+      <ScreenShell title="Event">
         <View style={styles.stateBlock}>
           <Text style={styles.stateTitle}>Nothing to show</Text>
           <Text style={styles.stateBody}>
@@ -120,7 +120,7 @@ export default function EventDetailsScreen() {
 
   if (eventQuery.isPending) {
     return (
-      <ScreenShell title="Event" subtitle="Loading…">
+      <ScreenShell title="Event">
         <View style={styles.stateBlock}>
           <ActivityIndicator color={tokens.color.text.muted} />
           <Text style={styles.stateBody}>Loading event…</Text>
@@ -131,7 +131,7 @@ export default function EventDetailsScreen() {
 
   if (eventQuery.isError || !event) {
     return (
-      <ScreenShell title="Event" subtitle="This event couldn't be loaded.">
+      <ScreenShell title="Event">
         <View style={styles.stateBlock}>
           <Text style={styles.stateTitle}>Couldn&apos;t load this event</Text>
           <Text style={styles.stateBody}>
