@@ -12,7 +12,7 @@ import {
 import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { isModuleEnabled } from "@repo/validation";
-import { useChapterBranding } from "@/lib/chapter-branding";
+import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
 import {
   deliveryChrome,
   type DeliveryChrome,
@@ -103,7 +103,8 @@ export function PollCard({
   onJumpToParent,
 }: PollCardProps) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
   // The chapter accent is the tally fill and the selected-option chip: a
   // poll's own vote is the viewer's content, and the engine's solid-fill pair
   // (accent-engine.md §8) is what a filled control takes.
@@ -356,7 +357,7 @@ function PollDeliveryChrome({
   }
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     // The body column's full width: a card in the row, under its author line.
     card: {
@@ -456,7 +457,7 @@ function createStyles(tokens: SignetTokens) {
     },
     retryText: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.gold.askText,
+      color: brand.accent,
     },
     discardText: {
       ...typeRole(tokens.typography.role.caption),
@@ -479,9 +480,9 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
     },
     reactionChipMine: {
-      backgroundColor: tokens.color.gold.askFill,
+      backgroundColor: brand.accentSubtle,
       borderWidth: 1,
-      borderColor: tokens.color.gold.askBorder,
+      borderColor: brand.accentBorder,
     },
     reactionText: {
       ...typeRole(tokens.typography.role.caption),
@@ -489,7 +490,7 @@ function createStyles(tokens: SignetTokens) {
     },
     reactionTextMine: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.gold.askText,
+      color: brand.accent,
     },
   });
 }

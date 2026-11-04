@@ -40,6 +40,7 @@ import {
   useBlockActions,
 } from "@/lib/chat/block-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 /**
  * Settings → Blocked members: the one place a block can always be undone
@@ -64,7 +65,8 @@ export const BLOCKED_MEMBERS_EMPTY_BODY =
 export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
   function BlockedMembersSheet(_props, ref) {
     const { tokens } = useFrappTheme();
-    const styles = createStyles(tokens);
+    const brand = useChapterBranding();
+    const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
     const blockList = useBlockedUserIds();
     const { nameFor } = useMemberDisplayNames();
@@ -197,7 +199,7 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
   },
 );
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     body: {
       paddingHorizontal: tokens.spacing.lg,
@@ -219,7 +221,7 @@ function createStyles(tokens: SignetTokens) {
     },
     unblock: {
       ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.askText,
+      color: brand.accent,
     },
     stale: {
       ...typeRole(tokens.typography.role.caption),

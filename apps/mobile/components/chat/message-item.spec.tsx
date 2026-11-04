@@ -37,6 +37,8 @@ vi.mock("@/lib/chapter-branding", () => ({
     accent: "#C49A3A",
     accentPrimary: "#C49A3A",
     accentOnPrimary: "#2B2009",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
     logoUrl: null,
     chapterName: null,
   }),
@@ -328,6 +330,36 @@ describe("the viewer's own name takes the chapter accent", () => {
     expect(flat).not.toContain("#C49A3A");
     expect(flat).not.toContain("#2B2009");
     expect(flat).toContain("Casey");
+  });
+});
+
+// #3370: the viewer's own reaction wears the chapter's tint, never Ask gold.
+describe("the viewer's own reaction takes the chapter accent", () => {
+  it("paints a mine chip from the branding hook and leaves others neutral", () => {
+    const tree = renderItem(
+      message({
+        sender_id: OTHER,
+        content: "hello",
+        reactions: {
+          [reactionActionType("👍")]: [VIEWER],
+          [reactionActionType("🔥")]: [OTHER],
+        },
+      }),
+    );
+    const chip = (emoji: string) =>
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          typeof node.props.accessibilityLabel === "string" &&
+          node.props.accessibilityLabel.includes(emoji),
+      );
+    const mine = JSON.stringify(chip("👍").props.style);
+    expect(mine).toContain('"backgroundColor":"#251A33"');
+    expect(mine).toContain('"borderColor":"#5C3E8A"');
+    expect(JSON.stringify(chip("👍").findByType("Text" as never).props.style)).toContain(
+      '"color":"#C49A3A"',
+    );
+    expect(JSON.stringify(chip("🔥").props.style)).not.toContain("#251A33");
   });
 });
 

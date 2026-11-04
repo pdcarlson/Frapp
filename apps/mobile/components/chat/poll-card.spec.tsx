@@ -40,6 +40,8 @@ vi.mock("@/lib/chapter-branding", () => ({
     accent: "#C49A3A",
     accentPrimary: "#C49A3A",
     accentOnPrimary: "#2B2009",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
     logoUrl: null,
     chapterName: null,
   }),
