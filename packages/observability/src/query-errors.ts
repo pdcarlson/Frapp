@@ -56,7 +56,7 @@ import { httpStatusClass } from "./sentry-http";
  * **Rate limit.** One report per fingerprint per {@link DEFAULT_REPORT_INTERVAL_MS}
  * for each reporter, so a query that fails on every focus, reconnect or retry
  * loop can't flood the project. An `exception`'s fingerprint leaves the split
- * to Sentry, so it is limited per error type and message instead. It is a
+ * to Sentry, so it is limited per root, error type and message instead. It is a
  * deliberate drop beside § Sampling's `1.0` for error events, and the spec
  * records it as one. The reporter remembers at most
  * {@link MAX_REMEMBERED_RATE_KEYS} of what it limits on, forgetting the oldest.
