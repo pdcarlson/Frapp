@@ -251,6 +251,7 @@ conformance run both leave an open alert open. Mechanics and rationale:
 - sustained 5xx error-rate threshold breaches
 - webhook delivery failure spikes
 - push notification delivery failure spikes
+- a chat worker's Realtime subscription down for a minute or more (no chat pushes, or no `#chapter-audit` mirror)
 - database latency saturation impacting request SLAs
 
 ## Thresholds
@@ -300,13 +301,25 @@ The API's cooldown reduces duplicates but **does not guarantee one event per occ
 
 Per the note above, Sentry alert-rule *create* is still dashboard-only and cannot be asserted in CI, so **the row above describes a rule a human still has to create**; until then the event lands in the default unresolved stream. Observed 2026-09-09: that rule is absent (see the Sentry issue-alert callout). Do not add a second rule for the subscription case — see the paragraph above for why it would page on an expected flow.
 
+### Chat worker subscriptions
+
+Source: the `error`-level Sentry event a chat worker sends when its Realtime subscription has gone 60 s without `SUBSCRIBED` (#3365), message `<worker> realtime subscription is down; <what stopped> are not being sent`, fingerprint `['worker-subscription-down', <worker>]`, tags `worker` and `realtime_status`. It repeats every 10 minutes while the outage lasts. What the workers do around it, and the per-status warnings that precede it: [`render.md` § 5.5](deployment/render.md#55-in-process-chat-workers-chunk-05).
+
+| Alert | Condition | Routing |
+| ------------------------------ | ------------------------------------------------------------------------------------------- | ------------ |
+| Chat worker subscription down | fingerprint `worker-subscription-down`, Sentry `environment: production` | critical |
+
+While it fires, `worker: chat-push` means no chat pushes go out and `worker: chat-bridge` means `#chapter-audit` stops mirroring, and inserts made in the gap are never delivered later. `/health/ready` stays green through it by decision ([`observability.md` § Health Check](../../spec/behavior/observability.md#health-check)), so this event is the only signal.
+
+The fingerprint is fixed per worker, so every outage of one worker lands in one Sentry issue: the first creates it, and a later outage is a new event on it or a regression if it was resolved. **The row above describes a rule nobody has created yet.** Until one exists, the only notifier is `frapp-api`'s default rule `3133192` (read 2026-11-04): it emails issue owners, falling back to active members, when a new issue is high priority or an existing one becomes high priority, at most once per 30 minutes, in any environment. An error-level event normally opens a high-priority issue, so a worker's first outage should notify. Whether a later outage on that same issue does depends on Sentry counting it as escalating, which nobody has observed yet.
+
 ### Thresholds that exist only as intended lists
 
 [`spec/behavior/observability.md`](../../spec/behavior/observability.md) § Alerting names
 API downtime, 5xx rate, database pool exhaustion, Stripe webhook failures, and the
 authorization-denial / throttle-saturation rows. This file records **implemented or
-human-create** thresholds for push delivery, the in-process auth-failure spike, and the
-billing unknown-chapter event. The rest have **no recorded provider rule**. Observed
+human-create** thresholds for push delivery, the in-process auth-failure spike, the
+billing unknown-chapter event, and a chat worker's Realtime subscription outage. The rest have **no recorded provider rule**. Observed
 2026-09-09: Sentry *issue* alerts are only the default high-priority notification per
 project; Sentry *metric* alerts were unread (`HTTP 410`); PostHog has none; Render was
 unread. Treat a missing threshold as a gap, not as a pointer to follow in a dashboard.

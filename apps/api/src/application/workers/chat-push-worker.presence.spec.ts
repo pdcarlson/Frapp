@@ -16,6 +16,7 @@ import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/ch
 import { CHAT_PUSH_DISPATCH_REPOSITORY } from '#domain/repositories/chat-push-dispatch.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { ChannelCacheService } from '../services/channel-cache.service';
+import { fakeChannel, fakeRealtime } from '#test/helpers/fake-realtime';
 
 jest.mock('@sentry/nestjs', () => ({
   ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
@@ -33,37 +34,6 @@ jest.mock('@sentry/nestjs', () => ({
  * channel per chat channel stayed open for the life of the process, so the
  * refusals started at roughly 98 active chat channels, silently.
  */
-
-interface FakeChannel {
-  topic: string;
-  subscribe: jest.Mock;
-  unsubscribe: jest.Mock;
-  teardown: jest.Mock;
-  presenceState: () => Record<string, unknown>;
-  /** The status callback the worker passed to `subscribe`. */
-  status: (status: string, err?: Error) => void;
-}
-
-function fakeRealtime() {
-  const opened: FakeChannel[] = [];
-  const channel = jest.fn((topic: string) => {
-    const ch = {
-      topic,
-      unsubscribe: jest.fn().mockResolvedValue('ok'),
-      teardown: jest.fn(),
-      presenceState: () => ({}),
-      status: () => undefined,
-    } as unknown as FakeChannel;
-    ch.subscribe = jest.fn((callback: FakeChannel['status']) => {
-      ch.status = callback;
-      return ch;
-    });
-    opened.push(ch);
-    return ch;
-  });
-  const topicsOpened = () => opened.map((ch) => ch.topic);
-  return { channel, opened, topicsOpened };
-}
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -110,16 +80,11 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
         ChannelCacheService,
         {
           provide: SUPABASE_CLIENT,
+          // Like realtime-js: the leave's acknowledgement fires the channel's
+          // `CLOSED` before `removeChannel` resolves.
           useValue: {
             channel: realtime.channel,
-            // Like realtime-js: the leave's acknowledgement fires the
-            // channel's `CLOSED` before `removeChannel` resolves.
-            removeChannel: jest.fn(async (ch: FakeChannel) => {
-              await ch.unsubscribe();
-              ch.status('CLOSED');
-              ch.teardown();
-              return 'ok';
-            }),
+            removeChannel: realtime.removeChannel,
           },
         },
         {
@@ -365,17 +330,11 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
 
     it('frees the topic when subscribe itself throws, so the next message retries', async () => {
       realtime.channel.mockImplementationOnce((topic: string) => {
-        const broken = {
-          topic,
-          subscribe: jest.fn(() => {
-            throw new Error('tried to subscribe multiple times');
-          }),
-          unsubscribe: jest.fn().mockResolvedValue('ok'),
-          teardown: jest.fn(),
-          presenceState: () => ({}),
-          // `subscribe` throws before it can hand the worker a callback.
-          status: jest.fn(),
-        };
+        // `subscribe` throws before it can hand the worker a callback.
+        const broken = fakeChannel(topic);
+        broken.subscribe.mockImplementation(() => {
+          throw new Error('tried to subscribe multiple times');
+        });
         realtime.opened.push(broken);
         return broken;
       });
