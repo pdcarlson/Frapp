@@ -1,7 +1,9 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  BackHandler,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,13 +14,15 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { AuthMethod, useAuthSession } from "@/lib/auth-session";
-import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import {
   describeOAuthKickoffError,
   OAUTH_MEMBERSHIP_HINT,
+  signInProviderLayout,
   type OAuthProvider,
 } from "@/lib/auth-providers";
 import { AppleMark, GoogleMark } from "@/components/auth/oauth-brand-icons";
+import { SignInMoments } from "@/components/auth/sign-in-moments";
+import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -32,6 +36,11 @@ function toAuthErrorMessage(error: unknown): string {
   }
   return "Sign-in failed. Retry in a moment.";
 }
+
+const PROVIDER_LABEL: Record<OAuthProvider, string> = {
+  apple: "Continue with Apple",
+  google: "Continue with Google",
+};
 
 export default function SignIn() {
   const { tokens } = useFrappTheme();
@@ -48,11 +57,33 @@ export default function SignIn() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authMode, setAuthMode] = useState<AuthMethod>("password");
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [oauthPending, setOauthPending] = useState<OAuthProvider | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [magicLinkSentTo, setMagicLinkSentTo] = useState<string | null>(null);
   const passwordRef = useRef<TextInput>(null);
+
+  // Android's back button and back gesture close the email form, as its
+  // chevron does, instead of leaving s01 (the `(auth)` anchor) and backgrounding
+  // the app. While a sign-in is in flight both are held, so a late result
+  // can't land on the provider view.
+  useEffect(() => {
+    if (!emailOpen) return undefined;
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        if (!submitting) {
+          setEmailOpen(false);
+          setAuthError(null);
+          setMagicLinkSentTo(null);
+        }
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [emailOpen, submitting]);
 
   if (status === "authenticated") {
     // The auth gate owns the next hop (join / welcome / tabs). Rendering the
@@ -60,6 +91,12 @@ export default function SignIn() {
     // straight to `(tabs)` — which skipped s03.
     return null;
   }
+
+  const layout = signInProviderLayout(Platform.OS);
+  const appleVisible =
+    layout.primary === "apple" ||
+    layout.secondary === "apple" ||
+    (layout.tucked === "apple" && moreOpen);
 
   function isValidEmailAddress(value: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -126,37 +163,96 @@ export default function SignIn() {
     }
   }
 
+  function closeEmail() {
+    if (submitting) return;
+    setEmailOpen(false);
+    setAuthError(null);
+    setMagicLinkSentTo(null);
+  }
+
+  function renderProvider(provider: OAuthProvider, filled: boolean) {
+    const foreground = filled
+      ? tokens.color.surface.background
+      : tokens.color.text.foreground;
+    return (
+      <Pressable
+        key={provider}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: submitting }}
+        disabled={submitting}
+        onPress={() => {
+          void handleOAuth(provider);
+        }}
+        style={[
+          styles.button,
+          filled ? styles.buttonFilled : styles.buttonOutline,
+          submitting ? styles.buttonDisabled : null,
+        ]}
+      >
+        {oauthPending === provider ? (
+          <ActivityIndicator color={foreground} size="small" />
+        ) : provider === "apple" ? (
+          <AppleMark color={foreground} />
+        ) : (
+          <GoogleMark />
+        )}
+        <Text
+          style={[
+            styles.buttonText,
+            filled ? styles.buttonTextFilled : null,
+          ]}
+        >
+          {oauthPending === provider ? "Signing in..." : PROVIDER_LABEL[provider]}
+        </Text>
+      </Pressable>
+    );
+  }
+
+  const messages = (
+    <>
+      {authError ? <Text style={styles.errorText}>{authError}</Text> : null}
+      {/* A dead magic link lands back here; without this the member cannot
+        tell a broken link from one they never tapped. */}
+      {!authError && callbackError ? (
+        <Text style={styles.errorText}>{callbackError}</Text>
+      ) : null}
+      {!isConfigured ? (
+        <Text style={styles.errorText}>
+          EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are not
+          set for this build, so sign-in is unavailable.
+        </Text>
+      ) : null}
+    </>
+  );
+
   return (
     // Safe area on every edge: `(auth)` renders with `headerShown: false`, so
     // nothing else keeps the mark off the status bar or the last control off
-    // the home indicator once the column is taller than the screen.
+    // the home indicator or the Android swipe bar.
     <SafeAreaView
       style={styles.safeArea}
       edges={["top", "right", "bottom", "left"]}
     >
       {/*
-        The column scrolls. It did not, and on a 375x667 screen (iPhone SE,
-        and any iPhone-only app on an iPad, which runs at iPhone size) it is
-        ~880pt tall: `justifyContent: "center"` overflows *both* ends rather
-        than clamping, so the mark went off the top and "Sign in" off the
-        bottom, where nothing could reach it. That is the first screen App
-        Review opens. `flexGrow: 1` keeps it centred whenever it does fit
-        (the join screen, #2295, is the same shape).
+        One surface (#3349): no card over the page. The owner read the old
+        card-on-background as "two different surfaces".
 
-        Keyboard on iOS: `automaticallyAdjustKeyboardInsets`, not the padding
-        view the join screen uses. It insets the scroll view by the keyboard's
-        overlap *and* scrolls the focused field above it (RN 0.86
-        `RCTScrollViewComponentView._keyboardWillChangeFrame`, fed by the
-        focused `TextInput`'s `firstResponderFocus`). A padding
-        `KeyboardAvoidingView` only shrinks the viewport, which leaves the
-        email field below the fold of a shorter scroll view: out from under
-        the keyboard, but still out of sight. Doing both would count the
-        keyboard twice, so the area below is a plain view on iOS.
+        The column scrolls, and `flexGrow: 1` lets it fill the screen when it
+        fits, with the brand at the top and the actions at the bottom, in
+        thumb reach. Folded, it fits a 6.1" phone without scrolling; a smaller
+        screen, or the open email form, scrolls instead of clipping (an
+        iPhone SE once lost "Sign in" below the edge, 2026-09-22).
+
+        Keyboard on iOS: `automaticallyAdjustKeyboardInsets` insets the scroll
+        view by the keyboard and scrolls the focused field above it. A padding
+        view on top would count the keyboard twice, so the area below is a
+        plain view on iOS.
 
         Keyboard on Android: that prop does nothing there, and the app-wide
-        `KeyboardProvider` stops the window from resizing (#3346), so the area
-        pads the scroll view by the keyboard. Android's scroll view keeps the
-        focused field in sight when it shrinks.
+        `KeyboardProvider` stops the window from resizing (#3346). The email
+        form replaces the brand and opens at the top of the column, and the
+        area below pads the scroll view by the keyboard, so on a short screen
+        the column scrolls instead of the keyboard covering "Sign in".
       */}
       <KeyboardAvoidingArea style={styles.scroll} iosInsetFromScrollView>
         <ScrollView
@@ -165,226 +261,213 @@ export default function SignIn() {
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets
         >
-          <Image
-            // Metro asset id. This app has no `*.png` module declaration, so a
-            // static ESM import fails `tsc` (TS2307) even though Metro is fine.
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            source={require("../../assets/images/icon.png")}
-            style={styles.mark}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-          />
-          <Text style={styles.title}>Frapp</Text>
-          {/*
-        The landing's closing line (D8, `spec/ui/landing/README.md`), not the
-        brand tagline "Ask your chapter anything.": this is the first screen
-        App Review opens, and a build without Ask must not lead with it
-        (#2298). The brand tagline returns here in the slice that ships Ask.
-      */}
-          <Text style={styles.subtitle}>
-            Everything your chapter needs is already in chat.
-          </Text>
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Sign in to your chapter</Text>
-            <Text style={styles.cardBody}>
-              Use your chapter email. Most accounts resolve to a single chapter
-              automatically; if yours belongs to more than one, you will pick
-              after signing in.
-            </Text>
+          {emailOpen ? (
+            <View style={styles.emailColumn}>
+              <View style={styles.emailHeader}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Back to sign-in options"
+                  accessibilityState={{ disabled: submitting }}
+                  disabled={submitting}
+                  hitSlop={8}
+                  onPress={closeEmail}
+                  style={styles.backButton}
+                >
+                  <Text style={styles.backGlyph}>‹</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.emailTitle}>Sign in with email</Text>
 
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: submitting }}
-              disabled={submitting}
-              onPress={() => {
-                void handleOAuth("apple");
-              }}
-              style={[
-                styles.oauthButton,
-                submitting ? styles.primaryButtonDisabled : null,
-              ]}
-            >
-              {oauthPending === "apple" ? (
-                <ActivityIndicator
-                  color={tokens.color.text.foreground}
-                  size="small"
-                />
-              ) : (
-                <AppleMark color={tokens.color.text.foreground} />
-              )}
-              <Text style={styles.oauthButtonText}>
-                {oauthPending === "apple"
-                  ? "Signing in..."
-                  : "Continue with Apple"}
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: submitting }}
-              disabled={submitting}
-              onPress={() => {
-                void handleOAuth("google");
-              }}
-              style={[
-                styles.oauthButton,
-                submitting ? styles.primaryButtonDisabled : null,
-              ]}
-            >
-              {oauthPending === "google" ? (
-                <ActivityIndicator
-                  color={tokens.color.text.foreground}
-                  size="small"
-                />
-              ) : (
-                <GoogleMark />
-              )}
-              <Text style={styles.oauthButtonText}>
-                {oauthPending === "google"
-                  ? "Signing in..."
-                  : "Continue with Google"}
-              </Text>
-            </Pressable>
-            <Text style={styles.helperText}>{OAUTH_MEMBERSHIP_HINT}</Text>
+              <Text style={styles.inputLabel}>Chapter email</Text>
+              <TextInput
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@university.edu"
+                placeholderTextColor={tokens.color.text.muted}
+                autoCapitalize="none"
+                autoComplete="email"
+                autoCorrect={false}
+                autoFocus
+                keyboardType="email-address"
+                textContentType="username"
+                // Password mode: return moves to the password field, keeping the
+                // keyboard up. Magic-link mode has no field after this one, so
+                // return sends the link, as the button would.
+                returnKeyType={authMode === "password" ? "next" : "send"}
+                submitBehavior={
+                  authMode === "password" ? "submit" : "blurAndSubmit"
+                }
+                onSubmitEditing={() => {
+                  if (authMode === "password") passwordRef.current?.focus();
+                  else submit();
+                }}
+                style={styles.input}
+              />
 
-            <View style={styles.orRow}>
-              <View style={styles.orRule} />
-              <Text style={styles.orLabel}>or</Text>
-              <View style={styles.orRule} />
-            </View>
-
-            <Text style={styles.inputLabel}>Chapter email</Text>
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@university.edu"
-              placeholderTextColor={tokens.color.text.muted}
-              autoCapitalize="none"
-              autoComplete="email"
-              autoCorrect={false}
-              keyboardType="email-address"
-              textContentType="username"
-              // Password mode: return moves to the password field, keeping the
-              // keyboard up. Magic-link mode has no field after this one, so
-              // return sends the link, as the button would.
-              returnKeyType={authMode === "password" ? "next" : "send"}
-              submitBehavior={
-                authMode === "password" ? "submit" : "blurAndSubmit"
-              }
-              onSubmitEditing={() => {
-                if (authMode === "password") passwordRef.current?.focus();
-                else submit();
-              }}
-              style={styles.input}
-            />
-
-            <View style={styles.modeRow}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected: authMode === "password" }}
-                onPress={() => setAuthMode("password")}
-                style={[
-                  styles.modeButton,
-                  authMode === "password" ? styles.modeButtonActive : null,
-                ]}
-              >
-                <Text
+              <View style={styles.modeRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: authMode === "password" }}
+                  onPress={() => setAuthMode("password")}
                   style={[
-                    styles.modeButtonText,
-                    authMode === "password"
-                      ? styles.modeButtonTextActive
-                      : null,
+                    styles.modeButton,
+                    authMode === "password" ? styles.modeButtonActive : null,
                   ]}
                 >
-                  Password
+                  <Text
+                    style={[
+                      styles.modeButtonText,
+                      authMode === "password"
+                        ? styles.modeButtonTextActive
+                        : null,
+                    ]}
+                  >
+                    Password
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: authMode === "magic_link" }}
+                  onPress={() => setAuthMode("magic_link")}
+                  style={[
+                    styles.modeButton,
+                    authMode === "magic_link" ? styles.modeButtonActive : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.modeButtonText,
+                      authMode === "magic_link"
+                        ? styles.modeButtonTextActive
+                        : null,
+                    ]}
+                  >
+                    Magic Link
+                  </Text>
+                </Pressable>
+              </View>
+
+              {authMode === "password" ? (
+                <>
+                  <Text style={styles.inputLabel}>Password</Text>
+                  <TextInput
+                    ref={passwordRef}
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Your password"
+                    placeholderTextColor={tokens.color.text.muted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    secureTextEntry
+                    textContentType="password"
+                    returnKeyType="go"
+                    onSubmitEditing={submit}
+                    style={styles.input}
+                  />
+                </>
+              ) : (
+                <Text style={styles.helperText}>
+                  We&apos;ll email you a link that signs you in on this device.
                 </Text>
-              </Pressable>
+              )}
+
+              {messages}
+              {magicLinkSentTo ? (
+                <Text style={styles.successText}>
+                  Link sent to {magicLinkSentTo}. Open it on this device to
+                  finish signing in.
+                </Text>
+              ) : null}
+
               <Pressable
                 accessibilityRole="button"
-                accessibilityState={{ selected: authMode === "magic_link" }}
-                onPress={() => setAuthMode("magic_link")}
+                accessibilityState={{ disabled: submitting }}
+                disabled={submitting}
+                onPress={submit}
                 style={[
-                  styles.modeButton,
-                  authMode === "magic_link" ? styles.modeButtonActive : null,
+                  styles.button,
+                  styles.buttonPrimary,
+                  submitting ? styles.buttonDisabled : null,
                 ]}
               >
-                <Text
-                  style={[
-                    styles.modeButtonText,
-                    authMode === "magic_link"
-                      ? styles.modeButtonTextActive
-                      : null,
-                  ]}
-                >
-                  Magic Link
+                <Text style={styles.buttonTextPrimary}>
+                  {submitting
+                    ? "Signing in..."
+                    : authMode === "password"
+                      ? "Sign in"
+                      : "Email me a link"}
                 </Text>
               </Pressable>
             </View>
-
-            {authMode === "password" ? (
-              <>
-                <Text style={styles.inputLabel}>Password</Text>
-                <TextInput
-                  ref={passwordRef}
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Your password"
-                  placeholderTextColor={tokens.color.text.muted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  secureTextEntry
-                  textContentType="password"
-                  returnKeyType="go"
-                  onSubmitEditing={submit}
-                  style={styles.input}
+          ) : (
+            <>
+              <View style={styles.brand}>
+                <Image
+                  // Metro asset id. This app has no `*.png` module declaration,
+                  // so a static ESM import fails `tsc` (TS2307) even though
+                  // Metro is fine.
+                  // eslint-disable-next-line @typescript-eslint/no-require-imports
+                  source={require("../../assets/images/icon.png")}
+                  style={styles.mark}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
                 />
-              </>
-            ) : (
-              <Text style={styles.helperText}>
-                We&apos;ll email you a link that signs you in on this device.
-              </Text>
-            )}
+                <Text style={styles.title}>Frapp</Text>
+                {/*
+                  The landing's closing line (D8, `spec/ui/landing/README.md`),
+                  not the brand tagline "Ask your chapter anything.": this is
+                  the first screen App Review opens, and a build without Ask
+                  must not lead with it (#2298).
+                */}
+                <Text style={styles.subtitle}>
+                  Everything your chapter needs is already in chat.
+                </Text>
+                <SignInMoments />
+              </View>
 
-            {authError ? (
-              <Text style={styles.errorText}>{authError}</Text>
-            ) : null}
-            {/* A dead magic link lands back here; without this the member cannot
-            tell a broken link from one they never tapped. */}
-            {!authError && callbackError ? (
-              <Text style={styles.errorText}>{callbackError}</Text>
-            ) : null}
-            {magicLinkSentTo ? (
-              <Text style={styles.successText}>
-                Link sent to {magicLinkSentTo}. Open it on this device to finish
-                signing in.
-              </Text>
-            ) : null}
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: submitting }}
-              disabled={submitting}
-              onPress={submit}
-              style={[
-                styles.primaryButton,
-                submitting ? styles.primaryButtonDisabled : null,
-              ]}
-            >
-              <Text style={styles.primaryButtonText}>
-                {submitting
-                  ? "Signing in..."
-                  : authMode === "password"
-                    ? "Sign in"
-                    : "Email me a link"}
-              </Text>
-            </Pressable>
-
-            {!isConfigured ? (
-              <Text style={styles.errorText}>
-                EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are
-                not set for this build, so sign-in is unavailable.
-              </Text>
-            ) : null}
-          </View>
+              <View style={styles.actions}>
+                {messages}
+                {renderProvider(layout.primary, true)}
+                {layout.secondary
+                  ? renderProvider(layout.secondary, false)
+                  : null}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: submitting }}
+                  disabled={submitting}
+                  onPress={() => {
+                    setAuthError(null);
+                    setMagicLinkSentTo(null);
+                    setEmailOpen(true);
+                  }}
+                  style={[
+                    styles.button,
+                    styles.buttonOutline,
+                    submitting ? styles.buttonDisabled : null,
+                  ]}
+                >
+                  <Text style={styles.buttonText}>Continue with email</Text>
+                </Pressable>
+                {layout.tucked && moreOpen
+                  ? renderProvider(layout.tucked, false)
+                  : null}
+                {layout.tucked && !moreOpen ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setMoreOpen(true)}
+                    style={styles.textButton}
+                  >
+                    <Text style={styles.textButtonLabel}>
+                      Other ways to sign in
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {appleVisible ? (
+                  <Text style={styles.hintText}>{OAUTH_MEMBERSHIP_HINT}</Text>
+                ) : null}
+              </View>
+            </>
+          )}
         </ScrollView>
       </KeyboardAvoidingArea>
     </SafeAreaView>
@@ -412,6 +495,9 @@ export default function SignIn() {
  */
 const SUBTITLE_MAX_WIDTH = 227;
 
+/** The actions column's cap, so a tablet doesn't stretch buttons edge to edge. */
+const COLUMN_MAX_WIDTH = 400;
+
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     // The surface colour sits on all three layers: an iOS overscroll bounce
@@ -427,10 +513,18 @@ function createStyles(tokens: SignetTokens) {
     },
     container: {
       flexGrow: 1,
-      justifyContent: "center",
-      alignItems: "center",
-      padding: tokens.spacing.xl,
+      paddingHorizontal: tokens.spacing.xl,
+      paddingTop: tokens.spacing.xl,
+      paddingBottom: tokens.spacing.lg,
+      gap: tokens.spacing.xl,
       backgroundColor: tokens.color.surface.background,
+    },
+    // Takes the height the actions leave and centres the brand in it, so a
+    // tall phone shows no dead band between the cards and the buttons.
+    brand: {
+      flexGrow: 1,
+      alignItems: "center",
+      justifyContent: "center",
     },
     // brand-identity.md §2: locked emblem B, 52px on radius 14 (`radius.card`).
     // Raster of the canonical tile — never chapter accent.
@@ -439,70 +533,95 @@ function createStyles(tokens: SignetTokens) {
       height: 52,
       borderRadius: tokens.radius.card,
       overflow: "hidden",
-      marginBottom: tokens.spacing.lg,
+      marginBottom: tokens.spacing.md,
     },
     title: {
-      ...typeRole(tokens.typography.role.display),
+      ...typeRole(tokens.typography.role.headline),
       color: tokens.color.text.foreground,
-      marginBottom: tokens.spacing.sm,
+      marginBottom: tokens.spacing.xs,
     },
     subtitle: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.muted,
-      marginBottom: tokens.spacing.xl,
       textAlign: "center",
       maxWidth: SUBTITLE_MAX_WIDTH,
     },
-    // Elevation is a lighter surface, never a shadow (foundations.md §10).
-    card: {
-      backgroundColor: tokens.color.surface.card,
-      borderRadius: tokens.radius.cardLarge,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      padding: tokens.spacing.lg,
+    actions: {
       width: "100%",
-      maxWidth: 340,
+      maxWidth: COLUMN_MAX_WIDTH,
+      alignSelf: "center",
+      gap: tokens.spacing.sm,
     },
-    cardTitle: {
-      ...typeRole(tokens.typography.role.title),
+    emailColumn: {
+      width: "100%",
+      maxWidth: COLUMN_MAX_WIDTH,
+      alignSelf: "center",
+    },
+    emailHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    backButton: {
+      minWidth: tokens.touch.minimum,
+      minHeight: tokens.touch.minimum,
+      justifyContent: "center",
+    },
+    backGlyph: {
+      fontSize: 30,
+      lineHeight: 32,
       color: tokens.color.text.foreground,
     },
-    cardBody: {
-      marginTop: tokens.spacing.sm,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
-    },
-    oauthButton: {
+    emailTitle: {
       marginTop: tokens.spacing.md,
+      marginBottom: tokens.spacing.sm,
+      ...typeRole(tokens.typography.role.headline),
+      color: tokens.color.text.foreground,
+    },
+    button: {
       borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingVertical: tokens.spacing.md,
       minHeight: tokens.touch.button,
+      paddingHorizontal: tokens.spacing.md,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
       gap: tokens.spacing.sm,
     },
-    oauthButtonText: {
-      color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.label),
+    // The platform's own account leads as the one filled button. Light on
+    // the dark page, so it reads as the first choice without borrowing house
+    // gold, which stays the email form's primary.
+    buttonFilled: {
+      backgroundColor: tokens.color.text.foreground,
     },
-    orRow: {
+    buttonOutline: {
+      borderWidth: 1,
+      borderColor: tokens.color.border.input,
+    },
+    buttonPrimary: {
       marginTop: tokens.spacing.lg,
-      flexDirection: "row",
+      backgroundColor: tokens.color.gold.house,
+    },
+    buttonDisabled: {
+      opacity: 0.55,
+    },
+    buttonText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+    },
+    buttonTextFilled: {
+      color: tokens.color.surface.background,
+    },
+    buttonTextPrimary: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.gold.onHouse,
+    },
+    textButton: {
+      minHeight: tokens.touch.minimum,
       alignItems: "center",
-      gap: tokens.spacing.sm,
+      justifyContent: "center",
     },
-    orRule: {
-      flex: 1,
-      height: 1,
-      backgroundColor: tokens.color.border.hairline,
-    },
-    orLabel: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
+    textButtonLabel: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
     },
     inputLabel: {
       marginTop: tokens.spacing.md,
@@ -524,7 +643,7 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
     },
     modeRow: {
-      marginTop: tokens.spacing.sm,
+      marginTop: tokens.spacing.md,
       flexDirection: "row",
       borderRadius: tokens.radius.control,
       borderWidth: 1,
@@ -559,26 +678,16 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.success,
     },
+    hintText: {
+      marginTop: tokens.spacing.xs,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      textAlign: "center",
+    },
     helperText: {
       marginTop: tokens.spacing.sm,
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
-    },
-    primaryButton: {
-      marginTop: tokens.spacing.lg,
-      borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.gold.house,
-      paddingVertical: tokens.spacing.md,
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    primaryButtonDisabled: {
-      opacity: 0.55,
-    },
-    primaryButtonText: {
-      color: tokens.color.gold.onHouse,
-      ...typeRole(tokens.typography.role.label),
     },
   });
 }
