@@ -111,7 +111,7 @@ constraints web habits most often break:
 
 - Style with typed `StyleSheet` token factories, not NativeWind (removed). A screen calls
   `useFrappTheme()` from `apps/mobile/lib/theme.tsx` and passes the tokens to a
-  `createStyles(tokens: SignetTokens)` factory. Follow `apps/mobile/components/nav-tile.tsx`.
+  `createStyles(tokens: SignetTokens)` factory. Follow `apps/mobile/components/list-section.tsx`.
 - The theme is dark-only. The context is `{ tokens: SignetTokens }`, with no light/dark preference,
   no `resolvedTheme`, and no `useColorScheme`.
 - Don't put raw hex or hand-set type in screen code. Set type only through

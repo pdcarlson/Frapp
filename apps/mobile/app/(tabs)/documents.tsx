@@ -119,7 +119,7 @@ export default function DocumentsScreen() {
       return (
         <ErrorState
           title="Couldn't load documents"
-          body="If you belong to more than one chapter, pick one from More → Chapter first."
+          body="If you belong to more than one chapter, pick one from More → Switch chapter first."
           onRetry={() => void documentsQuery.refetch()}
           isRetrying={documentsQuery.isFetching}
         />
