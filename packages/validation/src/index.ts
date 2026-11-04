@@ -577,7 +577,7 @@ export {
   CLIENT_ANALYTICS_APPS,
   ContentFreePropertyError,
   FORBIDDEN_ANALYTICS_PROPERTY_KEYS,
-  RESERVED_ANALYTICS_PROPERTY_KEYS,
+  RESERVED_ANALYTICS_PROPERTY_KEYS_TEXT,
 } from "./analytics";
 export type {
   AnalyticsApp,

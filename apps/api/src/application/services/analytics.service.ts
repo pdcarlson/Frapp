@@ -140,15 +140,16 @@ export class AnalyticsService {
     userId: string,
     options: TrackOptions = {},
   ): Promise<void> {
+    // Checked first, analytics configured or not, so a bad payload fails the
+    // same way in local dev as on staging; and before the API's own `app`
+    // stamp, which the check reserves.
+    assertContentFreeProperties({
+      name: eventName,
+      properties: options.properties,
+    });
     const distinctId = this.getDistinctId(userId);
     if (!distinctId) return;
 
-    // Checked before the API's own `app` stamp, which the check reserves.
-    assertContentFreeProperties({
-      name: eventName,
-      distinctId,
-      properties: options.properties,
-    });
     const chapterGroup = this.getChapterGroupId(options.chapterId);
     const event: AnalyticsEvent = {
       name: eventName,
@@ -205,20 +206,19 @@ export class AnalyticsService {
     userId: string,
     options: TrackOptions = {},
   ): Promise<void> {
-    // Analytics off (no salt): nothing will be captured, so skip the membership
-    // work and DB hit entirely — mirrors `track`'s own guard.
-    const distinctId = this.getDistinctId(userId);
-    if (!distinctId) return;
-
-    // Validate the payload up front so a content/PII event is always rejected
-    // with a 400 — the payload being malformed is a caller error independent of
-    // whether membership/opt-out later suppresses delivery. (`track` re-validates
-    // for its own server-originated callers; the assertion is pure and cheap.)
+    // Validate the payload up front so a content/PII or reserved-key event is
+    // always rejected with a 400, analytics configured or not: the payload being
+    // malformed is a caller error independent of whether the salt, membership or
+    // opt-out later suppresses delivery. (`track` re-validates for its own
+    // server-originated callers; the assertion is pure and cheap.)
     assertContentFreeProperties({
       name: eventName,
-      distinctId,
       properties: options.properties,
     });
+
+    // Analytics off (no salt): nothing will be captured, so skip the membership
+    // work and DB hit entirely — mirrors `track`'s own guard.
+    if (!this.getDistinctId(userId)) return;
 
     if (options.chapterId) {
       // A clean "not a member" is an authorization denial → 403. A DB error
@@ -310,10 +310,11 @@ export class AnalyticsService {
     chapterId: string,
     properties?: AnalyticsProperties,
   ): Promise<void> {
+    // Checked first, analytics configured or not, as in `track`.
+    assertContentFreeProperties({ name: eventName, properties });
     if (!this.salt) return;
 
     const distinctId = hashChapterIdForAnalytics(this.salt, chapterId);
-    assertContentFreeProperties({ name: eventName, distinctId, properties });
     const event: AnalyticsEvent = {
       name: eventName,
       distinctId,

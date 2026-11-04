@@ -4,6 +4,7 @@ import {
   assertContentFreeProperties,
   CLIENT_ANALYTICS_APPS,
   ContentFreePropertyError,
+  RESERVED_ANALYTICS_PROPERTY_KEYS_TEXT,
 } from './analytics';
 
 const DISTINCT_ID = 'a'.repeat(64);
@@ -43,6 +44,24 @@ describe('assertContentFreeProperties', () => {
     expect(check({ app: 'web', $ip: '1.2.3.4', step: 1 })).toThrow(
       'reserved properties: app, $ip',
     );
+  });
+
+  it('names the reserved keys from the list, not by hand', () => {
+    expect(RESERVED_ANALYTICS_PROPERTY_KEYS_TEXT).toBe('`app`');
+    expect(check({ app: 'web' })).toThrow(
+      `The API sets ${RESERVED_ANALYTICS_PROPERTY_KEYS_TEXT} itself`,
+    );
+  });
+
+  // The API checks a payload before it knows whether analytics is configured,
+  // so before any distinct id exists.
+  it('checks an event that has no distinct id yet', () => {
+    expect(() =>
+      assertContentFreeProperties({
+        name: 'search-completed',
+        properties: { $set: 'x' },
+      }),
+    ).toThrow(ContentFreePropertyError);
   });
 
   it('reserves `app` exactly, and `$` only as a prefix', () => {

@@ -100,6 +100,10 @@ export class ContentFreePropertyError extends Error {
 
 const RESERVED_KEY_SET = new Set<string>(RESERVED_ANALYTICS_PROPERTY_KEYS);
 
+/** The reserved keys as prose, e.g. "`app`", for messages and descriptions. */
+export const RESERVED_ANALYTICS_PROPERTY_KEYS_TEXT =
+  RESERVED_ANALYTICS_PROPERTY_KEYS.map((key) => `\`${key}\``).join(', ');
+
 function isReservedKey(key: string): boolean {
   return key.startsWith('$') || RESERVED_KEY_SET.has(key);
 }
@@ -110,10 +114,12 @@ function isReservedKey(key: string): boolean {
  * `$`-prefixed), and non-scalar values — a nested object or array could
  * smuggle content past the key check (e.g. `{ meta: { body: "…" } }`). Returns
  * the event unchanged on success so it can be used inline at the SDK boundary.
+ * Reads only the name and properties, so it can run before a distinct id
+ * exists.
  */
-export function assertContentFreeProperties(
-  event: AnalyticsEvent,
-): AnalyticsEvent {
+export function assertContentFreeProperties<
+  E extends Pick<AnalyticsEvent, 'name' | 'properties'>,
+>(event: E): E {
   const properties = event.properties ?? {};
 
   const reservedKeys = Object.keys(properties).filter(isReservedKey);
@@ -121,7 +127,7 @@ export function assertContentFreeProperties(
     throw new ContentFreePropertyError(
       `Analytics event "${event.name}" sets reserved propert${
         reservedKeys.length === 1 ? 'y' : 'ies'
-      }: ${reservedKeys.join(', ')}. The API sets \`app\` itself, and \`$\`-prefixed keys belong to PostHog.`,
+      }: ${reservedKeys.join(', ')}. The API sets ${RESERVED_ANALYTICS_PROPERTY_KEYS_TEXT} itself, and \`$\`-prefixed keys belong to PostHog.`,
     );
   }
 

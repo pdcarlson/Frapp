@@ -3305,7 +3305,7 @@ export interface components {
             /** @description Chapter the event is attributed to (enables the opt-out gate) */
             chapter_id?: string;
             /**
-             * @description The app sending the event. The API stamps it on the event as the `app` property; a client may not set `app` in `properties`.
+             * @description The app sending the event, as the client reports it. The API stamps it on the event as the `app` property; a client may not set `app` in `properties`.
              * @enum {string}
              */
             app?: "web" | "mobile";

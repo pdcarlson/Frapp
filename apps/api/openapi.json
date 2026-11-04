@@ -10646,7 +10646,7 @@
           },
           "app": {
             "type": "string",
-            "description": "The app sending the event. The API stamps it on the event as the `app` property; a client may not set `app` in `properties`.",
+            "description": "The app sending the event, as the client reports it. The API stamps it on the event as the `app` property; a client may not set `app` in `properties`.",
             "enum": [
               "web",
               "mobile"
