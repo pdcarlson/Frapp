@@ -174,12 +174,12 @@ export default function TermsPrompt() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    // On the scroll view as well as its content, as on the join screen: an
-    // iOS overscroll bounce otherwise shows react-navigation's light default.
     safeArea: {
       flex: 1,
       backgroundColor: tokens.color.surface.background,
     },
+    // On the scroll view as well as its content, as on the join screen: an
+    // iOS overscroll bounce otherwise shows react-navigation's light default.
     scroll: {
       flex: 1,
       backgroundColor: tokens.color.surface.background,

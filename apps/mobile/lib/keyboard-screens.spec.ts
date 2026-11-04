@@ -38,7 +38,8 @@ describe("screens with a low text field avoid the keyboard (#3346)", () => {
     // around it on iOS would count the keyboard twice.
     const source = readFileSync(join(APP_DIR, "(auth)/sign-in.tsx"), "utf8");
 
-    expect(source).toMatch(/automaticallyAdjustKeyboardInsets/);
+    // As a JSX prop on its own line; the file's comments name it too.
+    expect(source).toMatch(/^\s*automaticallyAdjustKeyboardInsets\s*$/m);
     expect(source).toMatch(
       /<KeyboardAvoidingArea\b[^>]*\biosInsetFromScrollView\b/,
     );

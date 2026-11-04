@@ -25,9 +25,12 @@ const AUTH_DIR = join(
   "(auth)",
 );
 
-const screens = readdirSync(AUTH_DIR).filter(
-  (file) => file.endsWith(".tsx") && file !== "_layout.tsx",
-);
+// Recursive, so a screen in a subfolder (a future `invite/[token].tsx`) is
+// checked too. Paths come back relative to `(auth)`, with `/` on POSIX.
+const screens = readdirSync(AUTH_DIR, {
+  recursive: true,
+  encoding: "utf8",
+}).filter((file) => file.endsWith(".tsx") && !file.endsWith("_layout.tsx"));
 
 describe("(auth) screens take the safe area (#3345)", () => {
   it("finds the screens to check", () => {
