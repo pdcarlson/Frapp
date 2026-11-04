@@ -5,7 +5,8 @@
  * `lib/chat/channel-list.ts` selectors are plain functions with a plain-node
  * spec, and they must be able to import this rule without dragging a query
  * client into that graph. Its one import is `@repo/validation`'s
- * `SYSTEM_SENDER_ID` (#3347), a constant from a package with no React in it.
+ * `SYSTEM_SENDER_ID` and `SYSTEM_AUTHOR_LABEL` (#3347), constants from a
+ * package with no React in it.
  *
  * ## Why names are resolved by id rather than joined onto the message
  *
@@ -22,7 +23,7 @@
  * only path-independent option.
  */
 
-import { SYSTEM_SENDER_ID } from "@repo/validation";
+import { SYSTEM_AUTHOR_LABEL, SYSTEM_SENDER_ID } from "@repo/validation";
 
 /** `users.id` → `display_name`, as served by `GET /v1/members/roster`. */
 export type DisplayNameMap = Record<string, string>;
@@ -241,20 +242,10 @@ export interface MessageAuthor {
 /** Resolves a `users.id` to a display name, or `null`. Matches `nameFor`. */
 export type NameResolver = (userId: string) => string | null;
 
-/**
- * The author name for a message the server posts as the system actor
- * (`SYSTEM_SENDER_ID`): the chapter welcome post, the `#chapter-audit` bridge,
- * poll-expiry notices and invite-accept DMs.
- *
- * The system actor is a real `users` row but never a chapter member, so the
- * roster can't name it, and before this the author line fell through to
- * `memberFallbackLabel` and the welcome post every new chapter sees first read
- * "Member 000000" beside a "00" avatar (#3347). It is the product speaking, so
- * it takes the product's name. The row's own `display_name` ("Frapp System")
- * is not used: it names the account, not the voice, and the roster never
- * serves it anyway.
- */
-export const SYSTEM_AUTHOR_LABEL = "Frapp";
+// The system actor's name lives in `@repo/validation` beside its id, so the
+// API's activity feed names it the same way (#3347). Re-exported here because
+// `resolveAuthorName` is where clients meet it.
+export { SYSTEM_AUTHOR_LABEL };
 
 /**
  * The best available human name for a message's author, or `null`.
