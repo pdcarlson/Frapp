@@ -53,9 +53,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * differs from the web form's `seededFrom` merge, #3392).
  *
  * Dismissing, saving or cancelling drops the edits, except that a sheet closed
- * mid-save keeps them until the save settles. `useUpdateUser` caches the row
- * the server saved before it settles, so a save closes onto the saved values
- * rather than flashing the old ones.
+ * mid-save keeps them until the save settles. Before it settles,
+ * `useUpdateUser` writes the row the server saved over the cached profile when
+ * it is the same account's (a loaded s15 always has it cached), so a save
+ * closes onto the saved values rather than flashing the old ones.
  *
  * ## A fixed detent, not dynamic sizing
  *
@@ -149,15 +150,21 @@ export const EditProfileSheet = forwardRef<
     dismiss();
   };
 
+  // Set the moment Save sends, before `isPending` reaches a render: two taps
+  // handled in one batch both see the same render's `canSave`.
+  const sending = useRef(false);
+
   const save = () => {
-    // `canSave`, not only the button's `disabled`, stands between a save in
-    // flight and a second PATCH.
-    if (!result.ok || !canSave) return;
+    // `canSave` and `sending`, not only the button's `disabled`, stand
+    // between a save in flight and a second PATCH.
+    if (!result.ok || !canSave || sending.current) return;
+    sending.current = true;
     setSubmitFailed(false);
     const sentFrom = closes.current;
     updateUser.mutate(result.patch, {
-      // `useUpdateUser` has already cached the row the server saved, so
-      // dropping the edits here shows it, not the old values. The fields are
+      // `useUpdateUser` has already written the row the server saved over
+      // this account's cached profile, so dropping the edits here shows it,
+      // not the old values. The fields are
       // read-only while the save runs, so these edits are all it sent. A
       // sheet closed and reopened since then is the member's new visit, and
       // the save doesn't close it under them.
@@ -167,6 +174,9 @@ export const EditProfileSheet = forwardRef<
       },
       // The draft stays, so nothing typed is lost to a dropped connection.
       onError: () => setSubmitFailed(true),
+      onSettled: () => {
+        sending.current = false;
+      },
     });
   };
 

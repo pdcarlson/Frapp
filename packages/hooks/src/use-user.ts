@@ -35,7 +35,11 @@ export function useCurrentUser() {
  */
 export function useViewerUserId(): string | null {
   const query = useCurrentUser();
-  const data: unknown = query.data;
+  return userIdOf(query.data);
+}
+
+/** A `/v1/users/me` row's `users.id`, narrowed as {@link useViewerUserId} says. */
+function userIdOf(data: unknown): string | null {
   const raw =
     data && typeof data === "object" && "id" in data
       ? ((data as { id?: unknown }).id ?? null)
@@ -60,17 +64,14 @@ export function useUpdateUser() {
       // save itself landed. Only over the same account's cached row: a save
       // still in flight across a sign-out or an account swap must not put the
       // previous member's row back into a cache the swap just cleared.
-      let cached = false;
       queryClient.setQueryData(["user", "me"], (old: unknown) => {
-        if (!sameUserRow(old, saved)) return old;
-        cached = true;
-        return saved;
+        const id = userIdOf(old);
+        return id !== null && id === userIdOf(saved) ? saved : old;
       });
-      // The cached row needs no refetch of its own; every other read does.
-      void invalidateProfileReads(
-        queryClient,
-        cached ? OTHER_PROFILE_READS : PROFILE_QUERY_FILTERS,
-      );
+      // `["user", "me"]` too, though it was just written: invalidating it
+      // cancels a GET that left before the PATCH landed, which would
+      // otherwise answer last and put the pre-save row back.
+      void invalidateProfileReads(queryClient);
     },
   });
 }
@@ -87,8 +88,9 @@ export function useUpdateUser() {
  * `["user", "me"]` is matched exactly: as a prefix it would also refetch
  * `["user", "me", "permissions", …]` and `["user", "me", "legal-acceptance"]`,
  * which a profile edit can't change. The photo mutations wait for every
- * refetch they start; `useUpdateUser` writes the saved row into the cache and
- * starts the rest without waiting.
+ * refetch they start. `useUpdateUser` starts them without waiting, having
+ * first written the saved row over the cached one when both are the same
+ * account's.
  */
 export const PROFILE_QUERY_FILTERS: readonly InvalidateQueryFilters[] = [
   { queryKey: ["user", "me"], exact: true },
@@ -97,27 +99,13 @@ export const PROFILE_QUERY_FILTERS: readonly InvalidateQueryFilters[] = [
   { queryKey: ["activity-feed"] },
 ];
 
-/** {@link PROFILE_QUERY_FILTERS} but the viewer's own `["user", "me"]`. */
-const OTHER_PROFILE_READS = PROFILE_QUERY_FILTERS.filter(
-  (filter) => filter.queryKey?.join("/") !== "user/me",
-);
-
-/** Whether `next` is a `users` row for the same account as cached `old`. */
-function sameUserRow(old: unknown, next: unknown): boolean {
-  const id = (row: unknown) =>
-    row && typeof row === "object" && "id" in row
-      ? (row as { id?: unknown }).id
-      : undefined;
-  const oldId = id(old);
-  return typeof oldId === "string" && oldId.length > 0 && oldId === id(next);
-}
-
 function invalidateProfileReads(
   queryClient: ReturnType<typeof useQueryClient>,
-  filters: readonly InvalidateQueryFilters[] = PROFILE_QUERY_FILTERS,
 ) {
   return Promise.all(
-    filters.map((filter) => queryClient.invalidateQueries(filter)),
+    PROFILE_QUERY_FILTERS.map((filters) =>
+      queryClient.invalidateQueries(filters),
+    ),
   );
 }
 

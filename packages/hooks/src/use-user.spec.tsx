@@ -234,24 +234,26 @@ describe("profile mutations (#732, #3387)", () => {
       body: { display_name: "Alex Rivera" },
     });
     expect(queryClient.getQueryData(["user", "me"])).toEqual(saved);
-    // The row just cached needs no refetch; every other read does.
-    const [own, ...others] = EXPECTED_FILTERS;
-    for (const filters of others) {
+    // Every read, the one just written too: that cancels a GET that left
+    // before the PATCH landed and would otherwise answer last.
+    for (const filters of EXPECTED_FILTERS) {
       expect(harness.invalidated()).toContainEqual(filters);
     }
-    expect(harness.invalidated()).not.toContainEqual(own);
     harness.release();
   });
 
   // A save still in flight across a sign-out or an account swap: the swap
   // cleared the cache, or the next member's row is in it now.
   it.each([
-    ["the cache was cleared", undefined],
-    ["another account's row is cached", { id: "u-2", display_name: "Bea" }],
-  ])("doesn't cache the saved row when %s", async (_case, cachedRow) => {
+    ["the cache was cleared", undefined, { id: "u-1" }],
+    ["another account's row is cached", { id: "u-2" }, { id: "u-1" }],
+    // Neither side has an id: still not the same account.
+    ["the cache was cleared and the row is null", undefined, null],
+    ["neither row carries an id", { display_name: "Bea" }, { bio: "x" }],
+  ])("doesn't cache the saved row when %s", async (_case, cachedRow, row) => {
     const harness = photoMutationHarness();
     harness.mockClient.PATCH.mockResolvedValue({
-      data: { id: "u-1", display_name: "Alex Rivera" },
+      data: row,
       error: undefined,
     });
     if (cachedRow) queryClient.setQueryData(["user", "me"], cachedRow);

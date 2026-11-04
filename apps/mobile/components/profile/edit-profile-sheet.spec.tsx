@@ -113,10 +113,12 @@ function heldSave() {
     settle.succeed = () => {
       isPending = false;
       options.onSuccess();
+      options.onSettled?.();
     };
     settle.fail = () => {
       isPending = false;
       options.onError(new Error());
+      options.onSettled?.();
     };
   });
   return settle;
@@ -153,7 +155,10 @@ describe("EditProfileSheet (#3387)", () => {
   });
 
   it("sends only what changed, then closes", () => {
-    mutate.mockImplementation((_body, options) => options.onSuccess());
+    mutate.mockImplementation((_body, options) => {
+      options.onSuccess();
+      options.onSettled?.();
+    });
     const tree = render();
 
     type(tree, "Company", "Acme");
@@ -219,7 +224,10 @@ describe("EditProfileSheet (#3387)", () => {
   });
 
   it("keeps the draft and says so when a save fails", () => {
-    mutate.mockImplementation((_body, options) => options.onError(new Error()));
+    mutate.mockImplementation((_body, options) => {
+      options.onError(new Error());
+      options.onSettled?.();
+    });
     const tree = render();
 
     type(tree, "City", "Albany, NY");
@@ -255,10 +263,12 @@ describe("EditProfileSheet (#3387)", () => {
     const tree = render();
 
     type(tree, "Company", "Acme");
+    // Two taps in one batch, before `isPending` reaches a render.
     act(() => {
       saveButton(tree).props.onPress();
+      saveButton(tree).props.onPress();
     });
-    refetch(tree, PROFILE); // re-render with the save in flight
+    refetch(tree, PROFILE); // and one after it has
     act(() => {
       saveButton(tree).props.onPress();
     });
@@ -309,6 +319,22 @@ describe("EditProfileSheet (#3387)", () => {
     expect(screenText(tree)).not.toContain("Your name can't be empty.");
     type(tree, "Company", "Acme");
     expect(screenText(tree)).toContain("Your name can't be empty.");
+  });
+
+  it("lets the member retry once a failed save settles", () => {
+    const save = heldSave();
+    const tree = render();
+
+    type(tree, "City", "Albany, NY");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    act(() => save.fail());
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+
+    expect(mutate).toHaveBeenCalledTimes(2);
   });
 
   it("holds Save while a save is in flight", () => {
