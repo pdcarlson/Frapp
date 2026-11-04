@@ -33,6 +33,7 @@ import {
   useBookmarkMessage,
   useUnbookmarkMessage,
   resolveAuthorLabel,
+  resolveAuthorName,
   SIDEBAR_SAVE_FAILED_BODY,
   SIDEBAR_SAVE_FAILED_TITLE,
   sidebarMutedChannelIds,
@@ -1337,7 +1338,7 @@ export function ChatShell({
     const author =
       latest.sender_id === liveUserId
         ? "You"
-        : (nameFor(latest.sender_id ?? "") ?? "Someone");
+        : (resolveAuthorName(latest, nameFor) ?? "Someone");
     // eslint-disable-next-line react-hooks/set-state-in-effect -- announcing a real-time arrival by comparing against the previous render's last-seen id, not syncing render state
     setLiveAnnouncement(`New message from ${author}`);
   }, [channel.messages, activeChannelId, liveUserId, nameFor, blockState]);

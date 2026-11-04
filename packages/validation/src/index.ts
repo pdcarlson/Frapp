@@ -482,6 +482,22 @@ export function moduleRefusalFromServerMessage(
 export const SYSTEM_SENDER_ID = "00000000-0000-0000-0000-000000000000";
 
 /**
+ * The author name for a message the server posts as the system actor
+ * (`SYSTEM_SENDER_ID`): the chapter welcome post, the `#chapter-audit` bridge,
+ * poll-expiry notices and invite-accept DMs.
+ *
+ * The system actor is a real `users` row but never a chapter member, so the
+ * roster can't name it, and before this the clients' author line fell through
+ * to `memberFallbackLabel` and the welcome post every new chapter sees first read
+ * "Member 000000" beside a "00" avatar (#3347). It is the product speaking, so
+ * it takes the product's name. The row's own `display_name` ("Frapp System")
+ * is not used: it names the account, not the voice, and the roster never
+ * serves it anyway. `@repo/hooks`' `resolveAuthorName` and the API's activity
+ * feed both read this.
+ */
+export const SYSTEM_AUTHOR_LABEL = "Frapp";
+
+/**
  * Where a client's read of its own chat block list stands
  * (`spec/behavior/chat/README.md` § The masking contract). Tri-state, never
  * boolean: a failed read that looked like "nobody is blocked" would fail open

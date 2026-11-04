@@ -22,6 +22,7 @@ import {
 } from "@/lib/auth-providers";
 import { AppleMark, GoogleMark } from "@/components/auth/oauth-brand-icons";
 import { SignInMoments } from "@/components/auth/sign-in-moments";
+import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -242,220 +243,233 @@ export default function SignIn() {
         screen, or the open email form, scrolls instead of clipping (an
         iPhone SE once lost "Sign in" below the edge, 2026-09-22).
 
-        Keyboard: `automaticallyAdjustKeyboardInsets` insets the scroll view by
-        the keyboard and scrolls the focused field above it on iOS. Android's
-        window does not resize under the app-wide `KeyboardProvider`, so the
-        email form replaces the brand and opens at the top of the column,
-        where the keyboard cannot reach it.
+        Keyboard on iOS: `automaticallyAdjustKeyboardInsets` insets the scroll
+        view by the keyboard and scrolls the focused field above it. A padding
+        view on top would count the keyboard twice, so the area below is a
+        plain view on iOS.
+
+        Keyboard on Android: that prop does nothing there, and the app-wide
+        `KeyboardProvider` stops the window from resizing (#3346). The email
+        form replaces the brand and opens at the top of the column, and the
+        area below pads the scroll view by the keyboard, so on a short screen
+        the column scrolls instead of the keyboard covering "Sign in".
       */}
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled"
-        automaticallyAdjustKeyboardInsets
-      >
-        {emailOpen ? (
-          <View style={styles.emailColumn}>
-            <View style={styles.emailHeader}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Back to sign-in options"
-                accessibilityState={{ disabled: submitting }}
-                disabled={submitting}
-                hitSlop={8}
-                onPress={closeEmail}
-                style={styles.backButton}
-              >
-                <Text style={styles.backGlyph}>‹</Text>
-              </Pressable>
-            </View>
-            <Text style={styles.emailTitle}>Sign in with email</Text>
-
-            <Text style={styles.inputLabel}>Chapter email</Text>
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@university.edu"
-              placeholderTextColor={tokens.color.text.muted}
-              autoCapitalize="none"
-              autoComplete="email"
-              autoCorrect={false}
-              autoFocus
-              keyboardType="email-address"
-              textContentType="username"
-              // Password mode: return moves to the password field, keeping the
-              // keyboard up. Magic-link mode has no field after this one, so
-              // return sends the link, as the button would.
-              returnKeyType={authMode === "password" ? "next" : "send"}
-              submitBehavior={
-                authMode === "password" ? "submit" : "blurAndSubmit"
-              }
-              onSubmitEditing={() => {
-                if (authMode === "password") passwordRef.current?.focus();
-                else submit();
-              }}
-              style={styles.input}
-            />
-
-            <View style={styles.modeRow}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected: authMode === "password" }}
-                onPress={() => setAuthMode("password")}
-                style={[
-                  styles.modeButton,
-                  authMode === "password" ? styles.modeButtonActive : null,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.modeButtonText,
-                    authMode === "password" ? styles.modeButtonTextActive : null,
-                  ]}
+      <KeyboardAvoidingArea style={styles.scroll} iosInsetFromScrollView>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets
+        >
+          {emailOpen ? (
+            <View style={styles.emailColumn}>
+              <View style={styles.emailHeader}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Back to sign-in options"
+                  accessibilityState={{ disabled: submitting }}
+                  disabled={submitting}
+                  hitSlop={8}
+                  onPress={closeEmail}
+                  style={styles.backButton}
                 >
-                  Password
-                </Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected: authMode === "magic_link" }}
-                onPress={() => setAuthMode("magic_link")}
-                style={[
-                  styles.modeButton,
-                  authMode === "magic_link" ? styles.modeButtonActive : null,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.modeButtonText,
-                    authMode === "magic_link"
-                      ? styles.modeButtonTextActive
-                      : null,
-                  ]}
-                >
-                  Magic Link
-                </Text>
-              </Pressable>
-            </View>
+                  <Text style={styles.backGlyph}>‹</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.emailTitle}>Sign in with email</Text>
 
-            {authMode === "password" ? (
-              <>
-                <Text style={styles.inputLabel}>Password</Text>
-                <TextInput
-                  ref={passwordRef}
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Your password"
-                  placeholderTextColor={tokens.color.text.muted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  secureTextEntry
-                  textContentType="password"
-                  returnKeyType="go"
-                  onSubmitEditing={submit}
-                  style={styles.input}
-                />
-              </>
-            ) : (
-              <Text style={styles.helperText}>
-                We&apos;ll email you a link that signs you in on this device.
-              </Text>
-            )}
-
-            {messages}
-            {magicLinkSentTo ? (
-              <Text style={styles.successText}>
-                Link sent to {magicLinkSentTo}. Open it on this device to finish
-                signing in.
-              </Text>
-            ) : null}
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: submitting }}
-              disabled={submitting}
-              onPress={submit}
-              style={[
-                styles.button,
-                styles.buttonPrimary,
-                submitting ? styles.buttonDisabled : null,
-              ]}
-            >
-              <Text style={styles.buttonTextPrimary}>
-                {submitting
-                  ? "Signing in..."
-                  : authMode === "password"
-                    ? "Sign in"
-                    : "Email me a link"}
-              </Text>
-            </Pressable>
-          </View>
-        ) : (
-          <>
-            <View style={styles.brand}>
-              <Image
-                // Metro asset id. This app has no `*.png` module declaration,
-                // so a static ESM import fails `tsc` (TS2307) even though
-                // Metro is fine.
-                // eslint-disable-next-line @typescript-eslint/no-require-imports
-                source={require("../../assets/images/icon.png")}
-                style={styles.mark}
-                accessibilityElementsHidden
-                importantForAccessibility="no-hide-descendants"
-              />
-              <Text style={styles.title}>Frapp</Text>
-              {/*
-                The landing's closing line (D8, `spec/ui/landing/README.md`),
-                not the brand tagline "Ask your chapter anything.": this is
-                the first screen App Review opens, and a build without Ask
-                must not lead with it (#2298).
-              */}
-              <Text style={styles.subtitle}>
-                Everything your chapter needs is already in chat.
-              </Text>
-              <SignInMoments />
-            </View>
-
-            <View style={styles.actions}>
-              {messages}
-              {renderProvider(layout.primary, true)}
-              {layout.secondary ? renderProvider(layout.secondary, false) : null}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ disabled: submitting }}
-                disabled={submitting}
-                onPress={() => {
-                  setAuthError(null);
-                  setMagicLinkSentTo(null);
-                  setEmailOpen(true);
+              <Text style={styles.inputLabel}>Chapter email</Text>
+              <TextInput
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@university.edu"
+                placeholderTextColor={tokens.color.text.muted}
+                autoCapitalize="none"
+                autoComplete="email"
+                autoCorrect={false}
+                autoFocus
+                keyboardType="email-address"
+                textContentType="username"
+                // Password mode: return moves to the password field, keeping the
+                // keyboard up. Magic-link mode has no field after this one, so
+                // return sends the link, as the button would.
+                returnKeyType={authMode === "password" ? "next" : "send"}
+                submitBehavior={
+                  authMode === "password" ? "submit" : "blurAndSubmit"
+                }
+                onSubmitEditing={() => {
+                  if (authMode === "password") passwordRef.current?.focus();
+                  else submit();
                 }}
+                style={styles.input}
+              />
+
+              <View style={styles.modeRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: authMode === "password" }}
+                  onPress={() => setAuthMode("password")}
+                  style={[
+                    styles.modeButton,
+                    authMode === "password" ? styles.modeButtonActive : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.modeButtonText,
+                      authMode === "password"
+                        ? styles.modeButtonTextActive
+                        : null,
+                    ]}
+                  >
+                    Password
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: authMode === "magic_link" }}
+                  onPress={() => setAuthMode("magic_link")}
+                  style={[
+                    styles.modeButton,
+                    authMode === "magic_link" ? styles.modeButtonActive : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.modeButtonText,
+                      authMode === "magic_link"
+                        ? styles.modeButtonTextActive
+                        : null,
+                    ]}
+                  >
+                    Magic Link
+                  </Text>
+                </Pressable>
+              </View>
+
+              {authMode === "password" ? (
+                <>
+                  <Text style={styles.inputLabel}>Password</Text>
+                  <TextInput
+                    ref={passwordRef}
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Your password"
+                    placeholderTextColor={tokens.color.text.muted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    secureTextEntry
+                    textContentType="password"
+                    returnKeyType="go"
+                    onSubmitEditing={submit}
+                    style={styles.input}
+                  />
+                </>
+              ) : (
+                <Text style={styles.helperText}>
+                  We&apos;ll email you a link that signs you in on this device.
+                </Text>
+              )}
+
+              {messages}
+              {magicLinkSentTo ? (
+                <Text style={styles.successText}>
+                  Link sent to {magicLinkSentTo}. Open it on this device to
+                  finish signing in.
+                </Text>
+              ) : null}
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: submitting }}
+                disabled={submitting}
+                onPress={submit}
                 style={[
                   styles.button,
-                  styles.buttonOutline,
+                  styles.buttonPrimary,
                   submitting ? styles.buttonDisabled : null,
                 ]}
               >
-                <Text style={styles.buttonText}>Continue with email</Text>
+                <Text style={styles.buttonTextPrimary}>
+                  {submitting
+                    ? "Signing in..."
+                    : authMode === "password"
+                      ? "Sign in"
+                      : "Email me a link"}
+                </Text>
               </Pressable>
-              {layout.tucked && moreOpen ? renderProvider(layout.tucked, false) : null}
-              {layout.tucked && !moreOpen ? (
+            </View>
+          ) : (
+            <>
+              <View style={styles.brand}>
+                <Image
+                  // Metro asset id. This app has no `*.png` module declaration,
+                  // so a static ESM import fails `tsc` (TS2307) even though
+                  // Metro is fine.
+                  // eslint-disable-next-line @typescript-eslint/no-require-imports
+                  source={require("../../assets/images/icon.png")}
+                  style={styles.mark}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                />
+                <Text style={styles.title}>Frapp</Text>
+                {/*
+                  The landing's closing line (D8, `spec/ui/landing/README.md`),
+                  not the brand tagline "Ask your chapter anything.": this is
+                  the first screen App Review opens, and a build without Ask
+                  must not lead with it (#2298).
+                */}
+                <Text style={styles.subtitle}>
+                  Everything your chapter needs is already in chat.
+                </Text>
+                <SignInMoments />
+              </View>
+
+              <View style={styles.actions}>
+                {messages}
+                {renderProvider(layout.primary, true)}
+                {layout.secondary
+                  ? renderProvider(layout.secondary, false)
+                  : null}
                 <Pressable
                   accessibilityRole="button"
-                  onPress={() => setMoreOpen(true)}
-                  style={styles.textButton}
+                  accessibilityState={{ disabled: submitting }}
+                  disabled={submitting}
+                  onPress={() => {
+                    setAuthError(null);
+                    setMagicLinkSentTo(null);
+                    setEmailOpen(true);
+                  }}
+                  style={[
+                    styles.button,
+                    styles.buttonOutline,
+                    submitting ? styles.buttonDisabled : null,
+                  ]}
                 >
-                  <Text style={styles.textButtonLabel}>
-                    Other ways to sign in
-                  </Text>
+                  <Text style={styles.buttonText}>Continue with email</Text>
                 </Pressable>
-              ) : null}
-              {appleVisible ? (
-                <Text style={styles.hintText}>{OAUTH_MEMBERSHIP_HINT}</Text>
-              ) : null}
-            </View>
-          </>
-        )}
-      </ScrollView>
+                {layout.tucked && moreOpen
+                  ? renderProvider(layout.tucked, false)
+                  : null}
+                {layout.tucked && !moreOpen ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setMoreOpen(true)}
+                    style={styles.textButton}
+                  >
+                    <Text style={styles.textButtonLabel}>
+                      Other ways to sign in
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {appleVisible ? (
+                  <Text style={styles.hintText}>{OAUTH_MEMBERSHIP_HINT}</Text>
+                ) : null}
+              </View>
+            </>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingArea>
     </SafeAreaView>
   );
 }
