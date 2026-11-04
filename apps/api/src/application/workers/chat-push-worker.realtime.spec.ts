@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -18,6 +19,7 @@ import {
   ChannelCacheService,
   type CachedChannelRow,
 } from '../services/channel-cache.service';
+import { reopenDelayMs } from './worker-subscription';
 
 /**
  * Recipient-filter proofs driven through the **real Realtime payload path**.
@@ -81,6 +83,8 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
   let getEffectivePermissions: jest.Mock;
   let subscribeSpy: jest.Mock;
   let removeChannel: jest.Mock;
+  /** `supabase.channel`: every topic the worker opened, presence included. */
+  let channelSpy: jest.Mock;
   /** Nobody has a display name here: this file is not about titles. */
   const findDisplayIdentitiesByIds = jest.fn().mockResolvedValue([]);
   /** The `postgres_changes` callback the worker registers at bootstrap. */
@@ -182,6 +186,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
 
     subscribeSpy = jest.fn(() => channelStub);
     removeChannel = jest.fn().mockResolvedValue('ok');
+    channelSpy = jest.fn(() => channelStub);
 
     let handler:
       | ((
@@ -212,6 +217,13 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
         return channelStub;
       },
       subscribe: subscribeSpy,
+      // What freeing a topic calls (#3365). Like phoenix's, a teardown drops
+      // the channel's listeners, so a row emitted after one reaches the
+      // worker only if a reopen registered its listener again.
+      unsubscribe: jest.fn().mockResolvedValue('ok'),
+      teardown: jest.fn(() => {
+        handler = null;
+      }),
       // `handleMessage` opens a presence channel through the same `channel()`
       // factory, and `readPresence` then calls `presenceState()` on it. Without
       // this the call throws and is swallowed by `readPresence`'s own catch —
@@ -228,7 +240,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
         ChannelCacheService,
         {
           provide: SUPABASE_CLIENT,
-          useValue: { channel: () => channelStub, removeChannel },
+          useValue: { channel: channelSpy, removeChannel },
         },
         { provide: MEMBER_REPOSITORY, useValue: { findByChapter } },
         { provide: NotificationService, useValue: { notifyUser } },
@@ -314,6 +326,66 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
       // per hot restart and nothing notices.
       await service.onApplicationShutdown();
       expect(removeChannel).toHaveBeenCalled();
+    });
+
+    // #3365. realtime-js never rejoins a channel the server closed, so before
+    // this the worker pushed nothing more until the next deploy.
+    describe('when the server ends it', () => {
+      const MESSAGES_TOPIC = 'chat-push-worker:messages';
+      const opensOfMessages = () =>
+        channelSpy.mock.calls.filter(([topic]) => topic === MESSAGES_TOPIC);
+      /** The one stand-in every `channel()` call returns. */
+      const stub = () =>
+        channelSpy.mock.results[0].value as { teardown: jest.Mock };
+      /** The status callback the worker gave the messages channel's join. */
+      const messagesStatus = () =>
+        subscribeSpy.mock.calls[0][0] as (status: string) => void;
+      const announce = (id: string) => ({
+        id,
+        channel_id: ANNOUNCE_CHANNEL.id,
+        sender_id: 'sender',
+        content: 'Big news',
+        kind: 'announcement' as const,
+        mentions: [],
+      });
+
+      beforeEach(() => {
+        jest
+          .spyOn(Logger.prototype, 'warn')
+          .mockImplementation(() => undefined);
+        service.__setChannelForTest(ANNOUNCE_CHANNEL);
+        setMembers(['sender', 'other']);
+      });
+
+      afterEach(() => {
+        jest.useRealTimers();
+        jest.restoreAllMocks();
+      });
+
+      it('reopens the subscription after a CLOSED, and pushes rows from it', async () => {
+        jest.useFakeTimers();
+        messagesStatus()('CLOSED');
+        await jest.advanceTimersByTimeAsync(reopenDelayMs(0));
+        // `emitRow` yields on `setImmediate`, which fake timers would hold.
+        jest.useRealTimers();
+
+        expect(opensOfMessages()).toHaveLength(2);
+        expect(stub().teardown).toHaveBeenCalledTimes(1);
+        await emitRow(announce('m-after-close'));
+        expect(notifiedUsers()).toEqual(['other']);
+      });
+
+      it('keeps the subscription through a TIMED_OUT, which realtime-js rejoins', async () => {
+        jest.useFakeTimers();
+        messagesStatus()('TIMED_OUT');
+        await jest.advanceTimersByTimeAsync(60_000);
+        jest.useRealTimers();
+
+        expect(opensOfMessages()).toHaveLength(1);
+        expect(stub().teardown).not.toHaveBeenCalled();
+        await emitRow(announce('m-after-timeout'));
+        expect(notifiedUsers()).toEqual(['other']);
+      });
     });
   });
 

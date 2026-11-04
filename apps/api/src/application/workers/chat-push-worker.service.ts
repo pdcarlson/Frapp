@@ -38,6 +38,7 @@ import { ChannelCacheService } from '../services/channel-cache.service';
 import type { CachedChannelRow } from '../services/channel-cache.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
+import { WorkerSubscription } from './worker-subscription';
 
 interface ChatMessageRow {
   id: string;
@@ -158,7 +159,8 @@ export class ChatPushWorkerService
   implements OnApplicationBootstrap, OnApplicationShutdown
 {
   private readonly logger = new Logger(ChatPushWorkerService.name);
-  private messagesChannel: RealtimeChannel | null = null;
+  /** The `chat_messages` INSERT subscription, opened at bootstrap. */
+  private messages: WorkerSubscription | null = null;
   /**
    * Open presence channels by chat channel id, least recently used first:
    * `ensurePresenceChannel` re-inserts on every use, so eviction takes the
@@ -210,10 +212,14 @@ export class ChatPushWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
-    try {
-      this.messagesChannel = this.supabase
-        .channel('chat-push-worker:messages')
-        .on(
+    // Survives the server closing the channel (#3365): see `WorkerSubscription`.
+    this.messages = new WorkerSubscription(this.supabase, {
+      topic: 'chat-push-worker:messages',
+      worker: 'chat-push',
+      impact: 'chat pushes',
+      logger: this.logger,
+      bind: (channel) =>
+        channel.on(
           'postgres_changes',
           {
             event: 'INSERT',
@@ -223,39 +229,14 @@ export class ChatPushWorkerService
           (payload: RealtimePostgresInsertPayload<ChatMessageRow>) => {
             void this.handleMessage(payload.new);
           },
-        )
-        .subscribe((status) => {
-          const s = status as string;
-          if (s === 'SUBSCRIBED') {
-            this.logger.log('chat-push subscribed to chat_messages');
-          } else if (s === 'CHANNEL_ERROR' || s === 'CLOSED') {
-            this.logger.warn(`chat-push channel state: ${s}`);
-          }
-        });
-    } catch (err) {
-      logThrowable(
-        this.logger,
-        'error',
-        'chat-push failed to start; chat pushes will not fire',
-        err,
-      );
-    }
+        ),
+    });
+    this.messages.start();
   }
 
   async onApplicationShutdown(): Promise<void> {
-    if (this.messagesChannel) {
-      try {
-        await this.supabase.removeChannel(this.messagesChannel);
-      } catch (err) {
-        logThrowable(
-          this.logger,
-          'warn',
-          'chat-push: error removing messages channel',
-          err,
-        );
-      }
-      this.messagesChannel = null;
-    }
+    await this.messages?.stop();
+    this.messages = null;
     // Let go of every presence channel before removing any, so each leave's
     // `CLOSED` echo reads as this worker's own (see `onPresenceStatus`), not a
     // server close to log and release a second time.
