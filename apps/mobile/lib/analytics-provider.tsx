@@ -49,6 +49,7 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
       if (optedOut) return;
       const body = namedAnalyticsEventBody({
         name,
+        app: "mobile",
         chapterId,
         properties,
         requireChapter: true,
