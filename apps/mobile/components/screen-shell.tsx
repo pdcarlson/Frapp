@@ -22,7 +22,8 @@ type ScreenShellProps = {
   /**
    * Drawn before the title on the title row. Chat home passes the chapter mark
    * (`ChapterMark`), which is the one mobile surface of the chapter's logo
-   * (`spec/behavior/branding.md` § Chapter mark). It used to ride in the tab
+   * inside a chapter; chapter setup draws its own preview before the chapter
+   * exists (`spec/behavior/branding.md` § Chapter mark). It used to ride in the tab
    * navigator's header, which no screen has since #2485.
    */
   titleMark?: ReactNode;
