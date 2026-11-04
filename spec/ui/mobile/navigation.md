@@ -294,3 +294,10 @@ one mobile surface ([`../../behavior/branding.md`](../../behavior/branding.md) Â
 mark). Four screens opt out of the shell. s05 and s13 took the top inset themselves in
 this change. s18 (`check-in.tsx`) and s22 (`host-check-in.tsx`) already took it, and
 their own titles took the heading role the header's title used to carry.
+
+**#3344 touched `app/(tabs)/_layout.tsx`, as an integrator change** (2026-11-04). The
+first Play build drew the tab bar under Android's swipe bar: a fixed
+`tabBarStyle.height` replaces the height React Navigation computes, so the bottom inset
+it would have added was lost, and Android draws edge to edge. The layout now reads
+`useSafeAreaInsets()` and adds the bottom inset to the bar's height and bottom padding,
+so the 62pt row sits above the system bar. `lib/tab-layout.spec.tsx` pins the sum.

@@ -21,6 +21,8 @@
  * only path-independent option.
  */
 
+import { SYSTEM_SENDER_ID } from "@repo/validation";
+
 /** `users.id` → `display_name`, as served by `GET /v1/members/roster`. */
 export type DisplayNameMap = Record<string, string>;
 
@@ -239,7 +241,24 @@ export interface MessageAuthor {
 export type NameResolver = (userId: string) => string | null;
 
 /**
+ * The author name for a message the server posts as the system actor
+ * (`SYSTEM_SENDER_ID`): the chapter welcome post, the `#chapter-audit` bridge,
+ * poll-expiry notices and invite-accept DMs.
+ *
+ * The system actor is a real `users` row but never a chapter member, so the
+ * roster can't name it, and before this the author line fell through to
+ * `memberFallbackLabel` and the welcome post every new chapter sees first read
+ * "Member 000000" beside a "00" avatar (#3347). It is the product speaking, so
+ * it takes the product's name. The row's own `display_name` ("Frapp System")
+ * is not used: it names the account, not the voice, and the roster never
+ * serves it anyway.
+ */
+export const SYSTEM_AUTHOR_LABEL = "Frapp";
+
+/**
  * The best available human name for a message's author, or `null`.
+ *
+ * The system actor is named {@link SYSTEM_AUTHOR_LABEL} before any lookup.
  *
  * `sender_id` is consulted first and `author_name` is the fallback, not the
  * other way round: a roster hit is the *current* name, while `author_name` is a
@@ -253,6 +272,7 @@ export function resolveAuthorName(
   author: MessageAuthor,
   nameFor: NameResolver,
 ): string | null {
+  if (author.sender_id === SYSTEM_SENDER_ID) return SYSTEM_AUTHOR_LABEL;
   if (author.sender_id) {
     const resolved = nameFor(author.sender_id);
     if (resolved) return resolved;

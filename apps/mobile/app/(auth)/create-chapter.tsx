@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import { Redirect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -13,6 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   DIRECTORY_MIN_QUERY_LENGTH,
   useChapterDirectorySearch,
@@ -44,6 +43,7 @@ import {
   webJoinUrl,
 } from "@/lib/onboarding/chapter-wizard/invite-link";
 import { useSelectChapter } from "@/lib/select-chapter";
+import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -90,7 +90,9 @@ export default function CreateChapter() {
   const debouncedQuery = useDebouncedValue(rawQuery, 250);
   const [directoryId, setDirectoryId] = useState<string | null>(null);
   const [archetype, setArchetype] = useState<ArchetypeKey>("ifc");
-  const [identity, setIdentity] = useState<ChapterIdentityForm>(EMPTY_CHAPTER_IDENTITY);
+  const [identity, setIdentity] = useState<ChapterIdentityForm>(
+    EMPTY_CHAPTER_IDENTITY,
+  );
   const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -203,146 +205,157 @@ export default function CreateChapter() {
   const submitting = onboardChapter.isPending;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    // Safe area on every edge (#3345): `(auth)` renders with `headerShown:
+    // false`, and Android draws the app edge to edge, so nothing else keeps
+    // this screen off the status bar or its last control off the swipe bar.
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={["top", "right", "bottom", "left"]}
     >
-      <View style={styles.container}>
-        <Text style={styles.kicker}>Set up your chapter</Text>
-        <Text style={styles.title}>{STEP_LABELS[step]}</Text>
-        <View
-          accessibilityRole="progressbar"
-          accessibilityValue={{ min: 1, max: STEP_ORDER.length, now: stepIndex + 1 }}
-          style={styles.progressRow}
-        >
-          {STEP_ORDER.map((item, index) => (
-            <View
-              key={item}
-              style={[
-                styles.progressTick,
-                index <= stepIndex ? styles.progressTickOn : null,
-              ]}
-            />
-          ))}
+      <KeyboardAvoidingArea style={styles.flex}>
+        <View style={styles.container}>
+          <Text style={styles.kicker}>Set up your chapter</Text>
+          <Text style={styles.title}>{STEP_LABELS[step]}</Text>
+          <View
+            accessibilityRole="progressbar"
+            accessibilityValue={{
+              min: 1,
+              max: STEP_ORDER.length,
+              now: stepIndex + 1,
+            }}
+            style={styles.progressRow}
+          >
+            {STEP_ORDER.map((item, index) => (
+              <View
+                key={item}
+                style={[
+                  styles.progressTick,
+                  index <= stepIndex ? styles.progressTickOn : null,
+                ]}
+              />
+            ))}
+          </View>
+
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+          >
+            {step === "find" ? (
+              <FindStep
+                rawQuery={rawQuery}
+                onQueryChange={setRawQuery}
+                isFetching={searchQuery.isFetching}
+                isError={searchQuery.isError}
+                onRetry={() => {
+                  void searchQuery.refetch();
+                }}
+                results={results}
+                debouncedQuery={debouncedQuery}
+                onSelect={applyDirectoryMatch}
+                onManual={startManualEntry}
+                styles={styles}
+                tokens={tokens}
+              />
+            ) : null}
+
+            {step === "archetype" ? (
+              <ArchetypeStep
+                selected={archetype}
+                onSelect={setArchetype}
+                styles={styles}
+              />
+            ) : null}
+
+            {step === "identity" ? (
+              <IdentityStep
+                identity={identity}
+                onChange={setIdentity}
+                isManual={directoryId === null}
+                accepted={acceptedLegal}
+                onAcceptedChange={setAcceptedLegal}
+                styles={styles}
+                tokens={tokens}
+              />
+            ) : null}
+
+            {step === "invite" ? (
+              <InviteStep
+                inviteLink={inviteLink}
+                isGenerating={createInvite.isPending}
+                onGenerate={() => {
+                  void generateInviteLink();
+                }}
+                onShare={() => {
+                  void shareInviteLink();
+                }}
+                styles={styles}
+                tokens={tokens}
+              />
+            ) : null}
+
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          </ScrollView>
+
+          <View style={styles.footer}>
+            {step !== "find" && step !== "invite" ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={goBack}
+                style={styles.secondaryButton}
+              >
+                <Text style={styles.secondaryButtonText}>Back</Text>
+              </Pressable>
+            ) : null}
+
+            {step === "archetype" ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setStep("identity")}
+                style={styles.primaryButton}
+              >
+                <Text style={styles.primaryButtonText}>Continue</Text>
+              </Pressable>
+            ) : null}
+
+            {step === "identity" ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: !canSubmit || submitting }}
+                disabled={!canSubmit || submitting}
+                onPress={() => {
+                  void submitChapter();
+                }}
+                style={[
+                  styles.primaryButton,
+                  !canSubmit || submitting
+                    ? styles.primaryButtonDisabled
+                    : null,
+                ]}
+              >
+                {submitting ? (
+                  <ActivityIndicator color={tokens.color.gold.onHouse} />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Create chapter</Text>
+                )}
+              </Pressable>
+            ) : null}
+
+            {step === "invite" ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={finish}
+                style={styles.primaryButton}
+              >
+                <Text style={styles.primaryButtonText}>
+                  {inviteLink ? "Go to chat" : "Skip for now"}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
-
-        <ScrollView
-          style={styles.flex}
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-        >
-          {step === "find" ? (
-            <FindStep
-              rawQuery={rawQuery}
-              onQueryChange={setRawQuery}
-              isFetching={searchQuery.isFetching}
-              isError={searchQuery.isError}
-              onRetry={() => {
-                void searchQuery.refetch();
-              }}
-              results={results}
-              debouncedQuery={debouncedQuery}
-              onSelect={applyDirectoryMatch}
-              onManual={startManualEntry}
-              styles={styles}
-              tokens={tokens}
-            />
-          ) : null}
-
-          {step === "archetype" ? (
-            <ArchetypeStep
-              selected={archetype}
-              onSelect={setArchetype}
-              styles={styles}
-            />
-          ) : null}
-
-          {step === "identity" ? (
-            <IdentityStep
-              identity={identity}
-              onChange={setIdentity}
-              isManual={directoryId === null}
-              accepted={acceptedLegal}
-              onAcceptedChange={setAcceptedLegal}
-              styles={styles}
-              tokens={tokens}
-            />
-          ) : null}
-
-          {step === "invite" ? (
-            <InviteStep
-              inviteLink={inviteLink}
-              isGenerating={createInvite.isPending}
-              onGenerate={() => {
-                void generateInviteLink();
-              }}
-              onShare={() => {
-                void shareInviteLink();
-              }}
-              styles={styles}
-              tokens={tokens}
-            />
-          ) : null}
-
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        </ScrollView>
-
-        <View style={styles.footer}>
-          {step !== "find" && step !== "invite" ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={goBack}
-              style={styles.secondaryButton}
-            >
-              <Text style={styles.secondaryButtonText}>Back</Text>
-            </Pressable>
-          ) : null}
-
-          {step === "archetype" ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setStep("identity")}
-              style={styles.primaryButton}
-            >
-              <Text style={styles.primaryButtonText}>Continue</Text>
-            </Pressable>
-          ) : null}
-
-          {step === "identity" ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: !canSubmit || submitting }}
-              disabled={!canSubmit || submitting}
-              onPress={() => {
-                void submitChapter();
-              }}
-              style={[
-                styles.primaryButton,
-                !canSubmit || submitting ? styles.primaryButtonDisabled : null,
-              ]}
-            >
-              {submitting ? (
-                <ActivityIndicator color={tokens.color.gold.onHouse} />
-              ) : (
-                <Text style={styles.primaryButtonText}>Create chapter</Text>
-              )}
-            </Pressable>
-          ) : null}
-
-          {step === "invite" ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={finish}
-              style={styles.primaryButton}
-            >
-              <Text style={styles.primaryButtonText}>
-                {inviteLink ? "Go to chat" : "Skip for now"}
-              </Text>
-            </Pressable>
-          ) : null}
-        </View>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingArea>
+    </SafeAreaView>
   );
 }
 
@@ -490,7 +503,10 @@ function ArchetypeStep({
             accessibilityState={{ selected: isActive }}
             accessibilityLabel={`${item.label}, ${item.council}`}
             onPress={() => onSelect(item.key)}
-            style={[styles.archetypeRow, isActive ? styles.archetypeRowOn : null]}
+            style={[
+              styles.archetypeRow,
+              isActive ? styles.archetypeRowOn : null,
+            ]}
           >
             <Text style={styles.archetypeShort}>{item.short}</Text>
             <Text style={styles.resultTitle}>{item.label}</Text>
@@ -519,7 +535,10 @@ function IdentityStep({
   styles: Styles;
   tokens: SignetTokens;
 }) {
-  function set<K extends keyof ChapterIdentityForm>(key: K, value: ChapterIdentityForm[K]) {
+  function set<K extends keyof ChapterIdentityForm>(
+    key: K,
+    value: ChapterIdentityForm[K],
+  ) {
     onChange({ ...identity, [key]: value });
   }
 
@@ -633,7 +652,10 @@ function IdentityStep({
         The officer's acceptance for the chapter and for themselves (#2302).
         No Backwork line: the app has no Backwork (#2258).
       */}
-      <TermsAcceptance accepted={accepted} onAcceptedChange={onAcceptedChange} />
+      <TermsAcceptance
+        accepted={accepted}
+        onAcceptedChange={onAcceptedChange}
+      />
     </View>
   );
 }
@@ -754,6 +776,10 @@ function InviteStep({
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     flex: { flex: 1 },
+    safeArea: {
+      flex: 1,
+      backgroundColor: tokens.color.surface.background,
+    },
     container: {
       flex: 1,
       backgroundColor: tokens.color.surface.background,

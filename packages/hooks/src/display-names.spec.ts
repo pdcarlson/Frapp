@@ -11,8 +11,10 @@ import {
   memberFallbackLabel,
   memberLabel,
   resolveDisplayName,
+  SYSTEM_AUTHOR_LABEL,
   type DisplayNameMap,
 } from "./display-names";
+import { SYSTEM_SENDER_ID } from "@repo/validation";
 
 const VIEWER = "user-viewer";
 const DM_NAME =
@@ -371,6 +373,17 @@ describe("resolveAuthorName", () => {
     ).toBeNull();
   });
 
+  it("names the system actor without asking the roster (#3347)", () => {
+    // The system actor is never a chapter member, so the roster misses it, and
+    // the chapter welcome post used to read "Member 000000".
+    const nameFor = vi.fn(() => null);
+    expect(resolveAuthorName({ sender_id: SYSTEM_SENDER_ID }, nameFor)).toBe(
+      SYSTEM_AUTHOR_LABEL,
+    );
+    expect(SYSTEM_AUTHOR_LABEL).toBe("Frapp");
+    expect(nameFor).not.toHaveBeenCalled();
+  });
+
   it("never calls the resolver for a null sender", () => {
     // The resolver signature takes a string; passing null through would be a
     // runtime type error in any caller that indexes with it.
@@ -475,6 +488,12 @@ describe("resolveAuthorLabel", () => {
         "u2",
       ),
     ).toBe("Marcus Reid");
+  });
+
+  it("labels the system actor's posts, never as a truncated id (#3347)", () => {
+    expect(
+      resolveAuthorLabel({ sender_id: SYSTEM_SENDER_ID }, roster({}), "u1"),
+    ).toBe("Frapp");
   });
 
   it("falls back to a truncated id only when the sender is unresolvable", () => {

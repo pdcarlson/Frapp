@@ -1,4 +1,9 @@
 import type { ReactNode } from "react";
+import {
+  KeyboardAvoidingView as NativeKeyboardAvoidingView,
+  Platform,
+  type ViewProps,
+} from "react-native";
 import { isExpoGo } from "./expo-go";
 import { createIsolatedModule } from "./isolated-module";
 
@@ -9,8 +14,8 @@ import { createIsolatedModule } from "./isolated-module";
  * The package registers a native module at import time, and Expo Go does not
  * ship it — an unguarded import crashes Go at launch. Nothing outside this
  * file may import the package (ESLint `no-restricted-imports` enforces it);
- * everything else goes through `KeyboardProviderGuarded` / `getKeyboardPath`,
- * and screens choose `KeyboardAvoidingView` when the path is "fallback".
+ * everything else goes through `KeyboardProviderGuarded`, `KeyboardAvoidingArea`
+ * and `getKeyboardPath`.
  */
 type KeyboardControllerModule =
   typeof import("react-native-keyboard-controller");
@@ -71,4 +76,51 @@ export function KeyboardProviderGuarded({ children }: { children: ReactNode }) {
 
   const { KeyboardProvider } = keyboardController;
   return <KeyboardProvider>{children}</KeyboardProvider>;
+}
+
+/**
+ * The keyboard-avoiding wrapper for a screen whose text field sits low enough
+ * for the keyboard to cover it (#3346).
+ *
+ * **Android, store builds.** `KeyboardProviderGuarded` mounts the library's
+ * `KeyboardProvider` app-wide, and while it is active the library stops the
+ * window from resizing for the keyboard (its `EdgeToEdgeReactViewGroup` only
+ * pads for the IME when the provider is *not* active). The screens used to
+ * assume "on Android the window already resizes" and switched React Native's
+ * `KeyboardAvoidingView` off there, so on the first Play build the keyboard
+ * covered the chat composer. The library's own `KeyboardAvoidingView` is the
+ * one that tracks the keyboard under its provider, so Android uses it, with
+ * `padding`.
+ *
+ * **iOS, and the fallback path** (Expo Go, web, tests). Unchanged: React
+ * Native's view, `padding` on iOS and no behaviour elsewhere, which is what
+ * each screen passed before this wrapper existed.
+ */
+export function KeyboardAvoidingArea({
+  children,
+  ...viewProps
+}: ViewProps & { children: ReactNode }) {
+  const keyboardController =
+    Platform.OS === "android" ? loadKeyboardController() : null;
+
+  if (keyboardController) {
+    const { KeyboardAvoidingView } = keyboardController;
+    return (
+      // `automaticOffset` measures the view's position in the window natively,
+      // so the overlap is right wherever the screen nests it (under a safe-area
+      // inset, above the tab bar) without a hand-kept `keyboardVerticalOffset`.
+      <KeyboardAvoidingView {...viewProps} behavior="padding" automaticOffset>
+        {children}
+      </KeyboardAvoidingView>
+    );
+  }
+
+  return (
+    <NativeKeyboardAvoidingView
+      {...viewProps}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      {children}
+    </NativeKeyboardAvoidingView>
+  );
 }

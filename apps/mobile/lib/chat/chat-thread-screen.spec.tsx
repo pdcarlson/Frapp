@@ -52,7 +52,7 @@ vi.mock("react-native", async () => {
   return { ...reactNativeStub, FlatList: RenderingFlatList };
 });
 
-// `getKeyboardPath()` reaches `expo-constants` through `lib/expo-go.ts`. The
+// `KeyboardAvoidingArea` reaches `expo-constants` through `lib/expo-go.ts`. The
 // suite leaves that module to each spec; this one runs as Expo Go.
 vi.mock("expo-constants", () => ({
   default: { executionEnvironment: "storeClient" },
