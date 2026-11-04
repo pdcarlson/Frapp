@@ -3,6 +3,7 @@ import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import * as Linking from "expo-linking";
 import {
   ActivityIndicator,
+  BackHandler,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,6 +22,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
+import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
 import { useAuthSession } from "@/lib/auth-session";
 import {
   consumeRememberedInviteToken,
@@ -33,21 +35,32 @@ import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * s02 — Join chapter (`spec/ui/mobile/screens.md`).
+ * s02, "How are you getting in?" (`spec/ui/mobile/screens.md`, #3350).
  *
- * Invite-token entry plus invite-link autofill. Visual language is the `(auth)`
- * card (s01 / chapter picker). Canvas draws six cells for a shared code; joining
- * is single-use invite tokens, so this is one field that also accepts a pasted
- * URL (`spec/behavior/onboarding.md` wins over the drawing for the data model).
+ * Where an account with no chapter lands. It asks one question with two large
+ * answers: "I have an invite" opens the invite step here, and "I'm starting our
+ * chapter" opens `/create-chapter`. An invite link that opened the app skips
+ * the question and lands on the invite step with the field filled.
  *
- * First-officer creation is a secondary control here (`/create-chapter`) so an
- * account with zero memberships can still start a chapter without leaving s02.
+ * One surface, no card, like s01 (#3349). Sign out and Delete account sit in
+ * the Account menu in the top corner, on both views, because this is the only
+ * screen a zero-membership account can reach (Apple 5.1.1(v), #2295).
+ *
+ * The invite step is one field that also accepts a pasted URL; the canvas draws
+ * six cells for a shared code, but joining is single-use invite tokens
+ * (`spec/behavior/onboarding.md` wins over the drawing for the data model).
  */
+
+type JoinView = "choose" | "invite";
+
+export const JOIN_CHOICE_TITLE = "How are you getting in?";
+export const JOIN_INVITE_TITLE = "Join with an invite";
+
 export default function JoinChapter() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  const { status, signOut } = useAuthSession();
+  const { status, email, signOut } = useAuthSession();
   const redeemInvite = useRedeemInvite();
   const deleteAccount = useDeleteAccount();
   // When to show the Terms checkbox, and what a refused join means for it,
@@ -61,6 +74,8 @@ export default function JoinChapter() {
   }>();
   const deepLinkUrl = Linking.useURL();
 
+  const [view, setView] = useState<JoinView>("choose");
+  const [accountOpen, setAccountOpen] = useState(false);
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -92,8 +107,73 @@ export default function JoinChapter() {
       rememberInviteToken(next);
       // eslint-disable-next-line react-hooks/set-state-in-effect -- seed an empty field from the invite URL; keep text the member already typed
       setToken((current) => (current.length > 0 ? current : next));
+      // An opened invite link has already answered the question, so it goes
+      // straight to the invite step.
+      setView("invite");
     }
   }, [deepLinkUrl, params.code, params.invite, params.token]);
+
+  // `isSuccess`, not just `isPending`: TanStack clears `isPending` in the same
+  // render that runs `onSuccess`, but `handleSignOut` then awaits a real
+  // network sign-out before navigating. Without it the row re-enables
+  // mid-teardown reading "Delete account" again, and a second tap sends a
+  // DELETE with a bearer whose auth user is already gone — a 401 that renders
+  // as "deletion didn't finish, running it again is safe" after it in fact
+  // finished.
+  const deleting = deleteAccount.isPending || deleteAccount.isSuccess;
+  // Redemption and deletion each lock the whole screen. Deleting must lock it
+  // because navigating away unmounts this screen, and a per-call `mutate`
+  // callback does not fire after unmount — the account would be erased with
+  // `handleSignOut` never running, leaving a live session on a deleted account.
+  // Redeeming must lock it because burning a single-use invite and then
+  // deleting the account strands the membership it just created.
+  // `isSuccess` on the redeem side too: `handleJoin` awaits `selectChapter`
+  // (a POST plus a session refresh) *after* `mutateAsync` resolves and before
+  // it navigates. Without it every control re-enables for those round trips —
+  // the exact window where a delete would strand the membership the redeem
+  // just created.
+  //
+  // This cannot strand the screen, and the reason is worth keeping: a
+  // successful redeem always reaches `router.replace`, because everything
+  // between the two is total. `selectChapter` catches its own failures and
+  // returns a boolean rather than throwing (`lib/select-chapter.ts`), and
+  // `consumeRememberedInviteToken` / `redeemChapterId` are pure. If any of
+  // those grows a throw path, the catch would leave `isSuccess` true on a
+  // mounted screen and lock every control — including this one.
+  const submitting =
+    redeemInvite.isPending || redeemInvite.isSuccess || deleting;
+  // The primary button's spinner stays tied to redemption alone. `submitting`
+  // disables it during a deletion too, but showing its spinner then would tell
+  // the user a join is running when what is running is the deletion of their
+  // account.
+  const redeeming = redeemInvite.isPending;
+  // A deletion in flight keeps the menu open, so "Deleting account…" stays on
+  // screen until sign-out takes the user away. The menu's own close controls
+  // are locked for the same window.
+  const menuVisible = accountOpen || deleting;
+
+  // Android's back button and back gesture step back inside this screen
+  // before leaving it: they close the Account menu, then return from the
+  // invite step to the question, as the chevron does. While a join or a
+  // deletion is in flight both are held, so the result lands on the view that
+  // started it. On the question itself back is left alone.
+  useEffect(() => {
+    if (!menuVisible && view === "choose") return undefined;
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        if (submitting) return true;
+        if (menuVisible) {
+          setAccountOpen(false);
+        } else {
+          setView("choose");
+          setError(null);
+        }
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [menuVisible, view, submitting]);
 
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;
@@ -162,40 +242,45 @@ export default function JoinChapter() {
     }
   }
 
-  // `isSuccess`, not just `isPending`: TanStack clears `isPending` in the same
-  // render that runs `onSuccess`, but `handleSignOut` then awaits a real
-  // network sign-out before navigating. Without it the row re-enables
-  // mid-teardown reading "Delete account" again, and a second tap sends a
-  // DELETE with a bearer whose auth user is already gone — a 401 that renders
-  // as "deletion didn't finish, running it again is safe" after it in fact
-  // finished.
-  const deleting = deleteAccount.isPending || deleteAccount.isSuccess;
-  // Redemption and deletion each lock the whole screen. Deleting must lock it
-  // because navigating away unmounts this screen, and a per-call `mutate`
-  // callback does not fire after unmount — the account would be erased with
-  // `handleSignOut` never running, leaving a live session on a deleted account.
-  // Redeeming must lock it because burning a single-use invite and then
-  // deleting the account strands the membership it just created.
-  // `isSuccess` on the redeem side too: `handleJoin` awaits `selectChapter`
-  // (a POST plus a session refresh) *after* `mutateAsync` resolves and before
-  // it navigates. Without it every control re-enables for those round trips —
-  // the exact window where a delete would strand the membership the redeem
-  // just created.
-  //
-  // This cannot strand the screen, and the reason is worth keeping: a
-  // successful redeem always reaches `router.replace`, because everything
-  // between the two is total. `selectChapter` catches its own failures and
-  // returns a boolean rather than throwing (`lib/select-chapter.ts`), and
-  // `consumeRememberedInviteToken` / `redeemChapterId` are pure. If any of
-  // those grows a throw path, the catch would leave `isSuccess` true on a
-  // mounted screen and lock every control — including this one.
-  const submitting =
-    redeemInvite.isPending || redeemInvite.isSuccess || deleting;
-  // The primary button's spinner stays tied to redemption alone. `submitting`
-  // disables it during a deletion too, but showing its spinner then would tell
-  // the user a join is running when what is running is the deletion of their
-  // account.
-  const redeeming = redeemInvite.isPending;
+  function backToChoices() {
+    if (submitting) return;
+    setView("choose");
+    setError(null);
+  }
+
+  const header = (
+    <View style={styles.header}>
+      {view === "invite" ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Back to the choices"
+          accessibilityState={{ disabled: submitting }}
+          disabled={submitting}
+          hitSlop={8}
+          onPress={backToChoices}
+          style={styles.backButton}
+        >
+          <Text style={styles.backGlyph}>‹</Text>
+        </Pressable>
+      ) : (
+        <View />
+      )}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Account"
+        accessibilityHint="Sign out or delete your account."
+        accessibilityState={{ expanded: menuVisible, disabled: submitting }}
+        disabled={submitting}
+        hitSlop={8}
+        onPress={() => {
+          setAccountOpen((open) => !open);
+        }}
+        style={styles.accountButton}
+      >
+        <Text style={styles.accountButtonText}>Account</Text>
+      </Pressable>
+    </View>
+  );
 
   return (
     // Safe area on every edge (#3345): `(auth)` renders with `headerShown:
@@ -207,138 +292,203 @@ export default function JoinChapter() {
     >
       <KeyboardAvoidingArea style={styles.flex}>
         {/*
-        The card scrolls. It stays centred while it fits and scrolls when it
-        does not — which it does not on a 375x667 device once the keyboard is
-        up: `justifyContent: "center"` lets Yoga overflow *both* ends rather
-        than clamping, so the last child is lost first, and that child is the
-        delete control this screen exists to guarantee (#2295).
-      */}
+          The column scrolls: on a 375x667 phone with the keyboard up the
+          invite step does not fit, and a non-scrolling column would clip its
+          last control.
+        */}
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.container}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.title}>Join your chapter</Text>
-          <Text style={styles.subtitle}>
-            Enter the invite your officer sent. Invites expire after 24 hours
-            and work once.
-          </Text>
+          {header}
 
-          <View style={styles.card}>
-            <Text style={styles.inputLabel}>Invite</Text>
-            <TextInput
-              value={token}
-              onChangeText={(value) => {
-                setToken(value);
-                setError(null);
-              }}
-              placeholder="Paste invite or link"
-              placeholderTextColor={tokens.color.text.muted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="off"
-              textContentType="none"
-              accessibilityLabel="Invite token"
-              style={styles.input}
-            />
+          {view === "choose" ? (
+            <View style={styles.body}>
+              <Text style={styles.title}>{JOIN_CHOICE_TITLE}</Text>
+              <Text style={styles.subtitle}>
+                Members join with an invite from an officer. The first officer
+                sets the chapter up.
+              </Text>
 
-            {terms.needed ? (
-              <TermsAcceptance
-                accepted={terms.accepted}
-                onAcceptedChange={(next) => {
-                  terms.setAccepted(next);
+              <View style={styles.choices}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: submitting }}
+                  disabled={submitting}
+                  onPress={() => {
+                    setAccountOpen(false);
+                    setView("invite");
+                  }}
+                  style={({ pressed }) => [
+                    styles.choice,
+                    pressed ? styles.choicePressed : null,
+                    submitting ? styles.disabled : null,
+                  ]}
+                >
+                  <View style={styles.choiceCopy}>
+                    <Text style={styles.choiceTitle}>I have an invite</Text>
+                    <Text style={styles.choiceBody}>
+                      Use the link your officer sent.
+                    </Text>
+                  </View>
+                  <Text style={styles.choiceChevron}>›</Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityHint="Opens chapter setup."
+                  accessibilityState={{ disabled: submitting }}
+                  disabled={submitting}
+                  onPress={() => {
+                    setAccountOpen(false);
+                    router.push("/create-chapter");
+                  }}
+                  style={({ pressed }) => [
+                    styles.choice,
+                    pressed ? styles.choicePressed : null,
+                    submitting ? styles.disabled : null,
+                  ]}
+                >
+                  <View style={styles.choiceCopy}>
+                    <Text style={styles.choiceTitle}>
+                      I&apos;m starting our chapter
+                    </Text>
+                    <Text style={styles.choiceBody}>
+                      Set it up, then invite everyone.
+                    </Text>
+                  </View>
+                  <Text style={styles.choiceChevron}>›</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.body}>
+              <Text style={styles.title}>{JOIN_INVITE_TITLE}</Text>
+              <Text style={styles.subtitle}>
+                Paste the invite link or code your officer sent. Invites work
+                once and expire after 24 hours.
+              </Text>
+
+              <Text style={styles.inputLabel}>Invite</Text>
+              <TextInput
+                value={token}
+                onChangeText={(value) => {
+                  setToken(value);
                   setError(null);
                 }}
-                disabled={submitting}
+                placeholder="Paste invite or link"
+                placeholderTextColor={tokens.color.text.muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="off"
+                // A filled field came from a link; the next step is Join, not
+                // typing, so the keyboard stays down.
+                autoFocus={token.length === 0}
+                textContentType="none"
+                accessibilityLabel="Invite token"
+                editable={!submitting}
+                returnKeyType="go"
+                onSubmitEditing={() => {
+                  void handleJoin();
+                }}
+                style={styles.input}
               />
-            ) : null}
 
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+              {terms.needed ? (
+                <TermsAcceptance
+                  accepted={terms.accepted}
+                  onAcceptedChange={(next) => {
+                    terms.setAccepted(next);
+                    setError(null);
+                  }}
+                  disabled={submitting}
+                />
+              ) : null}
 
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: submitting }}
-              disabled={submitting}
-              onPress={() => {
-                void handleJoin();
-              }}
-              style={[
-                styles.primaryButton,
-                submitting ? styles.primaryButtonDisabled : null,
-              ]}
-            >
-              {redeeming ? (
-                <ActivityIndicator color={tokens.color.gold.onHouse} />
-              ) : (
-                <Text style={styles.primaryButtonText}>Join chapter</Text>
-              )}
-            </Pressable>
+              {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-            <View style={styles.linkHint}>
-              <Text style={styles.helperText}>
-                Got an invite link? Paste it here, or open it and this page
-                fills itself in.
-              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: submitting }}
+                disabled={submitting}
+                onPress={() => {
+                  void handleJoin();
+                }}
+                style={[
+                  styles.primaryButton,
+                  submitting ? styles.disabled : null,
+                ]}
+              >
+                {redeeming ? (
+                  <ActivityIndicator color={tokens.color.gold.onHouse} />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Join chapter</Text>
+                )}
+              </Pressable>
+
+              <Text style={styles.hintText}>{OAUTH_MEMBERSHIP_HINT}</Text>
             </View>
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityHint="Open the first-officer chapter creation wizard."
-              accessibilityState={{ disabled: submitting }}
-              disabled={submitting}
-              onPress={() => {
-                router.push("/create-chapter");
-              }}
-              style={styles.secondaryButton}
-            >
-              <Text
-                style={[
-                  styles.secondaryButtonText,
-                  submitting ? styles.disabledButtonText : null,
-                ]}
-              >
-                Create a chapter
-              </Text>
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: submitting }}
-              disabled={submitting}
-              onPress={() => {
-                void handleSignOut();
-              }}
-              style={styles.secondaryButton}
-            >
-              <Text
-                style={[
-                  styles.secondaryButtonText,
-                  submitting ? styles.disabledButtonText : null,
-                ]}
-              >
-                Sign out
-              </Text>
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
-              accessibilityState={{ disabled: submitting, busy: deleting }}
-              disabled={submitting}
-              onPress={handleDeleteAccount}
-              style={styles.secondaryButton}
-            >
-              <Text
-                style={[
-                  styles.destructiveButtonText,
-                  submitting ? styles.disabledButtonText : null,
-                ]}
-              >
-                {deleting ? "Deleting account…" : "Delete account"}
-              </Text>
-            </Pressable>
-          </View>
+          )}
         </ScrollView>
+
+        {menuVisible ? (
+          <>
+            {/* Tapping anywhere outside the menu closes it. */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close account menu"
+              disabled={submitting}
+              onPress={() => {
+                setAccountOpen(false);
+              }}
+              style={styles.backdrop}
+            />
+            <View style={styles.menu} accessibilityViewIsModal>
+              {email ? (
+                <Text style={styles.menuCaption} numberOfLines={1}>
+                  Signed in as {email}
+                </Text>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: submitting }}
+                disabled={submitting}
+                onPress={() => {
+                  setAccountOpen(false);
+                  void handleSignOut();
+                }}
+                style={styles.menuRow}
+              >
+                <Text
+                  style={[
+                    styles.menuRowText,
+                    submitting ? styles.disabled : null,
+                  ]}
+                >
+                  Sign out
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
+                accessibilityState={{ disabled: submitting, busy: deleting }}
+                disabled={submitting}
+                onPress={handleDeleteAccount}
+                style={styles.menuRow}
+              >
+                <Text
+                  style={[
+                    styles.menuRowDestructive,
+                    submitting ? styles.disabled : null,
+                  ]}
+                >
+                  {deleting ? "Deleting account…" : "Delete account"}
+                </Text>
+              </Pressable>
+            </View>
+          </>
+        ) : null}
       </KeyboardAvoidingArea>
     </SafeAreaView>
   );
@@ -361,9 +511,46 @@ function createStyles(tokens: SignetTokens) {
     },
     container: {
       flexGrow: 1,
-      justifyContent: "center",
-      padding: tokens.spacing.xl,
+      paddingHorizontal: tokens.spacing.xl,
+      paddingBottom: tokens.spacing.xl,
       backgroundColor: tokens.color.surface.background,
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      minHeight: tokens.touch.minimum,
+      marginTop: tokens.spacing.sm,
+    },
+    backButton: {
+      minWidth: tokens.touch.minimum,
+      minHeight: tokens.touch.minimum,
+      justifyContent: "center",
+    },
+    backGlyph: {
+      fontSize: 30,
+      lineHeight: 32,
+      color: tokens.color.text.foreground,
+    },
+    accountButton: {
+      minHeight: tokens.touch.minimum,
+      paddingHorizontal: tokens.spacing.sm,
+      justifyContent: "center",
+    },
+    accountButtonText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
+    },
+    // Centred in the space under the header while it fits; the scroll view
+    // takes over when it does not.
+    body: {
+      flexGrow: 1,
+      justifyContent: "center",
+      width: "100%",
+      maxWidth: 400,
+      alignSelf: "center",
+      gap: tokens.spacing.md,
+      paddingVertical: tokens.spacing.xl,
     },
     title: {
       ...typeRole(tokens.typography.role.headline),
@@ -371,18 +558,46 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
     },
     subtitle: {
-      marginTop: tokens.spacing.xs,
-      marginBottom: tokens.spacing.lg,
+      marginBottom: tokens.spacing.sm,
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
     },
-    card: {
+    choices: {
+      gap: tokens.spacing.md,
+    },
+    // Elevation is a lighter surface, never a shadow (foundations.md §10).
+    choice: {
+      minHeight: 76,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+      paddingHorizontal: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.md,
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.lg,
-      gap: tokens.spacing.md,
+    },
+    choicePressed: {
+      backgroundColor: tokens.color.surface.surface1,
+    },
+    choiceCopy: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    choiceTitle: {
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.foreground,
+    },
+    choiceBody: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
+    },
+    choiceChevron: {
+      fontSize: 26,
+      lineHeight: 28,
+      color: tokens.color.text.muted,
     },
     inputLabel: {
       ...typeRole(tokens.typography.role.label),
@@ -413,46 +628,66 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "center",
     },
-    primaryButtonDisabled: {
-      opacity: 0.55,
-    },
     primaryButtonText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.gold.onHouse,
     },
-    linkHint: {
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.md,
-    },
-    helperText: {
+    hintText: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    secondaryButton: {
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    secondaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.mutedForeground,
-    },
-    // Same hue `ListRow` gives a destructive row in Settings
-    // (`components/list-section.tsx`), so the delete control reads the same
-    // way on both screens that offer it.
-    destructiveButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.semantic.destructive,
+      color: tokens.color.text.muted,
+      textAlign: "center",
     },
     // Mirrors `ListRow`'s disabled treatment: a control that cannot respond has
     // to look like it, or a user on a slow delete taps a dead full-strength
     // button and concludes the app has frozen.
-    disabledButtonText: {
+    disabled: {
       opacity: 0.5,
+    },
+    backdrop: {
+      position: "absolute",
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+    },
+    // The one floating surface on the screen: a lighter card under the
+    // Account button, no shadow (foundations.md §10).
+    menu: {
+      position: "absolute",
+      top: tokens.spacing.sm + tokens.touch.minimum,
+      // Lines up with the Account button's own box, inside the column's
+      // side padding.
+      right: tokens.spacing.xl,
+      minWidth: 220,
+      maxWidth: 300,
+      paddingVertical: tokens.spacing.xs,
+      borderRadius: tokens.radius.card,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.surface1,
+    },
+    menuCaption: {
+      paddingHorizontal: tokens.spacing.lg,
+      paddingTop: tokens.spacing.sm,
+      paddingBottom: tokens.spacing.xs,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+    },
+    menuRow: {
+      minHeight: tokens.touch.minimum,
+      paddingHorizontal: tokens.spacing.lg,
+      justifyContent: "center",
+    },
+    menuRowText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+    },
+    // Same hue `ListRow` gives a destructive row in Settings
+    // (`components/list-section.tsx`), so the delete control reads the same
+    // way on both screens that offer it.
+    menuRowDestructive: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.semantic.destructive,
     },
   });
 }

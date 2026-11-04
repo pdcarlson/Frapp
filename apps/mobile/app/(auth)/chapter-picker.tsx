@@ -17,9 +17,9 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * Chapter picker — the supporting route with no drawn Canvas screen
- * (spec/ui/mobile/screens.md § Inventory), so it reuses s02's visual language,
- * the `(auth)` card. s01 dropped its card for one surface in #3349, and s02
- * follows with #3350; restyle this picker to match when s02 lands.
+ * (spec/ui/mobile/screens.md § Inventory), so it reuses s02's visual language:
+ * one surface, no card, with each chapter as a row like s02's two answers
+ * (#3349, #3350).
  *
  * Reached deliberately, from the More hub — **not** forced on members whose
  * token lacks an `active_chapter_id` claim. `lib/auth-gate.ts` explains why
@@ -119,7 +119,7 @@ export default function ChapterPicker() {
           they belong to more than one chapter. */}
         <Text style={styles.subtitle}>Pick the chapter you want to open.</Text>
 
-        <View style={styles.card}>
+        <View style={styles.body}>
           {isPending ? (
             <View style={styles.stateBlock}>
               <ActivityIndicator color={tokens.color.gold.house} />
@@ -144,10 +144,11 @@ export default function ChapterPicker() {
             // Not reachable through the normal hook path, but a member with no
             // membership at all would otherwise be stranded on a blank screen
             // with no way back to sign-in.
+            // s02 asks invite-or-start itself (#3350), so one way there.
             <View style={styles.stateBlock}>
               <Text style={styles.helperText}>
                 This account is not a member of any chapter yet. Join with an
-                invite, or create a chapter if you&apos;re the first officer.
+                invite, or start your chapter if you&apos;re the first officer.
               </Text>
               <Pressable
                 accessibilityRole="button"
@@ -156,16 +157,9 @@ export default function ChapterPicker() {
                 }}
                 style={styles.primaryButton}
               >
-                <Text style={styles.primaryButtonText}>Join a chapter</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  router.push("/create-chapter");
-                }}
-                style={styles.secondaryButton}
-              >
-                <Text style={styles.secondaryButtonText}>Create a chapter</Text>
+                <Text style={styles.primaryButtonText}>
+                  Join or start a chapter
+                </Text>
               </Pressable>
             </View>
           ) : (
@@ -247,6 +241,9 @@ function createStyles(tokens: SignetTokens) {
     container: {
       flexGrow: 1,
       justifyContent: "center",
+      width: "100%",
+      maxWidth: 448,
+      alignSelf: "center",
       padding: tokens.spacing.xl,
       backgroundColor: tokens.color.surface.background,
     },
@@ -261,12 +258,7 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
     },
-    card: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.lg,
+    body: {
       gap: tokens.spacing.md,
     },
     stateBlock: {
@@ -277,17 +269,19 @@ function createStyles(tokens: SignetTokens) {
     list: {
       gap: tokens.spacing.sm,
     },
+    // The same row s02 draws for its two answers (`join.tsx`): a lighter
+    // surface, never a shadow (foundations.md §10).
     chapterRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.md,
-      borderRadius: tokens.radius.control,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
+      backgroundColor: tokens.color.surface.card,
+      paddingHorizontal: tokens.spacing.lg,
       paddingVertical: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
+      minHeight: 64,
     },
     chapterRowDimmed: {
       opacity: 0.5,
@@ -297,7 +291,7 @@ function createStyles(tokens: SignetTokens) {
       gap: 2,
     },
     chapterName: {
-      ...typeRole(tokens.typography.role.label),
+      ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.foreground,
     },
     chapterMeta: {
