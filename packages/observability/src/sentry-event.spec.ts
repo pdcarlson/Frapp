@@ -80,6 +80,20 @@ describe("sentryMarkerFrom", () => {
     });
   });
 
+  it("falls back to the request_id tag when the event has no request header", () => {
+    expect(
+      sentryMarkerFrom({ tags: { request_id: "req_tag", "http.status_code": "502" } }),
+    ).toMatchObject({ request_id: "req_tag", status_class: "5xx" });
+    expect(
+      sentryMarkerFrom({
+        request: { headers: { "x-request-id": "req_header" } },
+        tags: { request_id: "req_tag" },
+      }).request_id,
+    ).toBe("req_header");
+    expect(sentryMarkerFrom({ tags: { request_id: 7 } }).request_id).toBeUndefined();
+    expect(sentryMarkerFrom({ tags: { request_id: "" } }).request_id).toBeUndefined();
+  });
+
   it("drops a non-string route and release, and prefers an explicit status class", () => {
     const marker = sentryMarkerFrom(
       {

@@ -408,6 +408,8 @@ vi.mock("@sentry/react-native", () => ({
   init: vi.fn(),
   wrap: (component: unknown) => component,
   setUser: vi.fn(),
+  // Both QueryClients report failures through it (`lib/sentry/query-errors.ts`).
+  captureException: vi.fn(),
   mobileReplayIntegration: vi.fn(),
 }));
 

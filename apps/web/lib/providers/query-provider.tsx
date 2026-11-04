@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { isRetryableFailure } from "@repo/api-sdk";
+import { createReportingCaches } from "@/lib/sentry/query-errors";
 
 /** How many times a failed mutation is retried, when it is worth retrying. */
 const MUTATION_RETRIES = 2;
@@ -21,8 +22,14 @@ export function retryMutation(failureCount: number, error: unknown): boolean {
   return failureCount < MUTATION_RETRIES && isRetryableFailure(error);
 }
 
-function makeQueryClient() {
+/**
+ * The app's `QueryClient`. Its caches report every final failure to Sentry
+ * (`lib/sentry/query-errors.ts`, #3377). Exported for specs; the app reaches
+ * it through {@link QueryProvider}.
+ */
+export function makeQueryClient() {
   return new QueryClient({
+    ...createReportingCaches(),
     defaultOptions: {
       queries: {
         staleTime: 30_000,
