@@ -292,6 +292,21 @@ vi.mock("react-native-keyboard-controller", () => ({
   KeyboardProvider: "KeyboardProvider",
 }));
 
+// `lib/keyboard.tsx` reads the execution environment through `lib/expo-go.ts`,
+// so every screen inside `KeyboardAvoidingArea` (#3346) loads `expo-constants`,
+// whose real module needs a native bridge. The suite runs as Expo Go, the path
+// that never loads the keyboard library, so anything gated on `isExpoGo` takes
+// its Expo Go path by default. A spec that tests a store-build path mocks
+// `expo-constants` itself with another `executionEnvironment`.
+vi.mock("expo-constants", () => ({
+  default: { executionEnvironment: "storeClient" },
+  ExecutionEnvironment: {
+    Bare: "bare",
+    Standalone: "standalone",
+    StoreClient: "storeClient",
+  },
+}));
+
 // `expo-notifications` is reached only through `lib/notifications/push.ts`,
 // whose loader seam (`setPushLoaderForTests`) is how specs inject a fake. This
 // suite-wide mock exists for the *other* direction: a screen that imports the

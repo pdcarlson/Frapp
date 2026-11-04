@@ -226,15 +226,18 @@ describe("an imported author's row", () => {
       message({ sender_id: null, author_name: "Discord Dan" }),
     );
     const initials = tree.root.find(
-      (node) => (node.type as unknown) === "Text" && node.props.children === "DD",
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "DD",
     );
     expect(JSON.stringify(initials.props.style)).toContain("Figtree_700Bold");
   });
 });
 
 // Frapp's own posts (the welcome, the audit bridge, a poll's closing notice,
-// an invite-accept DM) wear the crest rather than initials (#3347).
-describe("a system post's avatar", () => {
+// an invite-accept DM) read "Frapp" and wear the crest rather than initials
+// (#3347). The system actor is on no roster, so it used to fall through to
+// "Member 000000" beside a "00" avatar.
+describe("a system post", () => {
   const hasSystemAvatar = (tree: ReactTestRenderer) =>
     tree.root.findAll((node) => node.props.testID === "system-avatar").length >
     0;
@@ -244,12 +247,15 @@ describe("a system post's avatar", () => {
       message({ sender_id: SYSTEM_SENDER_ID, kind: "system_audit" }),
     );
     expect(hasSystemAvatar(tree)).toBe(true);
-    // No initials drawn from the id-prefix fallback ("Member 000000").
+    // The name resolves to "Frapp" (`SYSTEM_AUTHOR_LABEL`), so initials, if
+    // the crest branch went, would be drawn from it rather than from the id.
     const texts = tree.root
       .findAll((node) => (node.type as unknown) === "Text")
       .map((node) => node.props.children);
-    expect(texts).not.toContain("M0");
-    expect(texts).not.toContain("00");
+    expect(texts).toContain("Frapp");
+    expect(texts).not.toContain("Member 000000");
+    expect(texts).not.toContain("F");
+    expect(texts).not.toContain("FR");
   });
 
   it("keeps initials for a member", () => {
@@ -540,7 +546,9 @@ describe("reply quote (#1727)", () => {
       ).toJSON(),
     );
     // The quote's author comes first in the tree, then the row's own.
-    expect(flat.indexOf("the original")).toBeLessThan(flat.lastIndexOf("Casey"));
+    expect(flat.indexOf("the original")).toBeLessThan(
+      flat.lastIndexOf("Casey"),
+    );
   });
 
   it("says so when the parent is outside the loaded window", () => {
@@ -688,9 +696,7 @@ describe("delivery status (#1910)", () => {
 
   it("draws no delivery line on a confirmed message", () => {
     const flat = JSON.stringify(
-      renderItem(
-        message({ sender_id: VIEWER, _status: "confirmed" }),
-      ).toJSON(),
+      renderItem(message({ sender_id: VIEWER, _status: "confirmed" })).toJSON(),
     );
 
     expect(flat).not.toContain("Not confirmed");

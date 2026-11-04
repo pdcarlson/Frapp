@@ -5,8 +5,6 @@ import {
   Alert,
   FlatList,
   Pressable,
-  KeyboardAvoidingView,
-  Platform,
   StyleSheet,
   Text,
   View,
@@ -79,7 +77,7 @@ import {
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
 import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
-import { getKeyboardPath } from "@/lib/keyboard";
+import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
@@ -101,11 +99,11 @@ const NO_DEPARTED: ReadonlySet<string> = new Set();
  * data is reversed once and `inverted` pins the newest message to the bottom
  * without a scroll-to-end effect racing every insert.
  *
- * Keyboard: `react-native-keyboard-controller` does not run in Expo Go, so it
- * lives behind `lib/keyboard.tsx`. This reads `getKeyboardPath()` only to pick
- * the right *behavior*, and uses `KeyboardAvoidingView` either way — the guarded
- * `KeyboardProvider` is already mounted app-wide, and a screen must never import
- * the native package directly (ESLint `no-restricted-imports` enforces it).
+ * Keyboard: `KeyboardAvoidingArea` from `lib/keyboard.tsx`, which picks the
+ * avoiding view per platform and keyboard path. On Android the window does not
+ * resize for the keyboard while the app-wide `KeyboardProvider` is active, so
+ * the composer has to be moved up from here (#3346), and a screen must never
+ * import the native package directly (ESLint `no-restricted-imports`).
  */
 export default function ChatThreadScreen() {
   const { tokens } = useFrappTheme();
@@ -709,16 +707,11 @@ export default function ChatThreadScreen() {
       style={styles.safeArea}
       edges={["top", "left", "right", "bottom"]}
     >
-      <KeyboardAvoidingView
+      <KeyboardAvoidingArea
         style={styles.flex}
-        // `padding` is the correct iOS behavior; on Android the window already
-        // resizes. The keyboard path only differs in how precisely the inset is
-        // tracked, not in which behavior is right.
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        enabled={getKeyboardPath() === "fallback" || Platform.OS === "ios"}
         // Everything the image viewer covers, out of the accessibility tree
         // while it is open, as the mute menu's wrapper below does for the
-        // menu. `KeyboardAvoidingView` hands these to the View it renders.
+        // menu. Either avoiding view hands these to the View it renders.
         collapsable={false}
         accessibilityElementsHidden={imageViewerOpen}
         importantForAccessibility={
@@ -1009,7 +1002,7 @@ export default function ChatThreadScreen() {
             if (channelId) setNotificationLevel.mutate({ channelId, level });
           }}
         />
-      </KeyboardAvoidingView>
+      </KeyboardAvoidingArea>
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={actionTarget}
