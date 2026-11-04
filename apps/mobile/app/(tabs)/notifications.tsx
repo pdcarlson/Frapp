@@ -9,6 +9,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { BACK_TO_CHAT } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
 import {
   EmptyState,
@@ -163,6 +164,7 @@ export default function NotificationsScreen() {
 
   return (
     <ScreenShell
+      back={BACK_TO_CHAT}
       title="Notifications"
       headerAction={
         unreadIds.length > 0 ? (

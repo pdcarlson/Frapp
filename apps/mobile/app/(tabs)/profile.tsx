@@ -9,6 +9,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { BACK_TO_MORE } from "@/components/back-row";
 import { ProfilePhoto } from "@/components/profile/profile-photo";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { ErrorState, SkeletonLines } from "@/components/state-block";
@@ -85,7 +86,7 @@ export default function ProfileScreen() {
 
   if (userQuery.isPending) {
     return (
-      <ScreenShell title="Profile">
+      <ScreenShell back={BACK_TO_MORE} title="Profile">
         <SkeletonLines lines={4} showTile />
       </ScreenShell>
     );
@@ -93,7 +94,7 @@ export default function ProfileScreen() {
 
   if (userQuery.isError) {
     return (
-      <ScreenShell title="Profile">
+      <ScreenShell back={BACK_TO_MORE} title="Profile">
         <ErrorState
           title="Couldn't load your profile"
           body="You're signed in, but we couldn't reach the server."
@@ -105,7 +106,7 @@ export default function ProfileScreen() {
   }
 
   return (
-    <ScreenShell title="Profile">
+    <ScreenShell back={BACK_TO_MORE} title="Profile">
       <View style={styles.identity}>
         <ProfilePhoto
           photoUrl={profile?.photoUrl ?? null}

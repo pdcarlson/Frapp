@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppState } from "react-native";
 import * as expoRouter from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
@@ -672,5 +673,14 @@ describe("Study with hours switched off (#2718)", () => {
       expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.runningSession);
       act(() => tree.unmount());
     });
+  });
+});
+
+/** #3022. s10 opens from More's Study hours row and draws `‹ More`. */
+describe("Study back row (#3022)", () => {
+  it("draws ‹ More above the title", () => {
+    const tree = render();
+    expectBackRow(tree, "More", "/more");
+    tree.unmount();
   });
 });
