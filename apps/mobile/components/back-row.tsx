@@ -10,7 +10,7 @@ export type BackTarget = {
   href: Href;
 };
 
-/** s10–s16 and service hours, each opened from a More row. */
+/** s10–s13, s15, s16 and Service hours, each opened from a More row. */
 export const BACK_TO_MORE: BackTarget = { label: "More", href: "/more" };
 /** s07, opened from an Events row (and from Chat home's Up next). */
 export const BACK_TO_EVENTS: BackTarget = { label: "Events", href: "/events" };
