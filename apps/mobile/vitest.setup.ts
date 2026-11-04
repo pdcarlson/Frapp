@@ -91,8 +91,11 @@ vi.mock("expo-router", () => {
   // Every mounted focus effect, re-runnable as one "the member came back"
   // event. A tab screen is never unmounted, so state that must not outlive a
   // visit (a subscription refusal, #2297) is cleared on refocus, and a spec
-  // can only prove that by refocusing: `act(() => __refocus())`.
+  // can only prove that by refocusing: `act(() => __refocus())`. `__blur` is
+  // the half before it, for a screen that must go quiet while another screen
+  // is pushed over it: `act(() => __blur())`, then `__refocus` brings it back.
   const refocusers = new Set<() => void>();
+  const blurrers = new Set<() => void>();
   return {
     useRouter: () => router,
     // Runs the effect on mount and on every callback-identity change, which
@@ -105,15 +108,24 @@ vi.mock("expo-router", () => {
           cleanup?.();
           cleanup = callback();
         };
+        const blur = () => {
+          cleanup?.();
+          cleanup = undefined;
+        };
         refocusers.add(refocus);
+        blurrers.add(blur);
         return () => {
           refocusers.delete(refocus);
+          blurrers.delete(blur);
           cleanup?.();
         };
       }, [callback]);
     },
     __refocus: () => {
       for (const refocus of [...refocusers]) refocus();
+    },
+    __blur: () => {
+      for (const blur of [...blurrers]) blur();
     },
     useLocalSearchParams: vi.fn(() => ({})),
     usePathname: vi.fn(() => "/"),

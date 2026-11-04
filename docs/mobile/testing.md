@@ -74,8 +74,9 @@ except the on-screen readout of the keyboard path, which a unit test covers:
       the sign-in screen (s01): its title is 700, its button labels 600 and its body
       copy 400. Android is the honest test, because it can't fake weights from
       one file. Screens built on `ScreenShell` show no 700 text, so they can't
-      prove it. The invite field on the join screen (s02), which an account
-      with no chapter lands on, renders in a monospace face.
+      prove it. The invite field on the join screen (s02), behind its "I have an
+      invite" answer (an account with no chapter lands on the question
+      first), renders in a monospace face.
 - [ ] **Sheets and the keyboard.** More → Service hours, then **Log** in the
       header, presents the s20 "Log service hours" sheet with its grabber,
       header and Cancel. It drags and
@@ -136,9 +137,12 @@ A tab screen renders under test like any component: `lib/events/check-in-screen.
 and `lib/study/study-screen.spec.tsx` show how, and the spec lives under `lib/`
 (see [§ Gotchas](#gotchas)). A tab screen is never unmounted, so state that
 must clear when the member comes back is tested with `__refocus()`, inside
-`act`, which re-runs every mounted `useFocusEffect`. It is an export of the
-mocked `expo-router` module, not a method on the router, so the specs reach it
-through `import * as expoRouter from "expo-router"`.
+`act`, which re-runs every mounted `useFocusEffect`. Its other half is
+`__blur()`, which runs only the cleanups, for a screen that must go quiet while
+another is pushed over it (`lib/onboarding/join-screen.spec.tsx` holds Android
+back that way). Both are exports of the mocked `expo-router` module, not
+methods on the router, so the specs reach them through
+`import * as expoRouter from "expo-router"`.
 
 The suite's `FlatList` is a string stand-in that never calls `renderItem`, so a
 spec that asserts on one row renders that row's component directly. A spec
