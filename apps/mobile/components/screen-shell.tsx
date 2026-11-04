@@ -15,6 +15,11 @@ type ScreenShellProps = {
    */
   back?: BackTarget;
   /**
+   * A control at the far end of the back row, where the board draws s15's
+   * Edit (#3387). Drawn only with `back`.
+   */
+  backAction?: ReactNode;
+  /**
    * Drawn before the title on the title row. Chat home passes the chapter mark
    * (`ChapterMark`), which is the one mobile surface of the chapter's logo
    * (`spec/behavior/branding.md` § Chapter mark). It used to ride in the tab
@@ -54,6 +59,7 @@ type ScreenShellProps = {
 export function ScreenShell({
   title,
   back,
+  backAction,
   titleMark,
   subtitle,
   headerAction,
@@ -69,7 +75,13 @@ export function ScreenShell({
     >
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          {back ? <BackRow label={back.label} href={back.href} /> : null}
+          {back ? (
+            <BackRow
+              label={back.label}
+              href={back.href}
+              trailing={backAction}
+            />
+          ) : null}
           <View style={styles.headerRow}>
             {titleMark}
             <Text accessibilityRole="header" style={styles.title}>

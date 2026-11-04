@@ -1,5 +1,6 @@
-import { useMemo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useMemo, useRef } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
   useCurrentUser,
@@ -10,6 +11,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
+import { EditProfileSheet } from "@/components/profile/edit-profile-sheet";
 import { ProfilePhoto } from "@/components/profile/profile-photo";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { ErrorState, SkeletonLines } from "@/components/state-block";
@@ -44,12 +46,14 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * lets a member edit (graduation year, city, company); display name heads the
  * screen and bio gets its own card. Filed.
  *
- * ## The photo is editable here; the rest is not
+ * ## Editing
  *
- * Canvas draws an Edit action. The photo half is built (#732): `ProfilePhoto`
- * picks, uploads and confirms it. The text fields (name, bio, graduation,
- * city, company) still edit on the web dashboard, since a form here is a
- * separate slice. TODO-DESIGN: the Edit affordance and its sheet.
+ * Canvas draws an Edit action at the far end of the `‹ More` row, and that is
+ * where it sits: it opens `EditProfileSheet` for the name, bio, graduation
+ * year, city and company (#3387). The photo edits in place (#732):
+ * `ProfilePhoto` picks, uploads and confirms it. Edit appears only once the
+ * profile has loaded, because a sheet opened on the loading or error state
+ * would prefill blanks over fields the member has already set.
  */
 export default function ProfileScreen() {
   const { tokens } = useFrappTheme();
@@ -59,6 +63,7 @@ export default function ProfileScreen() {
   const chapterId = useActiveChapterId();
 
   const userQuery = useCurrentUser();
+  const editSheetRef = useRef<BottomSheetModal>(null);
   const viewerUserId = useViewerUserId();
   const pointsQuery = useMyPoints();
   // Scoped to the viewer for the same reason `service-hours.tsx` is: unscoped,
@@ -106,7 +111,22 @@ export default function ProfileScreen() {
   }
 
   return (
-    <ScreenShell back={BACK_TO_MORE} title="Profile">
+    <ScreenShell
+      back={BACK_TO_MORE}
+      backAction={
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Edit profile"
+          accessibilityHint="Opens a sheet to edit your name and details."
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          onPress={() => editSheetRef.current?.present()}
+          style={({ pressed }) => (pressed ? styles.pressed : null)}
+        >
+          <Text style={styles.edit}>Edit</Text>
+        </Pressable>
+      }
+      title="Profile"
+    >
       <View style={styles.identity}>
         <ProfilePhoto
           photoUrl={profile?.photoUrl ?? null}
@@ -181,9 +201,7 @@ export default function ProfileScreen() {
         </>
       ) : null}
 
-      <Text style={styles.footnote}>
-        Edit your name and details on the web dashboard.
-      </Text>
+      <EditProfileSheet ref={editSheetRef} profile={profile} />
     </ScreenShell>
   );
 }
@@ -241,10 +259,14 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
     },
-    footnote: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      paddingHorizontal: tokens.spacing.xs,
+    // The board's Edit: 13.5px semibold in the back row's gold. The label
+    // role (14 semibold) is the nearest step on the type scale.
+    edit: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.gold.askText,
+    },
+    pressed: {
+      opacity: 0.6,
     },
   });
 }

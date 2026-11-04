@@ -43,6 +43,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useViewerUserId: () => viewerUserId,
   useMyPoints: () => ({ data: undefined, isPending: true, isError: false }),
   useServiceEntries: (...args: unknown[]) => useServiceEntries(...args),
+  useUpdateUser: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("@/lib/auth-session", () => ({
@@ -112,8 +113,70 @@ describe("Profile back row (#3022)", () => {
   ])("draws ‹ More above the title when %s", (_state, user) => {
     currentUser = user;
     const tree = render();
-    expect(screenText(tree).startsWith("‹ More\nProfile")).toBe(true);
+    // The loaded profile also draws Edit at the far end of the row (#3387).
+    expect(screenText(tree)).toMatch(/^‹ More\n(Edit\n)?Profile/);
     expectBackRow(tree, "More", "/more");
+    tree.unmount();
+  });
+});
+
+/**
+ * #3387. Edit sits at the far end of the `‹ More` row, where the board draws
+ * it, and opens the edit sheet. It appears only over a loaded profile: a sheet
+ * opened while loading would prefill blanks over fields already set.
+ */
+describe("Profile Edit (#3387)", () => {
+  afterEach(() => {
+    currentUser = LOADED_USER;
+  });
+
+  const editControls = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Edit profile",
+    );
+
+  it("draws Edit on the back row and presents the sheet", () => {
+    const present = vi.fn();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ProfileScreen />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            (element.type as unknown) === "BottomSheetModal"
+              ? { present, dismiss: vi.fn() }
+              : null,
+        },
+      );
+    });
+
+    const [edit] = editControls(tree);
+    expect(edit).toBeDefined();
+    // Same row as `‹ More`: the back row's own view holds both.
+    const backRow = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Back to More",
+    ).parent!;
+    expect(backRow.findAll((node) => node === edit)).toHaveLength(1);
+
+    act(() => {
+      edit!.props.onPress();
+    });
+    expect(present).toHaveBeenCalledTimes(1);
+    expect(screenText(tree)).not.toContain("web dashboard");
+    tree.unmount();
+  });
+
+  it("draws no Edit while the profile loads", () => {
+    currentUser = { isPending: true, isError: false, data: undefined };
+    const tree = render();
+
+    expect(editControls(tree)).toHaveLength(0);
     tree.unmount();
   });
 });

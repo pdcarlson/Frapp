@@ -126,3 +126,26 @@ describe("ScreenShell back row (#3022)", () => {
     expectBackRow(tree, "More", "/more");
   });
 });
+
+/** #3387. s15's Edit sits at the far end of its back row, as the board draws it. */
+describe("ScreenShell back-row action (#3387)", () => {
+  it("draws the action on the back row, after `‹ More`", () => {
+    const tree = render(
+      <ScreenShell
+        back={BACK_TO_MORE}
+        backAction={<Text testID="edit">Edit</Text>}
+        title="Profile"
+      >
+        <Text>Body</Text>
+      </ScreenShell>,
+    );
+
+    expect(screenText(tree)).toBe("‹ More\nEdit\nProfile\nBody");
+    const [action] = tree.root.findAllByProps({ testID: "edit" });
+    const row = action!.parent!;
+    expect(
+      row.findAll((node) => node.props.accessibilityLabel === "Back to More")
+        .length,
+    ).toBeGreaterThan(0);
+  });
+});

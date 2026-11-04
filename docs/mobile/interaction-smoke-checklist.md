@@ -60,6 +60,9 @@ in the S2 nav restructure (#957) — see
 | Event details | Add to Calendar (.ics) | Starts `.ics` export flow or surfaces retry guidance |
 | Event details | `‹ Events` above the title | Lands on the Events tab, also when the event was opened from a notification or a `frapp://` link |
 | Study hours, Service hours, Dues, Documents, Directory, Profile, Settings | `‹ More` above the title | Lands on the More tab |
+| Profile (`/(tabs)/profile`) | Edit, change a field, Save | The sheet opens on your current details; Save stays off until something changes; saving closes the sheet and the screen shows the new value |
+| Profile (`/(tabs)/profile`) | Edit, clear the name, or enter a graduation year like 1850 | Refused inline under the field, Save stays off, nothing is sent |
+| Profile (`/(tabs)/profile`) | Edit, Save with no connection | "That didn't save" under the fields; what you typed is still there |
 | Notifications (`/(tabs)/notifications`) | `‹ Chat` above the title | Lands on Chat home |
 | Chat thread | Retry failed upload | Requeues retry state + feedback |
 | Chat thread | Queue message | Queues message + feedback |
