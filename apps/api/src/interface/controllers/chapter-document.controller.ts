@@ -27,6 +27,7 @@ import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
   FeatureEvent,
   type FeatureEventInput,
+  hasText,
 } from '../decorators/feature-event.decorator';
 import {
   CurrentChapterId,
@@ -89,8 +90,8 @@ export class ChapterDocumentController {
     'document-uploaded',
     ({ body }: FeatureEventInput<ConfirmDocumentUploadDto>) => ({
       // Both are free text, so only their presence is sent.
-      has_document_type: !!body.document_type?.trim(),
-      has_folder: !!body.folder?.trim(),
+      has_document_type: hasText(body.document_type),
+      has_folder: hasText(body.folder),
     }),
   )
   async confirmUpload(

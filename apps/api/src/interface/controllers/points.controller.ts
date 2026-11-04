@@ -16,6 +16,7 @@ import {
 import {
   PointsService,
   PointsWindow,
+  type AdjustPointsResult,
 } from '../../application/services/points.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -124,9 +125,7 @@ export class PointsController {
   // verbatim retry is counted again.
   @FeatureEvent(
     'points-adjusted',
-    ({
-      result,
-    }: FeatureEventInput<AdjustPointsDto, AdjustPointsResponseDto>) => ({
+    ({ result }: FeatureEventInput<AdjustPointsDto, AdjustPointsResult>) => ({
       category: result.category,
       direction: result.amount < 0 ? 'deduct' : 'award',
       posted_to_chat: result.card_posted === true,

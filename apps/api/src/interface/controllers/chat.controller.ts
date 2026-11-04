@@ -42,6 +42,13 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
+  CARD_VOTE_ACTION_TYPE,
+  cardPollChoiceMode,
+  cardPollOptionIds,
+  cardVoteSelection,
+  type CardPollPayload,
+} from '#domain/utils/poll-vote-rules';
+import {
   CreateChannelDto,
   UpdateChannelDto,
   CreateDmDto,
@@ -75,35 +82,8 @@ type RecordedMessageAction = Awaited<
   ReturnType<ChatReactionService['recordMessageAction']>
 >;
 
-/** `ChatReactionService`'s vote discriminator, and the chat poll card's (`POLL_VOTE_ACTION_TYPE`). */
-const VOTE_ACTION_TYPE = 'vote';
-
 /** The prefix every emoji reaction's `action_type` carries (`reaction:<emoji>`). */
 const REACTION_ACTION_PREFIX = 'reaction:';
-
-/**
- * How many options a chat-card vote selects. `payload.option_id` is one id or
- * several, read the way `ChatReactionService` reads it for the poll rules.
- */
-function cardVoteSelectedCount(
-  payload: Record<string, unknown> | undefined,
-): number {
-  const raw = payload?.['option_id'];
-  return (Array.isArray(raw) ? raw : [raw]).filter(
-    (id) => typeof id === 'string',
-  ).length;
-}
-
-/**
- * The shape of a poll card's payload (`PollPayload` in
- * `@repo/chat-core/integrations`). Nothing validates it on send, so every
- * field is read defensively.
- */
-interface PollCardPayloadShape {
-  options?: unknown;
-  closes_at?: unknown;
-  choice_mode?: unknown;
-}
 
 @ApiTags('Chat')
 @ApiBearerAuth()
@@ -474,15 +454,11 @@ export class ChatController {
     'poll-created',
     ({ body, result }: FeatureEventInput<SendMessageDto, SentMessage>) => {
       if (result.deduplicated || result.message.kind !== 'poll') return null;
-      const poll = (body.payload ?? {}) as PollCardPayloadShape;
+      // Read as the card vote rules read it (`poll-vote-rules.ts`).
+      const poll = (body.payload ?? {}) as CardPollPayload;
       return {
-        // As the card vote rules read it: absent or `single` is single-choice,
-        // and anything else is held to no cardinality, so it votes as multi.
-        choice_mode:
-          poll.choice_mode == null || poll.choice_mode === 'single'
-            ? 'single'
-            : 'multi',
-        option_count: Array.isArray(poll.options) ? poll.options.length : 0,
+        choice_mode: cardPollChoiceMode(poll),
+        option_count: cardPollOptionIds(poll).length,
         has_expiry: typeof poll.closes_at === 'string' && poll.closes_at !== '',
       };
     },
@@ -689,10 +665,10 @@ export class ChatController {
       body,
       result,
     }: FeatureEventInput<ChatMessageActionDto, RecordedMessageAction>) => {
-      if (body.action_type !== VOTE_ACTION_TYPE || result.deduplicated) {
+      if (body.action_type !== CARD_VOTE_ACTION_TYPE || result.deduplicated) {
         return null;
       }
-      const selectedCount = cardVoteSelectedCount(body.payload);
+      const selectedCount = cardVoteSelection(body.payload).length;
       if (selectedCount === 0) return null;
       return {
         surface: 'card',

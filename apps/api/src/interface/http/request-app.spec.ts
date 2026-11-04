@@ -1,5 +1,9 @@
 import { PRODUCTION_APP_ORIGIN } from '@repo/validation';
-import { STAGING_APP_ORIGIN } from './cors.options';
+import {
+  CORS_ALLOWED_ORIGINS,
+  DASHBOARD_DEV_ORIGIN,
+  STAGING_APP_ORIGIN,
+} from './cors.options';
 import { requestApp } from './request-app';
 
 function req(headers: Record<string, string | string[]>) {
@@ -27,12 +31,22 @@ describe('requestApp (#593)', () => {
     ).toBe('mobile');
   });
 
-  it.each([PRODUCTION_APP_ORIGIN, STAGING_APP_ORIGIN, 'http://localhost:3000'])(
+  it.each([PRODUCTION_APP_ORIGIN, STAGING_APP_ORIGIN, DASHBOARD_DEV_ORIGIN])(
     'labels the dashboard origin %s web',
     (origin) => {
       expect(requestApp(req({ origin }))).toBe('web');
     },
   );
+
+  it('labels every origin CORS admits, except Expo web, as web', () => {
+    // The dashboard's origins and the CORS allowlist share their constants;
+    // this catches an origin added to the allowlist and not to the label.
+    const admitted = new Set(Object.values(CORS_ALLOWED_ORIGINS).flat());
+    const unlabelled = [...admitted].filter(
+      (origin) => requestApp(req({ origin })) !== 'web',
+    );
+    expect(unlabelled).toEqual(['http://localhost:3002']);
+  });
 
   it.each([
     ['Expo web', { origin: 'http://localhost:3002' }],

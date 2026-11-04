@@ -38,8 +38,10 @@ import type { RequestContext } from '../types/request-context.types';
  *    no event: there would be no opt-out to check.
  *  - Properties outside the event's allowlist are dropped and logged (the
  *    decorator's types already refuse them), and `feature` is added.
- *  - `app` comes from the request (`requestApp`), and the chapter's opt-out
- *    from what `ChapterGuard` already read, so the event costs no extra query.
+ *  - `app` comes from the request (`requestApp`).
+ *  - The chapter's opt-out is `track`'s to check, read when the event is sent,
+ *    after the handler: an action that opts the chapter out is not recorded,
+ *    nor is one that finishes after another request opted it out.
  *
  * Canonical behavior: `spec/behavior/observability.md` § Feature Events.
  */
@@ -108,11 +110,6 @@ export class FeatureEventInterceptor implements NestInterceptor {
           chapterId,
           properties,
           app: requestApp(request),
-          // ChapterGuard's read is for its own chapter only.
-          chapterOptedOut:
-            chapterId === request.chapterId
-              ? request.analyticsOptOut
-              : undefined,
         })
         .catch((error: unknown) => {
           logThrowable(

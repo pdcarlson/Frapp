@@ -50,7 +50,7 @@ On the API, Sentry owns tracing, and under SDK v11 it registers no OpenTelemetry
 
 Named product events reach PostHog from the API (`PosthogRuntime.captureEvent`), keyed as above. Since [#3381](https://github.com/pdcarlson/Frapp/issues/3381) an event can also carry:
 
-- **`app`**, the app that sent it: `web` or `mobile`, which the client reports in `POST /v1/analytics/events`'s `app` field and the API checks against that list, or `api` for the activation funnel. The value is the client's own word: the check stops a client from passing itself off as the API, not web from calling itself mobile. The API stamps it after checking the event's own properties, which may set neither `app` nor any `$`-prefixed key (PostHog's namespace: `$groups`, `$set`, `$process_person_profile`). A request that does gets a 400 whether or not analytics is configured, so properties a local run accepts are properties staging accepts. An event from a client that names no app (a build from before #3381) carries none. Events the client SDKs send directly (`$identify`, `$groupidentify`, their `sentry-error-correlated` marker) carry no `app`; PostHog's own `$lib` tells those apart.
+- **`app`**, the app that sent it: `web` or `mobile`, which the client reports in `POST /v1/analytics/events`'s `app` field and the API checks against that list; `api` for the activation funnel; or, on a [feature event](#feature-events), `web` or `mobile` as the API reads them from the request's `Origin` and `X-Client-Version` headers, and none when it can't place the request. So `app: api` marks the funnel, not every event the API sends. A client-reported value is the client's own word: the check stops a client from passing itself off as the API, not web from calling itself mobile. The API stamps it after checking the event's own properties, which may set neither `app` nor any `$`-prefixed key (PostHog's namespace: `$groups`, `$set`, `$process_person_profile`). A request that does gets a 400 whether or not analytics is configured, so properties a local run accepts are properties staging accepts. An event from a client that names no app (a build from before #3381) carries none. Events the client SDKs send directly (`$identify`, `$groupidentify`, their `sentry-error-correlated` marker) carry no `app`; PostHog's own `$lib` tells those apart.
 - **`groups.chapter`**, the chapter group digest, on a user-keyed event whose chapter is known: the `chapter_id` the caller was verified a member of. An event with no `chapter_id` carries no group; the API does not pick one from the caller's memberships.
 - **Person processing that follows the group.** PostHog links a group only on a person-processed event ("If `$process_person_profile` is set to `false`, the event won't link to the group", [group analytics](https://posthog.com/docs/product-analytics/group-analytics), read 2026-11-04), so an event with a chapter group is sent person-processed. Its distinct id is the user pseudonym the client `identify`s with, so it lands on that same person, and it sets no person properties (the API sends no `$set`, and its PostHog client has GeoIP off). Every other event the API sends is personless (`$process_person_profile: false`). PostHog still attributes a personless event to an identified person with the same distinct id; it only skips creating or updating one ([anonymous vs identified events](https://posthog.com/docs/data/anonymous-vs-identified-events), read 2026-11-04).
 
@@ -419,8 +419,8 @@ The activation funnel says where a chapter stalls on its way to paying. Feature 
 - **Sent after success, never in the way.** `FeatureEventInterceptor`, registered globally in `AnalyticsModule`, builds the event when the handler's result arrives. A failed request (any 4xx or 5xx) records nothing. A describer that throws is logged at error level and the response is unaffected, and the send is not awaited, so PostHog never delays a response.
 - **Who and which chapter.** The distinct id is the acting user's pseudonym. The chapter is `ChapterGuard`'s verified chapter; the two routes without the guard (`POST /chapters/onboard`, `POST /invites/redeem`) take it from their result. An action with no chapter records nothing, since there would be no opt-out to check. Every feature event therefore carries the chapter group and is person-processed onto that user ([§ What an event the API sends carries](#what-an-event-the-api-sends-carries)).
 - **Properties.** `feature` (the module key) is added to every event, beside the catalog's own properties, so one insight can break all usage down by module.
-- **`app`, from what the clients already send.** `mobile` when `X-Client-Version` parses (store and dev builds; Expo Go sends none), `web` when `Origin` is the dashboard (`https://app.frapp.live`, `https://app.staging.frapp.live`, or `http://localhost:3000`, not Expo web on 3002), otherwise none (`requestApp` in `apps/api/src/interface/http/request-app.ts`). Builds already in the stores send these headers, so this needs no client change. An explicit header would also have worked, since CORS reflects requested headers, but it would have needed new builds. It is a label, not an authority: a non-browser client can set either header.
-- **The opt-out, without another query.** `ChapterGuard` reads `chapters.analytics_opt_out` with the rest of the chapter row and leaves it on the request; the interceptor hands it to `track`, which then skips its own read. A row whose flag isn't a boolean leaves it unknown, and `track` reads it itself and fails closed. The one route that writes the flag, `PATCH /chapters/:id/config`, carries no feature event: the guard's value would be from before the write, so a request opting the chapter out would still send.
+- **`app`, from what the clients already send.** `mobile` when `X-Client-Version` parses (store and dev builds; Expo Go sends none), `web` when `Origin` is one of the dashboard's origins (production, staging and its local dev server, not Expo web), otherwise none (`requestApp` in `apps/api/src/interface/http/request-app.ts`, which takes the origins from the CORS allowlist's own constants). Builds already in the stores send these headers, so this needs no client change. An explicit header would also have worked, since CORS reflects requested headers, but it would have needed new builds. It is a label, not an authority: a non-browser client can set either header.
+- **The opt-out, read when the event is sent.** `track` reads `chapters.analytics_opt_out` for the event's chapter, as it does for every chapter-keyed event, and fails closed when the read fails. It runs after the handler, so a `PATCH /chapters/:id/config` that opts the chapter out is not recorded, and neither is a request that finishes after another one opted the chapter out. That is one read of the chapter row per event, off the response path.
 
 ### Catalog
 
@@ -432,7 +432,7 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | --- | --- | --- |
 | `event-created` | An officer creates an event (a recurring series is one event). Read from the created row, with the server's defaults applied | `is_mandatory`, `is_recurring`, `has_check_in_zone`, `has_point_value`, `posted_to_chat` |
 | `event-calendar-downloaded` | A member downloads an event's `.ics` file | — |
-| `attendance-checked-in` | A member checks in. `method` is `qr`, `manual_code` or `plain`; a second check-in is a 409 | `method`, `has_location` |
+| `attendance-checked-in` | A member checks in. `method` is `qr` (a scanned token), `manual_code` (a typed code), `plain` (neither, as from the chat event card), or `qr_or_manual_code` when a request carries both, since either one admits it. A second check-in is a 409 | `method`, `has_location` |
 | `attendance-marked` | An officer sets a member's attendance. `status` is the attendance enum; counts requests | `status`, `has_excuse` |
 
 **Tasks (`tasks`)**
@@ -473,6 +473,12 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | `service-hours-reviewed` | An officer approves or rejects an entry | `status`, `has_comment` |
 | `study-session-started` | A member starts a study session. No location or geofence is sent | — |
 | `study-session-stopped` | A member stops one. `outcome` is `completed`, `expired` or `paused_expired` | `outcome`, `duration_minutes` |
+
+**Geofences (`geofences`)**
+
+| Event | Recorded when | Properties |
+| --- | --- | --- |
+| `geofence-created` | An officer draws a study geofence. No coordinates or name are sent | — |
 
 **Chat (`chat`) and announcements (`announcements`)**
 
@@ -519,7 +525,24 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | `member-onboarding-completed` | A member finishes onboarding. Counts requests that set it, not first completions | — |
 | `chapter-onboarded` | The onboarding wizard creates a chapter (feature `chapter-settings`). `archetype` is the stored archetype key | `archetype`, `from_directory` |
 | `semester-rolled-over` | An officer rolls the chapter into a new semester (`chapter-settings`) | `promote_new_members` |
+| `chapter-config-updated` | An officer saves a chapter setting (`chapter-settings`). `section` is the field the save changed (`enabled_modules`, `branding`, `dues`, and so on), or `multiple`; never the values. An empty save records nothing | `section` |
 | `checkout-started` | Stripe issues a checkout session (`billing`) | — |
+
+### Modules with no event
+
+Every module in `MODULE_CATALOG` has an event above or a row here.
+
+| Module | Why it has no event |
+| --- | --- |
+| `audit-log` | A read-only feed. How often officers open it is a page view ([#3382](https://github.com/pdcarlson/Frapp/issues/3382)), which a request count would overstate, since the dashboard refetches it |
+| `onboarding` | No API routes: the pathway, big/little and quiz have no server side yet |
+| `academics` | No API routes yet |
+| `philanthropy` | No API routes yet |
+| `risk` | No API routes yet |
+| `lines` | No API routes yet |
+| `networking` | No API routes yet |
+| `standards` | No API routes yet |
+| `serviceFirst` | No API routes yet; service hours are `hours` |
 
 ### Reading them
 
@@ -534,11 +557,11 @@ Properties describe an action's shape, never its content: no titles, bodies, des
 
 ### Volume
 
-An estimate, not a measurement: an active 60-member chapter sending about 400 messages and 200 reactions or votes a day makes roughly 18,000 chat events a month, and every other feature event together about 1,000 to 2,000. Web's outbox events add about two per web send. That is about 20,000 to 25,000 person-processed events per chapter per month. PostHog's free allowance is 1 million events a month ([pricing](https://posthog.com/pricing), read 2026-11-04), about 40 chapters at that rate; identified (person-processed) events above the allowance are billed at a higher rate than anonymous ones ([anonymous vs identified events](https://posthog.com/event-comparison), read 2026-11-04).
+An estimate, not a measurement: an active 60-member chapter sending about 400 messages and 200 reactions or votes a day makes roughly 18,000 chat events a month, and every other feature event together about 1,000 to 2,000, so about 20,000 feature events. Web also sends two outbox events for every message sent from web (`outbox-queued` and `outbox-confirmed`, [§ Outbox Telemetry](#outbox-telemetry)), offline or not, so the total depends on how much of the chat is on web: about 20,000 person-processed events per chapter per month if almost all of it is on mobile, about 32,000 at an even split, and about 44,000 if all of it is on web. PostHog's free allowance is 1 million events a month ([pricing](https://posthog.com/pricing), read 2026-11-04), about 23 to 50 chapters at those rates; identified (person-processed) events above the allowance are billed at a higher rate than anonymous ones ([anonymous vs identified events](https://posthog.com/event-comparison), read 2026-11-04).
 
 ### Adding one
 
-Add the event to `FEATURE_EVENTS` with its feature and allowed properties, add its row to the tables above, and put `@FeatureEvent` on the handler. `feature-events.spec.ts` fails until the three agree: every catalog event is sent by a handler, the spec lists the same events with the same properties, and an event on a route gated by `@RequireModule` names that module as its feature.
+Add the event to `FEATURE_EVENTS` with its feature and allowed properties, add its row to the tables above, and put `@FeatureEvent` on the handler. `feature-events.spec.ts` fails until the three agree: every catalog event is sent by a handler, the spec lists the same events with the same properties, an event on a route gated by `@RequireModule` names that module as its feature, and every module has an event or a row under [§ Modules with no event](#modules-with-no-event). Give the describer a case in `feature-event-describers.spec.ts`, which runs each handler's real describer. Type its result as the handler's own return type: the decorator refuses one the handler doesn't return, so a change to what the handler returns breaks the build rather than the event. A describer reads the request body as sent, before the `ValidationPipe` converts it, so test a text field with `hasText` rather than calling string methods on it.
 
 ## Alerting
 

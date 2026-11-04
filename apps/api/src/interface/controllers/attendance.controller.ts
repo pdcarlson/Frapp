@@ -22,6 +22,7 @@ import { RequireModule } from '../decorators/module.decorator';
 import {
   FeatureEvent,
   type FeatureEventInput,
+  hasText,
 } from '../decorators/feature-event.decorator';
 import {
   CurrentChapterId,
@@ -33,6 +34,22 @@ import {
   UpdateAttendanceDto,
 } from '../dtos/attendance.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
+
+/**
+ * How a check-in was made, from the credential the request carried. The
+ * service admits a request on either credential when it carries both, so that
+ * case is its own value rather than a guess. Only a string counts: this is the
+ * raw body, and a `null` or a number there can't be what admitted the request.
+ */
+function checkInMethod(
+  body: CheckInDto | undefined,
+): 'qr' | 'manual_code' | 'plain' | 'qr_or_manual_code' {
+  const token = typeof body?.token === 'string';
+  const manualCode = typeof body?.manualCode === 'string';
+  if (token && manualCode) return 'qr_or_manual_code';
+  if (token) return 'qr';
+  return manualCode ? 'manual_code' : 'plain';
+}
 
 @ApiTags('Attendance')
 @ApiBearerAuth()
@@ -48,17 +65,11 @@ export class AttendanceController {
     description:
       'Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.',
   })
-  // The body is optional (a bare plain check-in), so it may be absent. `token`
-  // wins over `manualCode` when both are sent, as in `AttendanceService`.
+  // The body is optional (a bare plain check-in), so it may be absent.
   @FeatureEvent(
     'attendance-checked-in',
     ({ body }: FeatureEventInput<CheckInDto | undefined>) => ({
-      method:
-        body?.token != null
-          ? 'qr'
-          : body?.manualCode != null
-            ? 'manual_code'
-            : 'plain',
+      method: checkInMethod(body),
       has_location: body?.lat != null && body?.lng != null,
     }),
   )
@@ -115,7 +126,7 @@ export class AttendanceController {
     'attendance-marked',
     ({ body }: FeatureEventInput<UpdateAttendanceDto>) => ({
       status: body.status,
-      has_excuse: !!body.excuse_reason,
+      has_excuse: hasText(body.excuse_reason),
     }),
   )
   async updateStatus(

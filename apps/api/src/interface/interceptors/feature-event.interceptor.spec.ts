@@ -38,19 +38,21 @@ const USER_ID = '11111111-1111-4111-8111-111111111111';
 const CHAPTER_ID = '22222222-2222-4222-8222-222222222222';
 const OTHER_CHAPTER_ID = '33333333-3333-4333-8333-333333333333';
 
+/** Set by the `slow` handler as it finishes; read by a `track` stub. */
+let handlerFinished = false;
+
 /** The message of each logged line (a stack, when logged, is the second argument). */
 function firstArgs(spy: jest.SpyInstance): unknown[] {
   return spy.mock.calls.map((call: unknown[]) => call[0]);
 }
 
-/** Stands in for ChapterGuard: the user, the verified chapter, its opt-out. */
+/** Stands in for ChapterGuard: the user and the verified chapter. */
 @Injectable()
 class FakeChapterGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<RequestContext>();
     req.appUser = { id: USER_ID };
     req.chapterId = CHAPTER_ID;
-    req.analyticsOptOut = req.headers['x-test-opted-out'] === 'yes';
     return true;
   }
 }
@@ -81,6 +83,16 @@ class FeatureEventTestController {
   }))
   createTask(@Body() body: TaskBody) {
     return { id: 't1', echo: !!body };
+  }
+
+  @Post('slow')
+  @UseGuards(FakeChapterGuard)
+  @FeatureEvent('task-created')
+  async slow() {
+    handlerFinished = false;
+    await new Promise((resolve) => setImmediate(resolve));
+    handlerFinished = true;
+    return { ok: true };
   }
 
   @Post('fails')
@@ -196,7 +208,7 @@ describe('FeatureEventInterceptor (#593)', () => {
 
   const server = () => app.getHttpServer();
 
-  it('sends the event after the handler succeeds, with feature, chapter, app and the carried opt-out', async () => {
+  it('sends the event after the handler succeeds, with feature, chapter and app', async () => {
     await request(server())
       .post('/v1/fe/task')
       .set('Origin', 'http://localhost:3000')
@@ -208,15 +220,13 @@ describe('FeatureEventInterceptor (#593)', () => {
       chapterId: CHAPTER_ID,
       properties: { feature: 'tasks', posted_to_chat: true },
       app: 'web',
-      chapterOptedOut: false,
     });
   });
 
-  it('labels a native build mobile and passes an opted-out chapter through', async () => {
+  it('labels a native build mobile', async () => {
     await request(server())
       .post('/v1/fe/task')
       .set('X-Client-Version', 'android/0.9.0+2')
-      .set('x-test-opted-out', 'yes')
       .send({})
       .expect(201);
 
@@ -225,10 +235,22 @@ describe('FeatureEventInterceptor (#593)', () => {
       USER_ID,
       expect.objectContaining({
         app: 'mobile',
-        chapterOptedOut: true,
         properties: { feature: 'tasks', posted_to_chat: false },
       }),
     );
+  });
+
+  it("calls track only after the handler's work is done, so track's opt-out read sees it", async () => {
+    // The handler stands in for a request that opts the chapter out (or a
+    // concurrent one that commits while it runs): `track` reads the flag when
+    // it is called, so it must not be called before the handler finishes.
+    let sawHandlerFinish: boolean | undefined;
+    track.mockImplementation(() => {
+      sawHandlerFinish = handlerFinished;
+      return Promise.resolve();
+    });
+    await request(server()).post('/v1/fe/slow').expect(201);
+    expect(sawHandlerFinish).toBe(true);
   });
 
   it('sends no app when the request names none it can place', async () => {
@@ -268,13 +290,12 @@ describe('FeatureEventInterceptor (#593)', () => {
     expect(track).not.toHaveBeenCalled();
   });
 
-  it("uses the decorator's chapter on a route without ChapterGuard, and reads its opt-out itself", async () => {
+  it("uses the decorator's chapter on a route without ChapterGuard", async () => {
     await request(server()).post('/v1/fe/own-chapter').expect(201);
     expect(track).toHaveBeenCalledWith('invite-redeemed', USER_ID, {
       chapterId: OTHER_CHAPTER_ID,
       properties: { feature: 'members' },
       app: undefined,
-      chapterOptedOut: undefined,
     });
   });
 

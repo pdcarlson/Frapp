@@ -59,13 +59,6 @@ export interface TrackOptions {
    * client that names no app carries none.
    */
   app?: AnalyticsApp;
-  /**
-   * The chapter's `analytics_opt_out`, when the caller already read it in this
-   * request (`ChapterGuard` does, for its chapter). Given, it replaces
-   * `track`'s own read of the flag; absent, `track` reads it. Only meaningful
-   * with `chapterId`, and only for that same chapter.
-   */
-  chapterOptedOut?: boolean;
 }
 
 /**
@@ -166,12 +159,11 @@ export class AnalyticsService {
     };
 
     try {
-      if (options.chapterId) {
-        const enabled =
-          options.chapterOptedOut === undefined
-            ? await this.isChapterAnalyticsEnabled(options.chapterId)
-            : !options.chapterOptedOut;
-        if (!enabled) return;
+      if (
+        options.chapterId &&
+        !(await this.isChapterAnalyticsEnabled(options.chapterId))
+      ) {
+        return;
       }
       await this.provider.capture(event);
     } catch (error) {

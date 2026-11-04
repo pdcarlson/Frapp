@@ -30,6 +30,7 @@ import { RequireModule } from '../decorators/module.decorator';
 import {
   FeatureEvent,
   type FeatureEventInput,
+  hasText,
 } from '../decorators/feature-event.decorator';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
@@ -235,9 +236,7 @@ export class ServiceEntryController {
       result,
     }: FeatureEventInput<ReviewServiceEntryDto, ServiceEntry>) => ({
       status: result.status,
-      has_comment:
-        typeof body.review_comment === 'string' &&
-        body.review_comment.trim().length > 0,
+      has_comment: hasText(body.review_comment),
     }),
   )
   async review(

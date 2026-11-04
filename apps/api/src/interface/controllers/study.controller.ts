@@ -51,6 +51,7 @@ export class StudyGeofenceController {
   @Post()
   @RequirePermissions(SystemPermissions.GEOFENCES_MANAGE)
   @ApiOperation({ summary: 'Create geofence (admin)' })
+  @FeatureEvent('geofence-created')
   async create(
     @CurrentChapterId() chapterId: string,
     @Body() dto: CreateGeofenceDto,

@@ -12,9 +12,12 @@ export const FEATURE_EVENT_KEY = 'feature_event';
  * `body` and `query` are the request as sent, not the DTO instance the handler
  * got. Interceptors run before pipes, so the `ValidationPipe` has refused any
  * undeclared key (`forbidNonWhitelisted`) by the time a describer runs, but
- * has not converted values or applied defaults on this copy. Type `body` with
- * the DTO for its keys, and stick to presence, length and enum checks that
- * hold on raw JSON.
+ * has not converted values or applied defaults on this copy. With implicit
+ * conversion on, a field the DTO declares as a string can arrive here as a
+ * number. Type `body` with the DTO for its keys, and stick to checks that hold
+ * on raw JSON: presence, `Array.isArray(...)` lengths, enum values, `=== true`,
+ * and `hasText` for text. Never call a string method on a body field. Prefer
+ * the handler's `result` where it holds the same fact.
  */
 export interface FeatureEventInput<TBody = unknown, TResult = unknown> {
   body: TBody;
@@ -48,6 +51,16 @@ export interface FeatureEventMetadata {
   chapterId?: (input: FeatureEventInput) => string | undefined;
 }
 
+/**
+ * Whether a raw body field holds text, as the DTO will see it: implicit
+ * conversion turns a number or boolean into its string, so those count, and
+ * blank text doesn't.
+ */
+export function hasText(value: unknown): boolean {
+  if (typeof value === 'string') return value.trim() !== '';
+  return typeof value === 'number' || typeof value === 'boolean';
+}
+
 /** The `@FeatureEvent`s on one handler, in no particular order. */
 export function featureEventsOf(
   handler: unknown,
@@ -74,10 +87,17 @@ export function featureEventsOf(
  * request records nothing. Type the input to get the body and result typed:
  *
  * ```ts
- * @FeatureEvent('task-created', ({ body }: FeatureEventInput<CreateTaskDto>) => ({
- *   has_assignee: !!body.assignee_id,
- * }))
+ * @FeatureEvent(
+ *   'task-created',
+ *   ({ result }: FeatureEventInput<CreateTaskDto, CreateTaskResponseDto>) => ({
+ *     has_point_reward: (result.point_reward ?? 0) > 0,
+ *   }),
+ * )
  * ```
+ *
+ * The result type is checked against the handler: the decorator compiles only
+ * on a handler that returns `TResult` (or a promise of it), so a change to
+ * what the handler returns breaks the build, not the event.
  */
 export function FeatureEvent<
   N extends FeatureEventName,
@@ -90,7 +110,11 @@ export function FeatureEvent<
     input: FeatureEventInput<TBody, TResult>,
   ) => CheckedFeatureEventProperties<N, P> | null,
   options: FeatureEventOptions<TBody, TResult> = {},
-): MethodDecorator {
+): <H extends (...args: never[]) => TResult | Promise<TResult>>(
+  target: object,
+  key: string | symbol,
+  descriptor: TypedPropertyDescriptor<H>,
+) => TypedPropertyDescriptor<H> {
   const metadata: FeatureEventMetadata = {
     name,
     describe,

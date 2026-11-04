@@ -8,17 +8,17 @@ import {
 } from '#domain/constants/client-version';
 import { getHeaderValue } from '../types/request-context.types';
 import type { RequestContext } from '../types/request-context.types';
-import { STAGING_APP_ORIGIN } from './cors.options';
+import { DASHBOARD_DEV_ORIGIN, STAGING_APP_ORIGIN } from './cors.options';
 
 /**
  * Browser origins of the web dashboard: production, staging, and its local
- * dev server. Not `http://localhost:3002`, which is Expo web (the mobile
- * codebase in a browser), not the dashboard (`cors.options.ts`).
+ * dev server, as the CORS allowlist names them (`cors.options.ts`). Not the
+ * allowlist's Expo web origin, which is the mobile codebase in a browser.
  */
 const DASHBOARD_ORIGINS: ReadonlySet<string> = new Set([
   PRODUCTION_APP_ORIGIN,
   STAGING_APP_ORIGIN,
-  'http://localhost:3000',
+  DASHBOARD_DEV_ORIGIN,
 ]);
 
 /**

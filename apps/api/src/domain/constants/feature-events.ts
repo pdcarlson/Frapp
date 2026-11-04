@@ -11,7 +11,7 @@
  *    allowlist, checked at compile time on each `@FeatureEvent` describer and
  *    again at runtime by `FeatureEventInterceptor`. The shared
  *    `FORBIDDEN_ANALYTICS_PROPERTY_KEYS` denylist can't do this job alone: it
- *    doesn't know `title` or `reason` hold content.
+ *    doesn't know `title` or `details` hold content.
  *
  * A property describes the action's shape, never its content: no titles,
  * bodies, descriptions, free-text reasons or comments, names, emails,
@@ -91,6 +91,9 @@ export const FEATURE_EVENTS = {
     properties: ['outcome', 'duration_minutes'],
   },
 
+  // Geofences
+  'geofence-created': { feature: 'geofences', properties: [] },
+
   // Chat
   'message-sent': {
     feature: 'chat',
@@ -146,6 +149,10 @@ export const FEATURE_EVENTS = {
     feature: 'chapter-settings',
     properties: ['promote_new_members'],
   },
+  'chapter-config-updated': {
+    feature: 'chapter-settings',
+    properties: ['section'],
+  },
   'checkout-started': { feature: 'billing', properties: [] },
   'discord-import-created': { feature: 'chat', properties: ['source'] },
   'discord-import-started': { feature: 'chat', properties: ['has_cutoff'] },
@@ -166,7 +173,3 @@ export type FeatureEventPropertyKey<N extends FeatureEventName> =
 export type FeatureEventProperties<N extends FeatureEventName> = {
   [K in FeatureEventPropertyKey<N>]?: string | number | boolean | null;
 };
-
-export function isFeatureEventName(name: string): name is FeatureEventName {
-  return Object.prototype.hasOwnProperty.call(FEATURE_EVENTS, name);
-}

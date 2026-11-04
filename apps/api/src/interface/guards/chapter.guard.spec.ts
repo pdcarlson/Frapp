@@ -27,7 +27,6 @@ describe('ChapterGuard', () => {
     chapterId: undefined as unknown,
     subscriptionStatus: undefined as unknown,
     enabledModules: undefined as unknown,
-    analyticsOptOut: undefined as unknown,
     ...overrides,
   });
 
@@ -58,7 +57,6 @@ describe('ChapterGuard', () => {
       subscription_status: SubscriptionStatus;
       past_due_since?: string | null;
       enabled_modules?: Record<string, boolean> | null;
-      analytics_opt_out?: boolean;
     } | null;
     /** Rows returned by the auto-resolve lookup (`.eq(user_id).limit(2)`). */
     memberships?: Array<{
@@ -352,36 +350,6 @@ describe('ChapterGuard', () => {
     await guard.canActivate(mockExecutionContext(request));
 
     expect(request.enabledModules).toEqual({ polls: false });
-  });
-
-  it.each([true, false])(
-    'carries the chapter analytics opt-out (%s) for feature events (#593)',
-    async (optedOut) => {
-      const { selectArgs } = mockSupabaseChain({
-        appUser: { id: 'user-1' },
-        member: { id: 'member-1', role_ids: ['role-1'] },
-        chapter: { subscription_status: 'active', analytics_opt_out: optedOut },
-      });
-
-      const request = buildRequest();
-      await guard.canActivate(mockExecutionContext(request));
-
-      expect(selectArgs['chapters']?.[0]).toContain('analytics_opt_out');
-      expect(request.analyticsOptOut).toBe(optedOut);
-    },
-  );
-
-  it('leaves the opt-out unknown when the row carries no boolean, so the event reads it itself', async () => {
-    mockSupabaseChain({
-      appUser: { id: 'user-1' },
-      member: { id: 'member-1', role_ids: ['role-1'] },
-      chapter: { subscription_status: 'active' },
-    });
-
-    const request = buildRequest();
-    await guard.canActivate(mockExecutionContext(request));
-
-    expect(request.analyticsOptOut).toBeUndefined();
   });
 
   it('selects custom_role_ids on the membership and carries it into request.member', async () => {
