@@ -6,7 +6,7 @@ import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { textHeadings } from "@/test/screen-text";
+import { drawnText as screenTextOf, textHeadings } from "@/test/screen-text";
 
 /**
  * #2303 — the chat home's wiring of Hide conversation, rendered for real.
@@ -35,6 +35,7 @@ const {
   setFilter,
   writeOptions,
   queryErrors,
+  notificationsData,
 } = vi.hoisted(() => ({
   channelsData: { value: [] as unknown[] },
   categoriesData: { value: [] as unknown },
@@ -66,6 +67,10 @@ const {
   },
   // Loaded-but-failed state for the two reads the filters depend on.
   queryErrors: { unread: false, levels: false },
+  // The inbox rows behind the title row's bell (#3362).
+  notificationsData: {
+    value: [] as { id: string; read_at: string | null; data?: unknown }[],
+  },
 }));
 
 vi.mock("@repo/hooks", async () => {
@@ -132,6 +137,7 @@ vi.mock("@repo/hooks", async () => {
       isError: queryErrors.unread,
     }),
     useEvents: () => query([]),
+    useNotifications: () => query(notificationsData.value),
     useTasks: () => query([]),
     useViewerUserId: () => VIEWER,
     useMemberDisplayNames: () => ({
@@ -238,6 +244,7 @@ beforeEach(() => {
   categoriesData.value = [];
   unreadData.value = [];
   levelsData.value = [];
+  notificationsData.value = [];
   queryErrors.unread = false;
   queryErrors.levels = false;
   sidebarPrefs.value = {
@@ -785,5 +792,68 @@ describe("Chat home's title (#2485)", () => {
   it("falls back to Frapp while the chapter's name is unknown", () => {
     const tree = render();
     expect(heading(tree).props.children).toBe("Frapp");
+  });
+});
+
+/**
+ * #3362 — the notification inbox moved off More onto a bell on this screen's
+ * title row (owner decision 2026-11-04), where the web keeps it too.
+ */
+describe("Chat home notifications bell (#3362)", () => {
+  function badge(tree: ReactTestRenderer) {
+    return pressableLabelled(tree, "Notifications").findAllByProps({
+      testID: "notifications-badge",
+    });
+  }
+
+  it("draws the bell with Ask off, with no badge while nothing is unread", () => {
+    const tree = render();
+    const bell = pressableLabelled(tree, "Notifications");
+
+    expect(bell.props.accessibilityValue).toBeUndefined();
+    expect(badge(tree)).toHaveLength(0);
+  });
+
+  it("badges the unread count in house gold, never the chapter accent, and reads it out", () => {
+    // A red accent, the case the fixed gold exists for: beside the channel
+    // rows' mention-red badges, an accent-filled count would read as a mention.
+    branding.current = { ...branding.unnamed, accentPrimary: "#D75748" };
+    notificationsData.value = [
+      { id: "n-1", read_at: null },
+      { id: "n-2", read_at: null },
+      { id: "n-3", read_at: "2026-09-25T10:00:00Z" },
+    ];
+    const tree = render();
+    const bell = pressableLabelled(tree, "Notifications");
+    const [pill] = badge(tree).filter(
+      (node) => (node.type as unknown) === "View",
+    );
+
+    expect(bell.props.accessibilityValue).toEqual({ text: "2 unread" });
+    const style = JSON.stringify(pill!.props.style);
+    expect(style).toContain("#EFB63B");
+    expect(style).not.toContain("#D75748");
+    expect(screenTextOf(pill!)).toBe("2");
+  });
+
+  it("leaves chat-sourced rows to the channel badges below it", () => {
+    notificationsData.value = [
+      { id: "n-1", read_at: null, data: { target: { screen: "chat" } } },
+      { id: "n-2", read_at: null, data: { target: { screen: "events" } } },
+    ] as typeof notificationsData.value;
+    const tree = render();
+
+    expect(
+      pressableLabelled(tree, "Notifications").props.accessibilityValue,
+    ).toEqual({ text: "1 unread" });
+  });
+
+  it("opens the inbox", () => {
+    const tree = render();
+    act(() => {
+      pressableLabelled(tree, "Notifications").props.onPress();
+    });
+
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/notifications");
   });
 });
