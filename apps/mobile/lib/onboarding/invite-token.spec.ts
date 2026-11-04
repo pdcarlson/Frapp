@@ -4,6 +4,7 @@ import {
   extractInviteToken,
   extractInviteTokenFromQuery,
   rememberInviteToken,
+  takeInviteTokenFromLink,
 } from "./invite-token";
 
 afterEach(() => {
@@ -36,5 +37,22 @@ describe("rememberInviteToken", () => {
     rememberInviteToken(null);
     expect(consumeRememberedInviteToken()).toBe("first");
     expect(consumeRememberedInviteToken()).toBeNull();
+  });
+});
+
+describe("takeInviteTokenFromLink", () => {
+  it("reads an opened link once, so a redeemed invite doesn't come back (#3350)", () => {
+    const url = "frapp://join?token=launch-token";
+    expect(takeInviteTokenFromLink(url)).toBe("launch-token");
+    // `Linking.useURL()` still answers with the launch URL on the next visit.
+    expect(takeInviteTokenFromLink(url)).toBeNull();
+    // A different link is a new invite.
+    expect(takeInviteTokenFromLink("frapp://join?token=second")).toBe("second");
+  });
+
+  it("ignores no link, and doesn't spend a link without a token", () => {
+    expect(takeInviteTokenFromLink(null)).toBeNull();
+    expect(takeInviteTokenFromLink("frapp://chat")).toBeNull();
+    expect(takeInviteTokenFromLink("frapp://join?token=after")).toBe("after");
   });
 });
