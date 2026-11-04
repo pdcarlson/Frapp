@@ -250,6 +250,67 @@ describe("EditProfileSheet (#3387)", () => {
     expect(input(tree, "City").props.value).toBe("Albany, NY");
   });
 
+  it("sends one PATCH however often Save is pressed mid-save", () => {
+    heldSave();
+    const tree = render();
+
+    type(tree, "Company", "Acme");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    refetch(tree, PROFILE); // re-render with the save in flight
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+
+    expect(mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("makes the fields read-only while a save runs", () => {
+    heldSave();
+    const tree = render();
+
+    expect(input(tree, "City").props.editable).toBe(true);
+    type(tree, "City", "Albany, NY");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    refetch(tree, PROFILE);
+
+    expect(input(tree, "City").props.editable).toBe(false);
+  });
+
+  it("leaves a sheet reopened mid-save open when the save lands", () => {
+    const save = heldSave();
+    const tree = render();
+
+    type(tree, "City", "Albany, NY");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    refetch(tree, PROFILE);
+    act(() => {
+      modal(tree).props.onDismiss();
+    });
+    act(() => {
+      modal(tree).props.onAnimate(-1, 0); // reopened
+    });
+    act(() => save.succeed());
+
+    expect(dismiss).not.toHaveBeenCalled();
+  });
+
+  // `display_name` defaults to '' and reads back as unset, so a member who
+  // never set a name opens Edit on a blank Name field.
+  it("opens on a blank name without calling it an error", () => {
+    const tree = render({ ...PROFILE, displayName: null });
+
+    expect(input(tree, "Name").props.value).toBe("");
+    expect(screenText(tree)).not.toContain("Your name can't be empty.");
+    type(tree, "Company", "Acme");
+    expect(screenText(tree)).toContain("Your name can't be empty.");
+  });
+
   it("holds Save while a save is in flight", () => {
     isPending = true;
     const tree = render();

@@ -688,7 +688,13 @@ export {
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   CHAPTER_SHORT_NAME_MAX_LENGTH,
 };
-export { POLL_OPTIONS_MAX, POLL_OPTIONS_MIN, YEAR_MAX } from "./field-limits";
+export {
+  GRADUATION_YEAR_MAX,
+  GRADUATION_YEAR_MIN,
+  POLL_OPTIONS_MAX,
+  POLL_OPTIONS_MIN,
+  YEAR_MAX,
+} from "./field-limits";
 
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export {

@@ -6,6 +6,7 @@ import {
   useQueryClient,
   type InvalidateQueryFilters,
 } from "@tanstack/react-query";
+import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export function useCurrentUser() {
@@ -46,13 +47,7 @@ export function useUpdateUser() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: {
-      display_name?: string;
-      bio?: string;
-      graduation_year?: number | null;
-      current_city?: string;
-      current_company?: string;
-    }) => {
+    mutationFn: async (body: components["schemas"]["UpdateUserDto"]) => {
       const { data, error } = await client.PATCH("/v1/users/me", { body });
       if (error) throw error;
       return data;
@@ -62,12 +57,20 @@ export function useUpdateUser() {
       // `GET /v1/users/me` serves (both sign the photo), so it goes straight
       // into the cache: a form that closes on success closes onto it, without
       // waiting on a refetch a dropped connection could hold paused after the
-      // save itself landed.
-      const row: unknown = saved;
-      if (row && typeof row === "object") {
-        queryClient.setQueryData(["user", "me"], row);
-      }
-      void invalidateProfileReads(queryClient);
+      // save itself landed. Only over the same account's cached row: a save
+      // still in flight across a sign-out or an account swap must not put the
+      // previous member's row back into a cache the swap just cleared.
+      let cached = false;
+      queryClient.setQueryData(["user", "me"], (old: unknown) => {
+        if (!sameUserRow(old, saved)) return old;
+        cached = true;
+        return saved;
+      });
+      // The cached row needs no refetch of its own; every other read does.
+      void invalidateProfileReads(
+        queryClient,
+        cached ? OTHER_PROFILE_READS : PROFILE_QUERY_FILTERS,
+      );
     },
   });
 }
@@ -85,7 +88,7 @@ export function useUpdateUser() {
  * `["user", "me", "permissions", …]` and `["user", "me", "legal-acceptance"]`,
  * which a profile edit can't change. The photo mutations wait for every
  * refetch they start; `useUpdateUser` writes the saved row into the cache and
- * starts the refetches without waiting.
+ * starts the rest without waiting.
  */
 export const PROFILE_QUERY_FILTERS: readonly InvalidateQueryFilters[] = [
   { queryKey: ["user", "me"], exact: true },
@@ -94,13 +97,27 @@ export const PROFILE_QUERY_FILTERS: readonly InvalidateQueryFilters[] = [
   { queryKey: ["activity-feed"] },
 ];
 
+/** {@link PROFILE_QUERY_FILTERS} but the viewer's own `["user", "me"]`. */
+const OTHER_PROFILE_READS = PROFILE_QUERY_FILTERS.filter(
+  (filter) => filter.queryKey?.join("/") !== "user/me",
+);
+
+/** Whether `next` is a `users` row for the same account as cached `old`. */
+function sameUserRow(old: unknown, next: unknown): boolean {
+  const id = (row: unknown) =>
+    row && typeof row === "object" && "id" in row
+      ? (row as { id?: unknown }).id
+      : undefined;
+  const oldId = id(old);
+  return typeof oldId === "string" && oldId.length > 0 && oldId === id(next);
+}
+
 function invalidateProfileReads(
   queryClient: ReturnType<typeof useQueryClient>,
+  filters: readonly InvalidateQueryFilters[] = PROFILE_QUERY_FILTERS,
 ) {
   return Promise.all(
-    PROFILE_QUERY_FILTERS.map((filters) =>
-      queryClient.invalidateQueries(filters),
-    ),
+    filters.map((filter) => queryClient.invalidateQueries(filter)),
   );
 }
 

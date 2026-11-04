@@ -14,6 +14,8 @@ import {
   type UserSettings as StoredUserSettings,
 } from "@repo/hooks";
 import {
+  GRADUATION_YEAR_MAX,
+  GRADUATION_YEAR_MIN,
   isNotificationCategoryKey,
   normalizeTimeZoneInput,
   NOTIFICATION_CATEGORIES,
@@ -594,8 +596,8 @@ export function ProfilePanel() {
                 <Input
                   id="graduation-year"
                   type="number"
-                  min={1900}
-                  max={2100}
+                  min={GRADUATION_YEAR_MIN}
+                  max={GRADUATION_YEAR_MAX}
                   value={profile.graduation_year ?? ""}
                   onChange={(event) => {
                     const raw = event.target.value;

@@ -1,3 +1,5 @@
+import type { components } from "@repo/api-sdk";
+import { GRADUATION_YEAR_MAX, GRADUATION_YEAR_MIN } from "@repo/validation";
 import type { ViewerProfile } from "@/lib/more/profile";
 
 /**
@@ -16,24 +18,17 @@ export type ProfileDraft = {
   company: string;
 };
 
-/** The fields `UpdateUserDto` accepts, as `useUpdateUser` takes them. */
-export type ProfilePatch = {
-  display_name?: string;
-  bio?: string;
-  graduation_year?: number | null;
-  current_city?: string;
-  current_company?: string;
-};
+/**
+ * The `PATCH /v1/users/me` body, the generated `UpdateUserDto`, so a renamed
+ * field fails to compile here rather than going quietly unsent.
+ */
+export type ProfilePatch = components["schemas"]["UpdateUserDto"];
 
 export type ProfileDraftField = keyof ProfileDraft;
 
 export type ProfilePatchResult =
   | { ok: true; patch: ProfilePatch }
   | { ok: false; field: ProfileDraftField; message: string };
-
-/** `UpdateUserDto`'s `@Min(1900)` / `@Max(2100)` on `graduation_year`. */
-export const GRADUATION_YEAR_MIN = 1900;
-export const GRADUATION_YEAR_MAX = 2100;
 
 export const NAME_REQUIRED_MESSAGE = "Your name can't be empty.";
 export const GRADUATION_YEAR_MESSAGE = `Graduation year is a year between ${GRADUATION_YEAR_MIN} and ${GRADUATION_YEAR_MAX}, like 2027.`;
@@ -151,7 +146,7 @@ export function applyEdit(
  * pin the old value for a later save to write back over the newer one. The
  * web form's `seededFrom` merge
  * (`apps/web/components/profile/profile-panel.tsx`) is the same rule, except
- * that it compares untrimmed.
+ * that it compares untrimmed (#3392).
  */
 export function rebaseEdits(
   edits: ProfileEdits | null,

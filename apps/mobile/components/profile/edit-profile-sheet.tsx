@@ -50,7 +50,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * and on a refetch a moved field that held no change (spaces aside) follows
  * the new profile
  * (`lib/more/edit-profile.ts` `applyEdit`, `rebaseEdits`, which says how this
- * differs from the web form's `seededFrom` merge).
+ * differs from the web form's `seededFrom` merge, #3392).
  *
  * Dismissing, saving or cancelling drops the edits, except that a sheet closed
  * mid-save keeps them until the save settles. `useUpdateUser` caches the row
@@ -124,6 +124,9 @@ export const EditProfileSheet = forwardRef<
   // animation can be caught and snapped back without another `onAnimate`, and
   // `dismiss()` on a sheet still closing is safe.
   const presented = useRef(false);
+  // Counts the sheet's closes, so a save that settles knows whether the sheet
+  // it was sent from is still the one on screen.
+  const closes = useRef(0);
 
   const dismiss = useCallback(() => {
     if (!presented.current) return;
@@ -136,6 +139,7 @@ export const EditProfileSheet = forwardRef<
   // to reopen on what was typed.
   const closed = () => {
     presented.current = false;
+    closes.current += 1;
     if (updateUser.isPending) setFocused(null);
     else reset();
   };
@@ -150,12 +154,16 @@ export const EditProfileSheet = forwardRef<
     // flight and a second PATCH.
     if (!result.ok || !canSave) return;
     setSubmitFailed(false);
+    const sentFrom = closes.current;
     updateUser.mutate(result.patch, {
       // `useUpdateUser` has already cached the row the server saved, so
-      // dropping the edits here shows it, not the old values.
+      // dropping the edits here shows it, not the old values. The fields are
+      // read-only while the save runs, so these edits are all it sent. A
+      // sheet closed and reopened since then is the member's new visit, and
+      // the save doesn't close it under them.
       onSuccess: () => {
         reset();
-        dismiss();
+        if (closes.current === sentFrom) dismiss();
       },
       // The draft stays, so nothing typed is lost to a dropped connection.
       onError: () => setSubmitFailed(true),
@@ -178,6 +186,9 @@ export const EditProfileSheet = forwardRef<
       <BottomSheetTextInput
         value={shown[name]}
         onChangeText={edit(name)}
+        // Read-only while a save runs: the save sent what was typed when Save
+        // was pressed, and anything typed after it would be dropped unsent.
+        editable={!updateUser.isPending}
         onFocus={() => setFocused(name)}
         onBlur={() =>
           setFocused((current) => (current === name ? null : current))
