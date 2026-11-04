@@ -3,11 +3,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import {
-  PHOTO_QUERY_FILTERS,
+  PROFILE_QUERY_FILTERS,
   useConfirmAvatar,
+  useCurrentUser,
   useMyPermissions,
   useRemoveAvatar,
   useRequestAvatarUploadUrl,
+  useUpdateUser,
 } from "./use-user";
 import { FrappClientProvider } from "./use-frapp-client";
 
@@ -89,7 +91,7 @@ describe("useMyPermissions", () => {
   });
 });
 
-describe("profile photo mutations (#732)", () => {
+describe("profile mutations (#732, #3387)", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
@@ -118,7 +120,7 @@ describe("profile photo mutations (#732)", () => {
     });
   });
 
-  // Named literally rather than read back from `PHOTO_QUERY_FILTERS`, so
+  // Named literally rather than read back from `PROFILE_QUERY_FILTERS`, so
   // dropping one from that list fails here instead of passing with it.
   // `["user", "me"]` is exact so the permissions query under it isn't refetched.
   const EXPECTED_FILTERS = [
@@ -132,6 +134,7 @@ describe("profile photo mutations (#732)", () => {
     const mockClient = {
       POST: vi.fn().mockResolvedValue({ data: {}, error: undefined }),
       DELETE: vi.fn().mockResolvedValue({ data: {}, error: undefined }),
+      PATCH: vi.fn().mockResolvedValue({ data: {}, error: undefined }),
     };
     // Each invalidation stays pending until released, so a test can see
     // whether `mutateAsync` waited for the refetches or resolved before them.
@@ -144,6 +147,7 @@ describe("profile photo mutations (#732)", () => {
       .mockImplementation(() => gate);
     const invalidated = () => invalidate.mock.calls.map(([filters]) => filters);
     return {
+      mockClient,
       wrapper: createWrapper(queryClient, mockClient),
       invalidated,
       release: () => release(),
@@ -172,8 +176,8 @@ describe("profile photo mutations (#732)", () => {
     }
   }
 
-  it("the filter list covers every read that serves the photo", () => {
-    expect([...PHOTO_QUERY_FILTERS]).toEqual(EXPECTED_FILTERS);
+  it("the filter list covers every read that serves the profile", () => {
+    expect([...PROFILE_QUERY_FILTERS]).toEqual(EXPECTED_FILTERS);
   });
 
   it("confirm resolves only after every read that shows the photo refetched", async () => {
@@ -195,6 +199,140 @@ describe("profile photo mutations (#732)", () => {
     });
 
     await expectWaitsForRefetch(() => result.current.mutateAsync(), harness);
+  });
+
+  // #3387. A name edit shows in the same reads the photo does: the
+  // directory, and through the roster every chat author label; a city or
+  // company edit in the directory and the alumni filters.
+  it("a profile edit caches the saved row and refreshes every read without waiting", async () => {
+    const harness = photoMutationHarness();
+    // The server's row, not the cache with the body over it: a freshly
+    // signed photo URL, and a city another device saved meanwhile.
+    const saved = {
+      id: "u-1",
+      display_name: "Alex Rivera",
+      current_city: "Albany, NY",
+      avatar_url: "https://signed.example/new",
+    };
+    harness.mockClient.PATCH.mockResolvedValue({
+      data: saved,
+      error: undefined,
+    });
+    queryClient.setQueryData(["user", "me"], {
+      id: "u-1",
+      display_name: "Old Name",
+      current_city: "Troy, NY",
+    });
+    const { result } = renderHook(() => useUpdateUser(), {
+      wrapper: harness.wrapper,
+    });
+
+    // Settles while every refetch is still held: a refetch paused by a dropped
+    // connection can't leave a save the server took stuck on "Saving…".
+    await result.current.mutateAsync({ display_name: "Alex Rivera" });
+
+    expect(harness.mockClient.PATCH).toHaveBeenCalledWith("/v1/users/me", {
+      body: { display_name: "Alex Rivera" },
+    });
+    expect(queryClient.getQueryData(["user", "me"])).toEqual(saved);
+    // Every read, the one just written too: that cancels a GET that left
+    // before the PATCH landed and would otherwise answer last.
+    for (const filters of EXPECTED_FILTERS) {
+      expect(harness.invalidated()).toContainEqual(filters);
+    }
+    harness.release();
+  });
+
+  // A save still in flight across a sign-out or an account swap: the swap
+  // cleared the cache, or the next member's row is in it now.
+  it.each([
+    ["the cache was cleared", undefined, { id: "u-1" }],
+    ["another account's row is cached", { id: "u-2" }, { id: "u-1" }],
+    // Neither side has an id: still not the same account.
+    ["the cache was cleared and the row is null", undefined, null],
+    ["neither row carries an id", { display_name: "Bea" }, { bio: "x" }],
+  ])("doesn't cache the saved row when %s", async (_case, cachedRow, row) => {
+    const harness = photoMutationHarness();
+    harness.mockClient.PATCH.mockResolvedValue({
+      data: row,
+      error: undefined,
+    });
+    if (cachedRow) queryClient.setQueryData(["user", "me"], cachedRow);
+    const { result } = renderHook(() => useUpdateUser(), {
+      wrapper: harness.wrapper,
+    });
+
+    await result.current.mutateAsync({ display_name: "Alex Rivera" });
+
+    expect(queryClient.getQueryData(["user", "me"])).toEqual(cachedRow);
+    // Refetched instead, with whoever is signed in now.
+    for (const filters of EXPECTED_FILTERS) {
+      expect(harness.invalidated()).toContainEqual(filters);
+    }
+    harness.release();
+  });
+
+  it.each([null, undefined])(
+    "leaves the cached profile alone when the PATCH answers %s",
+    async (row) => {
+      const harness = photoMutationHarness();
+      harness.mockClient.PATCH.mockResolvedValue({
+        data: row,
+        error: undefined,
+      });
+      const cached = { id: "u-1", display_name: "Old Name" };
+      queryClient.setQueryData(["user", "me"], cached);
+      const { result } = renderHook(() => useUpdateUser(), {
+        wrapper: harness.wrapper,
+      });
+
+      await result.current.mutateAsync({ display_name: "Alex Rivera" });
+
+      expect(queryClient.getQueryData(["user", "me"])).toEqual(cached);
+      harness.release();
+    },
+  );
+
+  // A GET of the profile that left before the PATCH landed must not answer
+  // last and put the pre-save row back. Real invalidation, no harness: the
+  // save's refetch has to cancel the held GET.
+  it("keeps the saved row over a profile GET that was already in flight", async () => {
+    const before = { id: "u-1", display_name: "Old Name" };
+    const saved = { id: "u-1", display_name: "Alex Rivera" };
+    let answerHeldGet!: () => void;
+    const GET = vi
+      .fn()
+      .mockResolvedValueOnce({ data: before, error: undefined })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answerHeldGet = () => resolve({ data: before, error: undefined });
+          }),
+      )
+      .mockResolvedValue({ data: saved, error: undefined });
+    const mockClient = {
+      GET,
+      PATCH: vi.fn().mockResolvedValue({ data: saved, error: undefined }),
+    };
+    const { result } = renderHook(
+      () => ({ me: useCurrentUser(), update: useUpdateUser() }),
+      { wrapper: createWrapper(queryClient, mockClient) },
+    );
+    await waitFor(() => expect(result.current.me.data).toEqual(before));
+
+    // A focus refetch leaves, and is held.
+    void result.current.me.refetch();
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+    await result.current.update.mutateAsync({ display_name: "Alex Rivera" });
+    answerHeldGet();
+
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(3));
+    await waitFor(() =>
+      expect(queryClient.getQueryData(["user", "me"])).toEqual(saved),
+    );
+    // Settled, and still the saved row.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(queryClient.getQueryData(["user", "me"])).toEqual(saved);
   });
 
   it("confirm sends the path and surfaces an API refusal", async () => {
