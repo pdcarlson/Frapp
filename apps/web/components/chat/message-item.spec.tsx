@@ -129,7 +129,10 @@ describe("MessageItem author rendering", () => {
 
     expect(screen.getByText("Frapp")).toBeInTheDocument();
     expect(screen.queryByText(/^Member /)).not.toBeInTheDocument();
+    // The crest takes the avatar (#3357); no letter tile from either the id
+    // ("00") or the name ("F").
     expect(screen.queryByText("00")).not.toBeInTheDocument();
+    expect(screen.queryByText("F")).not.toBeInTheDocument();
   });
 
   it("says 'You' on the viewer's own card", () => {

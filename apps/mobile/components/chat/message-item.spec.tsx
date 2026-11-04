@@ -231,24 +231,11 @@ describe("an imported author's row", () => {
   });
 });
 
-// The system actor (`SYSTEM_SENDER_ID`) posts the chapter welcome, poll-expiry
-// notices and invite-accept DMs. It is on no roster, so it used to fall through
-// to "Member 000000" beside a "00" avatar (#3347).
-describe("the system actor's row", () => {
-  it("reads Frapp, and draws no id-derived avatar", () => {
-    const tree = renderItem(message({ sender_id: SYSTEM_SENDER_ID }));
-    const drawn = tree.root
-      .findAll((node) => (node.type as unknown) === "Text")
-      .map((node) => node.props.children);
-    expect(drawn).toContain("Frapp");
-    expect(drawn).not.toContain("Member 000000");
-    expect(drawn).not.toContain("00");
-  });
-});
-
 // Frapp's own posts (the welcome, the audit bridge, a poll's closing notice,
-// an invite-accept DM) wear the crest rather than initials (#3347).
-describe("a system post's avatar", () => {
+// an invite-accept DM) read "Frapp" and wear the crest rather than initials
+// (#3347). The system actor is on no roster, so it used to fall through to
+// "Member 000000" beside a "00" avatar.
+describe("a system post", () => {
   const hasSystemAvatar = (tree: ReactTestRenderer) =>
     tree.root.findAll((node) => node.props.testID === "system-avatar").length >
     0;
@@ -258,12 +245,15 @@ describe("a system post's avatar", () => {
       message({ sender_id: SYSTEM_SENDER_ID, kind: "system_audit" }),
     );
     expect(hasSystemAvatar(tree)).toBe(true);
-    // No initials drawn from the id-prefix fallback ("Member 000000").
+    // The name resolves to "Frapp" (`SYSTEM_AUTHOR_LABEL`), so initials, if
+    // the crest branch went, would be drawn from it rather than from the id.
     const texts = tree.root
       .findAll((node) => (node.type as unknown) === "Text")
       .map((node) => node.props.children);
-    expect(texts).not.toContain("M0");
-    expect(texts).not.toContain("00");
+    expect(texts).toContain("Frapp");
+    expect(texts).not.toContain("Member 000000");
+    expect(texts).not.toContain("F");
+    expect(texts).not.toContain("FR");
   });
 
   it("keeps initials for a member", () => {
