@@ -554,6 +554,97 @@ describe('InviteService', () => {
   // matters is the invite's, not the caller's), so the subscription hard lock
   // is evaluated here: a canceled chapter, or a past_due one past its grace
   // window, cannot gain a member through a token minted before it lapsed.
+  describe('preview (#3352)', () => {
+    const LIVE_UNTIL = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const invite = (overrides: Partial<Invite> = {}): Invite => ({
+      id: 'inv-p',
+      token: 'preview-token',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: LIVE_UNTIL,
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+      ...overrides,
+    });
+    const chapter = (branding: Record<string, unknown>): Chapter =>
+      ({
+        id: 'ch-1',
+        name: 'FIJI Tau Nu',
+        university: 'Rensselaer Polytechnic Institute',
+        accent_color: '#5b2c83',
+        branding,
+      }) as Chapter;
+
+    beforeEach(() => {
+      mockInviteRepo.findByToken.mockResolvedValue(invite());
+      mockChapterRepo.findById.mockResolvedValue(
+        chapter({ short_name: 'FIJI', greek_letters: 'ΦΓΔ' }),
+      );
+      mockUserRepo.findById.mockResolvedValue(
+        userFixture({ id: 'user-1', display_name: 'Paul Carlson' }),
+      );
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        roleFixture({
+          id: 'r-member',
+          name: 'Brother',
+          system_key: SystemRoleKeys.MEMBER,
+        }),
+      ]);
+    });
+
+    it('names the chapter, the inviter and the role, and uses nothing up', async () => {
+      await expect(service.preview('preview-token')).resolves.toEqual({
+        chapter_name: 'FIJI Tau Nu',
+        university: 'Rensselaer Polytechnic Institute',
+        mark_text: 'FIJI',
+        accent_color: '#5b2c83',
+        invited_by: 'Paul Carlson',
+        // "Member" isn't a role here, so the redeem would grant the seeded
+        // Member role under the name this chapter gave it.
+        role: 'Brother',
+        expires_at: LIVE_UNTIL,
+      });
+      expect(mockInviteRepo.markUsedAtomically).not.toHaveBeenCalled();
+      expect(mockMemberRepo.create).not.toHaveBeenCalled();
+      expect(mockLegalAcceptance.requireOrAccept).not.toHaveBeenCalled();
+    });
+
+    it('never sends letters a chapter hides', async () => {
+      mockChapterRepo.findById.mockResolvedValue(
+        chapter({ greek_letters: 'ΦΓΔ', show_greek_letters: false }),
+      );
+      const preview = await service.preview('preview-token');
+      expect(preview.mark_text).toBeNull();
+      expect(JSON.stringify(preview)).not.toContain('ΦΓΔ');
+    });
+
+    it('still previews when the inviter profile is gone', async () => {
+      mockUserRepo.findById.mockResolvedValue(null);
+      await expect(service.preview('preview-token')).resolves.toMatchObject({
+        invited_by: null,
+      });
+    });
+
+    it.each([
+      ['unknown', null],
+      ['used', invite({ used_at: '2024-01-02' })],
+      ['expired', invite({ expires_at: '2020-01-01T00:00:00.000Z' })],
+    ])('answers 410 for a %s invite, as redeem does', async (_label, found) => {
+      mockInviteRepo.findByToken.mockResolvedValue(found);
+      await expect(service.preview('preview-token')).rejects.toBeInstanceOf(
+        GoneException,
+      );
+    });
+
+    it('answers 410 when the chapter is gone', async () => {
+      mockChapterRepo.findById.mockResolvedValue(null);
+      await expect(service.preview('preview-token')).rejects.toBeInstanceOf(
+        GoneException,
+      );
+    });
+  });
+
   describe('redeem into a chapter under the subscription hard lock (#1546)', () => {
     const liveInvite = (): Invite => ({
       id: 'inv-locked',

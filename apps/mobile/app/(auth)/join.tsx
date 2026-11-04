@@ -23,12 +23,16 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
+  isDeadInviteError,
   joinErrorCopy,
   redeemChapterId,
   useDeleteAccount,
+  useInvitePreview,
   useJoinTermsCheckbox,
   useRedeemInvite,
 } from "@repo/hooks";
+import { normalizeAccentInput } from "@repo/hooks/chapter-identity";
+import { chapterInitials } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChoiceRow } from "@/components/auth/choice-row";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
@@ -45,7 +49,7 @@ import {
 import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
-import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
+import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s02, "How are you getting in?" (`spec/ui/mobile/screens.md`, #3350).
@@ -64,11 +68,12 @@ import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
  * (`spec/behavior/onboarding.md` wins over the drawing for the data model).
  *
  * Nothing joins from the field itself. Continue opens a confirm step, and an
- * opened invite link lands there directly (#3352): one card for the invite,
- * the Terms checkbox when it's needed, and Join chapter pinned at the bottom.
- * The card can't name the chapter yet. An invite is a random token, and the
- * only route that reads its chapter is the redeem that uses it up, so the
- * chapter's name first shows on s03, "You're in.", right after.
+ * opened invite link lands there directly (#3352): "Join FIJI Tau Nu?" over
+ * one card for the chapter (its mark, name and school, who sent the invite and
+ * the role it grants, read by `POST /v1/invites/preview` without using the
+ * invite up), the Terms checkbox when it's needed, and Join chapter pinned at
+ * the bottom. A preview that fails leaves a card for the bare invite, which
+ * can still be joined; a dead invite (410) says so and offers no Join.
  */
 
 type JoinView = "choose" | "invite" | "confirm";
@@ -77,7 +82,12 @@ export const JOIN_CHOICE_TITLE = "How are you getting in?";
 export const JOIN_INVITE_TITLE = "Join with an invite";
 export const JOIN_CONFIRM_TITLE = "Join with this invite?";
 
-/** How the confirm card names an invite: its last four characters. */
+/** The confirm step's title once the invite's chapter is known. */
+export function confirmTitle(chapterName: string): string {
+  return `Join ${chapterName}?`;
+}
+
+/** How the confirm card names an invite it can't read: its last four characters. */
 export function inviteTail(token: string): string {
   return token.slice(-4);
 }
@@ -232,6 +242,14 @@ export default function JoinChapter() {
   const menuTitleRef = useRef<ComponentRef<typeof Text>>(null);
   useFocusOnOpen(menuTitleRef, menuVisible);
 
+  // Read before the redirect below: hooks run on every render.
+  const invite = extractInviteToken(token);
+  const preview = useInvitePreview(view === "confirm" ? invite : null);
+  const chapter = preview.data ?? null;
+  // A dead link can't be joined, so the step says so instead of offering it.
+  const deadInvite = preview.isError && isDeadInviteError(preview.error);
+  const stepBlocked = submitting || (view === "confirm" && deadInvite);
+
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;
   }
@@ -317,8 +335,6 @@ export default function JoinChapter() {
       setError(joinErrorCopy(caught));
     }
   }
-
-  const invite = extractInviteToken(token);
 
   const header = (
     <View style={styles.header}>
@@ -460,30 +476,92 @@ export default function JoinChapter() {
               </View>
             ) : (
               <View style={styles.stepBody}>
-                <Text style={styles.title}>{JOIN_CONFIRM_TITLE}</Text>
-                <Text style={styles.subtitle}>
-                  You&apos;ll join the chapter that sent it, and see its name
-                  and channels as soon as you&apos;re in.
+                <Text style={styles.title}>
+                  {chapter
+                    ? confirmTitle(chapter.chapter_name)
+                    : JOIN_CONFIRM_TITLE}
                 </Text>
 
-                {/* One object, so one card: the invite this step joins with. */}
-                <View style={styles.inviteCard}>
-                  <Text style={styles.inviteCardTitle}>Chapter invite</Text>
-                  <Text style={styles.inviteCardDetail}>
-                    {invite ? (
-                      <>
-                        Ending in{" "}
-                        <Text style={styles.inviteCardTail}>
-                          {inviteTail(invite)}
+                {chapter ? (
+                  // One object, so one card: the chapter this invite joins.
+                  <View style={styles.inviteCard}>
+                    <View style={styles.chapterRow}>
+                      <View
+                        style={[
+                          styles.markTile,
+                          {
+                            backgroundColor: tint(
+                              normalizeAccentInput(chapter.accent_color),
+                              0.24,
+                            ),
+                          },
+                        ]}
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
+                      >
+                        <Text style={styles.markText} numberOfLines={1}>
+                          {chapter.mark_text ??
+                            chapterInitials(chapter.chapter_name)}
                         </Text>
-                        {" · "}
-                      </>
+                      </View>
+                      <View style={styles.chapterText}>
+                        <Text style={styles.inviteCardTitle}>
+                          {chapter.chapter_name}
+                        </Text>
+                        <Text style={styles.inviteCardDetail}>
+                          {chapter.university}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.cardRule} />
+                    {chapter.invited_by ? (
+                      <Text style={styles.inviteCardDetail}>
+                        Invited by {chapter.invited_by}
+                      </Text>
                     ) : null}
-                    Works once
-                  </Text>
-                </View>
+                    <Text style={styles.inviteCardDetail}>
+                      Joining as {chapter.role}
+                    </Text>
+                  </View>
+                ) : (
+                  // The invite itself, while the preview loads or when it
+                  // can't be read.
+                  <View style={styles.inviteCard}>
+                    <View style={styles.chapterRow}>
+                      <View style={styles.chapterText}>
+                        <Text style={styles.inviteCardTitle}>
+                          Chapter invite
+                        </Text>
+                        <Text style={styles.inviteCardDetail}>
+                          {invite ? (
+                            <>
+                              Ending in{" "}
+                              <Text style={styles.inviteCardTail}>
+                                {inviteTail(invite)}
+                              </Text>
+                              {" · "}
+                            </>
+                          ) : null}
+                          Works once
+                        </Text>
+                      </View>
+                      {preview.isPending && preview.fetchStatus !== "idle" ? (
+                        <ActivityIndicator
+                          color={tokens.color.gold.house}
+                          accessibilityLabel="Reading the invite"
+                        />
+                      ) : null}
+                    </View>
+                  </View>
+                )}
 
-                {terms.needed ? (
+                {deadInvite ? (
+                  <Text style={styles.errorText}>
+                    {joinErrorCopy(preview.error)}
+                  </Text>
+                ) : null}
+
+                {terms.needed && !deadInvite ? (
                   <TermsAcceptance
                     accepted={terms.accepted}
                     onAcceptedChange={(next) => {
@@ -508,15 +586,18 @@ export default function JoinChapter() {
             <View style={styles.footer}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityState={{ disabled: submitting, busy: redeeming }}
-                disabled={submitting}
+                accessibilityState={{
+                  disabled: stepBlocked,
+                  busy: redeeming,
+                }}
+                disabled={stepBlocked}
                 onPress={() => {
                   if (view === "invite") handleContinue();
                   else void handleJoin();
                 }}
                 style={[
                   styles.primaryButton,
-                  submitting ? styles.disabled : null,
+                  stepBlocked ? styles.disabled : null,
                 ]}
               >
                 {redeeming ? (
@@ -683,6 +764,35 @@ function createStyles(tokens: SignetTokens) {
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.md,
       gap: tokens.spacing.xs,
+    },
+    chapterRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+    },
+    chapterText: {
+      flex: 1,
+      gap: 2,
+    },
+    // The chapter mark as setup draws it (`create-chapter.tsx`): its text on
+    // a tint of the chapter color, so any color keeps the text readable.
+    markTile: {
+      minWidth: 44,
+      height: 44,
+      paddingHorizontal: tokens.spacing.xs,
+      borderRadius: 11,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    markText: {
+      ...typeRole(tokens.typography.role.label),
+      fontWeight: "700",
+      color: tokens.color.text.foreground,
+    },
+    cardRule: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: tint(tokens.color.text.foreground, 0.08),
+      marginVertical: tokens.spacing.xs,
     },
     inviteCardTitle: {
       ...typeRole(tokens.typography.role.title),

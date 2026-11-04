@@ -105,6 +105,7 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 | `GET /chapters` | A | **D** — lists only the caller's own memberships. Each embedded chapter is the member-safe projection (`toChapterMemberView`), not the raw row: this route carries no billing permission, and before #930 it shipped `stripe_customer_id` / `subscription_id` for every chapter the caller belongs to |
 | `POST /chapters/:id/activate` | A | Client-supplied `:id`, but `setActiveChapter` requires a membership row and throws `403` otherwise (`ChapterService.setActiveChapter`) |
 | `POST /invites/redeem` | A | Redeems by opaque invite code; the code *is* the capability. Chapter comes from the invite row, not the caller — which is also why the subscription hard lock is evaluated in `InviteService.redeem` against `invite.chapter_id` (#1546) rather than by `ChapterGuard`, which never sees that chapter |
+| `POST /invites/preview` | A | Reads by opaque invite code, as redeem does, and returns only what joining would show the caller: the chapter's name, school, text mark and color, the inviter's display name and the role. A live code is the capability; a dead one is 410 (#3352) |
 | `GET/PATCH /users/me`, `DELETE /users/me` | A | **D** |
 | `GET/POST /users/me/legal-acceptance` | A | **D** — reads and stamps the caller's own row only; no chapter context, because a user accepts before they join one (#2302) |
 | `GET /users/me/permissions`, `POST /users/me/avatar-url` | A+C | Chapter context needed; guard supplies it |

@@ -70,8 +70,23 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useDeleteAccount: () => ({ isPending, isSuccess, mutateAsync }),
 }));
 
-/** Answers `GET /v1/users/me/legal-acceptance`; `undefined` never answers. */
+/**
+ * What `POST /v1/invites/preview` answers (#3352). `null` fails the read the
+ * way a network error does, which leaves the card showing the bare invite.
+ */
+let previewAnswer: { data?: unknown; error?: unknown } | null = null;
+const previewPost = vi.fn(() =>
+  previewAnswer
+    ? Promise.resolve(previewAnswer)
+    : Promise.reject(new Error("offline")),
+);
+
+/**
+ * Answers `GET /v1/users/me/legal-acceptance`, where `undefined` never
+ * answers, and the invite preview above.
+ */
 const statusClient = {
+  POST: previewPost,
   GET: () =>
     legalRequired === undefined
       ? new Promise(() => {})
@@ -96,6 +111,7 @@ import JoinChapter, {
   JOIN_CHOICE_TITLE,
   JOIN_CONFIRM_TITLE,
   JOIN_INVITE_TITLE,
+  confirmTitle,
 } from "@/app/(auth)/join";
 
 type Node = ReactTestRenderer["root"];
@@ -876,5 +892,112 @@ describe("join screen — the question (#3350)", () => {
 
     const second = render();
     expect(allText(second.root)).toContain(JOIN_CHOICE_TITLE);
+  });
+});
+
+/**
+ * #3352. The confirm card names the chapter before the member joins, from a
+ * read that doesn't use the invite up.
+ */
+describe("join screen — the confirm card's chapter (#3352)", () => {
+  const params = vi.mocked(useLocalSearchParams);
+  const checkbox = (root: Node) =>
+    root
+      .findAllByType("Pressable" as never, { deep: true })
+      .find((pressable) => pressable.props.accessibilityRole === "checkbox");
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isPending = false;
+    isSuccess = false;
+    redeemPending = false;
+    legalRequired = true;
+    redeemMutateAsync.mockResolvedValue({ chapterId: "ch-1", memberId: "m-1" });
+  });
+
+  afterEach(() => {
+    params.mockReturnValue({});
+    previewAnswer = null;
+    consumeRememberedInviteToken();
+  });
+
+  it("names the chapter, who sent the invite and the role, before joining", async () => {
+    previewAnswer = {
+      data: {
+        chapter_name: "FIJI Tau Nu",
+        university: "Rensselaer Polytechnic Institute",
+        mark_text: "FIJI",
+        accent_color: "#5b2c83",
+        invited_by: "Paul Carlson",
+        role: "Member",
+        expires_at: "2026-11-05T20:00:00.000Z",
+      },
+    };
+    params.mockReturnValue({ token: "invite-token-20" });
+    const tree = render();
+    await settle();
+
+    expect(previewPost).toHaveBeenCalledWith("/v1/invites/preview", {
+      body: { token: "invite-token-20" },
+    });
+    const text = allText(tree.root);
+    expect(text).toContain(confirmTitle("FIJI Tau Nu"));
+    expect(text).toContain("Rensselaer Polytechnic Institute");
+    expect(text).toContain("FIJI");
+    expect(text).toContain("Invited by Paul Carlson");
+    expect(text).toContain("Joining as Member");
+    // Reading it used nothing up.
+    expect(redeemMutateAsync).not.toHaveBeenCalled();
+
+    act(() => {
+      checkbox(tree.root)?.props.onPress();
+    });
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+    expect(redeemMutateAsync).toHaveBeenCalledWith({
+      token: "invite-token-20",
+      accept_terms_privacy: true,
+    });
+  });
+
+  it("says a dead invite is dead, and offers no Join", async () => {
+    previewAnswer = {
+      error: { statusCode: 410, message: "Invite expired" },
+    };
+    params.mockReturnValue({ token: "invite-token-21" });
+    const tree = render();
+    await settle();
+
+    expect(allText(tree.root)).toContain("expired or already been used");
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(true);
+    expect(checkbox(tree.root)).toBeUndefined();
+    // Back still leads to the field, to paste another.
+    expect(
+      tree.root
+        .findAllByType("Pressable" as never, { deep: true })
+        .find((p) => p.props.accessibilityLabel === "Back to the invite")?.props
+        .disabled,
+    ).toBe(false);
+  });
+
+  it("still joins with the bare invite when the chapter can't be read", async () => {
+    previewAnswer = null;
+    params.mockReturnValue({ token: "invite-token-22" });
+    const tree = render();
+    await settle();
+
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
+    expect(allText(tree.root)).toContain("n-22");
+    act(() => {
+      checkbox(tree.root)?.props.onPress();
+    });
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+    expect(redeemMutateAsync).toHaveBeenCalledWith({
+      token: "invite-token-22",
+      accept_terms_privacy: true,
+    });
   });
 });

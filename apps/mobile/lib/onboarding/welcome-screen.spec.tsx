@@ -32,13 +32,26 @@ vi.mock("@/lib/auth-session", () => ({
   useAuthSession: () => ({ status: "authenticated", chapterId: null }),
 }));
 
+const completeOnboarding = vi.fn().mockResolvedValue(undefined);
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useListChapters: () => ({ data: [] }),
+  useListChapters: () => ({
+    data: [
+      {
+        chapter: {
+          id: "ch-1",
+          name: "FIJI Tau Nu",
+          university: "Rensselaer Polytechnic Institute",
+        },
+      },
+    ],
+  }),
   useChannels: () => ({ isPending: false, isError: false, data: [] }),
-  useUpdateOnboarding: () => ({ mutateAsync: vi.fn() }),
+  useUpdateOnboarding: () => ({ mutateAsync: completeOnboarding }),
 }));
 
+import { useRouter } from "expo-router";
 import Welcome from "@/app/(auth)/welcome";
 
 type Node = ReactTestRenderer["root"];
@@ -107,5 +120,46 @@ describe("s03 welcome, push primer (#2299)", () => {
     const button = turnOn(root);
     expect(button).toBeDefined();
     expect(button?.props.disabled).toBe(false);
+  });
+});
+
+/**
+ * #3352. "You're in." follows the #3348 screen rules: the chapter named under
+ * the title, and one button pinned under the scroll, where a Skip that did
+ * the same thing used to sit beside it.
+ */
+describe("s03 welcome, screen rules (#3352)", () => {
+  beforeEach(() => {
+    pushAvailable = false;
+    permission = null;
+    completeOnboarding.mockClear();
+  });
+
+  it("names the chapter and pins one button, Go to chat, outside the scroll", async () => {
+    const { root } = await render();
+
+    expect(
+      texts(root).some((t) =>
+        t.includes("FIJI Tau Nu · Rensselaer Polytechnic Institute"),
+      ),
+    ).toBe(true);
+    const buttons = root
+      .findAllByType("Pressable" as never, { deep: true })
+      .filter((p) => p.props.accessibilityRole === "button");
+    expect(buttons).toHaveLength(1);
+    expect(
+      root
+        .findByType("ScrollView" as never)
+        .findAllByType("Pressable" as never, { deep: true }),
+    ).toHaveLength(0);
+    expect(texts(root).some((t) => t.includes("Skip"))).toBe(false);
+
+    await act(async () => {
+      await buttons[0]?.props.onPress();
+    });
+    expect(completeOnboarding).toHaveBeenCalledWith({
+      has_completed_onboarding: true,
+    });
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
   });
 });

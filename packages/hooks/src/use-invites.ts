@@ -87,7 +87,10 @@ export function useRedeemInvite() {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: { token: string; accept_terms_privacy?: true }) => {
+    mutationFn: async (body: {
+      token: string;
+      accept_terms_privacy?: true;
+    }) => {
       const { data, error } = await client.POST("/v1/invites/redeem", {
         body,
       });
@@ -100,6 +103,33 @@ export function useRedeemInvite() {
       queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
     },
+  });
+}
+
+/**
+ * What an invite is for, read without using it up (#3352): the chapter's name,
+ * school, text mark and color, who sent it and the role it grants. The join
+ * screen's confirm card shows it before the member taps Join. Pass `null` for
+ * no invite yet.
+ *
+ * Not retried: a 410 is a dead link and stays one, and anything else leaves
+ * the card showing the bare invite, which can still be joined. Keyed by the
+ * token, which is a secret, so it lives only in this query cache.
+ */
+export function useInvitePreview(token: string | null) {
+  const client = useFrappClient();
+  return useQuery({
+    queryKey: ["invite-preview", token],
+    queryFn: async () => {
+      const { data, error } = await client.POST("/v1/invites/preview", {
+        body: { token: token as string },
+      });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!token,
+    retry: false,
+    staleTime: 60_000,
   });
 }
 

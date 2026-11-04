@@ -47,6 +47,15 @@ export function joinErrorCopy(error: unknown): string {
 }
 
 /**
+ * Whether an invite read or redeem failed because the invite is dead: missing,
+ * used, expired, or the account itself is deleted (all 410). Mobile's confirm
+ * card uses it to stop offering Join for a link that can't work (#3352).
+ */
+export function isDeadInviteError(error: unknown): boolean {
+  return statusOf(error) === 410;
+}
+
+/**
  * The chapter the redemption joined, or `null`.
  *
  * The response is typed loosely at the hook boundary, and the caller must not

@@ -81,3 +81,42 @@ export class RedeemInviteDto {
   })
   accept_terms_privacy?: boolean;
 }
+
+export class PreviewInviteDto {
+  @ApiProperty({ description: 'The invite token, as the join link carries it' })
+  @IsString()
+  token: string;
+}
+
+/** `InvitePreview` in `invite.service.ts`, for the contract (#3352). */
+export class InvitePreviewResponseDto {
+  @ApiProperty()
+  chapter_name: string;
+
+  @ApiProperty()
+  university: string;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      "The chapter's text mark: its short name, else its Greek letters if it shows them, else null. Never letters the chapter hides.",
+  })
+  mark_text: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  accent_color: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: "The inviter's display name, or null when it can't be read.",
+  })
+  invited_by: string | null;
+
+  @ApiProperty({ description: 'The role name joining grants' })
+  role: string;
+
+  @ApiProperty()
+  expires_at: string;
+}
