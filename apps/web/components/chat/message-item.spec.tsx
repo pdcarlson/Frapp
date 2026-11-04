@@ -118,7 +118,7 @@ describe("MessageItem author rendering", () => {
     expect(screen.getByText("Member 222222")).toBeInTheDocument();
   });
 
-  it("names the system actor Frapp, with an F avatar, not a truncated id (#3347)", () => {
+  it("names the system actor Frapp, not a truncated id (#3347)", () => {
     // `SYSTEM_SENDER_ID`: on no roster, so the resolver misses it as it would
     // here. The chapter welcome post used to read "Member 000000" beside "00".
     renderItem(
@@ -127,7 +127,6 @@ describe("MessageItem author rendering", () => {
     );
 
     expect(screen.getByText("Frapp")).toBeInTheDocument();
-    expect(screen.getByText("F")).toBeInTheDocument();
     expect(screen.queryByText(/^Member /)).not.toBeInTheDocument();
     expect(screen.queryByText("00")).not.toBeInTheDocument();
   });

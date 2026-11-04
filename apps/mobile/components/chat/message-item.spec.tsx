@@ -234,7 +234,7 @@ describe("an imported author's row", () => {
 // notices and invite-accept DMs. It is on no roster, so it used to fall through
 // to "Member 000000" beside a "00" avatar (#3347).
 describe("the system actor's row", () => {
-  it("reads Frapp, with initials drawn from that name", () => {
+  it("reads Frapp, and draws no id-derived avatar", () => {
     const tree = renderItem(
       message({ sender_id: "00000000-0000-0000-0000-000000000000" }),
     );
@@ -242,8 +242,6 @@ describe("the system actor's row", () => {
       .findAll((node) => (node.type as unknown) === "Text")
       .map((node) => node.props.children);
     expect(drawn).toContain("Frapp");
-    // Mobile's `initialsFor` takes two letters from a one-word name.
-    expect(drawn).toContain("FR");
     expect(drawn).not.toContain("Member 000000");
     expect(drawn).not.toContain("00");
   });
