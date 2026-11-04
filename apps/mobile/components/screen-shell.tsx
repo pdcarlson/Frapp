@@ -14,11 +14,11 @@ type ScreenShellProps = {
    */
   titleMark?: ReactNode;
   /**
-   * A line under the title, for a fact about this one screen that the title
-   * can't carry: Event details passes the event's time window. Optional since
-   * #3023. The board draws no subtitle on any shell screen, so a line that
-   * only narrates what the screen is for ("What you owe the chapter…") does
-   * not belong here; the owner dropped those on 2026-11-04.
+   * A line under the title, for a fact about this one item that the title
+   * can't carry. Optional since #3023: the board draws one only on s07, where
+   * Event details passes the event's time. A line that says what the screen is
+   * for ("What you owe the chapter…") never belongs here; the owner dropped
+   * those on 2026-11-04 (`spec/ui/mobile/patterns.md` § Screen headers).
    */
   subtitle?: string;
   /**

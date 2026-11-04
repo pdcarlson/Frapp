@@ -297,9 +297,9 @@ their own titles took the heading role the header's title used to carry.
 
 **#3023 touched `components/screen-shell.tsx`, as an integrator change.** `subtitle`
 became optional and the shell draws no line when it is absent. Every call site was updated
-in the same change: the board draws no subtitle on any shell screen, so the lines that only
-said what a screen is for ("What you owe the chapter, and what it has earned you.") were
-deleted (owner decision, 2026-11-04). So was the same kind of line in s13's own header,
-Directory's "Actives and alumni.", which the board doesn't draw either. Event details is the one screen that still passes a
-subtitle, because it carries a fact the title can't: the event's time window. Its loading,
-empty and error states pass none, since each state block already says the same thing.
+in the same change. The lines that only said what a screen is for ("What you owe the
+chapter, and what it has earned you.") were deleted (owner decision, 2026-11-04), and so
+was the same kind of line in s13's own header, Directory's "Actives and alumni.". The board
+draws neither. Event details is the one screen that still passes a subtitle, the event's
+time, because s07 is the one screen the board draws one on. Its loading, empty and error
+states pass none. The rule itself lives in [`patterns.md` § Screen headers](patterns.md#screen-headers).

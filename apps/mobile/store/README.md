@@ -292,6 +292,10 @@ Members get one place for the things that used to live in six group chats: chapt
 > exists anywhere in the schema (`components/study/week-summary.tsx` says so in its header),
 > so the clause now says what the Study tab does, in its own subtitle's words. Study time
 > does earn points, per zone (`minutes_per_point`), and the next item already covers points.
+> *2026-11-04 ([#3023](https://github.com/pdcarlson/Frapp/issues/3023)):* that subtitle
+> ("Tracked sessions inside your chapter's study zones.") is gone. The clause still holds on
+> what the tab does: a session starts only inside one of the chapter's study zones, picked
+> from the tab's zone sheet (`app/(tabs)/study.tsx`, `components/study/zone-picker-sheet.tsx`).
 
 Officers get what they need on their feet: take attendance at the door with a QR code, assign a task to any member, and post an announcement every member gets. Setting the chapter up — roles and permissions, dues and who has paid, service-hour approvals, channels and points — is on the web dashboard.
 

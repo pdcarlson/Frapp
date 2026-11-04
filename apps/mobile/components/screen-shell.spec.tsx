@@ -72,9 +72,9 @@ describe("ScreenShell (#2485)", () => {
 });
 
 /**
- * #3023. The board draws no subtitle on any shell screen, so the shell draws
- * none unless a screen passes one. Event details is the caller that does: its
- * subtitle is the event's time window.
+ * #3023. The shell draws no line under the title unless a screen passes one.
+ * The board draws one only on s07, so Event details is the caller that does:
+ * its subtitle is the event's time.
  */
 describe("ScreenShell subtitle (#3023)", () => {
   it("draws nothing under the title when no subtitle is passed", () => {
