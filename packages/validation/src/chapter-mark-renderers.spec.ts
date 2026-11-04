@@ -34,7 +34,7 @@ const ALLOWED: Record<string, string> = {
   "apps/api/src/interface/dtos/chapter-config.dto.ts":
     "the DTO validates the field on write",
   "apps/api/src/application/services/chapter-onboarding.service.ts":
-    "stores the field and files the directory request; the welcome message goes through chapterTextMark",
+    "stores the field and files the directory request; the welcome message never reads it (#3347)",
   "apps/web/components/onboarding/chapter-wizard.tsx":
     "the wizard's input for the field, and its preview feeds resolveChapterMark",
   "apps/web/components/settings/settings-org-tab.tsx":
