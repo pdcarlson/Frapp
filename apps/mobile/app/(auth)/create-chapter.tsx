@@ -22,14 +22,17 @@ import {
 import {
   ARCHETYPES,
   getArchetype,
+  orgColorsFor,
+  orgDefaultAccent,
+  orgMarkFields,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import { SignetTokens } from "@repo/theme/signet";
 import { serverMessageOf } from "@repo/api-sdk";
 import { useAuthSession } from "@/lib/auth-session";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
+import { AccentPicker } from "@/components/chapter/accent-picker";
 import {
-  DEFAULT_CHAPTER_ACCENT,
   EMPTY_CHAPTER_IDENTITY,
   chapterIdentityBranding,
   chapterIdentityIsValid,
@@ -102,23 +105,31 @@ export default function CreateChapter() {
   });
   const results = Array.isArray(searchQuery.data) ? searchQuery.data : [];
   const stepIndex = STEP_ORDER.indexOf(step);
-  const canSubmit = chapterIdentityIsValid(identity) && acceptedLegal;
+  // False while the accent's custom field holds a half-typed hex, which would
+  // otherwise submit the last whole color it held instead.
+  const [accentValid, setAccentValid] = useState(true);
+  const canSubmit =
+    chapterIdentityIsValid(identity) && acceptedLegal && accentValid;
 
   function applyDirectoryMatch(row: ChapterDirectoryResult) {
     setDirectoryId(row.id);
     setArchetype(getArchetype(row.archetype ?? "").key);
+    const mark = orgMarkFields(row.org_name, identity.name, identity);
     setIdentity({
       name: row.org_name ?? "",
       university: row.university ?? "",
       greekLetters: row.org_letters ?? "",
-      // The directory knows letters, not whether an organization shows them,
-      // so these two keep whatever the founder already chose.
-      shortName: identity.shortName,
-      showGreekLetters: identity.showGreekLetters,
+      // The directory knows letters, not whether an organization shows them:
+      // FIJI's profile switches them off (`orgMarkFields`).
+      ...mark,
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
-      colorAccent: normalizeAccentInput(row.default_colors?.accent),
+      // The organization's own first color wins over the directory's: most
+      // directory rows hold one placeholder gold (`orgDefaultAccent`).
+      colorAccent: normalizeAccentInput(
+        orgDefaultAccent(row.org_name) ?? row.default_colors?.accent,
+      ),
     });
     setAcceptedLegal(false);
     setError(null);
@@ -139,7 +150,11 @@ export default function CreateChapter() {
 
   function goBack() {
     const prev = STEP_ORDER[stepIndex - 1];
-    if (prev) setStep(prev);
+    if (!prev) return;
+    // Leaving identity unmounts the picker and drops a half-typed hex with
+    // it; the picker opens on swatches again, so the accent is valid again.
+    setAccentValid(true);
+    setStep(prev);
   }
 
   async function submitChapter() {
@@ -274,6 +289,7 @@ export default function CreateChapter() {
                 isManual={directoryId === null}
                 accepted={acceptedLegal}
                 onAcceptedChange={setAcceptedLegal}
+                onAccentValidityChange={setAccentValid}
                 styles={styles}
                 tokens={tokens}
               />
@@ -524,6 +540,7 @@ function IdentityStep({
   isManual,
   accepted,
   onAcceptedChange,
+  onAccentValidityChange,
   styles,
   tokens,
 }: {
@@ -532,6 +549,7 @@ function IdentityStep({
   isManual: boolean;
   accepted: boolean;
   onAcceptedChange: (next: boolean) => void;
+  onAccentValidityChange: (valid: boolean) => void;
   styles: Styles;
   tokens: SignetTokens;
 }) {
@@ -636,17 +654,18 @@ function IdentityStep({
         styles={styles}
         tokens={tokens}
       />
-      <Field
-        label="Accent color"
-        value={identity.colorAccent}
-        onChangeText={(value) => set("colorAccent", value)}
-        placeholder={DEFAULT_CHAPTER_ACCENT}
-        autoCapitalize="characters"
-        mono
-        styles={styles}
-        tokens={tokens}
-        swatch={normalizeAccentInput(identity.colorAccent)}
-      />
+      <View style={styles.field}>
+        <Text style={styles.inputLabel} importantForAccessibility="no">
+          Accent color
+        </Text>
+        <AccentPicker
+          label="Accent color"
+          value={normalizeAccentInput(identity.colorAccent)}
+          onChange={(hex) => set("colorAccent", hex)}
+          onValidityChange={onAccentValidityChange}
+          orgColors={orgColorsFor(identity.name)}
+        />
+      </View>
 
       {/*
         The officer's acceptance for the chapter and for themselves (#2302).
@@ -670,8 +689,6 @@ function Field({
   keyboardType,
   autoCapitalize,
   maxLength,
-  mono,
-  swatch,
 }: {
   label: string;
   value: string;
@@ -682,32 +699,22 @@ function Field({
   keyboardType?: "number-pad";
   autoCapitalize?: "characters" | "none";
   maxLength?: number;
-  mono?: boolean;
-  swatch?: string;
 }) {
   return (
     <View style={styles.field}>
       <Text style={styles.inputLabel}>{label}</Text>
-      <View style={styles.swatchRow}>
-        {swatch ? (
-          <View
-            accessibilityLabel={`${label} preview`}
-            style={[styles.swatch, { backgroundColor: swatch }]}
-          />
-        ) : null}
-        <TextInput
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor={tokens.color.text.muted}
-          autoCapitalize={autoCapitalize ?? "sentences"}
-          autoCorrect={false}
-          keyboardType={keyboardType}
-          maxLength={maxLength}
-          accessibilityLabel={label}
-          style={[styles.input, styles.inputFlex, mono ? styles.mono : null]}
-        />
-      </View>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={tokens.color.text.muted}
+        autoCapitalize={autoCapitalize ?? "sentences"}
+        autoCorrect={false}
+        keyboardType={keyboardType}
+        maxLength={maxLength}
+        accessibilityLabel={label}
+        style={styles.input}
+      />
     </View>
   );
 }
@@ -841,26 +848,12 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
-    inputFlex: { flex: 1 },
-    mono: { fontFamily: MONO_FONT_FAMILY },
     monoBody: {
       ...typeRole(tokens.typography.role.caption),
       fontFamily: MONO_FONT_FAMILY,
       color: tokens.color.text.foreground,
     },
     field: { gap: tokens.spacing.xs },
-    swatchRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-    },
-    swatch: {
-      width: tokens.touch.minimum,
-      height: tokens.touch.minimum,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-    },
     switchRow: {
       flexDirection: "row",
       alignItems: "center",

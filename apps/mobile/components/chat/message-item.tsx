@@ -7,6 +7,8 @@ import {
   View,
   type AccessibilityActionEvent,
   type AccessibilityActionInfo,
+  type StyleProp,
+  type TextStyle,
 } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
@@ -623,7 +625,7 @@ function DeliveryLine({
             hitSlop={8}
             onPress={() => onRetry(clientMessageId)}
           >
-            <Text style={styles.retryText}>Retry</Text>
+            <AccentText style={styles.retryText}>Retry</AccentText>
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -647,6 +649,86 @@ function DeliveryLine({
       return _never;
     }
   }
+}
+
+/**
+ * Text in the chapter's accent (step 11). Its own component for the reason
+ * `SelfName` gives: only a row that draws the accent calls
+ * `useChapterBranding()`, so a row that never fails never reaches for the
+ * client provider.
+ */
+function AccentText({
+  style,
+  children,
+}: {
+  style: StyleProp<TextStyle>;
+  children: ReactNode;
+}) {
+  const { accent } = useChapterBranding();
+  return <Text style={[style, { color: accent }]}>{children}</Text>;
+}
+
+type ReactionChipStyles = Pick<
+  ReturnType<typeof createStyles>,
+  "reactionChip" | "reactionChipMine" | "reactionText" | "reactionTextMine"
+>;
+
+/**
+ * One reaction chip. The viewer's own reaction wears the chapter accent.
+ *
+ * One component whether or not the reaction is the viewer's: a chip that
+ * flips between the two keeps its native view, so a screen reader stays on
+ * the chip it just toggled and hears its new state. That means every chip
+ * calls `useChapterBranding()`, which only a row with reactions renders; a
+ * row without any (most of them) still never reaches for the client
+ * provider (see `SelfName`).
+ */
+function ReactionChip({
+  group,
+  disabled,
+  styles,
+  onPress,
+  onLongPress,
+}: {
+  group: ReactionGroup;
+  disabled: boolean;
+  styles: ReactionChipStyles;
+  onPress: () => void;
+  onLongPress?: () => void;
+}) {
+  const { accent, accentSubtle, accentBorder } = useChapterBranding();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: group.mine, disabled }}
+      accessibilityLabel={`${group.emoji}, ${group.count}`}
+      disabled={disabled}
+      // A 26pt chip against the 44pt floor: hitSlop closes the gap without
+      // inflating the drawn chip (components.md §11).
+      hitSlop={9}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={[
+        styles.reactionChip,
+        group.mine
+          ? [
+              styles.reactionChipMine,
+              { backgroundColor: accentSubtle, borderColor: accentBorder },
+            ]
+          : null,
+      ]}
+    >
+      <Text
+        style={
+          group.mine
+            ? [styles.reactionTextMine, { color: accent }]
+            : styles.reactionText
+        }
+      >
+        {`${group.emoji} ${group.count}`}
+      </Text>
+    </Pressable>
+  );
 }
 
 /**
@@ -693,34 +775,19 @@ export function ReactionRow({
   // server id a pending placeholder does not have yet.
   return (
     <View style={styles.reactionRow}>
-      {reactions.map((group) => (
-        <Pressable
-          key={group.actionType}
-          accessibilityRole="button"
-          accessibilityState={{ selected: group.mine, disabled }}
-          accessibilityLabel={`${group.emoji}, ${group.count}`}
-          disabled={disabled}
-          // A 26pt chip against the 44pt floor: hitSlop closes the gap without
-          // inflating the drawn chip (components.md §11).
-          hitSlop={9}
-          onPress={() =>
+      {reactions.map((group) => {
+        const chip = {
+          group,
+          disabled,
+          styles,
+          onLongPress,
+          onPress: () =>
             group.mine
               ? onUnreact(messageId, group.emoji)
-              : onReact(messageId, group.emoji)
-          }
-          onLongPress={onLongPress}
-          style={[
-            styles.reactionChip,
-            group.mine ? styles.reactionChipMine : null,
-          ]}
-        >
-          <Text
-            style={group.mine ? styles.reactionTextMine : styles.reactionText}
-          >
-            {`${group.emoji} ${group.count}`}
-          </Text>
-        </Pressable>
-      ))}
+              : onReact(messageId, group.emoji),
+        };
+        return <ReactionChip key={group.actionType} {...chip} />;
+      })}
 
       {!disabled && !reactions.some((group) => group.mine) ? (
         <Pressable
@@ -850,9 +917,9 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.md,
       marginTop: 2,
     },
+    // Colored with the chapter accent at render (`AccentText`).
     retryText: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.gold.askText,
     },
     discardText: {
       ...typeRole(tokens.typography.role.caption),
@@ -872,10 +939,9 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "center",
     },
+    // Colors come from the chapter accent at render (`ReactionChip`).
     reactionChipMine: {
-      backgroundColor: tokens.color.gold.askFill,
       borderWidth: 1,
-      borderColor: tokens.color.gold.askBorder,
     },
     reactionText: {
       ...typeRole(tokens.typography.role.caption),
@@ -883,7 +949,6 @@ function createStyles(tokens: SignetTokens) {
     },
     reactionTextMine: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.gold.askText,
     },
   });
 }

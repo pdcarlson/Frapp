@@ -80,6 +80,7 @@ import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 const NO_DEPARTED: ReadonlySet<string> = new Set();
 
@@ -106,7 +107,8 @@ const NO_DEPARTED: ReadonlySet<string> = new Set();
  */
 export default function ChatThreadScreen() {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
   const router = useRouter();
 
   // Params arrive as `string | string[]`; a repeated query key would otherwise
@@ -1019,7 +1021,7 @@ export default function ChatThreadScreen() {
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     safeArea: {
       flex: 1,
@@ -1046,7 +1048,7 @@ function createStyles(tokens: SignetTokens) {
     },
     backChevron: {
       ...typeRole(tokens.typography.role.title),
-      color: tokens.color.gold.askText,
+      color: brand.accent,
       minWidth: tokens.spacing.md,
     },
     headerTitle: {
