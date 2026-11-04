@@ -46,6 +46,16 @@ vi.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: vi.fn().mockResolvedValue({ canceled: true }),
 }));
 
+// Chapter setup marks the chapter going live with a tap (#3351).
+vi.mock("expo-haptics", () => ({
+  notificationAsync: vi.fn().mockResolvedValue(undefined),
+  NotificationFeedbackType: {
+    Success: "success",
+    Warning: "warning",
+    Error: "error",
+  },
+}));
+
 vi.mock("expo-image-manipulator", () => ({
   ImageManipulator: {
     manipulate: vi.fn(() => ({
@@ -254,6 +264,14 @@ vi.mock("react-native-reanimated", () => ({
       }),
     }),
   withTiming: <T>(value: T) => value,
+  // Entering animations are builders: each modifier returns the builder.
+  ZoomIn: (() => {
+    const builder: Record<string, unknown> = {};
+    builder.duration = () => builder;
+    builder.reduceMotion = () => builder;
+    return builder;
+  })(),
+  ReduceMotion: { System: "system", Always: "always", Never: "never" },
 }));
 
 vi.mock("react-native-safe-area-context", () => ({

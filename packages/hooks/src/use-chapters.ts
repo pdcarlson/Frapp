@@ -212,7 +212,6 @@ export interface ChapterLogoUpload {
   contentType: string;
 }
 
-
 /**
  * Upload or replace the active chapter's logo (#2591): mint a signed URL, PUT
  * the bytes, then confirm the path, which is the step that changes what the
@@ -248,6 +247,48 @@ export function useUploadChapterLogo() {
       return data;
     },
     onSuccess: invalidate,
+  });
+}
+
+/**
+ * Step 1 of 3 for a client that PUTs the bytes itself: mobile holds a
+ * `file://` URI, not a DOM `Blob`, so it can't use {@link useUploadChapterLogo}
+ * (the same split as `useRequestAvatarUploadUrl`). The route declares only
+ * these two fields and the API forbids any other, so a caller must not pass
+ * `size_bytes` through.
+ */
+export function useRequestChapterLogoUploadUrl() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationFn: async (body: { filename: string; content_type: string }) => {
+      const { data, error } = await client.POST(
+        "/v1/chapters/current/logo-url",
+        { body: { filename: body.filename, content_type: body.content_type } },
+      );
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+/**
+ * Step 3 of 3: make the uploaded object the chapter's logo. Resolves once the
+ * current chapter has refetched, so a caller that clears its busy state on
+ * resolve already has the new signed `logo_url`.
+ */
+export function useConfirmChapterLogo() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (storagePath: string) => {
+      const { data, error } = await client.POST("/v1/chapters/current/logo", {
+        body: { storage_path: storagePath },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: chapterQueryKey() }),
   });
 }
 
