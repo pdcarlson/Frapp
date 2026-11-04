@@ -10,7 +10,7 @@ import {
 import {
   reopenDelayMs,
   WORKER_REOPEN_MAX_DELAY_MS,
-  WORKER_SUBSCRIPTION_DOWN_AFTER,
+  WORKER_SUBSCRIPTION_DOWN_AFTER_MS,
   WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS,
   WorkerSubscription,
 } from './worker-subscription';
@@ -346,6 +346,7 @@ describe('WorkerSubscription', () => {
       ch.status('SUBSCRIBED');
       ch.status('CHANNEL_ERROR');
       ch.status('TIMED_OUT');
+      ch.status('SUBSCRIBED');
       expect(captured().map(([message]) => message)).toEqual([
         'test-worker realtime subscription CHANNEL_ERROR',
         'test-worker realtime subscription TIMED_OUT',
@@ -361,84 +362,144 @@ describe('WorkerSubscription', () => {
       expect(logger.warn).toHaveBeenCalledTimes(4);
     });
 
-    it(`reports an outage at error level after ${WORKER_SUBSCRIPTION_DOWN_AFTER} failures in a row`, () => {
-      sub.start();
-      const ch = latest();
-      for (let i = 1; i < WORKER_SUBSCRIPTION_DOWN_AFTER; i += 1) {
-        ch.status('TIMED_OUT');
-      }
-      expect(
-        captured().filter(([, context]) => levelOf(context) === 'error'),
-      ).toHaveLength(0);
-
-      ch.status('TIMED_OUT');
-
-      expect(captured().at(-1)).toEqual([
+    describe('an outage', () => {
+      const errors = () =>
+        captured().filter(([, context]) => levelOf(context) === 'error');
+      const OUTAGE = [
         'test-worker realtime subscription is down; test rows are not being sent',
         {
           level: 'error',
           tags: {
             worker: 'test-worker',
-            realtime_status: 'TIMED_OUT',
-            failures: String(WORKER_SUBSCRIPTION_DOWN_AFTER),
+            realtime_status: 'CHANNEL_ERROR',
+            failures: '1',
           },
           fingerprint: ['worker-subscription-down', 'test-worker'],
         },
-      ]);
-    });
+      ];
 
-    it('counts reopens that keep closing toward the outage', async () => {
-      sub.start();
-      for (
-        let reopen = 0;
-        reopen < WORKER_SUBSCRIPTION_DOWN_AFTER;
-        reopen += 1
-      ) {
-        latest().status('CLOSED');
-        await settle();
-        await jest.advanceTimersByTimeAsync(reopenDelayMs(reopen));
-      }
-
-      expect(captured().at(-1)?.[1]).toEqual(
-        expect.objectContaining({
-          level: 'error',
-          fingerprint: ['worker-subscription-down', 'test-worker'],
-        }),
-      );
-    });
-
-    it('repeats the outage report once per window while it lasts', async () => {
-      sub.start();
-      const ch = latest();
-      const errors = () =>
-        captured().filter(([, context]) => levelOf(context) === 'error');
-      for (let i = 0; i < WORKER_SUBSCRIPTION_DOWN_AFTER + 3; i += 1) {
-        ch.status('TIMED_OUT');
-      }
-      expect(errors()).toHaveLength(1);
-
-      await jest.advanceTimersByTimeAsync(
-        WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS,
-      );
-      ch.status('TIMED_OUT');
-
-      expect(errors()).toHaveLength(2);
-    });
-
-    it('starts the count over at every SUBSCRIBED', () => {
-      sub.start();
-      const ch = latest();
-      for (let i = 1; i < WORKER_SUBSCRIPTION_DOWN_AFTER; i += 1) {
+      // The shape a socket outage takes: phoenix errors a joined channel once
+      // and then waits for the socket (realtime-js-contract.spec.ts), so no
+      // count of failures would ever be reached.
+      it(`is reported at error level after ${WORKER_SUBSCRIPTION_DOWN_AFTER_MS} ms without SUBSCRIBED, from one CHANNEL_ERROR`, async () => {
+        sub.start();
+        const ch = latest();
+        ch.status('SUBSCRIBED');
         ch.status('CHANNEL_ERROR');
-      }
-      ch.status('SUBSCRIBED');
-      for (let i = 1; i < WORKER_SUBSCRIPTION_DOWN_AFTER; i += 1) {
-        ch.status('CHANNEL_ERROR');
-      }
 
-      expect(
-        captured().filter(([, context]) => levelOf(context) === 'error'),
-      ).toHaveLength(0);
+        await jest.advanceTimersByTimeAsync(
+          WORKER_SUBSCRIPTION_DOWN_AFTER_MS - 1,
+        );
+        expect(errors()).toHaveLength(0);
+        await jest.advanceTimersByTimeAsync(1);
+
+        expect(errors()).toEqual([OUTAGE]);
+        expect(logger.error).toHaveBeenCalledWith(
+          `test-worker: ${TOPIC} has not been subscribed for 60 s (last status CHANNEL_ERROR, 1 failed); test rows are not being sent`,
+        );
+      });
+
+      it('is reported when the subscription never subscribes after boot', async () => {
+        sub.start();
+
+        await jest.advanceTimersByTimeAsync(WORKER_SUBSCRIPTION_DOWN_AFTER_MS);
+
+        expect(errors()).toEqual([
+          [
+            OUTAGE[0],
+            expect.objectContaining({
+              tags: {
+                worker: 'test-worker',
+                realtime_status: 'NONE',
+                failures: '0',
+              },
+            }),
+          ],
+        ]);
+      });
+
+      it('is reported for a CLOSED reopen loop', async () => {
+        sub.start();
+        latest().status('SUBSCRIBED');
+        for (
+          let reopen = 0;
+          errors().length === 0 && reopen < 10;
+          reopen += 1
+        ) {
+          latest().status('CLOSED');
+          await settle();
+          await jest.advanceTimersByTimeAsync(reopenDelayMs(reopen));
+        }
+
+        expect(errors()).toEqual([
+          [
+            OUTAGE[0],
+            expect.objectContaining({
+              tags: expect.objectContaining({ realtime_status: 'CLOSED' }),
+            }),
+          ],
+        ]);
+      });
+
+      it('is not reported for a blip that rejoins inside the window', async () => {
+        sub.start();
+        const ch = latest();
+        ch.status('SUBSCRIBED');
+
+        ch.status('CHANNEL_ERROR');
+        await jest.advanceTimersByTimeAsync(
+          WORKER_SUBSCRIPTION_DOWN_AFTER_MS / 2,
+        );
+        ch.status('SUBSCRIBED');
+        await jest.advanceTimersByTimeAsync(
+          WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS,
+        );
+
+        expect(errors()).toHaveLength(0);
+      });
+
+      it('is reported again once per window while it lasts', async () => {
+        sub.start();
+        latest().status('TIMED_OUT');
+
+        await jest.advanceTimersByTimeAsync(WORKER_SUBSCRIPTION_DOWN_AFTER_MS);
+        expect(errors()).toHaveLength(1);
+        await jest.advanceTimersByTimeAsync(
+          WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS - 1,
+        );
+        expect(errors()).toHaveLength(1);
+        await jest.advanceTimersByTimeAsync(1);
+
+        expect(errors()).toHaveLength(2);
+      });
+
+      it('that starts soon after another recovered is reported on its own clock', async () => {
+        sub.start();
+        const ch = latest();
+        ch.status('SUBSCRIBED');
+        ch.status('CHANNEL_ERROR');
+        await jest.advanceTimersByTimeAsync(WORKER_SUBSCRIPTION_DOWN_AFTER_MS);
+        expect(errors()).toHaveLength(1);
+        ch.status('SUBSCRIBED');
+
+        await jest.advanceTimersByTimeAsync(2 * 60 * 1000);
+        ch.status('CHANNEL_ERROR');
+        await jest.advanceTimersByTimeAsync(WORKER_SUBSCRIPTION_DOWN_AFTER_MS);
+
+        expect(errors()).toHaveLength(2);
+      });
+
+      it('is not reported after the subscription stops', async () => {
+        sub.start();
+        latest().status('CHANNEL_ERROR');
+
+        await sub.stop();
+        await jest.advanceTimersByTimeAsync(
+          WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS,
+        );
+
+        expect(errors()).toHaveLength(0);
+      });
     });
 
     it('keeps working when Sentry itself throws', async () => {
@@ -478,6 +539,15 @@ describe('WorkerSubscription', () => {
       );
       expect(leftover.unsubscribe).toHaveBeenCalledTimes(1);
       expect(leftover.teardown).toHaveBeenCalledTimes(1);
+      expect(captured()).toEqual([
+        [
+          'test-worker realtime subscription OPEN_FAILED',
+          expect.objectContaining({
+            level: 'warning',
+            tags: expect.objectContaining({ realtime_status: 'OPEN_FAILED' }),
+          }),
+        ],
+      ]);
 
       await jest.advanceTimersByTimeAsync(reopenDelayMs(0));
 
@@ -495,6 +565,27 @@ describe('WorkerSubscription', () => {
 
       expect(realtime.channel).toHaveBeenCalledTimes(2);
       expect(channels()).toHaveLength(1);
+    });
+
+    it('counts toward an outage when it keeps failing', async () => {
+      realtime.channel.mockImplementation(() => {
+        throw new Error('client gone');
+      });
+
+      sub.start();
+      await jest.advanceTimersByTimeAsync(WORKER_SUBSCRIPTION_DOWN_AFTER_MS);
+
+      const errors = captured().filter(
+        ([, context]) => levelOf(context) === 'error',
+      );
+      expect(errors).toEqual([
+        [
+          expect.any(String),
+          expect.objectContaining({
+            tags: expect.objectContaining({ realtime_status: 'OPEN_FAILED' }),
+          }),
+        ],
+      ]);
     });
   });
 

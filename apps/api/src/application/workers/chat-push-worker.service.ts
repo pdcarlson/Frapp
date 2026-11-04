@@ -38,7 +38,7 @@ import { ChannelCacheService } from '../services/channel-cache.service';
 import type { CachedChannelRow } from '../services/channel-cache.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
-import { WorkerSubscription } from './worker-subscription';
+import { releaseChannel, WorkerSubscription } from './worker-subscription';
 
 interface ChatMessageRow {
   id: string;
@@ -740,32 +740,18 @@ export class ChatPushWorkerService
   }
 
   /**
-   * Forget a presence channel and free its topic.
-   *
-   * `unsubscribe()` and then an unconditional `teardown()`: `removeChannel()`
-   * only tears down when the leave is acknowledged `ok`, and a channel left
-   * registered hands itself back to the next `supabase.channel()` on its topic
-   * (`realtime-resilience` rule 1). That is chat-core's `releaseTopic`, which
-   * this process can't import: chat-core ships TypeScript source for the
-   * bundler-built clients, and the API's compiled output can't load it.
+   * Forget a presence channel and free its topic with `releaseChannel`
+   * (`realtime-resilience` rule 1), marking the topic as releasing until it
+   * lands.
    */
   private dropPresenceChannel(channelId: string, ch: RealtimeChannel): void {
     if (this.presenceChannels.get(channelId) === ch) {
       this.presenceChannels.delete(channelId);
     }
     this.releasingPresence.add(channelId);
-    void (async () => {
-      try {
-        await ch.unsubscribe();
-      } catch {
-        // Already gone, or the socket is down; the teardown is what counts.
-      }
-      try {
-        ch.teardown();
-      } catch {
-        // Already torn down.
-      }
-    })().finally(() => this.releasingPresence.delete(channelId));
+    void releaseChannel(ch).finally(() =>
+      this.releasingPresence.delete(channelId),
+    );
   }
 
   /**

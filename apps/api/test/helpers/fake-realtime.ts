@@ -14,6 +14,10 @@
  * - `removeChannel()` leaves, echoes `CLOSED` through the channel's own status
  *   callback before it resolves, and tears down only when the leave was
  *   acknowledged `ok`.
+ *
+ * What the worker's design rests on (which statuses realtime-js rejoins by
+ * itself, and which it never does) is pinned against the real library in
+ * `src/application/workers/realtime-js-contract.spec.ts`, not here.
  */
 
 type StatusCallback = (status: string, err?: Error) => void;

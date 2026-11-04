@@ -5,15 +5,17 @@ import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
 
 /**
- * Failed statuses in a row, with no `SUBSCRIBED` between them, after which the
- * subscription counts as down and Sentry hears about it at error level.
+ * How long a subscription may go without `SUBSCRIBED` before it counts as
+ * down and Sentry hears about it at error level.
  *
- * A routine Realtime blip is one `CHANNEL_ERROR` that rejoins about a second
- * later (prod logs, 2026-11-02 to 11-04, about 40 of them). Five failures in a
- * row is about 20 s of rejoins on realtime-js's own schedule, or about 15 s of
- * reopens on {@link reopenDelayMs}'s, so it is a real outage.
+ * Measured in time, not in failed statuses, because a long outage sends few of
+ * them. When the socket drops, phoenix errors each joined channel once and then
+ * waits for the socket to reopen, so an hour with Realtime unreachable is one
+ * `CHANNEL_ERROR` (`realtime-js-contract.spec.ts` pins this). A routine blip
+ * rejoins about a second after its `CHANNEL_ERROR` (prod logs, 2026-11-02 to
+ * 11-04, about 40 of them), far inside a minute.
  */
-export const WORKER_SUBSCRIPTION_DOWN_AFTER = 5;
+export const WORKER_SUBSCRIPTION_DOWN_AFTER_MS = 60_000;
 
 /** The first reopen after a server close waits this long. */
 export const WORKER_REOPEN_BASE_DELAY_MS = 1_000;
@@ -22,9 +24,9 @@ export const WORKER_REOPEN_BASE_DELAY_MS = 1_000;
 export const WORKER_REOPEN_MAX_DELAY_MS = 60_000;
 
 /**
- * Sentry reports for one subscription, at most one per status per window. A
- * dropped socket fails a channel once per rejoin, and one event says as much
- * as twenty.
+ * Warning reports for one subscription, at most one per status per window, and
+ * the outage report repeats on the same window while the outage lasts. Blips
+ * come in runs, and one event says as much as twenty.
  */
 export const WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS = 10 * 60 * 1000;
 
@@ -34,6 +36,35 @@ export function reopenDelayMs(reopens: number): number {
     WORKER_REOPEN_BASE_DELAY_MS * 2 ** Math.min(reopens, 16),
     WORKER_REOPEN_MAX_DELAY_MS,
   );
+}
+
+/**
+ * Free a channel's topic (`realtime-resilience` rule 1): `unsubscribe()`, then
+ * an unconditional `teardown()`.
+ *
+ * `removeChannel()` only tears down when the leave is acknowledged `ok`, and a
+ * channel left registered hands itself back to the next `supabase.channel()` on
+ * its topic. phoenix 0.4.5 counts every leave as acked at once
+ * (`realtime-js-contract.spec.ts`), but nothing here leans on that: a version
+ * that waits for the server would make the unconditional teardown the one that
+ * frees the topic.
+ *
+ * This is chat-core's `releaseTopic`, which the API can't import:
+ * chat-core ships TypeScript source for the bundler-built clients, and the
+ * API's compiled output can't load it. Every API release of a channel goes
+ * through this one.
+ */
+export async function releaseChannel(ch: RealtimeChannel): Promise<void> {
+  try {
+    await ch.unsubscribe();
+  } catch {
+    // Already gone, or the socket is down; the teardown is what counts.
+  }
+  try {
+    ch.teardown();
+  } catch {
+    // Already torn down.
+  }
 }
 
 export interface WorkerSubscriptionConfig {
@@ -55,47 +86,54 @@ export interface WorkerSubscriptionConfig {
  * A long-lived worker's Realtime subscription that survives the server
  * ending it (#3365).
  *
- * realtime-js retries some failures itself and not others, so this only adds
- * what it lacks:
+ * realtime-js retries some failures itself and not others
+ * (`realtime-js-contract.spec.ts` pins which), so this only adds what it lacks:
  *
- * - `CHANNEL_ERROR` and `TIMED_OUT` leave the channel `errored`, and
- *   phoenix's rejoin timer joins it again on its own (1 s, 2 s, 5 s, then every
- *   10 s), or as soon as the socket reopens. A second join from here would race
- *   that one, so the channel is kept and the failure is only logged and
- *   reported.
+ * - `CHANNEL_ERROR` and `TIMED_OUT` leave the channel `errored`, and phoenix's
+ *   rejoin timer joins it again by itself (1 s, 2 s, 5 s, then every 10 s), or
+ *   as soon as the socket reopens. A second join from here would race that one,
+ *   so the channel is kept and the failure is only logged and reported.
  * - `CLOSED` on a channel this worker still holds is the server ending it.
  *   phoenix resets the rejoin timer on close and realtime-js drops the channel
  *   from its client, so nothing ever joins it again: before this, chat pushes
  *   (or the audit mirror) stopped there until the next deploy, with one warn
- *   line. So the topic is freed and reopened on a fresh channel, backing off
- *   from {@link WORKER_REOPEN_BASE_DELAY_MS} to {@link WORKER_REOPEN_MAX_DELAY_MS},
- *   forever. A worker that stops trying is a worker that is down until
- *   someone restarts it.
+ *   line. So the topic is freed with {@link releaseChannel} and reopened on a
+ *   fresh channel, backing off from {@link WORKER_REOPEN_BASE_DELAY_MS} to
+ *   {@link WORKER_REOPEN_MAX_DELAY_MS}, forever. A worker that stops trying is
+ *   a worker that is down until someone restarts it.
  *
  * Every failure is logged, and reported to Sentry as a warning at most once per
- * {@link WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS} per status. After
- * {@link WORKER_SUBSCRIPTION_DOWN_AFTER} in a row with no `SUBSCRIBED` it is an
- * outage, reported at error level instead, on the same window. That error
- * event is the signal that the worker is down: `/health/ready` does not
- * include it (`docs/ops/deployment/render.md` § 5.5).
+ * {@link WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS} per status. A subscription
+ * that has gone {@link WORKER_SUBSCRIPTION_DOWN_AFTER_MS} without `SUBSCRIBED`,
+ * from boot or from its first failure, is an outage: that is logged and
+ * reported at error level, and again every
+ * {@link WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS} while it lasts. The error
+ * event is the signal that the worker is down, because `/health/ready` leaves
+ * the subscriptions out (`spec/behavior/observability.md` § Health Check).
  *
  * Inserts made while the subscription is down are never delivered later:
  * postgres_changes does not replay. Each failure's log line says so.
  *
  * Only this instance opens its topic, so the channel it holds is the only one
- * that topic has. Freeing it before a reopen is `realtime-resilience` rule 1:
- * `unsubscribe()` and then an unconditional `teardown()`, because a channel
- * still registered is handed back by the next `supabase.channel()` on its
- * topic, and realtime-js's `_remove` drops every channel with the topic, so a
- * late close of the old one would unregister the new one.
+ * that topic has. The reopen waits for the release, because a channel still
+ * registered is handed back by the next `supabase.channel()` on its topic, and
+ * realtime-js's `_remove` drops every channel with the topic, so a late close of
+ * the old one would unregister the new one.
  */
 export class WorkerSubscription {
   /** The channel this worker holds. Null between a close and its reopen. */
   private channel: RealtimeChannel | null = null;
   private reopenTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Pending outage report; armed whenever the subscription isn't subscribed. */
+  private outageTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
+  private subscribed = false;
+  /** When the current spell without `SUBSCRIBED` began: boot, or a failure. */
+  private downSince = 0;
   /** Failed statuses and opens since the last `SUBSCRIBED`. */
   private failures = 0;
+  /** The most recent failure since the last `SUBSCRIBED`, for the outage report. */
+  private lastFailure = 'NONE';
   /** Reopens in a row that ended without a `SUBSCRIBED`, for the backoff. */
   private reopens = 0;
   private readonly lastReportAt = new Map<string, number>();
@@ -108,20 +146,22 @@ export class WorkerSubscription {
   /** Opens the subscription. A second call while one is held does nothing. */
   start(): void {
     if (this.stopped || this.channel || this.reopenTimer) return;
+    this.markDown();
     this.open();
   }
 
   /**
-   * Shutdown. Cancels a pending reopen and removes the channel. The `CLOSED`
-   * its own leave echoes back is ignored, because the channel is let go of
-   * first.
+   * Shutdown. Cancels a pending reopen and outage report, and removes the
+   * channel. The `CLOSED` its own leave echoes back is ignored, because the
+   * channel is let go of first.
    */
   async stop(): Promise<void> {
     this.stopped = true;
-    if (this.reopenTimer) {
-      clearTimeout(this.reopenTimer);
-      this.reopenTimer = null;
+    for (const timer of [this.reopenTimer, this.outageTimer]) {
+      if (timer) clearTimeout(timer);
     }
+    this.reopenTimer = null;
+    this.outageTimer = null;
     const ch = this.channel;
     this.channel = null;
     if (!ch) return;
@@ -179,8 +219,12 @@ export class WorkerSubscription {
           ? `${worker} subscribed to ${topic} again, after ${this.failures} failed in a row`
           : `${worker} subscribed to ${topic}`,
       );
+      this.subscribed = true;
       this.failures = 0;
+      this.lastFailure = 'NONE';
       this.reopens = 0;
+      if (this.outageTimer) clearTimeout(this.outageTimer);
+      this.outageTimer = null;
       return;
     }
 
@@ -191,9 +235,22 @@ export class WorkerSubscription {
     }
   }
 
+  /** Start the clock on a spell without `SUBSCRIBED`, if one isn't running. */
+  private markDown(): void {
+    this.subscribed = false;
+    if (this.stopped || this.outageTimer) return;
+    this.downSince = Date.now();
+    this.outageTimer = backgroundTimer(
+      () => this.reportOutage(),
+      WORKER_SUBSCRIPTION_DOWN_AFTER_MS,
+    );
+  }
+
   private recordFailure(status: string, err?: Error): void {
     const { topic, worker, impact, logger } = this.config;
+    this.markDown();
     this.failures += 1;
+    this.lastFailure = status;
     const detail = err instanceof Error ? ` (${err.message})` : '';
     const next =
       status === 'CLOSED' || status === 'OPEN_FAILED'
@@ -203,50 +260,53 @@ export class WorkerSubscription {
       `${worker}: ${topic} ${status}${detail}; ${impact} stop until ${next}, and inserts meanwhile are not replayed (${this.failures} failed in a row)`,
     );
 
-    const down = this.failures >= WORKER_SUBSCRIPTION_DOWN_AFTER;
-    const key = down ? 'DOWN' : status;
     const now = Date.now();
     if (
-      now - (this.lastReportAt.get(key) ?? Number.NEGATIVE_INFINITY) <
+      now - (this.lastReportAt.get(status) ?? Number.NEGATIVE_INFINITY) <
       WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS
     ) {
       return;
     }
-    this.lastReportAt.set(key, now);
+    this.lastReportAt.set(status, now);
     const failures = String(this.failures);
-    reportSwallowed(logger, `the ${worker} subscription`, () =>
-      down
-        ? {
-            message: `${worker} realtime subscription is down; ${impact} are not being sent`,
-            level: 'error',
-            tags: { worker, realtime_status: status, failures },
-            fingerprint: ['worker-subscription-down', worker],
-          }
-        : {
-            message: `${worker} realtime subscription ${status}`,
-            level: 'warning',
-            tags: { worker, realtime_status: status, failures },
-            fingerprint: ['worker-subscription-status', worker, status],
-          },
-    );
+    reportSwallowed(logger, `the ${worker} subscription`, () => ({
+      message: `${worker} realtime subscription ${status}`,
+      level: 'warning',
+      tags: { worker, realtime_status: status, failures },
+      fingerprint: ['worker-subscription-status', worker, status],
+    }));
   }
 
   /**
-   * Free the topic (`realtime-resilience` rule 1), then schedule the reopen.
-   * The reopen waits for the release, so a fresh channel never meets the one
-   * it replaces.
+   * The subscription has gone {@link WORKER_SUBSCRIPTION_DOWN_AFTER_MS} without
+   * `SUBSCRIBED`. Reported now, and again every
+   * {@link WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS} until it subscribes.
    */
+  private reportOutage(): void {
+    this.outageTimer = null;
+    if (this.stopped || this.subscribed) return;
+    const { topic, worker, impact, logger } = this.config;
+    const downForS = Math.round((Date.now() - this.downSince) / 1000);
+    const lastFailure = this.lastFailure;
+    const failures = String(this.failures);
+    logger.error(
+      `${worker}: ${topic} has not been subscribed for ${downForS} s (last status ${lastFailure}, ${failures} failed); ${impact} are not being sent`,
+    );
+    reportSwallowed(logger, `the ${worker} subscription outage`, () => ({
+      message: `${worker} realtime subscription is down; ${impact} are not being sent`,
+      level: 'error',
+      tags: { worker, realtime_status: lastFailure, failures },
+      fingerprint: ['worker-subscription-down', worker],
+    }));
+    this.outageTimer = backgroundTimer(
+      () => this.reportOutage(),
+      WORKER_SUBSCRIPTION_REPORT_INTERVAL_MS,
+    );
+  }
+
+  /** Free the topic, then schedule the reopen, so the reopen waits for it. */
   private async releaseThenReopen(ch: RealtimeChannel): Promise<void> {
-    try {
-      await ch.unsubscribe();
-    } catch {
-      // Already gone, or the socket is down; the teardown is what counts.
-    }
-    try {
-      ch.teardown();
-    } catch {
-      // Already torn down.
-    }
+    await releaseChannel(ch);
     this.scheduleReopen();
   }
 
@@ -257,9 +317,23 @@ export class WorkerSubscription {
     this.config.logger.warn(
       `${this.config.worker}: reopening ${this.config.topic} in ${delay} ms`,
     );
-    this.reopenTimer = setTimeout(() => {
+    this.reopenTimer = backgroundTimer(() => {
       this.reopenTimer = null;
       this.open();
     }, delay);
   }
+}
+
+/**
+ * A timer that never keeps the process alive by itself. The HTTP server does
+ * that; a pending reopen or outage check must not hold a draining process, or
+ * a test run, open after everything else has stopped.
+ */
+function backgroundTimer(
+  fn: () => void,
+  ms: number,
+): ReturnType<typeof setTimeout> {
+  const timer = setTimeout(fn, ms);
+  timer.unref?.();
+  return timer;
 }

@@ -75,16 +75,39 @@ type WorkerReadsFromChatMessages = Pick<
   'id' | 'channel_id' | 'sender_id' | 'content' | 'kind' | 'mentions'
 >;
 
+type InsertHandler = (
+  payload: RealtimePostgresInsertPayload<WorkerReadsFromChatMessages>,
+) => void;
+
+/** The part of a realtime-js channel the worker touches. */
+interface ChannelStub {
+  topic: string;
+  on: (
+    event: string,
+    filter: { event?: string; schema?: string; table?: string },
+    cb: InsertHandler,
+  ) => ChannelStub;
+  subscribe: jest.Mock;
+  unsubscribe: jest.Mock;
+  teardown: jest.Mock;
+  presenceState: () => Record<string, unknown>;
+}
+
 describe('ChatPushWorkerService — recipient filter over the Realtime payload path', () => {
   let service: ChatPushWorkerService;
   let notifyUser: jest.Mock;
   let findByChapter: jest.Mock;
   let findForUsers: jest.Mock;
   let getEffectivePermissions: jest.Mock;
-  let subscribeSpy: jest.Mock;
   let removeChannel: jest.Mock;
-  /** `supabase.channel`: every topic the worker opened, presence included. */
-  let channelSpy: jest.Mock;
+  /**
+   * `supabase.channel`: every topic the worker opened, presence included. Each
+   * call returns a new stand-in, as realtime-js does once a topic is free, so a
+   * reopen can be told apart from the channel it replaced.
+   */
+  let channelSpy: jest.Mock<ChannelStub, [string]>;
+  /** The stand-in whose `postgres_changes` listener `emitRow` delivers to. */
+  let listening: () => ChannelStub | null;
   /** Nobody has a display name here: this file is not about titles. */
   const findDisplayIdentitiesByIds = jest.fn().mockResolvedValue([]);
   /** The `postgres_changes` callback the worker registers at bootstrap. */
@@ -184,54 +207,55 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     findForUsers = jest.fn().mockResolvedValue(new Map());
     getEffectivePermissions = jest.fn().mockResolvedValue([]);
 
-    subscribeSpy = jest.fn(() => channelStub);
     removeChannel = jest.fn().mockResolvedValue('ok');
-    channelSpy = jest.fn(() => channelStub);
 
-    let handler:
-      | ((
-          payload: RealtimePostgresInsertPayload<WorkerReadsFromChatMessages>,
-        ) => void)
-      | null = null;
+    let handler: InsertHandler | null = null;
+    /** Which stand-in registered `handler`, so only its teardown drops it. */
+    let handlerOwner: ChannelStub | null = null;
+    listening = () => (handler ? handlerOwner : null);
 
     // A Supabase stand-in that records the subscription the worker builds,
     // rather than one that pretends the worker built it correctly. If the
     // worker stops registering an INSERT listener on `chat_messages`, `emitRow`
     // throws and every case below fails — which is the point.
-    const channelStub = {
-      on: (
-        event: string,
-        filter: { event?: string; schema?: string; table?: string },
-        cb: (
-          payload: RealtimePostgresInsertPayload<WorkerReadsFromChatMessages>,
-        ) => void,
-      ) => {
-        if (
-          event === 'postgres_changes' &&
-          filter.event === 'INSERT' &&
-          filter.schema === 'public' &&
-          filter.table === 'chat_messages'
-        ) {
-          handler = cb;
-        }
-        return channelStub;
-      },
-      subscribe: subscribeSpy,
-      // What freeing a topic calls (#3365). Like phoenix's, a teardown drops
-      // the channel's listeners, so a row emitted after one reaches the
-      // worker only if a reopen registered its listener again.
-      unsubscribe: jest.fn().mockResolvedValue('ok'),
-      teardown: jest.fn(() => {
-        handler = null;
-      }),
-      // `handleMessage` opens a presence channel through the same `channel()`
-      // factory, and `readPresence` then calls `presenceState()` on it. Without
-      // this the call throws and is swallowed by `readPresence`'s own catch —
-      // the tests would still pass, but via an error path rather than the empty
-      // presence map they mean to assume. No case here seeds presence, so an
-      // empty map is the honest fixture: nobody is currently reading.
-      presenceState: () => ({}),
+    const makeStub = (topic: string): ChannelStub => {
+      const stub: ChannelStub = {
+        topic,
+        on: (event, filter, cb) => {
+          if (
+            event === 'postgres_changes' &&
+            filter.event === 'INSERT' &&
+            filter.schema === 'public' &&
+            filter.table === 'chat_messages'
+          ) {
+            handler = cb;
+            handlerOwner = stub;
+          }
+          return stub;
+        },
+        subscribe: jest.fn(() => stub),
+        // What freeing a topic calls (#3365). Like phoenix's, a teardown drops
+        // the channel's listeners, so a row emitted after one reaches the
+        // worker only if a reopen registered its listener again on the new
+        // channel. A presence channel's teardown leaves it alone.
+        unsubscribe: jest.fn().mockResolvedValue('ok'),
+        teardown: jest.fn(() => {
+          if (handlerOwner !== stub) return;
+          handler = null;
+          handlerOwner = null;
+        }),
+        // `handleMessage` opens a presence channel through the same
+        // `channel()` factory, and `readPresence` then calls `presenceState()`
+        // on it. Without this the call throws and is swallowed by
+        // `readPresence`'s own catch — the tests would still pass, but via an
+        // error path rather than the empty presence map they mean to assume.
+        // No case here seeds presence, so an empty map is the honest fixture:
+        // nobody is currently reading.
+        presenceState: () => ({}),
+      };
+      return stub;
     };
+    channelSpy = jest.fn(makeStub);
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -317,7 +341,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
       // joined: delete the `.subscribe(...)` call from `onApplicationBootstrap`
       // and every payload case here still passes, while production receives
       // exactly zero rows.
-      expect(subscribeSpy).toHaveBeenCalled();
+      expect(listening()?.subscribe).toHaveBeenCalled();
     });
 
     it('removes the channel on shutdown', async () => {
@@ -332,14 +356,16 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     // this the worker pushed nothing more until the next deploy.
     describe('when the server ends it', () => {
       const MESSAGES_TOPIC = 'chat-push-worker:messages';
+      /** Every channel the worker opened on the messages topic, oldest first. */
       const opensOfMessages = () =>
-        channelSpy.mock.calls.filter(([topic]) => topic === MESSAGES_TOPIC);
-      /** The one stand-in every `channel()` call returns. */
-      const stub = () =>
-        channelSpy.mock.results[0].value as { teardown: jest.Mock };
-      /** The status callback the worker gave the messages channel's join. */
+        channelSpy.mock.results
+          .map((result) => result.value as ChannelStub)
+          .filter((ch) => ch.topic === MESSAGES_TOPIC);
+      /** The status callback the worker gave the first messages channel's join. */
       const messagesStatus = () =>
-        subscribeSpy.mock.calls[0][0] as (status: string) => void;
+        opensOfMessages()[0].subscribe.mock.calls[0][0] as (
+          status: string,
+        ) => void;
       const announce = (id: string) => ({
         id,
         channel_id: ANNOUNCE_CHANNEL.id,
@@ -369,8 +395,14 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
         // `emitRow` yields on `setImmediate`, which fake timers would hold.
         jest.useRealTimers();
 
+        const [closed, reopened] = opensOfMessages();
         expect(opensOfMessages()).toHaveLength(2);
-        expect(stub().teardown).toHaveBeenCalledTimes(1);
+        expect(reopened).not.toBe(closed);
+        expect(closed.teardown).toHaveBeenCalledTimes(1);
+        expect(reopened.subscribe).toHaveBeenCalledTimes(1);
+        expect(reopened.teardown).not.toHaveBeenCalled();
+        // The row arrives on the new channel's listener, not the old one's.
+        expect(listening()).toBe(reopened);
         await emitRow(announce('m-after-close'));
         expect(notifiedUsers()).toEqual(['other']);
       });
@@ -382,7 +414,8 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
         jest.useRealTimers();
 
         expect(opensOfMessages()).toHaveLength(1);
-        expect(stub().teardown).not.toHaveBeenCalled();
+        expect(opensOfMessages()[0].teardown).not.toHaveBeenCalled();
+        expect(listening()).toBe(opensOfMessages()[0]);
         await emitRow(announce('m-after-timeout'));
         expect(notifiedUsers()).toEqual(['other']);
       });
