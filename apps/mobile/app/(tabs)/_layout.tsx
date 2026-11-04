@@ -1,4 +1,5 @@
 import { Redirect, Tabs } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ChatGlyph,
   EventsGlyph,
@@ -11,6 +12,13 @@ import { resolveAuthGate } from "@/lib/auth-gate";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useFrappTheme } from "@/lib/theme";
+
+/**
+ * The bar as drawn, above the bottom inset: a 62pt row with 6pt of padding
+ * above and below its content (#3344).
+ */
+const TAB_BAR_HEIGHT = 62;
+const TAB_BAR_PADDING = 6;
 
 /**
  * The locked 4-tab IA (spec/ui/mobile/navigation.md §"Tab bar — 4 tabs, locked").
@@ -40,6 +48,11 @@ export default function TabLayout() {
   // Inside the tab group the member is always in a chapter, so branding is
   // safe to read here — the auth stack sits outside and stays Frapp-branded.
   const { accent } = useChapterBranding();
+  // Android draws the app edge to edge, so the swipe bar (and the iPhone home
+  // indicator) sits over the bottom of the window. A fixed `height` here
+  // replaces the inset React Navigation would otherwise add, so the bar has to
+  // add it back itself or its labels sit under the swipe bar (#3344).
+  const { bottom: bottomInset } = useSafeAreaInsets();
 
   const destination = resolveAuthGate({ status, chapterId, isChapterResolving });
 
@@ -64,9 +77,9 @@ export default function TabLayout() {
         tabBarActiveTintColor: accent,
         tabBarInactiveTintColor: tokens.color.text.muted,
         tabBarStyle: {
-          height: 62,
-          paddingTop: 6,
-          paddingBottom: 6,
+          height: TAB_BAR_HEIGHT + bottomInset,
+          paddingTop: TAB_BAR_PADDING,
+          paddingBottom: TAB_BAR_PADDING + bottomInset,
           backgroundColor: tokens.color.surface.card,
           borderTopColor: tokens.color.border.hairline,
         },
