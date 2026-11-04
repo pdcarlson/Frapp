@@ -181,7 +181,7 @@ export function ErrorState({
  * disabled. A spinner there would hang forever and an error would blame
  * the network for a missing chapter context.
  *
- * Points at the Chapter row on More, which is the only entry to the picker
+ * Points at the Switch chapter row on More, which is the only entry to the picker
  * (`spec/ui/mobile/navigation.md`).
  */
 export function NoChapterState({ noun }: { noun: string }) {
@@ -189,7 +189,7 @@ export function NoChapterState({ noun }: { noun: string }) {
     <EmptyState
       glyph="⌂"
       title="No chapter selected"
-      body={`Choose a chapter from More → Chapter to see ${noun}.`}
+      body={`Choose a chapter from More → Switch chapter to see ${noun}.`}
     />
   );
 }

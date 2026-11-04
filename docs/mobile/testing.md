@@ -111,7 +111,7 @@ device run, check:
       must not require the claim (the hook is on in both hosted projects; the
       playbook still disables it as incident mitigation). Force-quit and reopen:
       straight to the tabs, no picker flash.
-- [ ] **Chapter picker** (More → Chapter): opens for any member, lists their
+- [ ] **Chapter picker** (More → Switch chapter): opens for any member, lists their
       chapters, and Sign out works from it even mid-selection.
 - [ ] **Multi-chapter switch** (needs an account in 2+ chapters): pick a chapter
       and land back in the tabs with that chapter's data. If a test token has no
