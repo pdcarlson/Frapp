@@ -497,6 +497,32 @@ describe("UploadDocumentSheet (#3399)", () => {
     open(tree);
     expect(screenText(tree)).not.toContain("subscription is renewed");
     expect(uploadButton(tree).props.disabled).toBe(false);
+    // The bytes it sent are still held, so the next try is the confirm alone.
+    await pressUpload(tree);
+    expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
+      PHOTO,
+      expect.any(Object),
+      expect.any(Object),
+      SENT,
+    );
+  });
+
+  it("shows an officer-only refusal on a sheet reopened mid-upload", async () => {
+    const tree = render();
+    await choose(tree);
+    const settle = heldUpload();
+    await pressUpload(tree);
+    closed(tree);
+    open(tree);
+
+    await settle({
+      status: "refused",
+      reason: "Uploads are paused until the subscription is renewed.",
+      final: true,
+      sent: SENT,
+    });
+    expect(screenText(tree)).toContain("subscription is renewed");
+    expect(uploadButton(tree).props.disabled).toBe(true);
   });
 
   it("focuses the title field in the chapter accent", () => {

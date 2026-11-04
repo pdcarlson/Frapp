@@ -41,6 +41,11 @@ describe('safeObjectFilename', () => {
     expect(safeObjectFilename('..\\..\\x.pdf')).toBe('.._.._x.pdf');
   });
 
+  it('drops a trailing space, which the request URL would strip', () => {
+    expect(safeObjectFilename('bylaws.pdf  ')).toBe('bylaws.pdf');
+    expect(safeObjectFilename(' notes .pdf')).toBe(' notes .pdf');
+  });
+
   it('squashes percent-encoded separators, so they never reach storage as `/`', () => {
     expect(safeObjectFilename('..%2f..%2fx.pdf')).toBe('.._2f.._2fx.pdf');
   });
@@ -74,6 +79,7 @@ describe('isObjectKeySegment', () => {
       'q?.pdf',
       'Q1 50% growth.pdf',
       'Résumé.pdf',
+      'bylaws.pdf ',
     ]) {
       expect(isObjectKeySegment(safeObjectFilename(name))).toBe(true);
     }

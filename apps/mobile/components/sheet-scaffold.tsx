@@ -154,6 +154,8 @@ export function SheetPrimaryButton({
  *   tells a write that settles whether the member is still in that visit. A
  *   sheet closed and reopened since is the member's new visit, and the write
  *   doesn't close it under them.
+ * - `isOpen()` tells a write that settles whether any visit is on screen, for
+ *   a message that matters only to a member who is looking.
  */
 export function useSheetVisit(ref: ForwardedRef<BottomSheetModal>) {
   const presented = useRef(false);
@@ -174,13 +176,14 @@ export function useSheetVisit(ref: ForwardedRef<BottomSheetModal>) {
     ref.current.dismiss();
   }, [ref]);
 
+  const isOpen = useCallback(() => presented.current, []);
   const visit = useCallback(() => closes.current, []);
   const isSameVisit = useCallback(
     (token: number) => closes.current === token,
     [],
   );
 
-  return { onAnimate, markClosed, dismiss, visit, isSameVisit };
+  return { onAnimate, markClosed, dismiss, isOpen, visit, isSameVisit };
 }
 
 /**

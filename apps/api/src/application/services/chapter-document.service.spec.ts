@@ -111,6 +111,30 @@ describe('ChapterDocumentService', () => {
       );
     });
 
+    it('mints a key its own confirm accepts for a name ending in a space', async () => {
+      // The extension check trims, so `bylaws.pdf ` mints; a key ending in a
+      // space would then be refused at confirm, orphaning the uploaded bytes.
+      const { storagePath } = await service.requestUploadUrl({
+        chapterId: 'ch-1',
+        filename: 'bylaws.pdf ',
+        contentType: 'application/pdf',
+      });
+      expect(storagePath).toMatch(/\/bylaws\.pdf$/);
+      mockDocumentRepo.create.mockResolvedValue({
+        ...baseDocument,
+        storage_path: storagePath,
+      });
+
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          title: 'Bylaws',
+          storage_path: storagePath,
+          uploaded_by: 'user-1',
+        }),
+      ).resolves.toMatchObject({ storage_path: storagePath });
+    });
+
     it('strips directory components from the filename before building the key', async () => {
       const result = await service.requestUploadUrl({
         chapterId: 'ch-1',

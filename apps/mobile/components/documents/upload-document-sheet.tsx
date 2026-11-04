@@ -139,7 +139,7 @@ export const UploadDocumentSheet = forwardRef<
     setStored(null);
   }, []);
 
-  const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
+  const { onAnimate, markClosed, dismiss, isOpen, visit, isSameVisit } =
     useSheetVisit(ref);
   // Set the moment Upload sends, before `uploading` reaches a render, so two
   // taps in one batch send one upload.
@@ -214,11 +214,11 @@ export const UploadDocumentSheet = forwardRef<
       return;
     }
     if (result.sent) setStored(result.sent);
-    // An officer-only refusal is for the visit it was sent from. One that
-    // lands after the sheet closed is dropped, as a close drops one already
-    // shown: the officer may have lifted it by the next visit.
+    // An officer-only refusal that lands while the sheet is closed is
+    // dropped, as a close drops one already shown: the officer may have
+    // lifted it by the next visit. A sheet reopened mid-upload still shows it.
     if (result.final) {
-      if (isSameVisit(sentFrom)) setRefusal(result.reason);
+      if (isOpen()) setRefusal(result.reason);
     } else setFailure(result.reason);
   };
 
