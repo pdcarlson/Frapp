@@ -116,3 +116,53 @@ export function profilePatch(
 export function hasChanges(patch: ProfilePatch): boolean {
   return Object.keys(patch).length > 0;
 }
+
+/**
+ * The fields a member has typed into, each with the profile value it was
+ * typed over (`base`). The sheet shows these over the live profile, so a
+ * refetch mid-edit (a return to the app refetches `/v1/users/me`) moves every
+ * field the member left alone.
+ */
+export type ProfileEdits = Partial<
+  Record<ProfileDraftField, { value: string; base: string }>
+>;
+
+/**
+ * `edits` with `field` typed to `value` over `original`. A field typed back to
+ * the value it was typed over leaves `edits`, so it follows the profile again.
+ */
+export function applyEdit(
+  edits: ProfileEdits | null,
+  original: ProfileDraft,
+  field: ProfileDraftField,
+  value: string,
+): ProfileEdits {
+  const next: ProfileEdits = { ...edits };
+  const base = next[field]?.base ?? original[field];
+  if (value === base) delete next[field];
+  else next[field] = { value, base };
+  return next;
+}
+
+/**
+ * What the fields show: the profile, with each typed field over it.
+ *
+ * A typed field that differs from its `base` only in surrounding spaces is no
+ * change (`profilePatch` trims), so once the profile moves under it, it shows
+ * the profile instead. Without that, a stray trailing space would pin the old
+ * value and a later save would write it back over the newer one.
+ */
+export function shownDraft(
+  original: ProfileDraft,
+  edits: ProfileEdits | null,
+): ProfileDraft {
+  const shown = { ...original };
+  for (const [field, edit] of Object.entries(edits ?? {}) as [
+    ProfileDraftField,
+    { value: string; base: string },
+  ][]) {
+    const changed = edit.value.trim() !== edit.base.trim();
+    if (changed || original[field] === edit.base) shown[field] = edit.value;
+  }
+  return shown;
+}

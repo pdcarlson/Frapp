@@ -203,8 +203,17 @@ describe("profile mutations (#732, #3387)", () => {
   // #3387. A name edit shows in the same reads the photo does: the
   // directory, and through the roster every chat author label; a city or
   // company edit in the directory and the alumni filters.
-  it("a profile edit writes the saved fields and refreshes every read without waiting", async () => {
+  it("a profile edit caches the saved row and refreshes every read without waiting", async () => {
     const harness = photoMutationHarness();
+    const saved = {
+      id: "u-1",
+      display_name: "Alex Rivera",
+      current_city: "Troy, NY",
+    };
+    harness.mockClient.PATCH.mockResolvedValue({
+      data: saved,
+      error: undefined,
+    });
     queryClient.setQueryData(["user", "me"], {
       id: "u-1",
       display_name: "Old Name",
@@ -221,11 +230,7 @@ describe("profile mutations (#732, #3387)", () => {
     expect(harness.mockClient.PATCH).toHaveBeenCalledWith("/v1/users/me", {
       body: { display_name: "Alex Rivera" },
     });
-    expect(queryClient.getQueryData(["user", "me"])).toEqual({
-      id: "u-1",
-      display_name: "Alex Rivera",
-      current_city: "Troy, NY",
-    });
+    expect(queryClient.getQueryData(["user", "me"])).toEqual(saved);
     for (const filters of EXPECTED_FILTERS) {
       expect(harness.invalidated()).toContainEqual(filters);
     }

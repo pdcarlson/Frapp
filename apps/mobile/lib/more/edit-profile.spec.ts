@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyEdit,
+  shownDraft,
   draftFromProfile,
   GRADUATION_YEAR_MESSAGE,
   hasChanges,
@@ -104,5 +106,49 @@ describe("profilePatch (#3387)", () => {
       ok: true,
       patch: { bio: "", current_city: "" },
     });
+  });
+});
+
+describe("applyEdit and shownDraft (#3387)", () => {
+  const ORIGINAL = {
+    displayName: "Alex Rivera",
+    bio: "",
+    graduationYear: "2027",
+    city: "Troy, NY",
+    company: "",
+  };
+  const MOVED = { ...ORIGINAL, city: "Albany, NY", company: "Set elsewhere" };
+
+  it("shows a typed field over the profile, and the rest as the profile is now", () => {
+    const edits = applyEdit(null, ORIGINAL, "bio", "Pre-med.");
+
+    expect(shownDraft(MOVED, edits)).toEqual({ ...MOVED, bio: "Pre-med." });
+  });
+
+  it("drops a field typed back to the value it was typed over", () => {
+    let edits = applyEdit(null, ORIGINAL, "city", "Troy, NYx");
+    edits = applyEdit(edits, ORIGINAL, "city", "Troy, NY");
+
+    expect(edits).toEqual({});
+  });
+
+  it("keeps the first base through a refetch, so typing back still drops it", () => {
+    let edits = applyEdit(null, ORIGINAL, "city", "Boston");
+    edits = applyEdit(edits, MOVED, "city", "Troy, NY");
+
+    expect(edits).toEqual({});
+  });
+
+  it("keeps a real change over a moved profile", () => {
+    const edits = applyEdit(null, ORIGINAL, "city", "Boston");
+
+    expect(shownDraft(MOVED, edits).city).toBe("Boston");
+  });
+
+  it("keeps spaces as typed until the profile moves, then follows it", () => {
+    const edits = applyEdit(null, ORIGINAL, "city", "Troy, NY ");
+
+    expect(shownDraft(ORIGINAL, edits).city).toBe("Troy, NY ");
+    expect(shownDraft(MOVED, edits).city).toBe("Albany, NY");
   });
 });

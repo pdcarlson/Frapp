@@ -63,9 +63,9 @@ function render(profile: ViewerProfile | null = PROFILE): ReactTestRenderer {
     });
   });
   mounted.push(tree);
-  // What gorhom reports once `present()` has brought the sheet up.
+  // What gorhom reports as `present()` starts bringing the sheet up.
   act(() => {
-    modal(tree).props.onChange(0);
+    modal(tree).props.onAnimate(-1, 0);
   });
   return tree;
 }
@@ -363,5 +363,36 @@ describe("EditProfileSheet (#3387)", () => {
     refetch(tree, { ...PROFILE, currentCity: "Albany, NY" });
     refetch(tree, { ...PROFILE, currentCity: "Changed on the web" });
     expect(input(tree, "City").props.value).toBe("Changed on the web");
+  });
+
+  it("doesn't dismiss a sheet that animated closed", () => {
+    const save = heldSave();
+    const tree = render();
+
+    type(tree, "City", "Albany, NY");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    // gorhom starts the close (a swipe or the scrim) before `onDismiss`.
+    act(() => {
+      modal(tree).props.onAnimate(0, -1);
+    });
+    act(() => save.succeed());
+
+    expect(dismiss).not.toHaveBeenCalled();
+  });
+
+  it("follows the profile in a field that differs from it only by spaces", () => {
+    const tree = render();
+
+    type(tree, "City", "Troy, NY ");
+    refetch(tree, { ...PROFILE, currentCity: "Set on the web" });
+    type(tree, "Bio", "Pre-med.");
+
+    expect(input(tree, "City").props.value).toBe("Set on the web");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    expect(mutate.mock.calls[0]![0]).toEqual({ bio: "Pre-med." });
   });
 });

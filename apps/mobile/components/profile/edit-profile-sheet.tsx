@@ -16,11 +16,13 @@ import {
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
+  applyEdit,
   draftFromProfile,
   hasChanges,
   profilePatch,
-  type ProfileDraft,
+  shownDraft,
   type ProfileDraftField,
+  type ProfileEdits,
 } from "@/lib/more/edit-profile";
 import type { ViewerProfile } from "@/lib/more/profile";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -42,9 +44,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the member left alone instead of freezing them. Those fields equal the
  * profile, so `profilePatch` leaves them out of the save, and a value another
  * device set is written back over only in a field the member changed. A field
- * typed back to its old value leaves `edits` and follows the profile again.
- * That is the web form's rule too (`apps/web/components/profile/profile-panel.tsx`,
- * `seededFrom`): it keeps a field only while it differs from the profile.
+ * typed back to its old value, or to it plus stray spaces, follows the profile
+ * again (`lib/more/edit-profile.ts` `applyEdit`, `shownDraft`). The web form
+ * keeps the same rule (`apps/web/components/profile/profile-panel.tsx`,
+ * `seededFrom`): a field is kept only while it differs from the profile.
  *
  * Dismissing, saving or cancelling drops the edits, except that a sheet closed
  * mid-save keeps them until the save settles. `useUpdateUser` writes the saved
@@ -75,10 +78,10 @@ export const EditProfileSheet = forwardRef<
   const updateUser = useUpdateUser();
 
   const original = useMemo(() => draftFromProfile(profile), [profile]);
-  const [edits, setEdits] = useState<Partial<ProfileDraft> | null>(null);
+  const [edits, setEdits] = useState<ProfileEdits | null>(null);
   const [submitFailed, setSubmitFailed] = useState(false);
   const [focused, setFocused] = useState<ProfileDraftField | null>(null);
-  const shown: ProfileDraft = { ...original, ...edits };
+  const shown = shownDraft(original, edits);
 
   const result = profilePatch(original, shown);
   // A refusal is shown only once the member has typed: the sheet must not
@@ -87,16 +90,9 @@ export const EditProfileSheet = forwardRef<
   const canSave =
     result.ok && hasChanges(result.patch) && !updateUser.isPending;
 
-  // A field typed back to the profile's value leaves `edits`, so it follows
-  // the profile again rather than pinning the value it had when it was typed.
   const edit = (field: ProfileDraftField) => (value: string) => {
     setSubmitFailed(false);
-    setEdits((current) => {
-      const next = { ...current };
-      if (value === original[field]) delete next[field];
-      else next[field] = value;
-      return next;
-    });
+    setEdits((current) => applyEdit(current, original, field, value));
   };
 
   const reset = useCallback(() => {
@@ -105,9 +101,11 @@ export const EditProfileSheet = forwardRef<
     setFocused(null);
   }, []);
 
-  // Whether the sheet is up. A save can settle after the sheet has closed, and
-  // gorhom's `dismiss()` on a closed modal leaves it stuck mid-dismiss, so the
-  // next `present()` draws nothing (5.2.x `handlePortalRender`).
+  // Whether the sheet is up or on its way up. A save can settle after the
+  // sheet has closed, and gorhom's `dismiss()` on a closed modal leaves it
+  // stuck mid-dismiss, so the next `present()` draws nothing (5.2.x
+  // `handlePortalRender`). Set from `onAnimate`, which fires as the sheet
+  // starts to move, so a Cancel during the slide up still closes it.
   const presented = useRef(false);
 
   const dismiss = useCallback(() => {
@@ -200,8 +198,8 @@ export const EditProfileSheet = forwardRef<
       backgroundStyle={backgroundStyle}
       backdropComponent={SheetScrim}
       handleComponent={SheetGrabber}
-      onChange={(index) => {
-        presented.current = index >= 0;
+      onAnimate={(_from, to) => {
+        presented.current = to >= 0;
       }}
       onDismiss={closed}
     >
