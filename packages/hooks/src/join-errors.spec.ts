@@ -111,9 +111,24 @@ describe("this module is error copy, not a status vocabulary", () => {
   it("exports no badge-kind mapper", () => {
     // Written down so the absence reads as a decision: 410 and 409 are never
     // persisted, badged or coloured, so there is no kind to be wrong about.
+    // `isDeadInviteError` is a yes/no for whether to offer Join (#3352), not
+    // a kind.
     expect(Object.keys(joinErrors).sort()).toEqual([
+      "isDeadInviteError",
       "joinErrorCopy",
       "redeemChapterId",
     ]);
+  });
+});
+
+describe("isDeadInviteError (#3352)", () => {
+  it("is true for a 410 and nothing else", () => {
+    expect(
+      joinErrors.isDeadInviteError({ statusCode: 410, message: "x" }),
+    ).toBe(true);
+    expect(
+      joinErrors.isDeadInviteError({ statusCode: 409, message: "x" }),
+    ).toBe(false);
+    expect(joinErrors.isDeadInviteError(new Error("offline"))).toBe(false);
   });
 });

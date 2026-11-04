@@ -23,15 +23,24 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
+  isDeadInviteError,
   joinErrorCopy,
   redeemChapterId,
   useDeleteAccount,
+  useInvitePreview,
   useJoinTermsCheckbox,
   useRedeemInvite,
 } from "@repo/hooks";
+import { normalizeAccentInput } from "@repo/hooks/chapter-identity";
+import { chapterInitials } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChoiceRow } from "@/components/auth/choice-row";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
+import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
+import {
+  ONBOARDING_COLUMN_WIDTH,
+  OnboardingPrimaryButton,
+} from "@/components/onboarding/onboarding-primary-button";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
 import { useAuthSession } from "@/lib/auth-session";
@@ -45,7 +54,7 @@ import {
 import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
-import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
+import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s02, "How are you getting in?" (`spec/ui/mobile/screens.md`, #3350).
@@ -53,21 +62,41 @@ import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
  * Where an account with no chapter lands. It asks one question with two large
  * answers: "I have an invite" opens the invite step here, and "I'm starting our
  * chapter" opens `/create-chapter`. An invite link that opened the app skips
- * the question and lands on the invite step with the field filled.
+ * the question and lands on the confirm step.
  *
- * One surface, no card, like s01 (#3349). Sign out and Delete account sit in
- * the Account menu in the top corner, on both views, because this is the only
+ * One surface, like s01 (#3349), with a card only for the one object on the
+ * confirm step. Sign out and Delete account sit in the Account menu in the top
+ * corner, on every view, because this is the only
  * screen a zero-membership account can reach (Apple 5.1.1(v), #2295).
  *
  * The invite step is one field that also accepts a pasted URL; the canvas draws
  * six cells for a shared code, but joining is single-use invite tokens
  * (`spec/behavior/onboarding.md` wins over the drawing for the data model).
+ *
+ * Nothing joins from the field itself. Continue opens a confirm step, and an
+ * opened invite link lands there directly (#3352): "Join FIJI Tau Nu?" over
+ * one card for the chapter (its mark, name and school, who sent the invite and
+ * the role it grants, read by `POST /v1/invites/preview` without using the
+ * invite up), the Terms checkbox when it's needed, and Join chapter pinned at
+ * the bottom. A preview that fails leaves a card for the bare invite, which
+ * can still be joined; a dead invite (410), found by the preview or by the redeem, says so and disables Join.
  */
 
-type JoinView = "choose" | "invite";
+type JoinView = "choose" | "invite" | "confirm";
 
 export const JOIN_CHOICE_TITLE = "How are you getting in?";
 export const JOIN_INVITE_TITLE = "Join with an invite";
+export const JOIN_CONFIRM_TITLE = "Join with this invite?";
+
+/** The confirm step's title once the invite's chapter is known. */
+export function confirmTitle(chapterName: string): string {
+  return `Join ${chapterName}?`;
+}
+
+/** How the confirm card names an invite it can't read: its last four characters. */
+export function inviteTail(token: string): string {
+  return token.slice(-4);
+}
 
 export default function JoinChapter() {
   const { tokens } = useFrappTheme();
@@ -91,8 +120,43 @@ export default function JoinChapter() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
+  /**
+   * An invite the redeem itself found dead (410), with the sentence to show:
+   * a preview read a minute earlier can still say it was live.
+   */
+  const [deadRedeem, setDeadRedeem] = useState<{
+    token: string;
+    copy: string;
+  } | null>(null);
+
+  // Every invite the effect below has applied. A route param stays set for
+  // the life of the screen, so every re-run sees it again; only one never
+  // applied is new. A set, not the last one: a param a link replaced must not
+  // come back as new on a later re-run.
+  const appliedInvites = useRef(new Set<string>());
+  // The link and params the effect last acted on. A re-run where they are
+  // unchanged (a join or deletion that held links just ended) has nothing to
+  // apply, so it leaves the field, the step and any error alone.
+  const handledInputs = useRef<string | null>(null);
+  // A join or deletion in flight holds the screen on the invite that started
+  // it, so a link opened meanwhile waits for it to end (`stepBack` holds the
+  // same way).
+  const holdLinks =
+    redeemInvite.isPending ||
+    redeemInvite.isSuccess ||
+    deleteAccount.isPending ||
+    deleteAccount.isSuccess;
 
   useEffect(() => {
+    if (holdLinks) return;
+    const inputs = JSON.stringify([
+      deepLinkUrl,
+      params.token,
+      params.invite,
+      params.code,
+    ]);
+    if (inputs === handledInputs.current) return;
+    handledInputs.current = inputs;
     const paramValue = (
       value: string | string[] | undefined,
     ): string | null => {
@@ -118,20 +182,33 @@ export default function JoinChapter() {
     // the process, so an invite already redeemed would otherwise fill the
     // field, and skip the question, on every later visit.
     const fromLink = takeInviteTokenFromLink(deepLinkUrl);
-    const fresh = fromParams ?? fromLink;
+    const isNew = (value: string | null): value is string =>
+      value !== null && !appliedInvites.current.has(value);
+    // A link is only ever returned once, so it leads; a param applied before
+    // is not new.
+    const fresh = isNew(fromLink)
+      ? fromLink
+      : isNew(fromParams)
+        ? fromParams
+        : null;
+    if (!fresh && (fromLink ?? fromParams)) return;
+    if (fresh) appliedInvites.current.add(fresh);
     // Only a fresh invite is remembered, for the signed-out bounce onto
     // sign-in. One taken back out of memory stays out, or it would fill the
     // field and skip the question on every later visit until a redeem.
     if (fresh) rememberInviteToken(fresh);
     const next = fresh ?? consumeRememberedInviteToken();
     if (next) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- seed an empty field from the invite URL; keep text the member already typed
-      setToken((current) => (current.length > 0 ? current : next));
-      // An opened invite link has already answered the question, so it goes
-      // straight to the invite step.
-      setView("invite");
+      // A link just opened wins over whatever the field holds: the confirm
+      // step hides the field, so a kept value would be joined unseen. A
+      // remembered invite only fills an empty field.
+      setToken((current) => (fresh || current.length === 0 ? next : current));
+      setError(null);
+      // An opened invite link has already answered the question and filled
+      // the field, so it goes straight to the confirm step.
+      setView("confirm");
     }
-  }, [deepLinkUrl, params.code, params.invite, params.token]);
+  }, [deepLinkUrl, holdLinks, params.code, params.invite, params.token]);
 
   // `isSuccess`, not just `isPending`: TanStack clears `isPending` in the same
   // render that runs `onSuccess`, but `handleSignOut` then awaits a real
@@ -174,7 +251,7 @@ export default function JoinChapter() {
 
   // Only the focused screen answers Android's back button. `/join` stays
   // mounted under a pushed `/create-chapter`, and an invite link opened then
-  // still moves it to the invite step; holding back from there would swallow
+  // still moves it to the confirm step; holding back from there would swallow
   // presses meant for the screen on top.
   const [focused, setFocused] = useState(true);
   useFocusEffect(
@@ -189,27 +266,54 @@ export default function JoinChapter() {
     if (!submitting) setAccountOpen(false);
   }, [submitting]);
 
-  const backToChoices = useCallback(() => {
+  /**
+   * One step back: from the confirm step to the field, which keeps the
+   * invite so it can be changed, and from the field to the question.
+   */
+  const stepBack = useCallback(() => {
     // Held while a join or deletion runs, so the result lands on the view
     // that started it.
     if (submitting) return;
+    setError(null);
+    if (view === "confirm") {
+      setView("invite");
+      return;
+    }
     // Backing out declines an opened invite: the next visit asks again.
     consumeRememberedInviteToken();
     setView("choose");
-    setError(null);
-  }, [submitting]);
+  }, [submitting, view]);
 
   // Android's back button steps back inside this screen before leaving it:
-  // it closes the Account menu, then returns from the invite step to the
-  // question, as the chevron does. On the question itself it is left alone.
+  // it closes the Account menu, then steps back a view, as the chevron does.
+  // On the question itself it is left alone.
   useBackToClose(focused && menuVisible, closeMenu);
-  useBackToClose(focused && !menuVisible && view === "invite", backToChoices);
+  useBackToClose(focused && !menuVisible && view !== "choose", stepBack);
 
   // The menu's title takes a screen reader's focus when it opens
   // (`spec/ui/mobile/patterns.md` § Overlays). A `Text`, as in the worked
   // examples there: TalkBack may not land on a plain container `View`.
   const menuTitleRef = useRef<ComponentRef<typeof Text>>(null);
   useFocusOnOpen(menuTitleRef, menuVisible);
+
+  // Read before the redirect below: hooks run on every render.
+  const invite = extractInviteToken(token);
+  // Signed-in only: a signed-out render is about to redirect, and the token
+  // would go out with no session.
+  const preview = useInvitePreview(
+    status === "authenticated" && view === "confirm" ? invite : null,
+  );
+  const chapter = preview.data ?? null;
+  // A dead link can't be joined, so the step says so and disables Join,
+  // whether the preview or the redeem found it dead.
+  const deadCopy =
+    preview.isError && isDeadInviteError(preview.error)
+      ? joinErrorCopy(preview.error)
+      : deadRedeem && deadRedeem.token === invite
+        ? deadRedeem.copy
+        : null;
+  const deadInvite = deadCopy !== null;
+  const stepBlocked = submitting || (view === "confirm" && deadInvite);
 
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;
@@ -251,12 +355,26 @@ export default function JoinChapter() {
     });
   }
 
+  /** The field's Continue, and its Go key: on to the confirm step. */
+  function handleContinue() {
+    // A field that already has focus can still send Go after `editable`
+    // turns false.
+    if (submitting) return;
+    if (!extractInviteToken(token)) {
+      setError("Paste the invite your officer sent, or open the invite link.");
+      return;
+    }
+    setError(null);
+    setView("confirm");
+  }
+
   async function handleJoin() {
-    // The Go key reaches here as well as the button, and a field that already
-    // has focus can still send it after `editable` turns false.
+    // A second tap can land before the button disables.
     if (submitting) return;
     const extracted = extractInviteToken(token);
     if (!extracted) {
+      // Only reachable if the field was cleared under a confirm step.
+      setView("invite");
       setError("Paste the invite your officer sent, or open the invite link.");
       return;
     }
@@ -279,20 +397,26 @@ export default function JoinChapter() {
       router.replace("/welcome");
     } catch (caught) {
       terms.onJoinError(caught);
+      if (isDeadInviteError(caught)) {
+        setDeadRedeem({ token: extracted, copy: joinErrorCopy(caught) });
+        return;
+      }
       setError(joinErrorCopy(caught));
     }
   }
 
   const header = (
     <View style={styles.header}>
-      {view === "invite" ? (
+      {view !== "choose" ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Back to the choices"
+          accessibilityLabel={
+            view === "confirm" ? "Back to the invite" : "Back to the choices"
+          }
           accessibilityState={{ disabled: submitting }}
           disabled={submitting}
           hitSlop={8}
-          onPress={backToChoices}
+          onPress={stepBack}
           style={styles.backButton}
         >
           <Text style={styles.backGlyph}>‹</Text>
@@ -383,8 +507,8 @@ export default function JoinChapter() {
                   />
                 </View>
               </View>
-            ) : (
-              <View style={styles.body}>
+            ) : view === "invite" ? (
+              <View style={styles.stepBody}>
                 <Text style={styles.title}>{JOIN_INVITE_TITLE}</Text>
                 <Text style={styles.subtitle}>
                   Paste the invite link or code your officer sent. Invites work
@@ -403,20 +527,107 @@ export default function JoinChapter() {
                   autoCapitalize="none"
                   autoCorrect={false}
                   autoComplete="off"
-                  // A filled field came from a link; the next step is Join, not
-                  // typing, so the keyboard stays down.
+                  // A filled field came from a link, or back from the confirm
+                  // step; the next step is Continue, not typing, so the
+                  // keyboard stays down.
                   autoFocus={token.length === 0}
                   textContentType="none"
                   accessibilityLabel="Invite token"
                   editable={!submitting}
-                  returnKeyType="go"
-                  onSubmitEditing={() => {
-                    void handleJoin();
-                  }}
+                  returnKeyType="next"
+                  onSubmitEditing={handleContinue}
                   style={styles.input}
                 />
 
-                {terms.needed ? (
+                {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+                <Text style={styles.hintText}>{OAUTH_MEMBERSHIP_HINT}</Text>
+              </View>
+            ) : (
+              <View style={styles.stepBody}>
+                <Text style={styles.title}>
+                  {chapter
+                    ? confirmTitle(chapter.chapter_name)
+                    : JOIN_CONFIRM_TITLE}
+                </Text>
+
+                {chapter ? (
+                  // One object, so one card: the chapter this invite joins.
+                  <View style={styles.inviteCard}>
+                    <View style={styles.chapterRow}>
+                      {/* The name beside it says who this is, so a screen
+                          reader skips the mark. */}
+                      <View
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
+                      >
+                        <ChapterMarkTile
+                          text={
+                            chapter.mark_text ??
+                            chapterInitials(chapter.chapter_name)
+                          }
+                          accent={normalizeAccentInput(chapter.accent_color)}
+                          size={44}
+                        />
+                      </View>
+                      <View style={styles.chapterText}>
+                        <Text style={styles.inviteCardTitle}>
+                          {chapter.chapter_name}
+                        </Text>
+                        <Text style={styles.inviteCardDetail}>
+                          {chapter.university}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.cardRule} />
+                    {chapter.invited_by ? (
+                      <Text style={styles.inviteCardDetail}>
+                        Invited by {chapter.invited_by}
+                      </Text>
+                    ) : null}
+                    {chapter.role ? (
+                      <Text style={styles.inviteCardDetail}>
+                        Joining as {chapter.role}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : (
+                  // The invite itself, while the preview loads or when it
+                  // can't be read.
+                  <View style={styles.inviteCard}>
+                    <View style={styles.chapterRow}>
+                      <View style={styles.chapterText}>
+                        <Text style={styles.inviteCardTitle}>
+                          Chapter invite
+                        </Text>
+                        <Text style={styles.inviteCardDetail}>
+                          {invite ? (
+                            <>
+                              Ending in{" "}
+                              <Text style={styles.inviteCardTail}>
+                                {inviteTail(invite)}
+                              </Text>
+                              {" · "}
+                            </>
+                          ) : null}
+                          Works once
+                        </Text>
+                      </View>
+                      {preview.isPending && preview.fetchStatus !== "idle" ? (
+                        <ActivityIndicator
+                          color={tokens.color.gold.house}
+                          accessibilityLabel="Reading the invite"
+                        />
+                      ) : null}
+                    </View>
+                  </View>
+                )}
+
+                {deadCopy ? (
+                  <Text style={styles.errorText}>{deadCopy}</Text>
+                ) : null}
+
+                {terms.needed && !deadInvite ? (
                   <TermsAcceptance
                     accepted={terms.accepted}
                     onAcceptedChange={(next) => {
@@ -428,30 +639,28 @@ export default function JoinChapter() {
                 ) : null}
 
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: submitting }}
-                  disabled={submitting}
-                  onPress={() => {
-                    void handleJoin();
-                  }}
-                  style={[
-                    styles.primaryButton,
-                    submitting ? styles.disabled : null,
-                  ]}
-                >
-                  {redeeming ? (
-                    <ActivityIndicator color={tokens.color.gold.onHouse} />
-                  ) : (
-                    <Text style={styles.primaryButtonText}>Join chapter</Text>
-                  )}
-                </Pressable>
-
-                <Text style={styles.hintText}>{OAUTH_MEMBERSHIP_HINT}</Text>
               </View>
             )}
           </ScrollView>
+
+          {/*
+            The step forward, pinned above the keyboard and the inset, on both
+            invite views (#3348 screen rules). Inside the underlay so the
+            Account menu hides it from a screen reader too.
+          */}
+          {view === "choose" ? null : (
+            <View style={styles.footer}>
+              <OnboardingPrimaryButton
+                label={view === "invite" ? "Continue" : "Join chapter"}
+                disabled={stepBlocked}
+                busy={redeeming}
+                onPress={() => {
+                  if (view === "invite") handleContinue();
+                  else void handleJoin();
+                }}
+              />
+            </View>
+          )}
         </View>
 
         {menuVisible ? (
@@ -571,7 +780,7 @@ function createStyles(tokens: SignetTokens) {
       flexGrow: 1,
       justifyContent: "center",
       width: "100%",
-      maxWidth: 400,
+      maxWidth: ONBOARDING_COLUMN_WIDTH,
       alignSelf: "center",
       gap: tokens.spacing.md,
       paddingVertical: tokens.spacing.xl,
@@ -586,8 +795,56 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
     },
+    // The invite and confirm steps sit at the top, under the back chevron,
+    // with their button pinned below (#3348 screen rules).
+    stepBody: {
+      width: "100%",
+      maxWidth: ONBOARDING_COLUMN_WIDTH,
+      alignSelf: "center",
+      gap: tokens.spacing.md,
+      paddingTop: tokens.spacing.lg,
+    },
     choices: {
       gap: tokens.spacing.md,
+    },
+    inviteCard: {
+      borderRadius: tokens.radius.card,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.card,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.md,
+      gap: tokens.spacing.xs,
+    },
+    chapterRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+    },
+    chapterText: {
+      flex: 1,
+      gap: 2,
+    },
+    cardRule: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: tint(tokens.color.text.foreground, 0.08),
+      marginVertical: tokens.spacing.xs,
+    },
+    inviteCardTitle: {
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.foreground,
+    },
+    inviteCardDetail: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
+    },
+    inviteCardTail: {
+      fontFamily: MONO_FONT_FAMILY,
+      color: tokens.color.text.foreground,
+    },
+    footer: {
+      paddingHorizontal: tokens.spacing.xl,
+      paddingVertical: tokens.spacing.lg,
     },
     inputLabel: {
       ...typeRole(tokens.typography.role.label),
@@ -610,17 +867,6 @@ function createStyles(tokens: SignetTokens) {
     errorText: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
-    },
-    primaryButton: {
-      borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.gold.house,
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    primaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.onHouse,
     },
     hintText: {
       ...typeRole(tokens.typography.role.caption),
