@@ -175,6 +175,7 @@ export class StripeBillingService implements IBillingProvider {
       id: event.id,
       type: event.type,
       created: event.created,
+      api_version: event.api_version ?? null,
       data: {
         object: event.data.object as unknown as Record<string, unknown>,
       },

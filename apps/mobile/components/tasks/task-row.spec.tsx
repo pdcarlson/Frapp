@@ -10,8 +10,11 @@ import { FrappThemeProvider } from "@/lib/theme";
 // `useCurrentChapter` and would drag the API client and a QueryClient into a
 // spec about styling. The accent value is covered by `lib/chapter-branding.spec.tsx`.
 vi.mock("@/lib/chapter-branding", () => ({
+  // A purple stand-in, so a chip painted house gold fails instead of passing.
   useChapterBranding: () => ({
-    accent: "#F4CB63",
+    accent: "#CB9FFF",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
     logoUrl: null,
     chapterName: null,
   }),
@@ -162,7 +165,7 @@ describe("TaskRow — the points chip", () => {
     expect(texts(tree).some((text) => text.startsWith("+"))).toBe(false);
   });
 
-  it("keeps a completed-but-unconfirmed reward on the gold chip", () => {
+  it("keeps a completed-but-unconfirmed reward on the accent chip", () => {
     const tree = render(
       <TaskRow
         row={row({
@@ -175,8 +178,6 @@ describe("TaskRow — the points chip", () => {
       />,
     );
     expect(texts(tree)).toContain("+15");
-    expect(styleOfText(tree, "+15").color).toBe(
-      signetDarkTokens.color.gold.askText,
-    );
+    expect(styleOfText(tree, "+15").color).toBe("#CB9FFF");
   });
 });

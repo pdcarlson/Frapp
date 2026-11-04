@@ -345,3 +345,82 @@ describe("useChapterBranding solid-fill pair (accentPrimary/accentOnPrimary)", (
     expect(result.current.accentOnPrimary).toBe(BRAND_ON);
   });
 });
+
+// The quiet tinted pair (a chip's fill and border) replaced the gold Ask
+// tokens inside a chapter (#3370). Both or neither, and only alongside the
+// generated `accent` the pair sits under.
+describe("useChapterBranding subtle pair (accentSubtle/accentBorder)", () => {
+  const GENERATED_SUBTLE = "#2A1216";
+  const GENERATED_BORDER = "#6E2A33";
+  const ASK_FILL = signetDarkTokens.color.gold.askFill;
+  const ASK_BORDER = signetDarkTokens.color.gold.askBorder;
+
+  it("reads the generated subtle-bg and border", async () => {
+    const { result } = renderBranding(
+      {
+        "chapter-1": {
+          id: "chapter-1",
+          accent_color: CRIMSON,
+          theme_palette: {
+            "--signet-accent-text": "#FF907F",
+            "--signet-accent-subtle-bg": GENERATED_SUBTLE,
+            "--signet-accent-border": GENERATED_BORDER,
+          },
+        },
+      },
+      "chapter-1",
+    );
+
+    await waitFor(() =>
+      expect(result.current.accentSubtle).toBe(GENERATED_SUBTLE),
+    );
+    expect(result.current.accentBorder).toBe(GENERATED_BORDER);
+  });
+
+  it("falls back to the house pair with no chapter resolved", async () => {
+    const { result } = renderBranding({}, null);
+
+    await waitFor(() => expect(result.current.accentSubtle).toBe(ASK_FILL));
+    expect(result.current.accentBorder).toBe(ASK_BORDER);
+  });
+
+  it("falls back to the house pair for both when only one is present", async () => {
+    const { result } = renderBranding(
+      {
+        "chapter-1": {
+          id: "chapter-1",
+          accent_color: CRIMSON,
+          theme_palette: {
+            "--signet-accent-text": "#FF907F",
+            "--signet-accent-subtle-bg": GENERATED_SUBTLE,
+          },
+        },
+      },
+      "chapter-1",
+    );
+
+    await waitFor(() => expect(result.current.accent).toBe("#FF907F"));
+    expect(result.current.accentSubtle).toBe(ASK_FILL);
+    expect(result.current.accentBorder).toBe(ASK_BORDER);
+  });
+
+  it("falls back to the house pair when the accent text itself falls back", async () => {
+    const { result } = renderBranding(
+      {
+        "chapter-1": {
+          id: "chapter-1",
+          accent_color: CRIMSON,
+          theme_palette: {
+            "--signet-accent-subtle-bg": GENERATED_SUBTLE,
+            "--signet-accent-border": GENERATED_BORDER,
+          },
+        },
+      },
+      "chapter-1",
+    );
+
+    await waitFor(() => expect(result.current.accent).toBe(BRAND));
+    expect(result.current.accentSubtle).toBe(ASK_FILL);
+    expect(result.current.accentBorder).toBe(ASK_BORDER);
+  });
+});

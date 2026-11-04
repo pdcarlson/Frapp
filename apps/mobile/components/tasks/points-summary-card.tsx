@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 import type { HouseRank, PointsSummary } from "@/lib/tasks/points-card";
 
 /**
@@ -25,7 +26,8 @@ export interface PointsSummaryCardProps {
 
 export function PointsSummaryCard({ summary, rank }: PointsSummaryCardProps) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
 
   return (
     <View style={styles.card}>
@@ -61,7 +63,7 @@ export function PointsSummaryCard({ summary, rank }: PointsSummaryCardProps) {
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     card: {
       flexDirection: "row",
@@ -88,7 +90,7 @@ function createStyles(tokens: SignetTokens) {
       // on a role token is banned by foundations.md §7, so the nearest role wins.
       ...typeRole(tokens.typography.role.display),
       letterSpacing: -0.5,
-      color: tokens.color.gold.askText,
+      color: brand.accent,
       marginTop: 2,
     },
     rank: {

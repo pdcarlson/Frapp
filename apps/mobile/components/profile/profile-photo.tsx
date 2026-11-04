@@ -15,7 +15,7 @@ import {
 } from "@repo/hooks";
 import { onlineManager } from "@tanstack/react-query";
 import { SignetTokens } from "@repo/theme/signet";
-import { useChapterBranding } from "@/lib/chapter-branding";
+import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
 import { pickAndSetProfilePhoto } from "@/lib/more/profile-photo";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -44,8 +44,9 @@ export function ProfilePhoto({
   initials: string;
 }) {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const { accent } = brand;
+  const styles = createStyles(tokens, brand);
   const chapterId = useActiveChapterId();
   const requestUrl = useRequestAvatarUploadUrl();
   const confirm = useConfirmAvatar();
@@ -159,7 +160,7 @@ export function ProfilePhoto({
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     wrap: {
       alignItems: "center",
@@ -170,7 +171,7 @@ function createStyles(tokens: SignetTokens) {
       height: AVATAR_SIZE,
       borderRadius: avatarRadius(AVATAR_SIZE),
       borderWidth: 1,
-      backgroundColor: tokens.color.gold.askFill,
+      backgroundColor: brand.accentSubtle,
       alignItems: "center",
       justifyContent: "center",
       overflow: "hidden",

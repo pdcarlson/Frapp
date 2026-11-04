@@ -21,6 +21,8 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import {
   can,
+  canAll,
+  CHAPTER_PROFILE_PERMISSIONS,
   isModuleEnabled,
   isSupportedTimeZone,
   MAX_TIME_ZONE_LENGTH,
@@ -30,6 +32,7 @@ import { BLOCKED_MEMBERS_TITLE } from "@repo/chat-core/block-copy";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import { AccentSheet } from "@/components/settings/accent-sheet";
 import { BlockedMembersSheet } from "@/components/settings/blocked-members-sheet";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
@@ -325,6 +328,7 @@ export default function PreferencesScreen() {
   // only stated off a confirmed read: "None" from a failed one would claim
   // nobody is blocked.
   const blockedMembersSheetRef = useRef<BottomSheetModal>(null);
+  const accentSheetRef = useRef<BottomSheetModal>(null);
   const blockList = useBlockedUserIds();
   const blockedMembersValue =
     blockList.status !== "ready"
@@ -373,6 +377,8 @@ export default function PreferencesScreen() {
   // membership test would lock out exactly the people this section is for.
   const permissions = usePermissionList();
   const canSeeChapterAdmin = can("chapter-config:view", permissions);
+  // The guard on `PATCH /v1/chapters/current`, which the accent save calls.
+  const canEditAccent = canAll(CHAPTER_PROFILE_PERMISSIONS, permissions);
 
   const chapterQuery = useCurrentChapter();
   const enabledModules = chapterQuery.data?.enabled_modules;
@@ -505,7 +511,21 @@ export default function PreferencesScreen() {
           <ListSection>
             <ListRow
               label="Chapter accent"
-              description="One hex → a full accent scale, lightened where it needs to stand out."
+              description={
+                canEditAccent
+                  ? "Your organization's colors, or any color you like."
+                  : "Set by an officer with chapter settings access."
+              }
+              accessibilityHint={
+                canEditAccent
+                  ? "Opens the color picker for the chapter accent."
+                  : undefined
+              }
+              onPress={
+                canEditAccent
+                  ? () => accentSheetRef.current?.present()
+                  : undefined
+              }
               trailing={
                 <View
                   accessibilityLabel="Current chapter accent"
@@ -525,7 +545,7 @@ export default function PreferencesScreen() {
             ) : null}
           </ListSection>
           <Text style={styles.footnote}>
-            Chapter settings are edited on the web dashboard.
+            Other chapter settings are edited on the web dashboard.
           </Text>
         </>
       ) : null}
@@ -580,6 +600,7 @@ export default function PreferencesScreen() {
         </Text>
       ) : null}
       <BlockedMembersSheet ref={blockedMembersSheetRef} />
+      <AccentSheet ref={accentSheetRef} />
     </ScreenShell>
   );
 }
