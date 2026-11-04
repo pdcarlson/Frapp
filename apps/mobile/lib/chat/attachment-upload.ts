@@ -221,7 +221,8 @@ export type ImageUploadResult =
   | { status: "uploaded"; image: UploadedImage }
   | { status: "refused"; reason: string };
 
-export const UPLOAD_FAILED = "Couldn't upload that photo. Try again in a moment.";
+export const UPLOAD_FAILED =
+  "Couldn't upload that photo. Try again in a moment.";
 
 /**
  * The sentence to show for a failed request.
@@ -334,8 +335,9 @@ async function pickAndUploadImageUnguarded(
 
 /**
  * Pick one photo from the library and PUT it to a freshly minted signed URL:
- * the pipeline chat attachments ({@link pickAndUploadPhoto}) and the profile
- * photo (`lib/more/profile-photo.ts`) share, so a fix to either reaches both.
+ * the pipeline chat attachments ({@link pickAndUploadPhoto}), the profile
+ * photo and the chapter logo ({@link pickUploadAndConfirmImage}) share, so a
+ * fix to one reaches all of them.
  *
  * The contract is that this never throws, so it is enforced in one place.
  * Three awaits sit outside the inner try blocks and can reject for reasons a
@@ -361,6 +363,35 @@ export async function pickAndUploadImage(
   }
 }
 
+/** How a pick, upload and confirm ended. */
+export type ConfirmedImageResult =
+  | { status: "cancelled" }
+  | { status: "updated" }
+  | { status: "refused"; reason: string };
+
+/**
+ * {@link pickAndUploadImage}, then `confirm` the uploaded path: the whole flow
+ * for an image that replaces one thing, the profile photo
+ * (`lib/more/profile-photo.ts`) and the chapter logo
+ * (`lib/onboarding/chapter-wizard/chapter-logo.ts`). Never rejects; a refused
+ * confirm reads as `uploadFailureReason`'s sentence.
+ */
+export async function pickUploadAndConfirmImage(
+  options: ImageUploadOptions & {
+    confirm: (storagePath: string) => Promise<unknown>;
+  },
+): Promise<ConfirmedImageResult> {
+  const { confirm, ...upload } = options;
+  const result = await pickAndUploadImage(upload);
+  if (result.status !== "uploaded") return result;
+  try {
+    await confirm(result.image.storagePath);
+    return { status: "updated" };
+  } catch (err) {
+    return { status: "refused", reason: uploadFailureReason(err) };
+  }
+}
+
 /** Pick a photo and put it in the bucket, returning the claim the next send carries. */
 export async function pickAndUploadPhoto(
   channelId: string,
@@ -371,7 +402,8 @@ export async function pickAndUploadPhoto(
     requestUploadUrl: (body) => requestUploadUrl({ id: channelId, body }),
     copy: {
       askAccess: "Frapp needs access to your photos to send one.",
-      settingsAccess: "Allow photo access for Frapp in Settings to send a photo.",
+      settingsAccess:
+        "Allow photo access for Frapp in Settings to send a photo.",
       type: TYPE_REFUSAL,
       size: SIZE_REFUSAL,
     },

@@ -44,9 +44,12 @@ export function usePushPrimer() {
 
   useEffect(() => {
     let live = true;
-    void getPushPermission().then((result) => {
-      if (live) setPermissionGranted(result ? result.granted : null);
-    });
+    // A failed read offers no card, as an unknown permission does.
+    void getPushPermission()
+      .catch(() => null)
+      .then((result) => {
+        if (live) setPermissionGranted(result ? result.granted : null);
+      });
     return () => {
       live = false;
     };
@@ -57,7 +60,11 @@ export function usePushPrimer() {
     decisionRead &&
     shouldOfferPrimer({ isAvailable: available, permissionGranted, decision });
 
-  /** Resolves with whether the member allowed notifications. */
+  /**
+   * Resolves with whether the member allowed notifications, and never
+   * rejects: a prompt the OS failed to show counts as not allowed, and the
+   * decision stays recorded, so the card isn't offered again.
+   */
   const turnOn = useCallback(async (): Promise<boolean> => {
     setIsRequesting(true);
     try {
@@ -66,6 +73,8 @@ export function usePushPrimer() {
       const granted = await requestPushPermission();
       setPermissionGranted(granted);
       return granted;
+    } catch {
+      return false;
     } finally {
       setIsRequesting(false);
     }

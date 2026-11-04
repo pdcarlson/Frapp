@@ -121,11 +121,31 @@ function knownArchetype(value: string | null | undefined): ArchetypeKey | null {
     : null;
 }
 
+/** Whether an organization keeps its Greek letters off every surface. */
+function hidesLetters(orgName: string | null | undefined): boolean {
+  return orgProfileFor(orgName)?.displaysGreekLetters === false;
+}
+
+/**
+ * The identity after the organization's name changes: a profile's short name
+ * and letters switch follow it (`orgMarkFields`), and an organization that
+ * hides its letters keeps none in the form, so none can show or be sent.
+ */
+function withOrgName(
+  identity: ChapterIdentityForm,
+  name: string,
+): ChapterIdentityForm {
+  return {
+    ...identity,
+    name,
+    ...orgMarkFields(name, identity.name, identity),
+    greekLetters: hidesLetters(name) ? "" : identity.greekLetters,
+  };
+}
+
 /** How a directory row reads in the results: never letters a group hides. */
 export function directoryRowTitle(row: ChapterDirectoryResult): string {
-  const hidesLetters =
-    orgProfileFor(row.org_name)?.displaysGreekLetters === false;
-  return !hidesLetters && row.org_letters
+  return !hidesLetters(row.org_name) && row.org_letters
     ? `${row.org_letters} · ${row.org_name}`
     : row.org_name;
 }
@@ -189,13 +209,17 @@ export default function CreateChapter() {
     setArchetype(known);
     setAsksArchetype(known === null);
     // The directory knows letters, not whether an organization shows them:
-    // FIJI's profile switches them off and fills the short name.
-    const mark = orgMarkFields(row.org_name, identity.name, identity);
+    // FIJI's profile switches them off, drops them and fills the short name.
+    const named = withOrgName(
+      { ...identity, greekLetters: row.org_letters ?? "" },
+      row.org_name ?? "",
+    );
     setIdentity({
-      name: row.org_name ?? "",
+      name: named.name,
       university: row.university ?? "",
-      greekLetters: row.org_letters ?? "",
-      ...mark,
+      greekLetters: named.greekLetters,
+      shortName: named.shortName,
+      showGreekLetters: named.showGreekLetters,
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
@@ -264,8 +288,9 @@ export default function CreateChapter() {
       const active = id ? await selectChapter(id) : false;
       setActivated(active);
       // The channel list is keyed without the chapter, so a list read before
-      // the chapter existed would stand in for its seeded channels.
-      void queryClient.invalidateQueries({ queryKey: CHANNEL_LIST_KEY });
+      // the chapter existed would stand in for its seeded channels. Dropped,
+      // not just marked stale, so the live step never draws the old one.
+      queryClient.removeQueries({ queryKey: CHANNEL_LIST_KEY });
       setStep("live");
       successHaptic();
     } catch (caught) {
@@ -288,18 +313,38 @@ export default function CreateChapter() {
     if (result.status === "refused") setLogoNote(result.reason);
   }
 
+  // The invite route acts on the active chapter, like the logo's: without
+  // the new chapter active it would mint for another chapter, or fail, so
+  // setup ends at chat and the officer invites from there.
+  function afterPrimer() {
+    if (activated) {
+      setStep("invite");
+    } else {
+      finish();
+    }
+  }
+
   function leaveLive() {
     setError(null);
-    setStep(primer.showPrimer ? "primer" : "invite");
+    if (primer.showPrimer) {
+      setStep("primer");
+    } else {
+      afterPrimer();
+    }
   }
 
   async function answerPrimer(answer: "on" | "not-now") {
-    if (answer === "on") {
-      await primer.turnOn();
-    } else {
-      await primer.notNow();
+    try {
+      if (answer === "on") {
+        await primer.turnOn();
+      } else {
+        await primer.notNow();
+      }
+    } finally {
+      // Either answer moves on, even when the OS prompt failed: the primer
+      // step has no other way forward.
+      afterPrimer();
     }
-    setStep("invite");
   }
 
   async function generateInviteLink() {
@@ -511,10 +556,19 @@ export default function CreateChapter() {
 
             {step === "live" ? (
               <View style={styles.stack}>
-                <Text style={styles.body}>
-                  Your channels are ready. Invite your members next.
-                </Text>
-                <JoinedChannelsCard trailing="ready" />
+                {activated ? (
+                  <>
+                    <Text style={styles.body}>
+                      Your channels are ready. Invite your members next.
+                    </Text>
+                    <JoinedChannelsCard trailing="ready" />
+                  </>
+                ) : (
+                  <Text style={styles.body}>
+                    Your chapter is ready. Open chat to see its channels and
+                    invite your members.
+                  </Text>
+                )}
                 {activated ? (
                   <View style={styles.logoBlock}>
                     <Pressable
@@ -904,6 +958,7 @@ function ConfirmStep({
   ) {
     onChange({ ...identity, [key]: value });
   }
+  const lettersHidden = hidesLetters(identity.name);
 
   const meta = [identity.designation.trim(), identity.university.trim()]
     .filter(Boolean)
@@ -914,7 +969,7 @@ function ConfirmStep({
       <Field
         label="Organization"
         value={identity.name}
-        onChangeText={(value) => set("name", value)}
+        onChangeText={(value) => onChange(withOrgName(identity, value))}
         placeholder="Sigma Phi Epsilon"
         styles={styles}
         tokens={tokens}
@@ -950,14 +1005,17 @@ function ConfirmStep({
         styles={styles}
         tokens={tokens}
       />
-      <Field
-        label="Greek letters"
-        value={identity.greekLetters}
-        onChangeText={(value) => set("greekLetters", value)}
-        placeholder="ΣΦΕ"
-        styles={styles}
-        tokens={tokens}
-      />
+      {/* No letters field for an organization that hides its letters. */}
+      {lettersHidden ? null : (
+        <Field
+          label="Greek letters"
+          value={identity.greekLetters}
+          onChangeText={(value) => set("greekLetters", value)}
+          placeholder="ΣΦΕ"
+          styles={styles}
+          tokens={tokens}
+        />
+      )}
       <View style={styles.switchRow}>
         <View style={styles.switchText}>
           <Text style={styles.inputLabel}>Show Greek letters</Text>

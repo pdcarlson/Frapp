@@ -177,11 +177,38 @@ export function useActivateChapter() {
  * `["chapters"]` prefix covers `["chapters", "current", id]` and the
  * memberships list alike.
  */
+/**
+ * What every write to the current chapter does on success. Returns the
+ * refetch, for a caller that must not resolve before it lands; the others
+ * fire and forget.
+ */
 function useInvalidateCurrentChapter() {
   const queryClient = useQueryClient();
-  return () => {
-    void queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
-  };
+  return () => queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
+}
+
+type FrappClient = ReturnType<typeof useFrappClient>;
+
+/** Mint a signed upload URL for the active chapter's next logo. */
+async function mintChapterLogoUpload(
+  client: FrappClient,
+  filename: string,
+  contentType: string,
+) {
+  const { data, error } = await client.POST("/v1/chapters/current/logo-url", {
+    body: { filename, content_type: contentType },
+  });
+  if (error) throw error;
+  return data;
+}
+
+/** Make an uploaded object the active chapter's logo. */
+async function confirmChapterLogo(client: FrappClient, storagePath: string) {
+  const { data, error } = await client.POST("/v1/chapters/current/logo", {
+    body: { storage_path: storagePath },
+  });
+  if (error) throw error;
+  return data;
 }
 
 export function useUpdateChapter() {
@@ -200,7 +227,9 @@ export function useUpdateChapter() {
       if (error) throw error;
       return data;
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      void invalidate();
+    },
   });
 }
 
@@ -228,11 +257,7 @@ export function useUploadChapterLogo() {
   const invalidate = useInvalidateCurrentChapter();
   return useMutation({
     mutationFn: async ({ body, filename, contentType }: ChapterLogoUpload) => {
-      const { data: signed, error: mintError } = await client.POST(
-        "/v1/chapters/current/logo-url",
-        { body: { filename, content_type: contentType } },
-      );
-      if (mintError) throw mintError;
+      const signed = await mintChapterLogoUpload(client, filename, contentType);
       const { signedUrl, storagePath } = readSignedUpload(signed);
       await putSignedUpload({
         signedUrl,
@@ -240,13 +265,11 @@ export function useUploadChapterLogo() {
         contentType,
         describeRejection: (status) => `Logo upload failed (${status})`,
       });
-      const { data, error } = await client.POST("/v1/chapters/current/logo", {
-        body: { storage_path: storagePath },
-      });
-      if (error) throw error;
-      return data;
+      return confirmChapterLogo(client, storagePath);
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      void invalidate();
+    },
   });
 }
 
@@ -260,14 +283,8 @@ export function useUploadChapterLogo() {
 export function useRequestChapterLogoUploadUrl() {
   const client = useFrappClient();
   return useMutation({
-    mutationFn: async (body: { filename: string; content_type: string }) => {
-      const { data, error } = await client.POST(
-        "/v1/chapters/current/logo-url",
-        { body: { filename: body.filename, content_type: body.content_type } },
-      );
-      if (error) throw error;
-      return data;
-    },
+    mutationFn: (body: { filename: string; content_type: string }) =>
+      mintChapterLogoUpload(client, body.filename, body.content_type),
   });
 }
 
@@ -278,17 +295,12 @@ export function useRequestChapterLogoUploadUrl() {
  */
 export function useConfirmChapterLogo() {
   const client = useFrappClient();
-  const queryClient = useQueryClient();
+  const invalidate = useInvalidateCurrentChapter();
   return useMutation({
-    mutationFn: async (storagePath: string) => {
-      const { data, error } = await client.POST("/v1/chapters/current/logo", {
-        body: { storage_path: storagePath },
-      });
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: chapterQueryKey() }),
+    mutationFn: (storagePath: string) =>
+      confirmChapterLogo(client, storagePath),
+    // Returned, so the mutation resolves only once the refetch lands.
+    onSuccess: () => invalidate(),
   });
 }
 
@@ -302,6 +314,8 @@ export function useRemoveChapterLogo() {
       if (error) throw error;
       return data;
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      void invalidate();
+    },
   });
 }

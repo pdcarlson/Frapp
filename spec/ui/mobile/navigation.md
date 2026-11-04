@@ -206,6 +206,13 @@ as an integrator change so `photosPermission` names both uses ("set your profile
 and send photos in chapter chat"), with the privacy policy and the store records in the
 same PR.
 
+*2026-11-04:* chapter setup's live step (#3351,
+`lib/onboarding/chapter-wizard/chapter-logo.ts`) is the third caller, adding the chapter's
+logo. `photosPermission` names it too ("add your chapter's logo"), as do the store records.
+Whether the privacy policy's permissions clause changes with it is the owner's call,
+because the policy text is pinned to the acceptance version (`legal.md` § Acceptance
+record).
+
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`
 key at all**. Each of those three is load-bearing:
@@ -309,7 +316,7 @@ lost the header styling and Chat home's `headerTitle` with it. The shell took ov
 the header had been doing: it takes the top safe-area inset, marks its title as the
 screen's heading, and gained an optional `titleMark` slot before the title. Chat home
 fills that slot with the chapter mark, which had been the header's title and is the mark's
-one mobile surface ([`../../behavior/branding.md`](../../behavior/branding.md) § Chapter
+one mobile surface inside a chapter (chapter setup previews it too, #3351) ([`../../behavior/branding.md`](../../behavior/branding.md) § Chapter
 mark). Four screens opt out of the shell. s05 and s13 took the top inset themselves in
 this change. s18 (`check-in.tsx`) and s22 (`host-check-in.tsx`) already took it, and
 their own titles took the heading role the header's title used to carry.

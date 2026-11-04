@@ -21,12 +21,13 @@ import { FrappThemeProvider } from "@/lib/theme";
  */
 
 let pushAvailable = false;
+const requestPushPermission = vi.fn();
 let permission: { granted: boolean } | null = null;
 
 vi.mock("@/lib/notifications/push", () => ({
   isPushAvailable: () => pushAvailable,
   getPushPermission: () => Promise.resolve(permission),
-  requestPushPermission: vi.fn().mockResolvedValue(true),
+  requestPushPermission: (...args: unknown[]) => requestPushPermission(...args),
 }));
 
 vi.mock("@/lib/auth-session", () => ({
@@ -94,6 +95,16 @@ const FIJI_ROW: ChapterDirectoryResult = {
   founded_year: 1893,
   default_colors: { accent: "#C9A227" },
   website: null,
+};
+
+/** A sorority row: its archetype isn't the first one, so a default can't pass. */
+const ALPHA_PHI_ROW: ChapterDirectoryResult = {
+  ...FIJI_ROW,
+  id: "dir-aphi",
+  org_letters: "ΑΦ",
+  org_name: "Alpha Phi",
+  archetype: "npc",
+  chapter_designation: "Theta Eta",
 };
 
 const SIGEP_ROW: ChapterDirectoryResult = {
@@ -185,6 +196,14 @@ function radios(root: Node) {
     .filter((p) => p.props.accessibilityRole === "radio");
 }
 
+function inputValues(root: Node): string {
+  return JSON.stringify(
+    root
+      .findAllByType("TextInput" as never, { deep: true })
+      .map((i) => [i.props.accessibilityLabel, i.props.value]),
+  );
+}
+
 function typeInto(root: Node, label: string, value: string): void {
   const input = root
     .findAllByType("TextInput" as never, { deep: true })
@@ -216,6 +235,7 @@ beforeEach(() => {
   createInvite.mockReset().mockResolvedValue({ token: "tok123" });
   pickAndSetChapterLogo.mockReset();
   successHaptic.mockReset();
+  requestPushPermission.mockReset().mockResolvedValue(true);
   vi.mocked(useRouter().replace).mockClear();
 });
 
@@ -283,12 +303,19 @@ describe("chapter setup — step order", () => {
 
 describe("chapter setup — archetype", () => {
   it("takes it from the directory match and never asks", async () => {
+    directoryRows = [ALPHA_PHI_ROW];
     const { root } = await render();
-    await createFromMatch(root);
+    await pickRow(root, "Alpha Phi");
+    await press(root, "Continue");
+    await press(root, "agree");
+    await act(async () => {
+      primary(root).props.onPress();
+    });
+    await settle();
     expect(onboard).toHaveBeenCalledWith(
       expect.objectContaining({
-        org_archetype: "ifc",
-        directory_id: "dir-fiji",
+        org_archetype: "npc",
+        directory_id: "dir-aphi",
       }),
     );
   });
@@ -356,6 +383,38 @@ describe("chapter setup — Greek letters", () => {
       .findAllByType("TextInput" as never, { deep: true })
       .find((i) => i.props.accessibilityLabel === "Short name");
     expect(shortName?.props.value).toBe("FIJI");
+    // Nor in any field: the letters field isn't drawn, and nothing holds them.
+    expect(inputValues(root)).not.toContain("ΦΓΔ");
+    expect(inputValues(root)).not.toContain("Greek letters");
+    expect(allText(root)).not.toContain("ΦΓΔ");
+  });
+
+  it("keeps the letters field for an organization that shows them", async () => {
+    const { root } = await render();
+    await pickRow(root, "Sigma Phi Epsilon");
+    await press(root, "Edit details");
+    expect(inputValues(root)).toContain("ΣΦΕ");
+  });
+
+  it("applies the same rule when FIJI is typed by hand", async () => {
+    const { root } = await render();
+    await press(root, "Not in our directory?");
+    typeInto(root, "Organization", "Phi Gamma Delta");
+    typeInto(root, "School", "Rensselaer Polytechnic Institute");
+    await press(root, "More details (optional)");
+
+    const toggle = root
+      .findAllByType("Switch" as never, { deep: true })
+      .find((s) => s.props.accessibilityLabel === "Show Greek letters");
+    expect(toggle?.props.value).toBe(false);
+    expect(inputValues(root)).toContain('["Short name","FIJI"]');
+    expect(inputValues(root)).not.toContain("Greek letters");
+
+    await act(async () => {
+      radios(root)[0].props.onPress();
+    });
+    await press(root, "Continue");
+    expect(allText(root)).toContain("Create FIJI");
   });
 
   it("sends FIJI's branding with the letters switched off", async () => {
@@ -424,6 +483,21 @@ describe("chapter setup — logo", () => {
   });
 });
 
+describe("chapter setup — new chapter not active", () => {
+  it("names no channels and skips the invite, which would mint for another chapter", async () => {
+    selectChapter.mockResolvedValue(false);
+    const { root } = await render();
+    await createFromMatch(root);
+    expect(title(root)).toBe("FIJI is live");
+    expect(allText(root)).not.toContain("general");
+
+    await press(root, "Continue");
+    expect(control(root, "Create invite link")).toBeUndefined();
+    expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(createInvite).not.toHaveBeenCalled();
+  });
+});
+
 describe("chapter setup — push primer for the founder", () => {
   it("offers it after the live step when this build can push", async () => {
     pushAvailable = true;
@@ -434,6 +508,17 @@ describe("chapter setup — push primer for the founder", () => {
     expect(title(root)).toBe(SETUP_TITLES.primer);
 
     await press(root, "Not now");
+    expect(title(root)).toBe(SETUP_TITLES.invite);
+  });
+
+  it("moves on to the invite even when the OS prompt fails", async () => {
+    pushAvailable = true;
+    permission = { granted: false };
+    requestPushPermission.mockRejectedValue(new Error("native module"));
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+    await press(root, "Turn on notifications");
     expect(title(root)).toBe(SETUP_TITLES.invite);
   });
 

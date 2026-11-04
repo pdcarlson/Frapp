@@ -194,16 +194,39 @@ describe("chapter logo hooks", () => {
       data: { id: CHAPTER_ID, logo_path: STORAGE_PATH },
       error: null,
     }));
-    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    // A refetch that lands only when the test says so.
+    let landRefetch!: () => void;
+    const invalidate = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockImplementation(
+        () => new Promise<void>((resolve) => (landRefetch = resolve)),
+      );
     const { result } = renderHook(() => useConfirmChapterLogo(), {
       wrapper: wrapper(clientWith(post)),
     });
 
-    await act(() => result.current.mutateAsync(STORAGE_PATH));
+    let resolved = false;
+    let pending!: Promise<unknown>;
+    act(() => {
+      pending = result.current
+        .mutateAsync(STORAGE_PATH)
+        .then(() => (resolved = true));
+    });
+    await vi.waitFor(() => expect(invalidate).toHaveBeenCalled());
 
     expect(post).toHaveBeenCalledWith("/v1/chapters/current/logo", {
       body: { storage_path: STORAGE_PATH },
     });
-    expect(invalidate).toHaveBeenCalled();
+    // The current-chapter query, which the `["chapters"]` prefix covers.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["chapters"] });
+    // Still waiting on the refetch, so a caller's busy state holds.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(resolved).toBe(false);
+
+    await act(async () => {
+      landRefetch();
+      await pending;
+    });
+    expect(resolved).toBe(true);
   });
 });
