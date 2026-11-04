@@ -60,7 +60,7 @@ Activation-funnel events keep their chapter-keyed distinct id ([§ Identifiers](
 
 Identity, opt-out, and the forget path are owned by [`data-retention.md`](data-retention.md#analytics-events-pseudonymous). This section adds the replay and dual-capture rules that would otherwise be restated there.
 
-- **PostHog exception autocapture is off** in every SDK and in the project. Errors are counted only in Sentry. A content-free PostHog **timeline marker** named **`sentry-error-correlated`** (kebab-case, same convention as `opened-channel` / `outbox-queued`) may attach `sentry_event_id`, Sentry `trace_id`, `request_id` (`x-request-id`), `route`, HTTP status *class* (`1xx`–`5xx`, from an integer status 100–599; any other status omits the property rather than guessing one), and `release` — never the body, query, exception type, stack, or message text.
+- **PostHog exception autocapture is off** in every SDK and in the project. Errors are counted only in Sentry. A content-free PostHog **timeline marker** named **`sentry-error-correlated`** (kebab-case, same convention as `outbox-queued` / `task-created`) may attach `sentry_event_id`, Sentry `trace_id`, `request_id` (`x-request-id`), `route`, HTTP status *class* (`1xx`–`5xx`, from an integer status 100–599; any other status omits the property rather than guessing one), and `release` — never the body, query, exception type, stack, or message text.
 - **Sentry Replay is not enabled** on any surface. Session replay and heatmaps are PostHog-only.
 - **PostHog replay** is masked and blocklisted by default (`maskAllInputs` / React Native `maskAllTextInputs` is the floor, not the policy). It obeys `chapters.analytics_opt_out` immediately (`opt_out_capturing` / `optOut` + `stopSessionRecording`). It is **production-disabled until Paul approves** privacy disclosure, consent, and retention. **Correction (2026-09-09):** Workstream 5 keeps replay **off in every environment**, including staging. **Correction (2026-09-09):** Workstream 7 matches that posture on mobile. Mask/blocklist and the opt-out stop ship so a later flip is gated; chat/document capture is not proven masked. Production remains off until Paul approves (#2038). Expo Go is not native-crash or replay proof (#938 / #1361).
 - Attach PostHog distinct/session/replay ids to Sentry events so an error can be traced into a replay without putting the exception in PostHog.
@@ -407,6 +407,138 @@ Like Outbox Telemetry above, `search-completed` carries no dedicated Frapp-owned
 - **Actionable buckets for product/design review**: group zero-result events by `query_word_count` (single-word vs. multi-word misses read differently) and cross-reference against `timed_out = true` (a timeout-caused miss is an infrastructure problem, not a content or vocabulary gap, and must not be counted as the same kind of failure).
 
 **This instrumentation enables but does not itself complete the acceptance criterion that findings inform the mobile search UI's scope** — no chapter has used this yet, so there is no data to analyze. That is a downstream product decision for whoever reviews the report once real usage accumulates, the same posture the Outbox Telemetry section takes toward its own p50/failure-rate report.
+
+## Feature Events
+
+The activation funnel says where a chapter stalls on its way to paying. Feature events say which features members use and how often. Each feature's main action is recorded **by the API** when the request that performs it succeeds ([#593](https://github.com/pdcarlson/Frapp/issues/593)), so web and mobile are counted from one place, with no client code, and an ad blocker or a closed tab can't drop one.
+
+### How one is recorded
+
+- **A decorator on the route.** `@FeatureEvent(name, describe?)` sits on the controller handler (`apps/api/src/interface/decorators/feature-event.decorator.ts`). `describe` reads the request body, params and query, and the handler's result, and returns the event's properties, or `null` to send nothing (a deduplicated retry, or a chat send that isn't a poll). A handler can carry several: a chat send is always `message-sent`, and also `poll-created` when the message is a poll.
+- **A catalog that is an allowlist.** `FEATURE_EVENTS` (`apps/api/src/domain/constants/feature-events.ts`) names each event's feature, a `MODULE_CATALOG` key, and the only property keys it may carry. A describer returning any other key is a compile error, and the interceptor drops one at runtime too. The shared denylist (`FORBIDDEN_ANALYTICS_PROPERTY_KEYS`) can't do this alone: it doesn't know that `title` or `details` hold content.
+- **Sent after success, never in the way.** `FeatureEventInterceptor`, registered globally in `AnalyticsModule`, builds the event when the handler's result arrives. A failed request (any 4xx or 5xx) records nothing. A describer that throws is logged at error level and the response is unaffected, and the send is not awaited, so PostHog never delays a response.
+- **Who and which chapter.** The distinct id is the acting user's pseudonym. The chapter is `ChapterGuard`'s verified chapter; the two routes without the guard (`POST /chapters/onboard`, `POST /invites/redeem`) take it from their result. An action with no chapter records nothing, since there would be no opt-out to check. Every feature event therefore carries the chapter group and is person-processed onto that user ([§ What an event the API sends carries](#what-an-event-the-api-sends-carries)).
+- **Properties.** `feature` (the module key) is added to every event, beside the catalog's own properties, so one insight can break all usage down by module.
+- **`app`, from what the clients already send.** `mobile` when `X-Client-Version` parses (store and dev builds; Expo Go sends none), `web` when `Origin` is the dashboard (`https://app.frapp.live`, `https://app.staging.frapp.live`, or `http://localhost:3000`, not Expo web on 3002), otherwise none (`requestApp` in `apps/api/src/interface/http/request-app.ts`). Builds already in the stores send these headers, so this needs no client change. An explicit header would also have worked, since CORS reflects requested headers, but it would have needed new builds. It is a label, not an authority: a non-browser client can set either header.
+- **The opt-out, without another query.** `ChapterGuard` reads `chapters.analytics_opt_out` with the rest of the chapter row and leaves it on the request; the interceptor hands it to `track`, which then skips its own read. A row whose flag isn't a boolean leaves it unknown, and `track` reads it itself and fails closed. The one route that writes the flag, `PATCH /chapters/:id/config`, carries no feature event: the guard's value would be from before the write, so a request opting the chapter out would still send.
+
+### Catalog
+
+Properties are listed without `feature`, which every event carries. "Counts requests" means a retried or repeated request that succeeds again is counted again; the other events can't succeed twice for one action, or return a flag the describer uses to skip the repeat.
+
+**Events (`events`)**
+
+| Event | Recorded when | Properties |
+| --- | --- | --- |
+| `event-created` | An officer creates an event (a recurring series is one event). Read from the created row, with the server's defaults applied | `is_mandatory`, `is_recurring`, `has_check_in_zone`, `has_point_value`, `posted_to_chat` |
+| `event-calendar-downloaded` | A member downloads an event's `.ics` file | — |
+| `attendance-checked-in` | A member checks in. `method` is `qr`, `manual_code` or `plain`; a second check-in is a 409 | `method`, `has_location` |
+| `attendance-marked` | An officer sets a member's attendance. `status` is the attendance enum; counts requests | `status`, `has_excuse` |
+
+**Tasks (`tasks`)**
+
+| Event | Recorded when | Properties |
+| --- | --- | --- |
+| `task-created` | An officer creates a task | `assigned_to_self`, `has_point_reward`, `posted_to_chat` |
+| `task-status-changed` | The assignee or an officer moves a task to a new status | `status` |
+| `task-completion-confirmed` | The assigner confirms a completed task | — |
+| `task-completion-rejected` | The assigner sends a completed task back | — |
+
+**Polls (`polls`)**
+
+| Event | Recorded when | Properties |
+| --- | --- | --- |
+| `poll-created` | A `/poll` message is sent in chat. Clients set no `choice_mode` and always a close time today, so `single` and `true` until a composer changes | `choice_mode`, `option_count`, `has_expiry` |
+| `poll-voted` | A member votes, on the chat card (`surface: card`) or the `/polls` page (`page`). On the card a second vote replaces the first and sets `is_revote`, even for the same option; the page can't tell, so it counts requests. Clearing a multi-choice vote is not a vote | `surface`, `selected_count`, `is_revote` |
+
+**Dues (`dues`)**
+
+| Event | Recorded when | Properties |
+| --- | --- | --- |
+| `invoice-created` | A treasurer creates an invoice | — |
+| `invoice-status-changed` | A treasurer marks an invoice open, paid or void | `status` |
+| `invoice-payment-started` | A member opens the payment sheet. Reopening it reuses the payment and counts again | — |
+
+**Points (`points`)**
+
+| Event | Recorded when | Properties |
+| --- | --- | --- |
+| `points-adjusted` | An officer awards or deducts points. `direction` is `award` or `deduct`; the amount is never sent. A retry with the same `client_message_id` returns the original grant and counts again | `category`, `direction`, `posted_to_chat` |
+
+**Service and study hours (`hours`)**
+
+| Event | Recorded when | Properties |
+| --- | --- | --- |
+| `service-hours-logged` | A member logs service hours | `duration_minutes`, `has_proof`, `posted_to_chat` |
+| `service-hours-reviewed` | An officer approves or rejects an entry | `status`, `has_comment` |
+| `study-session-started` | A member starts a study session. No location or geofence is sent | — |
+| `study-session-stopped` | A member stops one. `outcome` is `completed`, `expired` or `paused_expired` | `outcome`, `duration_minutes` |
+
+**Chat (`chat`) and announcements (`announcements`)**
+
+| Event | Recorded when | Properties |
+| --- | --- | --- |
+| `message-sent` | Any message is sent, a retry on the same `client_message_id` excepted. `kind` is the stored message kind. This is the count of sends; the web outbox events measure delivery | `kind`, `is_reply`, `attachment_count` |
+| `announcement-posted` | An `/announce` message is sent (feature `announcements`) | — |
+| `message-reacted` | A member adds a reaction. The emoji is never sent; a repeat is deduplicated, and removing one doesn't reach the API | — |
+| `dm-opened` | A member opens a 1-on-1 DM. Get-or-create, so reopening one counts again | — |
+| `channel-created` | An officer creates a channel | `type`, `is_read_only`, `has_category` |
+| `message-reported` | A member reports a message. `reason` is the report-reason enum, never the details; a repeat while the report is open counts again | `reason` |
+| `discord-import-created` | An officer starts a Discord import | `source` |
+| `discord-import-started` | The import is started; a restart counts again | `has_cutoff` |
+
+**Documents (`documents`) and backwork (`backwork`)**
+
+| Event | Recorded when | Properties |
+| --- | --- | --- |
+| `document-uploaded` | A document upload is confirmed. Its category and folder are free text, so only whether they were set | `has_document_type`, `has_folder` |
+| `document-viewed` | A document is fetched, to view or download. Each fetch counts, a refetch included | — |
+| `backwork-uploaded` | Backwork is uploaded. `assignment_type` is the closed assignment list; title, course and professor are never sent | `assignment_type`, `is_redacted`, `tag_count` |
+| `backwork-viewed` | A backwork item is fetched. Each fetch counts | — |
+
+**Recruitment (`rush`)**
+
+| Event | Recorded when | Properties |
+| --- | --- | --- |
+| `rush-candidate-added` | A member adds a candidate. No name is sent | `is_existing_user`, `posted_to_chat` |
+| `rush-candidate-voted` | A member votes for a candidate. A repeat vote succeeds again and counts again | — |
+| `rush-candidate-bid` | An officer extends a bid. A repeat counts again | — |
+
+**Reports (`reports`)**
+
+| Event | Recorded when | Properties |
+| --- | --- | --- |
+| `report-generated` | A report is generated. The dashboard previews through `format: json` and builds its CSV in the browser, so `json` includes previews and a web CSV download isn't seen | `report_kind`, `format` |
+
+**Members (`members`), chapter setup (`chapter-settings`) and billing (`billing`)**
+
+| Event | Recorded when | Properties |
+| --- | --- | --- |
+| `invite-created` | An officer creates invites. `invite_method` is `link`, `batch` or `email`; `count` is the invites created, never the addresses | `invite_method`, `count` |
+| `invite-redeemed` | Someone joins by redeeming an invite | — |
+| `member-onboarding-completed` | A member finishes onboarding. Counts requests that set it, not first completions | — |
+| `chapter-onboarded` | The onboarding wizard creates a chapter (feature `chapter-settings`). `archetype` is the stored archetype key | `archetype`, `from_directory` |
+| `semester-rolled-over` | An officer rolls the chapter into a new semester (`chapter-settings`) | `promote_new_members` |
+| `checkout-started` | Stripe issues a checkout session (`billing`) | — |
+
+### Reading them
+
+- **Funnels and conversion use the `activation-*` events**, which are keyed by chapter and recorded once per chapter ([§ Product Analytics — Activation Funnel](#product-analytics--activation-funnel)). Feature events are keyed by user and count every action, so `invite-created` and `activation-first-invite-created` answer different questions.
+- **Server-side means successes only.** A tap that ends in an error, and an action the client never sends to the API (removing a reaction, building a CSV in the browser), records nothing.
+- **No `app` is not an error.** Expo Go, server-side Next.js calls and anything else `requestApp` can't place carry none.
+- **Writes from workers and schedules are not covered**: they aren't a member's action, and they have no request.
+
+### PII exclusion
+
+Properties describe an action's shape, never its content: no titles, bodies, descriptions, free-text reasons, details or comments, names, emails, coordinates, file or folder names, money amounts, emoji, or another member's id. A string value comes from a closed set, a DTO `@IsIn`/`@IsEnum` field or a value the server set. `feature-events.spec.ts` (`apps/api/src/interface/controllers/`) checks that every allowed key is snake_case and passes `assertContentFreeProperties`.
+
+### Volume
+
+An estimate, not a measurement: an active 60-member chapter sending about 400 messages and 200 reactions or votes a day makes roughly 18,000 chat events a month, and every other feature event together about 1,000 to 2,000. Web's outbox events add about two per web send. That is about 20,000 to 25,000 person-processed events per chapter per month. PostHog's free allowance is 1 million events a month ([pricing](https://posthog.com/pricing), read 2026-11-04), about 40 chapters at that rate; identified (person-processed) events above the allowance are billed at a higher rate than anonymous ones ([anonymous vs identified events](https://posthog.com/event-comparison), read 2026-11-04).
+
+### Adding one
+
+Add the event to `FEATURE_EVENTS` with its feature and allowed properties, add its row to the tables above, and put `@FeatureEvent` on the handler. `feature-events.spec.ts` fails until the three agree: every catalog event is sent by a handler, the spec lists the same events with the same properties, and an event on a route gated by `@RequireModule` names that module as its feature.
 
 ## Alerting
 

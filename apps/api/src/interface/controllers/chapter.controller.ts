@@ -47,6 +47,12 @@ import {
 import { toChapterMemberView } from '../../application/services/chapter-member-view';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { CHAPTER_PROFILE_PERMISSIONS } from '@repo/validation';
+import { ARCHETYPES } from '@repo/org-archetypes';
+import type { Chapter } from '#domain/entities/chapter.entity';
+import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
 
 /**
  * Compile-time guard that every field `PATCH /chapters/current` can write is
@@ -84,6 +90,24 @@ export class ChapterController {
     summary:
       'Create and configure a chapter from the onboarding wizard (archetype, branding, default channels, welcome message)',
   })
+  @FeatureEvent(
+    'chapter-onboarded',
+    ({ body, result }: FeatureEventInput<ChapterOnboardingDto, Chapter>) => ({
+      // The stored key, not the body's unvalidated string: onboarding resolves
+      // it through `getArchetype`, which falls back to `ifc`.
+      archetype:
+        result.org_archetype &&
+        Object.prototype.hasOwnProperty.call(ARCHETYPES, result.org_archetype)
+          ? result.org_archetype
+          : null,
+      from_directory: !!body.directory_id,
+    }),
+    {
+      chapterId: ({
+        result,
+      }: FeatureEventInput<ChapterOnboardingDto, Chapter>) => result.id,
+    },
+  )
   async onboard(
     @CurrentUser('id') userId: string,
     @Body() dto: ChapterOnboardingDto,

@@ -402,6 +402,28 @@ describe('AnalyticsService', () => {
       // Privacy-safe default: don't emit when opt-out state is unknown.
       expect(provider.capture).not.toHaveBeenCalled();
     });
+
+    it.each([
+      [false, 1],
+      [true, 0],
+    ])(
+      'uses an opt-out the caller already read (%s) instead of reading it again (#593)',
+      async (chapterOptedOut, captures) => {
+        const { repo: chapters, isAnalyticsOptedOut } = makeChapterRepo({
+          // The stored value disagrees, to prove the carried one wins.
+          data: { analytics_opt_out: !chapterOptedOut },
+        });
+        const service = await buildService({ salt: SALT, chapters, provider });
+
+        await service.track('task-created', USER_ID, {
+          chapterId: CHAPTER_ID,
+          chapterOptedOut,
+        });
+
+        expect(isAnalyticsOptedOut).not.toHaveBeenCalled();
+        expect(provider.capture).toHaveBeenCalledTimes(captures);
+      },
+    );
   });
 
   describe('trackForChapter (chapter-keyed funnel events, #267)', () => {

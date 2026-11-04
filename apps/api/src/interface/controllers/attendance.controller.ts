@@ -20,6 +20,10 @@ import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -44,6 +48,20 @@ export class AttendanceController {
     description:
       'Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.',
   })
+  // The body is optional (a bare plain check-in), so it may be absent. `token`
+  // wins over `manualCode` when both are sent, as in `AttendanceService`.
+  @FeatureEvent(
+    'attendance-checked-in',
+    ({ body }: FeatureEventInput<CheckInDto | undefined>) => ({
+      method:
+        body?.token != null
+          ? 'qr'
+          : body?.manualCode != null
+            ? 'manual_code'
+            : 'plain',
+      has_location: body?.lat != null && body?.lng != null,
+    }),
+  )
   async checkIn(
     @Param('eventId') eventId: string,
     @CurrentUser('id') userId: string,
@@ -93,6 +111,13 @@ export class AttendanceController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
   @ApiOperation({ summary: 'Update attendance status for a member' })
+  @FeatureEvent(
+    'attendance-marked',
+    ({ body }: FeatureEventInput<UpdateAttendanceDto>) => ({
+      status: body.status,
+      has_excuse: !!body.excuse_reason,
+    }),
+  )
   async updateStatus(
     @Param('eventId') eventId: string,
     @Param('userId') userId: string,

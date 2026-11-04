@@ -41,6 +41,11 @@ export interface RequestContext extends Request {
    * with no toggles stored, which is every module on.
    */
   enabledModules?: Record<string, boolean> | null;
+  /**
+   * `chapters.analytics_opt_out` for `chapterId`, as `ChapterGuard` read it.
+   * Undefined on a route without the guard.
+   */
+  analyticsOptOut?: boolean;
   rawBody?: Buffer;
 }
 

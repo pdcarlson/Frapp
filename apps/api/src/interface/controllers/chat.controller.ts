@@ -32,6 +32,10 @@ import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentEnabledModules,
   CurrentUser,
@@ -61,7 +65,45 @@ import {
   GetChannelMessagesQueryDto,
   ChatMessageDto,
 } from '../dtos/chat.dto';
-import type { ChannelType } from '#domain/entities/chat.entity';
+import type { ChannelType, ChatChannel } from '#domain/entities/chat.entity';
+
+/** What `POST :id/messages` answers with. */
+type SentMessage = Awaited<ReturnType<ChatService['sendMessage']>>;
+
+/** What `POST messages/:messageId/actions` answers with. */
+type RecordedMessageAction = Awaited<
+  ReturnType<ChatReactionService['recordMessageAction']>
+>;
+
+/** `ChatReactionService`'s vote discriminator, and the chat poll card's (`POLL_VOTE_ACTION_TYPE`). */
+const VOTE_ACTION_TYPE = 'vote';
+
+/** The prefix every emoji reaction's `action_type` carries (`reaction:<emoji>`). */
+const REACTION_ACTION_PREFIX = 'reaction:';
+
+/**
+ * How many options a chat-card vote selects. `payload.option_id` is one id or
+ * several, read the way `ChatReactionService` reads it for the poll rules.
+ */
+function cardVoteSelectedCount(
+  payload: Record<string, unknown> | undefined,
+): number {
+  const raw = payload?.['option_id'];
+  return (Array.isArray(raw) ? raw : [raw]).filter(
+    (id) => typeof id === 'string',
+  ).length;
+}
+
+/**
+ * The shape of a poll card's payload (`PollPayload` in
+ * `@repo/chat-core/integrations`). Nothing validates it on send, so every
+ * field is read defensively.
+ */
+interface PollCardPayloadShape {
+  options?: unknown;
+  closes_at?: unknown;
+  choice_mode?: unknown;
+}
 
 @ApiTags('Chat')
 @ApiBearerAuth()
@@ -195,6 +237,14 @@ export class ChatController {
   @Post()
   @RequirePermissions(SystemPermissions.CHANNELS_CREATE)
   @ApiOperation({ summary: 'Create a channel' })
+  @FeatureEvent(
+    'channel-created',
+    ({ result }: FeatureEventInput<CreateChannelDto, ChatChannel>) => ({
+      type: result.type,
+      is_read_only: result.is_read_only,
+      has_category: result.category_id != null,
+    }),
+  )
   async createChannel(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -238,6 +288,9 @@ export class ChatController {
 
   @Post('dm')
   @ApiOperation({ summary: 'Get or create a 1-on-1 DM channel' })
+  // Get-or-create, and the result does not say which: reopening an existing
+  // DM counts the same as starting one.
+  @FeatureEvent('dm-opened')
   async getOrCreateDm(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -398,6 +451,48 @@ export class ChatController {
   @ApiOperation({
     summary: 'Send a message (hot path; idempotent on client_message_id)',
   })
+  // A retry on the same `client_message_id` answers `deduplicated: true`, and
+  // records nothing: the message was counted when it was first written.
+  @FeatureEvent(
+    'message-sent',
+    ({ body, result }: FeatureEventInput<SendMessageDto, SentMessage>) =>
+      result.deduplicated
+        ? null
+        : {
+            kind: result.message.kind ?? 'text',
+            is_reply: !!result.message.reply_to_id,
+            // From the request, not `metadata.attachment_count`: with no
+            // attachments the row's metadata is the client's own, verbatim.
+            attachment_count: Array.isArray(body.attachments)
+              ? body.attachments.length
+              : 0,
+          },
+  )
+  // `/poll` posts a `kind: 'poll'` message through this route
+  // (`@repo/chat-core/dispatch`).
+  @FeatureEvent(
+    'poll-created',
+    ({ body, result }: FeatureEventInput<SendMessageDto, SentMessage>) => {
+      if (result.deduplicated || result.message.kind !== 'poll') return null;
+      const poll = (body.payload ?? {}) as PollCardPayloadShape;
+      return {
+        // As the card vote rules read it: absent or `single` is single-choice,
+        // and anything else is held to no cardinality, so it votes as multi.
+        choice_mode:
+          poll.choice_mode == null || poll.choice_mode === 'single'
+            ? 'single'
+            : 'multi',
+        option_count: Array.isArray(poll.options) ? poll.options.length : 0,
+        has_expiry: typeof poll.closes_at === 'string' && poll.closes_at !== '',
+      };
+    },
+  )
+  // `/announce` posts a `kind: 'announcement'` message through this route.
+  @FeatureEvent(
+    'announcement-posted',
+    ({ result }: FeatureEventInput<SendMessageDto, SentMessage>) =>
+      result.deduplicated || result.message.kind !== 'announcement' ? null : {},
+  )
   async sendMessage(
     @Param('id') channelId: string,
     @CurrentChapterId() chapterId: string,
@@ -567,6 +662,45 @@ export class ChatController {
     summary:
       'Record a reaction / vote / card action (hot path; atomic dedup; vote UPSERTS)',
   })
+  // Neither event carries the `action_type`: a reaction's holds the emoji, and
+  // any other is free-form. A repeated reaction answers `deduplicated: true`
+  // and records nothing. Removing one goes to `chat_message_actions` directly
+  // (`unreact` in `@repo/chat-core/chat-client`), so no event sees it.
+  @FeatureEvent(
+    'message-reacted',
+    ({
+      body,
+      result,
+    }: FeatureEventInput<ChatMessageActionDto, RecordedMessageAction>) =>
+      typeof body.action_type === 'string' &&
+      body.action_type.startsWith(REACTION_ACTION_PREFIX) &&
+      !result.deduplicated
+        ? {}
+        : null,
+  )
+  // The chat poll card's vote. A vote is never `deduplicated`: a second one
+  // replaces the first (ADR-07) and answers `updated: true`, even when it
+  // picks the same option again, so `is_revote` means "replaced an earlier
+  // vote", not "changed the answer". A multi-choice vote with nothing selected
+  // clears the vote, which is not a vote cast.
+  @FeatureEvent(
+    'poll-voted',
+    ({
+      body,
+      result,
+    }: FeatureEventInput<ChatMessageActionDto, RecordedMessageAction>) => {
+      if (body.action_type !== VOTE_ACTION_TYPE || result.deduplicated) {
+        return null;
+      }
+      const selectedCount = cardVoteSelectedCount(body.payload);
+      if (selectedCount === 0) return null;
+      return {
+        surface: 'card',
+        selected_count: selectedCount,
+        is_revote: result.updated === true,
+      };
+    },
+  )
   async recordMessageAction(
     @Param('messageId') messageId: string,
     @CurrentChapterId() chapterId: string,

@@ -27,6 +27,10 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -88,6 +92,19 @@ export class DiscordImportController {
       'Requires the consent acknowledgement. Returns the import to upload an export against.',
   })
   @ApiCreatedResponse({ type: DiscordImportResponseDto })
+  // `source` as the server resolved it (`upload` when omitted); never the
+  // guild name.
+  @FeatureEvent(
+    'discord-import-created',
+    ({
+      result,
+    }: FeatureEventInput<
+      CreateDiscordImportDto,
+      DiscordImportResponseDto
+    >) => ({
+      source: result.source,
+    }),
+  )
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser() user: { id: string },
@@ -297,6 +314,17 @@ export class DiscordImportController {
   // Optional: every client before #2858 starts with no body at all.
   @ApiBody({ type: StartDiscordImportDto, required: false })
   @ApiCreatedResponse({ type: DiscordImportResponseDto })
+  // From the result, not the body: a restart that sends no cutoff keeps the
+  // one the first start set. A start of an import already `ready` succeeds
+  // again and counts again.
+  @FeatureEvent(
+    'discord-import-started',
+    ({
+      result,
+    }: FeatureEventInput<StartDiscordImportDto, DiscordImportResponseDto>) => ({
+      has_cutoff: result.messages_after != null,
+    }),
+  )
   async start(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: StartDiscordImportDto,

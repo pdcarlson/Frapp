@@ -76,12 +76,15 @@ export class ChapterGuard implements CanActivate {
 
     const { data: chapter } = await this.supabase
       .from('chapters')
-      .select('subscription_status, past_due_since, enabled_modules')
+      .select(
+        'subscription_status, past_due_since, enabled_modules, analytics_opt_out',
+      )
       .eq('id', chapterId)
       .single<{
         subscription_status: SubscriptionStatus;
         past_due_since: string | null;
         enabled_modules: Record<string, boolean> | null;
+        analytics_opt_out: boolean;
       }>();
 
     if (!chapter) {
@@ -93,6 +96,13 @@ export class ChapterGuard implements CanActivate {
     request.chapterId = chapterId;
     request.subscriptionStatus = chapter.subscription_status;
     request.enabledModules = chapter.enabled_modules;
+    // Read here so a feature event this request sends (#593) needn't read the
+    // chapter row again for its opt-out check. Anything but a boolean is left
+    // unknown, so the event falls back to its own fail-closed read.
+    request.analyticsOptOut =
+      typeof chapter.analytics_opt_out === 'boolean'
+        ? chapter.analytics_opt_out
+        : undefined;
 
     this.enforceSubscription(
       context,

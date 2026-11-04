@@ -31,6 +31,12 @@ import {
   RedeemInviteDto,
 } from '../dtos/invite.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
+import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import type { Invite } from '#domain/entities/invite.entity';
+import type { BulkEmailInviteResult } from '../../application/services/invite.service';
 
 @ApiTags('Invites')
 @ApiBearerAuth()
@@ -46,6 +52,7 @@ export class InviteController {
   @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
   @GraceBlocked()
   @ApiOperation({ summary: 'Generate an invite token' })
+  @FeatureEvent('invite-created', () => ({ invite_method: 'link', count: 1 }))
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -60,6 +67,13 @@ export class InviteController {
   @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
   @GraceBlocked()
   @ApiOperation({ summary: 'Generate multiple invite tokens' })
+  @FeatureEvent(
+    'invite-created',
+    ({ result }: FeatureEventInput<BatchCreateInvitesDto, Invite[]>) => ({
+      invite_method: 'batch',
+      count: result.length,
+    }),
+  )
   async createBatch(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -81,6 +95,15 @@ export class InviteController {
   @ApiOperation({
     summary: 'Generate invite tokens and email each address a join link',
   })
+  @FeatureEvent(
+    'invite-created',
+    ({
+      result,
+    }: FeatureEventInput<BulkEmailInviteDto, BulkEmailInviteResult>) => ({
+      invite_method: 'email',
+      count: result.invites.length,
+    }),
+  )
   async createWithEmails(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -97,6 +120,12 @@ export class InviteController {
   @Post('redeem')
   @ThrottleFanOutWrite()
   @ApiOperation({ summary: 'Redeem an invite token to join a chapter' })
+  @FeatureEvent('invite-redeemed', undefined, {
+    chapterId: ({
+      result,
+    }: FeatureEventInput<RedeemInviteDto, { chapterId: string }>) =>
+      result.chapterId,
+  })
   async redeem(
     @CurrentUser('id') userId: string,
     @Body() dto: RedeemInviteDto,
