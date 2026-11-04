@@ -152,6 +152,27 @@ Points no longer exist as screens; Profile moved into the More hub.
 Screens that have not been reskinned yet still draw Ionicons per §5. Each
 cluster replaces its own as it rebuilds; there is no separate icon migration.
 
+### 6.1.2 Mobile More hub (Signet duotone, shipped)
+
+The More hub's leading row glyphs (s09, #1048) live in
+`apps/mobile/components/more/more-glyphs.tsx` at 20px (§2's list-row size).
+Where the board draws the row, the geometry is transcribed from it; where it
+doesn't, the shape is the web shell's glyph for the same intent (§6.2), so one
+intent draws one shape on both surfaces. Member rows stroke in the chapter
+accent; the Admin rows are drawn neutral, as the board draws them.
+
+| Semantic intent | Glyph | Source |
+|---|---|---|
+| Study hours | Clock: circle body, hands stroke-only | s09 (same shape as web `StudyGlyph`) |
+| Service hours | Heart | web `ServiceGlyph` (the board draws no Service hours row) |
+| Dues | Card: body plus a stroke-only stripe | s09 (web `BillingGlyph`) |
+| Documents | Page with a folded corner | s09 (web `DocumentsGlyph`) |
+| Directory | Two people, the second stroke-only | s09 (web `DirectoryGlyph`) |
+| Notifications | Bell, clapper stroke-only | s09 (web `NotificationsGlyph`) |
+| Settings | Gear, hub stroke-only | web `SettingsGlyph` (the board's s09 cog is drawn half-open) |
+| Switch chapter | Crest carrying two opposed swap arrows | Drawn fresh in the §1 recipe: no board draws this row |
+| Host check-in (Admin) | Three squares and a QR corner, neutral | s09 |
+
 ### 6.2 Web Dashboard shell (Signet duotone)
 
 Since the #920 shell slice the dashboard's shell chrome draws the duotone

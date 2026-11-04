@@ -175,7 +175,7 @@ describe("ProfilePhoto", () => {
     );
     expect(add.props.disabled).toBe(true);
     expect(texts(tree)).toContain(
-      "Choose a chapter from More → Chapter to add a photo.",
+      "Choose a chapter from More → Switch chapter to add a photo.",
     );
   });
 });
