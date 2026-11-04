@@ -3733,8 +3733,8 @@ export interface components {
             accent_color: string | null;
             /** @description The inviter's display name, or null when it can't be read. */
             invited_by: string | null;
-            /** @description The role name joining grants */
-            role: string;
+            /** @description The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role) */
+            role: string | null;
             expires_at: string;
         };
         RedeemInviteDto: {

@@ -1,12 +1,16 @@
 import { useMemo, useState } from "react";
 import { Redirect, useRouter } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { useListChapters, useUpdateOnboarding } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { PushPrimerCard } from "@/components/notifications/push-primer-card";
 import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
+import {
+  ONBOARDING_COLUMN_WIDTH,
+  OnboardingPrimaryButton,
+} from "@/components/onboarding/onboarding-primary-button";
 import { useAuthSession } from "@/lib/auth-session";
 import { selectOnboardingMembership } from "@/lib/onboarding/membership";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
@@ -102,22 +106,13 @@ export default function Welcome() {
       </ScrollView>
 
       <View style={styles.footer}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ disabled: leaving }}
+        <OnboardingPrimaryButton
+          label={leaving ? "Opening chat…" : "Go to chat"}
           disabled={leaving}
           onPress={() => {
             void finish();
           }}
-          style={[
-            styles.primaryButton,
-            leaving ? styles.primaryButtonDisabled : null,
-          ]}
-        >
-          <Text style={styles.primaryButtonText}>
-            {leaving ? "Opening chat…" : "Go to chat"}
-          </Text>
-        </Pressable>
+        />
       </View>
     </SafeAreaView>
   );
@@ -130,11 +125,11 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.background,
     },
     flex: { flex: 1 },
-    // One column, as wide as the join and setup screens' (400), centred on a
+    // One column, as wide as the join and setup screens', centred on a
     // tablet.
     scroll: {
       width: "100%",
-      maxWidth: 400 + tokens.spacing.xl * 2,
+      maxWidth: ONBOARDING_COLUMN_WIDTH + tokens.spacing.xl * 2,
       alignSelf: "center",
       paddingHorizontal: tokens.spacing.xl,
       paddingTop: tokens.spacing["3xl"],
@@ -159,23 +154,6 @@ function createStyles(tokens: SignetTokens) {
     footer: {
       paddingHorizontal: tokens.spacing.xl,
       paddingVertical: tokens.spacing.lg,
-    },
-    primaryButton: {
-      width: "100%",
-      maxWidth: 400,
-      alignSelf: "center",
-      borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.gold.house,
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    primaryButtonDisabled: {
-      opacity: 0.55,
-    },
-    primaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.onHouse,
     },
   });
 }

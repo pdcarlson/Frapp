@@ -12,6 +12,7 @@ import {
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LEGAL_ACCEPTANCE_LABEL } from '@repo/validation';
+import type { InvitePreview } from '../../application/services/invite.service';
 
 /**
  * #422: `role` is optional on all three create routes. Omitting it falls back
@@ -89,7 +90,7 @@ export class PreviewInviteDto {
 }
 
 /** `InvitePreview` in `invite.service.ts`, for the contract (#3352). */
-export class InvitePreviewResponseDto {
+export class InvitePreviewResponseDto implements InvitePreview {
   @ApiProperty()
   chapter_name: string;
 
@@ -114,8 +115,13 @@ export class InvitePreviewResponseDto {
   })
   invited_by: string | null;
 
-  @ApiProperty({ description: 'The role name joining grants' })
-  role: string;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role)',
+  })
+  role: string | null;
 
   @ApiProperty()
   expires_at: string;

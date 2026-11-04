@@ -40,9 +40,12 @@ const mutateAsync = vi.fn();
 let isPending = false;
 let isSuccess = false;
 
+/** The session's status; a spec sets it before rendering. */
+let authStatus: "authenticated" | "unauthenticated" = "authenticated";
+
 vi.mock("@/lib/auth-session", () => ({
   useAuthSession: () => ({
-    status: "authenticated",
+    status: authStatus,
     email: "brother@westfield.edu",
     signOut,
   }),
@@ -107,6 +110,7 @@ import {
   consumeRememberedInviteToken,
   rememberInviteToken,
 } from "@/lib/onboarding/invite-token";
+import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
 import JoinChapter, {
   JOIN_CHOICE_TITLE,
   JOIN_CONFIRM_TITLE,
@@ -746,10 +750,11 @@ describe("join screen — the question (#3350)", () => {
   });
 
   it("keeps the member on the confirm card while the join is running", () => {
-    // A link lands on the card, and the redeem is running.
+    // A link lands on the card, then the redeem starts.
     params.mockReturnValue({ token: "invite-token-10" });
-    redeemPending = true;
     const tree = render();
+    redeemPending = true;
+    rerender(tree);
     expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
 
     expect(labelled(tree.root, "Back to the invite")?.props.disabled).toBe(
@@ -766,10 +771,11 @@ describe("join screen — the question (#3350)", () => {
 
   it("ignores a second Join while a join is running", async () => {
     params.mockReturnValue({ token: "invite-token-11" });
-    redeemPending = true;
     const tree = render();
     // Terms answered, so only the guard can stop the send.
     await settle();
+    redeemPending = true;
+    rerender(tree);
 
     const join = tree.root
       .findAllByType("Pressable" as never, { deep: true })
@@ -913,6 +919,12 @@ describe("join screen — the question (#3350)", () => {
   });
 });
 
+/** The text the confirm card's chapter mark tile draws. */
+function markText(root: Node): string | undefined {
+  const tile = root.findAllByType(ChapterMarkTile, { deep: true })[0];
+  return tile?.props.text;
+}
+
 /**
  * #3352. The confirm card names the chapter before the member joins, from a
  * read that doesn't use the invite up.
@@ -964,6 +976,8 @@ describe("join screen — the confirm card's chapter (#3352)", () => {
     expect(text).toContain("FIJI");
     expect(text).toContain("Invited by Paul Carlson");
     expect(text).toContain("Joining as Member");
+    // The tile carries the chapter's own text mark, not its initials.
+    expect(markText(tree.root)).toBe("FIJI");
     // Reading it used nothing up.
     expect(redeemMutateAsync).not.toHaveBeenCalled();
 
@@ -1075,5 +1089,102 @@ describe("join screen — the confirm card's chapter (#3352)", () => {
     continueToConfirm(tree.root);
     await settle();
     expect(previewPost).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to initials for a chapter with no text mark, and names no role it won't grant", async () => {
+    previewAnswer = {
+      data: {
+        chapter_name: "Phi Gamma Delta Tau Nu",
+        university: "Rensselaer Polytechnic Institute",
+        // Letters hidden and no short name: the API sends no mark.
+        mark_text: null,
+        accent_color: null,
+        invited_by: null,
+        role: null,
+        expires_at: "2026-11-05T20:00:00.000Z",
+      },
+    };
+    params.mockReturnValue({ token: "invite-token-26" });
+    const tree = render();
+    await settle();
+
+    expect(markText(tree.root)).toBe("PG");
+    expect(allText(tree.root)).not.toContain("Joining as");
+    expect(allText(tree.root)).not.toContain("Invited by");
+  });
+
+  it("lets a fresh invite join after the last one came back dead", async () => {
+    previewAnswer = null;
+    legalRequired = false;
+    redeemMutateAsync.mockRejectedValueOnce({
+      statusCode: 410,
+      message: "Invite already used",
+    });
+    params.mockReturnValue({ token: "invite-token-27" });
+    const tree = render();
+    await settle();
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(true);
+
+    // Back to the field, and a new invite from the officer.
+    act(() => {
+      labelled(tree.root, "Back to the invite")?.props.onPress();
+    });
+    typeToken(tree.root, "invite-token-28");
+    continueToConfirm(tree.root);
+    await settle();
+
+    expect(allText(tree.root)).not.toContain("expired or already been used");
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(false);
+  });
+
+  it("holds a link opened while a join runs, then shows it once the join fails", async () => {
+    previewAnswer = null;
+    params.mockReturnValue({ token: "invite-token-29" });
+    const tree = render();
+    await settle();
+    redeemPending = true;
+    rerender(tree);
+
+    params.mockReturnValue({ token: "invite-token-30" });
+    rerender(tree);
+    // Still the invite being joined.
+    expect(allText(tree.root)).toContain("n-29");
+
+    redeemPending = false;
+    rerender(tree);
+    expect(allText(tree.root)).toContain("n-30");
+  });
+
+  it("keeps an invite the member pasted when the screen re-renders with the old link's param", async () => {
+    previewAnswer = null;
+    params.mockReturnValue({ token: "invite-token-31" });
+    const tree = render();
+    act(() => {
+      labelled(tree.root, "Back to the invite")?.props.onPress();
+    });
+    typeToken(tree.root, "invite-token-32");
+
+    // Anything that re-runs the link check, with the launch param still set.
+    vi.mocked(Linking.useURL).mockReturnValue("frapp://other");
+    rerender(tree);
+    expect(tree.root.findByType("TextInput" as never).props.value).toBe(
+      "invite-token-32",
+    );
+    vi.mocked(Linking.useURL).mockReturnValue(null);
+  });
+
+  it("reads no preview while signed out", async () => {
+    authStatus = "unauthenticated";
+    try {
+      params.mockReturnValue({ token: "invite-token-33" });
+      render();
+      await settle();
+      expect(previewPost).not.toHaveBeenCalled();
+    } finally {
+      authStatus = "authenticated";
+    }
   });
 });

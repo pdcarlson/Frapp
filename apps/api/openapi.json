@@ -11961,7 +11961,8 @@
           },
           "role": {
             "type": "string",
-            "description": "The role name joining grants"
+            "nullable": true,
+            "description": "The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role)"
           },
           "expires_at": {
             "type": "string"

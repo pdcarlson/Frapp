@@ -45,6 +45,10 @@ import { ChoiceRow } from "@/components/auth/choice-row";
 import { AccentPicker } from "@/components/chapter/accent-picker";
 import { PushPrimerCard } from "@/components/notifications/push-primer-card";
 import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
+import {
+  ONBOARDING_COLUMN_WIDTH,
+  OnboardingPrimaryButton,
+} from "@/components/onboarding/onboarding-primary-button";
 import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
 import {
   EMPTY_CHAPTER_IDENTITY,
@@ -674,7 +678,6 @@ export default function CreateChapter() {
             onLeaveLive={leaveLive}
             onFinish={finish}
             styles={styles}
-            tokens={tokens}
           />
         </View>
       </KeyboardAvoidingArea>
@@ -702,7 +705,6 @@ function Footer({
   onLeaveLive,
   onFinish,
   styles,
-  tokens,
 }: {
   step: Step;
   canConfirm: boolean;
@@ -716,7 +718,6 @@ function Footer({
   onLeaveLive: () => void;
   onFinish: () => void;
   styles: Styles;
-  tokens: SignetTokens;
 }) {
   let label: string;
   let onPress: () => void;
@@ -748,24 +749,12 @@ function Footer({
   }
   return (
     <View style={styles.footer}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ disabled, busy }}
-        disabled={disabled}
+      <OnboardingPrimaryButton
+        label={label}
         onPress={onPress}
-        style={[
-          styles.primaryButton,
-          disabled ? styles.primaryButtonDisabled : null,
-        ]}
-      >
-        {busy ? (
-          <ActivityIndicator color={tokens.color.gold.onHouse} />
-        ) : (
-          <Text style={styles.primaryButtonText} numberOfLines={1}>
-            {label}
-          </Text>
-        )}
-      </Pressable>
+        disabled={disabled}
+        busy={busy}
+      />
     </View>
   );
 }
@@ -1192,7 +1181,7 @@ function createStyles(tokens: SignetTokens) {
     container: {
       flex: 1,
       width: "100%",
-      maxWidth: 448,
+      maxWidth: ONBOARDING_COLUMN_WIDTH + tokens.spacing.xl * 2,
       alignSelf: "center",
       paddingHorizontal: tokens.spacing.xl,
     },
@@ -1358,21 +1347,6 @@ function createStyles(tokens: SignetTokens) {
     },
     footer: {
       paddingVertical: tokens.spacing.lg,
-    },
-    primaryButton: {
-      borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.gold.house,
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: tokens.spacing.md,
-    },
-    primaryButtonDisabled: {
-      opacity: 0.55,
-    },
-    primaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.onHouse,
     },
   });
 }

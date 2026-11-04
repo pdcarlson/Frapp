@@ -59,8 +59,12 @@ export interface InvitePreview {
   accent_color: string | null;
   /** The inviter's display name, or null when their profile is gone. */
   invited_by: string | null;
-  /** The role name the redeem will grant (`resolveRedeemRole`). */
-  role: string;
+  /**
+   * The role name the redeem will grant (`resolveRedeemRole`), or null when
+   * it would grant none: the invite's role is gone and the chapter has no
+   * seeded Member role to fall back to.
+   */
+  role: string | null;
   expires_at: string;
 }
 
@@ -356,7 +360,7 @@ export class InviteService {
       mark_text: chapterTextMark(chapter.branding)?.text ?? null,
       accent_color: chapter.accent_color,
       invited_by: inviter?.display_name ?? null,
-      role: role?.name ?? invite.role,
+      role: role?.name ?? null,
       expires_at: invite.expires_at,
     };
   }

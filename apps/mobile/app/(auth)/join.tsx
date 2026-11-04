@@ -37,6 +37,10 @@ import { SignetTokens } from "@repo/theme/signet";
 import { ChoiceRow } from "@/components/auth/choice-row";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
+import {
+  ONBOARDING_COLUMN_WIDTH,
+  OnboardingPrimaryButton,
+} from "@/components/onboarding/onboarding-primary-button";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
 import { useAuthSession } from "@/lib/auth-session";
@@ -60,8 +64,9 @@ import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * chapter" opens `/create-chapter`. An invite link that opened the app skips
  * the question and lands on the confirm step.
  *
- * One surface, no card, like s01 (#3349). Sign out and Delete account sit in
- * the Account menu in the top corner, on both views, because this is the only
+ * One surface, like s01 (#3349), with a card only for the one object on the
+ * confirm step. Sign out and Delete account sit in the Account menu in the top
+ * corner, on every view, because this is the only
  * screen a zero-membership account can reach (Apple 5.1.1(v), #2295).
  *
  * The invite step is one field that also accepts a pasted URL; the canvas draws
@@ -124,7 +129,21 @@ export default function JoinChapter() {
     copy: string;
   } | null>(null);
 
+  // The invite the effect below last applied. A route param stays set for the
+  // life of the screen, so every re-run sees it again; only one not applied
+  // yet is new.
+  const appliedInvite = useRef<string | null>(null);
+  // A join or deletion in flight holds the screen on the invite that started
+  // it, so a link opened meanwhile waits for it to end (`stepBack` holds the
+  // same way).
+  const holdLinks =
+    redeemInvite.isPending ||
+    redeemInvite.isSuccess ||
+    deleteAccount.isPending ||
+    deleteAccount.isSuccess;
+
   useEffect(() => {
+    if (holdLinks) return;
     const paramValue = (
       value: string | string[] | undefined,
     ): string | null => {
@@ -150,7 +169,17 @@ export default function JoinChapter() {
     // the process, so an invite already redeemed would otherwise fill the
     // field, and skip the question, on every later visit.
     const fromLink = takeInviteTokenFromLink(deepLinkUrl);
-    const fresh = fromParams ?? fromLink;
+    const isNew = (value: string | null): value is string =>
+      value !== null && value !== appliedInvite.current;
+    // A link is only ever returned once, so it leads; a param applied before
+    // is not new.
+    const fresh = isNew(fromLink)
+      ? fromLink
+      : isNew(fromParams)
+        ? fromParams
+        : null;
+    if (!fresh && (fromLink ?? fromParams)) return;
+    if (fresh) appliedInvite.current = fresh;
     // Only a fresh invite is remembered, for the signed-out bounce onto
     // sign-in. One taken back out of memory stays out, or it would fill the
     // field and skip the question on every later visit until a redeem.
@@ -160,14 +189,13 @@ export default function JoinChapter() {
       // A link just opened wins over whatever the field holds: the confirm
       // step hides the field, so a kept value would be joined unseen. A
       // remembered invite only fills an empty field.
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- seed the field from the invite URL
       setToken((current) => (fresh || current.length === 0 ? next : current));
       setError(null);
       // An opened invite link has already answered the question and filled
       // the field, so it goes straight to the confirm step.
       setView("confirm");
     }
-  }, [deepLinkUrl, params.code, params.invite, params.token]);
+  }, [deepLinkUrl, holdLinks, params.code, params.invite, params.token]);
 
   // `isSuccess`, not just `isPending`: TanStack clears `isPending` in the same
   // render that runs `onSuccess`, but `handleSignOut` then awaits a real
@@ -257,7 +285,11 @@ export default function JoinChapter() {
 
   // Read before the redirect below: hooks run on every render.
   const invite = extractInviteToken(token);
-  const preview = useInvitePreview(view === "confirm" ? invite : null);
+  // Signed-in only: a signed-out render is about to redirect, and the token
+  // would go out with no session.
+  const preview = useInvitePreview(
+    status === "authenticated" && view === "confirm" ? invite : null,
+  );
   const chapter = preview.data ?? null;
   // A dead link can't be joined, so the step says so and disables Join,
   // whether the preview or the redeem found it dead.
@@ -540,9 +572,11 @@ export default function JoinChapter() {
                         Invited by {chapter.invited_by}
                       </Text>
                     ) : null}
-                    <Text style={styles.inviteCardDetail}>
-                      Joining as {chapter.role}
-                    </Text>
+                    {chapter.role ? (
+                      <Text style={styles.inviteCardDetail}>
+                        Joining as {chapter.role}
+                      </Text>
+                    ) : null}
                   </View>
                 ) : (
                   // The invite itself, while the preview loads or when it
@@ -603,30 +637,15 @@ export default function JoinChapter() {
           */}
           {view === "choose" ? null : (
             <View style={styles.footer}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{
-                  disabled: stepBlocked,
-                  busy: redeeming,
-                }}
+              <OnboardingPrimaryButton
+                label={view === "invite" ? "Continue" : "Join chapter"}
                 disabled={stepBlocked}
+                busy={redeeming}
                 onPress={() => {
                   if (view === "invite") handleContinue();
                   else void handleJoin();
                 }}
-                style={[
-                  styles.primaryButton,
-                  stepBlocked ? styles.disabled : null,
-                ]}
-              >
-                {redeeming ? (
-                  <ActivityIndicator color={tokens.color.gold.onHouse} />
-                ) : (
-                  <Text style={styles.primaryButtonText}>
-                    {view === "invite" ? "Continue" : "Join chapter"}
-                  </Text>
-                )}
-              </Pressable>
+              />
             </View>
           )}
         </View>
@@ -748,7 +767,7 @@ function createStyles(tokens: SignetTokens) {
       flexGrow: 1,
       justifyContent: "center",
       width: "100%",
-      maxWidth: 400,
+      maxWidth: ONBOARDING_COLUMN_WIDTH,
       alignSelf: "center",
       gap: tokens.spacing.md,
       paddingVertical: tokens.spacing.xl,
@@ -767,7 +786,7 @@ function createStyles(tokens: SignetTokens) {
     // with their button pinned below (#3348 screen rules).
     stepBody: {
       width: "100%",
-      maxWidth: 400,
+      maxWidth: ONBOARDING_COLUMN_WIDTH,
       alignSelf: "center",
       gap: tokens.spacing.md,
       paddingTop: tokens.spacing.lg,
@@ -835,21 +854,6 @@ function createStyles(tokens: SignetTokens) {
     errorText: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
-    },
-    // As wide as the column above it.
-    primaryButton: {
-      width: "100%",
-      maxWidth: 400,
-      alignSelf: "center",
-      borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.gold.house,
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    primaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.onHouse,
     },
     hintText: {
       ...typeRole(tokens.typography.role.caption),

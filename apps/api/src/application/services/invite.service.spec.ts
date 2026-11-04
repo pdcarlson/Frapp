@@ -619,6 +619,15 @@ describe('InviteService', () => {
       expect(JSON.stringify(preview)).not.toContain('ΦΓΔ');
     });
 
+    it('names no role when the redeem would grant none', async () => {
+      // The invite's role is gone and there is no seeded Member role: redeem
+      // inserts the membership with no roles, so the card mustn't promise one.
+      mockRoleRepo.findByChapter.mockResolvedValue([]);
+      await expect(service.preview('preview-token')).resolves.toMatchObject({
+        role: null,
+      });
+    });
+
     it('still previews when the inviter profile is gone', async () => {
       mockUserRepo.findById.mockResolvedValue(null);
       await expect(service.preview('preview-token')).resolves.toMatchObject({
