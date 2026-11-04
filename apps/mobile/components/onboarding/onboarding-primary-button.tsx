@@ -10,11 +10,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 export const ONBOARDING_COLUMN_WIDTH = 400;
 
 /**
- * The one pinned step-forward button on an onboarding screen (#3348 screen
- * rules): house gold, because no chapter's color applies before the member is
- * inside one (`spec/behavior/branding.md` § Brand Boundaries). The screen
- * places it in its own footer, above the keyboard and the inset; this owns
- * how it looks and behaves, so join, setup and s03 can't drift apart.
+ * The one step-forward button on an onboarding screen (#3348 screen rules):
+ * house gold, because no chapter's color applies before the member is inside
+ * one (`spec/behavior/branding.md` § Brand Boundaries). Join, setup and s03
+ * pin it in their own footer, above the keyboard and the inset; the Terms
+ * prompt puts it in its card. This owns how it looks and behaves, so those
+ * four screens can't drift apart.
  *
  * `busy` swaps the label for a spinner. A disabled button dims, so a member
  * waiting on a slow request doesn't take it for a frozen screen.

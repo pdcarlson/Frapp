@@ -129,10 +129,15 @@ export default function JoinChapter() {
     copy: string;
   } | null>(null);
 
-  // The invite the effect below last applied. A route param stays set for the
-  // life of the screen, so every re-run sees it again; only one not applied
-  // yet is new.
-  const appliedInvite = useRef<string | null>(null);
+  // Every invite the effect below has applied. A route param stays set for
+  // the life of the screen, so every re-run sees it again; only one never
+  // applied is new. A set, not the last one: a param a link replaced must not
+  // come back as new on a later re-run.
+  const appliedInvites = useRef(new Set<string>());
+  // The link and params the effect last acted on. A re-run where they are
+  // unchanged (a join or deletion that held links just ended) has nothing to
+  // apply, so it leaves the field, the step and any error alone.
+  const handledInputs = useRef<string | null>(null);
   // A join or deletion in flight holds the screen on the invite that started
   // it, so a link opened meanwhile waits for it to end (`stepBack` holds the
   // same way).
@@ -144,6 +149,14 @@ export default function JoinChapter() {
 
   useEffect(() => {
     if (holdLinks) return;
+    const inputs = JSON.stringify([
+      deepLinkUrl,
+      params.token,
+      params.invite,
+      params.code,
+    ]);
+    if (inputs === handledInputs.current) return;
+    handledInputs.current = inputs;
     const paramValue = (
       value: string | string[] | undefined,
     ): string | null => {
@@ -170,7 +183,7 @@ export default function JoinChapter() {
     // field, and skip the question, on every later visit.
     const fromLink = takeInviteTokenFromLink(deepLinkUrl);
     const isNew = (value: string | null): value is string =>
-      value !== null && value !== appliedInvite.current;
+      value !== null && !appliedInvites.current.has(value);
     // A link is only ever returned once, so it leads; a param applied before
     // is not new.
     const fresh = isNew(fromLink)
@@ -179,7 +192,7 @@ export default function JoinChapter() {
         ? fromParams
         : null;
     if (!fresh && (fromLink ?? fromParams)) return;
-    if (fresh) appliedInvite.current = fresh;
+    if (fresh) appliedInvites.current.add(fresh);
     // Only a fresh invite is remembered, for the signed-out bounce onto
     // sign-in. One taken back out of memory stays out, or it would fill the
     // field and skip the question on every later visit until a redeem.

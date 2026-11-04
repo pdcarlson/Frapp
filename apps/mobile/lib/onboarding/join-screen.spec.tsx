@@ -58,6 +58,8 @@ vi.mock("@/lib/select-chapter", () => ({
 const redeemMutateAsync = vi.fn();
 /** A redeem in flight, as `useRedeemInvite` reports it. */
 let redeemPending = false;
+/** A redeem that succeeded while the chapter it joined opens. */
+let redeemSuccess = false;
 let legalRequired: boolean | undefined = false;
 
 // The Terms checkbox runs the real `useJoinTermsCheckbox`, against a mock API
@@ -67,7 +69,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useRedeemInvite: () => ({
     isPending: redeemPending,
-    isSuccess: false,
+    isSuccess: redeemSuccess,
     mutateAsync: redeemMutateAsync,
   }),
   useDeleteAccount: () => ({ isPending, isSuccess, mutateAsync }),
@@ -941,6 +943,7 @@ describe("join screen — the confirm card's chapter (#3352)", () => {
     isPending = false;
     isSuccess = false;
     redeemPending = false;
+    redeemSuccess = false;
     legalRequired = true;
     redeemMutateAsync.mockResolvedValue({ chapterId: "ch-1", memberId: "m-1" });
   });
@@ -1174,6 +1177,123 @@ describe("join screen — the confirm card's chapter (#3352)", () => {
       "invite-token-32",
     );
     vi.mocked(Linking.useURL).mockReturnValue(null);
+  });
+
+  it("keeps a failed join's error when the screen's only invite came from a link", async () => {
+    previewAnswer = null;
+    legalRequired = false;
+    vi.mocked(Linking.useURL).mockReturnValue(
+      "frapp://join?token=link-token-34",
+    );
+    try {
+      const tree = render();
+      await settle();
+      // The opened link stays remembered for a sign-in bounce. Said again
+      // here because this harness can mount the screen twice, and the second
+      // mount takes it back out.
+      rememberInviteToken("link-token-34");
+      redeemMutateAsync.mockRejectedValueOnce({
+        statusCode: 409,
+        message: "Already a member of this chapter",
+      });
+      await act(async () => {
+        await control(tree.root, "Join chapter")?.props.onPress();
+      });
+      expect(allText(tree.root)).toContain("already a member of this chapter");
+      // The join's pending flag rises and falls around it.
+      redeemPending = true;
+      rerender(tree);
+      // The join ends, which lets links through again: nothing new arrived,
+      // so the error the member needs stays.
+      redeemPending = false;
+      rerender(tree);
+
+      expect(allText(tree.root)).toContain("already a member of this chapter");
+      expect(allText(tree.root)).toContain("n-34");
+    } finally {
+      vi.mocked(Linking.useURL).mockReturnValue(null);
+    }
+  });
+
+  it("doesn't bring back a launch param a link replaced", async () => {
+    previewAnswer = null;
+    params.mockReturnValue({ token: "invite-token-35" });
+    const tree = render();
+    await settle();
+    vi.mocked(Linking.useURL).mockReturnValue(
+      "frapp://join?token=link-token-36",
+    );
+    try {
+      rerender(tree);
+      expect(allText(tree.root)).toContain("n-36");
+
+      // A join that failed, then anything else that re-runs the link check
+      // with the launch param still set.
+      redeemPending = true;
+      rerender(tree);
+      redeemPending = false;
+      rerender(tree);
+      vi.mocked(Linking.useURL).mockReturnValue("frapp://other");
+      rerender(tree);
+
+      expect(allText(tree.root)).toContain("n-36");
+      expect(allText(tree.root)).not.toContain("n-35");
+    } finally {
+      vi.mocked(Linking.useURL).mockReturnValue(null);
+    }
+  });
+
+  it("holds a link opened while the account is being deleted", () => {
+    params.mockReturnValue({ token: "invite-token-37" });
+    const tree = render();
+    isPending = true;
+    rerender(tree);
+
+    params.mockReturnValue({ token: "invite-token-38" });
+    rerender(tree);
+    expect(allText(tree.root)).toContain("n-37");
+
+    // The deletion failed: the link applies now.
+    isPending = false;
+    rerender(tree);
+    expect(allText(tree.root)).toContain("n-38");
+  });
+
+  it("holds a link opened after a join succeeded, while the chapter opens", () => {
+    params.mockReturnValue({ token: "invite-token-39" });
+    const tree = render();
+    redeemSuccess = true;
+    rerender(tree);
+
+    params.mockReturnValue({ token: "invite-token-40" });
+    rerender(tree);
+    expect(allText(tree.root)).toContain("n-39");
+    expect(allText(tree.root)).not.toContain("n-40");
+  });
+
+  it("leaves the member on the field after a deletion fails", () => {
+    vi.mocked(Linking.useURL).mockReturnValue(
+      "frapp://join?token=link-token-43",
+    );
+    try {
+      const tree = render();
+      act(() => {
+        labelled(tree.root, "Back to the invite")?.props.onPress();
+      });
+      typeToken(tree.root, "invite-token-44");
+
+      isPending = true;
+      rerender(tree);
+      isPending = false;
+      rerender(tree);
+
+      expect(allText(tree.root)).not.toContain(JOIN_CONFIRM_TITLE);
+      expect(tree.root.findByType("TextInput" as never).props.value).toBe(
+        "invite-token-44",
+      );
+    } finally {
+      vi.mocked(Linking.useURL).mockReturnValue(null);
+    }
   });
 
   it("reads no preview while signed out", async () => {
