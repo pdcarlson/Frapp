@@ -37,18 +37,6 @@ const mutateAsync = vi.fn();
 let isPending = false;
 let isSuccess = false;
 
-// The screen's `KeyboardAvoidingArea` (#3346) reaches `expo-constants` through
-// `lib/expo-go.ts`. The suite leaves that module to each spec; this one runs as
-// Expo Go, as the chat thread's does.
-vi.mock("expo-constants", () => ({
-  default: { executionEnvironment: "storeClient" },
-  ExecutionEnvironment: {
-    Bare: "bare",
-    Standalone: "standalone",
-    StoreClient: "storeClient",
-  },
-}));
-
 vi.mock("@/lib/auth-session", () => ({
   useAuthSession: () => ({ status: "authenticated", signOut }),
 }));

@@ -32,4 +32,15 @@ describe("screens with a low text field avoid the keyboard (#3346)", () => {
     );
     expect(source).toMatch(/<KeyboardAvoidingArea\b/);
   });
+
+  it("sign-in leaves iOS to its scroll view's own keyboard inset", () => {
+    // Its ScrollView sets `automaticallyAdjustKeyboardInsets`; a padding view
+    // around it on iOS would count the keyboard twice.
+    const source = readFileSync(join(APP_DIR, "(auth)/sign-in.tsx"), "utf8");
+
+    expect(source).toMatch(/automaticallyAdjustKeyboardInsets/);
+    expect(source).toMatch(
+      /<KeyboardAvoidingArea\b[^>]*\biosInsetFromScrollView\b/,
+    );
+  });
 });

@@ -3066,7 +3066,7 @@ describe("ChatShell block list (#2313)", () => {
     expect(screen.getByText(/new message from someone/i)).toBeInTheDocument();
   });
 
-  it("announces the system actor as Frapp, as its row reads (#3347)", () => {
+  it("announces the system actor as Frapp, not as Someone (#3347)", () => {
     const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
 
     mockUseChatChannel.mockReturnValue(
