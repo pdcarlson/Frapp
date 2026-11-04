@@ -3,12 +3,19 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Post,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { InviteService } from '../../application/services/invite.service';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
@@ -29,6 +36,8 @@ import {
   BatchCreateInvitesDto,
   BulkEmailInviteDto,
   RedeemInviteDto,
+  PreviewInviteDto,
+  InvitePreviewResponseDto,
 } from '../dtos/invite.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
@@ -115,6 +124,20 @@ export class InviteController {
       dto.role,
       dto.emails,
     );
+  }
+
+  @Post('preview')
+  @HttpCode(HttpStatus.OK)
+  @ThrottleFanOutWrite()
+  @ApiOperation({
+    summary:
+      "Read an invite's chapter, inviter and role without redeeming it (410 when the invite is dead)",
+  })
+  @ApiOkResponse({ type: InvitePreviewResponseDto })
+  async preview(
+    @Body() dto: PreviewInviteDto,
+  ): Promise<InvitePreviewResponseDto> {
+    return this.inviteService.preview(dto.token);
   }
 
   @Post('redeem')

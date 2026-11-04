@@ -700,6 +700,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invites/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Read an invite's chapter, inviter and role without redeeming it (410 when the invite is dead) */
+        post: operations["InviteController_preview_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/invites/redeem": {
         parameters: {
             query?: never;
@@ -3709,6 +3726,22 @@ export interface components {
             /** @description Email addresses to invite, one invite token per address */
             emails: string[];
         };
+        PreviewInviteDto: {
+            /** @description The invite token, as the join link carries it */
+            token: string;
+        };
+        InvitePreviewResponseDto: {
+            chapter_name: string;
+            university: string;
+            /** @description The chapter's text mark: its short name, else its Greek letters if it shows them, else null. Never letters the chapter hides. */
+            mark_text: string | null;
+            accent_color: string | null;
+            /** @description The inviter's display name, or null when it can't be read. */
+            invited_by: string | null;
+            /** @description The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role) */
+            role: string | null;
+            expires_at: string;
+        };
         RedeemInviteDto: {
             token: string;
             /** @description True when the user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy." Needed only if they haven't accepted the current version. */
@@ -6629,6 +6662,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    InviteController_preview_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewInviteDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitePreviewResponseDto"];
+                };
             };
             /** @description Error */
             default: {

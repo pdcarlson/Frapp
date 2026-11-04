@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Redirect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   ScrollView,
   Share,
@@ -45,6 +44,11 @@ import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { ChoiceRow } from "@/components/auth/choice-row";
 import { AccentPicker } from "@/components/chapter/accent-picker";
 import { PushPrimerCard } from "@/components/notifications/push-primer-card";
+import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
+import {
+  ONBOARDING_COLUMN_WIDTH,
+  OnboardingPrimaryButton,
+} from "@/components/onboarding/onboarding-primary-button";
 import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
 import {
   EMPTY_CHAPTER_IDENTITY,
@@ -462,12 +466,12 @@ export default function CreateChapter() {
                 )}
                 style={styles.liveMark}
               >
-                <MarkTile
+                <ChapterMarkTile
+                  testID="setup-mark-text"
                   logoUrl={mark.logoUrl}
                   text={mark.text}
                   accent={accent}
                   size={72}
-                  styles={styles}
                 />
               </Animated.View>
             ) : null}
@@ -505,12 +509,12 @@ export default function CreateChapter() {
                 archetype={archetype}
                 onArchetype={setArchetype}
                 mark={
-                  <MarkTile
+                  <ChapterMarkTile
+                    testID="setup-mark-text"
                     logoUrl={null}
                     text={mark.text}
                     accent={accent}
                     size={48}
-                    styles={styles}
                   />
                 }
                 styles={styles}
@@ -525,12 +529,12 @@ export default function CreateChapter() {
                   can change it later in Settings.
                 </Text>
                 <View style={styles.previewRow}>
-                  <MarkTile
+                  <ChapterMarkTile
+                    testID="setup-mark-text"
                     logoUrl={null}
                     text={mark.text}
                     accent={accent}
                     size={48}
-                    styles={styles}
                   />
                   <Text style={styles.cardTitle} numberOfLines={2}>
                     {identity.name}
@@ -674,7 +678,6 @@ export default function CreateChapter() {
             onLeaveLive={leaveLive}
             onFinish={finish}
             styles={styles}
-            tokens={tokens}
           />
         </View>
       </KeyboardAvoidingArea>
@@ -702,7 +705,6 @@ function Footer({
   onLeaveLive,
   onFinish,
   styles,
-  tokens,
 }: {
   step: Step;
   canConfirm: boolean;
@@ -716,7 +718,6 @@ function Footer({
   onLeaveLive: () => void;
   onFinish: () => void;
   styles: Styles;
-  tokens: SignetTokens;
 }) {
   let label: string;
   let onPress: () => void;
@@ -748,83 +749,12 @@ function Footer({
   }
   return (
     <View style={styles.footer}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ disabled, busy }}
-        disabled={disabled}
+      <OnboardingPrimaryButton
+        label={label}
         onPress={onPress}
-        style={[
-          styles.primaryButton,
-          disabled ? styles.primaryButtonDisabled : null,
-        ]}
-      >
-        {busy ? (
-          <ActivityIndicator color={tokens.color.gold.onHouse} />
-        ) : (
-          <Text style={styles.primaryButtonText} numberOfLines={1}>
-            {label}
-          </Text>
-        )}
-      </Pressable>
-    </View>
-  );
-}
-
-/**
- * The chapter's mark as setup draws it: the logo once there is one, else the
- * text `resolveChapterMark` chose (short name, shown letters, or initials) on
- * a tint of the chosen color. A tint rather than a fill, so any color the
- * officer picks keeps the text readable.
- */
-function MarkTile({
-  logoUrl,
-  text,
-  accent,
-  size,
-  styles,
-}: {
-  logoUrl: string | null;
-  text: string;
-  accent: string;
-  size: number;
-  styles: Styles;
-}) {
-  // The URL that failed to load, so a new logo gets its own try.
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const logoFailed = logoUrl !== null && failedUrl === logoUrl;
-  const frame = {
-    width: size,
-    height: size,
-    borderRadius: Math.round(size / 4),
-  };
-  if (logoUrl && !logoFailed) {
-    return (
-      <Image
-        accessibilityIgnoresInvertColors
-        accessibilityLabel="Chapter logo"
-        source={{ uri: logoUrl }}
-        resizeMode="contain"
-        onError={() => setFailedUrl(logoUrl)}
-        style={[styles.markLogo, frame]}
+        disabled={disabled}
+        busy={busy}
       />
-    );
-  }
-  return (
-    <View
-      testID="setup-mark-text"
-      style={[
-        styles.markTile,
-        frame,
-        { backgroundColor: tint(accent, 0.18), borderColor: accent },
-      ]}
-    >
-      <Text
-        style={[styles.markText, { fontSize: Math.round(size * 0.3) }]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-      >
-        {text}
-      </Text>
     </View>
   );
 }
@@ -1251,7 +1181,7 @@ function createStyles(tokens: SignetTokens) {
     container: {
       flex: 1,
       width: "100%",
-      maxWidth: 448,
+      maxWidth: ONBOARDING_COLUMN_WIDTH + tokens.spacing.xl * 2,
       alignSelf: "center",
       paddingHorizontal: tokens.spacing.xl,
     },
@@ -1369,20 +1299,6 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       gap: tokens.spacing.md,
     },
-    markTile: {
-      borderWidth: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: 4,
-    },
-    markLogo: {
-      backgroundColor: tokens.color.surface.surface1,
-    },
-    markText: {
-      fontFamily: typeRole(tokens.typography.role.title).fontFamily,
-      fontWeight: "700",
-      color: tokens.color.text.foreground,
-    },
     liveMark: {
       alignSelf: "flex-start",
       marginTop: tokens.spacing.lg,
@@ -1431,21 +1347,6 @@ function createStyles(tokens: SignetTokens) {
     },
     footer: {
       paddingVertical: tokens.spacing.lg,
-    },
-    primaryButton: {
-      borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.gold.house,
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: tokens.spacing.md,
-    },
-    primaryButtonDisabled: {
-      opacity: 0.55,
-    },
-    primaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.onHouse,
     },
   });
 }

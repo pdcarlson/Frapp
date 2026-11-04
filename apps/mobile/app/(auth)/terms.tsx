@@ -1,13 +1,6 @@
 import { useState } from "react";
 import { Redirect, useRouter } from "expo-router";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   termsPromptErrorCopy,
@@ -17,6 +10,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { TERMS_PROMPT_COPY } from "@repo/validation";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
+import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-primary-button";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -109,26 +103,14 @@ export default function TermsPrompt() {
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ disabled: submitting }}
+          <OnboardingPrimaryButton
+            label={TERMS_PROMPT_COPY.cta}
             disabled={submitting}
+            busy={acceptTerms.isPending}
             onPress={() => {
               void handleAccept();
             }}
-            style={[
-              styles.primaryButton,
-              submitting ? styles.primaryButtonDisabled : null,
-            ]}
-          >
-            {acceptTerms.isPending ? (
-              <ActivityIndicator color={tokens.color.gold.onHouse} />
-            ) : (
-              <Text style={styles.primaryButtonText}>
-                {TERMS_PROMPT_COPY.cta}
-              </Text>
-            )}
-          </Pressable>
+          />
 
           <Pressable
             accessibilityRole="button"
@@ -212,20 +194,6 @@ function createStyles(tokens: SignetTokens) {
     errorText: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
-    },
-    primaryButton: {
-      borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.gold.house,
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    primaryButtonDisabled: {
-      opacity: 0.55,
-    },
-    primaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.onHouse,
     },
     secondaryButton: {
       minHeight: tokens.touch.button,

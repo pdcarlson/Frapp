@@ -1,24 +1,35 @@
 import { useMemo, useState } from "react";
 import { Redirect, useRouter } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { useListChapters, useUpdateOnboarding } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { PushPrimerCard } from "@/components/notifications/push-primer-card";
 import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
+import {
+  ONBOARDING_COLUMN_WIDTH,
+  OnboardingPrimaryButton,
+} from "@/components/onboarding/onboarding-primary-button";
 import { useAuthSession } from "@/lib/auth-session";
 import { selectOnboardingMembership } from "@/lib/onboarding/membership";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * s03 — First-run + notification primer (`spec/ui/mobile/screens.md`).
+ * s03, "You're in." (`spec/ui/mobile/screens.md`).
  *
- * Hosts the auto-joined public channels and, when this build can push, the C7
- * push primer card (`shouldOfferPrimer`, #2299). Completing
- * or skipping PATCHes `has_completed_onboarding` so the gate will not send the
- * member here again.
+ * The first screen after a member joins: the chapter and its school under the
+ * title, read from the membership this time, not from the invite preview the
+ * confirm step on `/join` showed (#3352). It shows the auto-joined public
+ * channels and, when this
+ * build can push, the C7 push primer card inline (`shouldOfferPrimer`,
+ * #2299). Go to chat PATCHes `has_completed_onboarding`, so the gate will not
+ * send the member here again.
+ *
+ * It follows the #3348 screen rules: one surface, with a card only for the
+ * channel list and the primer, and one button pinned above the inset. It used
+ * to carry a Skip under Go to chat that did the same thing.
  */
 export default function Welcome() {
   const { tokens } = useFrappTheme();
@@ -64,10 +75,13 @@ export default function Welcome() {
       edges={["top", "right", "bottom", "left"]}
     >
       <ScrollView
+        style={styles.flex}
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>You&apos;re in.</Text>
+        <Text accessibilityRole="header" style={styles.title}>
+          You&apos;re in.
+        </Text>
         <Text style={styles.subtitle}>
           {university ? `${chapterName} · ${university}` : chapterName}
         </Text>
@@ -92,33 +106,13 @@ export default function Welcome() {
       </ScrollView>
 
       <View style={styles.footer}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ disabled: leaving }}
+        <OnboardingPrimaryButton
+          label={leaving ? "Opening chat…" : "Go to chat"}
           disabled={leaving}
           onPress={() => {
             void finish();
           }}
-          style={[
-            styles.primaryButton,
-            leaving ? styles.primaryButtonDisabled : null,
-          ]}
-        >
-          <Text style={styles.primaryButtonText}>
-            {leaving ? "Opening chat…" : "Go to chat"}
-          </Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Skip first-run"
-          disabled={leaving}
-          onPress={() => {
-            void finish();
-          }}
-          style={styles.secondaryButton}
-        >
-          <Text style={styles.secondaryButtonText}>Skip</Text>
-        </Pressable>
+        />
       </View>
     </SafeAreaView>
   );
@@ -130,7 +124,13 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       backgroundColor: tokens.color.surface.background,
     },
+    flex: { flex: 1 },
+    // One column, as wide as the join and setup screens', centred on a
+    // tablet.
     scroll: {
+      width: "100%",
+      maxWidth: ONBOARDING_COLUMN_WIDTH + tokens.spacing.xl * 2,
+      alignSelf: "center",
       paddingHorizontal: tokens.spacing.xl,
       paddingTop: tokens.spacing["3xl"],
       paddingBottom: tokens.spacing.lg,
@@ -153,31 +153,7 @@ function createStyles(tokens: SignetTokens) {
     },
     footer: {
       paddingHorizontal: tokens.spacing.xl,
-      paddingBottom: tokens.spacing.xl,
-      gap: tokens.spacing.sm,
-    },
-    primaryButton: {
-      borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.gold.house,
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    primaryButtonDisabled: {
-      opacity: 0.55,
-    },
-    primaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.onHouse,
-    },
-    secondaryButton: {
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    secondaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.mutedForeground,
+      paddingVertical: tokens.spacing.lg,
     },
   });
 }

@@ -40,9 +40,12 @@ const mutateAsync = vi.fn();
 let isPending = false;
 let isSuccess = false;
 
+/** The session's status; a spec sets it before rendering. */
+let authStatus: "authenticated" | "unauthenticated" = "authenticated";
+
 vi.mock("@/lib/auth-session", () => ({
   useAuthSession: () => ({
-    status: "authenticated",
+    status: authStatus,
     email: "brother@westfield.edu",
     signOut,
   }),
@@ -55,6 +58,8 @@ vi.mock("@/lib/select-chapter", () => ({
 const redeemMutateAsync = vi.fn();
 /** A redeem in flight, as `useRedeemInvite` reports it. */
 let redeemPending = false;
+/** A redeem that succeeded while the chapter it joined opens. */
+let redeemSuccess = false;
 let legalRequired: boolean | undefined = false;
 
 // The Terms checkbox runs the real `useJoinTermsCheckbox`, against a mock API
@@ -64,14 +69,29 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useRedeemInvite: () => ({
     isPending: redeemPending,
-    isSuccess: false,
+    isSuccess: redeemSuccess,
     mutateAsync: redeemMutateAsync,
   }),
   useDeleteAccount: () => ({ isPending, isSuccess, mutateAsync }),
 }));
 
-/** Answers `GET /v1/users/me/legal-acceptance`; `undefined` never answers. */
+/**
+ * What `POST /v1/invites/preview` answers (#3352). `null` fails the read the
+ * way a network error does, which leaves the card showing the bare invite.
+ */
+let previewAnswer: { data?: unknown; error?: unknown } | null = null;
+const previewPost = vi.fn(() =>
+  previewAnswer
+    ? Promise.resolve(previewAnswer)
+    : Promise.reject(new Error("offline")),
+);
+
+/**
+ * Answers `GET /v1/users/me/legal-acceptance`, where `undefined` never
+ * answers, and the invite preview above.
+ */
 const statusClient = {
+  POST: previewPost,
   GET: () =>
     legalRequired === undefined
       ? new Promise(() => {})
@@ -92,35 +112,49 @@ import {
   consumeRememberedInviteToken,
   rememberInviteToken,
 } from "@/lib/onboarding/invite-token";
+import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
 import JoinChapter, {
   JOIN_CHOICE_TITLE,
+  JOIN_CONFIRM_TITLE,
   JOIN_INVITE_TITLE,
+  confirmTitle,
 } from "@/app/(auth)/join";
 
 type Node = ReactTestRenderer["root"];
 type AlertButton = { text: string; style?: string; onPress?: () => void };
 
+/** The screen under its providers. A new element each call, so a rerender renders. */
+function app(queryClient: QueryClient) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <FrappClientProvider
+        client={
+          statusClient as unknown as ComponentProps<
+            typeof FrappClientProvider
+          >["client"]
+        }
+        chapterId={null}
+      >
+        <FrappThemeProvider>
+          <JoinChapter />
+        </FrappThemeProvider>
+      </FrappClientProvider>
+    </QueryClientProvider>
+  );
+}
+
+/** The client the latest `render()` used, for `rerender`. */
+let lastQueryClient: QueryClient | null = null;
+
 function render(): ReactTestRenderer {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  lastQueryClient = queryClient;
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
-      <QueryClientProvider client={queryClient}>
-        <FrappClientProvider
-          client={
-            statusClient as unknown as ComponentProps<
-              typeof FrappClientProvider
-            >["client"]
-          }
-          chapterId={null}
-        >
-          <FrappThemeProvider>
-            <JoinChapter />
-          </FrappThemeProvider>
-        </FrappClientProvider>
-      </QueryClientProvider>,
+      app(queryClient),
       // A host ref is null under the test renderer without this; with it, a
       // focus event's target names the element it was sent to. Not
       // enumerable, so `tree.toJSON()` still serializes.
@@ -131,6 +165,13 @@ function render(): ReactTestRenderer {
     );
   });
   return tree;
+}
+
+/** Renders the same screen again, as a new route param or link would. */
+function rerender(tree: ReactTestRenderer): void {
+  act(() => {
+    tree.update(app(lastQueryClient!));
+  });
 }
 
 /** Let the status read settle, so the screen shows what the server said. */
@@ -176,11 +217,44 @@ function openInvite(root: Node): void {
   });
 }
 
+/** Types into the invite field. */
+function typeToken(root: Node, value: string): void {
+  act(() => {
+    root.findByType("TextInput" as never).props.onChangeText(value);
+  });
+}
+
+/** The field's Continue: on to the confirm step. */
+function continueToConfirm(root: Node): void {
+  act(() => {
+    control(root, "Continue")?.props.onPress();
+  });
+}
+
+/** The pressable with this accessibility label (the back chevron's). */
+function labelled(root: Node, label: string) {
+  return root
+    .findAllByType("Pressable" as never, { deep: true })
+    .find((p) => p.props.accessibilityLabel === label);
+}
+
+/**
+ * The string parts of a `Text`'s children. A `Text` nested inside another is
+ * an element here, and `findAllByType` reaches it on its own.
+ */
+function textOf(children: unknown): string {
+  if (typeof children === "string" || typeof children === "number") {
+    return String(children);
+  }
+  if (Array.isArray(children)) return children.map(textOf).join("");
+  return "";
+}
+
 function allText(root: Node): string {
   return JSON.stringify(
     root
       .findAllByType("Text" as never, { deep: true })
-      .map((t) => t.props.children ?? ""),
+      .map((t) => textOf(t.props.children)),
   );
 }
 
@@ -220,7 +294,7 @@ describe("join screen — account deletion (5.1.1(v))", () => {
     openAccount(tree.root);
     expect(control(tree.root, "Delete account")).toBeDefined();
     // And the screen still does its own job.
-    expect(control(tree.root, "Join chapter")).toBeDefined();
+    expect(control(tree.root, "Continue")).toBeDefined();
   });
 
   it("confirms before deleting, and does not delete on cancel", () => {
@@ -321,10 +395,10 @@ describe("join screen — account deletion (5.1.1(v))", () => {
       .findAllByType("Pressable" as never, { deep: true })
       .find((p) => p.props.accessibilityLabel === "Close account menu");
     expect(backdrop?.props.disabled).toBe(true);
-    // "Join chapter" is disabled too, but keeps its label: its spinner means
+    // The step button is disabled too, but keeps its label: its spinner means
     // "a join is running", and what is running is the deletion.
     openInvite(tree.root);
-    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(true);
+    expect(control(tree.root, "Continue")?.props.disabled).toBe(true);
     expect(
       tree.root.findAllByType("ActivityIndicator" as never, { deep: true }),
     ).toHaveLength(0);
@@ -361,24 +435,22 @@ describe("join screen — account deletion (5.1.1(v))", () => {
  * ticking the box, and one who has isn't asked again.
  */
 describe("join screen — the Terms checkbox (#2302)", () => {
-  const renderInvite = () => {
+  /** The confirm step for `invite-token-1`, where the checkbox lives. */
+  const renderConfirm = () => {
     const tree = render();
     openInvite(tree.root);
+    typeToken(tree.root, "invite-token-1");
+    continueToConfirm(tree.root);
     return tree;
   };
   const checkbox = (root: Node) =>
     root
       .findAllByType("Pressable" as never, { deep: true })
       .find((pressable) => pressable.props.accessibilityRole === "checkbox");
-  const typeToken = (root: Node, value: string) => {
-    act(() => {
-      root.findByType("TextInput" as never).props.onChangeText(value);
-    });
-  };
   const texts = (root: Node) =>
     root
       .findAllByType("Text" as never, { deep: true })
-      .map((text) => JSON.stringify(text.props.children ?? ""));
+      .map((text) => textOf(text.props.children));
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -389,11 +461,10 @@ describe("join screen — the Terms checkbox (#2302)", () => {
 
   it("doesn't ask a user who already accepted the current Terms", async () => {
     legalRequired = false;
-    const tree = renderInvite();
+    const tree = renderConfirm();
     await settle();
     expect(checkbox(tree.root)).toBeUndefined();
 
-    typeToken(tree.root, "invite-token-1");
     await act(async () => {
       await control(tree.root, "Join chapter")?.props.onPress();
     });
@@ -403,11 +474,10 @@ describe("join screen — the Terms checkbox (#2302)", () => {
 
   it("asks, and won't join until the box is ticked", async () => {
     legalRequired = true;
-    const tree = renderInvite();
+    const tree = renderConfirm();
     await settle();
     expect(checkbox(tree.root)).toBeDefined();
 
-    typeToken(tree.root, "invite-token-1");
     await act(async () => {
       await control(tree.root, "Join chapter")?.props.onPress();
     });
@@ -420,10 +490,9 @@ describe("join screen — the Terms checkbox (#2302)", () => {
 
   it("sends the checkbox once it is ticked", async () => {
     legalRequired = true;
-    const tree = renderInvite();
+    const tree = renderConfirm();
     await settle();
 
-    typeToken(tree.root, "invite-token-1");
     act(() => {
       checkbox(tree.root)?.props.onPress();
     });
@@ -439,7 +508,7 @@ describe("join screen — the Terms checkbox (#2302)", () => {
 
   it("asks while the status is still unknown, rather than earn a refusal", () => {
     legalRequired = undefined;
-    const tree = renderInvite();
+    const tree = renderConfirm();
     expect(checkbox(tree.root)).toBeDefined();
   });
 
@@ -452,11 +521,10 @@ describe("join screen — the Terms checkbox (#2302)", () => {
       message: LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
       requestId: "req_1",
     });
-    const tree = renderInvite();
+    const tree = renderConfirm();
     await settle();
     expect(checkbox(tree.root)).toBeUndefined();
 
-    typeToken(tree.root, "invite-token-1");
     await act(async () => {
       await control(tree.root, "Join chapter")?.props.onPress();
     });
@@ -549,14 +617,79 @@ describe("join screen — the question (#3350)", () => {
     expect(hasField(tree.root)).toBe(true);
     expect(allText(tree.root)).toContain(OAUTH_MEMBERSHIP_HINT);
 
-    const back = tree.root
-      .findAllByType("Pressable" as never, { deep: true })
-      .find((p) => p.props.accessibilityLabel === "Back to the choices");
     act(() => {
-      back?.props.onPress();
+      labelled(tree.root, "Back to the choices")?.props.onPress();
     });
     expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
     expect(hasField(tree.root)).toBe(false);
+  });
+
+  it("confirms the invite on a card before joining with it (#3352)", async () => {
+    const tree = render();
+    openInvite(tree.root);
+    typeToken(tree.root, "https://app.frapp.live/join?token=invite-token-2a9f");
+
+    continueToConfirm(tree.root);
+    // Terms answered, so the join goes straight through.
+    await settle();
+    // Continue only moves on; nothing is used up yet.
+    expect(redeemMutateAsync).not.toHaveBeenCalled();
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
+    expect(hasField(tree.root)).toBe(false);
+    // The card names the invite by its tail, read out of the pasted link.
+    expect(allText(tree.root)).toContain("2a9f");
+
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+    expect(redeemMutateAsync).toHaveBeenCalledWith({
+      token: "invite-token-2a9f",
+    });
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/welcome");
+  });
+
+  it("won't continue without an invite in the field", () => {
+    const tree = render();
+    openInvite(tree.root);
+
+    continueToConfirm(tree.root);
+    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+    expect(allText(tree.root)).toContain("Paste the invite your officer sent");
+
+    // The keyboard's own key does the same.
+    act(() => {
+      tree.root.findByType("TextInput" as never).props.onSubmitEditing();
+    });
+    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+  });
+
+  it("steps back from the card to the field with the invite kept, then to the question", () => {
+    const tree = render();
+    openInvite(tree.root);
+    typeToken(tree.root, "invite-token-3");
+    continueToConfirm(tree.root);
+
+    act(() => {
+      labelled(tree.root, "Back to the invite")?.props.onPress();
+    });
+    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+    expect(tree.root.findByType("TextInput" as never).props.value).toBe(
+      "invite-token-3",
+    );
+
+    // Android's back button walks the same steps.
+    continueToConfirm(tree.root);
+    let handled = false;
+    act(() => {
+      handled = latestBackHandler()();
+    });
+    expect(handled).toBe(true);
+    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+    act(() => {
+      handled = latestBackHandler()();
+    });
+    expect(handled).toBe(true);
+    expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
   });
 
   it("sends a founder to chapter setup", () => {
@@ -567,14 +700,21 @@ describe("join screen — the question (#3350)", () => {
     expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/create-chapter");
   });
 
-  it("goes straight to the invite step, filled in, when an invite link opened the app", () => {
+  it("goes straight to the confirm card when an invite link opened the app", () => {
     params.mockReturnValue({ token: "invite-token-9" });
     const tree = render();
 
-    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
+    expect(allText(tree.root)).toContain("en-9");
+    expect(control(tree.root, "Join chapter")).toBeDefined();
+
+    // Back shows the field the link filled, keyboard down: the next step is
+    // Continue, not typing.
+    act(() => {
+      labelled(tree.root, "Back to the invite")?.props.onPress();
+    });
     const field = tree.root.findByType("TextInput" as never);
     expect(field.props.value).toBe("invite-token-9");
-    // The next step is Join, so the keyboard stays down.
     expect(field.props.autoFocus).toBe(false);
   });
 
@@ -611,46 +751,40 @@ describe("join screen — the question (#3350)", () => {
     expect(allText(tree.root)).toContain("Deleting account");
   });
 
-  it("keeps the member on the invite step while the join is running", () => {
-    // A link lands on the invite step, then the redeem starts.
+  it("keeps the member on the confirm card while the join is running", () => {
+    // A link lands on the card, then the redeem starts.
     params.mockReturnValue({ token: "invite-token-10" });
     const tree = render();
-    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
-
     redeemPending = true;
-    // Any state change re-reads the hook; an edit is the cheapest one.
-    act(() => {
-      tree.root
-        .findByType("TextInput" as never)
-        .props.onChangeText("invite-token-10 ");
-    });
+    rerender(tree);
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
 
-    const back = tree.root
-      .findAllByType("Pressable" as never, { deep: true })
-      .find((p) => p.props.accessibilityLabel === "Back to the choices");
-    expect(back?.props.disabled).toBe(true);
+    expect(labelled(tree.root, "Back to the invite")?.props.disabled).toBe(
+      true,
+    );
 
     let handled = false;
     act(() => {
       handled = latestBackHandler()();
     });
     expect(handled).toBe(true);
-    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
   });
-  it("ignores the Go key while a join is running", async () => {
+
+  it("ignores a second Join while a join is running", async () => {
     params.mockReturnValue({ token: "invite-token-11" });
     const tree = render();
     // Terms answered, so only the guard can stop the send.
     await settle();
     redeemPending = true;
-    act(() => {
-      tree.root
-        .findByType("TextInput" as never)
-        .props.onChangeText("invite-token-11 ");
-    });
+    rerender(tree);
 
-    act(() => {
-      tree.root.findByType("TextInput" as never).props.onSubmitEditing();
+    const join = tree.root
+      .findAllByType("Pressable" as never, { deep: true })
+      .find((p) => p.props.accessibilityState?.busy === true);
+    expect(join?.props.disabled).toBe(true);
+    await act(async () => {
+      await join?.props.onPress();
     });
     expect(redeemMutateAsync).not.toHaveBeenCalled();
   });
@@ -719,7 +853,7 @@ describe("join screen — the question (#3350)", () => {
       handled = live[live.length - 1]();
     });
     expect(handled).toBe(true);
-    expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
+    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
 
     // The same for the Account menu.
     openAccount(tree.root);
@@ -743,7 +877,7 @@ describe("join screen — the question (#3350)", () => {
       "frapp://join?token=link-token-13",
     );
     const first = render();
-    expect(allText(first.root)).toContain(JOIN_INVITE_TITLE);
+    expect(allText(first.root)).toContain(JOIN_CONFIRM_TITLE);
     act(() => {
       first.unmount();
     });
@@ -757,11 +891,11 @@ describe("join screen — the question (#3350)", () => {
   it("forgets an invite the member backed out of", () => {
     params.mockReturnValue({ token: "invite-token-14" });
     const first = render();
-    const back = first.root
-      .findAllByType("Pressable" as never, { deep: true })
-      .find((p) => p.props.accessibilityLabel === "Back to the choices");
     act(() => {
-      back?.props.onPress();
+      labelled(first.root, "Back to the invite")?.props.onPress();
+    });
+    act(() => {
+      labelled(first.root, "Back to the choices")?.props.onPress();
     });
     act(() => {
       first.unmount();
@@ -776,14 +910,401 @@ describe("join screen — the question (#3350)", () => {
     // Remembered by a signed-out visit that bounced to sign-in.
     rememberInviteToken("invite-token-15");
     const first = render();
-    expect(first.root.findByType("TextInput" as never).props.value).toBe(
-      "invite-token-15",
-    );
+    expect(allText(first.root)).toContain(JOIN_CONFIRM_TITLE);
+    expect(allText(first.root)).toContain("n-15");
     act(() => {
       first.unmount();
     });
 
     const second = render();
     expect(allText(second.root)).toContain(JOIN_CHOICE_TITLE);
+  });
+});
+
+/** The text the confirm card's chapter mark tile draws. */
+function markText(root: Node): string | undefined {
+  const tile = root.findAllByType(ChapterMarkTile, { deep: true })[0];
+  return tile?.props.text;
+}
+
+/**
+ * #3352. The confirm card names the chapter before the member joins, from a
+ * read that doesn't use the invite up.
+ */
+describe("join screen — the confirm card's chapter (#3352)", () => {
+  const params = vi.mocked(useLocalSearchParams);
+  const checkbox = (root: Node) =>
+    root
+      .findAllByType("Pressable" as never, { deep: true })
+      .find((pressable) => pressable.props.accessibilityRole === "checkbox");
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isPending = false;
+    isSuccess = false;
+    redeemPending = false;
+    redeemSuccess = false;
+    legalRequired = true;
+    redeemMutateAsync.mockResolvedValue({ chapterId: "ch-1", memberId: "m-1" });
+  });
+
+  afterEach(() => {
+    params.mockReturnValue({});
+    previewAnswer = null;
+    consumeRememberedInviteToken();
+  });
+
+  it("names the chapter, who sent the invite and the role, before joining", async () => {
+    previewAnswer = {
+      data: {
+        chapter_name: "FIJI Tau Nu",
+        university: "Rensselaer Polytechnic Institute",
+        mark_text: "FIJI",
+        accent_color: "#5b2c83",
+        invited_by: "Paul Carlson",
+        role: "Member",
+        expires_at: "2026-11-05T20:00:00.000Z",
+      },
+    };
+    params.mockReturnValue({ token: "invite-token-20" });
+    const tree = render();
+    await settle();
+
+    expect(previewPost).toHaveBeenCalledWith("/v1/invites/preview", {
+      body: { token: "invite-token-20" },
+    });
+    const text = allText(tree.root);
+    expect(text).toContain(confirmTitle("FIJI Tau Nu"));
+    expect(text).toContain("Rensselaer Polytechnic Institute");
+    expect(text).toContain("FIJI");
+    expect(text).toContain("Invited by Paul Carlson");
+    expect(text).toContain("Joining as Member");
+    // The tile carries the chapter's own text mark, not its initials.
+    expect(markText(tree.root)).toBe("FIJI");
+    // Reading it used nothing up.
+    expect(redeemMutateAsync).not.toHaveBeenCalled();
+
+    act(() => {
+      checkbox(tree.root)?.props.onPress();
+    });
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+    expect(redeemMutateAsync).toHaveBeenCalledWith({
+      token: "invite-token-20",
+      accept_terms_privacy: true,
+    });
+  });
+
+  it("says a dead invite is dead, and offers no Join", async () => {
+    previewAnswer = {
+      error: { statusCode: 410, message: "Invite expired" },
+    };
+    params.mockReturnValue({ token: "invite-token-21" });
+    const tree = render();
+    await settle();
+
+    expect(allText(tree.root)).toContain("expired or already been used");
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(true);
+    expect(checkbox(tree.root)).toBeUndefined();
+    // Back still leads to the field, to paste another.
+    expect(
+      tree.root
+        .findAllByType("Pressable" as never, { deep: true })
+        .find((p) => p.props.accessibilityLabel === "Back to the invite")?.props
+        .disabled,
+    ).toBe(false);
+  });
+
+  it("still joins with the bare invite when the chapter can't be read", async () => {
+    previewAnswer = null;
+    params.mockReturnValue({ token: "invite-token-22" });
+    const tree = render();
+    await settle();
+
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
+    expect(allText(tree.root)).toContain("n-22");
+    act(() => {
+      checkbox(tree.root)?.props.onPress();
+    });
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+    expect(redeemMutateAsync).toHaveBeenCalledWith({
+      token: "invite-token-22",
+      accept_terms_privacy: true,
+    });
+  });
+
+  it("disables Join once the redeem itself finds the invite dead", async () => {
+    previewAnswer = {
+      data: {
+        chapter_name: "FIJI Tau Nu",
+        university: "Rensselaer Polytechnic Institute",
+        mark_text: "FIJI",
+        accent_color: null,
+        invited_by: null,
+        role: "Member",
+        expires_at: "2026-11-05T20:00:00.000Z",
+      },
+    };
+    legalRequired = false;
+    // Live when previewed, used by someone else before the tap.
+    redeemMutateAsync.mockRejectedValueOnce({
+      statusCode: 410,
+      message: "Invite already used",
+    });
+    params.mockReturnValue({ token: "invite-token-23" });
+    const tree = render();
+    await settle();
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(false);
+
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+    expect(allText(tree.root)).toContain("expired or already been used");
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(true);
+  });
+
+  it("joins the link just opened, not the invite the field already held", async () => {
+    previewAnswer = null;
+    const tree = render();
+    openInvite(tree.root);
+    typeToken(tree.root, "old-invite-24");
+
+    params.mockReturnValue({ token: "new-invite-24" });
+    rerender(tree);
+    await settle();
+
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
+    expect(previewPost).toHaveBeenLastCalledWith("/v1/invites/preview", {
+      body: { token: "new-invite-24" },
+    });
+  });
+
+  it("reads the preview only on the confirm step, not while typing", async () => {
+    const tree = render();
+    openInvite(tree.root);
+    typeToken(tree.root, "invite-token-25");
+    await settle();
+    expect(previewPost).not.toHaveBeenCalled();
+
+    continueToConfirm(tree.root);
+    await settle();
+    expect(previewPost).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to initials for a chapter with no text mark, and names no role it won't grant", async () => {
+    previewAnswer = {
+      data: {
+        chapter_name: "Phi Gamma Delta Tau Nu",
+        university: "Rensselaer Polytechnic Institute",
+        // Letters hidden and no short name: the API sends no mark.
+        mark_text: null,
+        accent_color: null,
+        invited_by: null,
+        role: null,
+        expires_at: "2026-11-05T20:00:00.000Z",
+      },
+    };
+    params.mockReturnValue({ token: "invite-token-26" });
+    const tree = render();
+    await settle();
+
+    expect(markText(tree.root)).toBe("PG");
+    expect(allText(tree.root)).not.toContain("Joining as");
+    expect(allText(tree.root)).not.toContain("Invited by");
+  });
+
+  it("lets a fresh invite join after the last one came back dead", async () => {
+    previewAnswer = null;
+    legalRequired = false;
+    redeemMutateAsync.mockRejectedValueOnce({
+      statusCode: 410,
+      message: "Invite already used",
+    });
+    params.mockReturnValue({ token: "invite-token-27" });
+    const tree = render();
+    await settle();
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(true);
+
+    // Back to the field, and a new invite from the officer.
+    act(() => {
+      labelled(tree.root, "Back to the invite")?.props.onPress();
+    });
+    typeToken(tree.root, "invite-token-28");
+    continueToConfirm(tree.root);
+    await settle();
+
+    expect(allText(tree.root)).not.toContain("expired or already been used");
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(false);
+  });
+
+  it("holds a link opened while a join runs, then shows it once the join fails", async () => {
+    previewAnswer = null;
+    params.mockReturnValue({ token: "invite-token-29" });
+    const tree = render();
+    await settle();
+    redeemPending = true;
+    rerender(tree);
+
+    params.mockReturnValue({ token: "invite-token-30" });
+    rerender(tree);
+    // Still the invite being joined.
+    expect(allText(tree.root)).toContain("n-29");
+
+    redeemPending = false;
+    rerender(tree);
+    expect(allText(tree.root)).toContain("n-30");
+  });
+
+  it("keeps an invite the member pasted when the screen re-renders with the old link's param", async () => {
+    previewAnswer = null;
+    params.mockReturnValue({ token: "invite-token-31" });
+    const tree = render();
+    act(() => {
+      labelled(tree.root, "Back to the invite")?.props.onPress();
+    });
+    typeToken(tree.root, "invite-token-32");
+
+    // Anything that re-runs the link check, with the launch param still set.
+    vi.mocked(Linking.useURL).mockReturnValue("frapp://other");
+    rerender(tree);
+    expect(tree.root.findByType("TextInput" as never).props.value).toBe(
+      "invite-token-32",
+    );
+    vi.mocked(Linking.useURL).mockReturnValue(null);
+  });
+
+  it("keeps a failed join's error when the screen's only invite came from a link", async () => {
+    previewAnswer = null;
+    legalRequired = false;
+    vi.mocked(Linking.useURL).mockReturnValue(
+      "frapp://join?token=link-token-34",
+    );
+    try {
+      const tree = render();
+      await settle();
+      // The opened link stays remembered for a sign-in bounce. Said again
+      // here because this harness can mount the screen twice, and the second
+      // mount takes it back out.
+      rememberInviteToken("link-token-34");
+      redeemMutateAsync.mockRejectedValueOnce({
+        statusCode: 409,
+        message: "Already a member of this chapter",
+      });
+      await act(async () => {
+        await control(tree.root, "Join chapter")?.props.onPress();
+      });
+      expect(allText(tree.root)).toContain("already a member of this chapter");
+      // The join's pending flag rises and falls around it.
+      redeemPending = true;
+      rerender(tree);
+      // The join ends, which lets links through again: nothing new arrived,
+      // so the error the member needs stays.
+      redeemPending = false;
+      rerender(tree);
+
+      expect(allText(tree.root)).toContain("already a member of this chapter");
+      expect(allText(tree.root)).toContain("n-34");
+    } finally {
+      vi.mocked(Linking.useURL).mockReturnValue(null);
+    }
+  });
+
+  it("doesn't bring back a launch param a link replaced", async () => {
+    previewAnswer = null;
+    params.mockReturnValue({ token: "invite-token-35" });
+    const tree = render();
+    await settle();
+    vi.mocked(Linking.useURL).mockReturnValue(
+      "frapp://join?token=link-token-36",
+    );
+    try {
+      rerender(tree);
+      expect(allText(tree.root)).toContain("n-36");
+
+      // A join that failed, then anything else that re-runs the link check
+      // with the launch param still set.
+      redeemPending = true;
+      rerender(tree);
+      redeemPending = false;
+      rerender(tree);
+      vi.mocked(Linking.useURL).mockReturnValue("frapp://other");
+      rerender(tree);
+
+      expect(allText(tree.root)).toContain("n-36");
+      expect(allText(tree.root)).not.toContain("n-35");
+    } finally {
+      vi.mocked(Linking.useURL).mockReturnValue(null);
+    }
+  });
+
+  it("holds a link opened while the account is being deleted", () => {
+    params.mockReturnValue({ token: "invite-token-37" });
+    const tree = render();
+    isPending = true;
+    rerender(tree);
+
+    params.mockReturnValue({ token: "invite-token-38" });
+    rerender(tree);
+    expect(allText(tree.root)).toContain("n-37");
+
+    // The deletion failed: the link applies now.
+    isPending = false;
+    rerender(tree);
+    expect(allText(tree.root)).toContain("n-38");
+  });
+
+  it("holds a link opened after a join succeeded, while the chapter opens", () => {
+    params.mockReturnValue({ token: "invite-token-39" });
+    const tree = render();
+    redeemSuccess = true;
+    rerender(tree);
+
+    params.mockReturnValue({ token: "invite-token-40" });
+    rerender(tree);
+    expect(allText(tree.root)).toContain("n-39");
+    expect(allText(tree.root)).not.toContain("n-40");
+  });
+
+  it("leaves the member on the field after a deletion fails", () => {
+    vi.mocked(Linking.useURL).mockReturnValue(
+      "frapp://join?token=link-token-43",
+    );
+    try {
+      const tree = render();
+      act(() => {
+        labelled(tree.root, "Back to the invite")?.props.onPress();
+      });
+      typeToken(tree.root, "invite-token-44");
+
+      isPending = true;
+      rerender(tree);
+      isPending = false;
+      rerender(tree);
+
+      expect(allText(tree.root)).not.toContain(JOIN_CONFIRM_TITLE);
+      expect(tree.root.findByType("TextInput" as never).props.value).toBe(
+        "invite-token-44",
+      );
+    } finally {
+      vi.mocked(Linking.useURL).mockReturnValue(null);
+    }
+  });
+
+  it("reads no preview while signed out", async () => {
+    authStatus = "unauthenticated";
+    try {
+      params.mockReturnValue({ token: "invite-token-33" });
+      render();
+      await settle();
+      expect(previewPost).not.toHaveBeenCalled();
+    } finally {
+      authStatus = "authenticated";
+    }
   });
 });
