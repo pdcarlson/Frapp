@@ -28,7 +28,7 @@ Per-environment values are in
 `EXPO_PUBLIC_API_URL` is the **bare API origin** — the SDK paths already carry
 `/v1`, so a trailing `/v1` doubles it.
 
-Without the two Supabase values the sign-in card renders
+Without the two Supabase values the sign-in screen renders
 "EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are not set for this
 build, so sign-in is unavailable." and every auth row in the smoke checklist
 fails by construction.

@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  BackHandler,
   Image,
   Platform,
   Pressable,
@@ -15,6 +16,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { AuthMethod, useAuthSession } from "@/lib/auth-session";
 import {
   describeOAuthKickoffError,
+  OAUTH_MEMBERSHIP_HINT,
   signInProviderLayout,
   type OAuthProvider,
 } from "@/lib/auth-providers";
@@ -62,6 +64,26 @@ export default function SignIn() {
   const [magicLinkSentTo, setMagicLinkSentTo] = useState<string | null>(null);
   const passwordRef = useRef<TextInput>(null);
 
+  // Android's back button and back gesture close the email form, as its
+  // chevron does, instead of leaving s01 (the `(auth)` anchor) and backgrounding
+  // the app. While a sign-in is in flight both are held, so a late result
+  // can't land on the provider view.
+  useEffect(() => {
+    if (!emailOpen) return undefined;
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        if (!submitting) {
+          setEmailOpen(false);
+          setAuthError(null);
+          setMagicLinkSentTo(null);
+        }
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [emailOpen, submitting]);
+
   if (status === "authenticated") {
     // The auth gate owns the next hop (join / welcome / tabs). Rendering the
     // form for one more frame is the flash this used to paper over by jumping
@@ -70,6 +92,10 @@ export default function SignIn() {
   }
 
   const layout = signInProviderLayout(Platform.OS);
+  const appleVisible =
+    layout.primary === "apple" ||
+    layout.secondary === "apple" ||
+    (layout.tucked === "apple" && moreOpen);
 
   function isValidEmailAddress(value: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -137,6 +163,7 @@ export default function SignIn() {
   }
 
   function closeEmail() {
+    if (submitting) return;
     setEmailOpen(false);
     setAuthError(null);
     setMagicLinkSentTo(null);
@@ -218,8 +245,8 @@ export default function SignIn() {
         Keyboard: `automaticallyAdjustKeyboardInsets` insets the scroll view by
         the keyboard and scrolls the focused field above it on iOS. Android's
         window does not resize under the app-wide `KeyboardProvider`, so the
-        email form opens at the top of the column (the brand folds to the
-        mark), where the keyboard cannot reach it.
+        email form replaces the brand and opens at the top of the column,
+        where the keyboard cannot reach it.
       */}
       <ScrollView
         style={styles.scroll}
@@ -233,6 +260,8 @@ export default function SignIn() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Back to sign-in options"
+                accessibilityState={{ disabled: submitting }}
+                disabled={submitting}
                 hitSlop={8}
                 onPress={closeEmail}
                 style={styles.backButton}
@@ -397,6 +426,7 @@ export default function SignIn() {
                 disabled={submitting}
                 onPress={() => {
                   setAuthError(null);
+                  setMagicLinkSentTo(null);
                   setEmailOpen(true);
                 }}
                 style={[
@@ -418,6 +448,9 @@ export default function SignIn() {
                     Other ways to sign in
                   </Text>
                 </Pressable>
+              ) : null}
+              {appleVisible ? (
+                <Text style={styles.hintText}>{OAUTH_MEMBERSHIP_HINT}</Text>
               ) : null}
             </View>
           </>
@@ -630,6 +663,12 @@ function createStyles(tokens: SignetTokens) {
       marginTop: tokens.spacing.sm,
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.success,
+    },
+    hintText: {
+      marginTop: tokens.spacing.xs,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      textAlign: "center",
     },
     helperText: {
       marginTop: tokens.spacing.sm,

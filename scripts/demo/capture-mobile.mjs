@@ -422,8 +422,13 @@ async function signIn(page) {
     waitUntil: "domcontentloaded",
     timeout: 120_000,
   });
+  // s01 keeps the password form behind "Continue with email" (#3349).
+  await waitFor(page, "sign-in screen", () =>
+    document.body.innerText.includes("Continue with email"),
+  );
+  await page.getByText("Continue with email", { exact: true }).click();
   await waitFor(page, "sign-in form", () =>
-    document.body.innerText.includes("Sign in to your chapter"),
+    document.body.innerText.includes("Sign in with email"),
   );
 
   await page

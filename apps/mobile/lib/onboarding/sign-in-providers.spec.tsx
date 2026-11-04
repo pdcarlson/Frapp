@@ -1,11 +1,14 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
-import { Platform } from "react-native";
+import { BackHandler, Platform } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { signInProviderLayout } from "@/lib/auth-providers";
+import {
+  OAUTH_MEMBERSHIP_HINT,
+  signInProviderLayout,
+} from "@/lib/auth-providers";
 
 /**
  * Which sign-in providers s01 shows, and in what order, per platform (#3349).
@@ -21,6 +24,7 @@ import { signInProviderLayout } from "@/lib/auth-providers";
 
 const auth = vi.hoisted(() => ({
   signInWithOAuthProvider: vi.fn(),
+  signInWithPassword: vi.fn(),
 }));
 
 vi.mock("@/lib/auth-session", () => ({
@@ -30,7 +34,7 @@ vi.mock("@/lib/auth-session", () => ({
     callbackError: null,
     sendMagicLink: vi.fn(),
     signInWithOAuthProvider: auth.signInWithOAuthProvider,
-    signInWithPassword: vi.fn(),
+    signInWithPassword: auth.signInWithPassword,
     signOut: vi.fn(),
   }),
 }));
@@ -70,6 +74,39 @@ function pressableLabelled(root: Node, label: string): Node {
   return found;
 }
 
+/** Flattens the style arrays the screen passes, which the mock leaves alone. */
+function flat(style: unknown): Record<string, unknown> {
+  if (Array.isArray(style)) {
+    return Object.assign({}, ...style.map(flat));
+  }
+  return (style ?? {}) as Record<string, unknown>;
+}
+
+/** Buttons drawn with a fill: the one the screen leads with. */
+function filledLabels(root: Node): string[] {
+  return root
+    .findAll(
+      (node) =>
+        isHost(node, "Pressable") &&
+        flat(node.props.style).backgroundColor !== undefined,
+    )
+    .flatMap((pressable) =>
+      pressable
+        .findAll((node) => isHost(node, "Text"))
+        .map((text) => text.props.children as unknown)
+        .filter((child): child is string => typeof child === "string"),
+    );
+}
+
+function hasHint(root: Node): boolean {
+  return (
+    root.findAll(
+      (node) =>
+        isHost(node, "Text") && node.props.children === OAUTH_MEMBERSHIP_HINT,
+    ).length > 0
+  );
+}
+
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -88,6 +125,8 @@ const originalOS = platform.OS;
 beforeEach(() => {
   auth.signInWithOAuthProvider.mockReset();
   auth.signInWithOAuthProvider.mockResolvedValue(undefined);
+  auth.signInWithPassword.mockReset();
+  auth.signInWithPassword.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -127,6 +166,9 @@ describe("sign-in providers on Android", () => {
       "Continue with email",
       "Other ways to sign in",
     ]);
+    expect(filledLabels(tree.root)).toEqual(["Continue with Google"]);
+    // The Hide My Email hint is about Apple, so it waits for the Apple button.
+    expect(hasHint(tree.root)).toBe(false);
   });
 
   it("reveals Apple, which still signs in, from Other ways to sign in", async () => {
@@ -144,6 +186,7 @@ describe("sign-in providers on Android", () => {
       pressableLabelled(tree.root, "Continue with Apple").props.onPress();
     });
     expect(auth.signInWithOAuthProvider).toHaveBeenCalledWith("apple");
+    expect(hasHint(tree.root)).toBe(true);
   });
 });
 
@@ -159,6 +202,8 @@ describe("sign-in providers on iOS", () => {
       "Continue with Google",
       "Continue with email",
     ]);
+    expect(filledLabels(tree.root)).toEqual(["Continue with Apple"]);
+    expect(hasHint(tree.root)).toBe(true);
   });
 });
 
@@ -181,5 +226,78 @@ describe("the email form", () => {
     });
     expect(buttonLabels(tree.root)).toContain("Continue with Google");
     expect(buttonLabels(tree.root)).not.toContain("Sign in");
+  });
+});
+
+describe("Android back on the email form", () => {
+  const addListener = BackHandler.addEventListener as unknown as {
+    mock: { calls: [string, () => boolean][] };
+    mockClear: () => void;
+  };
+
+  beforeEach(() => {
+    addListener.mockClear();
+  });
+
+  function latestBackHandler(): () => boolean {
+    const calls = addListener.mock.calls.filter(
+      ([event]) => event === "hardwareBackPress",
+    );
+    const last = calls[calls.length - 1];
+    if (!last) throw new Error("no hardwareBackPress listener");
+    return last[1];
+  }
+
+  it("closes the form back to the providers instead of leaving the screen", () => {
+    const tree = render();
+    act(() => {
+      pressableLabelled(tree.root, "Continue with email").props.onPress();
+    });
+
+    let handled = false;
+    act(() => {
+      handled = latestBackHandler()();
+    });
+    expect(handled).toBe(true);
+    expect(buttonLabels(tree.root)).toContain("Continue with email");
+    expect(buttonLabels(tree.root)).not.toContain("Sign in");
+  });
+
+  it("holds the form while a sign-in is in flight", () => {
+    const tree = render();
+    act(() => {
+      pressableLabelled(tree.root, "Continue with email").props.onPress();
+    });
+    // Never settles, so the screen stays submitting.
+    auth.signInWithPassword.mockReturnValue(new Promise(() => {}));
+    const email = tree.root.find(
+      (node) =>
+        isHost(node, "TextInput") && node.props.textContentType === "username",
+    );
+    act(() => {
+      email.props.onChangeText("brother@westfield.edu");
+    });
+    const password = tree.root.find(
+      (node) =>
+        isHost(node, "TextInput") && node.props.textContentType === "password",
+    );
+    act(() => {
+      password.props.onChangeText("hunter22");
+    });
+    act(() => {
+      pressableLabelled(tree.root, "Sign in").props.onPress();
+    });
+
+    const back = tree.root.find(
+      (node) =>
+        isHost(node, "Pressable") &&
+        node.props.accessibilityLabel === "Back to sign-in options",
+    );
+    expect(back.props.disabled).toBe(true);
+    act(() => {
+      latestBackHandler()();
+    });
+    expect(buttonLabels(tree.root)).toContain("Signing in...");
+    expect(buttonLabels(tree.root)).not.toContain("Continue with email");
   });
 });

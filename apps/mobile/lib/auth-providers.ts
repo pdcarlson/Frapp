@@ -9,11 +9,25 @@ const IDENTITY_COLLISION_CODES = new Set([
   "email_exists",
 ]);
 
+// Mobile s01 keeps the password and magic-link form behind "Continue with
+// email" (#3349), so these name that button rather than controls that aren't
+// on screen when an OAuth kickoff fails. Web's copy lives in
+// `apps/web/lib/auth/oauth.ts`, where the form is always visible.
 export const IDENTITY_COLLISION_COPY =
-  "An account with this email already exists. Sign in with your password or a magic link. Google or Apple can attach to that same account on later visits.";
+  "An account with this email already exists. Tap Continue with email and sign in with your password or a magic link. Google or Apple can attach to that same account on later visits.";
 
 export const OAUTH_UNAVAILABLE_COPY =
-  "This sign-in method isn't available yet. Use your password or a magic link.";
+  "This sign-in method isn't available yet. Tap Continue with email to use your password or a magic link.";
+
+/**
+ * Shown on s01 wherever a Continue with Apple button is: an invited member who
+ * signs in with Apple's Hide My Email can still redeem an invite sent to a
+ * university address, because redeem binds the signed-in user, not the
+ * invite's email (`spec/behavior/onboarding.md`). The store's App Review notes
+ * rely on this line (`apps/mobile/store/README.md`).
+ */
+export const OAUTH_MEMBERSHIP_HINT =
+  "Invited at a university address? Open that link after you sign in. Membership follows this account, including Apple Hide My Email.";
 
 export function isApplePrivateRelayEmail(
   email: string | null | undefined,
