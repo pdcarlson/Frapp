@@ -94,6 +94,7 @@ import {
 } from "@/lib/onboarding/invite-token";
 import JoinChapter, {
   JOIN_CHOICE_TITLE,
+  JOIN_CONFIRM_TITLE,
   JOIN_INVITE_TITLE,
 } from "@/app/(auth)/join";
 
@@ -176,11 +177,44 @@ function openInvite(root: Node): void {
   });
 }
 
+/** Types into the invite field. */
+function typeToken(root: Node, value: string): void {
+  act(() => {
+    root.findByType("TextInput" as never).props.onChangeText(value);
+  });
+}
+
+/** The field's Continue: on to the confirm step. */
+function continueToConfirm(root: Node): void {
+  act(() => {
+    control(root, "Continue")?.props.onPress();
+  });
+}
+
+/** The pressable with this accessibility label (the back chevron's). */
+function labelled(root: Node, label: string) {
+  return root
+    .findAllByType("Pressable" as never, { deep: true })
+    .find((p) => p.props.accessibilityLabel === label);
+}
+
+/**
+ * The string parts of a `Text`'s children. A `Text` nested inside another is
+ * an element here, and `findAllByType` reaches it on its own.
+ */
+function textOf(children: unknown): string {
+  if (typeof children === "string" || typeof children === "number") {
+    return String(children);
+  }
+  if (Array.isArray(children)) return children.map(textOf).join("");
+  return "";
+}
+
 function allText(root: Node): string {
   return JSON.stringify(
     root
       .findAllByType("Text" as never, { deep: true })
-      .map((t) => t.props.children ?? ""),
+      .map((t) => textOf(t.props.children)),
   );
 }
 
@@ -220,7 +254,7 @@ describe("join screen — account deletion (5.1.1(v))", () => {
     openAccount(tree.root);
     expect(control(tree.root, "Delete account")).toBeDefined();
     // And the screen still does its own job.
-    expect(control(tree.root, "Join chapter")).toBeDefined();
+    expect(control(tree.root, "Continue")).toBeDefined();
   });
 
   it("confirms before deleting, and does not delete on cancel", () => {
@@ -321,10 +355,10 @@ describe("join screen — account deletion (5.1.1(v))", () => {
       .findAllByType("Pressable" as never, { deep: true })
       .find((p) => p.props.accessibilityLabel === "Close account menu");
     expect(backdrop?.props.disabled).toBe(true);
-    // "Join chapter" is disabled too, but keeps its label: its spinner means
+    // The step button is disabled too, but keeps its label: its spinner means
     // "a join is running", and what is running is the deletion.
     openInvite(tree.root);
-    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(true);
+    expect(control(tree.root, "Continue")?.props.disabled).toBe(true);
     expect(
       tree.root.findAllByType("ActivityIndicator" as never, { deep: true }),
     ).toHaveLength(0);
@@ -361,24 +395,22 @@ describe("join screen — account deletion (5.1.1(v))", () => {
  * ticking the box, and one who has isn't asked again.
  */
 describe("join screen — the Terms checkbox (#2302)", () => {
-  const renderInvite = () => {
+  /** The confirm step for `invite-token-1`, where the checkbox lives. */
+  const renderConfirm = () => {
     const tree = render();
     openInvite(tree.root);
+    typeToken(tree.root, "invite-token-1");
+    continueToConfirm(tree.root);
     return tree;
   };
   const checkbox = (root: Node) =>
     root
       .findAllByType("Pressable" as never, { deep: true })
       .find((pressable) => pressable.props.accessibilityRole === "checkbox");
-  const typeToken = (root: Node, value: string) => {
-    act(() => {
-      root.findByType("TextInput" as never).props.onChangeText(value);
-    });
-  };
   const texts = (root: Node) =>
     root
       .findAllByType("Text" as never, { deep: true })
-      .map((text) => JSON.stringify(text.props.children ?? ""));
+      .map((text) => textOf(text.props.children));
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -389,11 +421,10 @@ describe("join screen — the Terms checkbox (#2302)", () => {
 
   it("doesn't ask a user who already accepted the current Terms", async () => {
     legalRequired = false;
-    const tree = renderInvite();
+    const tree = renderConfirm();
     await settle();
     expect(checkbox(tree.root)).toBeUndefined();
 
-    typeToken(tree.root, "invite-token-1");
     await act(async () => {
       await control(tree.root, "Join chapter")?.props.onPress();
     });
@@ -403,11 +434,10 @@ describe("join screen — the Terms checkbox (#2302)", () => {
 
   it("asks, and won't join until the box is ticked", async () => {
     legalRequired = true;
-    const tree = renderInvite();
+    const tree = renderConfirm();
     await settle();
     expect(checkbox(tree.root)).toBeDefined();
 
-    typeToken(tree.root, "invite-token-1");
     await act(async () => {
       await control(tree.root, "Join chapter")?.props.onPress();
     });
@@ -420,10 +450,9 @@ describe("join screen — the Terms checkbox (#2302)", () => {
 
   it("sends the checkbox once it is ticked", async () => {
     legalRequired = true;
-    const tree = renderInvite();
+    const tree = renderConfirm();
     await settle();
 
-    typeToken(tree.root, "invite-token-1");
     act(() => {
       checkbox(tree.root)?.props.onPress();
     });
@@ -439,7 +468,7 @@ describe("join screen — the Terms checkbox (#2302)", () => {
 
   it("asks while the status is still unknown, rather than earn a refusal", () => {
     legalRequired = undefined;
-    const tree = renderInvite();
+    const tree = renderConfirm();
     expect(checkbox(tree.root)).toBeDefined();
   });
 
@@ -452,11 +481,10 @@ describe("join screen — the Terms checkbox (#2302)", () => {
       message: LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
       requestId: "req_1",
     });
-    const tree = renderInvite();
+    const tree = renderConfirm();
     await settle();
     expect(checkbox(tree.root)).toBeUndefined();
 
-    typeToken(tree.root, "invite-token-1");
     await act(async () => {
       await control(tree.root, "Join chapter")?.props.onPress();
     });
@@ -549,14 +577,79 @@ describe("join screen — the question (#3350)", () => {
     expect(hasField(tree.root)).toBe(true);
     expect(allText(tree.root)).toContain(OAUTH_MEMBERSHIP_HINT);
 
-    const back = tree.root
-      .findAllByType("Pressable" as never, { deep: true })
-      .find((p) => p.props.accessibilityLabel === "Back to the choices");
     act(() => {
-      back?.props.onPress();
+      labelled(tree.root, "Back to the choices")?.props.onPress();
     });
     expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
     expect(hasField(tree.root)).toBe(false);
+  });
+
+  it("confirms the invite on a card before joining with it (#3352)", async () => {
+    const tree = render();
+    openInvite(tree.root);
+    typeToken(tree.root, "https://app.frapp.live/join?token=invite-token-2a9f");
+
+    continueToConfirm(tree.root);
+    // Terms answered, so the join goes straight through.
+    await settle();
+    // Continue only moves on; nothing is used up yet.
+    expect(redeemMutateAsync).not.toHaveBeenCalled();
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
+    expect(hasField(tree.root)).toBe(false);
+    // The card names the invite by its tail, read out of the pasted link.
+    expect(allText(tree.root)).toContain("2a9f");
+
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+    expect(redeemMutateAsync).toHaveBeenCalledWith({
+      token: "invite-token-2a9f",
+    });
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/welcome");
+  });
+
+  it("won't continue without an invite in the field", () => {
+    const tree = render();
+    openInvite(tree.root);
+
+    continueToConfirm(tree.root);
+    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+    expect(allText(tree.root)).toContain("Paste the invite your officer sent");
+
+    // The keyboard's own key does the same.
+    act(() => {
+      tree.root.findByType("TextInput" as never).props.onSubmitEditing();
+    });
+    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+  });
+
+  it("steps back from the card to the field with the invite kept, then to the question", () => {
+    const tree = render();
+    openInvite(tree.root);
+    typeToken(tree.root, "invite-token-3");
+    continueToConfirm(tree.root);
+
+    act(() => {
+      labelled(tree.root, "Back to the invite")?.props.onPress();
+    });
+    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+    expect(tree.root.findByType("TextInput" as never).props.value).toBe(
+      "invite-token-3",
+    );
+
+    // Android's back button walks the same steps.
+    continueToConfirm(tree.root);
+    let handled = false;
+    act(() => {
+      handled = latestBackHandler()();
+    });
+    expect(handled).toBe(true);
+    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+    act(() => {
+      handled = latestBackHandler()();
+    });
+    expect(handled).toBe(true);
+    expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
   });
 
   it("sends a founder to chapter setup", () => {
@@ -567,14 +660,21 @@ describe("join screen — the question (#3350)", () => {
     expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/create-chapter");
   });
 
-  it("goes straight to the invite step, filled in, when an invite link opened the app", () => {
+  it("goes straight to the confirm card when an invite link opened the app", () => {
     params.mockReturnValue({ token: "invite-token-9" });
     const tree = render();
 
-    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
+    expect(allText(tree.root)).toContain("en-9");
+    expect(control(tree.root, "Join chapter")).toBeDefined();
+
+    // Back shows the field the link filled, keyboard down: the next step is
+    // Continue, not typing.
+    act(() => {
+      labelled(tree.root, "Back to the invite")?.props.onPress();
+    });
     const field = tree.root.findByType("TextInput" as never);
     expect(field.props.value).toBe("invite-token-9");
-    // The next step is Join, so the keyboard stays down.
     expect(field.props.autoFocus).toBe(false);
   });
 
@@ -611,46 +711,38 @@ describe("join screen — the question (#3350)", () => {
     expect(allText(tree.root)).toContain("Deleting account");
   });
 
-  it("keeps the member on the invite step while the join is running", () => {
-    // A link lands on the invite step, then the redeem starts.
+  it("keeps the member on the confirm card while the join is running", () => {
+    // A link lands on the card, and the redeem is running.
     params.mockReturnValue({ token: "invite-token-10" });
-    const tree = render();
-    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
-
     redeemPending = true;
-    // Any state change re-reads the hook; an edit is the cheapest one.
-    act(() => {
-      tree.root
-        .findByType("TextInput" as never)
-        .props.onChangeText("invite-token-10 ");
-    });
+    const tree = render();
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
 
-    const back = tree.root
-      .findAllByType("Pressable" as never, { deep: true })
-      .find((p) => p.props.accessibilityLabel === "Back to the choices");
-    expect(back?.props.disabled).toBe(true);
+    expect(labelled(tree.root, "Back to the invite")?.props.disabled).toBe(
+      true,
+    );
 
     let handled = false;
     act(() => {
       handled = latestBackHandler()();
     });
     expect(handled).toBe(true);
-    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
+    expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
   });
-  it("ignores the Go key while a join is running", async () => {
+
+  it("ignores a second Join while a join is running", async () => {
     params.mockReturnValue({ token: "invite-token-11" });
+    redeemPending = true;
     const tree = render();
     // Terms answered, so only the guard can stop the send.
     await settle();
-    redeemPending = true;
-    act(() => {
-      tree.root
-        .findByType("TextInput" as never)
-        .props.onChangeText("invite-token-11 ");
-    });
 
-    act(() => {
-      tree.root.findByType("TextInput" as never).props.onSubmitEditing();
+    const join = tree.root
+      .findAllByType("Pressable" as never, { deep: true })
+      .find((p) => p.props.accessibilityState?.busy === true);
+    expect(join?.props.disabled).toBe(true);
+    await act(async () => {
+      await join?.props.onPress();
     });
     expect(redeemMutateAsync).not.toHaveBeenCalled();
   });
@@ -719,7 +811,7 @@ describe("join screen — the question (#3350)", () => {
       handled = live[live.length - 1]();
     });
     expect(handled).toBe(true);
-    expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
+    expect(allText(tree.root)).toContain(JOIN_INVITE_TITLE);
 
     // The same for the Account menu.
     openAccount(tree.root);
@@ -743,7 +835,7 @@ describe("join screen — the question (#3350)", () => {
       "frapp://join?token=link-token-13",
     );
     const first = render();
-    expect(allText(first.root)).toContain(JOIN_INVITE_TITLE);
+    expect(allText(first.root)).toContain(JOIN_CONFIRM_TITLE);
     act(() => {
       first.unmount();
     });
@@ -757,11 +849,11 @@ describe("join screen — the question (#3350)", () => {
   it("forgets an invite the member backed out of", () => {
     params.mockReturnValue({ token: "invite-token-14" });
     const first = render();
-    const back = first.root
-      .findAllByType("Pressable" as never, { deep: true })
-      .find((p) => p.props.accessibilityLabel === "Back to the choices");
     act(() => {
-      back?.props.onPress();
+      labelled(first.root, "Back to the invite")?.props.onPress();
+    });
+    act(() => {
+      labelled(first.root, "Back to the choices")?.props.onPress();
     });
     act(() => {
       first.unmount();
@@ -776,9 +868,8 @@ describe("join screen — the question (#3350)", () => {
     // Remembered by a signed-out visit that bounced to sign-in.
     rememberInviteToken("invite-token-15");
     const first = render();
-    expect(first.root.findByType("TextInput" as never).props.value).toBe(
-      "invite-token-15",
-    );
+    expect(allText(first.root)).toContain(JOIN_CONFIRM_TITLE);
+    expect(allText(first.root)).toContain("n-15");
     act(() => {
       first.unmount();
     });

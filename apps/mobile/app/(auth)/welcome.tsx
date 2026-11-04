@@ -13,12 +13,18 @@ import { usePushPrimer } from "@/lib/notifications/use-push-primer";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * s03 — First-run + notification primer (`spec/ui/mobile/screens.md`).
+ * s03, "You're in." (`spec/ui/mobile/screens.md`).
  *
- * Hosts the auto-joined public channels and, when this build can push, the C7
- * push primer card (`shouldOfferPrimer`, #2299). Completing
- * or skipping PATCHes `has_completed_onboarding` so the gate will not send the
- * member here again.
+ * The first screen after a member joins, and the first that can name the
+ * chapter: the confirm step on `/join` can't, because an invite is a random
+ * token (#3352). It shows the auto-joined public channels and, when this
+ * build can push, the C7 push primer card inline (`shouldOfferPrimer`,
+ * #2299). Go to chat PATCHes `has_completed_onboarding`, so the gate will not
+ * send the member here again.
+ *
+ * It follows the #3348 screen rules: one surface, with a card only for the
+ * channel list and the primer, and one button pinned above the inset. It used
+ * to carry a Skip under Go to chat that did the same thing.
  */
 export default function Welcome() {
   const { tokens } = useFrappTheme();
@@ -64,10 +70,13 @@ export default function Welcome() {
       edges={["top", "right", "bottom", "left"]}
     >
       <ScrollView
+        style={styles.flex}
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>You&apos;re in.</Text>
+        <Text accessibilityRole="header" style={styles.title}>
+          You&apos;re in.
+        </Text>
         <Text style={styles.subtitle}>
           {university ? `${chapterName} · ${university}` : chapterName}
         </Text>
@@ -108,17 +117,6 @@ export default function Welcome() {
             {leaving ? "Opening chat…" : "Go to chat"}
           </Text>
         </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Skip first-run"
-          disabled={leaving}
-          onPress={() => {
-            void finish();
-          }}
-          style={styles.secondaryButton}
-        >
-          <Text style={styles.secondaryButtonText}>Skip</Text>
-        </Pressable>
       </View>
     </SafeAreaView>
   );
@@ -130,7 +128,13 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       backgroundColor: tokens.color.surface.background,
     },
+    flex: { flex: 1 },
+    // One column, as wide as the join and setup screens' (400), centred on a
+    // tablet.
     scroll: {
+      width: "100%",
+      maxWidth: 400 + tokens.spacing.xl * 2,
+      alignSelf: "center",
       paddingHorizontal: tokens.spacing.xl,
       paddingTop: tokens.spacing["3xl"],
       paddingBottom: tokens.spacing.lg,
@@ -153,10 +157,12 @@ function createStyles(tokens: SignetTokens) {
     },
     footer: {
       paddingHorizontal: tokens.spacing.xl,
-      paddingBottom: tokens.spacing.xl,
-      gap: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.lg,
     },
     primaryButton: {
+      width: "100%",
+      maxWidth: 400,
+      alignSelf: "center",
       borderRadius: tokens.radius.control,
       backgroundColor: tokens.color.gold.house,
       minHeight: tokens.touch.button,
@@ -169,15 +175,6 @@ function createStyles(tokens: SignetTokens) {
     primaryButtonText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.gold.onHouse,
-    },
-    secondaryButton: {
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    secondaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.mutedForeground,
     },
   });
 }
