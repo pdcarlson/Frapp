@@ -20,7 +20,9 @@ import {
   draftFromProfile,
   hasChanges,
   profilePatch,
-  shownDraft,
+  rebaseEdits,
+  sameDraft,
+  type ProfileDraft,
   type ProfileDraftField,
   type ProfileEdits,
 } from "@/lib/more/edit-profile";
@@ -44,15 +46,15 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the member left alone instead of freezing them. Those fields equal the
  * profile, so `profilePatch` leaves them out of the save, and a value another
  * device set is written back over only in a field the member changed. A field
- * typed back to its old value, or to it plus stray spaces, follows the profile
- * again (`lib/more/edit-profile.ts` `applyEdit`, `shownDraft`). The web form
- * keeps the same rule (`apps/web/components/profile/profile-panel.tsx`,
- * `seededFrom`): a field is kept only while it differs from the profile.
+ * typed to the profile's value leaves the edits, and on a refetch a field that
+ * held no change (spaces aside) follows the new profile
+ * (`lib/more/edit-profile.ts` `applyEdit`, `rebaseEdits`, which says how this
+ * differs from the web form's `seededFrom` merge).
  *
  * Dismissing, saving or cancelling drops the edits, except that a sheet closed
- * mid-save keeps them until the save settles. `useUpdateUser` writes the saved
- * fields into the cached profile before it settles, so a save closes onto the
- * saved values rather than flashing the old ones.
+ * mid-save keeps them until the save settles. `useUpdateUser` caches the row
+ * the server saved before it settles, so a save closes onto the saved values
+ * rather than flashing the old ones.
  *
  * ## A fixed detent, not dynamic sizing
  *
@@ -81,18 +83,29 @@ export const EditProfileSheet = forwardRef<
   const [edits, setEdits] = useState<ProfileEdits | null>(null);
   const [submitFailed, setSubmitFailed] = useState(false);
   const [focused, setFocused] = useState<ProfileDraftField | null>(null);
-  const shown = shownDraft(original, edits);
+
+  // The profile the edits were typed against. When a refetch moves it, the
+  // edits re-base in the same render (React's "adjust state on a prop
+  // change"), so no frame shows a field pinned to the old profile.
+  const [typedAgainst, setTypedAgainst] = useState<ProfileDraft>(original);
+  let typed = edits;
+  if (!sameDraft(typedAgainst, original)) {
+    typed = rebaseEdits(edits, typedAgainst, original);
+    setTypedAgainst(original);
+    setEdits(typed);
+  }
+  const shown: ProfileDraft = { ...original, ...typed };
 
   const result = profilePatch(original, shown);
   // A refusal is shown only once the member has typed: the sheet must not
   // open on an error for a profile the server already holds.
-  const refusal = edits !== null && !result.ok ? result : null;
+  const refusal = typed !== null && !result.ok ? result : null;
   const canSave =
     result.ok && hasChanges(result.patch) && !updateUser.isPending;
 
   const edit = (field: ProfileDraftField) => (value: string) => {
     setSubmitFailed(false);
-    setEdits((current) => applyEdit(current, original, field, value));
+    setEdits((latest) => applyEdit(latest, original, field, value));
   };
 
   const reset = useCallback(() => {
@@ -101,11 +114,14 @@ export const EditProfileSheet = forwardRef<
     setFocused(null);
   }, []);
 
-  // Whether the sheet is up or on its way up. A save can settle after the
-  // sheet has closed, and gorhom's `dismiss()` on a closed modal leaves it
-  // stuck mid-dismiss, so the next `present()` draws nothing (5.2.x
-  // `handlePortalRender`). Set from `onAnimate`, which fires as the sheet
-  // starts to move, so a Cancel during the slide up still closes it.
+  // Whether the sheet is mounted, from the start of `present()`'s slide up to
+  // `onDismiss`. A save can settle after the sheet has closed, and gorhom's
+  // `dismiss()` on a dismissed modal leaves it stuck mid-dismiss, so the next
+  // `present()` draws nothing (5.2.x `handlePortalRender`). It turns true on
+  // `onAnimate`, which fires as the sheet starts to move, so a Cancel during
+  // the slide up still closes it, and false only on `onDismiss`: a close
+  // animation can be caught and snapped back without another `onAnimate`, and
+  // `dismiss()` on a sheet still closing is safe.
   const presented = useRef(false);
 
   const dismiss = useCallback(() => {
@@ -134,8 +150,8 @@ export const EditProfileSheet = forwardRef<
     if (!result.ok || !canSave) return;
     setSubmitFailed(false);
     updateUser.mutate(result.patch, {
-      // `useUpdateUser` has already written the saved fields into the cached
-      // profile, so dropping the edits here shows them, not the old values.
+      // `useUpdateUser` has already cached the row the server saved, so
+      // dropping the edits here shows it, not the old values.
       onSuccess: () => {
         reset();
         dismiss();
@@ -199,7 +215,7 @@ export const EditProfileSheet = forwardRef<
       backdropComponent={SheetScrim}
       handleComponent={SheetGrabber}
       onAnimate={(_from, to) => {
-        presented.current = to >= 0;
+        if (to >= 0) presented.current = true;
       }}
       onDismiss={closed}
     >

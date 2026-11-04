@@ -205,10 +205,13 @@ describe("profile mutations (#732, #3387)", () => {
   // company edit in the directory and the alumni filters.
   it("a profile edit caches the saved row and refreshes every read without waiting", async () => {
     const harness = photoMutationHarness();
+    // The server's row, not the cache with the body over it: a freshly
+    // signed photo URL, and a city another device saved meanwhile.
     const saved = {
       id: "u-1",
       display_name: "Alex Rivera",
-      current_city: "Troy, NY",
+      current_city: "Albany, NY",
+      avatar_url: "https://signed.example/new",
     };
     harness.mockClient.PATCH.mockResolvedValue({
       data: saved,
@@ -234,6 +237,24 @@ describe("profile mutations (#732, #3387)", () => {
     for (const filters of EXPECTED_FILTERS) {
       expect(harness.invalidated()).toContainEqual(filters);
     }
+    harness.release();
+  });
+
+  it("leaves the cached profile alone when the PATCH answers with no row", async () => {
+    const harness = photoMutationHarness();
+    harness.mockClient.PATCH.mockResolvedValue({
+      data: undefined,
+      error: undefined,
+    });
+    const cached = { id: "u-1", display_name: "Old Name" };
+    queryClient.setQueryData(["user", "me"], cached);
+    const { result } = renderHook(() => useUpdateUser(), {
+      wrapper: harness.wrapper,
+    });
+
+    await result.current.mutateAsync({ display_name: "Alex Rivera" });
+
+    expect(queryClient.getQueryData(["user", "me"])).toEqual(cached);
     harness.release();
   });
 

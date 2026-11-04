@@ -118,18 +118,15 @@ export function hasChanges(patch: ProfilePatch): boolean {
 }
 
 /**
- * The fields a member has typed into, each with the profile value it was
- * typed over (`base`). The sheet shows these over the live profile, so a
- * refetch mid-edit (a return to the app refetches `/v1/users/me`) moves every
- * field the member left alone.
+ * The fields a member has typed into, as typed. The sheet shows them over the
+ * live profile (`{ ...original, ...edits }`), so every field the member left
+ * alone shows the profile as it stands.
  */
-export type ProfileEdits = Partial<
-  Record<ProfileDraftField, { value: string; base: string }>
->;
+export type ProfileEdits = Partial<ProfileDraft>;
 
 /**
- * `edits` with `field` typed to `value` over `original`. A field typed back to
- * the value it was typed over leaves `edits`, so it follows the profile again.
+ * `edits` with `field` typed to `value`. A field typed to the profile's value
+ * leaves `edits`, so it follows the profile again.
  */
 export function applyEdit(
   edits: ProfileEdits | null,
@@ -138,31 +135,44 @@ export function applyEdit(
   value: string,
 ): ProfileEdits {
   const next: ProfileEdits = { ...edits };
-  const base = next[field]?.base ?? original[field];
-  if (value === base) delete next[field];
-  else next[field] = { value, base };
+  if (value === original[field]) delete next[field];
+  else next[field] = value;
   return next;
 }
 
 /**
- * What the fields show: the profile, with each typed field over it.
+ * `edits` carried over a profile that moved from `previous` to `next` (a
+ * return to the app refetches `/v1/users/me`): a field stays typed only while
+ * it changes `previous`, the profile it was typed against, so a field that
+ * held no change follows `next`.
  *
- * A typed field that differs from its `base` only in surrounding spaces is no
- * change (`profilePatch` trims), so once the profile moves under it, it shows
- * the profile instead. Without that, a stray trailing space would pin the old
- * value and a later save would write it back over the newer one.
+ * "No change" is `profilePatch`'s: trimmed. So a stray trailing space doesn't
+ * pin the old value for a later save to write back over the newer one. The
+ * web form's `seededFrom` merge
+ * (`apps/web/components/profile/profile-panel.tsx`) is the same rule, except
+ * that it compares untrimmed.
  */
-export function shownDraft(
-  original: ProfileDraft,
+export function rebaseEdits(
   edits: ProfileEdits | null,
-): ProfileDraft {
-  const shown = { ...original };
-  for (const [field, edit] of Object.entries(edits ?? {}) as [
+  previous: ProfileDraft,
+  next: ProfileDraft,
+): ProfileEdits | null {
+  if (edits === null) return null;
+  const kept: ProfileEdits = {};
+  for (const [field, value] of Object.entries(edits) as [
     ProfileDraftField,
-    { value: string; base: string },
+    string,
   ][]) {
-    const changed = edit.value.trim() !== edit.base.trim();
-    if (changed || original[field] === edit.base) shown[field] = edit.value;
+    if (value.trim() !== previous[field].trim() && value !== next[field]) {
+      kept[field] = value;
+    }
   }
-  return shown;
+  return kept;
+}
+
+/** Whether two drafts hold the same values, field by field. */
+export function sameDraft(a: ProfileDraft, b: ProfileDraft): boolean {
+  return (Object.keys(a) as ProfileDraftField[]).every(
+    (field) => a[field] === b[field],
+  );
 }

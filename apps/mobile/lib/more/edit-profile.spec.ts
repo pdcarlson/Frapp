@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyEdit,
-  shownDraft,
+  rebaseEdits,
   draftFromProfile,
   GRADUATION_YEAR_MESSAGE,
   hasChanges,
@@ -109,7 +109,7 @@ describe("profilePatch (#3387)", () => {
   });
 });
 
-describe("applyEdit and shownDraft (#3387)", () => {
+describe("applyEdit and rebaseEdits (#3387)", () => {
   const ORIGINAL = {
     displayName: "Alex Rivera",
     bio: "",
@@ -119,36 +119,41 @@ describe("applyEdit and shownDraft (#3387)", () => {
   };
   const MOVED = { ...ORIGINAL, city: "Albany, NY", company: "Set elsewhere" };
 
-  it("shows a typed field over the profile, and the rest as the profile is now", () => {
-    const edits = applyEdit(null, ORIGINAL, "bio", "Pre-med.");
-
-    expect(shownDraft(MOVED, edits)).toEqual({ ...MOVED, bio: "Pre-med." });
-  });
-
-  it("drops a field typed back to the value it was typed over", () => {
+  it("drops a field typed to the profile's value", () => {
     let edits = applyEdit(null, ORIGINAL, "city", "Troy, NYx");
+    expect(edits).toEqual({ city: "Troy, NYx" });
     edits = applyEdit(edits, ORIGINAL, "city", "Troy, NY");
-
     expect(edits).toEqual({});
   });
 
-  it("keeps the first base through a refetch, so typing back still drops it", () => {
-    let edits = applyEdit(null, ORIGINAL, "city", "Boston");
-    edits = applyEdit(edits, MOVED, "city", "Troy, NY");
-
-    expect(edits).toEqual({});
-  });
-
-  it("keeps a real change over a moved profile", () => {
+  it("keeps a real change through a refetch", () => {
     const edits = applyEdit(null, ORIGINAL, "city", "Boston");
 
-    expect(shownDraft(MOVED, edits).city).toBe("Boston");
+    expect(rebaseEdits(edits, ORIGINAL, MOVED)).toEqual({ city: "Boston" });
   });
 
-  it("keeps spaces as typed until the profile moves, then follows it", () => {
+  it("lets a field that held only spaces follow the new profile", () => {
     const edits = applyEdit(null, ORIGINAL, "city", "Troy, NY ");
 
-    expect(shownDraft(ORIGINAL, edits).city).toBe("Troy, NY ");
-    expect(shownDraft(MOVED, edits).city).toBe("Albany, NY");
+    expect(rebaseEdits(edits, ORIGINAL, MOVED)).toEqual({});
+  });
+
+  it("drops a field the refetch brought to the typed value", () => {
+    const edits = applyEdit(null, ORIGINAL, "city", "Albany, NY");
+
+    expect(rebaseEdits(edits, ORIGINAL, MOVED)).toEqual({});
+  });
+
+  it("re-bases on each refetch, so a typed-back old value is a change", () => {
+    // Typed "Troy, N" over Troy, the profile moved to Albany, then "Y".
+    let edits = applyEdit(null, ORIGINAL, "city", "Troy, N");
+    edits = rebaseEdits(edits, ORIGINAL, MOVED)!;
+    edits = applyEdit(edits, MOVED, "city", "Troy, NY");
+
+    expect(edits).toEqual({ city: "Troy, NY" });
+  });
+
+  it("keeps no edits as no edits", () => {
+    expect(rebaseEdits(null, ORIGINAL, MOVED)).toBeNull();
   });
 });

@@ -287,7 +287,7 @@ describe("EditProfileSheet (#3387)", () => {
     expect(saveButton(tree).props.disabled).toBe(true);
   });
 
-  // `useUpdateUser` writes the saved fields into the cached profile before
+  // `useUpdateUser` caches the row the server saved before
   // it settles, so the screen hands the sheet the saved profile first.
   it("closes onto the saved values and drops the edits", () => {
     const save = heldSave();
@@ -365,21 +365,31 @@ describe("EditProfileSheet (#3387)", () => {
     expect(input(tree, "City").props.value).toBe("Changed on the web");
   });
 
-  it("doesn't dismiss a sheet that animated closed", () => {
-    const save = heldSave();
+  // gorhom fires no `onAnimate` when a caught close snaps back to the same
+  // detent, so a close that starts can't be taken to mean the sheet is down.
+  it("still closes on Cancel after a close was caught and snapped back", () => {
     const tree = render();
 
-    type(tree, "City", "Albany, NY");
-    act(() => {
-      saveButton(tree).props.onPress();
-    });
-    // gorhom starts the close (a swipe or the scrim) before `onDismiss`.
     act(() => {
       modal(tree).props.onAnimate(0, -1);
     });
-    act(() => save.succeed());
+    pressCancel(tree);
 
-    expect(dismiss).not.toHaveBeenCalled();
+    expect(dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves a field typed back to its old value after a refetch moved it", () => {
+    const tree = render();
+
+    type(tree, "City", "Troy, N");
+    refetch(tree, { ...PROFILE, currentCity: "Albany, NY" });
+    expect(input(tree, "City").props.value).toBe("Troy, N");
+    type(tree, "City", "Troy, NY");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+
+    expect(mutate.mock.calls[0]![0]).toEqual({ current_city: "Troy, NY" });
   });
 
   it("follows the profile in a field that differs from it only by spaces", () => {
