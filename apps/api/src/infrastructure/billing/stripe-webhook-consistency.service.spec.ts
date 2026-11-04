@@ -115,6 +115,28 @@ describe('StripeWebhookConsistencyService', () => {
     expect(errorLog).not.toHaveBeenCalled();
   });
 
+  it("logs the endpoint's payload API version, or that it follows the account default (#3204)", async () => {
+    const log = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => {});
+    list.mockResolvedValue({ data: [endpoint({ api_version: null })] });
+    const service = serviceWith({ secret: REAL_SECRET, apiUrl: API_URL });
+    await expect(service.assertRegisteredEndpoint()).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining('the account default (unpinned)'),
+    );
+
+    log.mockClear();
+    list.mockResolvedValue({
+      data: [endpoint({ api_version: '2026-08-26.dahlia' })],
+    });
+    await expect(service.assertRegisteredEndpoint()).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining('API version 2026-08-26.dahlia'),
+    );
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it('WARNS but does not refuse boot on a missing event type', async () => {
     // Deliberate, and still a warning: until 2026-09-28 every registered endpoint
     // was missing one handled type — test mode `payment_intent.payment_failed`

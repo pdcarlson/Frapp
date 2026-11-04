@@ -45,6 +45,7 @@ import { ChapterMark } from "@/components/chapter-mark";
 import { ScreenShell } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
+import { NotificationsBell } from "@/components/chat/notifications-bell";
 import { ToggleChips } from "@/components/filter-chips";
 import { ChannelRow, UnreadBadge } from "@/components/chat/channel-row";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
@@ -257,11 +258,16 @@ export default function ChatHomeScreen() {
       title={chapterName ?? "Frapp"}
       titleMark={<ChapterMark />}
       headerAction={
-        // No pill at all in a build without Ask (#2259): `AskSheet` renders
-        // nothing then, so the pill would be a control with nothing behind it.
-        isAskAvailable() ? (
-          <AskPill onPress={() => askSheetRef.current?.present()} />
-        ) : undefined
+        <View style={styles.headerActions}>
+          {/* No pill at all in a build without Ask (#2259): `AskSheet`
+              renders nothing then, so the pill would be a control with
+              nothing behind it. */}
+          {isAskAvailable() ? (
+            <AskPill onPress={() => askSheetRef.current?.present()} />
+          ) : null}
+          {/* The inbox's entry (#3362), where the web keeps it: on home. */}
+          <NotificationsBell />
+        </View>
       }
     >
       <UpNextStrip
@@ -479,6 +485,11 @@ export default function ChatHomeScreen() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+    },
     section: {
       gap: tokens.spacing.xs,
     },
