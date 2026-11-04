@@ -168,10 +168,14 @@ accent; the Admin rows are drawn neutral, as the board draws them.
 | Dues | Card: body plus a stroke-only stripe | s09 (web `BillingGlyph`) |
 | Documents | Page with a folded corner | s09 (web `DocumentsGlyph`) |
 | Directory | Two people, the second stroke-only | s09 (web `DirectoryGlyph`) |
-| Notifications | Bell, clapper stroke-only | s09 (web `NotificationsGlyph`) |
 | Settings | Gear, hub stroke-only | web `SettingsGlyph` (the board's s09 cog is drawn half-open) |
 | Switch chapter | Crest carrying two opposed swap arrows | Drawn fresh in the §1 recipe: no board draws this row |
 | Host check-in (Admin) | Three squares and a QR corner, neutral | s09 |
+
+The same file's `NotificationsGlyph` (bell, clapper stroke-only; s09 and web
+`NotificationsGlyph`) is drawn by Chat home's inbox bell
+(`components/chat/notifications-bell.tsx`), in `text.foreground` with the
+neutral fill, since the More row it was drawn for moved there (#3362).
 
 ### 6.2 Web Dashboard shell (Signet duotone)
 
@@ -261,7 +265,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Direct or group message | `DirectMessageGlyph` |
 | Connection lost | `OfflineGlyph` |
 | Reply to a message | `ThreadGlyph` |
-| Per-channel notification level / mute | `MuteGlyph` |
+| Per-channel notification level / mute: a speaker (box and cone, split by a detail stroke) with two waves, an × for the waves when muted. Not a bell, since #3362: the bell is the notification inbox's. The box, split and second wave keep it apart from `AnnouncementGlyph`'s single horn and wave | `MuteGlyph` |
 | Event location | `LocationGlyph` |
 | Event card | `EventsGlyph` (shared with the nav intent) |
 | Task card | `TasksGlyph` (shared) |

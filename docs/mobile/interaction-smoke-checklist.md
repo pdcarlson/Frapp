@@ -70,7 +70,8 @@ in the S2 nav restructure (#957) — see
 | Dues | Pay now (Expo Go) | CTA is **disabled with the reason stated**; balance and history still render |
 | Dues | Pay now (installed build, key configured) | Stripe PaymentSheet opens; dismissing it says nothing |
 | Dues | Complete a payment | Shows "payment received, confirmation pending", then flips to Paid only once the webhook lands |
-| Chat home (`/(tabs)`) and Events (`/(tabs)/events`) | Header, flag **off** (the default) | **No ✦ Ask pill at all** — nothing in the header row beside the title. This is the state a build gets when nothing sets `EXPO_PUBLIC_ASK_ENABLED`. A pill here, or one that opens a sheet saying Ask is off, is the placeholder #2259 removed |
+| Chat home (`/(tabs)`) and Events (`/(tabs)/events`) | Header, flag **off** (the default) | **No ✦ Ask pill at all**. Events shows nothing beside the title; Chat home shows only the notifications bell. This is the state a build gets when nothing sets `EXPO_PUBLIC_ASK_ENABLED`. A pill here, or one that opens a sheet saying Ask is off, is the placeholder #2259 removed |
+| Chat home (`/(tabs)`) | Notifications bell, with unread notifications | Shows a house-gold badge counting unread notifications that are not chat messages (those are badged on the channel rows); tapping opens Notifications. With none unread, the bell shows no badge |
 | `frapp://ask` | Open the link, flag **off** | Lands on Chat home. No "Ask" screen, no sheet |
 | Chat home (`/(tabs)`) | ✦ Ask pill, flag **on** (`EXPO_PUBLIC_ASK_ENABLED=1` in a local build) | Presents the s17 Ask sheet over the screen, with the scrim behind it; the grabber or a tap on the scrim dismisses it (there is **no** Cancel control, by design) |
 | Events (`/(tabs)/events`) | ✦ Ask pill, flag **on** | Same sheet, same behavior |
