@@ -58,7 +58,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "discord-api-types": "^0.38.57",
-    "expo-server-sdk": "^7.2.0",
+    "expo-server-sdk": "^8.0.0",
     "helmet": "^8.3.0",
     "pdf-lib": "^1.17.1",
     "posthog-node": "^5.60.1",
