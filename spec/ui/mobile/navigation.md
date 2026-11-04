@@ -208,10 +208,10 @@ same PR.
 
 *2026-11-04:* chapter setup's live step (#3351,
 `lib/onboarding/chapter-wizard/chapter-logo.ts`) is the third caller, adding the chapter's
-logo. `photosPermission` names it too ("add your chapter's logo"), as do the store records.
-Whether the privacy policy's permissions clause changes with it is the owner's call
-([#3395](https://github.com/pdcarlson/Frapp/issues/3395)), because the policy text is
-pinned to the acceptance version (`legal.md` § Acceptance record).
+logo. `photosPermission` names it too ("add your chapter's logo"), as do the store records
+and the privacy policy's permissions clause. The owner ruled that policy edit non-material
+([#3395](https://github.com/pdcarlson/Frapp/issues/3395)), so it moved only the page's pin
+(`legal.md` § Acceptance record).
 
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`

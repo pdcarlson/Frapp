@@ -526,8 +526,10 @@ Advertising Data, Browsing History, Search History.
 > (`lib/onboarding/chapter-wizard/chapter-logo.ts`, the same pipeline). It is the
 > chapter's image rather than the member's, but the upload is still a *Photos or
 > Videos* item collected for *App Functionality*, so the row's values don't change.
-> The purpose string names it. Whether the privacy policy's permissions clause does is
-> the owner's call ([#3395](https://github.com/pdcarlson/Frapp/issues/3395)), since that text is pinned to the acceptance version.
+> The purpose string and the privacy policy's permissions clause both name it. The
+> owner ruled the policy edit non-material on 2026-11-04 ([#3395](https://github.com/pdcarlson/Frapp/issues/3395)),
+> so it moved only the page's pin and nobody is asked to accept again. Deploy the
+> landing before submitting a binary that carries #3351.
 >
 > ‡ **`Linked: No` on Crash Data and Performance Data is wrong, and this table's own
 > reasoning is what proves it (owner action — console change).** Found 2026-09-21. The
