@@ -62,18 +62,18 @@ vi.mock("@repo/hooks", () => ({
   }),
 }));
 
-vi.mock("@repo/org-archetypes", () => ({
-  ARCHETYPES: {
-    ifc: { key: "ifc", label: "IFC", short: "IFC", council: "Interfraternity" },
-  },
-  getArchetype: (key: string) => ({ key: key || "ifc" }),
-  orgDefaultAccent: (name: string | null | undefined) =>
-    name === "Phi Gamma Delta" ? "#4F2683" : undefined,
-  orgProfileFor: (name: string | null | undefined) =>
-    name === "Phi Gamma Delta"
-      ? { displaysGreekLetters: false, shortName: "FIJI" }
-      : undefined,
-}));
+vi.mock("@repo/org-archetypes", async (importOriginal) => {
+  // The real profile lookups, so FIJI's color and mark come from the data.
+  const actual = await importOriginal<typeof import("@repo/org-archetypes")>();
+  return {
+    ARCHETYPES: {
+      ifc: { key: "ifc", label: "IFC", short: "IFC", council: "Interfraternity" },
+    },
+    getArchetype: (key: string) => ({ key: key || "ifc" }),
+    orgDefaultAccent: actual.orgDefaultAccent,
+    orgMarkFields: actual.orgMarkFields,
+  };
+});
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({

@@ -24,7 +24,7 @@ import {
   getArchetype,
   orgColorsFor,
   orgDefaultAccent,
-  orgProfileFor,
+  orgMarkFields,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import { SignetTokens } from "@repo/theme/signet";
@@ -114,20 +114,14 @@ export default function CreateChapter() {
   function applyDirectoryMatch(row: ChapterDirectoryResult) {
     setDirectoryId(row.id);
     setArchetype(getArchetype(row.archetype ?? "").key);
-    const profile = orgProfileFor(row.org_name);
+    const mark = orgMarkFields(row.org_name, identity.name, identity);
     setIdentity({
       name: row.org_name ?? "",
       university: row.university ?? "",
       greekLetters: row.org_letters ?? "",
-      // The directory knows letters, not whether an organization shows them.
-      // `ORG_PROFILES` knows for an organization that doesn't (FIJI), so its
-      // chapter starts on its short name with the letters hidden; otherwise
-      // these two keep whatever the founder already chose.
-      shortName: profile?.shortName ?? identity.shortName,
-      showGreekLetters:
-        profile?.displaysGreekLetters === false
-          ? false
-          : identity.showGreekLetters,
+      // The directory knows letters, not whether an organization shows them:
+      // FIJI's profile switches them off (`orgMarkFields`).
+      ...mark,
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",

@@ -379,3 +379,39 @@ export function orgDefaultAccent(
 ): string | undefined {
   return orgColorsFor(orgName)[0]?.hex;
 }
+
+/** The two chapter-mark fields a directory match can set from a profile. */
+export type OrgMarkFields = { shortName: string; showGreekLetters: boolean };
+
+/**
+ * The short name and letters switch a wizard should hold after a directory
+ * match on `orgName`. The directory row carries Greek letters for every
+ * organization, so for one that doesn't display them (FIJI) the profile turns
+ * them off and fills the short name. For any other organization the
+ * founder's own choice stands, except what an earlier match's profile set:
+ * picking FIJI by mistake, then another row, must not leave "FIJI" and the
+ * letters off behind.
+ */
+export function orgMarkFields(
+  orgName: string | null | undefined,
+  previousOrgName: string | null | undefined,
+  current: OrgMarkFields,
+): OrgMarkFields {
+  const profile = orgProfileFor(orgName);
+  if (profile?.displaysGreekLetters === false || profile?.shortName) {
+    return {
+      shortName: profile.shortName ?? current.shortName,
+      showGreekLetters:
+        profile.displaysGreekLetters === false ? false : current.showGreekLetters,
+    };
+  }
+  const previous = orgProfileFor(previousOrgName);
+  return {
+    shortName:
+      previous?.shortName && current.shortName === previous.shortName
+        ? ""
+        : current.shortName,
+    showGreekLetters:
+      previous?.displaysGreekLetters === false ? true : current.showGreekLetters,
+  };
+}
