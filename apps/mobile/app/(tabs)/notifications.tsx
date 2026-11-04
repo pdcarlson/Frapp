@@ -24,6 +24,7 @@ import {
 import { NOTIFICATION_FALLBACK_PATHNAME } from "@/lib/notifications/targets";
 import { asRoute } from "@/lib/href";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 /**
  * s14 — Notifications (`canvas-screens.dc.html:474`).
@@ -66,7 +67,8 @@ const MARK_ALL_BATCH = 25;
 export default function NotificationsScreen() {
   const router = useRouter();
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
   const chapterId = useActiveChapterId();
 
   const notificationsQuery = useNotifications();
@@ -196,7 +198,8 @@ export function NotificationListRow({
   onPress: () => void;
 }) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
 
   return (
     <Pressable
@@ -222,11 +225,11 @@ export function NotificationListRow({
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     headerAction: {
       ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.askText,
+      color: brand.accent,
     },
     group: {
       gap: tokens.spacing.xs,
@@ -253,7 +256,7 @@ function createStyles(tokens: SignetTokens) {
       height: tokens.spacing.sm,
       borderRadius: tokens.spacing.xs,
       marginTop: tokens.spacing.sm,
-      backgroundColor: tokens.color.gold.house,
+      backgroundColor: brand.accent,
     },
     dotSpacer: {
       width: tokens.spacing.sm,

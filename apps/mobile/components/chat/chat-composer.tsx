@@ -10,6 +10,7 @@ import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { formatBytes } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 /**
  * The s05 composer (`canvas-screens.dc.html:186-189`).
@@ -106,7 +107,8 @@ export function ChatComposer({
   context = null,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
 
   // An empty or whitespace-only body is not a send — unless something is
   // attached. An attachment-only message is a real message, and gating it on
@@ -246,7 +248,7 @@ export function ChatComposer({
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     wrapper: {
       borderTopWidth: 1,
@@ -349,9 +351,9 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
-    // Deliberately NOT gold. Gold is the send affordance on this row, and two
-    // gold controls either side of the input would give the screen two primary
-    // actions.
+    // Deliberately NOT the accent. The accent is the send affordance on this
+    // row, and two accent controls either side of the input would give the
+    // screen two primary actions.
     attach: {
       width: tokens.touch.minimum,
       height: tokens.touch.minimum,
@@ -373,7 +375,7 @@ function createStyles(tokens: SignetTokens) {
       width: tokens.touch.minimum,
       height: tokens.touch.minimum,
       borderRadius: tokens.radius.chipLarge,
-      backgroundColor: tokens.color.gold.house,
+      backgroundColor: brand.accent,
       alignItems: "center",
       justifyContent: "center",
     },

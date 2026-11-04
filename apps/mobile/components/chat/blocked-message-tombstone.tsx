@@ -12,6 +12,7 @@ import {
 } from "@repo/chat-core/block-copy";
 import type { MaskedRefreshState } from "@repo/chat-core/blocks";
 import { italicFontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 /**
  * What the thread draws in place of a message from a member the viewer blocked
@@ -74,7 +75,8 @@ export function BlockedMessageTombstone({
   startsRun = true,
 }: BlockedMessageTombstoneProps) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
   const text = canUnblock ? TOMBSTONE_TEXT : TOMBSTONE_STALE_TEXT;
   const hiddenFrom = senderName
     ? `hidden messages from ${senderName}`
@@ -121,7 +123,7 @@ export function BlockedMessageTombstone({
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     // The metrics `MessageItem` rows use, so the line sits in the body column.
     row: {
@@ -143,7 +145,7 @@ function createStyles(tokens: SignetTokens) {
     },
     action: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.gold.askText,
+      color: brand.accent,
     },
     pressed: {
       opacity: 0.6,

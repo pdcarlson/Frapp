@@ -3,6 +3,24 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
+
+// These screens paint with the chapter accent (`useChapterBranding`), which
+// reads the current chapter through the client provider these specs don't
+// mount. A purple chapter's values, deliberately not house gold, so a control
+// that slips back to a `gold.*` token shows up in an assertion; the hook
+// itself has its own spec.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({
+    accent: "#CB9FFF",
+    accentPrimary: "#8E4EC6",
+    accentOnPrimary: "#FFFFFF",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
+    logoUrl: null,
+    chapterName: null,
+    textMark: null,
+  }),
+}));
 import { FrappThemeProvider } from "@/lib/theme";
 import { ChatComposer, type ChatComposerProps } from "./chat-composer";
 
@@ -193,5 +211,18 @@ describe("ChatComposer reply and edit strip (#2775)", () => {
     const { tree } = renderComposer();
     expect(byLabel(tree, "Cancel reply")).toBeUndefined();
     expect(byLabel(tree, "Cancel edit")).toBeUndefined();
+  });
+});
+
+describe("ChatComposer accent", () => {
+  it("paints send with the chapter accent, not house gold (owner's rule, 2026-11-04)", () => {
+    const { tree } = renderComposer({ value: "hi" });
+    const send = byLabel(tree, "Send message")!;
+    const style = Object.assign(
+      {},
+      ...(send.props.style({ pressed: false }) as unknown[]).filter(Boolean),
+    ) as { backgroundColor?: string };
+    // The mocked chapter accent above, a purple.
+    expect(style.backgroundColor).toBe("#CB9FFF");
   });
 });

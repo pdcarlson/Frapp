@@ -25,7 +25,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useRemoveAvatar: () => ({ mutateAsync: state.remove }),
 }));
 vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({ accent: "#F4CB63" }),
+  useChapterBranding: () => ({
+    accent: "#CB9FFF",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
+  }),
 }));
 vi.mock("@/lib/more/profile-photo", () => ({
   pickAndSetProfilePhoto: (...args: unknown[]) => state.pick(...args),

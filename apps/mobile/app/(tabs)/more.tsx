@@ -7,7 +7,6 @@ import {
   useInvoices,
   useListChapters,
   useMyPoints,
-  useNotifications,
   useNowDate,
   usePermissionList,
   useStudySessions,
@@ -17,14 +16,12 @@ import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
-import { CountBadge } from "@/components/more/count-badge";
 import {
   ChapterGlyph,
   DirectoryGlyph,
   DocumentsGlyph,
   DuesGlyph,
   HostCheckInGlyph,
-  NotificationsGlyph,
   ServiceGlyph,
   SettingsGlyph,
   StudyGlyph,
@@ -34,7 +31,6 @@ import { StatusChip } from "@/components/status-chip";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectEventRows } from "@/lib/events/select";
 import { formatPointsLabel } from "@/lib/more/hub";
-import { selectUnreadIds } from "@/lib/more/notifications";
 import { selectPointsBalance, selectViewerProfile } from "@/lib/more/profile";
 import {
   dueChip,
@@ -61,6 +57,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * (Service hours and Switch chapter, `spec/ui/mobile/navigation.md` § More hub) sit
  * with their kind instead of trailing the list. The owner approved this
  * layout on 2026-11-04.
+ *
+ * The board's Notifications row is not here: the inbox moved to a bell on
+ * Chat home, beside the unread counts it belongs with (#3362, owner decision
+ * 2026-11-04; `components/chat/notifications-bell.tsx`).
  *
  * **Switch chapter** is the only entry to the chapter picker (#764). When
  * `GET /v1/chapters` is empty the same slot becomes **Create a chapter**
@@ -114,9 +114,6 @@ export default function MoreScreen() {
   // grant is the wildcard `*`, so a membership test would hide the Admin
   // section from exactly the people who need it.
   const canHost = can("events:update", permissions);
-
-  const notificationsQuery = useNotifications();
-  const unreadCount = selectUnreadIds(notificationsQuery.data).length;
 
   // s22 takes an `eventId`, so the row resolves one rather than leading
   // nowhere. `selectEventRows` already returns upcoming-plus-still-checkable-in,
@@ -222,16 +219,6 @@ export default function MoreScreen() {
           leading={<DirectoryGlyph color={accent} />}
           accessibilityHint="Opens the member directory."
           onPress={() => router.push("/directory")}
-        />
-        <ListRow
-          label="Notifications"
-          leading={<NotificationsGlyph color={accent} />}
-          accessibilityHint="Opens your notification history."
-          accessibilityValue={
-            unreadCount > 0 ? `${unreadCount} unread` : undefined
-          }
-          trailing={unreadCount > 0 ? <CountBadge count={unreadCount} /> : null}
-          onPress={() => router.push("/notifications")}
         />
       </ListSection>
 

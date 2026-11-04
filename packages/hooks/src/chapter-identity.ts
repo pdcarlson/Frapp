@@ -29,6 +29,28 @@ import { signetDarkTokens } from "@repo/theme/signet";
  */
 export const DEFAULT_CHAPTER_ACCENT = signetDarkTokens.color.gold.seed;
 
+/** A named accent swatch: an organization's color or one of the presets. */
+export type AccentSwatch = { name: string; hex: string };
+
+/**
+ * The common colors an accent picker offers every chapter, after its own
+ * organization's colors (`orgColorsFor` in `@repo/org-archetypes`). They are
+ * the hues Greek organizations use most, each a seed the accent engine reads
+ * well on Signet's dark surfaces. A chapter can still enter any hex.
+ */
+export const ACCENT_PRESETS: readonly AccentSwatch[] = Object.freeze(
+  [
+    { name: "Crimson", hex: "#A6192E" },
+    { name: "Orange", hex: "#E87722" },
+    { name: "Gold", hex: "#C9A227" },
+    { name: "Green", hex: "#2E7D32" },
+    { name: "Royal Blue", hex: "#1E4FA3" },
+    { name: "Navy", hex: "#1D2F6F" },
+    { name: "Purple", hex: "#5B2C83" },
+    { name: "Rose", hex: "#D51A68" },
+  ].map((swatch) => Object.freeze(swatch)),
+);
+
 export type ChapterIdentityForm = {
   name: string;
   university: string;
@@ -76,8 +98,8 @@ export const EMPTY_CHAPTER_IDENTITY: Readonly<ChapterIdentityForm> =
  * shouldn't be swapped for the default. Settings can stay strict because it
  * shows an explicit unsavable state; the wizard has none, so a blank or
  * unparseable field takes the default instead. Web's native colour input can't
- * produce one, and mobile's swatch previews this function's result, so the
- * founder sees the colour that will be stored.
+ * produce one, and mobile's accent picker only passes on a typed hex that
+ * already parses, so neither wizard stores a colour the founder didn't see.
  */
 export function normalizeAccentInput(value: string | null | undefined): string {
   const trimmed = value?.trim() ?? "";
