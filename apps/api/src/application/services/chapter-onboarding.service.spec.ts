@@ -732,6 +732,7 @@ describe('welcomeGreeting', () => {
     ['Tau Nu FIJI', 'Tau Nu', 'Welcome to the Tau Nu chapter of FIJI.'],
     ['Tau Nu', 'tau nu', 'Welcome to the tau nu chapter.'],
     ['FIJI', 'Tau Nu Chapter.', 'Welcome to the Tau Nu chapter of FIJI.'],
+    ['FIJI', 'ΤΝ', 'Welcome to FIJI.'],
     [undefined, 'Tau Nu', 'Welcome to the Tau Nu chapter.'],
     [undefined, 'Chapter', 'Welcome to your chapter.'],
     [' ', '  ', 'Welcome to your chapter.'],

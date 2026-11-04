@@ -363,8 +363,8 @@ const GREEK_LETTER = /[\u0370-\u03FF\u1F00-\u1FFF]/;
  * `name` is free text (the short name, else the wizard's "Chapter /
  * organization name", which manual entry seeds from the raw search), so it is
  * cleaned rather than trusted:
- * - a name with any Greek letter in it is dropped, because some organizations
- *   (Phi Gamma Delta) don't allow their letters to be shown;
+ * - a name (or designation) with any Greek letter in it is dropped, because
+ *   some organizations (Phi Gamma Delta) don't allow their letters to be shown;
  * - a name that repeats the designation ("FIJI Tau Nu" with "Tau Nu") loses
  *   it, and one that is only the designation is dropped.
  * A designation typed as "Tau Nu Chapter" (or "Tau Nu chapter.") loses its own
@@ -374,10 +374,13 @@ export function welcomeGreeting(
   name: string | undefined,
   rawDesignation: string | undefined,
 ): string {
-  const designation = rawDesignation
+  const cleaned = rawDesignation
     ?.trim()
     .replace(/(^|\s+)chapter[\s.,;:!]*$/i, '')
     .trim();
+  // A designation typed in Greek ("ΤΝ") is letters too.
+  const designation =
+    cleaned && !GREEK_LETTER.test(cleaned) ? cleaned : undefined;
   const nameText = cleanName(name, designation);
   if (designation && nameText) {
     return `Welcome to the ${designation} chapter of ${nameText}.`;
