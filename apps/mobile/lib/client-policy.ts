@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import { useFrappClient } from "@repo/hooks";
+import { createReportingCaches } from "@/lib/sentry/query-errors";
 
 /**
  * Is this build still supported? (#2526)
@@ -35,8 +36,10 @@ export const CLIENT_POLICY_STALE_MS = 60_000;
 // These defaults are this client's own, not a copy to keep in step with
 // `lib/query-client.ts`: the check has no spinner and fails open, so it only
 // needs to ask on focus, retry once, and try even when connectivity detection
-// says offline.
+// says offline. Its failures reach Sentry like the product client's, through
+// caches of its own (`lib/sentry/query-errors.ts`).
 export const clientPolicyQueryClient = new QueryClient({
+  ...createReportingCaches(),
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: true,
@@ -99,8 +102,12 @@ export function useClientPolicy(
         // already leaves `data` undefined there, so the shape check below
         // would throw too; checking the status means this doesn't rest on that.
         // (`error` can't be the test: it is undefined for an empty-bodied 5xx.)
+        // The status rides on what is thrown so a report groups it by class.
         if (!response.ok) {
-          throw new Error(`client-policy answered ${response.status}`);
+          throw Object.assign(
+            new Error(`client-policy answered ${response.status}`),
+            { statusCode: response.status },
+          );
         }
         const policy = readClientPolicy(body);
         if (!policy) throw new Error("client-policy answered in an unknown shape");

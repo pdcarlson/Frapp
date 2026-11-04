@@ -313,6 +313,12 @@ While it fires, `worker: chat-push` means no chat pushes go out and `worker: cha
 
 The fingerprint is fixed per worker, so every outage of one worker lands in one Sentry issue: the first creates it, and a later outage is a new event on it or a regression if it was resolved. **The row above describes a rule nobody has created yet.** Until one exists, the only notifier is `frapp-api`'s default rule `3133192` (read 2026-11-04): it emails issue owners, falling back to active members, when a new issue is high priority or an existing one becomes high priority, at most once per 30 minutes, in any environment. An error-level event normally opens a high-priority issue, so a worker's first outage should notify. Whether a later outage on that same issue does depends on Sentry counting it as escalating, which nobody has observed yet.
 
+### Client query and mutation failures
+
+Source: the `warning`-level events web and mobile send when a React Query query or mutation fails ([#3377](https://github.com/pdcarlson/Frapp/issues/3377)), fingerprint `['react-query', <kind>, <query-key root>, <status class or network>]`, at most one per fingerprint per 10 minutes per client. What is reported and what each event carries: [`observability.md` § Error Tracking](../../spec/behavior/observability.md#error-tracking).
+
+**No rule pages on these, by design.** They land in `frapp-web` and `frapp-mobile` for triage, not as alerts: an API 5xx behind one is already an error-level event in `frapp-api`, which its `request_id` tag joins. Sentry gives a `warning` event's new issue **medium** priority, and `frapp-web`'s default rule `3855503` (read 2026-11-04) emails only when an issue is or becomes high priority. So a client failure emails no one unless Sentry marks its issue escalating. `frapp-mobile`'s default rule `3914865` has the same name and was not re-read that day.
+
 ### Thresholds that exist only as intended lists
 
 [`spec/behavior/observability.md`](../../spec/behavior/observability.md) § Alerting names

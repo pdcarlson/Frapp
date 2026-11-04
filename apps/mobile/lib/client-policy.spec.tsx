@@ -103,7 +103,7 @@ describe("useClientPolicy", () => {
       );
       await settle();
     };
-    return { ...view, GET, refetch, settle };
+    return { ...view, GET, policyClient, refetch, settle };
   }
 
   const BLOCK = { data: { update_required: true, update_url: "https://a.test" } };
@@ -125,6 +125,17 @@ describe("useClientPolicy", () => {
     await waitFor(() => expect(GET).toHaveBeenCalled());
     await settle();
     expect(result.current).toEqual({ updateRequired: false, updateUrl: null });
+  });
+
+  // What a Sentry report groups by (`lib/sentry/query-errors.ts`).
+  it("throws a non-2xx with its status on it", async () => {
+    const { GET, policyClient, settle } = setup([{ status: 503 }]);
+    await waitFor(() => expect(GET).toHaveBeenCalled());
+    await settle();
+    expect(policyClient.getQueryState(CLIENT_POLICY_QUERY_KEY)?.error).toMatchObject({
+      message: "client-policy answered 503",
+      statusCode: 503,
+    });
   });
 
   it.each([
