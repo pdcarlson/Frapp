@@ -163,7 +163,7 @@ describe("NoChapterState", () => {
     const copy = texts(tree).join(" ");
 
     expect(copy).toContain("No chapter selected");
-    expect(copy).toContain("More → Chapter");
+    expect(copy).toContain("More → Switch chapter");
     expect(copy).toContain("the directory");
   });
 });

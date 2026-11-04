@@ -146,7 +146,7 @@ export default function ProfileScreen() {
         // a membership exists (and during a hook-off incident), so this is
         // the empty-prod case rather than an edge one.
         <Text style={styles.statNote}>
-          Choose a chapter from More → Chapter to see your points.
+          Choose a chapter from More → Switch chapter to see your points.
         </Text>
       ) : pointsQuery.isError || serviceQuery.isError ? (
         <Text style={styles.statNote}>

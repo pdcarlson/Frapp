@@ -148,7 +148,7 @@ export function ProfilePhoto({
       </View>
       {!chapterId ? (
         <Text style={styles.note}>
-          Choose a chapter from More → Chapter to add a photo.
+          Choose a chapter from More → Switch chapter to add a photo.
         </Text>
       ) : note ? (
         <Text style={styles.note} accessibilityLiveRegion="polite">
