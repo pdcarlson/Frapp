@@ -36,8 +36,8 @@ const TAB_BAR_PADDING = 6;
  * title again above it.
  * It never supplied a way back either — a tab route's header renders with no
  * `back` — so a pushed route's way back is whatever it draws itself: s05's `‹`
- * and the close controls on s18 and s22. The board's `‹ More` and `‹ Events`
- * rows on s07 and s10–s16 aren't drawn yet (#3022).
+ * and the close controls on s18 and s22, and the back rows above the title on
+ * s07 and s10–s16 (#3022, `spec/ui/mobile/navigation.md` § Back rows).
  * Chat home's chapter mark, which used to ride in the header, is now its
  * title row (`spec/behavior/branding.md` § Chapter mark). The `title`s below
  * still name each route for the tab labels and the web document title.

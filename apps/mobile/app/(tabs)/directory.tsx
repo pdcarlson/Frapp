@@ -15,6 +15,7 @@ import {
   NoChapterState,
   SkeletonLines,
 } from "@/components/state-block";
+import { BACK_TO_MORE, BackRow } from "@/components/back-row";
 import { FilterChips, SearchField } from "@/components/filter-chips";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import {
@@ -143,9 +144,14 @@ export default function DirectoryScreen() {
 
   const header = (
     <View style={styles.header}>
-      <Text accessibilityRole="header" style={styles.title}>
-        Directory
-      </Text>
+      {/* One block, so the header's gap doesn't widen the space under the
+          back row past the shell's (`components/screen-shell.tsx`). */}
+      <View>
+        <BackRow {...BACK_TO_MORE} />
+        <Text accessibilityRole="header" style={styles.title}>
+          Directory
+        </Text>
+      </View>
 
       <SearchField
         value={query}

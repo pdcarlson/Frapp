@@ -2,10 +2,18 @@ import { ReactNode } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
+import { BackRow, type BackTarget } from "@/components/back-row";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 type ScreenShellProps = {
   title: string;
+  /**
+   * The `‹ More` / `‹ Events` row above the title, on a screen reached from
+   * another one (#3022, `spec/ui/mobile/navigation.md` § Back rows). A tab's
+   * own screen passes none. Every state of a screen passes the same one, so a
+   * deep link that lands on an error still has a way out.
+   */
+  back?: BackTarget;
   /**
    * Drawn before the title on the title row. Chat home passes the chapter mark
    * (`ChapterMark`), which is the one mobile surface of the chapter's logo
@@ -36,8 +44,8 @@ type ScreenShellProps = {
 };
 
 /**
- * The screen frame most tab screens share: its title row, an optional
- * subtitle and the scrolling body. s05, s13, s18 and s22 draw their own. The
+ * The screen frame most tab screens share: an optional back row, its title
+ * row, an optional subtitle and the scrolling body. s05, s13, s18 and s22 draw their own. The
  * title is the only heading the shell draws; a screen may add its own below
  * it, as Chat home's section headers do. The tab layout draws no navigator
  * header (#2485), so the shell also takes the top safe-area inset the header
@@ -45,6 +53,7 @@ type ScreenShellProps = {
  */
 export function ScreenShell({
   title,
+  back,
   titleMark,
   subtitle,
   headerAction,
@@ -60,6 +69,7 @@ export function ScreenShell({
     >
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
+          {back ? <BackRow label={back.label} href={back.href} /> : null}
           <View style={styles.headerRow}>
             {titleMark}
             <Text accessibilityRole="header" style={styles.title}>

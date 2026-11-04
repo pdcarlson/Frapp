@@ -53,6 +53,8 @@ export const reactNativeStub = {
   Image: "Image",
   ScrollView: "ScrollView",
   TextInput: "TextInput",
+  // Added with s16's rendered spec (#3022): its notification rows are switches.
+  Switch: "Switch",
   // The chat thread windows its messages with a FlatList. As a string stand-in
   // it renders its props but never invokes `renderItem`, so a test that needs
   // to assert on a row should call the row component directly. A spec that
