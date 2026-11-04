@@ -48,6 +48,7 @@ import {
 } from "@repo/chat-core/reply-preview";
 import { EDITED_MARKER } from "@repo/chat-core/message-actions";
 import { signetDarkTokens } from "@repo/theme/signet";
+import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { groupReactions, MessageItem } from "./message-item";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
@@ -235,15 +236,48 @@ describe("an imported author's row", () => {
 // to "Member 000000" beside a "00" avatar (#3347).
 describe("the system actor's row", () => {
   it("reads Frapp, and draws no id-derived avatar", () => {
-    const tree = renderItem(
-      message({ sender_id: "00000000-0000-0000-0000-000000000000" }),
-    );
+    const tree = renderItem(message({ sender_id: SYSTEM_SENDER_ID }));
     const drawn = tree.root
       .findAll((node) => (node.type as unknown) === "Text")
       .map((node) => node.props.children);
     expect(drawn).toContain("Frapp");
     expect(drawn).not.toContain("Member 000000");
     expect(drawn).not.toContain("00");
+  });
+});
+
+// Frapp's own posts (the welcome, the audit bridge, a poll's closing notice,
+// an invite-accept DM) wear the crest rather than initials (#3347).
+describe("a system post's avatar", () => {
+  const hasSystemAvatar = (tree: ReactTestRenderer) =>
+    tree.root.findAll((node) => node.props.testID === "system-avatar").length >
+    0;
+
+  it("draws the crest, not initials, for the system sender", () => {
+    const tree = renderItem(
+      message({ sender_id: SYSTEM_SENDER_ID, kind: "system_audit" }),
+    );
+    expect(hasSystemAvatar(tree)).toBe(true);
+    // No initials drawn from the id-prefix fallback ("Member 000000").
+    const texts = tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => node.props.children);
+    expect(texts).not.toContain("M0");
+    expect(texts).not.toContain("00");
+  });
+
+  it("keeps initials for a member", () => {
+    const tree = renderItem(message());
+    expect(hasSystemAvatar(tree)).toBe(false);
+  });
+
+  it("draws no crest on a system follow-on row", () => {
+    const tree = renderItem(
+      message({ sender_id: SYSTEM_SENDER_ID, kind: "system_audit" }),
+      undefined,
+      { startsRun: false },
+    );
+    expect(hasSystemAvatar(tree)).toBe(false);
   });
 });
 
