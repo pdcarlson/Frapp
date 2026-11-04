@@ -197,12 +197,11 @@ export default function SignIn() {
           <GoogleMark />
         )}
         <Text
-          style={[
-            styles.buttonText,
-            filled ? styles.buttonTextFilled : null,
-          ]}
+          style={[styles.buttonText, filled ? styles.buttonTextFilled : null]}
         >
-          {oauthPending === provider ? "Signing in..." : PROVIDER_LABEL[provider]}
+          {oauthPending === provider
+            ? "Signing in..."
+            : PROVIDER_LABEL[provider]}
         </Text>
       </Pressable>
     );
@@ -218,8 +217,8 @@ export default function SignIn() {
       ) : null}
       {!isConfigured ? (
         <Text style={styles.errorText}>
-          EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are not
-          set for this build, so sign-in is unavailable.
+          EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are not set
+          for this build, so sign-in is unavailable.
         </Text>
       ) : null}
     </>

@@ -26,17 +26,18 @@ came with #2302 (PR #2611).
 | Sign in (`/(auth)/sign-in`) | Tap an already-used or expired magic link | Opens the app and shows the reason inline — never a silent return to a blank sign-in form |
 | Settings (`/(tabs)/preferences`) | Sign out | Clears the session + routes to sign-in; relaunching the app does not restore it |
 | Join (`/(auth)/join`) | First view | Asks "How are you getting in?" with I have an invite and I'm starting our chapter; no invite field, and no Sign out or Delete account until Account is tapped |
-| Join (`/(auth)/join`) | Open an invite link while signed in with no chapter | Skips the question: the invite step opens with the field filled |
+| Join (`/(auth)/join`) | Open an invite link while signed in with no chapter | Skips the question and the field: "Join <chapter>?" opens with the chapter's mark, name and school, who invited you and the role |
 | Join (`/(auth)/join`) | Account (top corner) | Shows the signed-in email, Sign out and Delete account; tapping outside, or Android back, closes it |
 | Join (`/(auth)/join`) | I have an invite, then back | Opens "Join with an invite"; the chevron and Android back return to the question without leaving the app |
+| Join (`/(auth)/join`) | Paste an invite, Continue, then back | Continue opens the "Join <chapter>?" card without using the invite; back returns to the field with the invite still in it |
 | Join (`/(auth)/join`) | Join chapter with a valid invite, box unticked | For a user who hasn't accepted the current Terms, shows the checkbox and `Agree to the Terms of Service and Privacy Policy to join.`; redeems nothing |
 | Join (`/(auth)/join`) | Join chapter with a valid invite, box ticked (or already accepted, no box shown) | Redeems `POST /v1/invites/redeem`, selects the chapter, lands on welcome (s03) |
-| Join (`/(auth)/join`) | Expired / already-used invite | Shows the 410 sentence; stays on the screen |
+| Join (`/(auth)/join`) | Expired / already-used invite | The confirm step shows the 410 sentence and Join chapter is disabled; back leads to the field |
 | Join (`/(auth)/join`) | I'm starting our chapter | Opens `(auth)/create-chapter` |
 | Terms (`/(auth)/terms`) | Agree and continue, box unticked | Shows `Agree to the Terms of Service and Privacy Policy to continue.`; records nothing |
 | Terms (`/(auth)/terms`) | Tick the box, Agree and continue | `POST /v1/users/me/legal-acceptance`; the gate moves on to welcome or `/(tabs)` |
 | Terms (`/(auth)/terms`) | Sign out / Delete account | Sign out routes to sign-in; Delete account confirms, deletes, and signs out (Settings is unreachable from here) |
-| Welcome (`/(auth)/welcome`) | Go to chat / Skip | PATCHes `has_completed_onboarding: true` and replaces into `/(tabs)` |
+| Welcome (`/(auth)/welcome`) | Go to chat (the one button, pinned at the bottom) | PATCHes `has_completed_onboarding: true` and replaces into `/(tabs)` |
 | Chapter picker (empty) | Join or start a chapter | Opens join (s02), which asks invite or start |
 | Create chapter (`/(auth)/create-chapter`) | Directory row → Continue → color + Terms → Create; or Not in our directory? → fields + archetype → Continue | `POST /v1/chapters/onboard`; the later steps stay on this route. A FIJI row shows no letters anywhere |
 | Create chapter (`/(auth)/create-chapter`) | Back chevron / Android back on confirm and color | Steps back one; on find, leaves for join |
@@ -131,7 +132,7 @@ Availability and local-notification checks:
 | Screen | Control | Expected outcome |
 |---|---|---|
 | Settings (`/(tabs)/preferences`) | Push notifications row, Expo Go | Reads "Unavailable" with the Expo Go sentence — not "Off", which would imply a switch the member could flip |
-| First-run (`/(auth)/welcome`, s03) | Push primer card, Expo Go | Not drawn: the screen shows the channels, then "Go to chat" and "Skip", with no primer card, no disabled "Turn on" and no apology ([#2299](https://github.com/pdcarlson/Frapp/issues/2299)) |
+| First-run (`/(auth)/welcome`, s03) | Push primer card, Expo Go | Not drawn: the screen shows the channels, then "Go to chat", with no primer card, no disabled "Turn on" and no apology ([#2299](https://github.com/pdcarlson/Frapp/issues/2299)) |
 | Study hours | Background the app mid-session (installed build) | A local "Study session paused" notification appears; returning clears it. **Local** notifications need the native module but no project id and can be tested independently of remote-push setup — this does nothing in Expo Go |
 | Study hours | End a session while paused | The paused notification is cleared rather than left inviting the member back to a session that no longer exists |
 

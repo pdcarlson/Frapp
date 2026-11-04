@@ -660,6 +660,7 @@ describe('CustomThrottlerGuard', () => {
       route('POST /reports/service', ReportController, RP.service, 5),
       route('POST /invites/batch', InviteController, IN.createBatch, 5),
       route('POST /invites/redeem', InviteController, IN.redeem, 10),
+      route('POST /invites/preview', InviteController, IN.preview, 10),
       route('POST /events', EventController, EV.create, 10),
       route('PATCH /events/:id', EventController, EV.update, 10),
       route(

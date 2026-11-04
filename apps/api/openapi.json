@@ -2244,6 +2244,53 @@
         ]
       }
     },
+    "/v1/invites/preview": {
+      "post": {
+        "operationId": "InviteController_preview_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewInviteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitePreviewResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read an invite's chapter, inviter and role without redeeming it (410 when the invite is dead)",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
     "/v1/invites/redeem": {
       "post": {
         "operationId": "InviteController_redeem_v1",
@@ -11883,6 +11930,60 @@
         },
         "required": [
           "emails"
+        ]
+      },
+      "PreviewInviteDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The invite token, as the join link carries it"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "InvitePreviewResponseDto": {
+        "type": "object",
+        "properties": {
+          "chapter_name": {
+            "type": "string"
+          },
+          "university": {
+            "type": "string"
+          },
+          "mark_text": {
+            "type": "string",
+            "nullable": true,
+            "description": "The chapter's text mark: its short name, else its Greek letters if it shows them, else null. Never letters the chapter hides."
+          },
+          "accent_color": {
+            "type": "string",
+            "nullable": true
+          },
+          "invited_by": {
+            "type": "string",
+            "nullable": true,
+            "description": "The inviter's display name, or null when it can't be read."
+          },
+          "role": {
+            "type": "string",
+            "nullable": true,
+            "description": "The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role)"
+          },
+          "expires_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chapter_name",
+          "university",
+          "mark_text",
+          "accent_color",
+          "invited_by",
+          "role",
+          "expires_at"
         ]
       },
       "RedeemInviteDto": {
