@@ -6,6 +6,7 @@ import {
   useQueryClient,
   type InvalidateQueryFilters,
 } from "@tanstack/react-query";
+import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export function useCurrentUser() {
@@ -34,7 +35,11 @@ export function useCurrentUser() {
  */
 export function useViewerUserId(): string | null {
   const query = useCurrentUser();
-  const data: unknown = query.data;
+  return userIdOf(query.data);
+}
+
+/** A `/v1/users/me` row's `users.id`, narrowed as {@link useViewerUserId} says. */
+function userIdOf(data: unknown): string | null {
   const raw =
     data && typeof data === "object" && "id" in data
       ? ((data as { id?: unknown }).id ?? null)
@@ -46,43 +51,59 @@ export function useUpdateUser() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: {
-      display_name?: string;
-      bio?: string;
-      graduation_year?: number | null;
-      current_city?: string;
-      current_company?: string;
-    }) => {
+    mutationFn: async (body: components["schemas"]["UpdateUserDto"]) => {
       const { data, error } = await client.PATCH("/v1/users/me", { body });
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["user", "me"] });
+    onSuccess: (saved) => {
+      // The PATCH answers with the whole updated row, in the shape
+      // `GET /v1/users/me` serves (both sign the photo), so it goes straight
+      // into the cache: a form that closes on success closes onto it, without
+      // waiting on a refetch a dropped connection could hold paused after the
+      // save itself landed. Only over the same account's cached row: a save
+      // still in flight across a sign-out or an account swap must not put the
+      // previous member's row back into a cache the swap just cleared.
+      queryClient.setQueryData(["user", "me"], (old: unknown) => {
+        const id = userIdOf(old);
+        return id !== null && id === userIdOf(saved) ? saved : old;
+      });
+      // `["user", "me"]` too, though it was just written: invalidating it
+      // cancels a GET that left before the PATCH landed, which would
+      // otherwise answer last and put the pre-save row back.
+      void invalidateProfileReads(queryClient);
     },
   });
 }
 
 /**
- * Every query whose rows carry the viewer's signed photo: their own profile,
- * every `["members", …]` read (roster, directory, detail, search), the alumni
- * directory, and the activity feed's actors. The server deletes the replaced
- * object, so a query left out here keeps rendering a URL to nothing.
+ * Every query whose rows carry the viewer's profile (name, photo, bio,
+ * graduation year, city, company): their own profile, every `["members", …]`
+ * read (roster, directory, detail, search, and through the roster every chat
+ * author label), the alumni directory and its city and company filters, and
+ * the activity feed's actors. For the photo it matters twice over: the server
+ * deletes the replaced object, so a query left out here keeps rendering a URL
+ * to nothing.
  *
  * `["user", "me"]` is matched exactly: as a prefix it would also refetch
- * `["user", "me", "permissions", …]`, which a photo can't change, and the
- * photo mutations wait for every refetch they start.
+ * `["user", "me", "permissions", …]` and `["user", "me", "legal-acceptance"]`,
+ * which a profile edit can't change. The photo mutations wait for every
+ * refetch they start. `useUpdateUser` starts them without waiting, having
+ * first written the saved row over the cached one when both are the same
+ * account's.
  */
-export const PHOTO_QUERY_FILTERS: readonly InvalidateQueryFilters[] = [
+export const PROFILE_QUERY_FILTERS: readonly InvalidateQueryFilters[] = [
   { queryKey: ["user", "me"], exact: true },
   { queryKey: ["members"] },
   { queryKey: ["alumni"] },
   { queryKey: ["activity-feed"] },
 ];
 
-function invalidatePhotoReads(queryClient: ReturnType<typeof useQueryClient>) {
+function invalidateProfileReads(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
   return Promise.all(
-    PHOTO_QUERY_FILTERS.map((filters) =>
+    PROFILE_QUERY_FILTERS.map((filters) =>
       queryClient.invalidateQueries(filters),
     ),
   );
@@ -134,7 +155,7 @@ export function useConfirmAvatar() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => invalidatePhotoReads(queryClient),
+    onSuccess: () => invalidateProfileReads(queryClient),
   });
 }
 
@@ -148,7 +169,7 @@ export function useRemoveAvatar() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => invalidatePhotoReads(queryClient),
+    onSuccess: () => invalidateProfileReads(queryClient),
   });
 }
 

@@ -83,6 +83,7 @@ A screen reached from another one draws a back row above its title, as the board
 | s14 Notifications | `‹ Chat` | Chat home |
 
 - **It goes to the place it names, not back through history.** These routes are hidden tabs (`href: null`), and a notification tap or a `frapp://` link can open one with nothing behind it, so `router.back()` could land nowhere or somewhere the label doesn't say. The row calls `router.navigate` with its fixed destination, as s05's `‹` goes to Chat home. Android's back button keeps the history behavior.
+- **s15 draws Edit at the row's far end**, as the board does (`‹ More` … `Edit`), through `ScreenShell`'s `backAction` ([#3387](https://github.com/pdcarlson/Frapp/issues/3387)). It appears only over a loaded profile.
 - **Every state of a screen draws it**, the loading and error states included: a link to an event that's gone lands on s07's error state, and that state still needs a way out.
 - **s14 draws `‹ Chat`, not the board's `‹ More`**, because its entry moved to the bell on Chat home ([§ Global entries outside the tab bar](#global-entries-outside-the-tab-bar), [#3362](https://github.com/pdcarlson/Frapp/issues/3362)). Service hours, which the board never drew, opens from a More row and draws `‹ More` like its neighbours.
 - It is drawn in the board's back-row gold (`gold.askText`, `#F4CB63`), the token s05's `‹` uses, not the chapter accent: it is navigation chrome, like the tab bar.
