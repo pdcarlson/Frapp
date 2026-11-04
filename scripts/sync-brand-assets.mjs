@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Copies canonical Signet rasters from @repo/brand-assets into Next app
- * routes and public dirs. Run from repo root after rasterize.
+ * routes and public dirs, and the chat system avatar into apps/mobile. Run
+ * from repo root after rasterize.
  *
  * The destination names are NOT ours: `app/icon.png`, `app/apple-icon.png` and
  * `app/favicon.ico` are Next App Router file conventions, and
