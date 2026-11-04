@@ -45,7 +45,8 @@ export function BackRow({
 }: BackTarget & {
   /**
    * A control at the row's far end, where the board draws s15's Edit
-   * (`‹ More` … `Edit`). Optional; every other screen draws the row alone.
+   * (`‹ More` … `Edit`) and s12's upload glyph. Optional; every other screen
+   * draws the row alone.
    */
   trailing?: ReactNode;
 }) {

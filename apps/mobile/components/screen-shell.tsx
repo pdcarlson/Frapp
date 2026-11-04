@@ -16,7 +16,7 @@ type ScreenShellProps = {
   back?: BackTarget;
   /**
    * A control at the far end of the back row, where the board draws s15's
-   * Edit (#3387). Drawn only with `back`.
+   * Edit (#3387) and s12's upload (#3399). Drawn only with `back`.
    */
   backAction?: ReactNode;
   /**

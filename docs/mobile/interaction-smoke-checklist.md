@@ -67,6 +67,9 @@ in the S2 nav restructure (#957) — see
 | Profile (`/(tabs)/profile`) | Edit, change a field, Save | The sheet opens on your current details; Save stays off until something changes; saving closes the sheet onto the new value; a changed name also shows in Directory and on your chat messages, and a changed city or company in Directory, without a restart |
 | Profile (`/(tabs)/profile`) | Edit, clear the name, or enter a graduation year like 1850 | Refused inline under the field, Save stays off, nothing is sent |
 | Profile (`/(tabs)/profile`) | Edit, Save with no connection | "That didn't save" under the fields; what you typed is still there |
+| Documents (`/(tabs)/documents`) | Open as the President, then as a plain member | The President sees an upload arrow at the right end of `‹ More`; a member sees none |
+| Documents (`/(tabs)/documents`) | Upload arrow, choose a photo, type a title, tap a folder, Upload | The sheet shows the photo's name and size; nothing uploads until Upload; the sheet closes, "… is in the library" shows, and the document appears in the list and opens |
+| Documents (`/(tabs)/documents`) | Upload with no connection | "Couldn't upload that photo" in the sheet; the photo, title and folder are still there, and Upload works once you're back online |
 | Notifications (`/(tabs)/notifications`) | `‹ Chat` above the title | Lands on Chat home |
 | Chat thread | Retry failed upload | Requeues retry state + feedback |
 | Chat thread | Queue message | Queues message + feedback |

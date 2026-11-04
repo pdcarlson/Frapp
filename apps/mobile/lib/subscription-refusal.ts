@@ -97,6 +97,9 @@ export const SUBSCRIPTION_REFUSAL_COPY = {
    */
   serviceHours:
     "Your chapter's subscription isn't active, so service hours can't be logged. An officer can sort this out for the chapter.",
+  /** `POST /v1/documents/upload-url` and `POST /v1/documents`, s21 (#3399). */
+  document:
+    "Your chapter's subscription isn't active, so documents can't be uploaded. An officer can sort this out for the chapter.",
   /**
    * Pause, resume, heartbeat and stop — a session that is ALREADY RUNNING.
    *
