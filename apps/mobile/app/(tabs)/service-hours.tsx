@@ -196,7 +196,7 @@ export default function ServiceHoursScreen() {
       return (
         <ErrorState
           title="Couldn't load your service hours"
-          body="If you belong to more than one chapter, pick one from More → Chapter first."
+          body="If you belong to more than one chapter, pick one from More → Switch chapter first."
           onRetry={() => void entriesQuery.refetch()}
           isRetrying={entriesQuery.isFetching}
         />
