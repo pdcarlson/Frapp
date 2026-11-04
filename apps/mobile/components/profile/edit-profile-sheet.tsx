@@ -33,12 +33,21 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * The rules (what is sent, what is refused) live in `lib/more/edit-profile.ts`.
  * This file wires them to fields.
  *
- * ## The draft follows the profile until the member types
+ * ## The draft holds only what the member typed
  *
- * `draft` is `null` until the first keystroke, and the fields show the profile
- * as it stands. So the sheet always opens on the latest profile, with no
- * "reset on present" step to forget, and a refetch that lands while it is
- * closed is what it opens on. Dismissing, saving or cancelling drops the draft.
+ * `edits` holds the fields the member has typed into, and every other field
+ * shows the profile as it stands. So the sheet always opens on the latest
+ * profile, with no "reset on present" step to forget, and a refetch that lands
+ * mid-edit (a return to the app refetches `/v1/users/me`) updates the fields
+ * the member left alone instead of freezing them. Those fields then equal the
+ * profile, so `profilePatch` leaves them out of the save, and a value another
+ * device set is never written back over. The web form keeps the same rule
+ * (`apps/web/components/profile/profile-panel.tsx`, `seededFrom`).
+ *
+ * Dismissing, saving or cancelling drops the edits, except that a sheet
+ * swiped away mid-save keeps them until the save settles. A save closes the
+ * sheet only once `useUpdateUser` has refetched the profile, so it closes onto
+ * the saved values rather than flashing the old ones.
  *
  * ## A fixed detent, not dynamic sizing
  *
@@ -64,25 +73,25 @@ export const EditProfileSheet = forwardRef<
   const updateUser = useUpdateUser();
 
   const original = useMemo(() => draftFromProfile(profile), [profile]);
-  const [draft, setDraft] = useState<ProfileDraft | null>(null);
+  const [edits, setEdits] = useState<Partial<ProfileDraft> | null>(null);
   const [submitFailed, setSubmitFailed] = useState(false);
   const [focused, setFocused] = useState<ProfileDraftField | null>(null);
-  const shown = draft ?? original;
+  const shown: ProfileDraft = { ...original, ...edits };
 
   const result = profilePatch(original, shown);
   // A refusal is shown only once the member has typed: the sheet must not
   // open on an error for a profile the server already holds.
-  const refusal = draft !== null && !result.ok ? result : null;
+  const refusal = edits !== null && !result.ok ? result : null;
   const canSave =
     result.ok && hasChanges(result.patch) && !updateUser.isPending;
 
   const edit = (field: ProfileDraftField) => (value: string) => {
     setSubmitFailed(false);
-    setDraft({ ...shown, [field]: value });
+    setEdits((current) => ({ ...current, [field]: value }));
   };
 
   const reset = useCallback(() => {
-    setDraft(null);
+    setEdits(null);
     setSubmitFailed(false);
     setFocused(null);
   }, []);
@@ -91,6 +100,13 @@ export const EditProfileSheet = forwardRef<
     if (typeof ref === "function" || !ref?.current) return;
     ref.current.dismiss();
   }, [ref]);
+
+  // A sheet swiped away mid-save keeps its edits until the save settles, so a
+  // failure still reopens on what was typed.
+  const dismissed = () => {
+    if (updateUser.isPending) setFocused(null);
+    else reset();
+  };
 
   const cancel = useCallback(() => {
     reset();
@@ -103,6 +119,8 @@ export const EditProfileSheet = forwardRef<
     if (!result.ok || !canSave) return;
     setSubmitFailed(false);
     updateUser.mutate(result.patch, {
+      // `useUpdateUser` resolves only after `/v1/users/me` has refetched, so
+      // dropping the edits here shows the saved values, not the old ones.
       onSuccess: () => {
         reset();
         dismiss();
@@ -165,7 +183,7 @@ export const EditProfileSheet = forwardRef<
       backgroundStyle={backgroundStyle}
       backdropComponent={SheetScrim}
       handleComponent={SheetGrabber}
-      onDismiss={reset}
+      onDismiss={dismissed}
     >
       <BottomSheetScrollView
         contentContainerStyle={styles.body}

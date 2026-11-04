@@ -3,11 +3,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import {
-  PHOTO_QUERY_FILTERS,
+  PROFILE_QUERY_FILTERS,
   useConfirmAvatar,
   useMyPermissions,
   useRemoveAvatar,
   useRequestAvatarUploadUrl,
+  useUpdateUser,
 } from "./use-user";
 import { FrappClientProvider } from "./use-frapp-client";
 
@@ -89,7 +90,7 @@ describe("useMyPermissions", () => {
   });
 });
 
-describe("profile photo mutations (#732)", () => {
+describe("profile mutations (#732, #3387)", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
@@ -118,7 +119,7 @@ describe("profile photo mutations (#732)", () => {
     });
   });
 
-  // Named literally rather than read back from `PHOTO_QUERY_FILTERS`, so
+  // Named literally rather than read back from `PROFILE_QUERY_FILTERS`, so
   // dropping one from that list fails here instead of passing with it.
   // `["user", "me"]` is exact so the permissions query under it isn't refetched.
   const EXPECTED_FILTERS = [
@@ -132,6 +133,7 @@ describe("profile photo mutations (#732)", () => {
     const mockClient = {
       POST: vi.fn().mockResolvedValue({ data: {}, error: undefined }),
       DELETE: vi.fn().mockResolvedValue({ data: {}, error: undefined }),
+      PATCH: vi.fn().mockResolvedValue({ data: {}, error: undefined }),
     };
     // Each invalidation stays pending until released, so a test can see
     // whether `mutateAsync` waited for the refetches or resolved before them.
@@ -144,6 +146,7 @@ describe("profile photo mutations (#732)", () => {
       .mockImplementation(() => gate);
     const invalidated = () => invalidate.mock.calls.map(([filters]) => filters);
     return {
+      mockClient,
       wrapper: createWrapper(queryClient, mockClient),
       invalidated,
       release: () => release(),
@@ -172,8 +175,8 @@ describe("profile photo mutations (#732)", () => {
     }
   }
 
-  it("the filter list covers every read that serves the photo", () => {
-    expect([...PHOTO_QUERY_FILTERS]).toEqual(EXPECTED_FILTERS);
+  it("the filter list covers every read that serves the profile", () => {
+    expect([...PROFILE_QUERY_FILTERS]).toEqual(EXPECTED_FILTERS);
   });
 
   it("confirm resolves only after every read that shows the photo refetched", async () => {
@@ -195,6 +198,23 @@ describe("profile photo mutations (#732)", () => {
     });
 
     await expectWaitsForRefetch(() => result.current.mutateAsync(), harness);
+  });
+
+  // #3387. A name, city or company edit shows in the same reads the photo
+  // does: the directory, the alumni filters and every chat author label.
+  it("a profile edit resolves only after every read that shows the profile refetched", async () => {
+    const harness = photoMutationHarness();
+    const { result } = renderHook(() => useUpdateUser(), {
+      wrapper: harness.wrapper,
+    });
+
+    await expectWaitsForRefetch(
+      () => result.current.mutateAsync({ display_name: "Alex Rivera" }),
+      harness,
+    );
+    expect(harness.mockClient.PATCH).toHaveBeenCalledWith("/v1/users/me", {
+      body: { display_name: "Alex Rivera" },
+    });
   });
 
   it("confirm sends the path and surfaces an API refusal", async () => {

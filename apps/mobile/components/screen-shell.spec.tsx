@@ -141,11 +141,14 @@ describe("ScreenShell back-row action (#3387)", () => {
     );
 
     expect(screenText(tree)).toBe("‹ More\nEdit\nProfile\nBody");
+    // One view holds `‹ More` and the action side by side: the back row's own.
+    const back = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Back to More",
+    );
     const [action] = tree.root.findAllByProps({ testID: "edit" });
-    const row = action!.parent!;
-    expect(
-      row.findAll((node) => node.props.accessibilityLabel === "Back to More")
-        .length,
-    ).toBeGreaterThan(0);
+    expect(action!.parent).toBe(back.parent);
+    expect(back.parent!.props.style).toMatchObject({ flexDirection: "row" });
   });
 });

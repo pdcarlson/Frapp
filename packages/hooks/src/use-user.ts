@@ -57,32 +57,38 @@ export function useUpdateUser() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["user", "me"] });
-    },
+    // Resolves once every read below has refetched, so a caller that closes a
+    // form on success closes it onto the saved values.
+    onSuccess: () => invalidateProfileReads(queryClient),
   });
 }
 
 /**
- * Every query whose rows carry the viewer's signed photo: their own profile,
- * every `["members", …]` read (roster, directory, detail, search), the alumni
- * directory, and the activity feed's actors. The server deletes the replaced
- * object, so a query left out here keeps rendering a URL to nothing.
+ * Every query whose rows carry the viewer's profile (name, photo, bio,
+ * graduation year, city, company): their own profile, every `["members", …]`
+ * read (roster, directory, detail, search, and through the roster every chat
+ * author label), the alumni directory and its city and company filters, and
+ * the activity feed's actors. For the photo it matters twice over: the server
+ * deletes the replaced object, so a query left out here keeps rendering a URL
+ * to nothing.
  *
  * `["user", "me"]` is matched exactly: as a prefix it would also refetch
- * `["user", "me", "permissions", …]`, which a photo can't change, and the
- * photo mutations wait for every refetch they start.
+ * `["user", "me", "permissions", …]` and `["user", "me", "legal-acceptance"]`,
+ * which a profile edit can't change, and the profile mutations wait for every
+ * refetch they start.
  */
-export const PHOTO_QUERY_FILTERS: readonly InvalidateQueryFilters[] = [
+export const PROFILE_QUERY_FILTERS: readonly InvalidateQueryFilters[] = [
   { queryKey: ["user", "me"], exact: true },
   { queryKey: ["members"] },
   { queryKey: ["alumni"] },
   { queryKey: ["activity-feed"] },
 ];
 
-function invalidatePhotoReads(queryClient: ReturnType<typeof useQueryClient>) {
+function invalidateProfileReads(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
   return Promise.all(
-    PHOTO_QUERY_FILTERS.map((filters) =>
+    PROFILE_QUERY_FILTERS.map((filters) =>
       queryClient.invalidateQueries(filters),
     ),
   );
@@ -134,7 +140,7 @@ export function useConfirmAvatar() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => invalidatePhotoReads(queryClient),
+    onSuccess: () => invalidateProfileReads(queryClient),
   });
 }
 
@@ -148,7 +154,7 @@ export function useRemoveAvatar() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => invalidatePhotoReads(queryClient),
+    onSuccess: () => invalidateProfileReads(queryClient),
   });
 }
 

@@ -172,11 +172,22 @@ describe("Profile Edit (#3387)", () => {
     tree.unmount();
   });
 
-  it("draws no Edit while the profile loads", () => {
-    currentUser = { isPending: true, isError: false, data: undefined };
+  it.each([
+    ["loads", { isPending: true, isError: false, data: undefined }],
+    [
+      "fails to load",
+      { isPending: false, isError: true, data: undefined, refetch: vi.fn() },
+    ],
+  ])("draws no Edit, and no sheet, while the profile %s", (_state, user) => {
+    currentUser = user;
     const tree = render();
 
     expect(editControls(tree)).toHaveLength(0);
+    expect(
+      tree.root.findAll(
+        (node) => (node.type as unknown) === "BottomSheetModal",
+      ),
+    ).toHaveLength(0);
     tree.unmount();
   });
 });

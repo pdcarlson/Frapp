@@ -42,21 +42,25 @@ const PROFILE: ViewerProfile = {
 const dismiss = vi.fn();
 const mounted: ReactTestRenderer[] = [];
 
+const ref = React.createRef<never>();
+
+function sheet(profile: ViewerProfile | null) {
+  return (
+    <FrappThemeProvider>
+      <EditProfileSheet ref={ref} profile={profile} />
+    </FrappThemeProvider>
+  );
+}
+
 function render(profile: ViewerProfile | null = PROFILE): ReactTestRenderer {
-  const ref = React.createRef<never>();
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(
-      <FrappThemeProvider>
-        <EditProfileSheet ref={ref} profile={profile} />
-      </FrappThemeProvider>,
-      {
-        createNodeMock: (element) =>
-          (element.type as unknown) === "BottomSheetModal"
-            ? { dismiss, present: vi.fn() }
-            : null,
-      },
-    );
+    tree = create(sheet(profile), {
+      createNodeMock: (element) =>
+        (element.type as unknown) === "BottomSheetModal"
+          ? { dismiss, present: vi.fn() }
+          : null,
+    });
   });
   mounted.push(tree);
   return tree;
@@ -75,6 +79,16 @@ const saveButton = (tree: ReactTestRenderer) =>
       (node.type as unknown) === "Pressable" &&
       node.props.accessibilityState !== undefined,
   );
+
+/** What the screen hands the sheet when `/v1/users/me` refetches. */
+function refetch(tree: ReactTestRenderer, profile: ViewerProfile) {
+  act(() => {
+    tree.update(sheet(profile));
+  });
+}
+
+const modal = (tree: ReactTestRenderer) =>
+  tree.root.find((node) => (node.type as unknown) === "BottomSheetModal");
 
 function type(tree: ReactTestRenderer, label: string, value: string) {
   act(() => {
@@ -121,6 +135,37 @@ describe("EditProfileSheet (#3387)", () => {
     expect(dismiss).toHaveBeenCalledTimes(1);
   });
 
+  // A return to the app refetches `/v1/users/me`. A field the member never
+  // touched follows the new profile and stays out of the save, so a value
+  // another device set isn't written back over.
+  it("sends only the typed field when the profile refetches mid-edit", () => {
+    const tree = render();
+
+    type(tree, "City", "Albany, NY");
+    refetch(tree, {
+      ...PROFILE,
+      currentCompany: "Set on the web",
+      bio: "Also from the web",
+    });
+
+    expect(input(tree, "Company").props.value).toBe("Set on the web");
+    expect(input(tree, "Bio").props.value).toBe("Also from the web");
+    expect(input(tree, "City").props.value).toBe("Albany, NY");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    expect(mutate.mock.calls[0]![0]).toEqual({ current_city: "Albany, NY" });
+  });
+
+  it("has nothing to save once a refetch brings the typed value", () => {
+    const tree = render();
+
+    type(tree, "City", "Albany, NY");
+    refetch(tree, { ...PROFILE, currentCity: "Albany, NY" });
+
+    expect(saveButton(tree).props.disabled).toBe(true);
+  });
+
   it("refuses a blank name inline and sends nothing", () => {
     const tree = render();
 
@@ -155,6 +200,29 @@ describe("EditProfileSheet (#3387)", () => {
     expect(dismiss).not.toHaveBeenCalled();
   });
 
+  it("keeps the draft when a save in flight fails after the sheet was swiped away", () => {
+    let fail!: () => void;
+    mutate.mockImplementation((_body, options) => {
+      isPending = true;
+      fail = () => options.onError(new Error());
+    });
+    const tree = render();
+
+    type(tree, "City", "Albany, NY");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    refetch(tree, PROFILE); // re-render with the save in flight
+    act(() => {
+      modal(tree).props.onDismiss();
+    });
+    isPending = false;
+    act(() => fail());
+
+    expect(screenText(tree)).toContain("That didn't save");
+    expect(input(tree, "City").props.value).toBe("Albany, NY");
+  });
+
   it("holds Save while a save is in flight", () => {
     isPending = true;
     const tree = render();
@@ -179,5 +247,44 @@ describe("EditProfileSheet (#3387)", () => {
 
     expect(input(tree, "Company").props.value).toBe("");
     expect(dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  // Swiping the sheet down or tapping the scrim closes it through gorhom's
+  // `onDismiss`, with no Cancel press.
+  it("drops the draft and its refusal when the sheet is swiped away", () => {
+    const tree = render();
+
+    type(tree, "Name", "");
+    type(tree, "Company", "Acme");
+    expect(screenText(tree)).toContain("Your name can't be empty.");
+    act(() => {
+      modal(tree).props.onDismiss();
+    });
+
+    expect(input(tree, "Name").props.value).toBe("Alex Rivera");
+    expect(input(tree, "Company").props.value).toBe("");
+    expect(screenText(tree)).not.toContain("Your name can't be empty.");
+    expect(saveButton(tree).props.disabled).toBe(true);
+  });
+
+  // The real hook resolves only after `/v1/users/me` has refetched, so by
+  // the time the edits drop, the fields show the saved values.
+  it("closes onto the saved values once the profile has refetched", () => {
+    let succeed!: () => void;
+    mutate.mockImplementation((_body, options) => {
+      succeed = () => options.onSuccess();
+    });
+    const tree = render();
+
+    type(tree, "Company", "Acme");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    refetch(tree, { ...PROFILE, currentCompany: "Acme" });
+    act(() => succeed());
+
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(input(tree, "Company").props.value).toBe("Acme");
+    expect(saveButton(tree).props.disabled).toBe(true);
   });
 });
