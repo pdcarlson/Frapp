@@ -214,7 +214,7 @@ Member invoice payments are applied by the `apply_invoice_payment` RPC — compa
 
 ### Chapter Documents
 
-**chapter_documents** — `id`, `chapter_id` (FK chapters), `title` (text), `description` (text, nullable), `folder` (text, nullable — single-level folder name), `storage_path` (text — Supabase Storage path), `uploaded_by` (FK users), `created_at`.
+**chapter_documents** — `id`, `chapter_id` (FK chapters), `title` (text), `description` (text, nullable), `folder` (text, nullable — single-level folder name), `storage_path` (text — Supabase Storage path), `uploaded_by` (FK users), `content_type` (text, nullable), `byte_size` (bigint, nullable), `document_type` (text, nullable — free text), `effective_date` (date, nullable), `created_at`. Unique on (storage_path), so a retried confirm cannot file one object twice (#3399; [`behavior/chapter-docs.md`](../behavior/chapter-docs.md#storage)).
 
 ### Semester Archives
 

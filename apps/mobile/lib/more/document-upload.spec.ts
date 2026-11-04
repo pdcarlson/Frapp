@@ -192,20 +192,6 @@ describe("uploadDocumentPhoto", () => {
     );
   });
 
-  it("names the title of the row the API filed, which a retry can't rename", async () => {
-    // The first confirm committed and its response was lost; the API answers
-    // the retry with that row (#3399).
-    confirm.mockResolvedValue({ id: "doc-1", title: "Minutes" });
-
-    await expect(
-      uploadDocumentPhoto(
-        IMAGE,
-        { title: "Minutes — Nov 2", folder: null },
-        mutations,
-      ),
-    ).resolves.toEqual({ status: "uploaded", title: "Minutes" });
-  });
-
   it.each([
     [
       "the subscription gate",
@@ -271,43 +257,99 @@ describe("uploadDocumentPhoto", () => {
       status: "refused",
       reason: "Couldn't upload that photo. Try again in a moment.",
       final: false,
-      uploaded: {
-        storagePath: TICKET.storage_path,
-        filename: "minutes.jpg",
-        contentType: "image/jpeg",
-        byteSize: 4096,
+      sent: {
+        image: IMAGE,
+        uploaded: {
+          storagePath: TICKET.storage_path,
+          filename: "minutes.jpg",
+          contentType: "image/jpeg",
+          byteSize: 4096,
+        },
+        title: "minutes.jpg",
+        folder: null,
       },
     });
   });
 
-  it("files bytes already sent without minting or PUTting again", async () => {
+  /** A first attempt whose confirm dropped, and the bytes it left behind. */
+  async function droppedConfirm(draft: {
+    title: string;
+    folder: string | null;
+  }) {
     confirm.mockRejectedValueOnce(new TypeError("Network request failed"));
-    const first = await uploadDocumentPhoto(
-      IMAGE,
-      { title: "", folder: null },
-      mutations,
-    );
-    expect(first.status === "refused" && first.uploaded).toBeTruthy();
+    const first = await uploadDocumentPhoto(IMAGE, draft, mutations);
+    const sent = first.status === "refused" ? first.sent : undefined;
+    expect(sent).toBeDefined();
     requestUploadUrl.mockClear();
     fs.uploadAsync.mockClear();
+    confirm.mockClear();
+    return sent;
+  }
+
+  it("files bytes already sent without minting or PUTting again", async () => {
+    const sent = await droppedConfirm({
+      title: " Minutes ",
+      folder: "Minutes",
+    });
 
     await expect(
       uploadDocumentPhoto(
         IMAGE,
         { title: "Minutes", folder: "Minutes" },
         mutations,
-        first.status === "refused" ? first.uploaded : undefined,
+        sent,
       ),
     ).resolves.toEqual({ status: "uploaded", title: "Minutes" });
     expect(requestUploadUrl).not.toHaveBeenCalled();
     expect(fs.uploadAsync).not.toHaveBeenCalled();
-    expect(confirm).toHaveBeenLastCalledWith(
+    expect(confirm).toHaveBeenCalledWith(
       expect.objectContaining({
         storage_path: TICKET.storage_path,
         title: "Minutes",
         folder: "Minutes",
       }),
     );
+  });
+
+  it.each([
+    ["the title", { title: "Minutes — Nov 2", folder: "Minutes" }],
+    ["the folder", { title: "Minutes", folder: "Bylaws" }],
+    ["the folder, to the library root", { title: "Minutes", folder: null }],
+  ])(
+    "uploads afresh once %s changed, since the first confirm may have filed the old draft",
+    async (_what, retry) => {
+      // The API answers a filed path with that row unchanged (#3399), so
+      // confirming the edited draft on those bytes would report an edit that
+      // was never filed.
+      const sent = await droppedConfirm({
+        title: "Minutes",
+        folder: "Minutes",
+      });
+
+      await expect(
+        uploadDocumentPhoto(IMAGE, retry, mutations, sent),
+      ).resolves.toEqual({ status: "uploaded", title: retry.title });
+      expect(requestUploadUrl).toHaveBeenCalledTimes(1);
+      expect(fs.uploadAsync).toHaveBeenCalledTimes(1);
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: retry.title,
+          folder: retry.folder ?? undefined,
+        }),
+      );
+    },
+  );
+
+  it("uploads afresh for a different photo", async () => {
+    const sent = await droppedConfirm({ title: "Minutes", folder: null });
+
+    await uploadDocumentPhoto(
+      { ...IMAGE, uri: "file:///bylaws.jpg", filename: "bylaws.jpg" },
+      { title: "Minutes", folder: null },
+      mutations,
+      sent,
+    );
+    expect(requestUploadUrl).toHaveBeenCalledTimes(1);
   });
 
   it("relays the API's reason for an ordinary refusal, and keeps it retryable", async () => {

@@ -175,6 +175,7 @@ await import("./tiers/discord-author-links.mjs");
 await import("./tiers/discord-import-purge.mjs");
 await import("./tiers/discord-import-merge-target.mjs");
 await import("./tiers/dm-one-per-pair.mjs");
+await import("./tiers/document-one-row-per-object.mjs");
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

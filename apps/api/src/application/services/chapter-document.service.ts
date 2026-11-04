@@ -140,6 +140,18 @@ export class ChapterDocumentService {
 
     const folder = normalizeFolderName(input.folder);
 
+    // Idempotent on the stored object (#3399): confirming a path that is
+    // already filed answers with that row, unchanged, instead of filing it
+    // twice. Two rows on one object would break delete, which removes the
+    // object. This read comes before the folder is registered, so a replay or
+    // a refusal leaves no folder behind. Two confirms racing past it meet the
+    // unique index instead, and `create` hands the loser the winner's row.
+    const filed = await this.documentRepo.findByStoragePath(
+      input.storage_path,
+      input.chapter_id,
+    );
+    if (filed) return this.filedFor(filed, input.uploaded_by);
+
     // Uploading into a folder that was never explicitly created is still
     // allowed — it is how every folder came into being before folders were
     // first-class. Register it so it shows up in the folder list and can be
@@ -148,12 +160,6 @@ export class ChapterDocumentService {
       await this.ensureFolder(folder, input.chapter_id);
     }
 
-    // Idempotent on the stored object (#3399): confirming a path that is
-    // already filed returns that row, unchanged, instead of filing it twice.
-    // Two rows on one object would break delete, which removes the object.
-    // Only the uploader who filed it gets the row back. The path is minted
-    // for, and returned to, that member alone, so anyone else confirming it is
-    // not retrying their own upload.
     const document = await this.documentRepo.create({
       chapter_id: input.chapter_id,
       title: input.title,
@@ -166,7 +172,19 @@ export class ChapterDocumentService {
       document_type: input.document_type ?? null,
       effective_date: input.effective_date ?? null,
     });
-    if (document.uploaded_by !== input.uploaded_by) {
+    return this.filedFor(document, input.uploaded_by);
+  }
+
+  /**
+   * A filed row goes back only to the member who filed it. Every member who
+   * can read the library sees a document's `storage_path`, so a confirm from
+   * anyone else is not a retry of their own upload.
+   */
+  private filedFor(
+    document: ChapterDocument,
+    uploadedBy: string,
+  ): ChapterDocument {
+    if (document.uploaded_by !== uploadedBy) {
       throw new ConflictException('That upload has already been filed');
     }
     return document;

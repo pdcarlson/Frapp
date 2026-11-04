@@ -37,10 +37,13 @@ import {
  *
  * A confirm can fail on the phone after it committed on the server: the
  * response is lost to a dropped connection. The retry then confirms a path
- * that is already filed, and the API answers with that row rather than a
- * second one (`chapter_documents_storage_path_key`, #3399). The filed row keeps
- * the title it was filed under, so the result names the title the API
- * returned, not the one typed for the retry.
+ * that is already filed, and the API answers with that row, unchanged, rather
+ * than a second one (`chapter_documents_storage_path_key`, #3399). So the
+ * confirm runs alone only while the photo, title and folder are the ones it
+ * was sent with. A draft edited since may describe a document the API already
+ * filed under the old draft, and confirming it would report the edit as filed
+ * when it wasn't, so it uploads afresh: at worst a second document with its own
+ * copy, never two rows on one object.
  *
  * Photos only. A PDF or an Office file needs `expo-document-picker`, a native
  * module, so it waits for a store build.
@@ -57,6 +60,14 @@ export interface DocumentUploadMutations {
   ) => Promise<unknown>;
 }
 
+/** Bytes in the bucket whose confirm failed, and the draft it was sent with. */
+export interface SentUpload {
+  image: PickedImage;
+  uploaded: UploadedImage;
+  title: string;
+  folder: string | null;
+}
+
 export type DocumentUploadResult =
   /** `title` is the title the document is filed under. */
   | { status: "uploaded"; title: string }
@@ -71,10 +82,10 @@ export type DocumentUploadResult =
       final: boolean;
       /**
        * Set when the bytes are already in the bucket and only the confirm
-       * failed: pass it back as `uploadDocumentPhoto`'s `uploaded` to retry
-       * the confirm alone.
+       * failed: pass it back as `uploadDocumentPhoto`'s `sent`, which
+       * confirms it alone while the photo and draft still match it.
        */
-      uploaded?: UploadedImage;
+      sent?: SentUpload;
     };
 
 export const DOCUMENT_TYPE_REFUSAL =
@@ -104,17 +115,6 @@ export function documentTitle(typed: string, image: PickedImage): string {
 }
 
 /**
- * The title on the row `POST /v1/documents` answered with. The route documents
- * no response body (#1049), so this reads it defensively and falls back to the
- * title sent.
- */
-function filedTitle(response: unknown): string | null {
-  if (typeof response !== "object" || response === null) return null;
-  const { title } = response as { title?: unknown };
-  return typeof title === "string" && title.length > 0 ? title : null;
-}
-
-/**
  * The member's sentence for a gate refusal, or `null` for any other failure.
  * Both routes sit under the documents controller's
  * `@RequireModule('documents')` and, with no `@FreeTier`, under the
@@ -127,22 +127,30 @@ function gateRefusal(error: unknown): string | null {
 }
 
 /**
- * Upload a picked photo and file it, or, given `uploaded` from a refusal
- * whose confirm failed, file those bytes without sending them again. Never
+ * Upload a picked photo and file it, or, given `sent` from a refusal whose
+ * confirm failed, file those bytes without sending them again, as long as the
+ * photo, title and folder are still the ones they were sent with. Never
  * rejects.
  */
 export async function uploadDocumentPhoto(
   image: PickedImage,
   draft: { title: string; folder: string | null },
   mutations: DocumentUploadMutations,
-  uploaded?: UploadedImage,
+  sent?: SentUpload,
 ): Promise<DocumentUploadResult> {
-  let stored = uploaded;
+  const title = documentTitle(draft.title, image);
+  let stored =
+    sent &&
+    sent.image === image &&
+    sent.title === title &&
+    sent.folder === draft.folder
+      ? sent.uploaded
+      : undefined;
   if (!stored) {
     // `uploadPickedImage` turns a refused mint into a sentence, so the error
     // itself is caught on its way out to tell a gate from a failure.
     let gated: string | null = null;
-    const sent = await uploadPickedImage(image, async (body) => {
+    const put = await uploadPickedImage(image, async (body) => {
       try {
         return await mutations.requestUploadUrl(body);
       } catch (error) {
@@ -150,31 +158,30 @@ export async function uploadDocumentPhoto(
         throw error;
       }
     });
-    if (sent.status !== "uploaded") {
+    if (put.status !== "uploaded") {
       return gated !== null
         ? { status: "refused", reason: gated, final: true }
-        : { status: "refused", reason: sent.reason, final: false };
+        : { status: "refused", reason: put.reason, final: false };
     }
-    stored = sent.image;
+    stored = put.image;
   }
 
-  const title = documentTitle(draft.title, image);
   try {
-    const filed = await mutations.confirm({
+    await mutations.confirm({
       storage_path: stored.storagePath,
       title,
       folder: draft.folder ?? undefined,
       content_type: stored.contentType,
       byte_size: stored.byteSize,
     });
-    return { status: "uploaded", title: filedTitle(filed) ?? title };
+    return { status: "uploaded", title };
   } catch (error) {
     const reason = gateRefusal(error);
     return {
       status: "refused",
       reason: reason ?? uploadFailureReason(error),
       final: reason !== null,
-      uploaded: stored,
+      sent: { image, uploaded: stored, title, folder: draft.folder },
     };
   }
 }

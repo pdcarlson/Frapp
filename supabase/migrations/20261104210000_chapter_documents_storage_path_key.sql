@@ -12,8 +12,9 @@
 --     minted by `requestUploadUrl` under a fresh document id, so two rows have
 --     never had a reason to share one.
 --
--- The API inserts, and on a 23505 from this index re-reads the row for that
--- path and returns it to the uploader who filed it.
+-- The API reads the path before it files, and returns a filed row to the
+-- uploader who filed it. Two confirms that race past that read meet this
+-- index, and on its 23505 the API re-reads the row that won.
 --
 -- No row is rewritten or removed. On 2026-11-04 frapp-staging held one row and
 -- frapp-prod none, with no shared paths. If a duplicate exists when this runs,

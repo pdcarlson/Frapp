@@ -373,24 +373,6 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(screenText(tree)).toContain("Choose a photo");
   });
 
-  it("names the title the document was filed under", async () => {
-    // A retried confirm the API had already filed comes back under the title
-    // it was filed with, not the one typed for the retry.
-    const tree = render();
-    await choose(tree);
-    act(() => {
-      titleInput(tree).props.onChangeText("Minutes — Nov 2");
-    });
-    uploadDocumentPhoto.mockResolvedValue({
-      status: "uploaded",
-      title: "Minutes",
-    });
-
-    await pressUpload(tree);
-
-    expect(onUploaded).toHaveBeenCalledWith("Minutes");
-  });
-
   it("keeps the draft when Cancel is pressed mid-upload", async () => {
     const tree = render();
     await choose(tree);
@@ -442,20 +424,25 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(dismiss).not.toHaveBeenCalled();
   });
 
-  it("retries a failed confirm with the bytes already sent, until a new pick", async () => {
+  it("hands a retry the bytes a failed confirm sent, until a new pick", async () => {
     const tree = render();
     await choose(tree);
-    const uploaded = {
-      storagePath: "chapters/c/documents/d/IMG_2041.jpg",
-      filename: "IMG_2041.jpg",
-      contentType: "image/jpeg",
-      byteSize: PHOTO.byteSize,
+    const sent = {
+      image: PHOTO,
+      uploaded: {
+        storagePath: "chapters/c/documents/d/IMG_2041.jpg",
+        filename: "IMG_2041.jpg",
+        contentType: "image/jpeg",
+        byteSize: PHOTO.byteSize,
+      },
+      title: "IMG_2041.jpg",
+      folder: null,
     };
     uploadDocumentPhoto.mockResolvedValue({
       status: "refused",
       reason: "Couldn't upload that photo. Try again in a moment.",
       final: false,
-      uploaded,
+      sent,
     });
 
     await pressUpload(tree);
@@ -466,12 +453,13 @@ describe("UploadDocumentSheet (#3399)", () => {
       undefined,
     );
 
+    // Whether the draft still matches is `uploadDocumentPhoto`'s call.
     await pressUpload(tree);
     expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
       PHOTO,
       expect.any(Object),
       expect.any(Object),
-      uploaded,
+      sent,
     );
 
     // A different photo is new bytes: it uploads from scratch.

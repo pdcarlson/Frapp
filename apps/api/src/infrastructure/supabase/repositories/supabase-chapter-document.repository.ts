@@ -74,7 +74,9 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
    * path is filed. The re-select is scoped to the chapter. A null re-select
    * means that row was deleted between the failed insert and the read, and
    * surfacing the original error is the honest answer. Whether the caller may
-   * have the row is the service's call (`ChapterDocumentService.confirmUpload`).
+   * have the row is the service's call (`ChapterDocumentService.confirmUpload`),
+   * which reads the path first, so this re-read serves only two confirms that
+   * race past that read.
    */
   async create(
     data: TablesInsert<'chapter_documents'>,
@@ -101,7 +103,7 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
     return created;
   }
 
-  private async findByStoragePath(
+  async findByStoragePath(
     storagePath: string,
     chapterId: string,
   ): Promise<ChapterDocument | null> {

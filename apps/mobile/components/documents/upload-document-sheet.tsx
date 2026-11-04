@@ -22,11 +22,12 @@ import {
   useSheetBackgroundStyle,
   useSheetVisit,
 } from "@/components/sheet-scaffold";
-import type { PickedImage, UploadedImage } from "@/lib/chat/attachment-upload";
+import type { PickedImage } from "@/lib/chat/attachment-upload";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   pickDocumentPhoto,
   uploadDocumentPhoto,
+  type SentUpload,
 } from "@/lib/more/document-upload";
 import type { DocumentFolder } from "@/lib/more/documents";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -56,9 +57,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * The pick only reads the photo on the device. Mint, PUT and confirm all run on
  * Upload, so a sheet cancelled after a pick leaves no object in the bucket.
  * Once the bytes have landed, a failed confirm keeps their upload, and Upload
- * retries the confirm alone rather than sending a second copy
- * (`lib/more/document-upload.ts` § "A confirm that fails keeps the bytes it
- * already sent").
+ * of the same draft retries the confirm alone rather than sending a second
+ * copy (`lib/more/document-upload.ts` § "A confirm that fails keeps the bytes
+ * it already sent").
  *
  * ## Closing mid-upload
  *
@@ -101,13 +102,11 @@ export const UploadDocumentSheet = forwardRef<
   /** A gate only an officer can lift; Upload is withdrawn while it stands. */
   const [refusal, setRefusal] = useState<string | null>(null);
   /**
-   * The bytes a failed confirm left in the bucket, and the pick they are, so
-   * a retry files them instead of uploading again. A new pick drops them.
+   * The bytes a failed confirm left in the bucket, with the pick and draft
+   * they were sent with, so a retry of that same draft files them instead of
+   * uploading again (`uploadDocumentPhoto` decides). A new pick drops them.
    */
-  const [stored, setStored] = useState<{
-    image: PickedImage;
-    uploaded: UploadedImage;
-  } | null>(null);
+  const [stored, setStored] = useState<SentUpload | null>(null);
 
   const folder = chosenFolder === undefined ? initialFolder : chosenFolder;
   const canUpload = picked !== null && !uploading && !picking && !refusal;
@@ -176,7 +175,7 @@ export const UploadDocumentSheet = forwardRef<
         requestUploadUrl: (body) => requestUploadUrl.mutateAsync(body),
         confirm: (body) => confirmUpload.mutateAsync(body),
       },
-      stored?.image === picked ? stored.uploaded : undefined,
+      stored ?? undefined,
     );
     sending.current = false;
     setUploading(false);
@@ -186,8 +185,7 @@ export const UploadDocumentSheet = forwardRef<
       onUploaded?.(result.title);
       return;
     }
-    if (result.uploaded)
-      setStored({ image: picked, uploaded: result.uploaded });
+    if (result.sent) setStored(result.sent);
     if (result.final) setRefusal(result.reason);
     else setFailure(result.reason);
   };

@@ -1,11 +1,11 @@
 // One chapter_documents row per stored object (#3399), against a real PostgREST.
 //
-// The unit suites prove that `create` re-selects on a `23505` and that
-// `confirmUpload` hands the filed row back only to its uploader. What only a
-// live database answers is that the `23505` happens: that
-// `chapter_documents_storage_path_key` refuses a second row for a path, so a
-// confirm retried after a lost response ends with one row, not two sharing an
-// object that deleting either would remove. So this drives the real
+// The unit suites prove that `confirmUpload` reads the path before filing and
+// hands a filed row back only to its uploader, and that `create` re-selects on
+// a `23505`. What only a live database answers is that those reads and that
+// `23505` happen: that a confirm retried after a lost response ends with one
+// row, not two sharing an object that deleting either would remove, and that
+// two confirms racing past the read still file one. So this drives the real
 // `ChapterDocumentService.confirmUpload` over the real repository.
 //
 // Run: `npm run test:integration -w apps/api` (needs a local Supabase stack;
@@ -28,13 +28,15 @@ describeIntegration(
     const chapterId = randomUUID();
     const uploaderId = randomUUID();
     const otherMemberId = randomUUID();
-    const path = `chapters/${chapterId}/documents/${randomUUID()}/minutes.jpg`;
+    const newPath = () =>
+      `chapters/${chapterId}/documents/${randomUUID()}/minutes.jpg`;
+    let repo: SupabaseChapterDocumentRepository;
 
     const assertOk = (label: string, error: { message: string } | null) => {
       if (error) throw new Error(`seed ${label}: ${error.message}`);
     };
 
-    const rowsForPath = async () => {
+    const rowsForPath = async (path: string) => {
       const { data, error } = await supabase
         .from('chapter_documents')
         .select('id, title')
@@ -43,7 +45,7 @@ describeIntegration(
       return data ?? [];
     };
 
-    const confirm = (uploadedBy: string, title: string) =>
+    const confirm = (path: string, uploadedBy: string, title: string) =>
       documents.confirmUpload({
         chapter_id: chapterId,
         title,
@@ -58,11 +60,8 @@ describeIntegration(
       // With no folder, `confirmUpload` reads neither the folder repository nor
       // storage.
       const unused = {} as never;
-      documents = new ChapterDocumentService(
-        new SupabaseChapterDocumentRepository(supabase),
-        unused,
-        unused,
-      );
+      repo = new SupabaseChapterDocumentRepository(supabase);
+      documents = new ChapterDocumentService(repo, unused, unused);
 
       assertOk(
         'chapters',
@@ -103,20 +102,54 @@ describeIntegration(
     });
 
     it('files a retried confirm once and hands the uploader the first row', async () => {
-      const first = await confirm(uploaderId, 'Minutes');
-      // The member edited the title before retrying; the filed row stands.
-      const retry = await confirm(uploaderId, 'Minutes — Nov 2');
+      const path = newPath();
+      const first = await confirm(path, uploaderId, 'Minutes');
+      const retry = await confirm(path, uploaderId, 'Minutes');
 
       expect(retry.id).toBe(first.id);
-      expect(retry.title).toBe('Minutes');
-      expect(await rowsForPath()).toEqual([{ id: first.id, title: 'Minutes' }]);
+      expect(await rowsForPath(path)).toEqual([
+        { id: first.id, title: 'Minutes' },
+      ]);
     });
 
-    it('refuses the filed path to another member and files nothing', async () => {
-      await expect(confirm(otherMemberId, 'Not mine')).rejects.toBeInstanceOf(
-        ConflictException,
-      );
-      expect(await rowsForPath()).toHaveLength(1);
+    it('refuses a filed path to another member and files nothing', async () => {
+      const path = newPath();
+      await confirm(path, uploaderId, 'Minutes');
+
+      await expect(
+        confirm(path, otherMemberId, 'Not mine'),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(await rowsForPath(path)).toHaveLength(1);
+    });
+
+    it('answers a second insert of a filed path with the filed row', async () => {
+      // What two confirms racing past the service's read meet: the index's
+      // 23505, which the repository turns into the winner's row.
+      const path = newPath();
+      const row = {
+        chapter_id: chapterId,
+        title: 'Minutes',
+        storage_path: path,
+        uploaded_by: uploaderId,
+      };
+      const first = await repo.create(row);
+      const second = await repo.create({ ...row, title: 'Lost the race' });
+
+      expect(second.id).toBe(first.id);
+      expect(await rowsForPath(path)).toEqual([
+        { id: first.id, title: 'Minutes' },
+      ]);
+    });
+
+    it('files one row for two confirms sent at once', async () => {
+      const path = newPath();
+      const [a, b] = await Promise.all([
+        confirm(path, uploaderId, 'Minutes'),
+        confirm(path, uploaderId, 'Minutes'),
+      ]);
+
+      expect(a.id).toBe(b.id);
+      expect(await rowsForPath(path)).toHaveLength(1);
     });
   },
 );

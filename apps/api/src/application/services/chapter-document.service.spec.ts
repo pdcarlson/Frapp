@@ -50,6 +50,7 @@ describe('ChapterDocumentService', () => {
     mockDocumentRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
+      findByStoragePath: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
       delete: jest.fn(),
       moveToRoot: jest.fn(),
@@ -210,22 +211,45 @@ describe('ChapterDocumentService', () => {
       );
     });
 
-    it('returns the row a retried confirm already filed to the member who filed it', async () => {
-      // The repository hands back the existing row when the path is filed
-      // (#3399); a mobile retry after a lost response lands here.
-      mockDocumentRepo.create.mockResolvedValue(baseDocument);
+    it('returns the row a retried confirm already filed, unchanged, and files nothing', async () => {
+      // A mobile retry after a lost response lands here (#3399).
+      mockDocumentRepo.findByStoragePath.mockResolvedValue(baseDocument);
 
       await expect(
         service.confirmUpload({
           chapter_id: 'ch-1',
-          title: 'A new title typed before the retry',
+          title: 'Bylaws 2025',
+          folder: 'A folder nothing is filed into',
           storage_path: baseDocument.storage_path,
           uploaded_by: baseDocument.uploaded_by,
         }),
       ).resolves.toEqual(baseDocument);
+      expect(mockDocumentRepo.findByStoragePath).toHaveBeenCalledWith(
+        baseDocument.storage_path,
+        'ch-1',
+      );
+      expect(mockDocumentRepo.create).not.toHaveBeenCalled();
+      expect(mockFolderRepo.create).not.toHaveBeenCalled();
     });
 
-    it('refuses a path another member filed, rather than handing over their row', async () => {
+    it('refuses a path another member filed, registering no folder for it', async () => {
+      mockDocumentRepo.findByStoragePath.mockResolvedValue(baseDocument);
+
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          title: 'Bylaws 2025',
+          folder: 'Not mine',
+          storage_path: baseDocument.storage_path,
+          uploaded_by: 'user-2',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mockDocumentRepo.create).not.toHaveBeenCalled();
+      expect(mockFolderRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses another member who won a race past the read', async () => {
+      // `create` hands back the row a concurrent confirm filed (its 23505).
       mockDocumentRepo.create.mockResolvedValue(baseDocument);
 
       await expect(
