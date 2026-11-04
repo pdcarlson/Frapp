@@ -4,11 +4,11 @@ import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * The grouped-list chrome the reference draws on s12, s14, s15 and s16: an
+ * The grouped-list chrome the reference draws on s09, s12, s14, s15 and s16: an
  * uppercase section caption over a rounded container whose rows are separated
  * by inset hairlines.
  *
- * Shared because four screens draw it and `components/screen-shell.tsx` — which
+ * Shared because five screens draw it and `components/screen-shell.tsx` — which
  * would otherwise be the place — is frozen under #937's hotspot protocol.
  *
  * ## Type roles, not the drawn pixel sizes
@@ -61,8 +61,7 @@ export function listRowHint(
   accessibilityHint: string | undefined,
 ): string | undefined {
   const parts = [description, accessibilityHint].filter(
-    (part, index, all): part is string =>
-      !!part && all.indexOf(part) === index,
+    (part, index, all): part is string => !!part && all.indexOf(part) === index,
   );
   if (parts.length === 0) return undefined;
   return parts

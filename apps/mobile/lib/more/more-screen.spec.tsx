@@ -28,22 +28,34 @@ let permissions: string[] = [];
 let events: unknown[] = [];
 let sessions: unknown[] | undefined;
 let invoices: unknown[] = [];
+let notifications: unknown[] = [];
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useListChapters: () => ({ isSuccess: true, data: [{ id: "chapter-1" }] }),
   usePermissionList: () => permissions,
-  useNotifications: () => ({ data: [] }),
+  useNotifications: () => ({ data: notifications }),
   useEvents: () => ({ data: events }),
   useViewerUserId: () => "user-1",
   useStudySessions: () => ({ data: sessions }),
   useInvoices: () => ({ data: invoices }),
   useCurrentUser: () => ({ data: { display_name: "Paul Carlson" } }),
   useMyPoints: () => ({ data: { balance: 1240, transactions: [] } }),
-  useCurrentChapter: () => ({ data: { name: "FIJI Tau Nu" } }),
+  useCurrentChapter: () => ({
+    data: {
+      name: "FIJI Tau Nu",
+      theme_palette: {
+        "--signet-accent-text": "#7FB2FF",
+        "--signet-accent-primary": "#2D7BFF",
+        "--signet-accent-on-primary": "#FFFFFF",
+      },
+    },
+  }),
 }));
 
 import MoreScreen from "@/app/(tabs)/more";
+import { ListRow, ListSection } from "@/components/list-section";
+import { CountBadge } from "@/components/more/count-badge";
 
 /**
  * Unmounted in `afterEach`, not at the end of each test: the shared clock is
@@ -82,6 +94,7 @@ describe("More hub clock (#2101)", () => {
     events = [];
     sessions = undefined;
     invoices = [];
+    notifications = [];
   });
 
   afterEach(() => {
@@ -178,6 +191,7 @@ describe("More hub anatomy (#1048)", () => {
     events = [];
     sessions = undefined;
     invoices = [];
+    notifications = [];
   });
 
   afterEach(() => {
@@ -211,9 +225,74 @@ describe("More hub anatomy (#1048)", () => {
       expect(text).toContain(label);
     }
     expect(text).toContain("FIJI Tau Nu");
-    // The old NavTile descriptions are gone.
-    expect(text).not.toContain("Chapter document library.");
-    expect(text).not.toContain("Actives and alumni.");
+  });
+
+  it("gives no row a description line", () => {
+    const rows = render().root.findAllByType(ListRow);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(row.props.description).toBeUndefined();
+  });
+
+  it("groups chapter tools, then your settings and chapter, then Admin", () => {
+    permissions = ["events:update"];
+    const sections = render()
+      .root.findAllByType(ListSection)
+      .map((section) =>
+        section.findAllByType(ListRow).map((row) => row.props.label),
+      );
+    expect(sections).toEqual([
+      [
+        "Study hours",
+        "Service hours",
+        "Dues",
+        "Documents",
+        "Directory",
+        "Notifications",
+      ],
+      ["Settings", "Switch chapter"],
+      ["Host check-in"],
+    ]);
+  });
+
+  it("draws a leading glyph on every row: the chapter accent for members, neutral for Admin", () => {
+    permissions = ["events:update"];
+    const rows = render().root.findAllByType(ListRow);
+    for (const row of rows) {
+      const glyph = row.props.leading as React.ReactElement<{
+        color: string;
+        neutral?: boolean;
+      }>;
+      expect(glyph, row.props.label).toBeTruthy();
+      if (row.props.label === "Host check-in") {
+        expect(glyph.props.neutral).toBe(true);
+        expect(glyph.props.color).not.toBe("#7FB2FF");
+      } else {
+        expect(glyph.props.color, row.props.label).toBe("#7FB2FF");
+      }
+    }
+  });
+
+  it("badges unread notifications in the chapter's accent fill, and reads the count", () => {
+    notifications = [
+      { id: "n-1", read_at: null },
+      { id: "n-2", read_at: null },
+      { id: "n-3", read_at: "2026-11-04T10:00:00Z" },
+    ];
+    const tree = render();
+    const badge = tree.root.findByType(CountBadge);
+    expect(badge.props.count).toBe(2);
+    const fill = badge.findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        JSON.stringify(node.props.style).includes("#2D7BFF"),
+    );
+    expect(fill.length).toBeGreaterThan(0);
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Notifications",
+    );
+    expect(row.props.accessibilityValue).toEqual({ text: "2 unread" });
   });
 
   it("gives every row a chevron and a press target", () => {
@@ -235,6 +314,36 @@ describe("More hub anatomy (#1048)", () => {
       "Settings",
       "Switch chapter",
     ]);
+    // One chevron inside each press target.
+    for (const button of buttons) {
+      expect(
+        button.findAll(
+          (node) =>
+            (node.type as unknown) === "Text" && node.props.children === "›",
+        ),
+      ).toHaveLength(1);
+    }
+  });
+
+  it("drops the chevron and the open-hint from a Host check-in row with nothing to host", () => {
+    permissions = ["events:update"];
+    const tree = render();
+    const host = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Host check-in",
+    );
+    expect(host.props.accessibilityState).toEqual({ disabled: true });
+    expect(host.props.accessibilityHint).toBeUndefined();
+    expect(host.props.accessibilityValue).toEqual({
+      text: "No upcoming event",
+    });
+    expect(
+      host.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" && node.props.children === "›",
+      ),
+    ).toHaveLength(0);
   });
 
   it("shows the Admin section only to a member who can host", () => {

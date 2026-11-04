@@ -1,6 +1,14 @@
-import { useState } from "react";
-import { Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import { Link } from "expo-router";
+import { useEffect, useState } from "react";
+import {
+  Image,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useRouter } from "expo-router";
+import { onlineManager } from "@tanstack/react-query";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -14,74 +22,94 @@ const AVATAR_SIZE = 48;
  * role name is readable on mobile (`/v1/users/me/permissions` returns
  * permissions only, #1048), so the line is the balance alone rather than a
  * chip that would have to invent one.
+ *
+ * It navigates with `router.push` in `onPress`, never `<Link asChild>`: on
+ * native, Link's slot merges the child's props with an object spread, which
+ * turns a function-form `style` into `{}` and drops every card style.
  */
 export function ProfileCard({
   displayName,
   initials,
   photoUrl,
+  fetchedAt = 0,
   pointsLabel,
   accent,
 }: {
   displayName: string | null;
   initials: string;
   photoUrl: string | null;
+  /** When that read last completed (`dataUpdatedAt`); a refetch retries a failed load. */
+  fetchedAt?: number;
   /** "1,240 pts", or `null` while the balance is unknown. */
   pointsLabel: string | null;
-  /** The chapter accent, which tints the initials avatar as s15's does. */
+  /** The chapter accent, which tints the initials avatar. */
   accent: string;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const router = useRouter();
   // A photo that fails to load (an expired signed URL, no network) falls back
-  // to initials rather than an empty circle. Keyed by URL: a refetch that
-  // signs a new one tries again.
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const showPhoto = !!photoUrl && photoUrl !== failedUrl;
+  // to initials rather than an empty circle. The failure is remembered per
+  // read, not per URL, for the reason `components/profile/profile-photo.tsx`
+  // gives: the API serves the same signed URL for half an hour, so a
+  // URL-keyed failure would hide the photo long after the network came back.
+  // A refetch, or the device coming back online, tries again.
+  const [failed, setFailed] = useState<{ url: string; at: number } | null>(
+    null,
+  );
+  useEffect(
+    () =>
+      onlineManager.subscribe((online) => {
+        if (online) setFailed(null);
+      }),
+    [],
+  );
+  const showPhoto =
+    !!photoUrl && !(failed?.url === photoUrl && failed.at === fetchedAt);
   const name = displayName ?? "Your profile";
 
   return (
-    <Link href="/profile" asChild>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={name}
-        accessibilityValue={pointsLabel ? { text: pointsLabel } : undefined}
-        accessibilityHint="Opens your profile."
-        android_ripple={{ color: styles.ripple.color }}
-        style={({ pressed }) => [
-          styles.card,
-          pressed && Platform.OS !== "android" ? styles.pressed : null,
-        ]}
-      >
-        {showPhoto ? (
-          <Image
-            source={{ uri: photoUrl }}
-            style={styles.avatar}
-            onError={() => setFailedUrl(photoUrl)}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-          />
-        ) : (
-          <View
-            style={[
-              styles.avatar,
-              {
-                backgroundColor: tint(accent, 0.13),
-                borderColor: tint(accent, 0.3),
-              },
-            ]}
-          >
-            <Text style={[styles.initials, { color: accent }]}>{initials}</Text>
-          </View>
-        )}
-        <View style={styles.text}>
-          <Text style={styles.name} numberOfLines={1}>
-            {name}
-          </Text>
-          {pointsLabel ? <Text style={styles.meta}>{pointsLabel}</Text> : null}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={name}
+      accessibilityValue={pointsLabel ? { text: pointsLabel } : undefined}
+      accessibilityHint="Opens your profile."
+      android_ripple={{ color: styles.ripple.color }}
+      onPress={() => router.push("/profile")}
+      style={({ pressed }) => [
+        styles.card,
+        pressed && Platform.OS !== "android" ? styles.pressed : null,
+      ]}
+    >
+      {showPhoto ? (
+        <Image
+          source={{ uri: photoUrl }}
+          style={styles.avatar}
+          onError={() => setFailed({ url: photoUrl, at: fetchedAt })}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
+      ) : (
+        <View
+          style={[
+            styles.avatar,
+            {
+              backgroundColor: tint(accent, 0.13),
+              borderColor: tint(accent, 0.3),
+            },
+          ]}
+        >
+          <Text style={[styles.initials, { color: accent }]}>{initials}</Text>
         </View>
-        <Text style={styles.chevron}>›</Text>
-      </Pressable>
-    </Link>
+      )}
+      <View style={styles.text}>
+        <Text style={styles.name} numberOfLines={1}>
+          {name}
+        </Text>
+        {pointsLabel ? <Text style={styles.meta}>{pointsLabel}</Text> : null}
+      </View>
+      <Text style={styles.chevron}>›</Text>
+    </Pressable>
   );
 }
 

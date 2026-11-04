@@ -32,12 +32,12 @@ The app groups the rows differently from the board, by owner decision on 2026-11
 | — | Profile card (avatar, name, points) | `profile.tsx` (s15) | chevron |
 | Chapter tools | Study hours | `study.tsx` (s10) | this week's total, e.g. "4.0 hrs" |
 | | Service hours | `service-hours.tsx` (host of the s20 sheet) | — |
-| | Dues | `dues.tsx` (s11) | warning chip, e.g. "Due Sept 15" |
+| | Dues | `dues.tsx` (s11) | the next bill's chip: warning hue for "Due Sept 15", destructive for "Past due Sept 15" |
 | | Documents | `documents.tsx` (s12) | — |
 | | Directory | `directory.tsx` (s13) | — |
 | | Notifications | `notifications.tsx` (s14) | unread-count badge |
 | You | Settings | `preferences.tsx` (s16) | — |
-| | Switch chapter | `(auth)/chapter-picker.tsx` | the current chapter's name |
+| | Switch chapter | `(auth)/chapter-picker.tsx` | the current chapter's name. When `GET /v1/chapters` is empty the slot is **Create a chapter** instead, opening `(auth)/create-chapter.tsx` (#1084) |
 | **Admin** (role-gated, captioned "Admin") | Host check-in | `host-check-in.tsx` (s22) | the next hostable event |
 | | Adjust points | s23 sheet — **not rendered** until the sheet ships (#2300) | — |
 

@@ -40,18 +40,60 @@ describe("ListRow — what a screen reader hears", () => {
       accessibilityHint: "Opens this app's settings.",
       onPress: vi.fn(),
     });
-    expect(row.props.accessibilityHint).toBe(
-      "Off. Opens this app's settings.",
-    );
+    expect(row.props.accessibilityHint).toBe("Off. Opens this app's settings.");
     expect(row.props.accessibilityValue).toBeUndefined();
+  });
+});
+
+describe("ListRow — press feedback", () => {
+  it("ripples on Android and lifts its surface on iOS while held", () => {
+    const row = pressable({ label: "Documents", onPress: vi.fn() });
+    expect(row.props.android_ripple?.color).toMatch(/^rgba\(/);
+    // The suite's react-native stub runs as iOS.
+    expect(row.props.style({ pressed: true })).toMatchObject({
+      backgroundColor: expect.any(String),
+    });
+    expect(row.props.style({ pressed: false })).toBeNull();
+  });
+
+  it("gives a disabled row no ripple and no chevron", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ListRow label="Host check-in" onPress={vi.fn()} disabled />
+        </FrappThemeProvider>,
+      );
+    });
+    const row = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    expect(row.props.android_ripple).toBeUndefined();
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" && node.props.children === "›",
+      ),
+    ).toHaveLength(0);
+  });
+});
+
+describe("ListRow — accessibilityValue", () => {
+  it("reads an explicit value for a drawn trailing status, over the value text", () => {
+    const row = pressable({
+      label: "Notifications",
+      accessibilityValue: "2 unread",
+      onPress: vi.fn(),
+    });
+    expect(row.props.accessibilityValue).toEqual({ text: "2 unread" });
   });
 });
 
 describe("listRowHint", () => {
   it("says a repeated sentence once, and nothing when there is nothing", () => {
-    expect(listRowHint("Opens in your browser.", "Opens in your browser.")).toBe(
-      "Opens in your browser.",
-    );
+    expect(
+      listRowHint("Opens in your browser.", "Opens in your browser."),
+    ).toBe("Opens in your browser.");
     expect(listRowHint(null, undefined)).toBeUndefined();
     expect(listRowHint("", undefined)).toBeUndefined();
   });

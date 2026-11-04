@@ -58,11 +58,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * The board draws one group (Study hours through Settings) and an Admin group.
  * The app splits the first in two, chapter tools and then your own Settings
  * and chapter switcher, so the two reachability rows the board never drew
- * (Service hours and Chapter, `spec/ui/mobile/navigation.md` § More hub) sit
+ * (Service hours and Switch chapter, `spec/ui/mobile/navigation.md` § More hub) sit
  * with their kind instead of trailing the list. The owner approved this
  * layout on 2026-11-04.
  *
- * **Chapter** is the only entry to the chapter picker (#764). When
+ * **Switch chapter** is the only entry to the chapter picker (#764). When
  * `GET /v1/chapters` is empty the same slot becomes **Create a chapter**
  * (#1084) so a first officer who landed in the tabs still has a door. The
  * picker is deliberately not forced on members whose token lacks an
@@ -173,6 +173,7 @@ export default function MoreScreen() {
         displayName={profile?.displayName ?? null}
         initials={profile?.initials ?? "?"}
         photoUrl={profile?.photoUrl ?? null}
+        fetchedAt={userQuery.dataUpdatedAt}
         pointsLabel={formatPointsLabel(pointsBalance)}
         accent={accent}
       />
@@ -280,7 +281,13 @@ export default function MoreScreen() {
                 </Text>
               }
               disabled={!nextEvent}
-              accessibilityHint="Opens the host check-in display for the next event."
+              // A disabled row's hint is not what it would open, which it
+              // cannot do; its value already says why.
+              accessibilityHint={
+                nextEvent
+                  ? "Opens the host check-in display for the next event."
+                  : undefined
+              }
               onPress={() => {
                 if (!nextEvent) return;
                 // Object form: the only navigation shape `lib/routes.spec.ts`
