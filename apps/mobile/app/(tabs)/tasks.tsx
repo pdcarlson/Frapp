@@ -292,7 +292,6 @@ export default function TasksScreen() {
   return (
     <ScreenShell
       title="Tasks"
-      subtitle="What you owe the chapter, and what it has earned you."
       headerAction={
         canManageTasks ? (
           <Pressable

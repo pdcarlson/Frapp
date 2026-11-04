@@ -5,7 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Text, View } from "react-native";
 import { describe, expect, it } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { textHeadings } from "@/test/screen-text";
+import { screenText, textHeadings } from "@/test/screen-text";
 import { ScreenShell } from "./screen-shell";
 
 /**
@@ -28,7 +28,7 @@ function render(element: React.ReactElement): ReactTestRenderer {
 describe("ScreenShell (#2485)", () => {
   it("takes the top safe-area inset, which no navigator header absorbs now", () => {
     const tree = render(
-      <ScreenShell title="Tasks" subtitle="Assigned to you.">
+      <ScreenShell title="Tasks">
         <View />
       </ScreenShell>,
     );
@@ -43,7 +43,7 @@ describe("ScreenShell (#2485)", () => {
 
   it("marks the title as the one heading the shell draws", () => {
     const tree = render(
-      <ScreenShell title="Tasks" subtitle="Assigned to you.">
+      <ScreenShell title="Tasks">
         <Text>Body</Text>
       </ScreenShell>,
     );
@@ -55,11 +55,7 @@ describe("ScreenShell (#2485)", () => {
 
   it("draws a title mark on the title's row, ahead of the title", () => {
     const tree = render(
-      <ScreenShell
-        title="Tau Nu"
-        titleMark={<View testID="mark" />}
-        subtitle="Your chapter's channels and direct messages."
-      >
+      <ScreenShell title="Tau Nu" titleMark={<View testID="mark" />}>
         <View />
       </ScreenShell>,
     );
@@ -72,5 +68,32 @@ describe("ScreenShell (#2485)", () => {
     );
     expect(markAt).toBeGreaterThanOrEqual(0);
     expect(markAt).toBeLessThan(children.indexOf(title!));
+  });
+});
+
+/**
+ * #3023. The shell draws no line under the title unless a screen passes one.
+ * The board draws one only on s07, so Event details is the caller that does:
+ * its subtitle is the event's time.
+ */
+describe("ScreenShell subtitle (#3023)", () => {
+  it("draws nothing under the title when no subtitle is passed", () => {
+    const tree = render(
+      <ScreenShell title="Tasks">
+        <Text>Body</Text>
+      </ScreenShell>,
+    );
+
+    expect(screenText(tree)).toBe("Tasks\nBody");
+  });
+
+  it("draws a passed subtitle under the title", () => {
+    const tree = render(
+      <ScreenShell title="Rush dinner" subtitle="Tonight, 7:00 – 9:00 PM">
+        <Text>Body</Text>
+      </ScreenShell>,
+    );
+
+    expect(screenText(tree)).toBe("Rush dinner\nTonight, 7:00 – 9:00 PM\nBody");
   });
 });
