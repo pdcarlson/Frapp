@@ -137,7 +137,8 @@ export function SheetPrimaryButton({
 
 /**
  * Which visit of a sheet is on screen, for a sheet whose write can settle
- * after it closed: s15's edit sheet and s21's upload sheet.
+ * after it closed. s15's edit sheet and s21's upload sheet use it; s19's
+ * new-task sheet and s20's log sheet still dismiss unguarded (#3405).
  *
  * Wire `onAnimate` and call `markClosed` first thing in the modal's
  * `onDismiss`. Then:

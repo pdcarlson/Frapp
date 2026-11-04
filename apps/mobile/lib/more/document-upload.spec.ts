@@ -158,7 +158,7 @@ describe("uploadDocumentPhoto", () => {
         { title: " Minutes ", folder: "Minutes" },
         mutations,
       ),
-    ).resolves.toEqual({ status: "uploaded" });
+    ).resolves.toEqual({ status: "uploaded", title: "Minutes" });
 
     expect(requestUploadUrl).toHaveBeenCalledWith({
       filename: "minutes.jpg",
@@ -183,11 +183,27 @@ describe("uploadDocumentPhoto", () => {
   });
 
   it("files at the library root when no folder is chosen", async () => {
-    await uploadDocumentPhoto(IMAGE, { title: "", folder: null }, mutations);
+    await expect(
+      uploadDocumentPhoto(IMAGE, { title: "", folder: null }, mutations),
+    ).resolves.toEqual({ status: "uploaded", title: "minutes.jpg" });
 
     expect(confirm).toHaveBeenCalledWith(
       expect.objectContaining({ title: "minutes.jpg", folder: undefined }),
     );
+  });
+
+  it("names the title of the row the API filed, which a retry can't rename", async () => {
+    // The first confirm committed and its response was lost; the API answers
+    // the retry with that row (#3399).
+    confirm.mockResolvedValue({ id: "doc-1", title: "Minutes" });
+
+    await expect(
+      uploadDocumentPhoto(
+        IMAGE,
+        { title: "Minutes — Nov 2", folder: null },
+        mutations,
+      ),
+    ).resolves.toEqual({ status: "uploaded", title: "Minutes" });
   });
 
   it.each([
@@ -282,7 +298,7 @@ describe("uploadDocumentPhoto", () => {
         mutations,
         first.status === "refused" ? first.uploaded : undefined,
       ),
-    ).resolves.toEqual({ status: "uploaded" });
+    ).resolves.toEqual({ status: "uploaded", title: "Minutes" });
     expect(requestUploadUrl).not.toHaveBeenCalled();
     expect(fs.uploadAsync).not.toHaveBeenCalled();
     expect(confirm).toHaveBeenLastCalledWith(

@@ -14,6 +14,10 @@ export interface IChapterDocumentRepository {
     chapterId: string,
     filter?: ChapterDocumentFilter,
   ): Promise<ChapterDocument[]>;
+  /**
+   * Files a document. When `storage_path` is already filed in the chapter, it
+   * returns that row instead of a second one (#3399).
+   */
   create(data: Partial<ChapterDocument>): Promise<ChapterDocument>;
   delete(id: string, chapterId: string): Promise<void>;
   moveToRoot(folder: string, chapterId: string): Promise<void>;

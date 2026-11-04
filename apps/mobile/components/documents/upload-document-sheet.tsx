@@ -25,7 +25,6 @@ import {
 import type { PickedImage, UploadedImage } from "@/lib/chat/attachment-upload";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
-  documentTitle,
   pickDocumentPhoto,
   uploadDocumentPhoto,
 } from "@/lib/more/document-upload";
@@ -58,7 +57,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * Upload, so a sheet cancelled after a pick leaves no object in the bucket.
  * Once the bytes have landed, a failed confirm keeps their upload, and Upload
  * retries the confirm alone rather than sending a second copy
- * (`lib/more/document-upload.ts` § "A confirm that fails").
+ * (`lib/more/document-upload.ts` § "A confirm that fails keeps the bytes it
+ * already sent").
  *
  * ## Closing mid-upload
  *
@@ -169,7 +169,6 @@ export const UploadDocumentSheet = forwardRef<
     setUploading(true);
     setFailure(null);
     const sentFrom = visit();
-    const filedAs = documentTitle(title, picked);
     const result = await uploadDocumentPhoto(
       picked,
       { title, folder },
@@ -184,7 +183,7 @@ export const UploadDocumentSheet = forwardRef<
     if (result.status === "uploaded") {
       reset();
       if (isSameVisit(sentFrom)) dismiss();
-      onUploaded?.(filedAs);
+      onUploaded?.(result.title);
       return;
     }
     if (result.uploaded)

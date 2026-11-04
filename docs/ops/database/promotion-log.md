@@ -29,6 +29,20 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-04: One chapter_documents row per stored object (#3399)
+
+### 20261104210000_chapter_documents_storage_path_key.sql
+
+- **Purpose**: Makes the database hold at most one `chapter_documents` row per `storage_path`. The rule is in [`spec/behavior/chapter-docs.md`](../../../spec/behavior/chapter-docs.md#storage) § Storage.
+  - A guard that raises, and changes nothing, if any path is already filed twice. Choosing which row survives is the owner's decision.
+  - `chapter_documents_storage_path_key`, a unique index on `(storage_path)`. Every path is minted under a fresh document id, so no two rows have had a reason to share one.
+
+  Mobile's upload sheet retries a failed `POST /v1/documents` with the bytes it already sent. The API's `create` inserts, and on a `23505` from the index returns the row already filed, so a confirm retried after its response was lost files one row. Without the index it filed two rows on one object, and deleting either removed the object the other pointed at. No row is rewritten.
+- **Checks**: Before `db push`, `select count(*), count(distinct storage_path) from public.chapter_documents;` gave 1 / 1 on `frapp-staging` and 0 / 0 on `frapp-prod` on 2026-11-04. After it, `select indexname from pg_indexes where indexname = 'chapter_documents_storage_path_key';` returns one row.
+- **Promoter notes**: Ship it before, or with, the API that relies on it. A deploy applies migrations first. Against an unmigrated database the newer API behaves as before: a retried confirm can file a second row. An older API against the migrated database keeps working, but a retried confirm gets the raw `23505` as a 500, which mobile shows as a retryable failure and web never sends (web re-mints a path on retry). The index build blocks writes to `chapter_documents` until the migration commits, and the table holds one row per document, so it is brief. If the guard raises, the migration stops and nothing is applied: bring the rows to the owner (#3399) rather than deleting any. Re-applying is idempotent (`create unique index if not exists`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-one-document-row-per-object-20261104210000) § Rollback one document row per object.
+
 ## 2026-10-01: `discord_imports.role_mapping` gets a catalog comment that is true (#2887)
 
 ### 20261001024000_discord_import_role_mapping_comment.sql

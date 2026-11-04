@@ -207,14 +207,18 @@ describe("UploadDocumentSheet (#3399)", () => {
     act(() => {
       pressable(tree, "Bylaws").props.onPress();
     });
-    uploadDocumentPhoto.mockResolvedValue({ status: "uploaded" });
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "uploaded",
+      title: "Minutes — Aug 14",
+    });
 
     await pressUpload(tree);
 
     expect(uploadDocumentPhoto).toHaveBeenCalledWith(
       PHOTO,
       { title: "Minutes — Aug 14", folder: "Bylaws" },
-      expect.any(Object),      undefined,
+      expect.any(Object),
+      undefined,
     );
     expect(dismiss).toHaveBeenCalledTimes(1);
     expect(onUploaded).toHaveBeenCalledWith("Minutes — Aug 14");
@@ -223,15 +227,18 @@ describe("UploadDocumentSheet (#3399)", () => {
   it("starts on s12's folder, and None files at the root", async () => {
     const tree = render("Minutes");
     await choose(tree);
-    uploadDocumentPhoto.mockResolvedValue({ status: "uploaded" });
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "uploaded",
+      title: "IMG_2041.jpg",
+    });
 
     await pressUpload(tree);
     expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
       PHOTO,
       { title: "", folder: "Minutes" },
-      expect.any(Object),      undefined,
+      expect.any(Object),
+      undefined,
     );
-    // The blank title is filed under the file name, as on web.
     expect(onUploaded).toHaveBeenLastCalledWith("IMG_2041.jpg");
 
     open(tree);
@@ -243,7 +250,8 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
       PHOTO,
       { title: "", folder: null },
-      expect.any(Object),      undefined,
+      expect.any(Object),
+      undefined,
     );
   });
 
@@ -296,7 +304,7 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(uploadDocumentPhoto).toHaveBeenCalledTimes(1);
     expect(screenText(tree)).toContain("Uploading…");
     expect(titleInput(tree).props.editable).toBe(false);
-    await settle({ status: "uploaded" });
+    await settle({ status: "uploaded", title: "IMG_2041.jpg" });
   });
 
   it("drops the draft on Cancel or a swipe", async () => {
@@ -340,13 +348,47 @@ describe("UploadDocumentSheet (#3399)", () => {
     await pressUpload(tree);
     closed(tree);
 
-    await settle({ status: "uploaded" });
+    await settle({ status: "uploaded", title: "IMG_2041.jpg" });
 
     // `dismiss()` on a dismissed gorhom modal wedges the next `present()`.
     expect(dismiss).not.toHaveBeenCalled();
     expect(onUploaded).toHaveBeenCalledWith("IMG_2041.jpg");
     open(tree);
     expect(screenText(tree)).toContain("Choose a photo");
+  });
+
+  it("leaves a sheet reopened mid-upload open when the upload lands", async () => {
+    const tree = render();
+    await choose(tree);
+    const settle = heldUpload();
+    await pressUpload(tree);
+    // Swiped away, then opened again to file another photo.
+    closed(tree);
+    open(tree);
+
+    await settle({ status: "uploaded", title: "IMG_2041.jpg" });
+
+    expect(dismiss).not.toHaveBeenCalled();
+    expect(onUploaded).toHaveBeenCalledWith("IMG_2041.jpg");
+    expect(screenText(tree)).toContain("Choose a photo");
+  });
+
+  it("names the title the document was filed under", async () => {
+    // A retried confirm the API had already filed comes back under the title
+    // it was filed with, not the one typed for the retry.
+    const tree = render();
+    await choose(tree);
+    act(() => {
+      titleInput(tree).props.onChangeText("Minutes — Nov 2");
+    });
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "uploaded",
+      title: "Minutes",
+    });
+
+    await pressUpload(tree);
+
+    expect(onUploaded).toHaveBeenCalledWith("Minutes");
   });
 
   it("keeps the draft when Cancel is pressed mid-upload", async () => {

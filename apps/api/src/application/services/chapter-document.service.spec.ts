@@ -210,6 +210,34 @@ describe('ChapterDocumentService', () => {
       );
     });
 
+    it('returns the row a retried confirm already filed to the member who filed it', async () => {
+      // The repository hands back the existing row when the path is filed
+      // (#3399); a mobile retry after a lost response lands here.
+      mockDocumentRepo.create.mockResolvedValue(baseDocument);
+
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          title: 'A new title typed before the retry',
+          storage_path: baseDocument.storage_path,
+          uploaded_by: baseDocument.uploaded_by,
+        }),
+      ).resolves.toEqual(baseDocument);
+    });
+
+    it('refuses a path another member filed, rather than handing over their row', async () => {
+      mockDocumentRepo.create.mockResolvedValue(baseDocument);
+
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          title: 'Bylaws 2025',
+          storage_path: baseDocument.storage_path,
+          uploaded_by: 'user-2',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
     it('should create document with minimal metadata (no folder)', async () => {
       mockDocumentRepo.create.mockResolvedValue({
         ...baseDocument,

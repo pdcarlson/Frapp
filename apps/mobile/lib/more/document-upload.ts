@@ -33,8 +33,14 @@ import {
  * fails, the refusal carries the upload, and a retry passes it back so only
  * the confirm runs again: a second mint would name a new storage path and PUT
  * a second copy, leaving the first unreferenced. A member who gives up at that
- * point does leave the object behind, as web's flow does, until #2197's sweep
- * exists.
+ * point does leave the object behind, as web's flow does (#1428).
+ *
+ * A confirm can fail on the phone after it committed on the server: the
+ * response is lost to a dropped connection. The retry then confirms a path
+ * that is already filed, and the API answers with that row rather than a
+ * second one (`chapter_documents_storage_path_key`, #3399). The filed row keeps
+ * the title it was filed under, so the result names the title the API
+ * returned, not the one typed for the retry.
  *
  * Photos only. A PDF or an Office file needs `expo-document-picker`, a native
  * module, so it waits for a store build.
@@ -52,7 +58,8 @@ export interface DocumentUploadMutations {
 }
 
 export type DocumentUploadResult =
-  | { status: "uploaded" }
+  /** `title` is the title the document is filed under. */
+  | { status: "uploaded"; title: string }
   /**
    * Nothing was filed. `final` is a gate that only an officer can lift (the
    * chapter's subscription, or the documents module switched off): the sheet
@@ -94,6 +101,17 @@ export function pickDocumentPhoto(): Promise<ImagePickResult> {
  */
 export function documentTitle(typed: string, image: PickedImage): string {
   return typed.trim() || image.filename;
+}
+
+/**
+ * The title on the row `POST /v1/documents` answered with. The route documents
+ * no response body (#1049), so this reads it defensively and falls back to the
+ * title sent.
+ */
+function filedTitle(response: unknown): string | null {
+  if (typeof response !== "object" || response === null) return null;
+  const { title } = response as { title?: unknown };
+  return typeof title === "string" && title.length > 0 ? title : null;
 }
 
 /**
@@ -140,15 +158,16 @@ export async function uploadDocumentPhoto(
     stored = sent.image;
   }
 
+  const title = documentTitle(draft.title, image);
   try {
-    await mutations.confirm({
+    const filed = await mutations.confirm({
       storage_path: stored.storagePath,
-      title: documentTitle(draft.title, image),
+      title,
       folder: draft.folder ?? undefined,
       content_type: stored.contentType,
       byte_size: stored.byteSize,
     });
-    return { status: "uploaded" };
+    return { status: "uploaded", title: filedTitle(filed) ?? title };
   } catch (error) {
     const reason = gateRefusal(error);
     return {

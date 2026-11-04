@@ -148,7 +148,13 @@ export class ChapterDocumentService {
       await this.ensureFolder(folder, input.chapter_id);
     }
 
-    return this.documentRepo.create({
+    // Idempotent on the stored object (#3399): confirming a path that is
+    // already filed returns that row, unchanged, instead of filing it twice.
+    // Two rows on one object would break delete, which removes the object.
+    // Only the uploader who filed it gets the row back. The path is minted
+    // for, and returned to, that member alone, so anyone else confirming it is
+    // not retrying their own upload.
+    const document = await this.documentRepo.create({
       chapter_id: input.chapter_id,
       title: input.title,
       description: input.description ?? null,
@@ -160,6 +166,10 @@ export class ChapterDocumentService {
       document_type: input.document_type ?? null,
       effective_date: input.effective_date ?? null,
     });
+    if (document.uploaded_by !== input.uploaded_by) {
+      throw new ConflictException('That upload has already been filed');
+    }
+    return document;
   }
 
   async findByChapter(
