@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { QueryClient, useQuery } from "@tanstack/react-query";
+import { throwUnlessOk } from "@repo/api-sdk";
 import { useFrappClient } from "@repo/hooks";
 import { createReportingCaches } from "@/lib/sentry/query-errors";
 
@@ -79,16 +80,6 @@ export function readClientPolicy(data: unknown): ClientPolicy | null {
   };
 }
 
-/** The API error body's `requestId` and `code`, when it sent them. */
-function apiErrorIds(error: unknown): { requestId?: string; code?: string } {
-  if (typeof error !== "object" || error === null) return {};
-  const { requestId, code } = error as { requestId?: unknown; code?: unknown };
-  return {
-    ...(typeof requestId === "string" ? { requestId } : {}),
-    ...(typeof code === "string" ? { code } : {}),
-  };
-}
-
 export function useClientPolicy(
   queryClient: QueryClient = clientPolicyQueryClient,
 ): ClientPolicy {
@@ -106,22 +97,17 @@ export function useClientPolicy(
     {
       queryKey: CLIENT_POLICY_QUERY_KEY,
       queryFn: async () => {
-        const { data: body, error, response } = await client.GET("/v1/client-policy");
+        const result = await client.GET("/v1/client-policy");
         // Thrown, not returned, so TanStack keeps the previous answer. A
         // non-2xx is never an answer, whatever its body. openapi-fetch 0.17
         // already leaves `data` undefined there, so the shape check below
         // would throw too; checking the status means this doesn't rest on that.
         // (`error` can't be the test: it is undefined for an empty-bodied 5xx.)
-        // The status, and the body's request id and code, ride on what is
-        // thrown, so a report groups it by status class and joins the API's
-        // own event (`lib/sentry/query-errors.ts`).
-        if (!response.ok) {
-          throw Object.assign(
-            new Error(`client-policy answered ${response.status}`),
-            { statusCode: response.status, ...apiErrorIds(error) },
-          );
-        }
-        const policy = readClientPolicy(body);
+        // `throwUnlessOk` throws the body with its status, request id and code,
+        // so a report groups it by status class and joins the API's own event
+        // (`lib/sentry/query-errors.ts`).
+        throwUnlessOk(result);
+        const policy = readClientPolicy(result.data);
         if (!policy) throw new Error("client-policy answered in an unknown shape");
         return policy;
       },

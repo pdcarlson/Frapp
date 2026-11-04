@@ -111,6 +111,29 @@ describe("web query-error reporting", () => {
     expect(captureException).not.toHaveBeenCalled();
   });
 
+  it("takes the query key out of TanStack's own errors", async () => {
+    // A queryFn that resolves undefined makes TanStack throw
+    // `<queryHash> data is undefined`, and the hash is the whole key.
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const client = makeQueryClient();
+    await client
+      .fetchQuery({
+        queryKey: ["search", "chapter-1", "jamie's lost jacket"],
+        queryFn: () => Promise.resolve(undefined as unknown),
+        retry: false,
+      })
+      .catch(() => undefined);
+
+    expect(captureException).toHaveBeenCalledTimes(1);
+    const [error, context] = captureException.mock.calls[0]!;
+    expect((error as Error).message).toBe("[query-key] data is undefined");
+    expect((error as Error).stack).not.toContain("chapter-1");
+    expect((error as Error).stack).not.toContain("jacket");
+    expect(context).toMatchObject({
+      fingerprint: ["{{ default }}", "react-query", "query", "search"],
+    });
+  });
+
   it("reports a failed mutation with no mutationKey under `unkeyed`", async () => {
     const client = makeQueryClient();
     const observer = new MutationObserver(client, {

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createQueryErrorReporter,
   DEFAULT_REPORT_INTERVAL_MS,
-  MAX_REMEMBERED_FINGERPRINTS,
+  MAX_REMEMBERED_RATE_KEYS,
   QUERY_KEY_PLACEHOLDER,
   type QueryErrorReport,
   type QueryErrorReporterOptions,
@@ -243,6 +243,10 @@ describe("createQueryErrorReporter", () => {
       expect(sent.message).toBe(`${QUERY_KEY_PLACEHOLDER} data is undefined`);
       expect(sent.stack).toContain(QUERY_KEY_PLACEHOLDER);
       expect(sent.stack).not.toContain("jacket");
+      // TanStack's throw site, not the reporter's, so Sentry groups by it.
+      const frames = (stack: string | undefined) => stack!.split("\n").slice(1);
+      expect(frames(sent.stack)).toEqual(frames(thrown.stack));
+      expect(frames(sent.stack).length).toBeGreaterThan(0);
       expect(thrown.message).toContain("jacket");
     });
 
@@ -336,21 +340,21 @@ describe("createQueryErrorReporter", () => {
 
     it("forgets the oldest fingerprint past its memory, not the newest", () => {
       const h = harness();
-      for (let i = 0; i <= MAX_REMEMBERED_FINGERPRINTS; i += 1) {
+      for (let i = 0; i <= MAX_REMEMBERED_RATE_KEYS; i += 1) {
         h.query(new TypeError(`bug ${i}`));
       }
-      expect(h.reports).toHaveLength(MAX_REMEMBERED_FINGERPRINTS + 1);
+      expect(h.reports).toHaveLength(MAX_REMEMBERED_RATE_KEYS + 1);
       // The newest is still remembered; the first was forgotten.
-      h.query(new TypeError(`bug ${MAX_REMEMBERED_FINGERPRINTS}`));
-      expect(h.reports).toHaveLength(MAX_REMEMBERED_FINGERPRINTS + 1);
+      h.query(new TypeError(`bug ${MAX_REMEMBERED_RATE_KEYS}`));
+      expect(h.reports).toHaveLength(MAX_REMEMBERED_RATE_KEYS + 1);
       h.query(new TypeError("bug 0"));
-      expect(h.reports).toHaveLength(MAX_REMEMBERED_FINGERPRINTS + 2);
+      expect(h.reports).toHaveLength(MAX_REMEMBERED_RATE_KEYS + 2);
     });
 
     it("counts a fingerprint reported again as the newest", () => {
       const h = harness({ intervalMs: 1_000 });
       h.query(new TypeError("recurring"));
-      for (let i = 1; i < MAX_REMEMBERED_FINGERPRINTS; i += 1) {
+      for (let i = 1; i < MAX_REMEMBERED_RATE_KEYS; i += 1) {
         h.query(new TypeError(`bug ${i}`));
       }
       h.advance(1_000);

@@ -136,7 +136,6 @@ describe("useClientPolicy", () => {
     await settle();
     const error = policyClient.getQueryState(CLIENT_POLICY_QUERY_KEY)?.error;
     expect(error).toMatchObject({
-      message: "client-policy answered 503",
       statusCode: 503,
       requestId: "req_abc",
       code: "DEGRADED",

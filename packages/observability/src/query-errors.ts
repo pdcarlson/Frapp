@@ -59,7 +59,7 @@ import { httpStatusClass } from "./sentry-http";
  * to Sentry, so it is limited per error type and message instead. It is a
  * deliberate drop beside § Sampling's `1.0` for error events, and the spec
  * records it as one. The reporter remembers at most
- * {@link MAX_REMEMBERED_FINGERPRINTS} fingerprints, forgetting the oldest.
+ * {@link MAX_REMEMBERED_RATE_KEYS} of what it limits on, forgetting the oldest.
  *
  * **It never throws.** `MutationCache` awaits its `onError` before the
  * mutation's own, so a throw here would surface as the caller's error.
@@ -69,11 +69,12 @@ import { httpStatusClass } from "./sentry-http";
 export const DEFAULT_REPORT_INTERVAL_MS = 10 * 60_000;
 
 /**
- * How many fingerprints one reporter remembers. Key roots and status classes
- * are few, but an exception's message is part of its limit, so this bounds a
- * session that throws many different ones.
+ * How many rate keys one reporter remembers. A rate key is the fingerprint,
+ * except for an `exception`, whose key is its root, error type and message.
+ * Key roots and status classes are few, but an exception's message is part of
+ * its key, so this bounds a session that throws many different ones.
  */
-export const MAX_REMEMBERED_FINGERPRINTS = 500;
+export const MAX_REMEMBERED_RATE_KEYS = 500;
 
 /** What replaces the `queryHash` in a TanStack error's message and stack. */
 export const QUERY_KEY_PLACEHOLDER = "[query-key]";
@@ -192,7 +193,7 @@ export function createQueryErrorReporter(
       // Map's order and the oldest is the one forgotten.
       lastReportedAt.delete(built.rateKey);
       lastReportedAt.set(built.rateKey, at);
-      if (lastReportedAt.size > MAX_REMEMBERED_FINGERPRINTS) {
+      if (lastReportedAt.size > MAX_REMEMBERED_RATE_KEYS) {
         const oldest = lastReportedAt.keys().next();
         if (!oldest.done) lastReportedAt.delete(oldest.value);
       }
