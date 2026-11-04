@@ -223,9 +223,29 @@ describe("an imported author's row", () => {
       message({ sender_id: null, author_name: "Discord Dan" }),
     );
     const initials = tree.root.find(
-      (node) => (node.type as unknown) === "Text" && node.props.children === "DD",
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "DD",
     );
     expect(JSON.stringify(initials.props.style)).toContain("Figtree_700Bold");
+  });
+});
+
+// The system actor (`SYSTEM_SENDER_ID`) posts the chapter welcome, poll-expiry
+// notices and invite-accept DMs. It is on no roster, so it used to fall through
+// to "Member 000000" beside a "00" avatar (#3347).
+describe("the system actor's row", () => {
+  it("reads Frapp, with initials drawn from that name", () => {
+    const tree = renderItem(
+      message({ sender_id: "00000000-0000-0000-0000-000000000000" }),
+    );
+    const drawn = tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => node.props.children);
+    expect(drawn).toContain("Frapp");
+    // Mobile's `initialsFor` takes two letters from a one-word name.
+    expect(drawn).toContain("FR");
+    expect(drawn).not.toContain("Member 000000");
+    expect(drawn).not.toContain("00");
   });
 });
 
@@ -502,7 +522,9 @@ describe("reply quote (#1727)", () => {
       ).toJSON(),
     );
     // The quote's author comes first in the tree, then the row's own.
-    expect(flat.indexOf("the original")).toBeLessThan(flat.lastIndexOf("Casey"));
+    expect(flat.indexOf("the original")).toBeLessThan(
+      flat.lastIndexOf("Casey"),
+    );
   });
 
   it("says so when the parent is outside the loaded window", () => {
@@ -650,9 +672,7 @@ describe("delivery status (#1910)", () => {
 
   it("draws no delivery line on a confirmed message", () => {
     const flat = JSON.stringify(
-      renderItem(
-        message({ sender_id: VIEWER, _status: "confirmed" }),
-      ).toJSON(),
+      renderItem(message({ sender_id: VIEWER, _status: "confirmed" })).toJSON(),
     );
 
     expect(flat).not.toContain("Not confirmed");
