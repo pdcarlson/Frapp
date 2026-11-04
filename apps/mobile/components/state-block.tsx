@@ -189,7 +189,7 @@ export function NoChapterState({ noun }: { noun: string }) {
     <EmptyState
       glyph="⌂"
       title="No chapter selected"
-      body={`Choose a chapter from More → Chapter to see ${noun}.`}
+      body={`Choose a chapter from More → Switch chapter to see ${noun}.`}
     />
   );
 }

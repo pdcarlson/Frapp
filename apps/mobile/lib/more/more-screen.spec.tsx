@@ -38,6 +38,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useViewerUserId: () => "user-1",
   useStudySessions: () => ({ data: sessions }),
   useInvoices: () => ({ data: invoices }),
+  useCurrentUser: () => ({ data: { display_name: "Paul Carlson" } }),
+  useMyPoints: () => ({ data: { balance: 1240, transactions: [] } }),
+  useCurrentChapter: () => ({ data: { name: "FIJI Tau Nu" } }),
 }));
 
 import MoreScreen from "@/app/(tabs)/more";
@@ -164,5 +167,82 @@ describe("More hub clock (#2101)", () => {
 
     expect(screenText(tree)).toContain("0.0 hrs");
     expect(screenText(tree)).not.toContain("2.0 hrs");
+  });
+});
+
+describe("More hub anatomy (#1048)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 4, 12, 0, 0));
+    permissions = [];
+    events = [];
+    sessions = undefined;
+    invoices = [];
+  });
+
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    vi.useRealTimers();
+  });
+
+  it("opens on the profile card, with the name and the points balance", () => {
+    const text = screenText(render());
+    expect(text).toContain("Paul Carlson");
+    expect(text).toContain("1,240 pts");
+    expect(text.indexOf("Paul Carlson")).toBeLessThan(
+      text.indexOf("Study hours"),
+    );
+  });
+
+  it("draws labels without a description line, and names the current chapter", () => {
+    const text = screenText(render());
+    for (const label of [
+      "Study hours",
+      "Service hours",
+      "Dues",
+      "Documents",
+      "Directory",
+      "Notifications",
+      "Settings",
+      "Switch chapter",
+    ]) {
+      expect(text).toContain(label);
+    }
+    expect(text).toContain("FIJI Tau Nu");
+    // The old NavTile descriptions are gone.
+    expect(text).not.toContain("Chapter document library.");
+    expect(text).not.toContain("Actives and alumni.");
+  });
+
+  it("gives every row a chevron and a press target", () => {
+    const tree = render();
+    const buttons = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button",
+    );
+    const labels = buttons.map((node) => node.props.accessibilityLabel);
+    expect(labels).toEqual([
+      "Paul Carlson",
+      "Study hours",
+      "Service hours",
+      "Dues",
+      "Documents",
+      "Directory",
+      "Notifications",
+      "Settings",
+      "Switch chapter",
+    ]);
+  });
+
+  it("shows the Admin section only to a member who can host", () => {
+    expect(screenText(render())).not.toContain("Host check-in");
+    permissions = ["events:update"];
+    const text = screenText(render());
+    expect(text).toContain("Admin");
+    expect(text).toContain("Host check-in");
+    expect(text).toContain("No upcoming event");
   });
 });

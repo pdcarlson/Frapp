@@ -23,29 +23,30 @@ Visual truth: [`../design-system/reference/canvas-screens.dc.html`](../design-sy
 
 ## More hub (s09)
 
-Rows as drawn, top to bottom. Row anatomy: duotone icon, label, trailing status, chevron.
+Row anatomy, as drawn: duotone glyph, label, trailing status, chevron. No row carries a description line. The screen opens on a profile card (avatar, name, points balance, chevron to s15) and groups its rows below it.
 
-| Row | Destination | Trailing status as drawn |
-| --- | ----------- | ------------------------ |
-| Profile card (avatar, name, role chip, points) | `profile.tsx` (s15) | chevron |
-| Study hours | `study.tsx` (s10) | progress, e.g. "4.0 / 6.0" |
-| Dues | `dues.tsx` (s11) | warning chip, e.g. "Due Sept 15" |
-| Documents | `documents.tsx` (s12) | — |
-| Directory | `directory.tsx` (s13) | — |
-| Notifications | `notifications.tsx` (s14) | unread-count badge |
-| Service hours | `service-hours.tsx` (host of the s20 sheet) | — |
-| Settings | `preferences.tsx` (s16) | — |
-| Chapter | `(auth)/chapter-picker.tsx` | — |
-| **Admin section** (role-gated, labeled with the viewer's role, e.g. "ADMIN · PRESIDENT") | | |
-| Host check-in | `host-check-in.tsx` (s22) | — |
-| Adjust points | s23 sheet — **not rendered** until the sheet ships (#2300) | — |
+The app groups the rows differently from the board, by owner decision on 2026-11-04 (#1048): the board draws one group from Study hours to Settings, while the app splits it into chapter tools and then your own settings and chapter switcher, so the two rows the board never drew sit with their kind instead of trailing the list.
 
-The admin section renders only for members whose role grants the underlying permissions; ordinary members never see it.
+| Group | Row | Destination | Trailing status |
+| ----- | --- | ----------- | --------------- |
+| — | Profile card (avatar, name, points) | `profile.tsx` (s15) | chevron |
+| Chapter tools | Study hours | `study.tsx` (s10) | this week's total, e.g. "4.0 hrs" |
+| | Service hours | `service-hours.tsx` (host of the s20 sheet) | — |
+| | Dues | `dues.tsx` (s11) | warning chip, e.g. "Due Sept 15" |
+| | Documents | `documents.tsx` (s12) | — |
+| | Directory | `directory.tsx` (s13) | — |
+| | Notifications | `notifications.tsx` (s14) | unread-count badge |
+| You | Settings | `preferences.tsx` (s16) | — |
+| | Switch chapter | `(auth)/chapter-picker.tsx` | the current chapter's name |
+| **Admin** (role-gated, captioned "Admin") | Host check-in | `host-check-in.tsx` (s22) | the next hostable event |
+| | Adjust points | s23 sheet — **not rendered** until the sheet ships (#2300) | — |
+
+The admin section renders only for members whose role grants the underlying permissions; ordinary members never see it. The board captions it with the viewer's role ("ADMIN · PRESIDENT") and draws a role chip on the profile card; neither is drawn, because no role name is readable on mobile (`/v1/users/me/permissions` returns permissions only).
 
 Two rows above are not drawn in Canvas and exist for reachability:
 
 - **Service hours** — `service-hours.tsx` is a live route hosting the s20 sheet, and without a row it would be unreachable.
-- **Chapter** — the only entry to `(auth)/chapter-picker.tsx`. The picker is deliberately *not* forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why claim-absence is not a destination), so it needs a door.
+- **Switch chapter** — the only entry to `(auth)/chapter-picker.tsx`. The picker is deliberately *not* forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why claim-absence is not a destination), so it needs a door.
 
 **Implementation status.** Every row above except Adjust points is routed, the admin section included — its gate landed with C4 of #937. The gate is `usePermissionList()` (a thin wrapper over `useMyPermissions()`) plus `can` from `@repo/validation` (`canAny` when a gate is composite), never a bare `permissions.includes(…)`: an owner's grant is the wildcard `*`, so a membership test would hide these rows from exactly the people they exist for. Today the section's gate is `events:update` alone — see Host check-in below.
 
@@ -103,7 +104,7 @@ A missing `active_chapter_id` claim is still not a destination — see `lib/auth
 - `typedRoutes` is enabled (`experiments.typedRoutes` in `apps/mobile/app.json`), so route strings are compile-checked against the file tree **during local development**.
 - **They are not checked in CI.** The generated types live in `.expo/types` and `expo-env.d.ts`, both gitignored (`apps/mobile/.gitignore`) and written only by `expo start`. CI runs a bare `tsc`, and with those files absent `Href` widens back to `string` — a nonexistent path assigned to `Href` type-checks clean. Do not rely on the compiler to catch a bad route on a branch.
 - **`apps/mobile/lib/routes.spec.ts` is the guard that actually runs.** It walks the real route tree and resolves route literals against it, and asserts the tab bar registers exactly the four locked tabs with a backing file behind every registration. A rename that misses a call site fails there.
-- **Know what that guard does not cover.** It matches *double-quoted string literals* at `href="…"`, `href: "…"`, `asRoute("…")`, `router.replace|push|navigate("…")`, and `pathname: "…"` — the last added with C1 (#937), whose chat list is the first screen to navigate with a param and therefore the first to use the object form `router.push({ pathname: "/chat-thread", params: { channelId } })`, which every other pattern misses. A route built from a template literal, a variable, or a prop is still invisible to it — `components/nav-tile.tsx` takes `href` as a prop, so only its call sites are checked, not the component. It also only checks that literals resolve, never that a route has an inbound link, so an orphaned route stays green. When you add a route, add its entry point in the same change; neither gate will remind you.
+- **Know what that guard does not cover.** It matches *double-quoted string literals* at `href="…"`, `href: "…"`, `asRoute("…")`, `router.replace|push|navigate("…")`, and `pathname: "…"` — the last added with C1 (#937), whose chat list is the first screen to navigate with a param and therefore the first to use the object form `router.push({ pathname: "/chat-thread", params: { channelId } })`, which every other pattern misses. A route built from a template literal, a variable, or a prop is still invisible to it, which is why the More hub's rows navigate with literal `router.push("…")` calls rather than passing a route through a prop. It also only checks that literals resolve, never that a route has an inbound link, so an orphaned route stays green. When you add a route, add its entry point in the same change; neither gate will remind you.
 - All renames and removals in [`screens.md`](screens.md) MUST still land in **one PR** — a partial rename leaves half the app's links broken whether or not a compiler notices.
 - `asRoute()` in `apps/mobile/lib/href.ts` is the sanctioned escape hatch for static paths that typed-route generation misses. It MUST NOT be used to paper over a route the type-checker correctly rejects. Note it takes a plain `string`, so it defeats the dev-time check entirely — `routes.spec.ts` is what keeps its call sites honest.
 

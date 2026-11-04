@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * The grouped-list chrome the reference draws on s12, s14, s15 and s16: an
@@ -72,6 +72,11 @@ export function listRowHint(
 
 export type ListRowProps = {
   label: string;
+  /**
+   * A leading glyph, drawn before the label. The More hub's rows carry one
+   * (s09); the other grouped lists draw none.
+   */
+  leading?: ReactNode;
   /** Trailing static text — a value the member reads but cannot change here. */
   value?: string | null;
   /** A second line under the label. */
@@ -80,6 +85,12 @@ export type ListRowProps = {
   trailing?: ReactNode;
   onPress?: () => void;
   accessibilityHint?: string;
+  /**
+   * What a screen reader reads as the row's value when the trailing status is
+   * a drawn element (a count badge, a chip) rather than `value` text. Defaults
+   * to `value`.
+   */
+  accessibilityValue?: string;
   /** Renders the label in the destructive hue. Does not itself confirm anything. */
   destructive?: boolean;
   disabled?: boolean;
@@ -87,11 +98,13 @@ export type ListRowProps = {
 
 export function ListRow({
   label,
+  leading,
   value,
   description,
   trailing,
   onPress,
   accessibilityHint,
+  accessibilityValue,
   destructive = false,
   disabled = false,
 }: ListRowProps) {
@@ -100,6 +113,7 @@ export function ListRow({
 
   const content = (
     <View style={styles.row}>
+      {leading}
       <View style={styles.rowText}>
         <Text
           style={[
@@ -129,12 +143,23 @@ export function ListRow({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityValue={value ? { text: value } : undefined}
+      accessibilityValue={
+        (accessibilityValue ?? value)
+          ? { text: (accessibilityValue ?? value) as string }
+          : undefined
+      }
       accessibilityHint={listRowHint(description, accessibilityHint)}
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => (pressed ? styles.pressed : null)}
+      // Press feedback per platform. Android gets the ripple the tab bar
+      // already draws (react-navigation's `PlatformPressable`), bounded by the
+      // row because `ListSection` clips its children. iOS has no ripple, so
+      // the row lifts one rung up the surface ladder while it is held.
+      android_ripple={disabled ? undefined : { color: styles.ripple.color }}
+      style={({ pressed }) =>
+        pressed && Platform.OS !== "android" ? styles.pressed : null
+      }
     >
       {content}
     </Pressable>
@@ -199,7 +224,12 @@ function createStyles(tokens: SignetTokens) {
       flexShrink: 0,
     },
     pressed: {
-      opacity: 0.7,
+      backgroundColor: tokens.color.surface.card,
+    },
+    // Not a style a view takes: the ripple's color, kept in the factory so
+    // it derives from a token like everything else here.
+    ripple: {
+      color: tint(tokens.color.text.foreground, 0.12),
     },
   });
 }
