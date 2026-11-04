@@ -6,6 +6,7 @@ import { reactionActionType, type ChatMessage } from "@repo/chat-core/types";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
 import { reducer } from "@/lib/hooks/use-toast";
 import { NOBODY_BLOCKED } from "@/tests/block-list";
+import { SYSTEM_SENDER_ID } from "@repo/validation";
 
 // The real list resolves signed URLs through `useFrappClient`, a provider this
 // suite does not stand up; a stand-in is enough to say where the list sits.
@@ -131,6 +132,30 @@ describe("MessageItem author rendering", () => {
  * #2873): no bubble, one shape for every row, and whose message it is carried
  * by the author line rather than by a side and a fill.
  */
+// Frapp's own posts (the welcome, poll results, the audit bridge) wear the
+// crest rather than initials (#3347). Radix renders the <img> only once it
+// loads, which jsdom never does, so the tile is read off the avatar root.
+describe("MessageItem system post avatar", () => {
+  it("marks the system sender's avatar as the crest, on its own field", () => {
+    const { container } = renderItem(
+      message({ sender_id: SYSTEM_SENDER_ID, kind: "system_audit" }),
+      () => null,
+    );
+
+    const avatar = container.querySelector("[data-system-avatar]");
+    expect(avatar).not.toBeNull();
+    expect((avatar as HTMLElement).style.backgroundColor).toBe(
+      "rgb(26, 26, 26)",
+    );
+  });
+
+  it("leaves a member's avatar alone", () => {
+    const { container } = renderItem(message());
+
+    expect(container.querySelector("[data-system-avatar]")).toBeNull();
+  });
+});
+
 describe("MessageItem compact layout (#2873)", () => {
   function bodyOf(container: HTMLElement): HTMLElement {
     const found = container.querySelector<HTMLElement>(

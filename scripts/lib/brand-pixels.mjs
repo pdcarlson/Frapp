@@ -599,7 +599,13 @@ export const SYNCED = [
   },
   {
     canonical: "packages/brand-assets/assets/signet-emblem-B-180.png",
-    targets: ["apps/landing/app/apple-icon.png", "apps/web/app/apple-icon.png"],
+    targets: [
+      "apps/landing/app/apple-icon.png",
+      "apps/web/app/apple-icon.png",
+      // The avatar mobile chat draws for Frapp's own posts (#3347): 32pt at up
+      // to 3x is 96px, so the 180 export, not the 1024 app icon.
+      "apps/mobile/assets/images/system-avatar.png",
+    ],
   },
   {
     canonical: "packages/brand-assets/assets/signet-emblem-B-1024.png",

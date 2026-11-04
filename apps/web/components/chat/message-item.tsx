@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Pencil, Trash2 } from "lucide-react";
+import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -39,6 +40,11 @@ import {
 } from "@repo/hooks";
 import { formatTimeOfDay, formatTimeOfDayShort } from "@repo/formatting";
 import { cn, initials } from "@/lib/utils";
+
+/** The crest tile `SignetMark` loads; `spec/ui/brand-identity.md` §2. */
+const SYSTEM_AVATAR_SRC = "/brand/signet-emblem-B.png";
+/** The crest raster's field colour ("Mark field", brand-identity.md §2). */
+const CREST_FIELD = "#1A1A1A";
 
 export interface MessageItemProps {
   message: ChatMessage;
@@ -254,6 +260,11 @@ export function MessageItem({
   // `message.sender_id.slice(...)` fallbacks below threw on it.
   const authorName = resolveAuthorName(message, nameFor);
   const authorLabel = resolveAuthorLabel(message, nameFor, viewerId);
+  // Frapp's own posts (the welcome, poll results, the audit bridge) wear the
+  // crest, not initials: the sender is the product, not a member (#3347). The
+  // tile the auth screens already load, so it is usually cached.
+  const isSystemPost = message.sender_id === SYSTEM_SENDER_ID;
+  const avatarSrc = isSystemPost ? SYSTEM_AVATAR_SRC : avatarUrl;
   const isPending = message._status === "pending";
   const isFailed = message._status === "failed";
   // An outcome we could not read, NOT a known failure — see `MessageStatus`.
@@ -844,8 +855,15 @@ export function MessageItem({
         {/* The 32px gutter, held open on every row of a run. */}
         <div className="w-8 shrink-0">
           {showHeader ? (
-            <Avatar className="h-8 w-8" aria-hidden="true">
-              {avatarUrl ? <AvatarImage src={avatarUrl} alt="" /> : null}
+            <Avatar
+              className="h-8 w-8"
+              aria-hidden="true"
+              data-system-avatar={isSystemPost || undefined}
+              style={
+                isSystemPost ? { backgroundColor: CREST_FIELD } : undefined
+              }
+            >
+              {avatarSrc ? <AvatarImage src={avatarSrc} alt="" /> : null}
               <AvatarFallback>
                 {authorName
                   ? initials(authorName)

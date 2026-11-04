@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from "react";
 import {
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -16,6 +17,7 @@ import {
   showsEditedMarker,
 } from "@repo/chat-core/message-actions";
 import { formatTimeOfDay } from "@repo/formatting";
+import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -293,13 +295,33 @@ export function MessageRowFrame({
       ) : null}
       <View style={styles.main}>
         {startsRun ? (
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {authorName
-                ? initialsFor(authorName)
-                : authorInitialsFallback(message)}
-            </Text>
-          </View>
+          message.sender_id === SYSTEM_SENDER_ID ? (
+            // Frapp's own posts (the welcome, poll results, the audit bridge)
+            // wear the crest, not initials: the sender is the product, not a
+            // member (#3347).
+            <View
+              style={[styles.avatar, styles.systemAvatar]}
+              testID="system-avatar"
+            >
+              <Image
+                // Metro asset id; a static import fails `tsc` (no `*.png`
+                // module declaration), as in `(auth)/sign-in.tsx`.
+                // eslint-disable-next-line @typescript-eslint/no-require-imports
+                source={require("../../assets/images/system-avatar.png")}
+                style={styles.systemAvatarImage}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+              />
+            </View>
+          ) : (
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {authorName
+                  ? initialsFor(authorName)
+                  : authorInitialsFallback(message)}
+              </Text>
+            </View>
+          )
         ) : (
           // A follow-on row draws no author or time, so its gutter is where a
           // screen reader hears them — and where the long-press action rides
@@ -717,6 +739,8 @@ export function ReactionRow({
 }
 
 const AVATAR_SIZE = 32;
+/** The crest raster's field colour (`spec/ui/brand-identity.md` §2, "Mark field"). */
+const CREST_FIELD = "#1A1A1A";
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
@@ -757,6 +781,16 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.popover,
       alignItems: "center",
       justifyContent: "center",
+    },
+    // The crest's own field, so its corners match the raster's while it loads.
+    // The mark never takes the chapter accent (brand-identity.md §2).
+    systemAvatar: {
+      backgroundColor: CREST_FIELD,
+      overflow: "hidden",
+    },
+    systemAvatarImage: {
+      width: AVATAR_SIZE,
+      height: AVATAR_SIZE,
     },
     // Initials at caption / 700 (§11 Row anatomy), as web's avatar draws them.
     // Weight comes from the Figtree family, never `fontWeight` (see `typeRole`).

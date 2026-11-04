@@ -8,7 +8,6 @@ import {
   type ChapterBrandingInput,
 } from './chapter-palette';
 import { buildCustomFieldRows } from './custom-field-provisioning';
-import { chapterTextMark } from '@repo/validation';
 import { LEGAL_POLICY_VERSION } from '#domain/constants/legal';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
@@ -189,13 +188,14 @@ export class ChapterOnboardingService {
         ),
     );
 
-    await this.postWelcomeMessage(chapter.id, branding).catch((err) =>
-      logThrowable(
-        this.logger,
-        'warn',
-        'Failed to post onboarding welcome message',
-        err,
-      ),
+    await this.postWelcomeMessage(chapter.id, chapter.name, branding).catch(
+      (err) =>
+        logThrowable(
+          this.logger,
+          'warn',
+          'Failed to post onboarding welcome message',
+          err,
+        ),
     );
 
     if (!dto.directory_id) {
@@ -296,19 +296,28 @@ export class ChapterOnboardingService {
     await this.customFieldRepo.seedDefaults(rows);
   }
 
-  private async postWelcomeMessage(chapterId: string, branding: Branding) {
+  private async postWelcomeMessage(
+    chapterId: string,
+    chapterName: string | null | undefined,
+    branding: Branding,
+  ) {
     const channel = await this.channelRepo.findByName(chapterId, 'general');
     if (!channel) return;
 
-    // The chapter mark's text, not `greek_letters` directly: a chapter that
-    // turned its letters off must not be welcomed by them (#2876), and one
-    // with a short name is welcomed by that ("Welcome to FIJI Tau Nu.").
-    const mark = chapterTextMark(branding)?.text;
-    const designation = (branding.designation as string | undefined)?.trim();
-    const identity = [mark, designation].filter(Boolean).join(' ').trim();
-    const welcome = identity
-      ? `Welcome to ${identity}. Invite your chapter to get the conversation started.`
-      : 'Welcome to your chapter. Invite your chapter to get the conversation started.';
+    // Names only, never Greek letters: some organizations (Phi Gamma Delta
+    // among them) don't allow their letters to be shown, and a system post is
+    // not where a chapter decides that (#2876, #3347). The short name ("FIJI")
+    // when the wizard set one, else the organization's name.
+    const shortName =
+      typeof branding.short_name === 'string' ? branding.short_name.trim() : '';
+    const designation =
+      typeof branding.designation === 'string'
+        ? branding.designation
+        : undefined;
+    const welcome = `${welcomeGreeting(
+      shortName || chapterName?.trim() || undefined,
+      designation,
+    )} Invite your chapter to get the conversation started.`;
 
     await this.messageRepo.create({
       channel_id: channel.id,
@@ -342,4 +351,27 @@ export class ChapterOnboardingService {
     };
     await this.directoryRepo.createRequest(request);
   }
+}
+
+/**
+ * The welcome post's first sentence: designation first, then the chapter's
+ * mark, as "Welcome to the Tau Nu chapter of FIJI." (owner's call, #3347).
+ * A designation typed as "Tau Nu Chapter" loses its own trailing "chapter"
+ * so the sentence never reads "chapter chapter".
+ */
+export function welcomeGreeting(
+  mark: string | undefined,
+  rawDesignation: string | undefined,
+): string {
+  const markText = mark?.trim();
+  const designation = rawDesignation
+    ?.trim()
+    .replace(/(^|\s+)chapter$/i, '')
+    .trim();
+  if (designation && markText) {
+    return `Welcome to the ${designation} chapter of ${markText}.`;
+  }
+  if (designation) return `Welcome to the ${designation} chapter.`;
+  if (markText) return `Welcome to ${markText}.`;
+  return 'Welcome to your chapter.';
 }

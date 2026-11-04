@@ -13,12 +13,12 @@ Behavior and boundaries for per-chapter branding. Visual design tokens (palette,
 
 ## Chapter mark
 
-The chapter mark is what stands for a chapter wherever the product shows its identity in a small space: the web nav's 28px chapter tile, Chat home's title row on mobile, beside the chapter name, and the welcome message onboarding posts to `#general` (#2876). In precedence order:
+The chapter mark is what stands for a chapter wherever the product shows its identity in a small space: the web nav's 28px chapter tile, and Chat home's title row on mobile, beside the chapter name. The welcome message onboarding posts to `#general` is not one of them: it names the chapter in words only, the short name or else the organization's name, and never its letters, whatever the switch below says ([`onboarding.md`](onboarding.md), #3347; corrected 2026-11-04, it used the mark from #2876 until then). In precedence order:
 
 1. **The uploaded logo.**
 2. **The short name** (`branding.short_name`), a few characters the chapter chooses: "FIJI", say. Capped at `CHAPTER_SHORT_NAME_MAX_LENGTH` in `@repo/validation`, which the tile's width sets. The API's DTO enforces the cap, and the inputs that write a short name carry it as `maxLength`. No zod schema restates it, because class-validator and zod count some emoji differently. A client reads `branding` as served and skips a value of the wrong type rather than refusing the payload: a read that refused one stored value would blank the nav for every member (#2844).
 3. **The Greek letters** (`branding.greek_letters`), **unless the chapter turned them off** (`branding.show_greek_letters: false`).
-4. **Initials of the chapter name**, only on a surface that always fills its slot (the web tile). Mobile's title row shows nothing instead, since the name is right beside it, and the welcome message leaves the mark out.
+4. **Initials of the chapter name**, only on a surface that always fills its slot (the web tile). Mobile's title row shows nothing instead, since the name is right beside it.
 
 **Why letters can be turned off.** Some organizations don't display their Greek letters at all. By custom, chapters of Phi Gamma Delta (FIJI) don't, and the beta chapter, Tau Nu, is one. The onboarding autofill fills the letters from `chapter_directory` for every chapter it knows, so without the switch that chapter's nav showed "ΦΓΔ" (reported by the owner, 2026-09-29). The positioning promise to serve "the full Greek spectrum" ([`../product/positioning.md`](../product/positioning.md)) means a chapter chooses what represents it.
 
