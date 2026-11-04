@@ -51,8 +51,10 @@ export function reopenDelayMs(reopens: number): number {
  *
  * This is chat-core's `releaseTopic`, which the API can't import:
  * chat-core ships TypeScript source for the bundler-built clients, and the
- * API's compiled output can't load it. Every API release of a channel goes
- * through this one.
+ * API's compiled output can't load it. Every release that a reopen can follow
+ * goes through this one: this class's reopens, after a `CLOSED` or a failed
+ * open, and the push worker's presence release. Shutdown frees channels with `removeChannel`,
+ * because nothing opens their topics again in that process.
  */
 export async function releaseChannel(ch: RealtimeChannel): Promise<void> {
   try {

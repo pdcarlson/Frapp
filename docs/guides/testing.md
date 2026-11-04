@@ -518,27 +518,28 @@ reading in the tracker as though it does. The pattern
   channel a seeded `off` changes no outcome, and the whole block passes with per-channel preferences
   disabled entirely.
 
-Teeth, verified against `apps/api/src/application/workers/chat-push-worker.service.ts` the same
-way §6a's table was:
+Teeth, verified on 2026-11-04 (#3365) against `apps/api/src/application/workers/chat-push-worker.service.ts`,
+`push-rules.ts` and `worker-subscription.ts` the same way §6a's table was, over the spec's 17 cases:
 
 | Mutation | Tests that fail |
 | --- | --- |
-| Subscribe to the wrong table | 13 of 15 |
-| Subscribe to the wrong schema | 13 of 15 |
+| Subscribe to the wrong table | 16 |
+| Subscribe to the wrong schema | 16 |
 | Skip `filterCanReadChannel` (push to every chapter member) | 5 |
-| Stop excluding `row.sender_id` from candidates | 6 |
+| Stop excluding `row.sender_id` from candidates | 10 |
 | `row.mentions ?? []` → `row.mentions as string[]` | 2 |
 | Fail **open** when the permission lookup throws | 1 |
 | Rethrow instead of returning `[userId, null]` on a lookup failure | 1 |
 | `resolveLevel` stops honouring channel-scoped preferences | 1 |
 | Mention no longer overrides the level in `decidePush` | 1 |
-| Never call `.subscribe()` on the registered channel | 1 |
+| Never call `.subscribe()` on the registered channel | 3 |
 | Drop the `removeChannel` teardown | 1 |
 
 The first two rows are what prove the payload path is load-bearing rather than decorative: a spec
 that called the handler method directly would still pass with the subscription pointed at nothing.
-The two that survive them are the subscription-contract cases, which assert the join and the
-teardown rather than a delivered row.
+The one case that survives them is the shutdown teardown, which asserts the removal rather than a
+delivered row. The join case fails with them, because it asserts the join on the channel that holds
+the listener.
 
 **Every row here was earned twice.** Six of these mutations left an earlier draft of this spec fully
 green, and that draft looked thorough — it had the right cases with the wrong assertions. The

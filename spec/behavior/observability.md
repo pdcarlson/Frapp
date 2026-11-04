@@ -399,3 +399,4 @@ Error **counts** used for paging live in Sentry, not PostHog. Thresholds and liv
 - Database connection pool exhaustion.
 - Stripe webhook processing failures.
 - Push notification delivery failure spike — thresholds in [`alert-routing.md`](../../docs/ops/alert-routing.md#push-notification-delivery).
+- A chat worker's Realtime subscription down (no chat pushes, or no audit mirror): the error-level event in [`alert-routing.md`](../../docs/ops/alert-routing.md#chat-worker-subscriptions), since `/health/ready` leaves the workers out (§ Health Check).

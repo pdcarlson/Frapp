@@ -439,6 +439,11 @@ describe('WorkerSubscription', () => {
             }),
           ],
         ]);
+        // Closes at 0, 1, 3, 7, 15 and 31 s. The clock runs from the first of
+        // them, not the latest, or the log would say 29 s.
+        expect(logger.error).toHaveBeenCalledWith(
+          `test-worker: ${TOPIC} has not been subscribed for 60 s (last status CLOSED, 6 failed); test rows are not being sent`,
+        );
       });
 
       it('is not reported for a blip that rejoins inside the window', async () => {
