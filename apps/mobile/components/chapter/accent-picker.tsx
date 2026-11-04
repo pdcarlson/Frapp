@@ -1,0 +1,272 @@
+import { useState, type ComponentType } from "react";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type TextInputProps,
+} from "react-native";
+import {
+  ACCENT_PRESETS,
+  normalizeAccentInput,
+  type AccentSwatch,
+} from "@repo/hooks/chapter-identity";
+import { SignetTokens } from "@repo/theme/signet";
+import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
+
+/**
+ * The chapter accent picker. One component for every place an officer sets the accent on mobile: the
+ * create-chapter wizard and Settings → Chapter.
+ *
+ * Swatches, not a hex field: the organization's own colors first
+ * (`orgColorsFor` in `@repo/org-archetypes`), then the common presets
+ * (`ACCENT_PRESETS`), with a typed hex behind "Custom color" for a chapter
+ * whose color is neither. The owner's note that started this: "nobody wants
+ * to type a hex".
+ *
+ * A swatch shows the seed exactly as stored. The app paints the shades the
+ * accent engine derives from it (lighter, for a dark seed on dark surfaces;
+ * `accent-engine.md`), which a member sees as soon as a save lands.
+ *
+ * It never reads or shows Greek letters: some organizations don't display
+ * them (`spec/behavior/branding.md` § Chapter mark).
+ */
+
+export type AccentPickerProps = {
+  /** The current accent, `#RRGGBB`. */
+  value: string;
+  /** Called with a normalized `#RRGGBB` whenever a swatch or a valid hex is chosen. */
+  onChange: (hex: string) => void;
+  /** The organization's official colors, shown first. Empty or absent hides the row. */
+  orgColors?: readonly AccentSwatch[];
+  disabled?: boolean;
+  /**
+   * The text input the custom field renders. Inside a bottom sheet pass
+   * `BottomSheetTextInput`, which keeps the field above the keyboard.
+   */
+  inputComponent?: ComponentType<TextInputProps>;
+};
+
+const HEX_PATTERN = /^#?(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+/** `#RRGGBB` for a typed hex, or null while it isn't one yet. */
+export function parseTypedHex(text: string): string | null {
+  const trimmed = text.trim();
+  return HEX_PATTERN.test(trimmed) ? normalizeAccentInput(trimmed) : null;
+}
+
+function sameHex(a: string, b: string): boolean {
+  return a.toUpperCase() === b.toUpperCase();
+}
+
+export function AccentPicker({
+  value,
+  onChange,
+  orgColors = [],
+  disabled = false,
+  inputComponent: Input = TextInput,
+}: AccentPickerProps) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+
+  const matchesSwatch =
+    orgColors.some((swatch) => sameHex(swatch.hex, value)) ||
+    ACCENT_PRESETS.some((swatch) => sameHex(swatch.hex, value));
+  // A stored accent that is no swatch was typed, so its field starts open.
+  const [customOpen, setCustomOpen] = useState(!matchesSwatch);
+  const [draft, setDraft] = useState(matchesSwatch ? "" : value);
+  const draftInvalid = draft.trim() !== "" && parseTypedHex(draft) === null;
+
+  function pick(hex: string) {
+    if (disabled) return;
+    onChange(normalizeAccentInput(hex));
+  }
+
+  function typeHex(text: string) {
+    setDraft(text);
+    const parsed = parseTypedHex(text);
+    if (parsed) onChange(parsed);
+  }
+
+  function renderSwatch(swatch: AccentSwatch, labelled: boolean) {
+    const selected = sameHex(swatch.hex, value);
+    return (
+      <Pressable
+        key={`${swatch.name}-${swatch.hex}`}
+        accessibilityRole="radio"
+        accessibilityLabel={swatch.name}
+        accessibilityState={{ selected, disabled }}
+        disabled={disabled}
+        hitSlop={4}
+        onPress={() => pick(swatch.hex)}
+        style={({ pressed }) => [
+          labelled ? styles.labelledSwatch : null,
+          pressed ? styles.pressed : null,
+        ]}
+      >
+        <View style={[styles.ring, selected ? styles.ringSelected : null]}>
+          <View style={[styles.dot, { backgroundColor: swatch.hex }]} />
+        </View>
+        {labelled ? (
+          <Text style={styles.swatchName} numberOfLines={2}>
+            {swatch.name}
+          </Text>
+        ) : null}
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={styles.root} accessibilityRole="radiogroup">
+      {orgColors.length > 0 ? (
+        <View style={styles.group}>
+          <Text style={styles.groupLabel}>Your organization</Text>
+          <View style={styles.row}>
+            {orgColors.map((swatch) => renderSwatch(swatch, true))}
+          </View>
+        </View>
+      ) : null}
+
+      <View style={styles.group}>
+        <Text style={styles.groupLabel}>
+          {orgColors.length > 0 ? "More colors" : "Colors"}
+        </Text>
+        <View style={styles.row}>
+          {ACCENT_PRESETS.map((swatch) => renderSwatch(swatch, false))}
+        </View>
+      </View>
+
+      {customOpen ? (
+        <View style={styles.group}>
+          <Text style={styles.groupLabel}>Custom color</Text>
+          <View style={styles.customRow}>
+            <View
+              accessibilityLabel="Custom color preview"
+              style={[
+                styles.customPreview,
+                {
+                  backgroundColor:
+                    parseTypedHex(draft) ?? tokens.color.surface.surface1,
+                },
+              ]}
+            />
+            <Input
+              value={draft}
+              onChangeText={typeHex}
+              placeholder="#4F2683"
+              placeholderTextColor={tokens.color.text.muted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={7}
+              editable={!disabled}
+              accessibilityLabel="Custom color hex"
+              style={[styles.input, styles.inputFlex]}
+            />
+          </View>
+          {draftInvalid ? (
+            <Text style={styles.helperText}>
+              Enter six hex digits, like #4F2683.
+            </Text>
+          ) : null}
+        </View>
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          disabled={disabled}
+          hitSlop={8}
+          onPress={() => setCustomOpen(true)}
+          style={({ pressed }) => [
+            styles.customLink,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <Text style={styles.customLinkText}>Custom color…</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+const DOT = 36;
+const RING_GAP = 3;
+
+function createStyles(tokens: SignetTokens) {
+  return StyleSheet.create({
+    root: { gap: tokens.spacing.md },
+    group: { gap: tokens.spacing.sm },
+    groupLabel: {
+      ...typeRole(tokens.typography.role.label),
+      letterSpacing: 0.3,
+      textTransform: "uppercase",
+      color: tokens.color.text.muted,
+    },
+    row: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: tokens.spacing.sm,
+    },
+    labelledSwatch: {
+      width: 72,
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+    },
+    ring: {
+      width: DOT + 2 * (RING_GAP + 2),
+      height: DOT + 2 * (RING_GAP + 2),
+      borderRadius: (DOT + 2 * (RING_GAP + 2)) / 2,
+      borderWidth: 2,
+      borderColor: "transparent",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    ringSelected: { borderColor: tokens.color.text.foreground },
+    dot: {
+      width: DOT,
+      height: DOT,
+      borderRadius: DOT / 2,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+    },
+    swatchName: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      textAlign: "center",
+    },
+    pressed: { opacity: 0.7 },
+    customRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+    },
+    customPreview: {
+      width: tokens.touch.minimum,
+      height: tokens.touch.minimum,
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+    },
+    input: {
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.surface1,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
+      ...typeRole(tokens.typography.role.body),
+      fontFamily: MONO_FONT_FAMILY,
+      color: tokens.color.text.foreground,
+    },
+    inputFlex: { flex: 1 },
+    helperText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    customLink: { alignSelf: "flex-start" },
+    customLinkText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
+    },
+  });
+}

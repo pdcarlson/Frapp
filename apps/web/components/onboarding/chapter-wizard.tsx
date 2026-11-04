@@ -16,6 +16,7 @@ import {
 import {
   ARCHETYPES,
   getArchetype,
+  orgDefaultAccent,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import {
@@ -153,7 +154,11 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
-      colorAccent: normalizeAccentInput(row.default_colors?.accent),
+      // The organization's own first color wins over the directory's: most
+      // directory rows hold one placeholder gold (`orgDefaultAccent`).
+      colorAccent: normalizeAccentInput(
+        orgDefaultAccent(row.org_name) ?? row.default_colors?.accent,
+      ),
     });
     // A different chapter identity invalidates any prior consent — re-affirm.
     setAcceptedLegal(false);

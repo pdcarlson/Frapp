@@ -67,6 +67,8 @@ vi.mock("@repo/org-archetypes", () => ({
     ifc: { key: "ifc", label: "IFC", short: "IFC", council: "Interfraternity" },
   },
   getArchetype: (key: string) => ({ key: key || "ifc" }),
+  orgDefaultAccent: (name: string | null | undefined) =>
+    name === "Phi Gamma Delta" ? "#4F2683" : undefined,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -330,7 +332,9 @@ describe("ChapterWizard chapter mark (#2876)", () => {
         university: "Rensselaer Polytechnic Institute",
         university_short: "RPI",
         founded_year: 1893,
-        default_colors: null,
+        // The placeholder most directory rows carry; the organization's own
+        // color must win over it.
+        default_colors: { accent: "#C9A56F" },
       },
     ];
     const pickFiji = async () => {
@@ -364,6 +368,7 @@ describe("ChapterWizard chapter mark (#2876)", () => {
         greek_letters: "ΦΓΔ",
         short_name: "FIJI",
         show_greek_letters: false,
+        colors: { accent: "#4F2683" },
       });
     } finally {
       directoryRows.current = [];

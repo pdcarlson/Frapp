@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 import { formatTimer } from "@repo/formatting";
 
 /**
@@ -52,7 +53,8 @@ export function SessionCard({
   onEnd,
 }: SessionCardProps) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
 
   const statusColor = isPaused
     ? tokens.color.semantic.warning
@@ -125,7 +127,7 @@ export function SessionCard({
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     card: {
       borderRadius: tokens.radius.cardLarge,
@@ -145,7 +147,7 @@ function createStyles(tokens: SignetTokens) {
       // Fixed-width digits, so the seconds column does not shuffle every tick.
       fontVariant: ["tabular-nums"],
       letterSpacing: -1,
-      color: tokens.color.gold.askText,
+      color: brand.accent,
       marginTop: tokens.spacing.sm,
     },
     statusRow: {

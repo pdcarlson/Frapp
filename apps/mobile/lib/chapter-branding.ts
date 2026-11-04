@@ -28,6 +28,15 @@ export type ChapterBranding = {
    * back to `gold.onHouse` alongside {@link accentPrimary}.
    */
   accentOnPrimary: string;
+  /**
+   * A quiet accent-tinted fill and its border — `--signet-accent-subtle-bg`
+   * (step 3) and `--signet-accent-border` (step 7) — for a selected chip or a
+   * highlighted row that sits on a neutral surface and carries
+   * {@link accent} text. Fall back together to the house `gold.askFill` /
+   * `gold.askBorder` pair.
+   */
+  accentSubtle: string;
+  accentBorder: string;
   /** Signed URL from `GET /v1/chapters/current`, or null when no logo is set. */
   logoUrl: string | null;
   /** Falls back to text branding when there is no logo (spec/behavior/branding.md). */
@@ -121,6 +130,8 @@ export function useChapterBranding(): ChapterBranding {
 
   const brandAccent = tokens.color.gold.house;
   const brandOnAccent = tokens.color.gold.onHouse;
+  const brandSubtle = tokens.color.gold.askFill;
+  const brandBorder = tokens.color.gold.askBorder;
   // `|| null` rather than `??`: an empty string means unset, as it does for
   // the palette's roles below.
   const logoUrl = data?.logo_url || null;
@@ -135,6 +146,9 @@ export function useChapterBranding(): ChapterBranding {
     palette,
     "--signet-accent-on-primary",
   );
+  const generatedSubtle = readString(palette, "--signet-accent-subtle-bg");
+  const generatedBorder = readString(palette, "--signet-accent-border");
+  const subtlePair = generatedSubtle && generatedBorder;
   // Both present or neither used — see the doc comment above.
   const accentPrimary =
     generatedAccentPrimary && generatedAccentOnPrimary
@@ -150,6 +164,8 @@ export function useChapterBranding(): ChapterBranding {
       accent: generatedAccent ?? brandAccent,
       accentPrimary,
       accentOnPrimary,
+      accentSubtle: subtlePair ? generatedSubtle : brandSubtle,
+      accentBorder: subtlePair ? generatedBorder : brandBorder,
       logoUrl,
       chapterName,
       textMark,
@@ -158,6 +174,11 @@ export function useChapterBranding(): ChapterBranding {
       accentOnPrimary,
       accentPrimary,
       brandAccent,
+      brandBorder,
+      brandSubtle,
+      generatedBorder,
+      generatedSubtle,
+      subtlePair,
       chapterName,
       generatedAccent,
       logoUrl,

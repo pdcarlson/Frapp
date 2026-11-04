@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 import { initialsFor } from "@/lib/chat/display-name";
 import {
   HIDE_CONVERSATION_LABEL,
@@ -97,7 +98,8 @@ export function ChannelRow({
   onLongPress,
 }: ChannelRowProps) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
 
   // Red means "you were addressed": an @-mention, or anything unread in a
   // direct message (foundations.md §5). The DM half was missing here until
@@ -209,7 +211,8 @@ export function UnreadBadge({
   addressed: boolean;
 }) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
   return (
     <View
       style={[
@@ -254,7 +257,7 @@ export function accessibilityLabelFor({
   return parts.join(", ");
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   const AVATAR_SIZE = 34;
 
   return StyleSheet.create({
@@ -281,7 +284,7 @@ function createStyles(tokens: SignetTokens) {
     },
     sigilPinned: {
       ...typeRole(tokens.typography.role.title),
-      color: tokens.color.gold.askText,
+      color: brand.accent,
     },
     avatar: {
       width: AVATAR_SIZE,

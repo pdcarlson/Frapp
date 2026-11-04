@@ -11,6 +11,7 @@ import type { ChatNotificationLevel } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 import { MuteGlyph } from "./mute-glyph";
 
 /**
@@ -151,7 +152,8 @@ export function NotificationLevelControl({
   onLayout?: (event: LayoutChangeEvent) => void;
 }) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
 
   const isMuted = menu.level === "off";
   const glyphColor = menu.blocked
@@ -204,7 +206,8 @@ export function NotificationLevelMenu({
   anchor: { top: number; right: number };
 }) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
   const titleRef = useRef<React.ComponentRef<typeof Text>>(null);
 
   // Opening hides the trigger that had a screen reader's focus, which clears
@@ -283,7 +286,7 @@ export function NotificationLevelMenu({
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     trigger: {
       flexDirection: "row",
@@ -333,21 +336,21 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.xs,
     },
     optionSelected: {
-      backgroundColor: tint(tokens.color.gold.house, 0.18),
+      backgroundColor: tint(brand.accent, 0.18),
     },
     optionLabel: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
     },
     optionLabelSelected: {
-      color: tokens.color.gold.askText,
+      color: brand.accent,
     },
     optionDescription: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
     optionDescriptionSelected: {
-      color: tokens.color.gold.askText,
+      color: brand.accent,
     },
     cancel: {
       minHeight: 44,
