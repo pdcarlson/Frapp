@@ -224,8 +224,12 @@ export type NamedAnalyticsEventProperties = {
   [key: string]: string | number | boolean | null;
 };
 
+/** The app a client names itself as; `TrackEventDto.app`. */
+export type NamedAnalyticsEventApp = "web" | "mobile";
+
 export type NamedAnalyticsEventBody = {
   name: string;
+  app: NamedAnalyticsEventApp;
   chapter_id?: string;
   properties?: NamedAnalyticsEventProperties;
 };
@@ -233,9 +237,14 @@ export type NamedAnalyticsEventBody = {
 /**
  * Body for `POST /v1/analytics/events`. Named product events never go to the
  * vendor SDK. Returns `null` when a chapter id is required and missing.
+ *
+ * `app` is required so neither client can forget it: the API stamps it on the
+ * event, which is how usage splits by platform
+ * (`spec/behavior/observability.md` § Correlation schema).
  */
 export function namedAnalyticsEventBody(input: {
   name: string;
+  app: NamedAnalyticsEventApp;
   chapterId?: string | null;
   properties?: NamedAnalyticsEventProperties;
   requireChapter?: boolean;
@@ -243,6 +252,7 @@ export function namedAnalyticsEventBody(input: {
   if (input.requireChapter && !input.chapterId) return null;
   return {
     name: input.name,
+    app: input.app,
     ...(input.chapterId ? { chapter_id: input.chapterId } : {}),
     ...(input.properties == undefined ? {} : { properties: input.properties }),
   };
@@ -251,18 +261,6 @@ export function namedAnalyticsEventBody(input: {
 export function resetPostHog(): void {
   const adapter = currentAdapter();
   if (adapter) resetKeepingOptOut(adapter);
-}
-
-/**
- * Capture a product or page event on the bound adapter. Landing uses this
- * for path-only pageviews and CTA clicks so it does not fork the singleton.
- */
-export function captureAnalyticsEvent(
-  event: string,
-  properties?: Record<string, unknown>,
-): void {
-  if (optedOut) return;
-  currentAdapter()?.capture(event, properties);
 }
 
 export function getPostHogDistinctId(): string | undefined {

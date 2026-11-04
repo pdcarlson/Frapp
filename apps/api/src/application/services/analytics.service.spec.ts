@@ -259,6 +259,50 @@ describe('AnalyticsService', () => {
       });
     });
 
+    it('groups the event by chapter and stamps the app (#3381)', async () => {
+      const { repo: chapters } = makeChapterRepo({
+        data: { analytics_opt_out: false },
+        error: null,
+      });
+      const service = await buildService({ salt: SALT, chapters, provider });
+
+      await service.track('opened-channel', USER_ID, {
+        chapterId: CHAPTER_ID.toUpperCase(),
+        properties: { channel_kind: 'general' },
+        app: 'web',
+      });
+
+      // The same digest `GET /identity` hands the client for `group()`.
+      expect(provider.capture).toHaveBeenCalledWith({
+        name: 'opened-channel',
+        distinctId: hashUserIdForAnalytics(SALT, USER_ID),
+        properties: { channel_kind: 'general', app: 'web' },
+        groups: { chapter: hashChapterIdForAnalytics(SALT, CHAPTER_ID) },
+      });
+      expect(JSON.stringify(provider.capture.mock.calls[0][0])).not.toContain(
+        CHAPTER_ID,
+      );
+    });
+
+    it('sends no group without a chapter, and no app when none is named', async () => {
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
+      const service = await buildService({ salt: SALT, chapters, provider });
+
+      await service.track('opened-app', USER_ID, { app: 'mobile' });
+      await service.track('opened-app', USER_ID);
+
+      expect(provider.capture).toHaveBeenNthCalledWith(1, {
+        name: 'opened-app',
+        distinctId: hashUserIdForAnalytics(SALT, USER_ID),
+        properties: { app: 'mobile' },
+      });
+      expect(provider.capture).toHaveBeenNthCalledWith(2, {
+        name: 'opened-app',
+        distinctId: hashUserIdForAnalytics(SALT, USER_ID),
+        properties: undefined,
+      });
+    });
+
     it('suppresses events for an opted-out chapter (defense in depth)', async () => {
       const { repo: chapters } = makeChapterRepo({
         data: { analytics_opt_out: true },
@@ -378,10 +422,12 @@ describe('AnalyticsService', () => {
         { step: 7 },
       );
 
+      // Stamped as the API's own, and no chapter group: the chapter is
+      // already the distinct id, and a group would need a person per chapter.
       expect(provider.capture).toHaveBeenCalledWith({
         name: 'activation-checkout-completed',
         distinctId: hashChapterIdForAnalytics(SALT, 'chapter-1'),
-        properties: { step: 7 },
+        properties: { step: 7, app: 'api' },
       });
       // The raw chapter id must not appear anywhere in the payload.
       expect(JSON.stringify(provider.capture.mock.calls[0][0])).not.toContain(
@@ -535,6 +581,89 @@ describe('AnalyticsService', () => {
       // omit-path fan-out over all the caller's chapters.
       expect(members.findByUser).not.toHaveBeenCalled();
     });
+
+    it('sends the chapter group and the app through the client path (#3381)', async () => {
+      const members = makeMemberRepo();
+      members.findByUserAndChapter.mockResolvedValue(makeMember(CHAPTER_ID));
+      const { repo: chapters } = makeChapterRepo({
+        data: { analytics_opt_out: false },
+        error: null,
+      });
+      const service = await buildService({
+        salt: SALT,
+        chapters,
+        provider,
+        members,
+      });
+
+      await service.trackFromClient('opened-channel', USER_ID, {
+        chapterId: CHAPTER_ID.toUpperCase(),
+        properties: { channel_kind: 'general' },
+        app: 'mobile',
+      });
+
+      expect(provider.capture).toHaveBeenCalledTimes(1);
+      expect(provider.capture).toHaveBeenCalledWith({
+        name: 'opened-channel',
+        distinctId: hashUserIdForAnalytics(SALT, USER_ID),
+        properties: { channel_kind: 'general', app: 'mobile' },
+        groups: { chapter: hashChapterIdForAnalytics(SALT, CHAPTER_ID) },
+      });
+    });
+
+    it('sends the app, and no group, on the chapter-less client path', async () => {
+      const members = makeMemberRepo();
+      members.findByUser.mockResolvedValue([]);
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        chapters,
+        provider,
+        members,
+      });
+
+      await service.trackFromClient('opened-app', USER_ID, { app: 'web' });
+
+      expect(provider.capture).toHaveBeenCalledWith({
+        name: 'opened-app',
+        distinctId: hashUserIdForAnalytics(SALT, USER_ID),
+        properties: { app: 'web' },
+      });
+    });
+
+    // The API stamps `app` and passes PostHog's `$` keys itself, so a client
+    // can't pass itself off as the API or steer groups and person processing.
+    // (Which client it is, web or mobile, is what it reports in `app`.)
+    it.each([
+      ['app', { app: 'api' }],
+      ['$groups', { $groups: 'x' }],
+      ['$process_person_profile', { $process_person_profile: true }],
+    ])(
+      'rejects a client event whose properties set %s',
+      async (_key, properties) => {
+        const members = makeMemberRepo();
+        members.findByUserAndChapter.mockResolvedValue(makeMember(CHAPTER_ID));
+        const { repo: chapters } = makeChapterRepo({
+          data: { analytics_opt_out: false },
+          error: null,
+        });
+        const service = await buildService({
+          salt: SALT,
+          chapters,
+          provider,
+          members,
+        });
+
+        await expect(
+          service.trackFromClient('opened-channel', USER_ID, {
+            chapterId: CHAPTER_ID,
+            properties,
+            app: 'web',
+          }),
+        ).rejects.toThrow(ContentFreePropertyError);
+        expect(provider.capture).not.toHaveBeenCalled();
+      },
+    );
 
     it('suppresses for a member of an opted-out chapter (with chapter_id)', async () => {
       const members = makeMemberRepo();
@@ -731,6 +860,40 @@ describe('AnalyticsService', () => {
       expect(members.findByUser).not.toHaveBeenCalled();
       expect(provider.capture).not.toHaveBeenCalled();
     });
+
+    // So a payload a local run (no salt) accepts is one staging accepts too.
+    it.each([
+      ['a reserved key', { $set: 'x' }],
+      ['a content/PII key', { email: 'x' }],
+    ])(
+      'rejects %s even when analytics is unconfigured (no salt)',
+      async (_label, properties) => {
+        const members = makeMemberRepo();
+        const { repo: chapters } = makeChapterRepo({ data: null, error: null });
+        const service = await buildService({
+          salt: '',
+          chapters,
+          provider,
+          members,
+        });
+
+        await expect(
+          service.trackFromClient('opened-channel', USER_ID, { properties }),
+        ).rejects.toThrow(ContentFreePropertyError);
+        await expect(
+          service.track('opened-channel', USER_ID, { properties }),
+        ).rejects.toThrow(ContentFreePropertyError);
+        await expect(
+          service.trackForChapter(
+            'activation-onboarding-submitted',
+            CHAPTER_ID,
+            properties,
+          ),
+        ).rejects.toThrow(ContentFreePropertyError);
+        expect(members.findByUser).not.toHaveBeenCalled();
+        expect(provider.capture).not.toHaveBeenCalled();
+      },
+    );
 
     it('rejects a content/PII payload up front, even on a path that would suppress', async () => {
       const members = makeMemberRepo();

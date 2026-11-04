@@ -64,7 +64,7 @@ describe("mobile AnalyticsProvider", () => {
     expect(harness.post).toHaveBeenCalledTimes(1);
     expect(harness.post.mock.calls[0]?.[0]).toBe("/v1/analytics/events");
     expect(harness.post.mock.calls[0]?.[1]).toEqual({
-      body: { name: "logged-hours", chapter_id: "chap-mobile" },
+      body: { name: "logged-hours", app: "mobile", chapter_id: "chap-mobile" },
     });
   });
 
