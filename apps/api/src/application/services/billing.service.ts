@@ -11,6 +11,7 @@ import {
   chargeIdFromLatestCharge,
   declineReasonFromLastPaymentError,
   customerIdFrom,
+  invoiceSubscriptionId,
   type IBillingProvider,
   type WebhookEvent,
   type CheckoutSessionWebhookObject,
@@ -832,8 +833,17 @@ export class BillingService {
 
   private async handleInvoicePaid(event: WebhookEvent): Promise<void> {
     const invoice = event.data.object as InvoiceWebhookObject;
-    const subscriptionId = invoice.subscription;
-    if (!subscriptionId) return;
+    const subscriptionId = invoiceSubscriptionId(invoice);
+    if (!subscriptionId) {
+      // A one-off or quote invoice has no chapter subscription to apply. Logged
+      // rather than silent: until #3204 every Basil-shaped invoice.paid took
+      // this branch, and nothing showed it.
+      this.logger.warn(
+        `invoice.paid ${event.id} names no subscription ` +
+          `(parent type: ${invoice.parent?.type ?? 'none'}); nothing to apply`,
+      );
+      return;
+    }
 
     const chapter = await this.findChapterBySubscription(
       subscriptionId,

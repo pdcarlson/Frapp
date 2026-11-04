@@ -58,9 +58,48 @@ export interface SubscriptionWebhookObject {
   customer?: string | { id: string } | null;
 }
 
+/**
+ * The `invoice.*` webhook object, as far as the billing handler reads it.
+ *
+ * Since API version 2025-03-31.basil Stripe puts the subscription id at
+ * `parent.subscription_details.subscription` and no longer sends a top-level
+ * `subscription` (#3204). A webhook payload follows its endpoint's own
+ * `api_version`, or the account default when that is null, never the SDK's
+ * pinned version, so the shape here is set in the Stripe dashboard, not in
+ * code. The staging endpoint is unpinned and received `2026-08-26.dahlia`
+ * payloads (event `evt_1UUCiw3Dzz3XLCb6DPDMNZ5O`, read 2026-11-04).
+ */
 export interface InvoiceWebhookObject {
-  subscription?: string | null;
+  id?: string;
+  parent?: {
+    type?: string;
+    subscription_details?: {
+      // An id string on webhook payloads; an expanded object only under
+      // explicit expansion.
+      subscription?: string | { id: string } | null;
+    } | null;
+  } | null;
+  /**
+   * Pre-Basil payloads only. Kept as a read fallback on purpose: no endpoint
+   * should be pinned before Basil, but the live endpoint's version can't be
+   * read from an agent session (test-mode access only), and reading one extra
+   * field costs nothing.
+   */
+  subscription?: string | { id: string } | null;
   customer?: string | { id: string } | null;
+}
+
+/**
+ * The subscription a paid invoice belongs to, from the Basil-and-later
+ * `parent.subscription_details` first, then the pre-Basil top-level field.
+ * Null for an invoice no subscription generated (a one-off or quote invoice).
+ */
+export function invoiceSubscriptionId(
+  invoice: InvoiceWebhookObject,
+): string | null {
+  const ref =
+    invoice.parent?.subscription_details?.subscription ?? invoice.subscription;
+  return typeof ref === 'string' ? ref : (ref?.id ?? null);
 }
 
 /** Normalize a Stripe `customer` reference (id, expanded object, or null). */

@@ -26,6 +26,19 @@
    warns at boot when the registered endpoint is missing one — read the API's startup
    log after creating an endpoint, and do not treat a green deploy as confirmation.
 
+   **Payload API version.** A webhook payload's shape follows the endpoint's own API
+   version, which can be set only when the endpoint is created (the update API has no
+   `api_version`), or the account default when the endpoint has none. Staging's
+   `we_1U93QB3Dzz3XLCb6mYeeNzUF` has none, and its `invoice.paid` events arrive as
+   `2026-08-26.dahlia` (both read from the test-mode account, 2026-11-04). Since
+   `2025-03-31.basil` an invoice names its subscription at
+   `parent.subscription_details.subscription`; the handler read the removed top-level
+   field, so every `invoice.paid` was ignored until
+   [#3204](https://github.com/pdcarlson/Frapp/issues/3204). The SDK's pinned version
+   shapes only outbound requests. `StripeWebhookConsistencyService` logs at boot which
+   version the endpoint receives, which is also how the live endpoint's version gets
+   read: agent sessions have test-mode access only.
+
 4. Copy the webhook signing secret → `STRIPE_WEBHOOK_SECRET`.
 5. Create a Product + Price → copy price ID → `STRIPE_PRICE_ID`.
 6. Save the customer portal settings (Settings → Billing → Customer portal), even
