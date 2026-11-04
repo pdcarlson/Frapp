@@ -1,8 +1,12 @@
 # Mobile Interaction Patterns
 
-> Client-side mechanics behind the screens: bottom sheets, QR check-in, study sessions, dues payment, chat, push notifications, and the minimum-version check. Server-side rules stay in [`../../behavior/`](../../behavior/README.md) — this doc links, never restates.
+> Client-side mechanics behind the screens: screen headers, bottom sheets, QR check-in, study sessions, dues payment, chat, push notifications, and the minimum-version check. Server-side rules stay in [`../../behavior/`](../../behavior/README.md) — this doc links, never restates.
 
 Screen ids reference [`screens.md`](screens.md); surface rules (native-feel, Expo Go isolation, styling) are in [`README.md`](README.md).
+
+## Screen headers
+
+A shell screen (`components/screen-shell.tsx`) opens on its title and goes straight into its body. There is no line under the title that says what the screen is for: the member is already on it, and the line costs a row above the fold (owner decision 2026-11-04, [#3023](https://github.com/pdcarlson/Frapp/issues/3023)). The shell's `subtitle` is for a fact about this one item that the title can't carry, and the board draws exactly one: s07 Event detail, whose line under the event's name is its time and place ("Tonight · 6:00 – 7:00 PM · Great Hall"). The app draws the time there and the place in the row beneath it, beside the event's Mandatory and points chips. A state screen (loading, empty, error) passes no subtitle, because its state block already says it. s13 Directory draws its own header and follows the same rule.
 
 ## Bottom sheets
 

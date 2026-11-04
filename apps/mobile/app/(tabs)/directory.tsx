@@ -146,7 +146,6 @@ export default function DirectoryScreen() {
       <Text accessibilityRole="header" style={styles.title}>
         Directory
       </Text>
-      <Text style={styles.subtitle}>Actives and alumni.</Text>
 
       <SearchField
         value={query}
@@ -348,10 +347,6 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.foreground,
       letterSpacing: -0.4,
-    },
-    subtitle: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
     },
     row: {
       flexDirection: "row",
