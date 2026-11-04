@@ -1,11 +1,10 @@
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useNotifications } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { CountBadge } from "@/components/more/count-badge";
 import { NotificationsGlyph } from "@/components/more/more-glyphs";
-import { selectUnreadIds } from "@/lib/more/notifications";
-import { tint, useFrappTheme } from "@/lib/theme";
+import { selectUnreadNonChatCount } from "@/lib/more/notifications";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * The notification inbox's entry point: a bell on Chat home's title row, with
@@ -16,6 +15,24 @@ import { tint, useFrappTheme } from "@/lib/theme";
  * replaced the Notifications row in More (owner decision 2026-11-04,
  * `spec/ui/mobile/navigation.md` § Global entries outside the tab bar).
  *
+ * ## The badge is house gold
+ *
+ * Fixed `gold.house`, never the chapter accent, as the web bell's badge is
+ * (`spec/ui/design-system/components.md` § App bar chips). A count is not
+ * direct address, and on this screen it sits beside the channel rows'
+ * mention-red badges: a chapter whose accent is red would otherwise draw an
+ * inbox count that reads as "someone addressed you".
+ *
+ * ## It counts what the channel list doesn't
+ *
+ * The chat push worker writes an inbox row for every chat push it sends (DMs,
+ * mentions, announcements), and the channel rows below already badge those
+ * messages from read receipts. Reading the thread clears the channel badge
+ * but not the inbox row, so counting chat rows here would leave the bell
+ * showing a message the member has already read, one row above the badge
+ * that cleared. The bell counts the rest, `selectUnreadNonChatCount`, the
+ * same split the app-icon badge makes (`lib/notifications/use-badge-sync.ts`).
+ *
  * The bell is the inbox's glyph and nothing else's: a channel's alert level
  * draws a speaker (`components/chat/mute-glyph.tsx`), so the two controls
  * never share a silhouette.
@@ -25,7 +42,7 @@ export function NotificationsBell() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const notificationsQuery = useNotifications();
-  const unreadCount = selectUnreadIds(notificationsQuery.data).length;
+  const unreadCount = selectUnreadNonChatCount(notificationsQuery.data);
 
   return (
     <Pressable
@@ -50,8 +67,14 @@ export function NotificationsBell() {
     >
       <NotificationsGlyph color={tokens.color.text.foreground} neutral />
       {unreadCount > 0 ? (
-        <View style={styles.badge} pointerEvents="none">
-          <CountBadge count={unreadCount} />
+        <View
+          testID="notifications-badge"
+          style={styles.badge}
+          pointerEvents="none"
+        >
+          <Text style={styles.badgeText}>
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </Text>
         </View>
       ) : null}
     </Pressable>
@@ -75,8 +98,22 @@ function createStyles(tokens: SignetTokens) {
     },
     badge: {
       position: "absolute",
-      top: -4,
-      right: -6,
+      top: -2,
+      right: -4,
+      minWidth: 18,
+      height: 18,
+      paddingHorizontal: tokens.spacing.xs,
+      borderRadius: 9,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: tokens.color.gold.house,
+    },
+    badgeText: {
+      // The web bell's badge type (`top-bar.tsx`): small and bold, so a
+      // two-digit count fits the 18pt pill.
+      ...typeRole({ size: 11, weight: tokens.typography.weight.bold }),
+      lineHeight: 14,
+      color: tokens.color.gold.onHouse,
     },
   });
 }

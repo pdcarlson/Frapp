@@ -3,8 +3,11 @@ import { tint } from "@/lib/theme";
 
 /**
  * Per-channel notification level (`spec/ui/design-system/iconography.md`
- * §6.2.2). Geometry matches web's `MuteGlyph`: a speaker with sound waves, and
- * an × for the waves when `active` (muted) so the off state reads at a glance.
+ * §6.2.2). Geometry matches web's `MuteGlyph`: a speaker (a box and its cone,
+ * split by a detail stroke) with two sound waves, and an × for the waves when
+ * `active` (muted) so the off state reads at a glance. The box, the split and
+ * the second wave are what tell it from web's `AnnouncementGlyph`, a single
+ * flared horn with one wave.
  *
  * A speaker, not a bell, since #3362: the bell is the notification inbox's
  * glyph on Chat home, and the two controls must not share a silhouette one tap
@@ -24,7 +27,7 @@ export function MuteGlyph({
   size = 24,
 }: {
   color: string;
-  /** `true` means muted — the slash is the "this is off" mark. */
+  /** `true` means muted: an × replaces the waves as the "this is off" mark. */
   active?: boolean;
   size?: number;
 }) {
@@ -37,6 +40,13 @@ export function MuteGlyph({
         strokeLinecap="round"
         strokeLinejoin="round"
         fill={active ? tint(color, ACTIVE_FILL_ALPHA) : INACTIVE_FILL}
+      />
+      <Path
+        d="M7.5 9.5v5"
+        stroke={color}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinecap="round"
+        fill="none"
       />
       {active ? (
         <Path

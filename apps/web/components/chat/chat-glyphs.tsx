@@ -226,9 +226,11 @@ export function ThreadGlyph({ className }: ChatGlyphProps) {
 }
 
 /**
- * Notification level (#296). A speaker with sound waves; `active` means muted,
- * and an × replaces the waves as a detail stroke so the muted state reads at a
- * glance rather than only through the label beside it.
+ * Notification level (#296). A speaker (a box and its cone, split by a detail
+ * stroke) with two sound waves; `active` means muted, and an × replaces the
+ * waves so the muted state reads at a glance rather than only through the
+ * label beside it. The box, the split and the second wave are what tell it
+ * from {@link AnnouncementGlyph}, a single flared horn with one wave.
  *
  * A speaker, not a bell, since #3362: the bell is the notification inbox's
  * glyph (`NotificationsGlyph` in the top bar, and on the phone's Chat home), so
@@ -242,6 +244,7 @@ export function MuteGlyph({ className, active }: ChatGlyphProps) {
         {...stroke}
         {...fillProps(active)}
       />
+      <path d="M7.5 9.5v5" {...detail} />
       {active ? (
         <path d="M15.5 9.5l5 5M20.5 9.5l-5 5" {...detail} />
       ) : (

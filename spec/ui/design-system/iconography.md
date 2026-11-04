@@ -265,7 +265,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Direct or group message | `DirectMessageGlyph` |
 | Connection lost | `OfflineGlyph` |
 | Reply to a message | `ThreadGlyph` |
-| Per-channel notification level / mute: a speaker with sound waves, an × for the waves when muted. Not a bell, since #3362: the bell is the notification inbox's | `MuteGlyph` |
+| Per-channel notification level / mute: a speaker (box and cone, split by a detail stroke) with two waves, an × for the waves when muted. Not a bell, since #3362: the bell is the notification inbox's. The box, split and second wave keep it apart from `AnnouncementGlyph`'s single horn and wave | `MuteGlyph` |
 | Event location | `LocationGlyph` |
 | Event card | `EventsGlyph` (shared with the nav intent) |
 | Task card | `TasksGlyph` (shared) |

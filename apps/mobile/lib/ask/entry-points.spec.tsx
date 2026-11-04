@@ -168,6 +168,28 @@ describe.each([
   });
 });
 
+// #3362: Chat home's notifications bell shares the title row with the pill,
+// and is drawn whether or not the build has Ask.
+describe("Chat home (s04) notifications bell", () => {
+  const screen = () => <ChatHomeScreen />;
+
+  it.each([
+    ["off", undefined],
+    ["on", "1"],
+  ])("draws the notifications bell with Ask %s", (_state, flag) => {
+    if (flag) process.env[ASK_FLAG_ENV_KEY] = flag;
+    const tree = render(screen());
+
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === "Notifications",
+      ),
+    ).toHaveLength(1);
+  });
+});
+
 describe("the ask route (frapp://ask)", () => {
   it("redirects to Chat home in a build without Ask", () => {
     const tree = render(<AskScreen />);

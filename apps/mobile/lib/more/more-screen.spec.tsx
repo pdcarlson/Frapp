@@ -55,7 +55,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 
 import MoreScreen from "@/app/(tabs)/more";
 import { ListRow, ListSection } from "@/components/list-section";
-import { CountBadge } from "@/components/more/count-badge";
 
 /**
  * Unmounted in `afterEach`, not at the end of each test: the shared clock is
@@ -270,7 +269,6 @@ describe("More hub anatomy (#1048)", () => {
     expect(
       tree.root.findAllByType(ListRow).map((row) => row.props.label),
     ).not.toContain("Notifications");
-    expect(tree.root.findAllByType(CountBadge)).toHaveLength(0);
   });
 
   it("gives every row a chevron and a press target", () => {

@@ -6,7 +6,7 @@ import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { textHeadings } from "@/test/screen-text";
+import { drawnText as screenTextOf, textHeadings } from "@/test/screen-text";
 
 /**
  * #2303 — the chat home's wiring of Hide conversation, rendered for real.
@@ -69,7 +69,7 @@ const {
   queryErrors: { unread: false, levels: false },
   // The inbox rows behind the title row's bell (#3362).
   notificationsData: {
-    value: [] as { id: string; read_at: string | null }[],
+    value: [] as { id: string; read_at: string | null; data?: unknown }[],
   },
 }));
 
@@ -166,7 +166,6 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import ChatHomeScreen from "@/app/(tabs)/index";
 import { ChannelRow } from "@/components/chat/channel-row";
-import { CountBadge } from "@/components/more/count-badge";
 
 const general = { id: "c-general", name: "general", type: "PUBLIC" };
 const dmAlice = {
@@ -801,15 +800,24 @@ describe("Chat home's title (#2485)", () => {
  * title row (owner decision 2026-11-04), where the web keeps it too.
  */
 describe("Chat home notifications bell (#3362)", () => {
-  it("draws the bell in every build, with no badge while nothing is unread", () => {
+  function badge(tree: ReactTestRenderer) {
+    return pressableLabelled(tree, "Notifications").findAllByProps({
+      testID: "notifications-badge",
+    });
+  }
+
+  it("draws the bell with Ask off, with no badge while nothing is unread", () => {
     const tree = render();
     const bell = pressableLabelled(tree, "Notifications");
 
     expect(bell.props.accessibilityValue).toBeUndefined();
-    expect(bell.findAllByType(CountBadge)).toHaveLength(0);
+    expect(badge(tree)).toHaveLength(0);
   });
 
-  it("badges the unread count in the accent fill and reads it out", () => {
+  it("badges the unread count in house gold, never the chapter accent, and reads it out", () => {
+    // A red accent, the case the fixed gold exists for: beside the channel
+    // rows' mention-red badges, an accent-filled count would read as a mention.
+    branding.current = { ...branding.unnamed, accentPrimary: "#D75748" };
     notificationsData.value = [
       { id: "n-1", read_at: null },
       { id: "n-2", read_at: null },
@@ -817,17 +825,27 @@ describe("Chat home notifications bell (#3362)", () => {
     ];
     const tree = render();
     const bell = pressableLabelled(tree, "Notifications");
-
-    expect(bell.findByType(CountBadge).props.count).toBe(2);
-    expect(bell.props.accessibilityValue).toEqual({ text: "2 unread" });
-    const fill = bell.findAll(
-      (node) =>
-        (node.type as unknown) === "View" &&
-        JSON.stringify(node.props.style).includes(
-          branding.current.accentPrimary,
-        ),
+    const [pill] = badge(tree).filter(
+      (node) => (node.type as unknown) === "View",
     );
-    expect(fill.length).toBeGreaterThan(0);
+
+    expect(bell.props.accessibilityValue).toEqual({ text: "2 unread" });
+    const style = JSON.stringify(pill!.props.style);
+    expect(style).toContain("#EFB63B");
+    expect(style).not.toContain("#D75748");
+    expect(screenTextOf(pill!)).toBe("2");
+  });
+
+  it("leaves chat-sourced rows to the channel badges below it", () => {
+    notificationsData.value = [
+      { id: "n-1", read_at: null, data: { target: { screen: "chat" } } },
+      { id: "n-2", read_at: null, data: { target: { screen: "events" } } },
+    ] as typeof notificationsData.value;
+    const tree = render();
+
+    expect(
+      pressableLabelled(tree, "Notifications").props.accessibilityValue,
+    ).toEqual({ text: "1 unread" });
   });
 
   it("opens the inbox", () => {

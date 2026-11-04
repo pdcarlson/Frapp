@@ -115,7 +115,6 @@ export default function MoreScreen() {
   // section from exactly the people who need it.
   const canHost = can("events:update", permissions);
 
-
   // s22 takes an `eventId`, so the row resolves one rather than leading
   // nowhere. `selectEventRows` already returns upcoming-plus-still-checkable-in,
   // soonest first, so the head of that list is the event an officer would host.
