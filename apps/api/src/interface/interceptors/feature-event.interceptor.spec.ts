@@ -161,6 +161,20 @@ class FeatureEventTestController {
     return { ok: true };
   }
 
+  // Never requested: the check under test is the compile. A describer typed
+  // for a result the handler doesn't return is refused, so a change to a
+  // handler's return breaks the build rather than the event.
+  @Post('mistyped')
+  // @ts-expect-error `{ deduplicated }` isn't what `mistyped` returns.
+  @FeatureEvent(
+    'message-sent',
+    ({ result }: FeatureEventInput<unknown, { deduplicated: boolean }>) =>
+      result.deduplicated ? null : { kind: 'text' },
+  )
+  mistyped() {
+    return { ok: true };
+  }
+
   @Get('ics')
   @UseGuards(FakeChapterGuard)
   @FeatureEvent('event-calendar-downloaded')

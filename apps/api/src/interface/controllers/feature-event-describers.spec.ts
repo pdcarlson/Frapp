@@ -50,6 +50,23 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
         { body: { token: null, manualCode: '4KQ-88' } },
         { method: 'manual_code', has_location: false },
       ],
+      // Implicit conversion makes a number the string the DTO wants, and an
+      // all-digit code verifies.
+      [
+        'an all-digit code sent as a number',
+        { body: { manualCode: 448812 } },
+        { method: 'manual_code', has_location: false },
+      ],
+      [
+        'a token beside a numeric code',
+        { body: { token: 't', manualCode: 448812 } },
+        { method: 'qr_or_manual_code', has_location: false },
+      ],
+      [
+        'a blank token beside a code',
+        { body: { token: ' ', manualCode: '4KQ-88' } },
+        { method: 'manual_code', has_location: false },
+      ],
     ],
   },
   'AttendanceController.updateStatus': {

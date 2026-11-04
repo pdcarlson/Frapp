@@ -36,9 +36,14 @@ export interface CardPollPayload {
   choice_mode?: 'single' | 'multi';
 }
 
-/** The card's option ids; a malformed `options` has none. */
-export function cardPollOptionIds(card: CardPollPayload): string[] {
-  return (Array.isArray(card.options) ? card.options : [])
+/**
+ * The card's option ids. A card with no `options` has none. `null` means
+ * `options` is there but isn't a list, so the card can't be read at all.
+ */
+export function cardPollOptionIds(card: CardPollPayload): string[] | null {
+  if (card.options == null) return [];
+  if (!Array.isArray(card.options)) return null;
+  return card.options
     .map((option) => option?.id)
     .filter((id): id is string => typeof id === 'string');
 }

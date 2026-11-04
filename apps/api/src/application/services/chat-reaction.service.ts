@@ -26,8 +26,10 @@ import { isFromBlockedSender } from './chat-block-mask';
  *
  * A card whose payload carries no options is left alone rather than rejected:
  * that is a malformed message, and refusing every vote on it would turn a data
- * problem into a dead card. Cards default to single-choice, matching the
- * composer, which offers no multi-select.
+ * problem into a dead card. A card whose `options` isn't a list is refused,
+ * as it always was (it used to throw here), because nothing about it can be
+ * checked. Cards default to single-choice, matching the composer, which
+ * offers no multi-select.
  */
 function assertCardPollVoteAllowed(
   messagePayload: unknown,
@@ -35,6 +37,7 @@ function assertCardPollVoteAllowed(
 ): void {
   const card = (messagePayload ?? {}) as CardPollPayload;
   const optionIds = cardPollOptionIds(card);
+  if (optionIds === null) throw new BadRequestException('Malformed poll card');
   if (optionIds.length === 0) return;
 
   const rejection = validateCardPollVote({

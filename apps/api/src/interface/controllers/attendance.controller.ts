@@ -38,14 +38,16 @@ import { SystemPermissions } from '#domain/constants/permissions';
 /**
  * How a check-in was made, from the credential the request carried. The
  * service admits a request on either credential when it carries both, so that
- * case is its own value rather than a guess. Only a string counts: this is the
- * raw body, and a `null` or a number there can't be what admitted the request.
+ * case is its own value rather than a guess. A credential counts when it could
+ * have admitted the request, which is what `hasText` reads from the raw body:
+ * implicit conversion turns a number into the string the DTO wants (an
+ * all-digit manual code verifies), while a blank or `null` one never verifies.
  */
 function checkInMethod(
   body: CheckInDto | undefined,
 ): 'qr' | 'manual_code' | 'plain' | 'qr_or_manual_code' {
-  const token = typeof body?.token === 'string';
-  const manualCode = typeof body?.manualCode === 'string';
+  const token = hasText(body?.token);
+  const manualCode = hasText(body?.manualCode);
   if (token && manualCode) return 'qr_or_manual_code';
   if (token) return 'qr';
   return manualCode ? 'manual_code' : 'plain';

@@ -9,6 +9,7 @@ import {
 } from '#domain/utils/analytics-keying';
 import { AppModule } from '../src/app.module';
 import { TaskService } from '../src/application/services/task.service';
+import { ChapterConfigService } from '../src/application/services/chapter-config.service';
 import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';
 import { ChapterGuard } from '../src/interface/guards/chapter.guard';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
@@ -41,6 +42,7 @@ describe('Feature events (e2e)', () => {
   const capture = jest.fn<Promise<void>, unknown[]>();
   const isAnalyticsOptedOut = jest.fn<Promise<boolean>, [string]>();
   const updateStatus = jest.fn();
+  const patchConfig = jest.fn();
 
   beforeAll(async () => {
     priorSalt = process.env.ANALYTICS_HMAC_SALT;
@@ -57,6 +59,8 @@ describe('Feature events (e2e)', () => {
       .useValue({ isAnalyticsOptedOut })
       .overrideProvider(TaskService)
       .useValue({ updateStatus })
+      .overrideProvider(ChapterConfigService)
+      .useValue({ patchConfig })
       .overrideGuard(SupabaseAuthGuard)
       .useClass(AuthGuardStub)
       .overrideGuard(ChapterGuard)
@@ -128,5 +132,58 @@ describe('Feature events (e2e)', () => {
     await moveTask().expect(500);
     await settle();
     expect(capture).not.toHaveBeenCalled();
+  });
+
+  describe('a config PATCH that sets the opt-out', () => {
+    // The stored flag: the service writes it, the opt-out lookup reads it.
+    let optedOut: boolean;
+
+    beforeEach(() => {
+      optedOut = false;
+      isAnalyticsOptedOut.mockImplementation(() => Promise.resolve(optedOut));
+      patchConfig
+        .mockReset()
+        .mockImplementation(
+          (
+            _chapterId: string,
+            _userId: string,
+            dto: Record<string, unknown>,
+          ) => {
+            if (typeof dto.analytics_opt_out === 'boolean') {
+              optedOut = dto.analytics_opt_out;
+            }
+            return Promise.resolve({});
+          },
+        );
+    });
+
+    const patch = (body: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .patch(`/v1/chapters/${CHAPTER_ID}/config`)
+        .set('authorization', 'Bearer token')
+        .set('x-chapter-id', CHAPTER_ID)
+        .send(body);
+
+    it('is not itself recorded when it opts the chapter out', async () => {
+      await patch({ analytics_opt_out: true }).expect(200);
+      await settle();
+      expect(patchConfig).toHaveBeenCalled();
+      expect(isAnalyticsOptedOut).toHaveBeenCalledWith(CHAPTER_ID);
+      expect(capture).not.toHaveBeenCalled();
+    });
+
+    it('is recorded, with its section, when it leaves the chapter opted in', async () => {
+      await patch({ analytics_opt_out: false }).expect(200);
+      await settle();
+      expect(capture).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'chapter-config-updated',
+          properties: expect.objectContaining({
+            feature: 'chapter-settings',
+            section: 'analytics_opt_out',
+          }),
+        }),
+      );
+    });
   });
 });

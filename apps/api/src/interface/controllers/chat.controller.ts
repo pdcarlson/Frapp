@@ -458,7 +458,7 @@ export class ChatController {
       const poll = (body.payload ?? {}) as CardPollPayload;
       return {
         choice_mode: cardPollChoiceMode(poll),
-        option_count: cardPollOptionIds(poll).length,
+        option_count: cardPollOptionIds(poll)?.length ?? 0,
         has_expiry: typeof poll.closes_at === 'string' && poll.closes_at !== '',
       };
     },

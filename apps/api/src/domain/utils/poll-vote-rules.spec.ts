@@ -181,14 +181,20 @@ describe('poll vote rules', () => {
 });
 
 describe('reading a chat poll card and its vote', () => {
-  it("lists the card's string option ids, and none for malformed options", () => {
+  it("lists the card's string option ids, none for absent options, and null for options that aren't a list", () => {
     expect(
       cardPollOptionIds({ options: [{ id: 'a' }, { id: 2 }, {}, { id: 'b' }] }),
     ).toEqual(['a', 'b']);
     expect(cardPollOptionIds({})).toEqual([]);
     expect(
-      cardPollOptionIds({ options: 'a,b' } as unknown as CardPollPayload),
+      cardPollOptionIds({ options: null } as unknown as CardPollPayload),
     ).toEqual([]);
+    expect(
+      cardPollOptionIds({ options: 'a,b' } as unknown as CardPollPayload),
+    ).toBeNull();
+    expect(
+      cardPollOptionIds({ options: {} } as unknown as CardPollPayload),
+    ).toBeNull();
   });
 
   it('holds a card with no choice mode, or single, to one choice, and anything else to none', () => {
