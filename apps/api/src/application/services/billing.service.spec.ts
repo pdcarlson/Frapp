@@ -1203,6 +1203,7 @@ describe('BillingService', () => {
         id: 'evt_1UUCiw3Dzz3XLCb6DPDMNZ5O',
         type: 'invoice.paid',
         created: 1792878213,
+        api_version: '2026-08-26.dahlia',
         data: {
           object: {
             id: 'in_1UUBmi3Dzz3XLCb6aOk02Glw',
@@ -1231,9 +1232,17 @@ describe('BillingService', () => {
         ...pastDueChapter,
         subscription_status: 'active',
       });
+      const log = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => {});
 
       await service.handleWebhookEvent(event);
 
+      // The payload version is logged per delivery: for an unpinned endpoint
+      // that is the only place the live version shows up (#3204).
+      expect(log).toHaveBeenCalledWith(
+        expect.stringContaining('API version 2026-08-26.dahlia'),
+      );
       expect(mockChapterRepo.findBySubscriptionId).toHaveBeenCalledWith(
         'sub_1UEEo73Dzz3XLCb6oinefcMK',
       );
@@ -1242,6 +1251,7 @@ describe('BillingService', () => {
         new Date(event.created * 1000).toISOString(),
         { activate_if: ['past_due', 'incomplete'] },
       );
+      log.mockRestore();
     });
 
     it('reads an expanded parent subscription object and still reads a pre-Basil top-level id (#3204)', async () => {

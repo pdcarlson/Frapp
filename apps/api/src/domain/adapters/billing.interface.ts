@@ -35,6 +35,13 @@ interface BaseWebhookEvent<TType extends string, TObject> {
   id: string;
   type: TType;
   created: number;
+  /**
+   * The API version this payload was rendered at: the endpoint's own pin, or
+   * the account default when the endpoint has none. Logged per event so the
+   * live endpoint's version shows up in production logs (#3204). Null on
+   * events Stripe sends without one.
+   */
+  api_version?: string | null;
   data: {
     object: TObject;
   };
@@ -66,8 +73,8 @@ export interface SubscriptionWebhookObject {
  * `subscription` (#3204). A webhook payload follows its endpoint's own
  * `api_version`, or the account default when that is null, never the SDK's
  * pinned version, so the shape here is set in the Stripe dashboard, not in
- * code. The staging endpoint is unpinned and received `2026-08-26.dahlia`
- * payloads (event `evt_1UUCiw3Dzz3XLCb6DPDMNZ5O`, read 2026-11-04).
+ * code. Which version each endpoint receives:
+ * `docs/ops/deployment/integrations.md` § 7.1.
  */
 export interface InvoiceWebhookObject {
   id?: string;
@@ -80,10 +87,9 @@ export interface InvoiceWebhookObject {
     } | null;
   } | null;
   /**
-   * Pre-Basil payloads only. Kept as a read fallback on purpose: no endpoint
-   * should be pinned before Basil, but the live endpoint's version can't be
-   * read from an agent session (test-mode access only), and reading one extra
-   * field costs nothing.
+   * Pre-Basil payloads only. Kept as a read fallback on purpose: until the
+   * live endpoint's version is recorded, a pre-Basil live payload can't be
+   * ruled out, and reading one extra field costs nothing.
    */
   subscription?: string | { id: string } | null;
   customer?: string | { id: string } | null;
@@ -97,8 +103,18 @@ export interface InvoiceWebhookObject {
 export function invoiceSubscriptionId(
   invoice: InvoiceWebhookObject,
 ): string | null {
-  const ref =
-    invoice.parent?.subscription_details?.subscription ?? invoice.subscription;
+  return stripeRefId(
+    invoice.parent?.subscription_details?.subscription ?? invoice.subscription,
+  );
+}
+
+/**
+ * Normalize a Stripe object reference: an id string on webhook payloads, an
+ * expanded object only under explicit expansion, or null.
+ */
+function stripeRefId(
+  ref: string | { id: string } | null | undefined,
+): string | null {
   return typeof ref === 'string' ? ref : (ref?.id ?? null);
 }
 
@@ -106,7 +122,7 @@ export function invoiceSubscriptionId(
 export function customerIdFrom(
   customer: string | { id: string } | null | undefined,
 ): string | null {
-  return typeof customer === 'string' ? customer : (customer?.id ?? null);
+  return stripeRefId(customer);
 }
 
 export interface PaymentIntentLastPaymentError {
@@ -133,9 +149,7 @@ export interface PaymentIntentWebhookObject {
 export function chargeIdFromLatestCharge(
   latestCharge: string | { id: string } | null | undefined,
 ): string | null {
-  return typeof latestCharge === 'string'
-    ? latestCharge
-    : (latestCharge?.id ?? null);
+  return stripeRefId(latestCharge);
 }
 
 /** Cap so a Stripe decline string cannot blow a notification body. */

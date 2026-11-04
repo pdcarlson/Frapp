@@ -373,7 +373,8 @@ export class BillingService {
     }
 
     this.logger.log(
-      `Processing webhook event: ${event.type} (${event.id}), attempt ${claim.attempts}`,
+      `Processing webhook event: ${event.type} (${event.id}, API version ` +
+        `${event.api_version ?? 'not sent'}), attempt ${claim.attempts}`,
     );
 
     try {

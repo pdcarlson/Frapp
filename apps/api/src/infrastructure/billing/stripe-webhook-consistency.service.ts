@@ -133,12 +133,17 @@ export class StripeWebhookConsistencyService implements OnModuleInit {
     // A webhook payload's shape follows the endpoint's own api_version, or the
     // account default when it is null, never the SDK's pinned version. An
     // unnoticed default change is how invoice.paid lost its top-level
-    // `subscription` (#3204), so the boot log records which one this endpoint
-    // gets. Logged, not warned: unpinned is today's setup on purpose
-    // (integrations.md § 7), and pinning means re-creating the endpoint.
+    // `subscription` (#3204), so the boot log says whether this endpoint is
+    // pinned. This list call does not return the account default, so for an
+    // unpinned endpoint the version itself comes from BillingService, which
+    // logs the api_version every delivery carries. Logged, not warned: an
+    // unpinned endpoint works, because handleInvoicePaid reads both invoice
+    // shapes, and pinning means re-creating the endpoint, which rotates its
+    // signing secret (integrations.md § 7.1).
     this.logger.log(
       `Stripe endpoint ${expectedUrl} receives payloads at API version ` +
-        (endpoint.api_version ?? 'the account default (unpinned)'),
+        (endpoint.api_version ??
+          'the account default (unpinned); each delivery logs the version it carries'),
     );
 
     const missing = missingEventTypes(
