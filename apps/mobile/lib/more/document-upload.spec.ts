@@ -1,4 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy";
+import { ImageManipulator } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { moduleDisabledMessage } from "@repo/validation";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -116,7 +117,26 @@ describe("pickDocumentPhoto", () => {
     });
   });
 
-  it("names the photo types it takes", () => {
+  it("refuses a photo it can't make uploadable in the document copy", async () => {
+    // Off the allowlist, so it is transcoded, and the transcode fails.
+    picker.launchImageLibraryAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///scan.bmp",
+          fileName: "scan.bmp",
+          mimeType: "image/bmp",
+        },
+      ],
+    } as never);
+    vi.mocked(ImageManipulator).manipulate.mockImplementationOnce(() => {
+      throw new Error("unsupported");
+    });
+
+    await expect(pickDocumentPhoto()).resolves.toEqual({
+      status: "refused",
+      reason: DOCUMENT_TYPE_REFUSAL,
+    });
     expect(DOCUMENT_TYPE_REFUSAL).toMatch(/JPEG, PNG, GIF or WebP/);
   });
 });
@@ -210,7 +230,7 @@ describe("uploadDocumentPhoto", () => {
 
     await expect(
       uploadDocumentPhoto(IMAGE, { title: "", folder: null }, mutations),
-    ).resolves.toEqual({ status: "refused", reason: copy, final: true });
+    ).resolves.toMatchObject({ status: "refused", reason: copy, final: true });
   });
 
   it("keeps a failed PUT retryable", async () => {
@@ -226,7 +246,7 @@ describe("uploadDocumentPhoto", () => {
     expect(confirm).not.toHaveBeenCalled();
   });
 
-  it("keeps a dropped connection on the confirm retryable", async () => {
+  it("keeps a dropped connection on the confirm retryable, with the bytes it sent", async () => {
     confirm.mockRejectedValue(new TypeError("Network request failed"));
 
     await expect(
@@ -235,7 +255,43 @@ describe("uploadDocumentPhoto", () => {
       status: "refused",
       reason: "Couldn't upload that photo. Try again in a moment.",
       final: false,
+      uploaded: {
+        storagePath: TICKET.storage_path,
+        filename: "minutes.jpg",
+        contentType: "image/jpeg",
+        byteSize: 4096,
+      },
     });
+  });
+
+  it("files bytes already sent without minting or PUTting again", async () => {
+    confirm.mockRejectedValueOnce(new TypeError("Network request failed"));
+    const first = await uploadDocumentPhoto(
+      IMAGE,
+      { title: "", folder: null },
+      mutations,
+    );
+    expect(first.status === "refused" && first.uploaded).toBeTruthy();
+    requestUploadUrl.mockClear();
+    fs.uploadAsync.mockClear();
+
+    await expect(
+      uploadDocumentPhoto(
+        IMAGE,
+        { title: "Minutes", folder: "Minutes" },
+        mutations,
+        first.status === "refused" ? first.uploaded : undefined,
+      ),
+    ).resolves.toEqual({ status: "uploaded" });
+    expect(requestUploadUrl).not.toHaveBeenCalled();
+    expect(fs.uploadAsync).not.toHaveBeenCalled();
+    expect(confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        storage_path: TICKET.storage_path,
+        title: "Minutes",
+        folder: "Minutes",
+      }),
+    );
   });
 
   it("relays the API's reason for an ordinary refusal, and keeps it retryable", async () => {

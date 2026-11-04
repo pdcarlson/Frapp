@@ -11,7 +11,7 @@ import {
 } from "@repo/hooks";
 import { formatBytes } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
-import { DOCUMENT_TITLE_MAX_LENGTH } from "@repo/validation";
+import { DOCUMENT_TITLE_MAX_LENGTH, MAX_UPLOAD_LABEL } from "@repo/validation";
 import { FileGlyph } from "@/components/documents/document-glyphs";
 import { FilterChips } from "@/components/filter-chips";
 import {
@@ -20,8 +20,9 @@ import {
   SheetPrimaryButton,
   SheetScrim,
   useSheetBackgroundStyle,
+  useSheetVisit,
 } from "@/components/sheet-scaffold";
-import type { PickedImage } from "@/lib/chat/attachment-upload";
+import type { PickedImage, UploadedImage } from "@/lib/chat/attachment-upload";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   documentTitle,
@@ -55,14 +56,16 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * The pick only reads the photo on the device. Mint, PUT and confirm all run on
  * Upload, so a sheet cancelled after a pick leaves no object in the bucket.
+ * Once the bytes have landed, a failed confirm keeps their upload, and Upload
+ * retries the confirm alone rather than sending a second copy
+ * (`lib/more/document-upload.ts` § "A confirm that fails").
  *
  * ## Closing mid-upload
  *
- * The same rules as s15's edit sheet (`components/profile/edit-profile-sheet.tsx`):
- * the draft stays until the upload settles, a success closes only the visit it
- * was sent from, and `dismiss()` runs only on a presented sheet, because gorhom
- * 5.2's `dismiss()` on a dismissed modal leaves the next `present()` drawing
- * nothing.
+ * The same rules as s15's edit sheet (`components/profile/edit-profile-sheet.tsx`),
+ * through the same `useSheetVisit`: the draft stays until the upload settles, a
+ * success closes only the visit it was sent from, and `dismiss()` runs only on
+ * a presented sheet.
  */
 export const UploadDocumentSheet = forwardRef<
   BottomSheetModal,
@@ -97,6 +100,14 @@ export const UploadDocumentSheet = forwardRef<
   const [failure, setFailure] = useState<string | null>(null);
   /** A gate only an officer can lift; Upload is withdrawn while it stands. */
   const [refusal, setRefusal] = useState<string | null>(null);
+  /**
+   * The bytes a failed confirm left in the bucket, and the pick they are, so
+   * a retry files them instead of uploading again. A new pick drops them.
+   */
+  const [stored, setStored] = useState<{
+    image: PickedImage;
+    uploaded: UploadedImage;
+  } | null>(null);
 
   const folder = chosenFolder === undefined ? initialFolder : chosenFolder;
   const canUpload = picked !== null && !uploading && !picking && !refusal;
@@ -109,26 +120,20 @@ export const UploadDocumentSheet = forwardRef<
     setPickRefusal(null);
     setFailure(null);
     setRefusal(null);
+    setStored(null);
   }, []);
 
-  // See the header: true from the first `onAnimate` towards an open position
-  // until `onDismiss`.
-  const presented = useRef(false);
-  const closes = useRef(0);
+  const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
+    useSheetVisit(ref);
   // Set the moment Upload sends, before `uploading` reaches a render, so two
   // taps in one batch send one upload.
   const sending = useRef(false);
+  // Set the moment Choose opens the library, so a second tap before the
+  // picker draws doesn't launch another (Android rejects the second launch).
   const pickingNow = useRef(false);
 
-  const dismiss = useCallback(() => {
-    if (!presented.current) return;
-    if (typeof ref === "function" || !ref?.current) return;
-    ref.current.dismiss();
-  }, [ref]);
-
   const closed = () => {
-    presented.current = false;
-    closes.current += 1;
+    markClosed();
     if (sending.current) setTitleFocused(false);
     else reset();
   };
@@ -147,6 +152,7 @@ export const UploadDocumentSheet = forwardRef<
       const result = await pickDocumentPhoto();
       if (result.status === "picked") {
         setPicked(result.image);
+        setStored(null);
         setFailure(null);
       } else if (result.status === "refused") {
         setPickRefusal(result.reason);
@@ -162,7 +168,7 @@ export const UploadDocumentSheet = forwardRef<
     sending.current = true;
     setUploading(true);
     setFailure(null);
-    const sentFrom = closes.current;
+    const sentFrom = visit();
     const filedAs = documentTitle(title, picked);
     const result = await uploadDocumentPhoto(
       picked,
@@ -171,22 +177,25 @@ export const UploadDocumentSheet = forwardRef<
         requestUploadUrl: (body) => requestUploadUrl.mutateAsync(body),
         confirm: (body) => confirmUpload.mutateAsync(body),
       },
+      stored?.image === picked ? stored.uploaded : undefined,
     );
     sending.current = false;
     setUploading(false);
     if (result.status === "uploaded") {
       reset();
-      if (closes.current === sentFrom) dismiss();
+      if (isSameVisit(sentFrom)) dismiss();
       onUploaded?.(filedAs);
       return;
     }
+    if (result.uploaded)
+      setStored({ image: picked, uploaded: result.uploaded });
     if (result.final) setRefusal(result.reason);
     else setFailure(result.reason);
   };
 
   const sourceLine = picked
     ? `${formatBytes(picked.byteSize)} · from Photos`
-    : "JPEG, PNG, GIF or WebP, up to 25 MB";
+    : `JPEG, PNG, GIF or WebP, up to ${MAX_UPLOAD_LABEL}`;
 
   return (
     <BottomSheetModal
@@ -196,9 +205,7 @@ export const UploadDocumentSheet = forwardRef<
       backgroundStyle={backgroundStyle}
       backdropComponent={SheetScrim}
       handleComponent={SheetGrabber}
-      onAnimate={(_from, to) => {
-        if (to >= 0) presented.current = true;
-      }}
+      onAnimate={onAnimate}
       onDismiss={closed}
     >
       <BottomSheetView style={styles.body}>

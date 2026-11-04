@@ -53,7 +53,10 @@ const onUploaded = vi.fn();
 const mounted: ReactTestRenderer[] = [];
 const ref = React.createRef<never>();
 
-function render(initialFolder: string | null = null): ReactTestRenderer {
+function render(
+  initialFolder: string | null = null,
+  { opened = true }: { opened?: boolean } = {},
+): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
@@ -74,7 +77,7 @@ function render(initialFolder: string | null = null): ReactTestRenderer {
     );
   });
   mounted.push(tree);
-  open(tree);
+  if (opened) open(tree);
   return tree;
 }
 
@@ -211,7 +214,7 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(uploadDocumentPhoto).toHaveBeenCalledWith(
       PHOTO,
       { title: "Minutes — Aug 14", folder: "Bylaws" },
-      expect.any(Object),
+      expect.any(Object),      undefined,
     );
     expect(dismiss).toHaveBeenCalledTimes(1);
     expect(onUploaded).toHaveBeenCalledWith("Minutes — Aug 14");
@@ -226,7 +229,7 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
       PHOTO,
       { title: "", folder: "Minutes" },
-      expect.any(Object),
+      expect.any(Object),      undefined,
     );
     // The blank title is filed under the file name, as on web.
     expect(onUploaded).toHaveBeenLastCalledWith("IMG_2041.jpg");
@@ -240,7 +243,7 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
       PHOTO,
       { title: "", folder: null },
-      expect.any(Object),
+      expect.any(Object),      undefined,
     );
   });
 
@@ -344,6 +347,108 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(onUploaded).toHaveBeenCalledWith("IMG_2041.jpg");
     open(tree);
     expect(screenText(tree)).toContain("Choose a photo");
+  });
+
+  it("keeps the draft when Cancel is pressed mid-upload", async () => {
+    const tree = render();
+    await choose(tree);
+    const settle = heldUpload();
+    await pressUpload(tree);
+
+    act(() => {
+      pressable(tree, "Cancel").props.onPress();
+    });
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    closed(tree);
+    open(tree);
+    expect(screenText(tree)).toContain("IMG_2041.jpg");
+
+    await settle({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+      final: false,
+    });
+    expect(screenText(tree)).toContain("IMG_2041.jpg");
+  });
+
+  it("opens the library once for two taps on Choose", async () => {
+    const tree = render();
+    let resolvePick!: (value: unknown) => void;
+    pickDocumentPhoto.mockImplementation(
+      () => new Promise((resolve) => (resolvePick = resolve)),
+    );
+
+    await act(async () => {
+      const card = pressable(tree, "Choose a photo");
+      card.props.onPress();
+      card.props.onPress();
+    });
+    expect(pickDocumentPhoto).toHaveBeenCalledTimes(1);
+    expect(screenText(tree)).toContain("Opening…");
+
+    await act(async () => resolvePick({ status: "picked", image: PHOTO }));
+    expect(screenText(tree)).toContain("IMG_2041.jpg");
+  });
+
+  it("leaves an unpresented sheet alone on Cancel", () => {
+    // `dismiss()` on a modal that isn't up wedges gorhom's next `present()`.
+    const tree = render(null, { opened: false });
+
+    act(() => {
+      pressable(tree, "Cancel").props.onPress();
+    });
+    expect(dismiss).not.toHaveBeenCalled();
+  });
+
+  it("retries a failed confirm with the bytes already sent, until a new pick", async () => {
+    const tree = render();
+    await choose(tree);
+    const uploaded = {
+      storagePath: "chapters/c/documents/d/IMG_2041.jpg",
+      filename: "IMG_2041.jpg",
+      contentType: "image/jpeg",
+      byteSize: PHOTO.byteSize,
+    };
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+      final: false,
+      uploaded,
+    });
+
+    await pressUpload(tree);
+    expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
+      PHOTO,
+      expect.any(Object),
+      expect.any(Object),
+      undefined,
+    );
+
+    await pressUpload(tree);
+    expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
+      PHOTO,
+      expect.any(Object),
+      expect.any(Object),
+      uploaded,
+    );
+
+    // A different photo is new bytes: it uploads from scratch.
+    const other = {
+      ...PHOTO,
+      uri: "file:///IMG_2042.jpg",
+      filename: "IMG_2042.jpg",
+    };
+    pickDocumentPhoto.mockResolvedValue({ status: "picked", image: other });
+    await act(async () => {
+      pressable(tree, "Change photo, IMG_2041.jpg").props.onPress();
+    });
+    await pressUpload(tree);
+    expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
+      other,
+      expect.any(Object),
+      expect.any(Object),
+      undefined,
+    );
   });
 
   it("draws no folder chips when the chapter has no folders", () => {

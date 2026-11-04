@@ -116,6 +116,24 @@ describe("Documents upload (#3399)", () => {
     expect(sheets(tree)).toHaveLength(0);
   });
 
+  it("says where a filed document went, until the sheet opens again", () => {
+    permissions = ["*"];
+    const tree = render();
+    const sheet = tree.root.find(
+      (node) => typeof node.props.onUploaded === "function",
+    );
+
+    act(() => {
+      sheet.props.onUploaded("Minutes — Nov 2");
+    });
+    expect(screenText(tree)).toContain("“Minutes — Nov 2” is in the library.");
+
+    act(() => {
+      uploadControls(tree)[0]!.props.onPress();
+    });
+    expect(screenText(tree)).not.toContain("is in the library.");
+  });
+
   it("no longer sends anyone to the web dashboard", () => {
     const tree = render();
 

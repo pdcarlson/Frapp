@@ -208,6 +208,12 @@ as an integrator change so `photosPermission` names both uses ("set your profile
 and send photos in chapter chat"), with the privacy policy and the store records in the
 same PR.
 
+*2026-11-04:* s21's document upload (#3399, `lib/more/document-upload.ts`) is the third
+caller, through `pickImage`, the pick half of the same pipeline. It needs no native
+change, so it ships over the air, but the compiled `photosPermission` text can only
+widen in a store build: #3401 does that with `expo-document-picker`, and the store
+records with it.
+
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`
 key at all**. Each of those three is load-bearing:
