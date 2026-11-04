@@ -11,6 +11,8 @@ import {
   auditMirrorClientId,
   ChatBridgeWorkerService,
 } from './chat-bridge-worker.service';
+import { reopenDelayMs } from './worker-subscription';
+import { fakeRealtime } from '#test/helpers/fake-realtime';
 
 type Lookup = () => Promise<string | null>;
 type Insert = (
@@ -218,5 +220,114 @@ describe('ChatBridgeWorkerService.handleAuditRow', () => {
         'chat-bridge: audit audit-1 already mirrored',
       );
     });
+  });
+});
+
+/**
+ * The bridge's own subscription (#3365), driven the way realtime-js would.
+ * The reopen logic itself is proven in `worker-subscription.spec.ts`; this
+ * proves the bridge is on it, with its listener on every channel it opens.
+ */
+describe('ChatBridgeWorkerService — the audit-log subscription', () => {
+  const TOPIC = 'chat-bridge-worker:audit-log';
+  const row = {
+    id: 'audit-9',
+    chapter_id: 'chap-1',
+    actor_user_id: 'user-1',
+    action: 'chapter_config_updated',
+    target_type: 'chapter',
+    target_id: 'chap-1',
+    scope: 'chapter',
+    diff: null,
+    member_visible: true,
+    created_at: '',
+  };
+
+  let realtime: ReturnType<typeof fakeRealtime>;
+  let repos: ReturnType<typeof buildRepos>;
+  let service: ChatBridgeWorkerService;
+
+  const channels = () => realtime.onTopic(TOPIC);
+  /** `handleAuditRow` is fired and forgotten; let its awaits settle. */
+  const settle = () => jest.advanceTimersByTimeAsync(0);
+
+  beforeEach(async () => {
+    jest.useFakeTimers();
+    realtime = fakeRealtime();
+    repos = buildRepos(auditChannel);
+    const mod = await Test.createTestingModule({
+      providers: [
+        ChatBridgeWorkerService,
+        {
+          provide: SUPABASE_CLIENT,
+          useValue: {
+            channel: realtime.channel,
+            removeChannel: realtime.removeChannel,
+          },
+        },
+        { provide: CHAT_CHANNEL_REPOSITORY, useValue: repos.channels },
+        { provide: CHAT_MESSAGE_REPOSITORY, useValue: repos.messages },
+      ],
+    }).compile();
+    service = mod.get(ChatBridgeWorkerService);
+    // The status lines are this file's subject only through their effects.
+    const logger = (
+      service as unknown as {
+        logger: { warn: (...args: unknown[]) => void };
+      }
+    ).logger;
+    jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    service.onApplicationBootstrap();
+  });
+
+  afterEach(async () => {
+    await service.onApplicationShutdown();
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('mirrors an audit INSERT delivered on its subscription', async () => {
+    expect(channels()).toHaveLength(1);
+    expect(channels()[0].insert('chapter_audit_log', row)).toBe(1);
+    await settle();
+
+    expect(repos.insertCalls).toHaveLength(1);
+  });
+
+  it('reopens after the server closes its channel, and mirrors rows on the new one', async () => {
+    const [first] = channels();
+    first.status('SUBSCRIBED');
+
+    first.status('CLOSED');
+    await settle();
+    await jest.advanceTimersByTimeAsync(reopenDelayMs(0));
+
+    expect(channels()).toHaveLength(2);
+    expect(first.teardown).toHaveBeenCalledTimes(1);
+    expect(first.insert('chapter_audit_log', row)).toBe(0);
+    expect(channels()[1].insert('chapter_audit_log', row)).toBe(1);
+    await settle();
+    expect(repos.insertCalls).toHaveLength(1);
+  });
+
+  it('keeps its channel through a TIMED_OUT, which realtime-js rejoins', async () => {
+    const [first] = channels();
+
+    first.status('TIMED_OUT');
+    await jest.advanceTimersByTimeAsync(60_000);
+
+    expect(channels()).toHaveLength(1);
+    expect(first.teardown).not.toHaveBeenCalled();
+    expect(first.insert('chapter_audit_log', row)).toBe(1);
+  });
+
+  it('removes its channel on shutdown, and does not reopen it', async () => {
+    const [first] = channels();
+
+    await service.onApplicationShutdown();
+    await jest.advanceTimersByTimeAsync(60_000);
+
+    expect(realtime.removeChannel).toHaveBeenCalledWith(first);
+    expect(channels()).toHaveLength(1);
   });
 });

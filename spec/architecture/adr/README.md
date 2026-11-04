@@ -13,7 +13,7 @@ One file per ADR. [`spec/architecture/README.md`](../README.md) is the system ma
 | ADR-05: Dexie-backed offline queue + reconnect-with-backfill (Chunk 04) | Amended | [adr-05.md](adr-05.md) |
 | ADR-06: `chat_notification_preferences` is a new table, not a column on `notification_preferences` (Chunk 05) | Amended | [adr-06.md](adr-06.md) |
 | ADR-07: chat-react UPSERT semantics for poll vote-change (Chunk 05) | Amended | [adr-07.md](adr-07.md) |
-| ADR-08: Audit→chat bridge via NestJS Realtime subscriber (Chunk 05) | Current | [adr-08.md](adr-08.md) |
+| ADR-08: Audit→chat bridge via NestJS Realtime subscriber (Chunk 05) | Amended: a failed subscription is retried and reported, not only logged (correction 2026-11-04) | [adr-08.md](adr-08.md) |
 | ADR-09: Push worker host is the in-process NestJS API, with a documented scaling watermark (Chunk 05) | Amended | [adr-09.md](adr-09.md) |
 | ADR-10: Supabase Realtime Presence is the presence source — no custom broadcast topic (Chunk 05) | Amended | [adr-10.md](adr-10.md) |
 | ADR-11: Agent dev stack — chat hot path moves to in-process NestJS; PGlite for local DB validation (#401) | Amended | [adr-11.md](adr-11.md) |
