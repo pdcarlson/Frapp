@@ -140,6 +140,10 @@ describe("sign-in (s01)", () => {
 
   it("puts the whole form, down to the Sign in button, inside one scroll container", () => {
     const tree = render(<SignIn />);
+    // The email form sits behind "Continue with email" (#3349).
+    act(() => {
+      pressableLabelled(tree.root, "Continue with email")!.props.onPress();
+    });
 
     const signIn = pressableLabelled(tree.root, "Sign in");
     const email = tree.root.findAll(

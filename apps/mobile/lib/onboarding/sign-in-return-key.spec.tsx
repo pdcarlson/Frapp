@@ -60,6 +60,10 @@ function render(): ReactTestRenderer {
       },
     );
   });
+  // The email form sits behind "Continue with email" (#3349).
+  act(() => {
+    pressableLabelled(tree.root, "Continue with email").props.onPress();
+  });
   return tree;
 }
 

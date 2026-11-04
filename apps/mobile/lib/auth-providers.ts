@@ -15,9 +15,6 @@ export const IDENTITY_COLLISION_COPY =
 export const OAUTH_UNAVAILABLE_COPY =
   "This sign-in method isn't available yet. Use your password or a magic link.";
 
-export const OAUTH_MEMBERSHIP_HINT =
-  "Invited at a university address? Open that link after you sign in. Membership follows this account, including Apple Hide My Email.";
-
 export function isApplePrivateRelayEmail(
   email: string | null | undefined,
 ): boolean {
@@ -59,4 +56,25 @@ export function describeOAuthKickoffError(error: unknown): string {
     return message;
   }
   return "Unable to start sign-in. Retry in a moment.";
+}
+
+/**
+ * Which provider leads, per platform (#3349).
+ *
+ * The phone's own account comes first: Apple on iOS, Google everywhere else.
+ * On iOS both stay on screen, because App Review asks for Sign in with Apple
+ * beside any other third-party login (Guideline 4.8). Off iOS, Apple only
+ * runs as a browser OAuth page (`lib/apple-auth.ts`), so it moves behind
+ * "Other ways to sign in": still there for an account first made with Apple
+ * on an iPhone, out of the way for everyone else.
+ */
+export function signInProviderLayout(os: string): {
+  primary: OAuthProvider;
+  secondary: OAuthProvider | null;
+  tucked: OAuthProvider | null;
+} {
+  if (os === "ios") {
+    return { primary: "apple", secondary: "google", tucked: null };
+  }
+  return { primary: "google", secondary: null, tucked: "apple" };
 }
