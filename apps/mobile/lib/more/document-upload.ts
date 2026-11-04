@@ -40,10 +40,10 @@ import {
  * that is already filed, and the API answers with that row, unchanged, rather
  * than a second one (`chapter_documents_storage_path_key`, #3399). So a retry
  * files those bytes with the title and folder they were first sent with, and
- * the sheet holds both fixed until a new photo is picked. Either way out of
- * that holds goes wrong: renaming on the retry would report a title the API
- * may never have filed, and uploading the edit afresh would leave the first
- * copy with no row whenever the first confirm never landed.
+ * the sheet holds both fixed until a new photo is picked. Both ways around
+ * that go wrong: renaming on the retry would report a title the API may never
+ * have filed, and uploading the edit afresh would leave the first copy with no
+ * row whenever the first confirm never landed.
  *
  * Photos only. A PDF or an Office file needs `expo-document-picker`, a native
  * module, so it waits for a store build.

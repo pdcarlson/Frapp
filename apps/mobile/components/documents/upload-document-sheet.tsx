@@ -32,6 +32,10 @@ import {
 import type { DocumentFolder } from "@/lib/more/documents";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
+/** Why the title and folder stopped taking edits after a failed confirm. */
+export const RETRY_KEEPS_DRAFT =
+  "Trying again keeps this title and folder. Change the photo to start over.";
+
 /**
  * s21, the Upload document sheet (`canvas-screens.dc.html` s21, #3399): the
  * picked file's card with Change, a title, the folder chips, and Upload. The
@@ -68,10 +72,6 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * success closes only the visit it was sent from, and `dismiss()` runs only on
  * a presented sheet.
  */
-/** Why the title and folder stopped taking edits after a failed confirm. */
-export const RETRY_KEEPS_DRAFT =
-  "Trying again keeps this title and folder. Change the photo to start over.";
-
 export const UploadDocumentSheet = forwardRef<
   BottomSheetModal,
   {
