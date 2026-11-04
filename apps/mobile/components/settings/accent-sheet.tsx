@@ -1,5 +1,5 @@
 import { forwardRef, useState } from "react";
-import { StyleSheet, Text } from "react-native";
+import { ActivityIndicator, StyleSheet, Text } from "react-native";
 import {
   BottomSheetModal,
   BottomSheetTextInput,
@@ -81,13 +81,45 @@ function AccentSheetBody({ onDone }: { onDone: () => void }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const chapter = useCurrentChapter();
+
+  // The draft starts from the stored accent, so the picker waits for it:
+  // starting from the house default while the read is in flight would
+  // enable Save on a color nobody picked, and saving it would overwrite the
+  // chapter's real accent.
+  if (!chapter.data) {
+    return (
+      <BottomSheetView style={styles.body}>
+        <SheetHeader title="Chapter accent" onCancel={onDone} />
+        {chapter.isError ? (
+          <Text style={styles.error}>
+            Couldn&apos;t load the chapter. Check your connection and try again.
+          </Text>
+        ) : (
+          <ActivityIndicator color={tokens.color.text.muted} />
+        )}
+      </BottomSheetView>
+    );
+  }
+  return <AccentSheetForm chapter={chapter.data} onDone={onDone} />;
+}
+
+function AccentSheetForm({
+  chapter,
+  onDone,
+}: {
+  chapter: NonNullable<ReturnType<typeof useCurrentChapter>["data"]>;
+  onDone: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
   const updateChapter = useUpdateChapter();
   const { accent } = useChapterBranding();
 
-  const stored = storedAccentOf(chapter.data);
-  // The modal mounts this body on every present, so the draft starts from
+  const stored = storedAccentOf(chapter);
+  // The modal mounts this form on every present, so the draft starts from
   // whatever is stored at that moment.
   const [draft, setDraft] = useState(stored);
+  const [draftValid, setDraftValid] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const unchanged = draft === stored;
 
@@ -112,9 +144,14 @@ function AccentSheetBody({ onDone }: { onDone: () => void }) {
         the chapter.
       </Text>
       <AccentPicker
+        label="Chapter accent"
         value={draft}
         onChange={setDraft}
-        orgColors={orgColorsFor(chapter.data?.name)}
+        onValidityChange={setDraftValid}
+        // Keyed by the chapter's name, which is its organization's name when
+        // it was created from the directory. A chapter renamed since gets the
+        // presets only (#3372).
+        orgColors={orgColorsFor(chapter.name)}
         disabled={updateChapter.isPending}
         inputComponent={BottomSheetTextInput}
       />
@@ -122,7 +159,7 @@ function AccentSheetBody({ onDone }: { onDone: () => void }) {
       <SheetPrimaryButton
         label={updateChapter.isPending ? "Saving…" : "Save"}
         onPress={() => void save()}
-        disabled={unchanged || updateChapter.isPending}
+        disabled={unchanged || !draftValid || updateChapter.isPending}
         accent={accent}
         // `accent` is step 11 of the scale, and every mobile fill painted with
         // it labels in the fixed `gold.onHouse` ink (chapter-branding.ts

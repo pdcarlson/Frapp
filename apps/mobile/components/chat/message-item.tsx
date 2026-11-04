@@ -673,25 +673,30 @@ type ReactionChipStyles = Pick<
   "reactionChip" | "reactionChipMine" | "reactionText" | "reactionTextMine"
 >;
 
-type ReactionChipProps = {
-  group: ReactionGroup;
-  disabled: boolean;
-  styles: ReactionChipStyles;
-  onPress: () => void;
-  onLongPress?: () => void;
-};
-
+/**
+ * One reaction chip. The viewer's own reaction wears the chapter accent.
+ *
+ * One component whether or not the reaction is the viewer's: a chip that
+ * flips between the two keeps its native view, so a screen reader stays on
+ * the chip it just toggled and hears its new state. That means every chip
+ * calls `useChapterBranding()`, which only a row with reactions renders; a
+ * row without any (most of them) still never reaches for the client
+ * provider (see `SelfName`).
+ */
 function ReactionChip({
   group,
   disabled,
   styles,
   onPress,
   onLongPress,
-  mineColors,
-}: ReactionChipProps & {
-  /** The accent fill, border and text a chip the viewer reacted with wears. */
-  mineColors?: { fill: string; border: string; text: string };
+}: {
+  group: ReactionGroup;
+  disabled: boolean;
+  styles: ReactionChipStyles;
+  onPress: () => void;
+  onLongPress?: () => void;
 }) {
+  const { accent, accentSubtle, accentBorder } = useChapterBranding();
   return (
     <Pressable
       accessibilityRole="button"
@@ -705,39 +710,24 @@ function ReactionChip({
       onLongPress={onLongPress}
       style={[
         styles.reactionChip,
-        mineColors
+        group.mine
           ? [
               styles.reactionChipMine,
-              { backgroundColor: mineColors.fill, borderColor: mineColors.border },
+              { backgroundColor: accentSubtle, borderColor: accentBorder },
             ]
           : null,
       ]}
     >
       <Text
         style={
-          mineColors
-            ? [styles.reactionTextMine, { color: mineColors.text }]
+          group.mine
+            ? [styles.reactionTextMine, { color: accent }]
             : styles.reactionText
         }
       >
         {`${group.emoji} ${group.count}`}
       </Text>
     </Pressable>
-  );
-}
-
-/**
- * The viewer's own reaction, in the chapter accent. Split from `ReactionChip`
- * so only a chip that draws the accent calls `useChapterBranding()` (see
- * `SelfName`), and so a chip that flips between mine and not just remounts.
- */
-function MineReactionChip(props: ReactionChipProps) {
-  const { accent, accentSubtle, accentBorder } = useChapterBranding();
-  return (
-    <ReactionChip
-      {...props}
-      mineColors={{ fill: accentSubtle, border: accentBorder, text: accent }}
-    />
   );
 }
 
@@ -796,11 +786,7 @@ export function ReactionRow({
               ? onUnreact(messageId, group.emoji)
               : onReact(messageId, group.emoji),
         };
-        return group.mine ? (
-          <MineReactionChip key={group.actionType} {...chip} />
-        ) : (
-          <ReactionChip key={group.actionType} {...chip} />
-        );
+        return <ReactionChip key={group.actionType} {...chip} />;
       })}
 
       {!disabled && !reactions.some((group) => group.mine) ? (
@@ -953,7 +939,7 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "center",
     },
-    // Colors come from the chapter accent at render (`MineReactionChip`).
+    // Colors come from the chapter accent at render (`ReactionChip`).
     reactionChipMine: {
       borderWidth: 1,
     },

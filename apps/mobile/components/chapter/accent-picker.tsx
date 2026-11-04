@@ -38,6 +38,15 @@ export type AccentPickerProps = {
   value: string;
   /** Called with a normalized `#RRGGBB` whenever a swatch or a valid hex is chosen. */
   onChange: (hex: string) => void;
+  /**
+   * Called with `false` while the custom field holds text that is not a color
+   * yet, and `true` once it is again (or a swatch is tapped). `onChange` keeps
+   * the last valid color meanwhile, so a caller that saves disables its save
+   * on `false` rather than saving a color the field no longer shows.
+   */
+  onValidityChange?: (valid: boolean) => void;
+  /** What a screen reader calls the group of swatches. */
+  label?: string;
   /** The organization's official colors, shown first. Empty or absent hides the row. */
   orgColors?: readonly AccentSwatch[];
   disabled?: boolean;
@@ -63,6 +72,8 @@ function sameHex(a: string, b: string): boolean {
 export function AccentPicker({
   value,
   onChange,
+  onValidityChange,
+  label = "Accent color",
   orgColors = [],
   disabled = false,
   inputComponent: Input = TextInput,
@@ -70,22 +81,37 @@ export function AccentPicker({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
-  const matchesSwatch =
-    orgColors.some((swatch) => sameHex(swatch.hex, value)) ||
-    ACCENT_PRESETS.some((swatch) => sameHex(swatch.hex, value));
-  // A stored accent that is no swatch was typed, so its field starts open.
-  const [customOpen, setCustomOpen] = useState(!matchesSwatch);
-  const [draft, setDraft] = useState(matchesSwatch ? "" : value);
+  // A preset the organization already offers is shown once, under the
+  // organization, so one color is never two radios in the same group.
+  const presets = ACCENT_PRESETS.filter(
+    (preset) => !orgColors.some((swatch) => sameHex(swatch.hex, preset.hex)),
+  );
+  // The color the chapter holds when it is none of the swatches: the house
+  // default, the directory's placeholder, or a typed hex. Shown as its own
+  // selected swatch, so the picker opens on swatches rather than a hex field.
+  const [initialValue] = useState(value);
+  const current: AccentSwatch | null = [...orgColors, ...presets].some(
+    (swatch) => sameHex(swatch.hex, initialValue),
+  )
+    ? null
+    : { name: "Current", hex: initialValue };
+
+  const [customOpen, setCustomOpen] = useState(false);
+  const [draft, setDraft] = useState("");
   const draftInvalid = draft.trim() !== "" && parseTypedHex(draft) === null;
 
   function pick(hex: string) {
     if (disabled) return;
+    setDraft("");
+    onValidityChange?.(true);
     onChange(normalizeAccentInput(hex));
   }
 
   function typeHex(text: string) {
     setDraft(text);
     const parsed = parseTypedHex(text);
+    // An emptied field isn't an error: the last color stands.
+    onValidityChange?.(parsed !== null || text.trim() === "");
     if (parsed) onChange(parsed);
   }
 
@@ -96,7 +122,7 @@ export function AccentPicker({
         key={`${swatch.name}-${swatch.hex}`}
         accessibilityRole="radio"
         accessibilityLabel={swatch.name}
-        accessibilityState={{ selected, disabled }}
+        accessibilityState={{ checked: selected, disabled }}
         disabled={disabled}
         hitSlop={4}
         onPress={() => pick(swatch.hex)}
@@ -118,11 +144,18 @@ export function AccentPicker({
   }
 
   return (
-    <View style={styles.root} accessibilityRole="radiogroup">
-      {orgColors.length > 0 ? (
+    <View
+      style={styles.root}
+      accessibilityRole="radiogroup"
+      accessibilityLabel={label}
+    >
+      {orgColors.length > 0 || current ? (
         <View style={styles.group}>
-          <Text style={styles.groupLabel}>Your organization</Text>
+          <Text style={styles.groupLabel}>
+            {orgColors.length > 0 ? "Your organization" : "Current"}
+          </Text>
           <View style={styles.row}>
+            {current ? renderSwatch(current, true) : null}
             {orgColors.map((swatch) => renderSwatch(swatch, true))}
           </View>
         </View>
@@ -130,10 +163,10 @@ export function AccentPicker({
 
       <View style={styles.group}>
         <Text style={styles.groupLabel}>
-          {orgColors.length > 0 ? "More colors" : "Colors"}
+          {orgColors.length > 0 || current ? "More colors" : "Colors"}
         </Text>
         <View style={styles.row}>
-          {ACCENT_PRESETS.map((swatch) => renderSwatch(swatch, false))}
+          {presets.map((swatch) => renderSwatch(swatch, false))}
         </View>
       </View>
 
@@ -173,6 +206,8 @@ export function AccentPicker({
       ) : (
         <Pressable
           accessibilityRole="button"
+          accessibilityLabel="Custom color"
+          accessibilityHint="Opens a field for a hex color."
           disabled={disabled}
           hitSlop={8}
           onPress={() => setCustomOpen(true)}

@@ -98,8 +98,8 @@ export const EMPTY_CHAPTER_IDENTITY: Readonly<ChapterIdentityForm> =
  * shouldn't be swapped for the default. Settings can stay strict because it
  * shows an explicit unsavable state; the wizard has none, so a blank or
  * unparseable field takes the default instead. Web's native colour input can't
- * produce one, and mobile's swatch previews this function's result, so the
- * founder sees the colour that will be stored.
+ * produce one, and mobile's accent picker only passes on a typed hex that
+ * already parses, so neither wizard stores a colour the founder didn't see.
  */
 export function normalizeAccentInput(value: string | null | undefined): string {
   const trimmed = value?.trim() ?? "";

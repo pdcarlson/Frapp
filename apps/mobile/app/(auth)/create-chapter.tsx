@@ -102,7 +102,11 @@ export default function CreateChapter() {
   });
   const results = Array.isArray(searchQuery.data) ? searchQuery.data : [];
   const stepIndex = STEP_ORDER.indexOf(step);
-  const canSubmit = chapterIdentityIsValid(identity) && acceptedLegal;
+  // False while the accent's custom field holds a half-typed hex, which would
+  // otherwise submit the last whole color it held instead.
+  const [accentValid, setAccentValid] = useState(true);
+  const canSubmit =
+    chapterIdentityIsValid(identity) && acceptedLegal && accentValid;
 
   function applyDirectoryMatch(row: ChapterDirectoryResult) {
     setDirectoryId(row.id);
@@ -270,6 +274,7 @@ export default function CreateChapter() {
               isManual={directoryId === null}
               accepted={acceptedLegal}
               onAcceptedChange={setAcceptedLegal}
+              onAccentValidityChange={setAccentValid}
               styles={styles}
               tokens={tokens}
             />
@@ -514,6 +519,7 @@ function IdentityStep({
   isManual,
   accepted,
   onAcceptedChange,
+  onAccentValidityChange,
   styles,
   tokens,
 }: {
@@ -522,6 +528,7 @@ function IdentityStep({
   isManual: boolean;
   accepted: boolean;
   onAcceptedChange: (next: boolean) => void;
+  onAccentValidityChange: (valid: boolean) => void;
   styles: Styles;
   tokens: SignetTokens;
 }) {
@@ -624,10 +631,14 @@ function IdentityStep({
         tokens={tokens}
       />
       <View style={styles.field}>
-        <Text style={styles.inputLabel}>Accent color</Text>
+        <Text style={styles.inputLabel} importantForAccessibility="no">
+          Accent color
+        </Text>
         <AccentPicker
+          label="Accent color"
           value={normalizeAccentInput(identity.colorAccent)}
           onChange={(hex) => set("colorAccent", hex)}
+          onValidityChange={onAccentValidityChange}
           orgColors={orgColorsFor(identity.name)}
         />
       </View>

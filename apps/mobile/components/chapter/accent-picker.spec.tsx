@@ -58,32 +58,42 @@ describe("AccentPicker", () => {
 
   it("hands back the tapped swatch as #RRGGBB and marks the stored one selected", () => {
     const { tree, onChange } = render({ orgColors: FIJI });
-    expect(byLabel(tree, "Crimson").props.accessibilityState.selected).toBe(
+    expect(byLabel(tree, "Crimson").props.accessibilityState.checked).toBe(
       true,
     );
     act(() => byLabel(tree, "Royal Purple").props.onPress());
     expect(onChange).toHaveBeenCalledWith(FIJI[0]!.hex);
   });
 
-  it("keeps the hex field closed for a swatch color and opens it for any other", () => {
-    const closed = render().tree;
+  it("opens on swatches, showing a non-swatch color as its own Current swatch", () => {
+    // The house default, the directory placeholder and a typed hex are none
+    // of the swatches; the hex field still starts tucked away.
+    const { tree } = render({ value: "#C9A56F", orgColors: FIJI });
     expect(
-      closed.root.findAll(
+      tree.root.findAll(
         (node) => node.props.accessibilityLabel === "Custom color hex",
       ),
     ).toHaveLength(0);
-
-    const open = render({ value: "#123456" }).tree;
-    const field = open.root.find(
-      (node) =>
-        node.type === ("TextInput" as unknown) &&
-        node.props.accessibilityLabel === "Custom color hex",
+    expect(byLabel(tree, "Current").props.accessibilityState.checked).toBe(
+      true,
     );
-    expect(field.props.value).toBe("#123456");
   });
 
-  it("passes a typed hex on only once it is a whole color", () => {
-    const { tree, onChange } = render({ value: "#123456" });
+  it("shows a preset the organization already offers only once", () => {
+    // Theta Chi's Military Red is the Crimson preset's hex.
+    const { tree } = render({ orgColors: orgColorsFor("Theta Chi") });
+    const checked = swatches(tree).filter(
+      (node) => node.props.accessibilityState.checked,
+    );
+    expect(checked.map((node) => node.props.accessibilityLabel)).toEqual([
+      "Military Red",
+    ]);
+  });
+
+  it("passes a typed hex on only once it is a whole color, and says when it isn't", () => {
+    const onValidityChange = vi.fn();
+    const { tree, onChange } = render({ onValidityChange });
+    act(() => byLabel(tree, "Custom color").props.onPress());
     const field = () =>
       tree.root.find(
         (node) =>
@@ -92,11 +102,18 @@ describe("AccentPicker", () => {
       );
     act(() => field().props.onChangeText("#4f2"));
     expect(onChange).toHaveBeenLastCalledWith("#44FF22");
+    expect(onValidityChange).toHaveBeenLastCalledWith(true);
     onChange.mockClear();
     act(() => field().props.onChangeText("#4f26"));
     expect(onChange).not.toHaveBeenCalled();
+    expect(onValidityChange).toHaveBeenLastCalledWith(false);
     act(() => field().props.onChangeText("4f2683"));
     expect(onChange).toHaveBeenLastCalledWith("#4F2683");
+    expect(onValidityChange).toHaveBeenLastCalledWith(true);
+
+    // Tapping a swatch clears the field, so it never shows a second color.
+    act(() => byLabel(tree, "Navy").props.onPress());
+    expect(field().props.value).toBe("");
   });
 });
 

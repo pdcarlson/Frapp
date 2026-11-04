@@ -16,16 +16,18 @@
  * derives the shades that actually paint, so a swatch needs to be the right
  * color, not an exact brand match.
  *
- * Where the national organization publishes a hex (or a Pantone code, converted
- * to sRGB) the value is that. Where it publishes only color names, the hex is
- * a conventional rendering of the name, marked `// by name`. Nobody fetched the
- * brand documents themselves (the sandbox that gathered these could not reach
- * the organizations' sites), so a chapter that knows better should say so and
- * the entry should change.
+ * None of these values is verified. An unmarked hex is what web search
+ * results quoted from the organization's brand guide or Pantone code (converted
+ * to sRGB); nobody opened the brand documents themselves, because the sandbox
+ * that gathered them could not reach the organizations' sites. Where only a
+ * color name turned up, the hex is a conventional rendering of the name,
+ * marked `// by name`. A chapter that knows better should say so, and the
+ * entry should change (2026-11-04).
  *
- * Left out on purpose: white, pearl, argent and black. As an accent seed on
- * Signet's dark surfaces, white reads as plain text and black is lifted to a
- * gray, so neither looks like the organization's color.
+ * Left out on purpose: white, cream, pearl, argent and black. As an accent seed
+ * on Signet's dark surfaces, white and cream read as plain text and black is
+ * lifted to a gray, so none looks like the organization's color. Cream is also
+ * what the beta chapter was wrongly painted (the directory's `#C9A56F`).
  */
 
 export interface OrgColor {
@@ -159,7 +161,6 @@ export const ORG_PROFILES: Readonly<Record<string, Readonly<OrgProfile>>> =
     "Kappa Alpha Psi": profile({
       colors: [
         { name: "Crimson", hex: "#70110C" },
-        { name: "Cream", hex: "#F2EBD7" },
       ],
     }),
     "Phi Beta Sigma": profile({
@@ -180,7 +181,6 @@ export const ORG_PROFILES: Readonly<Record<string, Readonly<OrgProfile>>> =
     "Delta Sigma Theta": profile({
       colors: [
         { name: "Crimson", hex: "#A6192E" }, // by name
-        { name: "Cream", hex: "#F3E5C0" }, // by name
       ],
     }),
     "Zeta Phi Beta": profile({

@@ -12,14 +12,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // These screens paint with the chapter accent (`useChapterBranding`), which
 // reads the current chapter through the client provider these specs don't
-// mount. The values are the house fallbacks; the hook has its own spec.
+// mount. A purple chapter's values, deliberately not house gold, so a control
+// that slips back to a `gold.*` token shows up in an assertion; the hook
+// itself has its own spec.
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
-    accent: "#F4CB63",
-    accentPrimary: "#EFB63B",
-    accentOnPrimary: "#2C2000",
-    accentSubtle: "#251E0E",
-    accentBorder: "#6B5619",
+    accent: "#CB9FFF",
+    accentPrimary: "#8E4EC6",
+    accentOnPrimary: "#FFFFFF",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
     logoUrl: null,
     chapterName: null,
     textMark: null,

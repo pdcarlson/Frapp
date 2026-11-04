@@ -725,4 +725,4 @@ export function buildChapterConfigFromArchetype(archetypeKey: string): ChapterCo
     }),
   };
 }
-export * from "./org-profiles.js";
+export * from "./org-profiles";
