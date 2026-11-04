@@ -58,15 +58,31 @@ type ConnectionState = 'ONLINE' | 'DEGRADED' | 'OFFLINE';
 > `/health` poll (30s, 5s timeout), three consecutive failures.
 >
 > **`isInternetReachable === false` is suspicion, not proof.** The mobile
-> outbox reads this same monitor (#1072), so this value is DEGRADED for both
-> the banner and the queue — a slow or once-failed probe must still send.
-> Folding it into OFFLINE would disable check-in at the door with no route
-> back: a chapter house whose captive-portal validation probe is blocked
-> reports `isInternetReachable: false` while the API is perfectly reachable,
-> and a down link also suppresses the `/health` probe that would have proved
-> otherwise. So it counts as one probe failure and `/health` settles it,
-> which is also what this section literally says: `!navigator.onLine` is the OFFLINE
-> clause, "intermittently failing" is DEGRADED.
+> outbox reads this same monitor (#1072), so folding it into OFFLINE would
+> disable check-in at the door: a chapter house whose captive-portal
+> validation probe is blocked reports `isInternetReachable: false` while the
+> API is perfectly reachable. It asks `/health` at once (at most once per
+> poll interval) and counts nothing itself; the probe's answer is what moves
+> the state. (Corrected 2026-11-04:
+> it used to count as one probe failure, but Android emits it once per
+> capability change while a reconnected network validates, and the monitor
+> counted each event, so a reconnect alone could reach three.)
+>
+> **On mobile a link drop is confirmed, and the background is not evidence**
+> (2026-11-04, a false "You're offline" after a lock and unlock on Android).
+> `isConnected === false` must stand for `LINK_DOWN_GRACE_MS` (3s) and then
+> fail one `/health` probe before it means OFFLINE, which covers a Wi-Fi
+> network re-associating on wake or a Wi-Fi to cellular handoff. While the app
+> is in the background (`AppState` `background`, not iOS `inactive`) the
+> monitor ignores link events and discards probe results, because Android's
+> `getActiveNetwork()` returns null for a network it is blocking for a
+> backgrounded app and `expo-network` never re-emits when the block lifts. On
+> return to the foreground it re-reads the link and probes at once, and that
+> first probe gets one retry 2s later before its failure counts. A probe still
+> runs on each poll while the link reads as down, and only a reachable answer
+> clears it: a link-up event alone leaves OFFLINE in place, which is the
+> diagram's "onLine → true AND a /health probe succeeds". The mechanism is in
+> `apps/mobile/lib/connection/monitor.ts`.
 
 **Two inputs, not one.** A device link is not reachability, which is why `DEGRADED`
 exists at all: an API that is up, routable and failing leaves the member connected
@@ -238,8 +254,8 @@ dead API with the link up queues instead of POSTing a failed bubble, and a
 health recovery with no link flip still fires `online=true` to flush the
 outbox. `DEGRADED` does **not** queue: a slow or once-failed probe must still
 send. The remaining asymmetry is the banner's write gate, not a second
-connectivity definition: `isInternetReachable === false` is still one probe
-failure here, never proof of OFFLINE, because that value disables check-in.
+connectivity definition: `isInternetReachable === false` only asks `/health`
+here, never proves OFFLINE, because that value disables check-in.
 
 **Web and mobile share the rule.** `deriveConnectionState` and
 `healthProbeIsReachable` live in `@repo/validation`. Web's
