@@ -14,6 +14,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { formatMinutesRounded, localIsoDate } from "@repo/formatting";
 import { ScreenShell } from "@/components/screen-shell";
+import { BACK_TO_MORE } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import {
   EmptyState,
@@ -231,6 +232,7 @@ export default function ServiceHoursScreen() {
 
   return (
     <ScreenShell
+      back={BACK_TO_MORE}
       title="Service hours"
       headerAction={
         <Pressable

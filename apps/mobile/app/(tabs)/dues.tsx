@@ -11,6 +11,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { BACK_TO_MORE } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
 import {
   EmptyState,
@@ -269,7 +270,7 @@ export default function DuesScreen() {
   }
 
   return (
-    <ScreenShell title="Dues">
+    <ScreenShell back={BACK_TO_MORE} title="Dues">
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       {failure ? <Text style={styles.failure}>{failure}</Text> : null}
 

@@ -30,6 +30,7 @@ import {
 } from "@repo/validation";
 import { BLOCKED_MEMBERS_TITLE } from "@repo/chat-core/block-copy";
 import { ScreenShell } from "@/components/screen-shell";
+import { BACK_TO_MORE } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { AccentSheet } from "@/components/settings/accent-sheet";
 import { BlockedMembersSheet } from "@/components/settings/blocked-members-sheet";
@@ -444,7 +445,7 @@ export default function PreferencesScreen() {
   }
 
   return (
-    <ScreenShell title="Settings">
+    <ScreenShell back={BACK_TO_MORE} title="Settings">
       <SectionHeader>Notifications</SectionHeader>
 
       <ListSection>

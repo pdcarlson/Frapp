@@ -10,6 +10,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEvent, useNowDate } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { BACK_TO_EVENTS } from "@/components/back-row";
 import { exportEventToCalendar } from "@/lib/calendar-export";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -107,7 +108,7 @@ export default function EventDetailsScreen() {
 
   if (!eventId) {
     return (
-      <ScreenShell title="Event">
+      <ScreenShell back={BACK_TO_EVENTS} title="Event">
         <View style={styles.stateBlock}>
           <Text style={styles.stateTitle}>Nothing to show</Text>
           <Text style={styles.stateBody}>
@@ -120,7 +121,7 @@ export default function EventDetailsScreen() {
 
   if (eventQuery.isPending) {
     return (
-      <ScreenShell title="Event">
+      <ScreenShell back={BACK_TO_EVENTS} title="Event">
         <View style={styles.stateBlock}>
           <ActivityIndicator color={tokens.color.text.muted} />
           <Text style={styles.stateBody}>Loading event…</Text>
@@ -131,7 +132,7 @@ export default function EventDetailsScreen() {
 
   if (eventQuery.isError || !event) {
     return (
-      <ScreenShell title="Event">
+      <ScreenShell back={BACK_TO_EVENTS} title="Event">
         <View style={styles.stateBlock}>
           <Text style={styles.stateTitle}>Couldn&apos;t load this event</Text>
           <Text style={styles.stateBody}>
@@ -158,6 +159,7 @@ export default function EventDetailsScreen() {
 
   return (
     <ScreenShell
+      back={BACK_TO_EVENTS}
       title={event.name}
       subtitle={formatEventWindow(event.start_time, event.end_time, now)}
     >

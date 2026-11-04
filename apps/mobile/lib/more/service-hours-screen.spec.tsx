@@ -4,6 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
@@ -308,5 +309,17 @@ describe("Service hours reads only the viewer's entries", () => {
     const tree = render();
     expectViewerScopedReads(useServiceEntries.mock.calls, null);
     act(() => tree.unmount());
+  });
+});
+
+/**
+ * #3022. The board never drew this screen, but it opens from a More row like
+ * s10–s16, so it draws the same `‹ More`.
+ */
+describe("Service hours back row (#3022)", () => {
+  it("draws ‹ More above the title", () => {
+    const tree = render();
+    expectBackRow(tree, "More", "/more");
+    tree.unmount();
   });
 });
