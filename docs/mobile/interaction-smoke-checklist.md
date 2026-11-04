@@ -58,6 +58,9 @@ in the S2 nav restructure (#957) — see
 | Screen | Control | Expected outcome |
 |---|---|---|
 | Event details | Add to Calendar (.ics) | Starts `.ics` export flow or surfaces retry guidance |
+| Event details | `‹ Events` above the title | Lands on the Events tab, also when the event was opened from a notification or a `frapp://` link |
+| Study hours, Service hours, Dues, Documents, Directory, Profile, Settings | `‹ More` above the title | Lands on the More tab |
+| Notifications (`/(tabs)/notifications`) | `‹ Chat` above the title | Lands on Chat home |
 | Chat thread | Retry failed upload | Requeues retry state + feedback |
 | Chat thread | Queue message | Queues message + feedback |
 | Chapter picker | Chapter row (multi-chapter account only) | Activates, refreshes the session, lands in the tabs |

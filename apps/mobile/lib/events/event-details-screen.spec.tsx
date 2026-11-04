@@ -5,6 +5,7 @@ import * as expoRouter from "expo-router";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -121,5 +122,31 @@ describe("Event details clock (#2101)", () => {
 
     expect(screenText(tree)).toMatch(/(^|\n)Tonight · /);
     expect(screenText(tree)).not.toContain("Tomorrow");
+  });
+});
+
+/**
+ * #3022. s07 draws `‹ Events` above the title, in every state: a notification
+ * or a `frapp://` link can open an event that is gone, and the error screen
+ * still needs a way out.
+ */
+describe("Event details back row (#3022)", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    event = EVENT;
+  });
+
+  it("draws ‹ Events over a loaded event", () => {
+    expectBackRow(render(), "Events", "/events");
+  });
+
+  it("draws ‹ Events over the error state", () => {
+    event = null as unknown as typeof EVENT;
+
+    const tree = render();
+    expect(screenText(tree)).toContain("Couldn't load this event");
+    expectBackRow(tree, "Events", "/events");
   });
 });

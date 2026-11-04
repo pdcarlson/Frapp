@@ -8,6 +8,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { BACK_TO_MORE } from "@/components/back-row";
 import { FilterChips, SearchField } from "@/components/filter-chips";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { EmptyState, ErrorState, SkeletonLines } from "@/components/state-block";
@@ -155,7 +156,7 @@ export default function DocumentsScreen() {
   }
 
   return (
-    <ScreenShell title="Documents">
+    <ScreenShell back={BACK_TO_MORE} title="Documents">
       <SearchField
         value={search}
         onChangeText={setSearch}

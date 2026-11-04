@@ -4,6 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectBackRow } from "@/test/back-row";
 import { expectViewerScopedReads } from "@/test/service-entry-reads";
 
 /**
@@ -83,5 +84,14 @@ describe("Profile reads only the viewer's service entries", () => {
     const tree = render();
     expectViewerScopedReads(useServiceEntries.mock.calls, null);
     act(() => tree.unmount());
+  });
+});
+
+/** #3022. s15 is opened from More's profile card and draws `‹ More`. */
+describe("Profile back row (#3022)", () => {
+  it("draws ‹ More above the title", () => {
+    const tree = render();
+    expectBackRow(tree, "More", "/more");
+    tree.unmount();
   });
 });

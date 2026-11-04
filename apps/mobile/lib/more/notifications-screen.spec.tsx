@@ -4,6 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -94,5 +95,21 @@ describe("Notifications clock (#2101)", () => {
 
     expect(screenText(tree)).toContain("EARLIER");
     expect(screenText(tree)).not.toContain("TODAY");
+  });
+});
+
+/**
+ * #3022. The board draws `‹ More` on s14, but the inbox opens from the bell on
+ * Chat home since #3362, so its way back is Chat.
+ */
+describe("Notifications back row (#3022)", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+  });
+
+  it("draws ‹ Chat, the screen the bell opens it from", () => {
+    expectBackRow(render(), "Chat", "/");
   });
 });

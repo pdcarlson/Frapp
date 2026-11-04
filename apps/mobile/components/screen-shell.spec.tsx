@@ -6,6 +6,8 @@ import { Text, View } from "react-native";
 import { describe, expect, it } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText, textHeadings } from "@/test/screen-text";
+import { expectBackRow } from "@/test/back-row";
+import { BACK_TO_MORE } from "./back-row";
 import { ScreenShell } from "./screen-shell";
 
 /**
@@ -95,5 +97,32 @@ describe("ScreenShell subtitle (#3023)", () => {
     );
 
     expect(screenText(tree)).toBe("Rush dinner\nTonight, 7:00 – 9:00 PM\nBody");
+  });
+});
+
+/**
+ * #3022. A screen reached from another one passes `back`, and the shell draws
+ * the board's `‹ More` row above the title. A tab's own screen passes none.
+ */
+describe("ScreenShell back row (#3022)", () => {
+  it("draws no back row when none is passed", () => {
+    const tree = render(
+      <ScreenShell title="Tasks">
+        <Text>Body</Text>
+      </ScreenShell>,
+    );
+
+    expect(screenText(tree)).not.toContain("‹");
+  });
+
+  it("draws the passed back row above the title, and it goes there", () => {
+    const tree = render(
+      <ScreenShell back={BACK_TO_MORE} title="Dues">
+        <Text>Body</Text>
+      </ScreenShell>,
+    );
+
+    expect(screenText(tree)).toBe("‹ More\nDues\nBody");
+    expectBackRow(tree, "More", "/more");
   });
 });
