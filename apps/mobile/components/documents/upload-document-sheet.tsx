@@ -68,6 +68,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * success closes only the visit it was sent from, and `dismiss()` runs only on
  * a presented sheet.
  */
+/** Why the title and folder stopped taking edits after a failed confirm. */
+export const RETRY_KEEPS_DRAFT =
+  "Trying again keeps this title and folder. Change the photo to start over.";
+
 export const UploadDocumentSheet = forwardRef<
   BottomSheetModal,
   {
@@ -103,10 +107,14 @@ export const UploadDocumentSheet = forwardRef<
   const [refusal, setRefusal] = useState<string | null>(null);
   /**
    * The bytes a failed confirm left in the bucket, with the pick and draft
-   * they were sent with, so a retry of that same draft files them instead of
-   * uploading again (`uploadDocumentPhoto` decides). A new pick drops them.
+   * they were sent with, so a retry files them as sent instead of uploading
+   * again. Title and folder hold still while they stand, since the retry
+   * files the draft they were sent with (`lib/more/document-upload.ts`
+   * § "A confirm that fails keeps the bytes it already sent"). A new pick
+   * drops them.
    */
   const [stored, setStored] = useState<SentUpload | null>(null);
+  const draftHeld = uploading || stored !== null;
 
   const folder = chosenFolder === undefined ? initialFolder : chosenFolder;
   const canUpload = picked !== null && !uploading && !picking && !refusal;
@@ -246,13 +254,15 @@ export const UploadDocumentSheet = forwardRef<
           <BottomSheetTextInput
             value={title}
             onChangeText={setTitle}
-            editable={!uploading}
+            editable={!draftHeld}
             onFocus={() => setTitleFocused(true)}
             onBlur={() => setTitleFocused(false)}
             placeholder={picked?.filename ?? "Meeting minutes — Aug 14"}
             placeholderTextColor={tokens.color.text.muted}
             accessibilityLabel="Title"
-            accessibilityHint="Leave blank to use the file name."
+            accessibilityHint={
+              stored ? RETRY_KEEPS_DRAFT : "Leave blank to use the file name."
+            }
             autoCapitalize="sentences"
             maxLength={DOCUMENT_TITLE_MAX_LENGTH}
             style={[styles.field, titleFocused ? styles.fieldFocused : null]}
@@ -266,7 +276,7 @@ export const UploadDocumentSheet = forwardRef<
               accessibilityLabel="Folder"
               selected={folder}
               onSelect={(value) => {
-                if (!uploading) setChosenFolder(value);
+                if (!draftHeld) setChosenFolder(value);
               }}
               chips={[
                 { value: null, label: "None" },
@@ -288,6 +298,9 @@ export const UploadDocumentSheet = forwardRef<
           <Text accessibilityRole="alert" style={styles.error}>
             {failure}
           </Text>
+        ) : null}
+        {failure && stored ? (
+          <Text style={styles.note}>{RETRY_KEEPS_DRAFT}</Text>
         ) : null}
 
         <SheetPrimaryButton
@@ -367,6 +380,10 @@ function createStyles(tokens: SignetTokens) {
     error: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
+    },
+    note: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
   });
 }

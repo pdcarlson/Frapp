@@ -144,8 +144,10 @@ export class ChapterDocumentService {
     // already filed answers with that row, unchanged, instead of filing it
     // twice. Two rows on one object would break delete, which removes the
     // object. This read comes before the folder is registered, so a replay or
-    // a refusal leaves no folder behind. Two confirms racing past it meet the
-    // unique index instead, and `create` hands the loser the winner's row.
+    // a refusal answered here leaves no folder behind. Two confirms racing
+    // past it meet the unique index instead, and `create` hands the loser the
+    // winner's row; the loser has registered its folder by then, which at
+    // worst leaves one empty folder in the uploader's own chapter.
     const filed = await this.documentRepo.findByStoragePath(
       input.storage_path,
       input.chapter_id,

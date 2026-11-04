@@ -2788,7 +2788,7 @@ A unique index on `chapter_documents (storage_path)`, `chapter_documents_storage
 
 **Revert the API code forward, and keep the migration file.** Revert the #3399 code on `main` and ship that, but keep `supabase/migrations/20261104210000_chapter_documents_storage_path_key.sql` in the tree ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API runs safely against the index. It inserts without a re-read, so a confirm retried after its response was lost gets the raw `23505` as a 500, and the document it filed the first time is already in the library.
 
-**Keep the index unless it is itself the problem.** Dropping it lets a retried confirm file a second row on one object again, and deleting either row removes the object the other points at. To remove it anyway, do it in a later forward migration, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)):
+**Keep the index unless it is itself the problem.** With it dropped, the API's read still answers a retried confirm, but two confirms racing past that read can file two rows on one object again, and deleting either row removes the object the other points at. With the API reverted as well, there is no read, and every retried confirm files a second row. To remove it anyway, do it in a later forward migration, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)):
 
 ```sql
 drop index if exists public.chapter_documents_storage_path_key;

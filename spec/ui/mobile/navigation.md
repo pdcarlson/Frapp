@@ -212,7 +212,8 @@ same PR.
 caller, through `pickImage`, the pick half of the same pipeline. It needs no native
 change, so it ships over the air, but the compiled `photosPermission` text can only
 widen in a store build: #3401 does that with `expo-document-picker`, and the store
-records with it.
+records with it. The privacy policy is a web page, so it names the new use in the
+same PR (ruled non-material by the owner, 2026-11-04).
 
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`

@@ -311,34 +311,43 @@ describe("uploadDocumentPhoto", () => {
     );
   });
 
-  it.each([
-    ["the title", { title: "Minutes — Nov 2", folder: "Minutes" }],
-    ["the folder", { title: "Minutes", folder: "Bylaws" }],
-    ["the folder, to the library root", { title: "Minutes", folder: null }],
-  ])(
-    "uploads afresh once %s changed, since the first confirm may have filed the old draft",
-    async (_what, retry) => {
-      // The API answers a filed path with that row unchanged (#3399), so
-      // confirming the edited draft on those bytes would report an edit that
-      // was never filed.
-      const sent = await droppedConfirm({
+  it("retries with the title and folder it was sent with, whatever the draft says", async () => {
+    // The first confirm may have committed, and the API answers a filed path
+    // with that row unchanged (#3399): a renamed retry would report a title
+    // that was never filed, and a fresh upload would strand the first copy.
+    const sent = await droppedConfirm({ title: "Minutes", folder: "Minutes" });
+
+    await expect(
+      uploadDocumentPhoto(
+        IMAGE,
+        { title: "Minutes — Nov 2", folder: "Bylaws" },
+        mutations,
+        sent,
+      ),
+    ).resolves.toEqual({ status: "uploaded", title: "Minutes" });
+    expect(requestUploadUrl).not.toHaveBeenCalled();
+    expect(fs.uploadAsync).not.toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        storage_path: TICKET.storage_path,
         title: "Minutes",
         folder: "Minutes",
-      });
+      }),
+    );
+  });
 
-      await expect(
-        uploadDocumentPhoto(IMAGE, retry, mutations, sent),
-      ).resolves.toEqual({ status: "uploaded", title: retry.title });
-      expect(requestUploadUrl).toHaveBeenCalledTimes(1);
-      expect(fs.uploadAsync).toHaveBeenCalledTimes(1);
-      expect(confirm).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: retry.title,
-          folder: retry.folder ?? undefined,
-        }),
-      );
-    },
-  );
+  it("hands a second failed retry the same bytes and draft", async () => {
+    const sent = await droppedConfirm({ title: "", folder: null });
+    confirm.mockRejectedValueOnce(new TypeError("Network request failed"));
+
+    const again = await uploadDocumentPhoto(
+      IMAGE,
+      { title: "Typed later", folder: "Bylaws" },
+      mutations,
+      sent,
+    );
+    expect(again).toMatchObject({ status: "refused", sent });
+  });
 
   it("uploads afresh for a different photo", async () => {
     const sent = await droppedConfirm({ title: "Minutes", folder: null });

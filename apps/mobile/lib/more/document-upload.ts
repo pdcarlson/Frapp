@@ -38,12 +38,12 @@ import {
  * A confirm can fail on the phone after it committed on the server: the
  * response is lost to a dropped connection. The retry then confirms a path
  * that is already filed, and the API answers with that row, unchanged, rather
- * than a second one (`chapter_documents_storage_path_key`, #3399). So the
- * confirm runs alone only while the photo, title and folder are the ones it
- * was sent with. A draft edited since may describe a document the API already
- * filed under the old draft, and confirming it would report the edit as filed
- * when it wasn't, so it uploads afresh: at worst a second document with its own
- * copy, never two rows on one object.
+ * than a second one (`chapter_documents_storage_path_key`, #3399). So a retry
+ * files those bytes with the title and folder they were first sent with, and
+ * the sheet holds both fixed until a new photo is picked. Either way out of
+ * that holds goes wrong: renaming on the retry would report a title the API
+ * may never have filed, and uploading the edit afresh would leave the first
+ * copy with no row whenever the first confirm never landed.
  *
  * Photos only. A PDF or an Office file needs `expo-document-picker`, a native
  * module, so it waits for a store build.
@@ -82,8 +82,8 @@ export type DocumentUploadResult =
       final: boolean;
       /**
        * Set when the bytes are already in the bucket and only the confirm
-       * failed: pass it back as `uploadDocumentPhoto`'s `sent`, which
-       * confirms it alone while the photo and draft still match it.
+       * failed: pass it back as `uploadDocumentPhoto`'s `sent` to confirm
+       * those bytes again, as they were sent, for the same photo.
        */
       sent?: SentUpload;
     };
@@ -128,8 +128,8 @@ function gateRefusal(error: unknown): string | null {
 
 /**
  * Upload a picked photo and file it, or, given `sent` from a refusal whose
- * confirm failed, file those bytes without sending them again, as long as the
- * photo, title and folder are still the ones they were sent with. Never
+ * confirm failed on this same photo, file those bytes again with the title
+ * and folder they were sent with, without sending the bytes twice. Never
  * rejects.
  */
 export async function uploadDocumentPhoto(
@@ -138,14 +138,10 @@ export async function uploadDocumentPhoto(
   mutations: DocumentUploadMutations,
   sent?: SentUpload,
 ): Promise<DocumentUploadResult> {
-  const title = documentTitle(draft.title, image);
-  let stored =
-    sent &&
-    sent.image === image &&
-    sent.title === title &&
-    sent.folder === draft.folder
-      ? sent.uploaded
-      : undefined;
+  const retry = sent?.image === image ? sent : undefined;
+  const title = retry ? retry.title : documentTitle(draft.title, image);
+  const folder = retry ? retry.folder : draft.folder;
+  let stored = retry?.uploaded;
   if (!stored) {
     // `uploadPickedImage` turns a refused mint into a sentence, so the error
     // itself is caught on its way out to tell a gate from a failure.
@@ -170,7 +166,7 @@ export async function uploadDocumentPhoto(
     await mutations.confirm({
       storage_path: stored.storagePath,
       title,
-      folder: draft.folder ?? undefined,
+      folder: folder ?? undefined,
       content_type: stored.contentType,
       byte_size: stored.byteSize,
     });
@@ -181,7 +177,7 @@ export async function uploadDocumentPhoto(
       status: "refused",
       reason: reason ?? uploadFailureReason(error),
       final: reason !== null,
-      sent: { image, uploaded: stored, title, folder: draft.folder },
+      sent: { image, uploaded: stored, title, folder },
     };
   }
 }

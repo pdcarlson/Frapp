@@ -34,7 +34,10 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63" }),
 }));
 
-import { UploadDocumentSheet } from "./upload-document-sheet";
+import {
+  RETRY_KEEPS_DRAFT,
+  UploadDocumentSheet,
+} from "./upload-document-sheet";
 
 const PHOTO: PickedImage = {
   uri: "file:///IMG_2041.jpg",
@@ -479,6 +482,85 @@ describe("UploadDocumentSheet (#3399)", () => {
       expect.any(Object),
       undefined,
     );
+  });
+
+  it("holds the title and folder after a failed confirm, until a new pick", async () => {
+    const tree = render();
+    await choose(tree);
+    act(() => {
+      titleInput(tree).props.onChangeText("Minutes");
+    });
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+      final: false,
+      sent: {
+        image: PHOTO,
+        uploaded: {
+          storagePath: "chapters/c/documents/d/IMG_2041.jpg",
+          filename: "IMG_2041.jpg",
+          contentType: "image/jpeg",
+          byteSize: PHOTO.byteSize,
+        },
+        title: "Minutes",
+        folder: null,
+      },
+    });
+    await pressUpload(tree);
+
+    expect(titleInput(tree).props.editable).toBe(false);
+    expect(screenText(tree)).toContain(RETRY_KEEPS_DRAFT);
+    act(() => {
+      pressable(tree, "Bylaws").props.onPress();
+    });
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "uploaded",
+      title: "Minutes",
+    });
+    await pressUpload(tree);
+    expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
+      PHOTO,
+      { title: "Minutes", folder: null },
+      expect.any(Object),
+      expect.objectContaining({ title: "Minutes", folder: null }),
+    );
+  });
+
+  it("lets a new pick edit the draft again", async () => {
+    const tree = render();
+    await choose(tree);
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+      final: false,
+      sent: {
+        image: PHOTO,
+        uploaded: {
+          storagePath: "chapters/c/documents/d/IMG_2041.jpg",
+          filename: "IMG_2041.jpg",
+          contentType: "image/jpeg",
+          byteSize: PHOTO.byteSize,
+        },
+        title: "IMG_2041.jpg",
+        folder: null,
+      },
+    });
+    await pressUpload(tree);
+    expect(titleInput(tree).props.editable).toBe(false);
+
+    pickDocumentPhoto.mockResolvedValue({
+      status: "picked",
+      image: {
+        ...PHOTO,
+        uri: "file:///IMG_2042.jpg",
+        filename: "IMG_2042.jpg",
+      },
+    });
+    await act(async () => {
+      pressable(tree, "Change photo, IMG_2041.jpg").props.onPress();
+    });
+    expect(titleInput(tree).props.editable).toBe(true);
+    expect(screenText(tree)).not.toContain(RETRY_KEEPS_DRAFT);
   });
 
   it("draws no folder chips when the chapter has no folders", () => {

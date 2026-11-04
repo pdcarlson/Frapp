@@ -6,11 +6,12 @@ console.log(
   "\n=== Functional: one chapter_documents row per stored object (#3399) ===",
 );
 {
-  // The path index is the whole fix: the API's document create relies on its
-  // 23505 to hand a retried confirm the row it already filed, and every unit
-  // suite mocks the repository. So this is the CI-run proof that the index
-  // exists and that the migration's guard stops on rows it would have to
-  // choose between (the live-PostgREST test,
+  // `confirmUpload` answers a retried confirm from a read of the path, and
+  // the index is what holds when two confirms race past that read: the API's
+  // document create turns its 23505 into the row that won. Every unit suite
+  // mocks the repository, so this is the CI-run proof that the index exists
+  // and that the migration's guard stops on rows it would have to choose
+  // between (the live-PostgREST test,
   // apps/api/test/integration/chapter-document-confirm.integration-spec.ts,
   // isn't run in CI).
   const CHAPTER = "a3399000-0000-4000-8000-00000000000a";
