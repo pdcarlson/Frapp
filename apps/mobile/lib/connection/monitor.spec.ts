@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createConnectionMonitor,
   healthUrl,
+  LINK_DOWN_GRACE_MS,
   type MonitorDeps,
 } from "./monitor";
 import type { ConnectionState } from "./state";
@@ -12,8 +13,21 @@ type LinkListener = (state: {
   isInternetReachable?: boolean;
 }) => void;
 
-function harness(overrides: Partial<MonitorDeps> = {}) {
+type AppStateListener = (state: string) => void;
+
+/** Lets the probe's `fetch` and the `getState()` read settle. */
+async function settle() {
+  for (let i = 0; i < 10; i += 1) await Promise.resolve();
+}
+
+function harness(
+  overrides: Partial<MonitorDeps> = {},
+  { appState = "active" }: { appState?: string } = {},
+) {
   let listener: LinkListener | null = null;
+  let appStateListener: AppStateListener | null = null;
+  // The grace timer is driven by hand, like the poll.
+  let timers: Array<{ fn: () => void; ms: number; live: boolean }> = [];
   const fetchMock = vi.fn();
   const deps: MonitorDeps = {
     getState: vi
@@ -28,13 +42,45 @@ function harness(overrides: Partial<MonitorDeps> = {}) {
     // race, and what is under test is the state machine, not setInterval.
     setInterval: vi.fn(() => 1),
     clearInterval: vi.fn(),
+    setTimeout: vi.fn((fn: () => void, ms: number) => {
+      const timer = { fn, ms, live: true };
+      timers.push(timer);
+      return timer;
+    }),
+    clearTimeout: vi.fn((timer: { live: boolean }) => {
+      timer.live = false;
+    }),
+    appState: {
+      currentState: appState,
+      addEventListener: vi.fn((_type: string, next: AppStateListener) => {
+        appStateListener = next;
+        return { remove: vi.fn() };
+      }),
+    },
     ...overrides,
   } as unknown as MonitorDeps;
 
   const monitor = createConnectionMonitor(deps);
   const seen: ConnectionState[] = [];
   monitor.subscribe((state) => seen.push(state));
-  return { monitor, deps, fetchMock, seen, link: () => listener };
+  return {
+    monitor,
+    deps,
+    fetchMock,
+    seen,
+    link: () => listener,
+    appState: (next: string) => appStateListener?.(next),
+    /** Runs the pending grace timers, as if `ms` had passed. */
+    elapse(ms: number) {
+      const due = timers.filter((timer) => timer.live && timer.ms <= ms);
+      timers = timers.filter((timer) => !due.includes(timer));
+      for (const timer of due) {
+        timer.live = false;
+        timer.fn();
+      }
+    },
+    pendingTimers: () => timers.filter((timer) => timer.live).length,
+  };
 }
 
 const OK = { ok: true, status: 200 } as Response;
@@ -95,48 +141,239 @@ describe("connection monitor", () => {
     expect(headers.get("baggage")).toBeNull();
   });
 
-  it("goes OFFLINE the moment the link drops", async () => {
-    const { monitor, seen, link } = harness();
+  it("goes OFFLINE once a link drop outlasts the grace and /health confirms it", async () => {
+    const { monitor, fetchMock, seen, link, elapse } = harness();
+    fetchMock.mockResolvedValue(OK);
     monitor.start();
+    await settle();
+
+    fetchMock.mockRejectedValue(new Error("network unreachable"));
     link()?.({ isConnected: false, isInternetReachable: false });
+    // A Wi-Fi network re-associating on wake reads as no network for a
+    // second or two; the banner waits that out.
+    expect(monitor.get()).toBe("ONLINE");
+
+    elapse(LINK_DOWN_GRACE_MS);
+    await settle();
     expect(monitor.get()).toBe("OFFLINE");
     expect(seen).toEqual(["OFFLINE"]);
   });
 
-  it("treats an unreachable internet as suspicion, not proof", () => {
-    // The chat outbox now reads this same monitor (#1072), so this value is
-    // DEGRADED for both the banner and the queue: a false offline would
-    // disable check-in at the door, and `DEGRADED` must still send. One
-    // failure's worth of suspicion, and `/health` settles it.
-    const { monitor, link } = harness();
+  it("never shows OFFLINE for a link drop that recovers inside the grace", async () => {
+    const { monitor, fetchMock, seen, link, elapse } = harness();
+    fetchMock.mockResolvedValue(OK);
     monitor.start();
-    link()?.({ isConnected: true, isInternetReachable: false });
-    expect(monitor.get()).toBe("DEGRADED");
+    await settle();
+
+    link()?.({ isConnected: false, isInternetReachable: false });
+    link()?.({ isConnected: true, isInternetReachable: true });
+    elapse(LINK_DOWN_GRACE_MS);
+    await settle();
+    expect(monitor.get()).toBe("ONLINE");
+    expect(seen).toEqual([]);
   });
 
-  it("lets a successful probe overrule an unreachable-internet reading", async () => {
+  it("does not show OFFLINE when /health answers after the grace — the link reading was wrong", async () => {
+    // Android reports no network while it blocks the app's traffic, and
+    // `expo-network` never re-emits when the block lifts.
+    const { monitor, fetchMock, seen, link, elapse } = harness();
+    fetchMock.mockResolvedValue(OK);
+    monitor.start();
+    await settle();
+
+    link()?.({ isConnected: false });
+    elapse(LINK_DOWN_GRACE_MS);
+    await settle();
+    expect(monitor.get()).toBe("ONLINE");
+    expect(seen).toEqual([]);
+  });
+
+  it("does not count a probe the link drop interrupted", async () => {
+    const { monitor, fetchMock, seen, link } = harness();
+    let reject: (error: Error) => void = () => {};
+    fetchMock.mockReturnValue(
+      new Promise((_resolve, rejectProbe) => {
+        reject = rejectProbe;
+      }),
+    );
+    monitor.start();
+    link()?.({ isConnected: false });
+    reject(new Error("socket closed"));
+    await settle();
+    expect(seen).toEqual([]);
+  });
+
+  it("waits for the link-drop verdict instead of probing during the grace", async () => {
     const { monitor, fetchMock, link } = harness();
     fetchMock.mockResolvedValue(OK);
     monitor.start();
+    await settle();
+    fetchMock.mockClear();
+
+    link()?.({ isConnected: false });
+    await monitor.probeOnce();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("treats an unreachable internet as suspicion: it asks /health and does not count a failure", async () => {
+    // The chat outbox reads this same monitor (#1072): a false offline would
+    // disable check-in at the door, and a captive-portal-ish network reports
+    // this while the API is perfectly reachable. `/health` settles it.
+    const { monitor, fetchMock, seen, link } = harness();
+    fetchMock.mockResolvedValue(OK);
+    monitor.start();
+    await settle();
+    fetchMock.mockClear();
+
     link()?.({ isConnected: true, isInternetReachable: false });
-    expect(monitor.get()).toBe("DEGRADED");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(monitor.get()).toBe("ONLINE");
+    await settle();
+    expect(seen).toEqual([]);
+  });
+
+  it("does not let a burst of unreachable readings add up to OFFLINE", async () => {
+    // Android emits one event per capability change while a reconnected
+    // network validates. Each used to count as a failure, so a reconnect
+    // alone could reach three.
+    const { monitor, fetchMock, link } = harness();
+    let resolve: (response: Response) => void = () => {};
+    fetchMock.mockReturnValue(
+      new Promise((resolveProbe) => {
+        resolve = resolveProbe;
+      }),
+    );
+    monitor.start();
+    for (let i = 0; i < 4; i += 1) {
+      link()?.({ isConnected: true, isInternetReachable: false });
+    }
+    // One probe in flight answers all of them.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(monitor.get()).toBe("ONLINE");
+    resolve(OK);
+    await settle();
+    expect(monitor.get()).toBe("ONLINE");
+  });
+
+  it("finds its way back from a down link through /health, even with no link event", async () => {
+    const { monitor, fetchMock, link, elapse } = harness();
+    fetchMock.mockRejectedValue(new Error("network unreachable"));
+    monitor.start();
+    await settle();
+    link()?.({ isConnected: false });
+    elapse(LINK_DOWN_GRACE_MS);
+    await settle();
+    expect(monitor.get()).toBe("OFFLINE");
+
+    // A failed probe with the link down is not news about the API.
+    await monitor.probeOnce();
+    expect(monitor.get()).toBe("OFFLINE");
+
+    fetchMock.mockResolvedValue(OK);
     await monitor.probeOnce();
     expect(monitor.get()).toBe("ONLINE");
   });
 
-  it("does not probe while the link is down", async () => {
-    const { monitor, fetchMock, link } = harness();
-    monitor.start();
-    // Let the start probe and the initial `getState()` read settle first, so
-    // this asserts on the steady state rather than on boot ordering.
-    await Promise.resolve();
-    await Promise.resolve();
-    fetchMock.mockClear();
-    link()?.({ isConnected: false });
-    await monitor.probeOnce();
-    // The answer is already known; a probe would burn a request and up to 5s
-    // to reach it.
-    expect(fetchMock).not.toHaveBeenCalled();
+  describe("lock and unlock", () => {
+    it("ignores link events while the app is in the background", async () => {
+      const { monitor, fetchMock, seen, link, appState, elapse } = harness();
+      fetchMock.mockResolvedValue(OK);
+      monitor.start();
+      await settle();
+
+      appState("background");
+      // What Android reports for a network it is blocking for this app.
+      link()?.({ isConnected: false, isInternetReachable: false });
+      elapse(LINK_DOWN_GRACE_MS);
+      await settle();
+      expect(monitor.get()).toBe("ONLINE");
+      expect(seen).toEqual([]);
+    });
+
+    it("does not count a probe the OS cut off when the screen locked", async () => {
+      const { monitor, fetchMock, seen, appState } = harness();
+      let reject: (error: Error) => void = () => {};
+      fetchMock.mockReturnValue(
+        new Promise((_resolve, rejectProbe) => {
+          reject = rejectProbe;
+        }),
+      );
+      monitor.start();
+      appState("background");
+      reject(new Error("socket closed"));
+      await settle();
+      expect(seen).toEqual([]);
+    });
+
+    it("re-reads the link and probes as soon as the app is back in the foreground", async () => {
+      const { monitor, deps, fetchMock, appState } = harness();
+      fetchMock.mockResolvedValue(OK);
+      monitor.start();
+      await settle();
+      vi.mocked(deps.getState).mockClear();
+      fetchMock.mockClear();
+
+      appState("background");
+      appState("active");
+      await settle();
+      expect(deps.getState).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("clears an OFFLINE that a blocked network left behind, with no link event", async () => {
+      // The shape of the 2026-11-04 report: a reading taken while Android was
+      // blocking the app said no network, and nothing re-emitted afterwards.
+      const { monitor, fetchMock, link, appState, elapse } = harness();
+      fetchMock.mockRejectedValue(new Error("network unreachable"));
+      monitor.start();
+      await settle();
+      link()?.({ isConnected: false });
+      elapse(LINK_DOWN_GRACE_MS);
+      await settle();
+      expect(monitor.get()).toBe("OFFLINE");
+
+      appState("background");
+      fetchMock.mockResolvedValue(OK);
+      appState("active");
+      await settle();
+      expect(monitor.get()).toBe("ONLINE");
+    });
+
+    it("stops polling in the background and resumes in the foreground", async () => {
+      const { monitor, deps, appState } = harness();
+      monitor.start();
+      appState("background");
+      expect(deps.clearInterval).toHaveBeenCalledTimes(1);
+      appState("active");
+      expect(deps.setInterval).toHaveBeenCalledTimes(2);
+    });
+
+    it("treats iOS 'inactive' as still in the foreground", async () => {
+      // Control Center and the notification shade: the app keeps running and
+      // its network is not blocked.
+      const { monitor, fetchMock, link, appState, elapse } = harness();
+      fetchMock.mockRejectedValue(new Error("network unreachable"));
+      monitor.start();
+      await settle();
+      appState("inactive");
+      link()?.({ isConnected: false });
+      elapse(LINK_DOWN_GRACE_MS);
+      await settle();
+      expect(monitor.get()).toBe("OFFLINE");
+    });
+
+    it("waits for the foreground when started in the background", async () => {
+      const { monitor, fetchMock, appState } = harness(
+        {},
+        { appState: "background" },
+      );
+      fetchMock.mockResolvedValue(OK);
+      monitor.start();
+      expect(fetchMock).not.toHaveBeenCalled();
+      appState("active");
+      await settle();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("degrades on the first failure and goes offline on the third", async () => {
@@ -185,7 +422,7 @@ describe("connection monitor", () => {
   });
 
   it("does not reset the failure count on a link event; a successful probe does", async () => {
-    const { monitor, fetchMock, link } = harness();
+    const { monitor, fetchMock, link, elapse } = harness();
     fetchMock.mockRejectedValue(new Error("timeout"));
     monitor.start();
     await monitor.probeOnce();
@@ -199,6 +436,8 @@ describe("connection monitor", () => {
     expect(monitor.get()).toBe("DEGRADED");
 
     link()?.({ isConnected: false });
+    elapse(LINK_DOWN_GRACE_MS);
+    await settle();
     expect(monitor.get()).toBe("OFFLINE");
 
     fetchMock.mockResolvedValue(OK);

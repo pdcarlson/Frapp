@@ -22,6 +22,35 @@
  *    surfaces call the same `deriveConnectionState` in `@repo/validation`; a
  *    429 is reachability, not a failure (`healthProbeIsReachable`).
  *
+ * ## A link drop is confirmed, and a backgrounded app is not evidence
+ *
+ * Both rules come from a false "You're offline" banner after a lock and unlock
+ * on Android (0.9.0 (2), 2026-11-04), with the phone online the whole time:
+ *
+ * - **Background readings are discarded.** `expo-network` builds every Android
+ *   event from `ConnectivityManager.getActiveNetwork()`, which "will return null
+ *   when there is no default network, *or when the default network is blocked*"
+ *   (Android reference). Android blocks a backgrounded app's network under Doze,
+ *   app standby and battery saver, so a capability change that fires while the
+ *   screen is off reads as `isConnected: false`. `expo-network` has no
+ *   `onBlockedStatusChanged` handler, so nothing re-emits when the block lifts,
+ *   and the monitor used to skip every probe while the link read as down. The
+ *   app came back to the foreground OFFLINE and stayed there until some later
+ *   network event happened to fire. A `/health` probe cut off by the suspension
+ *   also counted as a failure. So the monitor now ignores link events and probe
+ *   results while the app is in the background, and on return to the
+ *   foreground re-reads the link and probes at once.
+ * - **A link drop waits `LINK_DOWN_GRACE_MS`, then asks `/health`.** A Wi-Fi
+ *   network that re-associates on wake, or a Wi-Fi to cellular handoff,
+ *   reports no network for a second or two. Any "link up" event inside the
+ *   grace cancels it, and probes wait for the verdict rather than counting a
+ *   failure the drop already explains. When the grace runs out, one probe
+ *   confirms it: with no link it fails at once and the banner shows.
+ * - **A successful probe clears a down link.** `/health` answering proves the
+ *   device can reach the API, whatever the last link event said, so the poll
+ *   keeps probing while the link reads as down. That is the way back when
+ *   `expo-network` never reports the recovery.
+ *
  * ## `/health` is not under `/v1`
  *
  * It is the one route that is not, so the poll needs the bare origin. That is
@@ -36,12 +65,20 @@ import {
   getNetworkStateAsync,
   type NetworkState as ExpoNetworkState,
 } from "expo-network";
+import { AppState, type AppStateStatus } from "react-native";
 import { normalizeApiBaseUrl, withRequestIdInit } from "@repo/api-sdk";
 import { healthProbeIsReachable } from "@repo/validation";
 import { deriveConnectionState, type ConnectionState } from "./state";
 
 export const HEALTH_POLL_INTERVAL_MS = 30_000;
 export const HEALTH_TIMEOUT_MS = 5_000;
+/**
+ * How long `isConnected: false` must stand before the monitor calls it
+ * OFFLINE. Long enough to cover a Wi-Fi network re-associating after the
+ * screen comes on, or a Wi-Fi to cellular handoff; short enough that a real
+ * drop still reaches the banner and the chat outbox within a few seconds.
+ */
+export const LINK_DOWN_GRACE_MS = 3_000;
 
 export function healthUrl(): string | null {
   const apiUrl = process.env.EXPO_PUBLIC_API_URL;
@@ -59,12 +96,25 @@ export interface ConnectionMonitor {
   probeOnce(): Promise<void>;
 }
 
+type TimerHandle = ReturnType<typeof setTimeout>;
+
 export interface MonitorDeps {
   getState: typeof getNetworkStateAsync;
   addListener: typeof addNetworkStateListener;
   fetch: typeof fetch;
   setInterval: (fn: () => void, ms: number) => ReturnType<typeof setInterval>;
   clearInterval: (handle: ReturnType<typeof setInterval>) => void;
+  /** The link-down grace timer. */
+  setTimeout: (fn: () => void, ms: number) => TimerHandle;
+  clearTimeout: (handle: TimerHandle) => void;
+  /** Foreground and background, from `AppState`. */
+  appState: {
+    readonly currentState: AppStateStatus | null | undefined;
+    addEventListener(
+      type: "change",
+      listener: (state: AppStateStatus) => void,
+    ): { remove(): void };
+  };
 }
 
 const defaultDeps: MonitorDeps = {
@@ -73,11 +123,25 @@ const defaultDeps: MonitorDeps = {
   fetch: (...args) => fetch(...args),
   setInterval: (fn, ms) => setInterval(fn, ms),
   clearInterval: (handle) => clearInterval(handle),
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (handle) => clearTimeout(handle),
+  appState: AppState,
 };
 
+/**
+ * `background` only. `inactive` is iOS Control Center, the app switcher and a
+ * notification-shade pull: the app is still running and its network is not
+ * blocked, so those readings stay trustworthy. `query-connectivity.ts` and
+ * `app/(tabs)/study.tsx` draw the same line.
+ */
+function isBackground(state: AppStateStatus | null | undefined): boolean {
+  return state === "background";
+}
+
 export function createConnectionMonitor(
-  deps: MonitorDeps = defaultDeps,
+  overrides: Partial<MonitorDeps> = {},
 ): ConnectionMonitor {
+  const deps: MonitorDeps = { ...defaultDeps, ...overrides };
   const listeners = new Set<(state: ConnectionState) => void>();
 
   // Optimistic until proven otherwise, matching the `NetworkState` port's
@@ -85,21 +149,29 @@ export function createConnectionMonitor(
   let linkOffline = false;
   let consecutiveFailures = 0;
   let probeGeneration = 0;
+  /** The generation of the probe in flight, if it still counts. */
+  let inFlightGeneration: number | null = null;
   let state: ConnectionState = "ONLINE";
 
   let started = false;
+  /** In the background: link events and probe results are not evidence. */
+  let suspended = false;
   /**
-   * Whether a listener event has already told us the link state.
+   * Counts listener events, so a `getState()` read can tell it was overtaken.
    *
-   * `start()` kicks off an async `getState()` read *and* subscribes. The read
-   * resolves a microtask or two later, so a listener event that fires in
-   * between would be overwritten by a snapshot taken before it — the monitor
-   * would report the older truth and, worse, un-set an offline it had just been
-   * told about. The listener always wins once it has spoken.
+   * `start()` and the return to the foreground each kick off an async
+   * `getState()` read *and* listen. The read resolves a microtask or two later,
+   * so a listener event that fires in between would be overwritten by a
+   * snapshot taken before it — the monitor would report the older truth and,
+   * worse, un-set an offline it had just been told about. The listener always
+   * wins once it has spoken.
    */
-  let linkFromListener = false;
+  let linkEvents = 0;
+  /** A link drop waiting out `LINK_DOWN_GRACE_MS`. */
+  let pendingLinkDown: TimerHandle | null = null;
   let poll: ReturnType<typeof setInterval> | null = null;
   let unsubscribeLink: (() => void) | null = null;
+  let unsubscribeAppState: (() => void) | null = null;
 
   function publish() {
     const next = deriveConnectionState({ linkOffline, consecutiveFailures });
@@ -110,21 +182,51 @@ export function createConnectionMonitor(
     for (const listener of [...listeners]) listener(state);
   }
 
+  /** Drops the probe in flight: whatever it reports, it reports on old news. */
+  function discardInFlightProbe() {
+    probeGeneration += 1;
+    inFlightGeneration = null;
+  }
+
+  function cancelPendingLinkDown(): boolean {
+    if (pendingLinkDown === null) return false;
+    deps.clearTimeout(pendingLinkDown);
+    pendingLinkDown = null;
+    return true;
+  }
+
   /**
-   * Only a **missing link** is definitive.
+   * Only a **missing link** is definitive, and only once it has stood for
+   * `LINK_DOWN_GRACE_MS`.
    *
    * `isInternetReachable === false` is suspicion, not proof — the same rule
-   * the chat outbox now inherits, because it reads this monitor (#1072).
-   * Folding it into OFFLINE would disable the check-in code field at the door
-   * for a captive-portal-ish network whose API is perfectly reachable, and
-   * `DEGRADED` must still send. A down link also suppresses the probe. One
-   * failure's worth of suspicion, and `/health` settles it. That is also what
-   * `spec/ui/resilience/connection-state.md` actually says — `!navigator.onLine` is the
-   * OFFLINE clause; "intermittently failing" is DEGRADED.
+   * the chat outbox inherits, because it reads this monitor (#1072). Folding it
+   * into OFFLINE would disable the check-in code field at the door for a
+   * captive-portal-ish network whose API is perfectly reachable. It does not
+   * count as a failure either: Android reports it for every network that has
+   * not finished validating, which includes every network that has just
+   * reconnected, and one event per capability change used to add one failure
+   * each, so a reconnect alone could reach three. It asks `/health`, and
+   * `/health` settles it (`spec/ui/resilience/connection-state.md`).
    */
   function applyLink(next: ExpoNetworkState) {
-    const nextOffline = next.isConnected === false;
-    const unreachable = next.isInternetReachable === false;
+    if (suspended) return;
+
+    if (next.isConnected === false) {
+      if (linkOffline || pendingLinkDown !== null) return;
+      // The drop explains any failure the probe in flight is about to report.
+      discardInFlightProbe();
+      pendingLinkDown = deps.setTimeout(() => {
+        pendingLinkDown = null;
+        // Not published yet: `/health` confirms it first. With no link the
+        // probe fails at once and publishes OFFLINE; an answer means the
+        // reading was wrong (a network still blocked for this app, say) and
+        // the banner never shows.
+        linkOffline = true;
+        void probeOnce();
+      }, LINK_DOWN_GRACE_MS);
+      return;
+    }
 
     // Do not reset the failure count on a link event. `expo-network` fires
     // on every path update — a cell handoff, a VPN toggle, a Wi-Fi↔LTE
@@ -134,19 +236,27 @@ export function createConnectionMonitor(
     // dropped: a link is not a reachable API, and flashing ONLINE while
     // `/health` is still dead re-enables writes. Probe; a reachable
     // response is what clears the count (`spec/ui/resilience/connection-state.md`).
-    const cameBack = linkOffline && !nextOffline;
-    linkOffline = nextOffline;
-    linkFromListener = true;
-    if (!nextOffline && unreachable) consecutiveFailures += 1;
-
+    const cameBack = linkOffline;
+    const blip = cancelPendingLinkDown();
+    linkOffline = false;
     publish();
-    if (cameBack) void probeOnce();
+
+    const unreachable = next.isInternetReachable === false;
+    // A blip discarded the probe in flight, so ask again.
+    if (cameBack || blip || unreachable) kickProbe();
+  }
+
+  /** A probe on demand, unless one that still counts is already in flight. */
+  function kickProbe() {
+    if (inFlightGeneration === probeGeneration) return;
+    void probeOnce();
   }
 
   async function probeOnce() {
-    // No link: the answer is already known and a probe would only burn a
-    // request and up to 5s to reach it.
-    if (linkOffline) return;
+    if (suspended) return;
+    // Wait for the link-drop verdict: a probe now would fail for a reason the
+    // drop already explains and count it against the API.
+    if (pendingLinkDown !== null) return;
 
     const url = healthUrl();
     if (!url) {
@@ -157,9 +267,14 @@ export function createConnectionMonitor(
       return;
     }
 
+    // Probed even while the link reads as down. With no link the request
+    // fails at once, and a reachable answer is the only way back when
+    // `expo-network` never reports the recovery (see the file doc).
     const generation = ++probeGeneration;
+    inFlightGeneration = generation;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
+    let reachable = false;
     try {
       const response = await deps.fetch(
         url,
@@ -168,17 +283,68 @@ export function createConnectionMonitor(
           signal: controller.signal,
         }),
       );
-      if (generation !== probeGeneration) return;
-      if (healthProbeIsReachable(response)) consecutiveFailures = 0;
-      else consecutiveFailures += 1;
+      reachable = healthProbeIsReachable(response);
     } catch {
-      if (generation !== probeGeneration) return;
-      consecutiveFailures += 1;
+      reachable = false;
     } finally {
       clearTimeout(timeout);
     }
     if (generation !== probeGeneration) return;
+    inFlightGeneration = null;
+
+    if (reachable) {
+      consecutiveFailures = 0;
+      linkOffline = false;
+    } else if (!linkOffline) {
+      // With the link down the state is already OFFLINE, and a failed
+      // recovery probe is not news about the API.
+      consecutiveFailures += 1;
+    }
     publish();
+  }
+
+  function startPolling() {
+    if (poll !== null) return;
+    poll = deps.setInterval(() => void probeOnce(), HEALTH_POLL_INTERVAL_MS);
+  }
+
+  function stopPolling() {
+    if (poll !== null) deps.clearInterval(poll);
+    poll = null;
+  }
+
+  function enterBackground() {
+    if (suspended) return;
+    suspended = true;
+    // A probe the OS cut off is not an outage, and a pending link drop was
+    // most likely the OS blocking a backgrounded app. The foreground re-read
+    // decides both.
+    discardInFlightProbe();
+    cancelPendingLinkDown();
+    stopPolling();
+  }
+
+  function enterForeground() {
+    if (!suspended) return;
+    suspended = false;
+    // The last link event may have been read while the network was blocked
+    // for this app, and nothing re-emits when the block lifts. Read it fresh,
+    // then probe: the probe also clears a down link that the read gets wrong.
+    // The screen keeps what it showed until then; flashing ONLINE first would
+    // re-enable writes on a guess.
+    const eventsBefore = linkEvents;
+    void deps
+      .getState()
+      .then((next) => {
+        if (linkEvents === eventsBefore) applyLink(next);
+      })
+      .catch(() => {
+        // Keep what we had; the probe below still settles it.
+      })
+      .finally(() => {
+        if (!suspended) void probeOnce();
+      });
+    startPolling();
   }
 
   return {
@@ -192,13 +358,34 @@ export function createConnectionMonitor(
     start() {
       if (started) return;
       started = true;
+      suspended = isBackground(deps.appState.currentState);
 
+      const appStateSubscription = deps.appState.addEventListener(
+        "change",
+        (next) => {
+          if (isBackground(next)) enterBackground();
+          else if (next === "active") enterForeground();
+        },
+      );
+      unsubscribeAppState = () => appStateSubscription.remove();
+
+      const subscription = deps.addListener((next) => {
+        linkEvents += 1;
+        applyLink(next);
+      });
+      unsubscribeLink = () => subscription.remove();
+
+      // Launched straight into the background (a notification, a headless
+      // task): wait for the foreground, which reads and probes on its own.
+      if (suspended) return;
+
+      const eventsBefore = linkEvents;
       void deps
         .getState()
         .then((state) => {
           // Superseded by a listener event that arrived while this was in
-          // flight — see `linkFromListener`.
-          if (linkFromListener) return;
+          // flight — see `linkEvents`.
+          if (linkEvents !== eventsBefore) return;
           applyLink(state);
         })
         .catch(() => {
@@ -206,23 +393,22 @@ export function createConnectionMonitor(
           // outage.
         });
 
-      const subscription = deps.addListener(applyLink);
-      unsubscribeLink = () => subscription.remove();
-
       // Probe immediately, not just on the first interval tick. Without this a
       // cold start against a dead API reports ONLINE for a full poll period
       // before the first failure even lands, and OFFLINE needs three — two
       // minutes of an app that says everything is fine while nothing loads.
       void probeOnce();
-      poll = deps.setInterval(() => void probeOnce(), HEALTH_POLL_INTERVAL_MS);
+      startPolling();
     },
     stop() {
       started = false;
-      linkFromListener = false;
+      suspended = false;
+      cancelPendingLinkDown();
       unsubscribeLink?.();
       unsubscribeLink = null;
-      if (poll !== null) deps.clearInterval(poll);
-      poll = null;
+      unsubscribeAppState?.();
+      unsubscribeAppState = null;
+      stopPolling();
     },
     probeOnce,
   };
