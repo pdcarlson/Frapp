@@ -69,6 +69,10 @@ vi.mock("@repo/org-archetypes", () => ({
   getArchetype: (key: string) => ({ key: key || "ifc" }),
   orgDefaultAccent: (name: string | null | undefined) =>
     name === "Phi Gamma Delta" ? "#4F2683" : undefined,
+  orgProfileFor: (name: string | null | undefined) =>
+    name === "Phi Gamma Delta"
+      ? { displaysGreekLetters: false, shortName: "FIJI" }
+      : undefined,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -318,10 +322,10 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     );
   });
 
-  it("keeps the opt-out and short name when the founder re-picks a directory row", async () => {
-    // The directory autofills Greek letters for every chapter it knows,
-    // FIJI's included. Choosing the row again (after going back) must not
-    // switch the letters back on or drop the short name.
+  it("starts a FIJI directory match on its short name and color, letters hidden", async () => {
+    // Phi Gamma Delta doesn't display its letters. The directory row carries
+    // them anyway, so the organization's profile has to switch them off,
+    // including when the founder goes back and picks the row again.
     directoryRows.current = [
       {
         id: "dir-fiji",
@@ -347,17 +351,10 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     try {
       render(<ChapterWizard onComplete={() => {}} />);
       await pickFiji();
-      fireEvent.change(screen.getByLabelText("Short name (optional)"), {
-        target: { value: "FIJI" },
-      });
-      fireEvent.click(
-        screen.getByRole("switch", { name: /show greek letters/i }),
-      );
       fireEvent.click(screen.getByRole("button", { name: /back/i }));
       fireEvent.click(screen.getByRole("button", { name: /back/i }));
       await pickFiji();
 
-      expect(screen.getByLabelText("Greek letters")).toHaveValue("ΦΓΔ");
       expect(screen.getByLabelText("Short name (optional)")).toHaveValue("FIJI");
       expect(
         screen.getByRole("switch", { name: /show greek letters/i }),
@@ -365,7 +362,6 @@ describe("ChapterWizard chapter mark (#2876)", () => {
       create();
       await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
       expect(onboardMutate.mock.calls[0]![0].branding).toMatchObject({
-        greek_letters: "ΦΓΔ",
         short_name: "FIJI",
         show_greek_letters: false,
         colors: { accent: "#4F2683" },

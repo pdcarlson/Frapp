@@ -33,7 +33,7 @@ export type ChapterBranding = {
    * (step 3) and `--signet-accent-border` (step 7) — for a selected chip or a
    * highlighted row that sits on a neutral surface and carries
    * {@link accent} text. Fall back together to the house `gold.askFill` /
-   * `gold.askBorder` pair.
+   * `gold.askBorder` pair, and also whenever {@link accent} itself falls back.
    */
   accentSubtle: string;
   accentBorder: string;
@@ -148,7 +148,12 @@ export function useChapterBranding(): ChapterBranding {
   );
   const generatedSubtle = readString(palette, "--signet-accent-subtle-bg");
   const generatedBorder = readString(palette, "--signet-accent-border");
-  const subtlePair = generatedSubtle && generatedBorder;
+  // The pair is drawn under `accent` text, so it is the chapter's only when
+  // that text is too: house gold text never lands on a chapter tint. The one
+  // mix left, chapter text on the Ask fill, needs a palette holding step 11
+  // without steps 3 and 7, which the engine never writes (it emits every
+  // role together).
+  const subtlePair = generatedAccent && generatedSubtle && generatedBorder;
   // Both present or neither used — see the doc comment above.
   const accentPrimary =
     generatedAccentPrimary && generatedAccentOnPrimary

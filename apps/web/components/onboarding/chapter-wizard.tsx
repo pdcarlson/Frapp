@@ -17,6 +17,7 @@ import {
   ARCHETYPES,
   getArchetype,
   orgDefaultAccent,
+  orgProfileFor,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import {
@@ -143,14 +144,20 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
     const resolvedArchetype = getArchetype(row.archetype).key;
     setDirectoryId(row.id);
     setArchetype(resolvedArchetype);
+    const profile = orgProfileFor(row.org_name);
     setIdentity({
       name: row.org_name ?? "",
       university: row.university ?? "",
       greekLetters: row.org_letters ?? "",
-      // The directory knows letters, not whether an organization shows them,
-      // so these two keep whatever the founder already chose.
-      shortName: identity.shortName,
-      showGreekLetters: identity.showGreekLetters,
+      // The directory knows letters, not whether an organization shows them.
+      // `ORG_PROFILES` knows for an organization that doesn't (FIJI), so its
+      // chapter starts on its short name with the letters hidden; otherwise
+      // these two keep whatever the founder already chose.
+      shortName: profile?.shortName ?? identity.shortName,
+      showGreekLetters:
+        profile?.displaysGreekLetters === false
+          ? false
+          : identity.showGreekLetters,
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",

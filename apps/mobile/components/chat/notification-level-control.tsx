@@ -10,7 +10,7 @@ import {
 import type { ChatNotificationLevel } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 import { MuteGlyph } from "./mute-glyph";
 
@@ -336,7 +336,9 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       gap: tokens.spacing.xs,
     },
     optionSelected: {
-      backgroundColor: tint(brand.accent, 0.18),
+      // The engine's subtle fill, which §8 holds accent text to 4.5:1 on; an
+      // 18% wash of the accent over the menu had no such guarantee.
+      backgroundColor: brand.accentSubtle,
     },
     optionLabel: {
       ...typeRole(tokens.typography.role.label),

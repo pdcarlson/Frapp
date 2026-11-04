@@ -115,6 +115,93 @@ describe("AccentPicker", () => {
     act(() => byLabel(tree, "Navy").props.onPress());
     expect(field().props.value).toBe("");
   });
+
+  it("is valid again once a swatch is tapped over a half-typed hex", () => {
+    const onValidityChange = vi.fn();
+    const { tree, onChange } = render({ onValidityChange });
+    act(() => byLabel(tree, "Custom color").props.onPress());
+    act(() =>
+      tree.root
+        .find((node) => node.props.accessibilityLabel === "Custom color hex")
+        .props.onChangeText("#4f26"),
+    );
+    expect(onValidityChange).toHaveBeenLastCalledWith(false);
+    act(() => byLabel(tree, "Navy").props.onPress());
+    expect(onValidityChange).toHaveBeenLastCalledWith(true);
+    expect(onChange).toHaveBeenLastCalledWith("#1D2F6F");
+  });
+
+  it("never holds a color it doesn't show", () => {
+    // Prefilled from the organization's row, then the wizard's name edit
+    // drops that row: the color stays on screen, still checked.
+    const onChange = vi.fn();
+    let tree!: ReactTestRenderer;
+    const picker = (orgColors: readonly { name: string; hex: string }[]) => (
+      <FrappThemeProvider>
+        <AccentPicker value={FIJI[0]!.hex} onChange={onChange} orgColors={orgColors} />
+      </FrappThemeProvider>
+    );
+    act(() => {
+      tree = create(picker(FIJI));
+    });
+    expect(
+      tree.root.findAll((node) => node.props.accessibilityLabel === "Current"),
+    ).toHaveLength(0);
+    act(() => tree.update(picker([])));
+    expect(byLabel(tree, "Current").props.accessibilityState.checked).toBe(
+      true,
+    );
+
+    // The same for a color picked after opening, not the one it opened on.
+    act(() => tree.update(picker(orgColorsFor("Theta Chi"))));
+    const military = orgColorsFor("Theta Chi")[0]!;
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <AccentPicker value={military.hex} onChange={onChange} orgColors={[]} />
+        </FrappThemeProvider>,
+      ),
+    );
+    // Military Red is the Crimson preset's hex, so it stays a visible preset.
+    expect(byLabel(tree, "Crimson").props.accessibilityState.checked).toBe(
+      true,
+    );
+    const kappa = orgColorsFor("Kappa Alpha Psi");
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <AccentPicker value={kappa[0]!.hex} onChange={onChange} orgColors={[]} />
+        </FrappThemeProvider>,
+      ),
+    );
+    expect(byLabel(tree, "Selected").props.accessibilityState.checked).toBe(
+      true,
+    );
+  });
+
+  it("shows a typed hex as Selected once the field is emptied", () => {
+    const { tree } = render({ value: "#A6192E" });
+    act(() => byLabel(tree, "Custom color").props.onPress());
+    const field = () =>
+      tree.root.find(
+        (node) =>
+          node.type === ("TextInput" as unknown) &&
+          node.props.accessibilityLabel === "Custom color hex",
+      );
+    // The caller feeds each valid color back in as `value`.
+    act(() => field().props.onChangeText("#123456"));
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <AccentPicker value="#123456" onChange={() => {}} />
+        </FrappThemeProvider>,
+      ),
+    );
+    act(() => field().props.onChangeText(""));
+    expect(byLabel(tree, "Selected").props.accessibilityState.checked).toBe(
+      true,
+    );
+  });
 });
 
 describe("parseTypedHex", () => {

@@ -86,19 +86,30 @@ export function AccentPicker({
   const presets = ACCENT_PRESETS.filter(
     (preset) => !orgColors.some((swatch) => sameHex(swatch.hex, preset.hex)),
   );
-  // The color the chapter holds when it is none of the swatches: the house
-  // default, the directory's placeholder, or a typed hex. Shown as its own
-  // selected swatch, so the picker opens on swatches rather than a hex field.
-  const [initialValue] = useState(value);
-  const current: AccentSwatch | null = [...orgColors, ...presets].some(
-    (swatch) => sameHex(swatch.hex, initialValue),
-  )
-    ? null
-    : { name: "Current", hex: initialValue };
-
   const [customOpen, setCustomOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const draftInvalid = draft.trim() !== "" && parseTypedHex(draft) === null;
+
+  // A color that is none of the swatches on screen still gets one, so the
+  // picker never holds a color it doesn't show. "Current" is what the chapter
+  // held when the picker opened (the house default, the directory's
+  // placeholder, an earlier typed hex), kept so it can be picked again.
+  // "Selected" is a chosen color the swatches lost: in the wizard, editing
+  // the organization name drops its colors from under a picked one. A hex
+  // typed into the open field shows in the field's own preview instead.
+  const visible = [...orgColors, ...presets];
+  const [initialValue] = useState(value);
+  const extras: AccentSwatch[] = [];
+  if (!visible.some((swatch) => sameHex(swatch.hex, initialValue))) {
+    extras.push({ name: "Current", hex: initialValue });
+  }
+  if (
+    draft.trim() === "" &&
+    !sameHex(value, initialValue) &&
+    !visible.some((swatch) => sameHex(swatch.hex, value))
+  ) {
+    extras.push({ name: "Selected", hex: value });
+  }
 
   function pick(hex: string) {
     if (disabled) return;
@@ -149,13 +160,19 @@ export function AccentPicker({
       accessibilityRole="radiogroup"
       accessibilityLabel={label}
     >
-      {orgColors.length > 0 || current ? (
+      {extras.length > 0 ? (
         <View style={styles.group}>
-          <Text style={styles.groupLabel}>
-            {orgColors.length > 0 ? "Your organization" : "Current"}
-          </Text>
+          <Text style={styles.groupLabel}>Current</Text>
           <View style={styles.row}>
-            {current ? renderSwatch(current, true) : null}
+            {extras.map((swatch) => renderSwatch(swatch, true))}
+          </View>
+        </View>
+      ) : null}
+
+      {orgColors.length > 0 ? (
+        <View style={styles.group}>
+          <Text style={styles.groupLabel}>Your organization</Text>
+          <View style={styles.row}>
             {orgColors.map((swatch) => renderSwatch(swatch, true))}
           </View>
         </View>
@@ -163,7 +180,7 @@ export function AccentPicker({
 
       <View style={styles.group}>
         <Text style={styles.groupLabel}>
-          {orgColors.length > 0 || current ? "More colors" : "Colors"}
+          {orgColors.length > 0 || extras.length > 0 ? "More colors" : "Colors"}
         </Text>
         <View style={styles.row}>
           {presets.map((swatch) => renderSwatch(swatch, false))}
