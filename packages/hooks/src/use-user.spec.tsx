@@ -200,21 +200,36 @@ describe("profile mutations (#732, #3387)", () => {
     await expectWaitsForRefetch(() => result.current.mutateAsync(), harness);
   });
 
-  // #3387. A name, city or company edit shows in the same reads the photo
-  // does: the directory, the alumni filters and every chat author label.
-  it("a profile edit resolves only after every read that shows the profile refetched", async () => {
+  // #3387. A name edit shows in the same reads the photo does: the
+  // directory, and through the roster every chat author label; a city or
+  // company edit in the directory and the alumni filters.
+  it("a profile edit writes the saved fields and refreshes every read without waiting", async () => {
     const harness = photoMutationHarness();
+    queryClient.setQueryData(["user", "me"], {
+      id: "u-1",
+      display_name: "Old Name",
+      current_city: "Troy, NY",
+    });
     const { result } = renderHook(() => useUpdateUser(), {
       wrapper: harness.wrapper,
     });
 
-    await expectWaitsForRefetch(
-      () => result.current.mutateAsync({ display_name: "Alex Rivera" }),
-      harness,
-    );
+    // Settles while every refetch is still held: a refetch paused by a dropped
+    // connection can't leave a save the server took stuck on "Saving…".
+    await result.current.mutateAsync({ display_name: "Alex Rivera" });
+
     expect(harness.mockClient.PATCH).toHaveBeenCalledWith("/v1/users/me", {
       body: { display_name: "Alex Rivera" },
     });
+    expect(queryClient.getQueryData(["user", "me"])).toEqual({
+      id: "u-1",
+      display_name: "Alex Rivera",
+      current_city: "Troy, NY",
+    });
+    for (const filters of EXPECTED_FILTERS) {
+      expect(harness.invalidated()).toContainEqual(filters);
+    }
+    harness.release();
   });
 
   it("confirm sends the path and surfaces an API refusal", async () => {

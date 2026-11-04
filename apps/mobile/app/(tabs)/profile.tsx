@@ -97,7 +97,11 @@ export default function ProfileScreen() {
     );
   }
 
-  if (userQuery.isError) {
+  // Only an error with nothing cached. TanStack keeps `data` through a failed
+  // background refetch (a return to the app refetches), and bare `isError`
+  // would swap in this state over the Edit sheet and drop what was typed. The
+  // web panel has the same guard (`profile-panel.tsx`).
+  if (userQuery.isError && userQuery.data === undefined) {
     return (
       <ScreenShell back={BACK_TO_MORE} title="Profile">
         <ErrorState

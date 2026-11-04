@@ -63,6 +63,10 @@ function render(profile: ViewerProfile | null = PROFILE): ReactTestRenderer {
     });
   });
   mounted.push(tree);
+  // What gorhom reports once `present()` has brought the sheet up.
+  act(() => {
+    modal(tree).props.onChange(0);
+  });
   return tree;
 }
 
@@ -89,6 +93,34 @@ function refetch(tree: ReactTestRenderer, profile: ViewerProfile) {
 
 const modal = (tree: ReactTestRenderer) =>
   tree.root.find((node) => (node.type as unknown) === "BottomSheetModal");
+
+function pressCancel(tree: ReactTestRenderer) {
+  const cancel = tree.root.find(
+    (node) =>
+      (node.type as unknown) === "Pressable" &&
+      screenText({ root: node } as unknown as ReactTestRenderer) === "Cancel",
+  );
+  act(() => {
+    cancel.props.onPress();
+  });
+}
+
+/** A save the spec settles by hand, with `isPending` held while it runs. */
+function heldSave() {
+  const settle = { succeed: () => {}, fail: () => {} };
+  mutate.mockImplementation((_body, options) => {
+    isPending = true;
+    settle.succeed = () => {
+      isPending = false;
+      options.onSuccess();
+    };
+    settle.fail = () => {
+      isPending = false;
+      options.onError(new Error());
+    };
+  });
+  return settle;
+}
 
 function type(tree: ReactTestRenderer, label: string, value: string) {
   act(() => {
@@ -201,11 +233,7 @@ describe("EditProfileSheet (#3387)", () => {
   });
 
   it("keeps the draft when a save in flight fails after the sheet was swiped away", () => {
-    let fail!: () => void;
-    mutate.mockImplementation((_body, options) => {
-      isPending = true;
-      fail = () => options.onError(new Error());
-    });
+    const save = heldSave();
     const tree = render();
 
     type(tree, "City", "Albany, NY");
@@ -216,8 +244,7 @@ describe("EditProfileSheet (#3387)", () => {
     act(() => {
       modal(tree).props.onDismiss();
     });
-    isPending = false;
-    act(() => fail());
+    act(() => save.fail());
 
     expect(screenText(tree)).toContain("That didn't save");
     expect(input(tree, "City").props.value).toBe("Albany, NY");
@@ -236,14 +263,7 @@ describe("EditProfileSheet (#3387)", () => {
     const tree = render();
 
     type(tree, "Company", "Acme");
-    const cancel = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        screenText({ root: node } as unknown as ReactTestRenderer) === "Cancel",
-    );
-    act(() => {
-      cancel.props.onPress();
-    });
+    pressCancel(tree);
 
     expect(input(tree, "Company").props.value).toBe("");
     expect(dismiss).toHaveBeenCalledTimes(1);
@@ -267,13 +287,10 @@ describe("EditProfileSheet (#3387)", () => {
     expect(saveButton(tree).props.disabled).toBe(true);
   });
 
-  // The real hook resolves only after `/v1/users/me` has refetched, so by
-  // the time the edits drop, the fields show the saved values.
-  it("closes onto the saved values once the profile has refetched", () => {
-    let succeed!: () => void;
-    mutate.mockImplementation((_body, options) => {
-      succeed = () => options.onSuccess();
-    });
+  // `useUpdateUser` writes the saved fields into the cached profile before
+  // it settles, so the screen hands the sheet the saved profile first.
+  it("closes onto the saved values and drops the edits", () => {
+    const save = heldSave();
     const tree = render();
 
     type(tree, "Company", "Acme");
@@ -281,10 +298,70 @@ describe("EditProfileSheet (#3387)", () => {
       saveButton(tree).props.onPress();
     });
     refetch(tree, { ...PROFILE, currentCompany: "Acme" });
-    act(() => succeed());
+    act(() => save.succeed());
 
     expect(dismiss).toHaveBeenCalledTimes(1);
     expect(input(tree, "Company").props.value).toBe("Acme");
     expect(saveButton(tree).props.disabled).toBe(true);
+    // The edit is gone, not just equal: a later change from the web shows.
+    refetch(tree, { ...PROFILE, currentCompany: "Changed on the web" });
+    expect(input(tree, "Company").props.value).toBe("Changed on the web");
+  });
+
+  it("follows the profile again in a field typed back to its old value", () => {
+    const tree = render();
+
+    type(tree, "City", "Albany, NY");
+    type(tree, "City", "Troy, NY");
+    refetch(tree, { ...PROFILE, currentCity: "Set on the web" });
+    type(tree, "Bio", "Pre-med.");
+
+    expect(input(tree, "City").props.value).toBe("Set on the web");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    expect(mutate.mock.calls[0]![0]).toEqual({ bio: "Pre-med." });
+  });
+
+  it("keeps the draft when a save in flight fails after Cancel", () => {
+    const save = heldSave();
+    const tree = render();
+
+    type(tree, "City", "Albany, NY");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    refetch(tree, PROFILE); // re-render with the save in flight
+    pressCancel(tree);
+    act(() => {
+      modal(tree).props.onDismiss();
+    });
+    act(() => save.fail());
+
+    expect(screenText(tree)).toContain("That didn't save");
+    expect(input(tree, "City").props.value).toBe("Albany, NY");
+  });
+
+  // gorhom's `dismiss()` on a modal that already closed leaves it stuck
+  // mid-dismiss, and the next `present()` draws nothing.
+  it("doesn't dismiss again when a save lands after the sheet closed", () => {
+    const save = heldSave();
+    const tree = render();
+
+    type(tree, "City", "Albany, NY");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    refetch(tree, PROFILE);
+    act(() => {
+      modal(tree).props.onDismiss();
+    });
+    act(() => save.succeed());
+
+    expect(dismiss).not.toHaveBeenCalled();
+    // And the edits drop on success, so the next open shows the profile.
+    refetch(tree, { ...PROFILE, currentCity: "Albany, NY" });
+    refetch(tree, { ...PROFILE, currentCity: "Changed on the web" });
+    expect(input(tree, "City").props.value).toBe("Changed on the web");
   });
 });

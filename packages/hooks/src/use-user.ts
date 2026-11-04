@@ -57,9 +57,15 @@ export function useUpdateUser() {
       if (error) throw error;
       return data;
     },
-    // Resolves once every read below has refetched, so a caller that closes a
-    // form on success closes it onto the saved values.
-    onSuccess: () => invalidateProfileReads(queryClient),
+    onSuccess: (_data, body) => {
+      // The saved fields go straight into the cached profile, so a form that
+      // closes on success closes onto them, without waiting on a refetch that
+      // a dropped connection could hold paused after the save itself landed.
+      queryClient.setQueryData(["user", "me"], (old: unknown) =>
+        old && typeof old === "object" ? { ...old, ...body } : old,
+      );
+      void invalidateProfileReads(queryClient);
+    },
   });
 }
 
@@ -74,8 +80,9 @@ export function useUpdateUser() {
  *
  * `["user", "me"]` is matched exactly: as a prefix it would also refetch
  * `["user", "me", "permissions", …]` and `["user", "me", "legal-acceptance"]`,
- * which a profile edit can't change, and the profile mutations wait for every
- * refetch they start.
+ * which a profile edit can't change. The photo mutations wait for every
+ * refetch they start; `useUpdateUser` writes its fields into the cache and
+ * starts the refetches without waiting.
  */
 export const PROFILE_QUERY_FILTERS: readonly InvalidateQueryFilters[] = [
   { queryKey: ["user", "me"], exact: true },

@@ -172,6 +172,17 @@ describe("Profile Edit (#3387)", () => {
     tree.unmount();
   });
 
+  // TanStack keeps `data` through a failed background refetch; the screen,
+  // and an Edit sheet open over it, stay rather than turning into the error.
+  it("keeps the profile and Edit when a background refetch fails", () => {
+    currentUser = { ...LOADED_USER, isError: true, refetch: vi.fn() };
+    const tree = render();
+
+    expect(editControls(tree)).toHaveLength(1);
+    expect(screenText(tree)).not.toContain("Couldn't load your profile");
+    tree.unmount();
+  });
+
   it.each([
     ["loads", { isPending: true, isError: false, data: undefined }],
     [

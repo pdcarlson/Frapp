@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useMemo, useState } from "react";
+import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import {
   BottomSheetModal,
@@ -39,15 +39,17 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * shows the profile as it stands. So the sheet always opens on the latest
  * profile, with no "reset on present" step to forget, and a refetch that lands
  * mid-edit (a return to the app refetches `/v1/users/me`) updates the fields
- * the member left alone instead of freezing them. Those fields then equal the
+ * the member left alone instead of freezing them. Those fields equal the
  * profile, so `profilePatch` leaves them out of the save, and a value another
- * device set is never written back over. The web form keeps the same rule
- * (`apps/web/components/profile/profile-panel.tsx`, `seededFrom`).
+ * device set is written back over only in a field the member changed. A field
+ * typed back to its old value leaves `edits` and follows the profile again.
+ * That is the web form's rule too (`apps/web/components/profile/profile-panel.tsx`,
+ * `seededFrom`): it keeps a field only while it differs from the profile.
  *
- * Dismissing, saving or cancelling drops the edits, except that a sheet
- * swiped away mid-save keeps them until the save settles. A save closes the
- * sheet only once `useUpdateUser` has refetched the profile, so it closes onto
- * the saved values rather than flashing the old ones.
+ * Dismissing, saving or cancelling drops the edits, except that a sheet closed
+ * mid-save keeps them until the save settles. `useUpdateUser` writes the saved
+ * fields into the cached profile before it settles, so a save closes onto the
+ * saved values rather than flashing the old ones.
  *
  * ## A fixed detent, not dynamic sizing
  *
@@ -85,9 +87,16 @@ export const EditProfileSheet = forwardRef<
   const canSave =
     result.ok && hasChanges(result.patch) && !updateUser.isPending;
 
+  // A field typed back to the profile's value leaves `edits`, so it follows
+  // the profile again rather than pinning the value it had when it was typed.
   const edit = (field: ProfileDraftField) => (value: string) => {
     setSubmitFailed(false);
-    setEdits((current) => ({ ...current, [field]: value }));
+    setEdits((current) => {
+      const next = { ...current };
+      if (value === original[field]) delete next[field];
+      else next[field] = value;
+      return next;
+    });
   };
 
   const reset = useCallback(() => {
@@ -96,22 +105,30 @@ export const EditProfileSheet = forwardRef<
     setFocused(null);
   }, []);
 
+  // Whether the sheet is up. A save can settle after the sheet has closed, and
+  // gorhom's `dismiss()` on a closed modal leaves it stuck mid-dismiss, so the
+  // next `present()` draws nothing (5.2.x `handlePortalRender`).
+  const presented = useRef(false);
+
   const dismiss = useCallback(() => {
+    if (!presented.current) return;
     if (typeof ref === "function" || !ref?.current) return;
     ref.current.dismiss();
   }, [ref]);
 
-  // A sheet swiped away mid-save keeps its edits until the save settles, so a
-  // failure still reopens on what was typed.
-  const dismissed = () => {
+  // However the sheet closes mid-save (Cancel, a swipe, the scrim), the edits
+  // stay until the save settles: the PATCH is already sent, and a failure has
+  // to reopen on what was typed.
+  const closed = () => {
+    presented.current = false;
     if (updateUser.isPending) setFocused(null);
     else reset();
   };
 
-  const cancel = useCallback(() => {
-    reset();
+  const cancel = () => {
+    if (!updateUser.isPending) reset();
     dismiss();
-  }, [reset, dismiss]);
+  };
 
   const save = () => {
     // `canSave`, not only the button's `disabled`, stands between a save in
@@ -119,8 +136,8 @@ export const EditProfileSheet = forwardRef<
     if (!result.ok || !canSave) return;
     setSubmitFailed(false);
     updateUser.mutate(result.patch, {
-      // `useUpdateUser` resolves only after `/v1/users/me` has refetched, so
-      // dropping the edits here shows the saved values, not the old ones.
+      // `useUpdateUser` has already written the saved fields into the cached
+      // profile, so dropping the edits here shows them, not the old values.
       onSuccess: () => {
         reset();
         dismiss();
@@ -183,7 +200,10 @@ export const EditProfileSheet = forwardRef<
       backgroundStyle={backgroundStyle}
       backdropComponent={SheetScrim}
       handleComponent={SheetGrabber}
-      onDismiss={dismissed}
+      onChange={(index) => {
+        presented.current = index >= 0;
+      }}
+      onDismiss={closed}
     >
       <BottomSheetScrollView
         contentContainerStyle={styles.body}
