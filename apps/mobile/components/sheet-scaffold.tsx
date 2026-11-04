@@ -183,6 +183,34 @@ export function useSheetVisit(ref: ForwardedRef<BottomSheetModal>) {
   return { onAnimate, markClosed, dismiss, visit, isSameVisit };
 }
 
+/**
+ * The text field every sheet form draws (s15's profile edit, s20's new task,
+ * s21's upload), as plain style objects for the caller's own
+ * `StyleSheet.create`, so a sheet can add its own layout to `field`. Focus
+ * swaps the border to the chapter accent, as every focusable control does
+ * (`spec/ui/design-system/components.md` § States). Shared because the three
+ * sheets had grown three copies, and the focus border had already drifted to
+ * house gold in two of them.
+ */
+export function sheetFieldStyles(tokens: SignetTokens, accent: string) {
+  return {
+    field: {
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.surface1,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+    },
+    fieldFocused: {
+      borderColor: accent,
+    },
+  };
+}
+
 /** Shared background for `BottomSheetModal`'s `backgroundStyle`. */
 export function useSheetBackgroundStyle() {
   const { tokens } = useFrappTheme();

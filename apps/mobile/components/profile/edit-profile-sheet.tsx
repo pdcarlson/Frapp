@@ -11,6 +11,7 @@ import {
   SheetGrabber,
   SheetHeader,
   SheetPrimaryButton,
+  sheetFieldStyles,
   SheetScrim,
   useSheetBackgroundStyle,
   useSheetVisit,
@@ -79,7 +80,7 @@ export const EditProfileSheet = forwardRef<
 >(function EditProfileSheet({ profile }, ref) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
-  const styles = createStyles(tokens);
+  const styles = createStyles(tokens, accent);
   const backgroundStyle = useSheetBackgroundStyle();
   const updateUser = useUpdateUser();
 
@@ -273,7 +274,8 @@ export const EditProfileSheet = forwardRef<
   );
 });
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, accent: string) {
+  const fieldStyles = sheetFieldStyles(tokens, accent);
   return StyleSheet.create({
     body: {
       paddingHorizontal: tokens.spacing.lg,
@@ -287,18 +289,7 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.mutedForeground,
     },
-    // `new-task-sheet.tsx`'s field, so the two sheets' inputs read as one.
-    field: {
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
+    field: fieldStyles.field,
     fieldMultiline: {
       minHeight:
         (tokens.typography.role.body.lineHeight ??
@@ -306,9 +297,7 @@ function createStyles(tokens: SignetTokens) {
           BIO_LINES +
         tokens.spacing.sm * 2,
     },
-    fieldFocused: {
-      borderColor: tokens.color.gold.house,
-    },
+    fieldFocused: fieldStyles.fieldFocused,
     fieldInvalid: {
       borderColor: tokens.color.semantic.destructive,
     },

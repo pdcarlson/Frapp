@@ -16,6 +16,8 @@ import { screenText } from "@/test/screen-text";
  */
 
 let permissions: string[] = [];
+let folderRows: unknown[] = [];
+let chapterId: string | null = "chapter-a";
 const LOADED = {
   data: [],
   isPending: false,
@@ -27,7 +29,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   usePermissionList: () => permissions,
   useDocuments: () => LOADED,
-  useDocumentFolders: () => LOADED,
+  useDocumentFolders: () => ({ ...LOADED, data: folderRows }),
+  useActiveChapterId: () => chapterId,
   useDocumentDownloadUrl: () => ({ mutateAsync: vi.fn() }),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useConfirmDocumentUpload: () => ({ mutateAsync: vi.fn() }),
@@ -42,20 +45,21 @@ import DocumentsScreen from "@/app/(tabs)/documents";
 const present = vi.fn();
 const mounted: ReactTestRenderer[] = [];
 
+const screen = () => (
+  <FrappThemeProvider>
+    <DocumentsScreen />
+  </FrappThemeProvider>
+);
+
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(
-      <FrappThemeProvider>
-        <DocumentsScreen />
-      </FrappThemeProvider>,
-      {
-        createNodeMock: (element) =>
-          (element.type as unknown) === "BottomSheetModal"
-            ? { present, dismiss: vi.fn() }
-            : null,
-      },
-    );
+    tree = create(screen(), {
+      createNodeMock: (element) =>
+        (element.type as unknown) === "BottomSheetModal"
+          ? { present, dismiss: vi.fn() }
+          : null,
+    });
   });
   mounted.push(tree);
   return tree;
@@ -73,6 +77,8 @@ const sheets = (tree: ReactTestRenderer) =>
 
 afterEach(() => {
   permissions = [];
+  folderRows = [];
+  chapterId = "chapter-a";
   present.mockReset();
   act(() => {
     for (const tree of mounted.splice(0)) tree.unmount();
@@ -132,6 +138,49 @@ describe("Documents upload (#3399)", () => {
       uploadControls(tree)[0]!.props.onPress();
     });
     expect(screenText(tree)).not.toContain("is in the library.");
+  });
+
+  it("opens s21 on the folder s12 is filtered to", () => {
+    permissions = ["*"];
+    folderRows = [
+      { id: "f1", name: "Minutes", sort_order: 0 },
+      { id: "f2", name: "Bylaws", sort_order: 1 },
+    ];
+    const tree = render();
+    const uploadSheet = () =>
+      tree.root.find((node) => typeof node.props.onUploaded === "function");
+    expect(uploadSheet().props.initialFolder).toBeNull();
+
+    act(() => {
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Filter by folder" &&
+            typeof node.props.onSelect === "function",
+        )
+        .props.onSelect("Bylaws");
+    });
+    expect(uploadSheet().props.initialFolder).toBe("Bylaws");
+  });
+
+  it("mounts a fresh s21 for each chapter", () => {
+    // A retry s21 holds names a path minted under the chapter it was sent from.
+    permissions = ["*"];
+    const tree = render();
+    const uploadSheet = () =>
+      tree.root.find((node) => typeof node.props.onUploaded === "function");
+    const first = uploadSheet();
+
+    act(() => {
+      tree.update(screen());
+    });
+    expect(uploadSheet()).toBe(first);
+
+    chapterId = "chapter-b";
+    act(() => {
+      tree.update(screen());
+    });
+    expect(uploadSheet()).not.toBe(first);
   });
 
   it("no longer sends anyone to the web dashboard", () => {

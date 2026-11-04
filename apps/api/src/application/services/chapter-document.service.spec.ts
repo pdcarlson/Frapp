@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { MAX_UPLOAD_BYTES } from '@repo/validation';
 import { ChapterDocumentService } from './chapter-document.service';
+import { safeObjectFilename } from '#domain/constants/storage';
 import { CHAPTER_DOCUMENT_REPOSITORY } from '#domain/repositories/chapter-document.repository.interface';
 import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
 import { CHAPTER_DOCUMENT_FOLDER_REPOSITORY } from '#domain/repositories/chapter-document-folder.repository.interface';
@@ -456,6 +457,52 @@ describe('ChapterDocumentService', () => {
         expect(mockDocumentRepo.create).not.toHaveBeenCalled();
       },
     );
+
+    it.each([
+      // Each names the filed object `doc-1/bylaws.pdf` under another string,
+      // so it would pass the filed-row read and the unique index (#3399).
+      'chapters/ch-1/documents/doc-1/bylaws.pdf?alias',
+      'chapters/ch-1/documents/doc-1/bylaws.pdf#alias',
+      'chapters/ch-1/documents/doc-1/bylaw%73.pdf',
+      // Not the `{documentId}/{filename}` the mint builds.
+      'chapters/ch-1/documents/bylaws.pdf',
+      'chapters/ch-1/documents/doc-1/extra/bylaws.pdf',
+      'chapters/ch-1/documents/doc-1/',
+      'chapters/ch-1/documents/doc-1//bylaws.pdf',
+    ])(
+      'rejects a storage_path that is not a minted key (%p)',
+      async (storagePath) => {
+        await expect(
+          service.confirmUpload({
+            chapter_id: 'ch-1',
+            title: 'Bylaws',
+            storage_path: storagePath,
+            uploaded_by: 'user-1',
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockDocumentRepo.findByStoragePath).not.toHaveBeenCalled();
+        expect(mockDocumentRepo.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('accepts every character a minted filename can keep', async () => {
+      const storagePath = `chapters/ch-1/documents/4a5c1f0e-3d2b-4c8a-9f1e-2b7d6c5a4e3f/${safeObjectFilename("Bob's notes (final), A&B $1=@;:+!*.pdf")}`;
+      mockDocumentRepo.create.mockResolvedValue({
+        ...baseDocument,
+        storage_path: storagePath,
+      });
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        title: 'Notes',
+        storage_path: storagePath,
+        uploaded_by: 'user-1',
+      });
+
+      expect(mockDocumentRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ storage_path: storagePath }),
+      );
+    });
 
     it('should reject a storage_path outside the chapter (cross-chapter)', async () => {
       await expect(

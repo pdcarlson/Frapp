@@ -28,7 +28,10 @@ import {
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
-import { safeObjectFilename } from '#domain/constants/storage';
+import {
+  isObjectKeySegment,
+  safeObjectFilename,
+} from '#domain/constants/storage';
 
 const DOCUMENTS_BUCKET = 'documents';
 
@@ -100,9 +103,8 @@ export class ChapterDocumentService {
   }
 
   async confirmUpload(input: ConfirmUploadInput): Promise<ChapterDocument> {
-    if (
-      !input.storage_path.startsWith(`chapters/${input.chapter_id}/documents/`)
-    ) {
+    const prefix = `chapters/${input.chapter_id}/documents/`;
+    if (!input.storage_path.startsWith(prefix)) {
       throw new BadRequestException(
         'storage_path must be within the chapter documents folder',
       );
@@ -121,6 +123,17 @@ export class ChapterDocumentService {
       );
     } catch (error) {
       throw new BadRequestException((error as Error).message);
+    }
+    // The rest must be the `{documentId}/{filename}` that `requestUploadUrl`
+    // mints. The traversal guard above lets `?`, `#` and `%` through, and a
+    // suffixed or percent-encoded spelling of a filed path names the same
+    // object while comparing unequal to it, so it would get past the filed-row
+    // read and the unique index below and file that object a second time.
+    const segments = input.storage_path.slice(prefix.length).split('/');
+    if (segments.length !== 2 || !segments.every(isObjectKeySegment)) {
+      throw new BadRequestException(
+        'storage_path must be a path the upload URL route minted',
+      );
     }
 
     // `requestUploadUrl` validates the declared content type before minting a

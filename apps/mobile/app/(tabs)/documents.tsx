@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import * as WebBrowser from "expo-web-browser";
 import {
+  useActiveChapterId,
   useDocumentDownloadUrl,
   useDocumentFolders,
   useDocuments,
@@ -16,7 +17,11 @@ import { UploadGlyph } from "@/components/documents/document-glyphs";
 import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
 import { FilterChips, SearchField } from "@/components/filter-chips";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
-import { EmptyState, ErrorState, SkeletonLines } from "@/components/state-block";
+import {
+  EmptyState,
+  ErrorState,
+  SkeletonLines,
+} from "@/components/state-block";
 import {
   selectDocumentFolders,
   selectDocumentRows,
@@ -84,6 +89,7 @@ export default function DocumentsScreen() {
   const [uploadedTitle, setUploadedTitle] = useState<string | null>(null);
   const uploadSheetRef = useRef<BottomSheetModal>(null);
   const canUpload = can("chapter_docs:upload", usePermissionList());
+  const chapterId = useActiveChapterId();
 
   // Deferred, like s13's: `search` is in the query key, so feeding raw
   // keystrokes would mint a cache entry and fire a request per character, and
@@ -228,6 +234,9 @@ export default function DocumentsScreen() {
 
       {canUpload ? (
         <UploadDocumentSheet
+          // A new sheet per chapter: a retry the sheet holds after a failed
+          // confirm names a path minted under the chapter it was sent from.
+          key={chapterId ?? "no-chapter"}
           ref={uploadSheetRef}
           folders={folders}
           initialFolder={folder}

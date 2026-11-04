@@ -165,6 +165,25 @@ export function flattenArchiveRelativePath(relativePath: string): string {
  */
 const UNSAFE_OBJECT_KEY_CHAR = /[^A-Za-z0-9_!.*'() &$=@;:+,-]/g;
 
+/** The same set, as a whole-segment test. */
+const OBJECT_KEY_SEGMENT = /^[A-Za-z0-9_!.*'() &$=@;:+,-]+$/;
+
+/**
+ * True when `segment` is one a minted key can hold: non-empty, and made only
+ * of the characters `safeObjectFilename` keeps.
+ *
+ * A confirm route checks the client's path with this as well as
+ * `assertSafeStoragePath`, because the traversal guard lets `?`, `#` and `%`
+ * through. storage-js puts the key into the request URL unencoded, so
+ * `{path}?x`, `{path}#x` or a percent-encoded spelling names the same object
+ * as `{path}` while comparing unequal to it as a string, and anything keyed on
+ * the string (a unique index, a filed-row lookup) would treat it as a new one
+ * (#3399).
+ */
+export function isObjectKeySegment(segment: string): boolean {
+  return OBJECT_KEY_SEGMENT.test(segment);
+}
+
 /**
  * The last segment of a storage key built from a client-supplied filename.
  *

@@ -73,6 +73,7 @@ in the S2 nav restructure (#957) — see
 | Documents (`/(tabs)/documents`) | Open as the President, then as a plain member | The President sees an upload arrow at the right end of `‹ More`; a member sees none |
 | Documents (`/(tabs)/documents`) | Upload arrow, choose a photo, type a title, tap a folder, Upload | The sheet shows the photo's name and size; nothing uploads until Upload; the sheet closes, "… is in the library" shows, and the document appears in the list and opens |
 | Documents (`/(tabs)/documents`) | Upload with no connection | "Couldn't upload that photo" in the sheet; the photo, title and folder are still there; if the photo had already gone up, the title and folder stop taking edits; Upload works once you're back online and files one document |
+| Documents (`/(tabs)/documents`) | After a failed upload whose title stopped taking edits, swipe the sheet down, reopen it, Upload | The photo, title and folder are still there, and one document is filed |
 | Notifications (`/(tabs)/notifications`) | `‹ Chat` above the title | Lands on Chat home |
 | Chat thread | Retry failed upload | Requeues retry state + feedback |
 | Chat thread | Queue message | Queues message + feedback |

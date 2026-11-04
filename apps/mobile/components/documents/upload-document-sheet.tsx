@@ -12,12 +12,13 @@ import {
 import { formatBytes } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { DOCUMENT_TITLE_MAX_LENGTH, MAX_UPLOAD_LABEL } from "@repo/validation";
-import { FileGlyph } from "@/components/documents/document-glyphs";
+import { DocumentsGlyph } from "@/components/more/more-glyphs";
 import { FilterChips } from "@/components/filter-chips";
 import {
   SheetGrabber,
   SheetHeader,
   SheetPrimaryButton,
+  sheetFieldStyles,
   SheetScrim,
   useSheetBackgroundStyle,
   useSheetVisit,
@@ -71,6 +72,11 @@ export const RETRY_KEEPS_DRAFT =
  * through the same `useSheetVisit`: the draft stays until the upload settles, a
  * success closes only the visit it was sent from, and `dismiss()` runs only on
  * a presented sheet.
+ *
+ * A swipe or scrim close after a failed confirm keeps the held upload too, so
+ * reopening retries the confirm instead of sending the photo again; Cancel and
+ * a new pick give it up. s12 mounts a new sheet per chapter, since the held
+ * path was minted under the chapter it was sent from.
  */
 export const UploadDocumentSheet = forwardRef<
   BottomSheetModal,
@@ -84,7 +90,7 @@ export const UploadDocumentSheet = forwardRef<
 >(function UploadDocumentSheet({ folders, initialFolder, onUploaded }, ref) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
-  const styles = createStyles(tokens);
+  const styles = createStyles(tokens, accent);
   const backgroundStyle = useSheetBackgroundStyle();
   const requestUploadUrl = useRequestDocumentUploadUrl();
   const confirmUpload = useConfirmDocumentUpload();
@@ -139,10 +145,21 @@ export const UploadDocumentSheet = forwardRef<
   // picker draws doesn't launch another (Android rejects the second launch).
   const pickingNow = useRef(false);
 
+  // A swipe or scrim close keeps an upload that is in flight, or one a
+  // failed confirm left in the bucket: reopening offers the same retry rather
+  // than uploading the photo a second time. Cancel is the way to give it up.
+  // A refusal is dropped, since the officer may have lifted it by the next
+  // visit, and the server will say so again if not.
   const closed = () => {
     markClosed();
-    if (sending.current) setTitleFocused(false);
-    else reset();
+    setTitleFocused(false);
+    if (sending.current) return;
+    if (stored !== null) {
+      setRefusal(null);
+      setPickRefusal(null);
+      return;
+    }
+    reset();
   };
 
   const cancel = () => {
@@ -193,7 +210,11 @@ export const UploadDocumentSheet = forwardRef<
       onUploaded?.(result.title);
       return;
     }
-    if (result.sent) setStored(result.sent);
+    if (result.sent) {
+      setStored(result.sent);
+      // Show the folder the retry will file into, which the sent draft fixed.
+      setChosenFolder(result.sent.folder);
+    }
     if (result.final) setRefusal(result.reason);
     else setFailure(result.reason);
   };
@@ -230,7 +251,7 @@ export const UploadDocumentSheet = forwardRef<
             pressed ? styles.pressed : null,
           ]}
         >
-          <FileGlyph color={tokens.color.gold.askText} />
+          <DocumentsGlyph color={tokens.color.gold.askText} size={24} />
           <View style={styles.fileText}>
             <Text style={styles.fileName} numberOfLines={1}>
               {picked ? picked.filename : "Choose a photo"}
@@ -318,7 +339,8 @@ export const UploadDocumentSheet = forwardRef<
   );
 });
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, accent: string) {
+  const fieldStyles = sheetFieldStyles(tokens, accent);
   return StyleSheet.create({
     body: {
       paddingHorizontal: tokens.spacing.lg,
@@ -362,21 +384,8 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.mutedForeground,
     },
-    // `edit-profile-sheet.tsx`'s field, so the sheets' inputs read as one.
-    field: {
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
-    fieldFocused: {
-      borderColor: tokens.color.gold.house,
-    },
+    field: fieldStyles.field,
+    fieldFocused: fieldStyles.fieldFocused,
     error: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,

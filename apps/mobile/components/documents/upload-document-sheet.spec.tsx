@@ -7,6 +7,7 @@ import type { PickedImage } from "@/lib/chat/attachment-upload";
 import type { DocumentUploadResult } from "@/lib/more/document-upload";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
+import { DOCUMENT_TITLE_MAX_LENGTH } from "@repo/validation";
 
 /**
  * #3399. s21, rendered: nothing is sent until Upload, Upload sends the title
@@ -50,6 +51,19 @@ const FOLDERS = [
   { id: "f1", name: "Minutes" },
   { id: "f2", name: "Bylaws" },
 ];
+
+/** What a confirm that failed after the PUT hands back to retry. */
+const SENT = {
+  image: PHOTO,
+  uploaded: {
+    storagePath: "chapters/c/documents/d/IMG_2041.jpg",
+    filename: "IMG_2041.jpg",
+    contentType: "image/jpeg",
+    byteSize: PHOTO.byteSize,
+  },
+  title: "IMG_2041.jpg",
+  folder: null,
+};
 
 const dismiss = vi.fn();
 const onUploaded = vi.fn();
@@ -123,6 +137,12 @@ const titleInput = (tree: ReactTestRenderer) =>
     (node) =>
       (node.type as unknown) === "BottomSheetTextInput" &&
       node.props.accessibilityLabel === "Title",
+  );
+
+const folderChips = (tree: ReactTestRenderer) =>
+  tree.root.find(
+    (node) =>
+      node.props.accessibilityLabel === "Folder" && "selected" in node.props,
   );
 
 async function choose(tree: ReactTestRenderer) {
@@ -310,18 +330,157 @@ describe("UploadDocumentSheet (#3399)", () => {
     await settle({ status: "uploaded", title: "IMG_2041.jpg" });
   });
 
-  it("drops the draft on Cancel or a swipe", async () => {
+  it.each([
+    [
+      "Cancel",
+      (tree: ReactTestRenderer) => {
+        act(() => {
+          pressable(tree, "Cancel").props.onPress();
+        });
+        expect(dismiss).toHaveBeenCalledTimes(1);
+        closed(tree);
+      },
+    ],
+    // A swipe or a scrim tap reaches the sheet only as `onDismiss`.
+    ["a swipe", (tree: ReactTestRenderer) => closed(tree)],
+  ])("drops a draft nothing was sent for on %s", async (_how, close) => {
     const tree = render();
     await choose(tree);
     act(() => {
-      pressable(tree, "Cancel").props.onPress();
+      titleInput(tree).props.onChangeText("Minutes");
     });
-    expect(dismiss).toHaveBeenCalledTimes(1);
-    closed(tree);
+    close(tree);
 
     open(tree);
     expect(screenText(tree)).toContain("Choose a photo");
     expect(screenText(tree)).not.toContain("IMG_2041.jpg");
+    expect(titleInput(tree).props.value).toBe("");
+  });
+
+  it("keeps the bytes a failed confirm sent across a swipe, until Cancel", async () => {
+    const tree = render();
+    await choose(tree);
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+      final: false,
+      sent: SENT,
+    });
+    await pressUpload(tree);
+
+    // Swiped away, then opened again: the retry is still the confirm alone.
+    closed(tree);
+    open(tree);
+    expect(screenText(tree)).toContain("IMG_2041.jpg");
+    expect(titleInput(tree).props.editable).toBe(false);
+    await pressUpload(tree);
+    expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
+      PHOTO,
+      expect.any(Object),
+      expect.any(Object),
+      SENT,
+    );
+
+    // Cancel is the way to give it up.
+    act(() => {
+      pressable(tree, "Cancel").props.onPress();
+    });
+    closed(tree);
+    open(tree);
+    expect(screenText(tree)).toContain("Choose a photo");
+    await choose(tree);
+    await pressUpload(tree);
+    expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
+      PHOTO,
+      expect.any(Object),
+      expect.any(Object),
+      undefined,
+    );
+  });
+
+  it("drops an officer-only refusal on close, keeping the bytes it sent", async () => {
+    const tree = render();
+    await choose(tree);
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "refused",
+      reason: "Uploads are paused until the subscription is renewed.",
+      final: true,
+      sent: SENT,
+    });
+    await pressUpload(tree);
+    expect(uploadButton(tree).props.disabled).toBe(true);
+
+    closed(tree);
+    open(tree);
+    expect(screenText(tree)).not.toContain("subscription is renewed");
+    expect(uploadButton(tree).props.disabled).toBe(false);
+    await pressUpload(tree);
+    expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
+      PHOTO,
+      expect.any(Object),
+      expect.any(Object),
+      SENT,
+    );
+  });
+
+  it("shows the folder a held retry files into, whatever s12 filters to next", async () => {
+    let tree!: ReactTestRenderer;
+    const sheet = (initialFolder: string | null) => (
+      <FrappThemeProvider>
+        <UploadDocumentSheet
+          ref={ref}
+          folders={FOLDERS}
+          initialFolder={initialFolder}
+          onUploaded={onUploaded}
+        />
+      </FrappThemeProvider>
+    );
+    act(() => {
+      tree = create(sheet("Minutes"), {
+        createNodeMock: (element) =>
+          (element.type as unknown) === "BottomSheetModal"
+            ? { dismiss, present: vi.fn() }
+            : null,
+      });
+    });
+    mounted.push(tree);
+    open(tree);
+    await choose(tree);
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+      final: false,
+      sent: { ...SENT, folder: "Minutes" },
+    });
+    await pressUpload(tree);
+    closed(tree);
+
+    // s12's filter moved while the sheet was away.
+    act(() => {
+      tree.update(sheet("Bylaws"));
+    });
+    open(tree);
+    expect(folderChips(tree).props.selected).toBe("Minutes");
+  });
+
+  it("caps the title at the API's document title limit", () => {
+    const tree = render();
+    expect(titleInput(tree).props.maxLength).toBe(DOCUMENT_TITLE_MAX_LENGTH);
+  });
+
+  it("clears a pick refusal when the next pick lands", async () => {
+    const tree = render();
+    pickDocumentPhoto.mockResolvedValue({
+      status: "refused",
+      reason: "Documents can be up to 25 MB.",
+    });
+    await act(async () => {
+      pressable(tree, "Choose a photo").props.onPress();
+    });
+    expect(screenText(tree)).toContain("Documents can be up to 25 MB.");
+
+    await choose(tree);
+    expect(screenText(tree)).not.toContain("Documents can be up to 25 MB.");
   });
 
   it("keeps the draft of a sheet closed mid-upload until the upload settles", async () => {
