@@ -4,6 +4,8 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectBackRow } from "@/test/back-row";
+import { screenText } from "@/test/screen-text";
 import type { DirectoryRow } from "@/lib/more/directory";
 
 /**
@@ -232,5 +234,27 @@ describe("s13's frame (#2485)", () => {
     );
 
     expect(title.children).toBe("Directory");
+  });
+});
+
+/** #3022. s13 draws its own header, so it draws the board's `‹ More` itself. */
+describe("s13's back row (#3022)", () => {
+  it("draws ‹ More above the title", () => {
+    const tree = render();
+    // `FlatList` is a host stand-in here, so its header element is never
+    // mounted; mount it on its own to press the row.
+    let header!: ReactTestRenderer;
+    act(() => {
+      header = create(
+        <FrappThemeProvider>
+          {list(tree).props.ListHeaderComponent}
+        </FrappThemeProvider>,
+      );
+    });
+    // Above the title: the header reads the row first, then "Directory".
+    expect(screenText(header).startsWith("‹ More\nDirectory")).toBe(true);
+    expectBackRow(header, "More", "/more");
+    header.unmount();
+    tree.unmount();
   });
 });

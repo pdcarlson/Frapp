@@ -15,6 +15,7 @@ import {
 import { isModuleEnabled } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { BACK_TO_MORE } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
 import {
   EmptyState,
@@ -869,7 +870,7 @@ export default function StudyScreen() {
   }
 
   return (
-    <ScreenShell title="Study hours">
+    <ScreenShell back={BACK_TO_MORE} title="Study hours">
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       {/* Under the module-off screen no failure line applies: each one is about
           a card, an End or a Start that screen has replaced, and its body
