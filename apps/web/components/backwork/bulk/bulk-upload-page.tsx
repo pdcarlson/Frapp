@@ -26,13 +26,9 @@ import {
   useRequestBackworkUploadUrl,
 } from "@repo/hooks";
 import {
-  ASSIGNMENT_TYPES,
-  DOCUMENT_VARIANTS,
   MAX_BACKWORK_UPLOAD_BYTES,
   MAX_BACKWORK_UPLOAD_LABEL,
-  SEMESTERS,
   inspectUploadFile,
-  readSignedUpload,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,13 +41,13 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useToast } from "@/lib/hooks/use-toast";
-import { cn, getErrorMessage, parseGuardedInt } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import {
   collectFromDrop,
   collectFromList,
   type CollectedFiles,
 } from "@/lib/backwork-bulk/collect-files";
-import { countBoxes, type BoxesByPage } from "@/lib/backwork-bulk/geometry";
+import type { BoxesByPage } from "@/lib/backwork-bulk/geometry";
 import {
   BulkUploadQueue,
   type ItemStatus,
@@ -59,12 +55,13 @@ import {
 } from "@/lib/backwork-bulk/queue";
 import type { PagePreview } from "@/lib/backwork-bulk/pdf";
 import { PdfRedactor } from "./pdf-redactor";
+import { BulkFieldsForm } from "./bulk-fields";
 import {
-  BulkFieldsForm,
   EMPTY_FIELDS,
   nextDocumentFields,
   type BulkFields,
-} from "./bulk-fields";
+} from "@/lib/backwork-bulk/fields";
+import { finishUpload, mustFlatten, sha256Hex } from "@/lib/backwork-bulk/finish";
 
 /**
  * Backwork bulk upload (#3499): drop PDFs or folders, redact and describe each
@@ -91,33 +88,12 @@ type Submission = {
   flatten: boolean;
 };
 
-const BACKWORK_YEAR_MIN = 1900;
-
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
 function releasePrepared(prepared: Prepared) {
   for (const preview of prepared.previews.values()) {
     preview.then((p) => URL.revokeObjectURL(p.url)).catch(() => undefined);
   }
   // pdf.js 6 tears a document down through its loading task.
   void prepared.doc.loadingTask.destroy();
-}
-
-function mustFlatten(fields: BulkFields, boxes: BoxesByPage): boolean {
-  return fields.document_variant === "Student Copy" || countBoxes(boxes) > 0;
-}
-
-function tagsOf(raw: string): string[] | undefined {
-  const tags = raw
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
-  return tags.length > 0 ? tags : undefined;
 }
 
 export function BulkUploadPage() {
@@ -191,62 +167,20 @@ function BulkUploadWorkspace() {
           await first;
           return { bytes, hash, doc, pageCount: doc.numPages, previews };
         },
-        finish: async ({ file, prepared, submission }) => {
+        finish: async (job) => {
           const { flattenPdf } = await import("@/lib/backwork-bulk/pdf");
-          let body = prepared.bytes;
-          if (submission.flatten) {
-            body = await flattenPdf(prepared.doc, submission.boxes);
-            if (body.byteLength > MAX_BACKWORK_UPLOAD_BYTES) {
-              body = await flattenPdf(prepared.doc, submission.boxes, {
-                dpi: 110,
-                quality: 0.7,
-              });
-            }
-          }
-          if (body.byteLength > MAX_BACKWORK_UPLOAD_BYTES) {
-            throw new Error(
-              `This file is over ${MAX_BACKWORK_UPLOAD_LABEL} once flattened. Split the PDF and try again.`,
-            );
-          }
-          const fileHash = submission.flatten ? await sha256Hex(body) : prepared.hash;
-          const signed = await mutations.current.requestUpload.mutateAsync({
-            filename: file.name,
-            content_type: "application/pdf",
-            size_bytes: body.byteLength,
-          });
-          const { signedUrl, storagePath } = readSignedUpload(signed);
-          await putSignedUpload({
-            signedUrl,
-            body: new Blob([body as BlobPart], { type: "application/pdf" }),
-            contentType: "application/pdf",
-            upsert: true,
-            describeRejection: (status) => `Storage rejected the upload (${status}).`,
-          });
-          const f = submission.fields;
-          await mutations.current.confirmUpload.mutateAsync({
-            storage_path: storagePath,
-            file_hash: fileHash,
-            title: f.title.trim() || file.name,
-            department_code: f.department_code.trim() || undefined,
-            course_number: f.course_number.trim() || undefined,
-            professor_name: f.professor_name.trim() || undefined,
-            year: parseGuardedInt(f.year, BACKWORK_YEAR_MIN),
-            semester: (SEMESTERS as readonly string[]).includes(f.semester)
-              ? (f.semester as (typeof SEMESTERS)[number])
-              : undefined,
-            assignment_type: (ASSIGNMENT_TYPES as readonly string[]).includes(
-              f.assignment_type,
-            )
-              ? (f.assignment_type as (typeof ASSIGNMENT_TYPES)[number])
-              : undefined,
-            assignment_number: parseGuardedInt(f.assignment_number, 1),
-            document_variant: (DOCUMENT_VARIANTS as readonly string[]).includes(
-              f.document_variant,
-            )
-              ? (f.document_variant as (typeof DOCUMENT_VARIANTS)[number])
-              : undefined,
-            tags: tagsOf(f.tags),
-            is_redacted: submission.flatten,
+          await finishUpload(job, {
+            flatten: flattenPdf,
+            requestUpload: (body) => mutations.current.requestUpload.mutateAsync(body),
+            put: ({ signedUrl, body }) =>
+              putSignedUpload({
+                signedUrl,
+                body,
+                contentType: "application/pdf",
+                upsert: true,
+                describeRejection: (status) => `Storage rejected the upload (${status}).`,
+              }),
+            confirm: (body) => mutations.current.confirmUpload.mutateAsync(body),
           });
         },
         release: releasePrepared,
