@@ -313,6 +313,9 @@ describe("Host check-in while the room fills", () => {
   describe("on the phone's own clocks", () => {
     const qrCount = (tree: ReactTestRenderer) =>
       tree.root.findAllByType("QRCode" as never).length;
+    /** How many of the countdown row's dots are drawn in that state. */
+    const dots = (tree: ReactTestRenderer, state: "live" | "waiting") =>
+      tree.root.findAllByProps({ testID: `rotates-dot-${state}` }).length;
 
     it("draws a code that will still redeem for a scan, and not one that won't", () => {
       // The server keeps accepting a code for a window after it rotates, but a
@@ -334,7 +337,22 @@ describe("Host check-in while the room fills", () => {
       hooks.token = { ...mintedAgo(ROTATES_IN_MS + 5_000), isFetching: true };
       const tree = render();
       expect(qrCount(tree)).toBe(1);
-      expect(screenText(tree)).toContain("0:00");
+      // Nothing left to count down: the row says the next code is coming, not
+      // a frozen "Rotates in 0:00" beside a live dot.
+      const text = screenText(tree);
+      expect(text).toContain("Getting a new code");
+      expect(text).not.toContain("Rotates in");
+      expect(dots(tree, "waiting")).toBeGreaterThan(0);
+      expect(dots(tree, "live")).toBe(0);
+      act(() => tree.unmount());
+    });
+
+    it("counts down with a live dot until the rotation", () => {
+      hooks.token = mintedAgo(ROTATES_IN_MS - 1_000);
+      const tree = render();
+      expect(screenText(tree)).toContain("Rotates in");
+      expect(screenText(tree)).not.toContain("Getting a new code");
+      expect(dots(tree, "live")).toBeGreaterThan(0);
       act(() => tree.unmount());
     });
 
@@ -414,6 +432,13 @@ describe("Host check-in while the room fills", () => {
         expect(qrCount(tree)).toBe(1);
         expect(screenText(tree)).toContain("4KQ-88");
         expect(screenText(tree)).not.toContain("Code unavailable");
+        // Past its rotation, with the next one failed: the row says so, and
+        // that this code still works, instead of a frozen countdown.
+        expect(screenText(tree)).toContain(
+          "New code didn't load. This one still works.",
+        );
+        expect(screenText(tree)).not.toContain("Rotates in");
+        expect(dots(tree, "waiting")).toBeGreaterThan(0);
 
         // Past its bound, with the requests still failing: no live code, so
         // the error card, with its retry.

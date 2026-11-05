@@ -34,8 +34,10 @@ export function useAttendance(
       const result = await client.GET("/v1/events/{eventId}/attendance", {
         params: { path: { eventId } },
       });
-      // On the status, not `error` (see `throwUnlessOk`): an empty-bodied 5xx
-      // would otherwise be a successful read with no roster in it.
+      // On the status, not `error` (see `throwUnlessOk`). An empty-bodied 5xx
+      // still failed this read before (TanStack rejects a queryFn that
+      // returns `undefined`), but with an error that carried no status, so
+      // `statusOf` and `isRetryableFailure` couldn't tell what it was.
       throwUnlessOk(result);
       return result.data;
     },

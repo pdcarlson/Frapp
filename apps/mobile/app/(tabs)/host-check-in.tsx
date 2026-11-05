@@ -74,7 +74,10 @@ import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
  * the code off screen. A refetch that fails keeps the last code beside its
  * error, and while that code is inside its bound it stays drawn, with no
  * error card, because members can still redeem it. "Code unavailable" shows
- * only when there is no live code to draw.
+ * only when there is no live code to draw. Past its rotation such a code has
+ * nothing left to count down, so the row under it says the next one is on its
+ * way ("Getting a new code…") or didn't load ("New code didn't load. This one
+ * still works."), and its dot turns from green to grey.
  *
  * ## The phone's clocks, from when the code was asked for
  *
@@ -118,7 +121,7 @@ const ATTENDANCE_POLL_MS = 10_000;
  * phone and decode it, s18 may need a location fix (a cold one at the
  * "balanced" accuracy it asks for takes a few seconds), and the check-in then
  * has to reach the server. Ten seconds covers that on poor venue Wi-Fi. A code
- * is drawn as live while, and only while, less than
+ * is drawn while, and only while, less than
  * `rotatesInMs + window - margin` has elapsed since it was asked for, whether
  * or not the requests since then failed.
  *
@@ -208,6 +211,13 @@ export default function HostCheckInScreen() {
   // Counted down on the phone's clocks alone: no `expiresAt - now`, which
   // would put the phone's clock error on screen.
   const remaining = minted ? minted.rotatesInMs - age : 0;
+  // Past its rotation a drawn code still redeems on the server's
+  // previous-window grace, but there is nothing left to count down. A frozen
+  // "Rotates in 0:00" beside a live dot would say a rotation is about to
+  // happen when the next code is late or failed, so the row says which, and
+  // the dot stops reading as live.
+  const rotated = minted !== null && remaining <= 0;
+  const nextFailed = tokenQuery.isError && !tokenQuery.isFetching;
   const checkedIn = countCheckedIn(attendance);
 
   const [bodyWidth, setBodyWidth] = useState<number | null>(null);
@@ -325,13 +335,26 @@ export default function HostCheckInScreen() {
                 </View>
 
                 <View style={styles.rotatesRow}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.rotates}>
-                    Rotates in{" "}
-                    <Text style={styles.rotatesTime}>
-                      {formatCountdown(remaining)}
+                  <View
+                    testID={
+                      rotated ? "rotates-dot-waiting" : "rotates-dot-live"
+                    }
+                    style={[styles.liveDot, rotated ? styles.waitingDot : null]}
+                  />
+                  {rotated ? (
+                    <Text style={styles.rotates}>
+                      {nextFailed
+                        ? "New code didn't load. This one still works."
+                        : "Getting a new code…"}
                     </Text>
-                  </Text>
+                  ) : (
+                    <Text style={styles.rotates}>
+                      Rotates in{" "}
+                      <Text style={styles.rotatesTime}>
+                        {formatCountdown(remaining)}
+                      </Text>
+                    </Text>
+                  )}
                 </View>
 
                 {checkedIn !== null ? (
@@ -434,6 +457,9 @@ function createStyles(tokens: SignetTokens, accent: string) {
       height: LIVE_DOT_SIZE,
       borderRadius: LIVE_DOT_SIZE / 2,
       backgroundColor: tokens.color.semantic.success,
+    },
+    waitingDot: {
+      backgroundColor: tokens.color.text.mutedForeground,
     },
     rotates: {
       color: tokens.color.text.mutedForeground,
