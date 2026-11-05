@@ -10,12 +10,11 @@ import {
   useDiscordImport,
   useDiscordImports,
 } from "@repo/hooks";
-import { formatLocaleDate, formatLocaleDateTime } from "@repo/formatting";
+import { formatDay, formatDayTime } from "@repo/formatting";
 import { isDiscordImportClearable } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { SectionLabel } from "@/components/shared/section-label";
 import { PageHeader } from "@/components/layout/page-header";
 import {
@@ -68,6 +67,22 @@ const STATUS_VARIANT: Record<
   cancelled: "outline",
   purged: "outline",
   draft: "outline",
+};
+
+/**
+ * The import's state in words. The API's tokens are lowercase (`completed`)
+ * and none has a writing.md §5 row, so they map to plain language once, here,
+ * rather than printing the token.
+ */
+const STATUS_LABEL: Record<string, string> = {
+  completed: "Completed",
+  running: "Importing",
+  ready: "Ready",
+  purging: "Deleting",
+  failed: "Failed",
+  cancelled: "Cancelled",
+  purged: "Deleted",
+  draft: "Draft",
 };
 
 /**
@@ -175,19 +190,16 @@ export function DiscordImportPage() {
         Outside the `<Can>` so the permission-denied branch keeps the route's
         heading — the shell no longer supplies one (#2141). The denied card's
         `<CardTitle>` and the body's were that same title said twice, so both
-        are gone; the denied card's `CardHeader` held nothing else.
+        are gone, and so is the card that framed the one denied sentence.
       */}
-      <PageHeader title="Discord Import" />
+      <PageHeader title="Discord import" />
       <Can
         permission="channels:manage"
         deniedFallback={
-          <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground">
-                Importing a Discord archive needs channel management permission.
-              </p>
-            </CardContent>
-          </Card>
+          <p className="text-sm text-muted-foreground">
+            Your role can&apos;t import Discord history. Ask your chapter
+            president for access.
+          </p>
         }
         // A paused permission read is not a denial (`writing.md` §7,
         // "Permission check offline"). Without this the screen-level gate fell
@@ -462,15 +474,15 @@ function DiscordImportList({
                       {live.guild_name ?? "Discord server"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {formatLocaleDateTime(live.created_at)}
+                      {formatDayTime(live.created_at)}
                       {/* A partial import says so (#2858). */}
-                      {live.messages_after
-                        ? ` · Messages since ${formatLocaleDate(live.messages_after)}`
+                      {formatDay(live.messages_after)
+                        ? ` · Messages since ${formatDay(live.messages_after)}`
                         : ""}
                     </p>
                   </div>
                   <Badge variant={STATUS_VARIANT[live.status] ?? "outline"}>
-                    {live.status}
+                    {STATUS_LABEL[live.status] ?? live.status}
                   </Badge>
                 </div>
 

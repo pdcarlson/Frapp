@@ -59,8 +59,24 @@ const NATIVE_SELECT = [
   "disabled:cursor-not-allowed disabled:border-border disabled:text-disabled",
 ].join(" ");
 
-/** A dashboard filter toolbar: §3's Inline height, per `components.md` §4. */
-export const dashboardFilterSelectClassName = `h-11 ${NATIVE_SELECT}`;
+/**
+ * A toolbar row's height: 36 to a mouse, 44 to a finger. The same rule the
+ * dense list rows below it take (`min-h-9 pointer-coarse:min-h-11`), and
+ * Button's `toolbar` size, so a filter, the search field and the route's
+ * primary action line up in one row on either pointer (`components.md` §4).
+ */
+export const dashboardToolbarHeightClassName = "h-9 pointer-coarse:h-11";
+const TOOLBAR_HEIGHT = dashboardToolbarHeightClassName;
+
+/** A dashboard filter toolbar's `<select>`, per `components.md` §4. */
+export const dashboardFilterSelectClassName = `${TOOLBAR_HEIGHT} ${NATIVE_SELECT}`;
+
+/** The search field in a toolbar row, leaving room for its glyph. */
+export const dashboardToolbarSearchClassName = `${TOOLBAR_HEIGHT} pl-9`;
+
+/** The search glyph inside {@link dashboardToolbarSearchClassName}, centred at either height. */
+export const dashboardToolbarSearchGlyphClassName =
+  "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground";
 
 /**
  * A `<select>` that is a **form field** rather than filter chrome, at §4's
@@ -78,12 +94,6 @@ export const dashboardTableCheckboxClassName = [
   "h-6 w-6 rounded-[7px] border-input accent-primary",
   FOCUS_RING,
 ].join(" ");
-
-/**
- * The `<th>`/`<td>` that hosts a row-select checkbox. Replaces the `w-10` these
- * cells used to pin; see the hit-area note above for why 48 and not 44.
- */
-export const dashboardCheckboxCellClassName = "w-12";
 
 /**
  * Wraps a `dashboardTableCheckboxClassName` input so the *tappable* area clears

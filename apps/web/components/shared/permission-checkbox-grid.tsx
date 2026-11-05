@@ -1,5 +1,6 @@
 "use client";
 
+import { permissionLabel } from "@/lib/permission-labels";
 import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
@@ -60,9 +61,8 @@ export function PermissionCheckboxGrid({
   if (catalogUnavailable) {
     return (
       <p className="mt-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
-        Couldn&apos;t load the permission catalog. You may be missing the{" "}
-        <code>members:view</code> permission it requires. Existing selections
-        are unaffected; ask your chapter president for access to change them.
+        Couldn&apos;t load the permission list, which needs a role that can see
+        the full directory. Your current selections are unaffected.
       </p>
     );
   }
@@ -97,7 +97,7 @@ export function PermissionCheckboxGrid({
                   onChange={() => onToggle(entry.permission)}
                 />
               </span>
-              <code className="text-xs">{entry.permission}</code>
+              <span>{permissionLabel(entry.permission)}</span>
               {holders ? (
                 <span className="truncate text-xs text-muted-foreground">
                   {roles.length > 0 ? roles.join(", ") : "no role holds this"}

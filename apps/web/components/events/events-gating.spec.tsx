@@ -38,7 +38,13 @@ vi.mock("@repo/hooks", () => ({
   useMembers: () => ({ data: MEMBERS, isPending: false, isError: false }),
   useUpdateAttendanceStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAutoAbsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useEvents: () => ({ data: [], isLoading: false, isError: false, refetch: vi.fn() }),
+  useMyPermissions: () => ({ data: { permissions: ["events:update"] } }),
+  useEvents: () => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
   useNow: () => Date.now(),
 }));
 
@@ -59,7 +65,9 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 
 // The realtime subscription needs a QueryClientProvider and a Supabase client;
 // neither is part of what this file covers.
@@ -111,9 +119,7 @@ describe("EventEditorDialog subscription gating", () => {
     renderEditor();
 
     expect(saveButton()).toBeDisabled();
-    expect(
-      screen.getByText(/subscription is not active/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
     ).toHaveAttribute("href", "/billing");
@@ -155,7 +161,9 @@ describe("EventEditorDialog subscription gating", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: /save changes/i })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /save changes/i }),
+    ).toBeDisabled();
   });
 
   it("fails open when the chapter record cannot be read", () => {
@@ -184,9 +192,7 @@ describe("AttendancePanel subscription gating", () => {
     render(<AttendancePanel eventId="evt-1" />);
 
     expect(autoAbsentButton()).toBeDisabled();
-    expect(
-      screen.getByText(/subscription is not active/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
     ).toHaveAttribute("href", "/billing");
@@ -218,10 +224,9 @@ describe("AttendancePanel subscription gating", () => {
   });
 });
 
-
 describe("EventsPage subscription gating", () => {
   // `POST /v1/events` and `PATCH /v1/events/:id` are paid-ops. The page owns the
-  // editor dialog's `open`, so §5 rule 1 lands here: the New Event button and
+  // editor dialog's `open`, so §5 rule 1 lands here: the New event button and
   // the empty-state CTA are the triggers that must refuse to open it (#841).
   beforeEach(() => vi.clearAllMocks());
 
@@ -244,9 +249,7 @@ describe("EventsPage subscription gating", () => {
     chapter.incomplete();
     render(<EventsPage />);
 
-    expect(
-      screen.getByPlaceholderText(/search events/i),
-    ).toBeEnabled();
+    expect(screen.getByPlaceholderText(/search events/i)).toBeEnabled();
   });
 
   it("leaves both entry points alone on an active chapter", () => {

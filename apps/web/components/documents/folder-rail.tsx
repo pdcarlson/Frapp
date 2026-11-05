@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -49,6 +50,14 @@ function folderRowClassName(isActive: boolean): string {
   ].join(" ");
 }
 
+/**
+ * The four management icons. A disabled one (the first folder's Move up, the
+ * last one's Move down) keeps the quiet look rather than `button.tsx`'s
+ * disabled card fill, which drew a boxed arrow in the middle of the rail.
+ */
+const MANAGE_CONTROL =
+  "h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11 disabled:border-transparent disabled:bg-transparent";
+
 export function FolderRail({
   railFolders,
   activeFolder,
@@ -71,6 +80,16 @@ export function FolderRail({
 }) {
   const { folderBusy, openFolderDialog, handleMoveFolder, handleDeleteFolder } =
     management;
+  /*
+    Folder management is a mode, not furniture. Every named folder used to
+    carry a second line of four icon buttons (up, down, rename, delete), so an
+    officer's rail read as a toolbar repeated six times and a member's rail
+    could never look like the navigation it is. Edit shows those lines; Done
+    puts them away. Toggling is not a write, so it is not gated; the four
+    controls it reveals still are, each with its own explanation.
+  */
+  const [editing, setEditing] = useState(false);
+  const manageable = railFolders.some((folder) => folder.id);
 
   return (
     <nav aria-labelledby="doc-folders-label">
@@ -82,16 +101,30 @@ export function FolderRail({
           Folders
         </h2>
         <Can permission="chapter_docs:manage">
-          <Button
-            variant="ghost"
-            size="icon"
-            className={compactControlClassName}
-            aria-label="New folder"
-            onClick={() => openFolderDialog(null)}
-            {...gate.controlProps(folderBusy)}
-          >
-            <FolderPlus className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-0.5">
+            {manageable ? (
+              <Button
+                variant="quiet"
+                size="toolbar"
+                className="px-2 pointer-coarse:px-3"
+                aria-pressed={editing}
+                aria-label={editing ? "Done editing folders" : "Edit folders"}
+                onClick={() => setEditing((current) => !current)}
+              >
+                {editing ? "Done" : "Edit"}
+              </Button>
+            ) : null}
+            <Button
+              variant="quiet"
+              size="icon"
+              className={compactControlClassName}
+              aria-label="New folder"
+              onClick={() => openFolderDialog(null)}
+              {...gate.controlProps(folderBusy)}
+            >
+              <FolderPlus className="h-4 w-4" />
+            </Button>
+          </div>
         </Can>
       </div>
       {/*
@@ -135,7 +168,7 @@ export function FolderRail({
               because the folder endpoint is down — there is no record to
               rename, reorder or delete, so the row filters and nothing more.
             */}
-            {folder.id ? (
+            {folder.id && editing ? (
               <Can permission="chapter_docs:manage">
                 {/*
                   A second line under the name rather than a trailing cluster
@@ -149,9 +182,9 @@ export function FolderRail({
                 */}
                 <div className="flex items-center justify-end gap-0.5 pb-1 pl-6">
                   <Button
-                    variant="ghost"
+                    variant="quiet"
                     size="icon"
-                    className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
+                    className={MANAGE_CONTROL}
                     aria-label={`Move ${folder.name} up`}
                     onClick={() => void handleMoveFolder(index, -1)}
                     {...gate.controlProps(folderBusy || index === 0)}
@@ -159,9 +192,9 @@ export function FolderRail({
                     <ChevronUp className="h-4 w-4" />
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="quiet"
                     size="icon"
-                    className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
+                    className={MANAGE_CONTROL}
                     aria-label={`Move ${folder.name} down`}
                     onClick={() => void handleMoveFolder(index, 1)}
                     {...gate.controlProps(
@@ -171,9 +204,9 @@ export function FolderRail({
                     <ChevronDown className="h-4 w-4" />
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="quiet"
                     size="icon"
-                    className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
+                    className={MANAGE_CONTROL}
                     aria-label={`Rename ${folder.name}`}
                     onClick={() => openFolderDialog(folder)}
                     {...gate.controlProps(folderBusy)}
@@ -181,9 +214,9 @@ export function FolderRail({
                     <Pencil className="h-4 w-4" />
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="quiet"
                     size="icon"
-                    className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
+                    className={MANAGE_CONTROL}
                     aria-label={`Delete folder ${folder.name}`}
                     onClick={() => void handleDeleteFolder(folder)}
                     {...gate.controlProps(folderBusy)}
