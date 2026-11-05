@@ -12,8 +12,10 @@ import { DOCUMENT_TITLE_MAX_LENGTH } from "@repo/validation";
 /**
  * #3399. s21, rendered: nothing is sent until Upload, Upload sends the title
  * and folder chosen, a gate withdraws Upload while a failure keeps the photo
- * for another try, and a sheet closed mid-upload keeps its draft until the
- * upload settles. The wire steps are pinned in `lib/more/document-upload.spec.ts`.
+ * for another try, a swipe or scrim close keeps the draft until Cancel or an
+ * upload that files it, and a sheet closed mid-upload keeps its draft until
+ * the upload settles. The wire steps are pinned in
+ * `lib/more/document-upload.spec.ts`.
  */
 
 const pickDocumentPhoto = vi.fn();
@@ -333,31 +335,78 @@ describe("UploadDocumentSheet (#3399)", () => {
     await settle({ status: "uploaded", title: "IMG_2041.jpg" });
   });
 
-  it.each([
-    [
-      "Cancel",
-      (tree: ReactTestRenderer) => {
-        act(() => {
-          pressable(tree, "Cancel").props.onPress();
-        });
-        expect(dismiss).toHaveBeenCalledTimes(1);
-        closed(tree);
-      },
-    ],
-    // A swipe or a scrim tap reaches the sheet only as `onDismiss`.
-    ["a swipe", (tree: ReactTestRenderer) => closed(tree)],
-  ])("drops a draft nothing was sent for on %s", async (_how, close) => {
+  it("keeps the photo, title and folder through a swipe or scrim close", async () => {
+    // A swipe or a scrim tap reaches the sheet only as `onDismiss`; tapping
+    // the dimmed screen to put the keyboard away mustn't cost the draft.
+    const tree = render();
+    await choose(tree);
+    act(() => {
+      titleInput(tree).props.onChangeText("Minutes — Aug 14");
+    });
+    act(() => {
+      pressable(tree, "Bylaws").props.onPress();
+    });
+    closed(tree);
+
+    open(tree);
+    expect(screenText(tree)).toContain("IMG_2041.jpg");
+    expect(titleInput(tree).props.value).toBe("Minutes — Aug 14");
+    expect(titleInput(tree).props.editable).toBe(true);
+    expect(folderChips(tree).props.selected).toBe("Bylaws");
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "uploaded",
+      title: "Minutes — Aug 14",
+    });
+    await pressUpload(tree);
+    expect(uploadDocumentPhoto).toHaveBeenCalledWith(
+      PHOTO,
+      { title: "Minutes — Aug 14", folder: "Bylaws" },
+      expect.any(Object),
+      undefined,
+    );
+
+    // The upload filed it, so the next visit starts clean.
+    open(tree);
+    expect(screenText(tree)).toContain("Choose a photo");
+    expect(titleInput(tree).props.value).toBe("");
+  });
+
+  it("drops the draft on Cancel", async () => {
     const tree = render();
     await choose(tree);
     act(() => {
       titleInput(tree).props.onChangeText("Minutes");
     });
-    close(tree);
+    act(() => {
+      pressable(tree, "Cancel").props.onPress();
+    });
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    closed(tree);
 
     open(tree);
     expect(screenText(tree)).toContain("Choose a photo");
     expect(screenText(tree)).not.toContain("IMG_2041.jpg");
     expect(titleInput(tree).props.value).toBe("");
+  });
+
+  it("drops a failure with nothing held on close, keeping the photo", async () => {
+    // Reopening is the member's next try, so it doesn't open on the last
+    // one's error.
+    const tree = render();
+    await choose(tree);
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+      final: false,
+    });
+    await pressUpload(tree);
+    expect(screenText(tree)).toContain("Try again in a moment.");
+
+    closed(tree);
+    open(tree);
+    expect(screenText(tree)).not.toContain("Try again in a moment.");
+    expect(screenText(tree)).toContain("IMG_2041.jpg");
+    expect(uploadButton(tree).props.disabled).toBe(false);
   });
 
   it("keeps the bytes a failed confirm sent across a swipe, until Cancel", async () => {

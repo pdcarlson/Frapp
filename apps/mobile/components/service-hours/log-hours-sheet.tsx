@@ -30,10 +30,14 @@ import { successHaptic } from "@/lib/haptics";
 import { formatHours } from "@/lib/more/profile";
 import {
   DEFAULT_DURATION_MINUTES,
+  DEFAULT_SERVICE_DATE_CHOICE,
   DURATION_STEP_MINUTES,
   MAX_DURATION_MINUTES,
+  resolveServiceDate,
+  serviceDateChoiceOf,
   serviceDatePresets,
   stepDuration,
+  type ServiceDateChoice,
 } from "@/lib/more/service-hours";
 import {
   RECEIPT_REQUIRED_COPY,
@@ -75,10 +79,21 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * A swipe or a tap on the scrim closes the sheet and keeps the entry for the
  * next visit; Cancel gives it up, and so does a save. The rule s19 and s21
- * follow (`spec/ui/mobile/screens.md`). Cancel is held while a save runs:
- * the save can't be called back, so a Cancel then would clear an entry that
- * gets filed anyway, or one whose failure no visit hears of. A swipe still
- * closes the sheet mid-save and keeps the entry.
+ * follow (`spec/ui/mobile/screens.md`); s15's Edit sheet doesn't, and says
+ * why. Cancel is held while a save runs: the save can't be called back, so a
+ * Cancel then would clear an entry that gets filed anyway, or one whose
+ * failure no visit hears of. A swipe still closes the sheet mid-save and
+ * keeps the entry.
+ *
+ * A kept entry reads its date chip against the day it is filed (`now` moves
+ * with the host's clock, which re-reads when the sheet opens and when the app
+ * comes back to the foreground, so a sheet left up overnight moves too).
+ * "Today" and "Yesterday" are relative, so an entry kept overnight with
+ * "Today" files the new day. A weekday chip names a date, and the entry holds
+ * the date it named when picked: the chip shown selected is whichever resolves
+ * to that date now, and a held date that has left the chip window falls back
+ * to Today (`resolveServiceDate` says why s20 can't keep it the way s19 keeps
+ * a "Next week" no chip draws).
  *
  * ## The photo goes up on Submit
  *
@@ -120,7 +135,10 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * the save runs, so clearing it on success clears only what was sent.
  */
 export interface LogHoursSheetProps {
-  /** The host's clock, re-read each time it opens the sheet. */
+  /**
+   * The host's clock, re-read each time it opens the sheet and when the app
+   * comes back to the foreground.
+   */
   now: Date;
 }
 
@@ -149,9 +167,14 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
 
     const [description, setDescription] = useState("");
     const [minutes, setMinutes] = useState(DEFAULT_DURATION_MINUTES);
-    // Days back rather than a date, so a draft left open across midnight
-    // still means the chip it shows.
-    const [daysAgo, setDaysAgo] = useState(0);
+    // The chip as the entry holds it, read against `now` below: "Today" and
+    // "Yesterday" re-derive from the day the entry is filed, and a weekday
+    // chip holds the date it named, shown under whichever chip resolves to it
+    // now, or as Today once none does (see the header).
+    const [dateChoice, setDateChoice] = useState<ServiceDateChoice>(
+      DEFAULT_SERVICE_DATE_CHOICE,
+    );
+    const { date, daysAgo } = resolveServiceDate(dateChoice, now);
     const [descriptionFocused, setDescriptionFocused] = useState(false);
     const [submitFailed, setSubmitFailed] = useState(false);
     /**
@@ -216,7 +239,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
       entryGeneration.current += 1;
       setDescription("");
       setMinutes(DEFAULT_DURATION_MINUTES);
-      setDaysAgo(0);
+      setDateChoice(DEFAULT_SERVICE_DATE_CHOICE);
       setSubmitFailed(false);
       setProof(null);
       setProofError(null);
@@ -259,8 +282,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
     };
 
     const submit = () => {
-      const date = (presets[daysAgo] ?? presets[0])?.date;
-      if (!canSubmit || sending.current || !date) return;
+      if (!canSubmit || sending.current) return;
       sending.current = true;
       setSubmitFailed(false);
       setProofError(null);
@@ -466,7 +488,10 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
             }))}
             selected={String(daysAgo)}
             onSelect={(value) => {
-              if (value !== null && !pending) setDaysAgo(Number(value));
+              const preset = presets.find(
+                (each) => String(each.daysAgo) === value,
+              );
+              if (preset && !pending) setDateChoice(serviceDateChoiceOf(preset));
             }}
             accessibilityLabel="Date of service"
           />

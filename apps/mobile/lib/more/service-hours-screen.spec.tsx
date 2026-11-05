@@ -3,12 +3,14 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AppState } from "react-native";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import {
+  SERVICE_DESCRIPTION_MAX_LENGTH,
   SERVICE_RECEIPT_REQUIRED_CODE,
   SERVICE_RECEIPT_REQUIRED_MESSAGE,
   moduleDisabledMessage,
@@ -695,6 +697,129 @@ describe("Log service hours sheet", () => {
     expect(mutate).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
+
+  it("caps the description at the API's limit", () => {
+    // Past it the API answers a 400 the sheet can only read as "try again",
+    // and with a photo held, as a refused path that uploads it again.
+    const tree = render();
+    expect(descriptionField(tree).props.maxLength).toBe(
+      SERVICE_DESCRIPTION_MAX_LENGTH,
+    );
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * The date chips across a day change. "Today" and "Yesterday" are relative; a
+ * weekday chip names a date, which a kept entry holds. The host's clock moves
+ * when the app comes back to the foreground, driven here through the
+ * screen's own `AppState` listener, and reopening is gorhom's `onAnimate`,
+ * which moves no clock of its own.
+ */
+describe("Log service hours date across a day", () => {
+  /** The listener the screen registered last with the mocked `AppState`. */
+  function appStateListener(): (state: string) => void {
+    const calls = vi.mocked(AppState.addEventListener).mock.calls;
+    return calls[calls.length - 1]![1] as (state: string) => void;
+  }
+
+  /** The app goes to the background and comes back at `at`. */
+  function foregroundAt(at: Date) {
+    act(() => appStateListener()("background"));
+    vi.setSystemTime(at);
+    act(() => appStateListener()("active"));
+  }
+
+  const weekday = (day: Date) =>
+    day.toLocaleDateString(undefined, { weekday: "short" });
+  const chip = (tree: ReactTestRenderer, label: string) =>
+    pressable(tree, label);
+  const isSelected = (tree: ReactTestRenderer, label: string) =>
+    chip(tree, label).props.accessibilityState.selected as boolean;
+  const chipLabels = (tree: ReactTestRenderer) =>
+    tree.root
+      .find((node) => node.props.accessibilityLabel === "Date of service")
+      .props.chips.map((each: { label: string }) => each.label);
+  const sentDate = () =>
+    (mutate.mock.calls.at(-1)?.[0] as { date: string }).date;
+
+  // Sunday 2026-11-01 through Thursday the 5th.
+  const sunday = new Date(2026, 10, 1, 12);
+  const monday = new Date(2026, 10, 2, 12);
+  const wednesdayEvening = new Date(2026, 10, 4, 20);
+  const thursdayMorning = new Date(2026, 10, 5, 8);
+
+  /** Opens the sheet on `pickedOn`, fills it, and picks `label`. */
+  function pickOn(pickedOn: Date, label: string) {
+    vi.setSystemTime(pickedOn);
+    const tree = render();
+    fill(tree);
+    act(() => chip(tree, label).props.onPress());
+    return tree;
+  }
+
+  /** A swipe, the app left overnight, and the sheet reopened at `at`. */
+  function keptUntil(tree: ReactTestRenderer, at: Date) {
+    act(() => modal(tree).props.onDismiss());
+    foregroundAt(at);
+    act(() => modal(tree).props.onAnimate(-1, 0));
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    return () => vi.useRealTimers();
+  });
+
+  it("files the new day under Today on a sheet left up overnight", () => {
+    vi.setSystemTime(new Date(2026, 10, 1, 23, 50));
+    const tree = render();
+    fill(tree);
+
+    foregroundAt(new Date(2026, 10, 2, 8));
+
+    expect(isSelected(tree, "Today")).toBe(true);
+    act(() => submitButton(tree).props.onPress());
+    expect(sentDate()).toBe("2026-11-02");
+    act(() => tree.unmount());
+  });
+
+  it("reads a kept Yesterday against the day it is filed", () => {
+    const tree = pickOn(wednesdayEvening, "Yesterday");
+    keptUntil(tree, thursdayMorning);
+
+    expect(isSelected(tree, "Yesterday")).toBe(true);
+    act(() => submitButton(tree).props.onPress());
+    expect(sentDate()).toBe("2026-11-04");
+    act(() => tree.unmount());
+  });
+
+  it("files a kept weekday chip on its date, under the chip that names it now", () => {
+    // Wednesday's chips end Mon, Sun; Thursday's end Tue, Mon.
+    const tree = pickOn(wednesdayEvening, weekday(monday));
+    keptUntil(tree, thursdayMorning);
+
+    expect(chipLabels(tree)).toEqual([
+      "Today",
+      "Yesterday",
+      weekday(new Date(2026, 10, 3, 12)),
+      weekday(monday),
+    ]);
+    expect(isSelected(tree, weekday(monday))).toBe(true);
+    act(() => submitButton(tree).props.onPress());
+    expect(sentDate()).toBe("2026-11-02");
+    act(() => tree.unmount());
+  });
+
+  it("files a kept date that has left the chips as Today", () => {
+    const tree = pickOn(wednesdayEvening, weekday(sunday));
+    keptUntil(tree, thursdayMorning);
+
+    expect(chipLabels(tree)).not.toContain(weekday(sunday));
+    expect(isSelected(tree, "Today")).toBe(true);
+    act(() => submitButton(tree).props.onPress());
+    expect(sentDate()).toBe("2026-11-05");
+    act(() => tree.unmount());
+  });
 });
 
 /**
@@ -834,6 +959,67 @@ describe("Log service hours photo proof", () => {
     act(() => removeButton(tree).props.onPress());
     expect(screenText(tree)).not.toContain("receipt.jpg");
     expect(addRow(tree)).toBeDefined();
+    act(() => tree.unmount());
+  });
+
+  it("opens the library once for two taps in one batch", async () => {
+    // Before `picking` renders, the row is still enabled for the second tap,
+    // and Android rejects a second launch.
+    let resolvePick: (value: unknown) => void = () => {};
+    pickProofPhoto.mockImplementation(
+      () => new Promise((resolve) => (resolvePick = resolve)),
+    );
+    const tree = render();
+    await act(async () => {
+      const row = addRow(tree);
+      row.props.onPress();
+      row.props.onPress();
+    });
+
+    expect(pickProofPhoto).toHaveBeenCalledTimes(1);
+    expect(screenText(tree)).toContain("Opening…");
+    await act(async () => resolvePick({ status: "picked", image: PHOTO }));
+    expect(screenText(tree)).toContain("receipt.jpg");
+    act(() => tree.unmount());
+  });
+
+  it("opens no library from a tap in the same batch as Submit", async () => {
+    mutate.mockImplementation(() => {});
+    pickProofPhoto.mockImplementation(() => new Promise(() => {}));
+    const tree = render();
+    fill(tree);
+    const row = addRow(tree);
+    await act(async () => {
+      submitButton(tree).props.onPress();
+      row.props.onPress();
+    });
+
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(pickProofPhoto).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("keeps the photo through a Remove in the same batch as Submit", async () => {
+    // Submit is already uploading this photo and will file the entry with
+    // it, so the row must not clear before `locked` renders.
+    mutate.mockImplementation(() => {});
+    let finish: (value: unknown) => void = () => {};
+    uploadProofPhoto.mockImplementationOnce(
+      () => new Promise((resolve) => (finish = resolve)),
+    );
+    const tree = render();
+    fill(tree);
+    await attach(tree);
+    const remove = removeButton(tree);
+    act(() => {
+      submitButton(tree).props.onPress();
+      remove.props.onPress();
+    });
+
+    expect(screenText(tree)).toContain("receipt.jpg");
+    await act(async () => finish({ status: "uploaded", storagePath: PATH }));
+    expect(sentBody().proof_path).toBe(PATH);
+    expect(screenText(tree)).toContain("receipt.jpg");
     act(() => tree.unmount());
   });
 

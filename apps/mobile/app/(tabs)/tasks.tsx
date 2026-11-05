@@ -317,6 +317,9 @@ export default function TasksScreen() {
       {renderBoard()}
 
       <NewTaskSheet
+        // A new sheet per chapter: a kept draft's assignee is a member of the
+        // chapter it was started in, and the API refuses one who isn't.
+        key={chapterId ?? "no-chapter"}
         ref={sheetRef}
         now={now}
         // A task assigned to someone else never appears on this board, so

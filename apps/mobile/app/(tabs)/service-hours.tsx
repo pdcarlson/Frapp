@@ -1,11 +1,12 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppState, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
   useCurrentUser,
   useServiceEntries,
   useViewerUserId,
+  type ServiceEntryStatus,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
@@ -22,8 +23,8 @@ import {
 } from "@/components/state-block";
 import {
   selectServiceEntryRows,
+  serviceStatusHue,
   summarizeServiceEntries,
-  type ServiceEntryStatus,
 } from "@/lib/more/service-hours";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -71,12 +72,21 @@ export default function ServiceHoursScreen() {
   const summary = useMemo(() => summarizeServiceEntries(rows), [rows]);
   const hasEntries = entriesQuery.isSuccess;
 
-  // Re-read each time the sheet opens: a tab screen is never unmounted, so a
-  // clock read once would offer "Today" as the day the screen first mounted.
+  // The clock the sheet's date chips read. Re-read each time the sheet opens,
+  // and when the app comes back to the foreground: a tab screen is never
+  // unmounted and the JS context survives days of backgrounding, so a clock
+  // read once would offer "Today" as the day the screen first mounted, and a
+  // sheet left up overnight would file the evening before under "Today".
   const [now, setNow] = useState(() => new Date());
   const openSheet = useCallback(() => {
     setNow(new Date());
     sheetRef.current?.present();
+  }, []);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "active") setNow(new Date());
+    });
+    return () => subscription.remove();
   }, []);
 
   function renderList() {
@@ -126,7 +136,7 @@ export default function ServiceHoursScreen() {
             trailing={
               <StatusChip
                 label={STATUS_LABELS[row.status]}
-                hue={statusHue(row.status, tokens)}
+                hue={serviceStatusHue(row.status, tokens)}
               />
             }
           />
@@ -173,8 +183,9 @@ export default function ServiceHoursScreen() {
       {renderList()}
 
       <LogHoursSheet
-        // A new sheet per chapter: a photo path the sheet holds after a
-        // failed create names a path minted under the chapter it was sent from.
+        // A new sheet per chapter: a kept entry belongs to the chapter it was
+        // started in, and a photo path the sheet holds after a failed create
+        // names a path minted under the chapter it was sent from.
         key={chapterId ?? "no-chapter"}
         ref={sheetRef}
         now={now}
@@ -188,12 +199,6 @@ const STATUS_LABELS: Record<ServiceEntryStatus, string> = {
   APPROVED: "Approved",
   REJECTED: "Rejected",
 };
-
-function statusHue(status: ServiceEntryStatus, tokens: SignetTokens): string {
-  if (status === "APPROVED") return tokens.color.semantic.success;
-  if (status === "REJECTED") return tokens.color.semantic.destructive;
-  return tokens.color.semantic.warning;
-}
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({

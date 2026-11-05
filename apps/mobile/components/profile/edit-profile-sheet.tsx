@@ -61,6 +61,13 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * it is the same account's (a loaded s15 always has it cached), so a save
  * closes onto the saved values rather than flashing the old ones.
  *
+ * So unlike s19, s20 and s21, a swipe or scrim close outside a save drops the
+ * edits rather than keeping them for the next visit. A typed field stays typed
+ * over a profile that moves under it (`rebaseEdits`), which is right within
+ * one visit and wrong across a close: a bio typed on Monday and swiped away
+ * would still fill the field after the member rewrote it on web on Tuesday,
+ * and Save would write Monday's over Tuesday's.
+ *
  * ## A fixed detent, not dynamic sizing
  *
  * Five fields and a bio that grows as it is typed, under a keyboard, don't fit

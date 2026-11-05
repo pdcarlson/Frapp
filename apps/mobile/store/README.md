@@ -548,10 +548,9 @@ Advertising Data, Browsing History, Search History.
 > change. The privacy policy's permissions clause (`apps/landing/app/privacy/page.tsx`)
 > names it, as #3399's did for documents, and on that precedent the edit moved only
 > the page's pin. Whether it is material is still open in
-> [#3424](https://github.com/pdcarlson/Frapp/issues/3424), and this paragraph is where
-> that status lives: if the owner rules it material, the page's date and
-> `LEGAL_POLICY_VERSION` move and every member accepts again; if the owner leaves it
-> out, the clause is reverted. The iOS
+> [#3424](https://github.com/pdcarlson/Frapp/issues/3424);
+> [`legal.md` § Acceptance record](../../../spec/behavior/legal.md#acceptance-record)
+> holds that status and what each ruling does. The iOS
 > purpose string (`app.json`'s `photosPermission`) doesn't name it: it can only widen
 > in a store build, and [#3401](https://github.com/pdcarlson/Frapp/issues/3401), which
 > widens it for documents, must name service proof too. Deploy the landing before

@@ -11,11 +11,11 @@ import {
   localIsoDate,
   parseBareDateLocalNoon,
 } from "@repo/formatting";
+import type { ServiceEntryStatus } from "@repo/hooks";
+import type { SignetTokens } from "@repo/theme/signet";
 import { metaLine, num, records, str } from "./narrow";
 import { formatHours } from "./profile";
 import { addDays } from "@/lib/tasks/create-task";
-
-export type ServiceEntryStatus = "PENDING" | "APPROVED" | "REJECTED";
 
 export interface ServiceEntryRow {
   id: string;
@@ -34,11 +34,35 @@ export interface ServiceSummary {
   pendingCount: number;
 }
 
-const STATUSES: ReadonlySet<string> = new Set([
+const STATUSES: ReadonlySet<string> = new Set<ServiceEntryStatus>([
   "PENDING",
   "APPROVED",
   "REJECTED",
 ]);
+
+/**
+ * A status chip's hue, web's `serviceStatusKind`: a status color, never the
+ * chapter accent (`spec/ui/design-system/components.md` §5). Pending is not
+ * yet settled, so it is the warning. Exhaustive, so a status added to
+ * `@repo/hooks` fails to compile here rather than painting as one of these.
+ */
+export function serviceStatusHue(
+  status: ServiceEntryStatus,
+  tokens: SignetTokens,
+): string {
+  switch (status) {
+    case "APPROVED":
+      return tokens.color.semantic.success;
+    case "REJECTED":
+      return tokens.color.semantic.destructive;
+    case "PENDING":
+      return tokens.color.semantic.warning;
+    default: {
+      const unknownStatus: never = status;
+      return unknownStatus;
+    }
+  }
+}
 
 /** A single logged shift longer than a day is a typo, not a shift. */
 export const MAX_DURATION_MINUTES = 24 * 60;
@@ -120,15 +144,25 @@ export function stepDuration(minutes: number, direction: 1 | -1): number {
 }
 
 export interface ServiceDatePreset {
-  /** Days before today: the chip's stable value across a day change. */
+  /** Days before today, which is also the chip's value in the row. */
   daysAgo: number;
   label: string;
   /** `YYYY-MM-DD`, device-local: the `date` the entry is filed under. */
   date: string;
+  /**
+   * How an entry kept past the day it was picked reads this chip. "Today" and
+   * "Yesterday" are relative: they mean the day the entry is filed and the
+   * day before. A weekday chip names a date, and the entry keeps that date
+   * ({@link resolveServiceDate}).
+   */
+  relative: boolean;
 }
 
 /** How many days the date chips reach, today included. */
 const DATE_PRESET_COUNT = 4;
+
+/** The chips named for their distance from today: Today and Yesterday. */
+const RELATIVE_PRESET_COUNT = 2;
 
 /**
  * The s20 date chips: Today, Yesterday, then the two days before by weekday
@@ -148,6 +182,67 @@ export function serviceDatePresets(now: Date): ServiceDatePreset[] {
         : daysAgo === 1
           ? "Yesterday"
           : day.toLocaleDateString(undefined, { weekday: "short" });
-    return { daysAgo, label, date: localIsoDate(day) };
+    return {
+      daysAgo,
+      label,
+      date: localIsoDate(day),
+      relative: daysAgo < RELATIVE_PRESET_COUNT,
+    };
   });
+}
+
+/**
+ * A date chip as an entry holds it: a relative chip by how many days back it
+ * is, re-read against the day the entry is filed, or the date a weekday chip
+ * named when it was picked (see {@link ServiceDatePreset.relative}).
+ */
+export type ServiceDateChoice =
+  | { kind: "relative"; daysAgo: number }
+  | { kind: "date"; date: string };
+
+/** A new entry's date choice: "Today". */
+export const DEFAULT_SERVICE_DATE_CHOICE: ServiceDateChoice = {
+  kind: "relative",
+  daysAgo: 0,
+};
+
+/** What an entry holds once the member picks `preset`. */
+export function serviceDateChoiceOf(
+  preset: ServiceDatePreset,
+): ServiceDateChoice {
+  return preset.relative
+    ? { kind: "relative", daysAgo: preset.daysAgo }
+    : { kind: "date", date: preset.date };
+}
+
+export interface ResolvedServiceDate {
+  /** `YYYY-MM-DD`, device-local: the date Submit files. */
+  date: string;
+  /** The chip `now`'s presets draw for `date`, which the row shows selected. */
+  daysAgo: number;
+}
+
+/**
+ * A held date choice, read on the day `now` falls on.
+ *
+ * A relative chip is that chip's date today. A held date stays as picked, and
+ * the chip shown selected is whichever of today's resolves to it: a "Mon"
+ * picked on a Wednesday is still Monday on the Thursday, now the oldest chip.
+ * A held date that has left the chip window falls back to Today. s19 can keep
+ * a date no chip draws, because its date field shows the date it files; s20
+ * draws its date only as the selected chip, so a date no chip names would file
+ * a day nothing on screen shows.
+ */
+export function resolveServiceDate(
+  choice: ServiceDateChoice,
+  now: Date,
+): ResolvedServiceDate {
+  const presets = serviceDatePresets(now);
+  const held =
+    choice.kind === "relative"
+      ? presets.find((preset) => preset.daysAgo === choice.daysAgo)?.date
+      : choice.date;
+  const chip = presets.find((preset) => preset.date === held);
+  if (chip) return { date: chip.date, daysAgo: chip.daysAgo };
+  return { date: localIsoDate(now), daysAgo: 0 };
 }

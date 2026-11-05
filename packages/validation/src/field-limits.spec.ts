@@ -3,6 +3,7 @@ import {
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
+  SERVICE_DESCRIPTION_MAX_LENGTH,
 } from "./field-limits";
 import { SendChatMessageSchema } from "./index";
 
@@ -13,6 +14,12 @@ describe("field-limits", () => {
     expect(POINTS_ADJUSTMENT_MAX).toBe(100_000);
     expect(POINTS_REASON_MAX_LENGTH).toBe(500);
     expect(CHAT_MESSAGE_CONTENT_MAX_LENGTH).toBe(10_000);
+  });
+
+  it("keeps the service description ceiling at the value the DTO and s20 share", () => {
+    // `CreateServiceEntryDto` refuses past it and the phone's field caps at
+    // it, so a change here moves both, and every client's limit with them.
+    expect(SERVICE_DESCRIPTION_MAX_LENGTH).toBe(2_000);
   });
 
   it("SendChatMessageSchema uses CHAT_MESSAGE_CONTENT_MAX_LENGTH, not a literal", () => {

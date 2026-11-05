@@ -66,17 +66,24 @@ export const RETRY_KEEPS_DRAFT =
  * copy (`lib/more/document-upload.ts` § "A confirm that fails keeps the bytes
  * it already sent").
  *
+ * ## The draft outlives a close, not a Cancel
+ *
+ * A swipe or a tap on the scrim closes the sheet and keeps the draft for the
+ * next visit: the picked photo, the title and the folder. Cancel gives it up,
+ * and so does an upload that files it. The rule s19 and s20 follow
+ * (`spec/ui/mobile/screens.md`); s15's Edit sheet doesn't, and says why.
+ *
+ * A close after a failed confirm keeps the held upload with the draft, so
+ * reopening retries the confirm instead of sending the photo again; a new pick
+ * gives it up. s12 mounts a new sheet per chapter, since the draft belongs to
+ * the chapter it was started in and the held path was minted under it.
+ *
  * ## Closing mid-upload
  *
- * The same rules as s15's edit sheet (`components/profile/edit-profile-sheet.tsx`),
- * through the same `useSheetVisit`: the draft stays until the upload settles, a
- * success closes only the visit it was sent from, and `dismiss()` runs only on
- * a presented sheet.
- *
- * A swipe or scrim close after a failed confirm keeps the held upload too, so
- * reopening retries the confirm instead of sending the photo again; Cancel and
- * a new pick give it up. s12 mounts a new sheet per chapter, since the held
- * path was minted under the chapter it was sent from.
+ * Through the same `useSheetVisit` as s15's edit sheet
+ * (`components/profile/edit-profile-sheet.tsx`): the draft stays until the
+ * upload settles, Cancel included, a success closes only the visit it was sent
+ * from, and `dismiss()` runs only on a presented sheet.
  */
 export const UploadDocumentSheet = forwardRef<
   BottomSheetModal,
@@ -148,21 +155,21 @@ export const UploadDocumentSheet = forwardRef<
   // picker draws doesn't launch another (Android rejects the second launch).
   const pickingNow = useRef(false);
 
-  // A swipe or scrim close keeps an upload that is in flight, or one a
-  // failed confirm left in the bucket: reopening offers the same retry rather
-  // than uploading the photo a second time. Cancel is the way to give it up.
-  // A refusal is dropped, since the officer may have lifted it by the next
-  // visit, and the server will say so again if not.
+  // A swipe or scrim close keeps the draft (see the header), an upload that
+  // is in flight, and one a failed confirm left in the bucket: reopening
+  // offers the same retry rather than uploading the photo a second time.
+  // Cancel is the way to give it up. A refusal is dropped, since the officer
+  // may have lifted it by the next visit, and the server will say so again if
+  // not. So is a failure with nothing held, because reopening is the member's
+  // next try; one with bytes held stays, since it says why the title and
+  // folder hold still.
   const closed = () => {
     markClosed();
     setTitleFocused(false);
     if (sending.current) return;
-    if (stored !== null) {
-      setRefusal(null);
-      setPickRefusal(null);
-      return;
-    }
-    reset();
+    setRefusal(null);
+    setPickRefusal(null);
+    if (stored === null) setFailure(null);
   };
 
   const cancel = () => {

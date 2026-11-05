@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { formatMinutesRounded } from "@repo/formatting";
+import { getSignetTokens } from "@repo/theme/signet";
 import {
+  DEFAULT_SERVICE_DATE_CHOICE,
   DURATION_STEP_MINUTES,
   MAX_DURATION_MINUTES,
+  resolveServiceDate,
   selectServiceEntryRows,
+  serviceDateChoiceOf,
   serviceDatePresets,
+  serviceStatusHue,
   stepDuration,
   summarizeServiceEntries,
 } from "./service-hours";
@@ -124,14 +129,15 @@ describe("serviceDatePresets", () => {
 
   it("offers today, yesterday and the two days before, newest first", () => {
     expect(serviceDatePresets(now)).toEqual([
-      { daysAgo: 0, label: "Today", date: "2026-11-05" },
-      { daysAgo: 1, label: "Yesterday", date: "2026-11-04" },
+      { daysAgo: 0, label: "Today", date: "2026-11-05", relative: true },
+      { daysAgo: 1, label: "Yesterday", date: "2026-11-04", relative: true },
       {
         daysAgo: 2,
         label: new Date(2026, 10, 3).toLocaleDateString(undefined, {
           weekday: "short",
         }),
         date: "2026-11-03",
+        relative: false,
       },
       {
         daysAgo: 3,
@@ -139,6 +145,7 @@ describe("serviceDatePresets", () => {
           weekday: "short",
         }),
         date: "2026-11-02",
+        relative: false,
       },
     ]);
   });
@@ -153,5 +160,75 @@ describe("serviceDatePresets", () => {
       "2026-02-27",
       "2026-02-26",
     ]);
+  });
+});
+
+/**
+ * s20's date chips across a day change: "Today" and "Yesterday" re-derive
+ * from the day the entry is filed, and a weekday chip holds the date it named.
+ */
+describe("resolveServiceDate", () => {
+  // Wednesday 2026-11-04, Thursday the 5th, Friday the 6th.
+  const wednesday = new Date(2026, 10, 4, 20);
+  const thursday = new Date(2026, 10, 5, 8);
+  const friday = new Date(2026, 10, 6, 8);
+  /** What the entry holds after the chip `daysAgo` back is picked on `day`. */
+  const picked = (day: Date, daysAgo: number) =>
+    serviceDateChoiceOf(serviceDatePresets(day)[daysAgo]!);
+
+  it("files a new entry today", () => {
+    expect(resolveServiceDate(DEFAULT_SERVICE_DATE_CHOICE, thursday)).toEqual({
+      date: "2026-11-05",
+      daysAgo: 0,
+    });
+  });
+
+  it("reads Today and Yesterday against the day the entry is filed", () => {
+    expect(resolveServiceDate(picked(wednesday, 0), thursday)).toEqual({
+      date: "2026-11-05",
+      daysAgo: 0,
+    });
+    expect(resolveServiceDate(picked(wednesday, 1), thursday)).toEqual({
+      date: "2026-11-04",
+      daysAgo: 1,
+    });
+  });
+
+  it("holds a weekday chip's date, under the chip that names it now", () => {
+    // Wednesday's "Mon" is Monday the 2nd; on Thursday it is the oldest chip.
+    const monday = picked(wednesday, 2);
+    expect(monday).toEqual({ kind: "date", date: "2026-11-02" });
+    expect(resolveServiceDate(monday, thursday)).toEqual({
+      date: "2026-11-02",
+      daysAgo: 3,
+    });
+  });
+
+  it("falls back to Today once a held date leaves the chip window", () => {
+    // Friday's chips reach back to Tuesday the 3rd.
+    expect(resolveServiceDate(picked(wednesday, 2), friday)).toEqual({
+      date: "2026-11-06",
+      daysAgo: 0,
+    });
+    expect(resolveServiceDate(picked(wednesday, 3), thursday)).toEqual({
+      date: "2026-11-05",
+      daysAgo: 0,
+    });
+  });
+});
+
+describe("serviceStatusHue", () => {
+  const tokens = getSignetTokens();
+
+  it("paints each status in its status color, never the accent", () => {
+    expect(serviceStatusHue("APPROVED", tokens)).toBe(
+      tokens.color.semantic.success,
+    );
+    expect(serviceStatusHue("REJECTED", tokens)).toBe(
+      tokens.color.semantic.destructive,
+    );
+    expect(serviceStatusHue("PENDING", tokens)).toBe(
+      tokens.color.semantic.warning,
+    );
   });
 });

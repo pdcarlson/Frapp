@@ -209,6 +209,25 @@ describe("New task after a gate refusal", () => {
     },
   );
 
+  it("sends one create for two taps in one batch", () => {
+    // Both presses run before `isPending` reaches a render, so both see the
+    // same render's `canSubmit`; only the in-flight ref stops the second.
+    mutate.mockImplementationOnce(() => {});
+    const tree = render();
+    const title = tree.root.find(
+      (node) => node.props.accessibilityLabel === "Task title",
+    );
+    act(() => title.props.onChangeText("Sweep the porch"));
+    act(() => {
+      const button = createButton(tree);
+      button.props.onPress();
+      button.props.onPress();
+    });
+
+    expect(mutate).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
   it.each(REFUSALS)(
     "offers Create again once the sheet is dismissed after %s",
     (_label, error, copy) => {

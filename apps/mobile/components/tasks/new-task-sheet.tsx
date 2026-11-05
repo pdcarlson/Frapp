@@ -72,16 +72,20 @@ import {
  * next visit: tapping the dimmed screen to put the keyboard away is a common
  * habit, and it must not cost the member what they typed. Cancel gives the
  * draft up, and so does a successful create. The same rule s20 and s21 follow
- * (`spec/ui/mobile/screens.md`).
+ * (`spec/ui/mobile/screens.md`); s15's Edit sheet doesn't, and says why.
  *
  * A kept draft reads its due chip against the day it is filed (`at` moves
  * with the host's clock, which re-reads on tab focus and on a return to the
  * app). "Today" and "Tomorrow" are relative, so a draft kept overnight with
- * "Today" files the new day; s20 holds its date as days back for the same
- * reason. "Friday" and "Next week" name a date, and the draft holds the date
- * they named when picked: the chip shown selected is whichever resolves to
- * that date today (on Thursday a kept Friday is the Tomorrow chip), and a held
- * date that has passed falls back to Today (`resolveDue`).
+ * "Today" files the new day, as s20's "Today" and "Yesterday" do. "Friday" and
+ * "Next week" name a date, and the draft holds the date they named when
+ * picked: the chip shown selected is whichever resolves to that date today (on
+ * Thursday a kept Friday is the Tomorrow chip), and a held date that has
+ * passed falls back to Today (`resolveDue`).
+ *
+ * The host mounts a new sheet per chapter, so a kept draft never crosses into
+ * another chapter: its assignee is a member of the chapter it was started in,
+ * and the API refuses one who isn't.
  *
  * ## A create can outlive its visit
  *
@@ -177,6 +181,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
      * meaning: a save that might succeed.
      */
     const [refusal, setRefusal] = useState<string | null>(null);
+    // Set the moment Create sends, before `isPending` reaches a render: two
+    // taps handled in one batch both see the same render's `canSubmit`, as on
+    // s20's log sheet.
+    const sending = useRef(false);
 
     const roster = useMemo(
       () => selectRoster(rosterQuery.data),
@@ -255,15 +263,18 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     }, [reset, dismiss]);
 
     const submit = useCallback(() => {
-      // `canSubmit`, not just `body`, as in s20's log sheet: otherwise
-      // only the button's `disabled` stands between a refused sheet (or a
-      // create already in flight) and another POST.
-      if (!body || !canSubmit) return;
+      // `canSubmit`, not just `body`, as in s20's log sheet: otherwise only the
+      // button's `disabled` stands between a refused sheet and another POST.
+      // It also stops a create in flight, but only once `isPending` has
+      // reached a render; `sending` stops a second tap in the same batch.
+      if (!body || !canSubmit || sending.current) return;
+      sending.current = true;
       setSubmitFailed(false);
       setRefusal(null);
       const sentFrom = visit();
       createTask.mutate(body, {
         onSuccess: () => {
+          sending.current = false;
           const wasSelf = body.assignee_id === viewerUserId;
           // The confirming action (`spec/ui/mobile/README.md` § Native-feel
           // rules), felt once the task exists.
@@ -279,6 +290,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           onCreated?.(assigneeName, wasSelf);
         },
         onError: (error) => {
+          sending.current = false;
           // A visit that has ended doesn't latch its outcome into the next
           // one, which would greet the member with a stale error.
           if (!isSameVisit(sentFrom)) return;

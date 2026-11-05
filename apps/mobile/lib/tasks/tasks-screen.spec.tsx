@@ -96,9 +96,11 @@ const mutateAsync = vi.fn(async () => {
   throw failure;
 });
 
+let chapterId = "chapter-1";
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useActiveChapterId: () => "chapter-1",
+  useActiveChapterId: () => chapterId,
   useViewerUserId: () => "user-1",
   useCurrentUser: () => ({ isError: false }),
   useTasks: () => ({
@@ -115,11 +117,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 }));
 
 // The sheet has its own rendered spec; here it would only bring its own hooks.
-// It keeps the clock it was handed, which is what its chips read.
+// It keeps the clock it was handed, which is what its chips read, and the
+// instance it is, which is what holds a kept draft.
 let sheetNow: Date | undefined;
+let sheetInstance: object | undefined;
 vi.mock("@/components/tasks/new-task-sheet", () => ({
   NewTaskSheet: ({ now }: { now?: Date }) => {
     sheetNow = now;
+    const [instance] = React.useState(() => ({}));
+    sheetInstance = instance;
     return null;
   },
 }));
@@ -172,6 +178,7 @@ async function tapRow(tree: ReactTestRenderer) {
 beforeEach(() => {
   mutateAsync.mockClear();
   successHaptic.mockReset();
+  chapterId = "chapter-1";
 });
 
 describe("Task status toggle on a gate refusal (#2710)", () => {
@@ -326,5 +333,34 @@ describe("Tasks board clock", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * The New task sheet is the host's per chapter: a kept draft's assignee is a
+ * member of the chapter it was started in, and the API refuses one who isn't.
+ * The Tasks tab stays mounted across a chapter switch, so only a new sheet
+ * drops the draft.
+ */
+describe("Tasks board's New task sheet across chapters", () => {
+  it("mounts a new sheet when the active chapter changes, and only then", () => {
+    const tree = render();
+    const first = sheetInstance;
+    const rerender = () =>
+      act(() =>
+        tree.update(
+          <FrappThemeProvider>
+            <TasksScreen />
+          </FrappThemeProvider>,
+        ),
+      );
+
+    rerender();
+    expect(sheetInstance).toBe(first);
+
+    chapterId = "chapter-2";
+    rerender();
+    expect(sheetInstance).not.toBe(first);
+    act(() => tree.unmount());
   });
 });
