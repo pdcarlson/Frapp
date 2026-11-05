@@ -143,7 +143,7 @@ export function RowMenu({
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
-          variant="quiet"
+          variant="ghost"
           size="icon"
           aria-label={label}
           title="More"

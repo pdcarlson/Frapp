@@ -1,7 +1,6 @@
 import { File, FileCheck, KeyRound, Lock, type LucideIcon } from "lucide-react";
 import { roleColor, type RoleColorKey } from "@repo/validation";
 import { highlightRuns } from "@/lib/search/fuzzy-match";
-import { cn } from "@/lib/utils";
 
 /*
  * What tells one backwork row from the next at a glance (Paul, 2026-11-05:
@@ -85,7 +84,11 @@ export function CopyLabel({
   );
 }
 
-/** Text with the words a search matched set in the accent tint. */
+/**
+ * Text with the words a search matched set in semibold `--foreground`:
+ * neutral, since a match is not one of the places the accent goes
+ * (`foundations.md` §6).
+ */
 export function Highlighted({
   text,
   hits,
@@ -102,7 +105,7 @@ export function Highlighted({
         run.hit ? (
           <mark
             key={index}
-            className={cn("rounded-[3px] bg-accent-subtle px-px text-accent-text")}
+            className="bg-transparent font-semibold text-foreground"
           >
             {run.text}
           </mark>

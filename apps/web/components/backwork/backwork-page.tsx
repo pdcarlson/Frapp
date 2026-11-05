@@ -506,7 +506,7 @@ export function BackworkPage() {
           {query ? (
             <Button
               type="button"
-              variant="quiet"
+              variant="ghost"
               size="icon"
               className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
               aria-label="Clear search"
@@ -532,7 +532,7 @@ export function BackworkPage() {
           {narrowed ? (
             <Button
               type="button"
-              variant="quiet"
+              variant="ghost"
               size="toolbar"
               onClick={clearAll}
             >
@@ -769,7 +769,7 @@ export function BackworkPage() {
                       <div className="col-start-2 row-span-2 row-start-1 flex items-center justify-end gap-0.5 md:order-7 md:col-start-auto md:row-span-1 md:row-start-auto">
                         <Button
                           type="button"
-                          variant="quiet"
+                          variant="ghost"
                           size="icon"
                           className={compactControlClassName}
                           aria-label={`Download ${row.title}`}

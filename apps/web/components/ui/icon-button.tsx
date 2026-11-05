@@ -30,8 +30,9 @@ import { cn } from "@/lib/utils";
  * so a gated row was left as grey glyphs nobody could identify. The
  * `disabled` attribute already blocks the click.
  *
- * Paint defaults to `quiet`: a row action sits in the text's own tone and
- * lights up on hover, so a column of them never outshines the row.
+ * Paint defaults to `ghost`, which is neutral (foundations.md §6, "Where the
+ * accent goes"): a row action sits in the muted text tone and lights up on
+ * hover, so a column of them never outshines the row.
  *
  * Size is the Small step of `foundations.md` §9's control size scale, 36 to a
  * mouse and 44 to a finger, wherever the control sits. It is set here rather
@@ -50,7 +51,7 @@ export interface IconButtonProps extends Omit<
 const SMALL_SQUARE = "h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11";
 
 const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
-  ({ label, title, variant = "quiet", className, ...props }, ref) => (
+  ({ label, title, variant = "ghost", className, ...props }, ref) => (
     <Button
       ref={ref}
       variant={variant}

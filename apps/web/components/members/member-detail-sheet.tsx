@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, MessageSquare, Trash2 } from "lucide-react";
-import { DirectoryGlyph, RolesGlyph } from "@/components/members/directory-glyphs";
+import {
+  DirectoryGlyph,
+  RolesGlyph,
+} from "@/components/members/directory-glyphs";
 import {
   useCustomRoles,
   useGetOrCreateDm,
@@ -57,27 +60,29 @@ function formatCustomValue(field: CustomFieldValue): string {
 }
 
 function parseCustomFields(member: MemberRecord | null): CustomFieldValue[] {
-  return asArray<Record<string, unknown>>(member?.custom_fields).flatMap((entry) => {
-    if (
-      !entry ||
-      typeof entry.field_id !== "string" ||
-      typeof entry.label !== "string" ||
-      typeof entry.type !== "string" ||
-      typeof entry.visibility !== "string"
-    ) {
-      return [];
-    }
-    return [
-      {
-        field_id: entry.field_id,
-        key: typeof entry.key === "string" ? entry.key : entry.field_id,
-        label: entry.label,
-        type: entry.type,
-        visibility: entry.visibility,
-        value: typeof entry.value === "string" ? entry.value : null,
-      },
-    ];
-  });
+  return asArray<Record<string, unknown>>(member?.custom_fields).flatMap(
+    (entry) => {
+      if (
+        !entry ||
+        typeof entry.field_id !== "string" ||
+        typeof entry.label !== "string" ||
+        typeof entry.type !== "string" ||
+        typeof entry.visibility !== "string"
+      ) {
+        return [];
+      }
+      return [
+        {
+          field_id: entry.field_id,
+          key: typeof entry.key === "string" ? entry.key : entry.field_id,
+          label: entry.label,
+          type: entry.type,
+          visibility: entry.visibility,
+          value: typeof entry.value === "string" ? entry.value : null,
+        },
+      ];
+    },
+  );
 }
 
 type MemberDetailSheetProps = {
@@ -106,7 +111,7 @@ function RoleChecklistItem({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition-colors hover:bg-accent-subtle">
+    <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition-colors hover:bg-card-hover">
       <div>
         <p className="text-sm font-semibold">{title}</p>
         <p
@@ -174,11 +179,14 @@ export function MemberDetailSheet({
   const removeMemberMutation = useRemoveMember();
   const dmMutation = useGetOrCreateDm();
   const router = useRouter();
-  const { userId: currentUserId, isLoading: isCurrentUserLoading } = useFrappUser();
+  const { userId: currentUserId, isLoading: isCurrentUserLoading } =
+    useFrappUser();
   const { toast } = useToast();
   const { confirm, confirmDialog } = useConfirmDialog();
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
-  const [selectedCustomRoleIds, setSelectedCustomRoleIds] = useState<string[]>([]);
+  const [selectedCustomRoleIds, setSelectedCustomRoleIds] = useState<string[]>(
+    [],
+  );
 
   const resolvedMember = useMemo(() => {
     if (!member) return null;
@@ -195,7 +203,9 @@ export function MemberDetailSheet({
     if (!resolvedMember) return [];
     const roleIds = resolvedMember.role_ids;
     if (!Array.isArray(roleIds)) return [];
-    return roleIds.filter((roleId): roleId is string => typeof roleId === "string");
+    return roleIds.filter(
+      (roleId): roleId is string => typeof roleId === "string",
+    );
   }, [resolvedMember]);
 
   const memberCustomRoleIds = useMemo(() => {
@@ -208,7 +218,11 @@ export function MemberDetailSheet({
   const customRoleOptions = useMemo(() => {
     const data = customRolesQuery.data;
     if (!Array.isArray(data)) return [];
-    return data.map((role) => ({ id: role.id, label: role.label, key: role.key }));
+    return data.map((role) => ({
+      id: role.id,
+      label: role.label,
+      key: role.key,
+    }));
   }, [customRolesQuery.data]);
 
   const roleOptions = useMemo(() => {
@@ -241,12 +255,15 @@ export function MemberDetailSheet({
     resolvedMember?.user_id,
   );
   const userId =
-    typeof resolvedMember?.user_id === "string" ? resolvedMember.user_id : "unknown-user";
+    typeof resolvedMember?.user_id === "string"
+      ? resolvedMember.user_id
+      : "unknown-user";
   // Distinct from the display-formatted `userId` above: this is null rather
   // than the "unknown-user" placeholder, so the Message button and its
   // handler can never fire a DM request at a fallback string.
   const dmTargetUserId =
-    typeof resolvedMember?.user_id === "string" && resolvedMember.user_id.length > 0
+    typeof resolvedMember?.user_id === "string" &&
+    resolvedMember.user_id.length > 0
       ? resolvedMember.user_id
       : null;
   // members-directory.tsx keeps one MemberDetailSheet instance mounted and
@@ -258,13 +275,20 @@ export function MemberDetailSheet({
   useEffect(() => {
     dmTargetUserIdRef.current = dmTargetUserId;
   }, [dmTargetUserId]);
-  const email = typeof resolvedMember?.email === "string" ? resolvedMember.email : "Unavailable";
+  const email =
+    typeof resolvedMember?.email === "string"
+      ? resolvedMember.email
+      : "Unavailable";
   const hasCompletedOnboarding =
     typeof resolvedMember?.has_completed_onboarding === "boolean"
       ? resolvedMember.has_completed_onboarding
       : false;
-  const customFields = useMemo(() => parseCustomFields(resolvedMember), [resolvedMember]);
-  const canMutate = !usingPreviewData && !rolesQuery.isError && !memberQuery.isError;
+  const customFields = useMemo(
+    () => parseCustomFields(resolvedMember),
+    [resolvedMember],
+  );
+  const canMutate =
+    !usingPreviewData && !rolesQuery.isError && !memberQuery.isError;
   // The writes' own gates (`PATCH /members/:id/roles` needs `roles:manage`,
   // `DELETE /members/:id` needs `members:remove`), mirrored so a viewer who
   // holds only `members:view` isn't offered controls that can only 403. Every
@@ -299,7 +323,10 @@ export function MemberDetailSheet({
     } catch (error) {
       toast({
         title: "Could not update roles",
-        description: getErrorMessage(error, "Something went wrong. Please retry."),
+        description: getErrorMessage(
+          error,
+          "Something went wrong. Please retry.",
+        ),
         variant: "destructive",
       });
     }
@@ -338,7 +365,10 @@ export function MemberDetailSheet({
     } catch (error) {
       toast({
         title: "Could not remove member",
-        description: getErrorMessage(error, "Something went wrong. Please retry."),
+        description: getErrorMessage(
+          error,
+          "Something went wrong. Please retry.",
+        ),
         variant: "destructive",
       });
     }
@@ -352,7 +382,11 @@ export function MemberDetailSheet({
     // `currentUserId` is null until /v1/users/me resolves; treating that as
     // "not the viewer" would let a self-DM through during that window, so
     // require the load to finish before comparing.
-    if (!dmTargetUserId || isCurrentUserLoading || dmTargetUserId === currentUserId) {
+    if (
+      !dmTargetUserId ||
+      isCurrentUserLoading ||
+      dmTargetUserId === currentUserId
+    ) {
       return;
     }
     const requestedUserId = dmTargetUserId;
@@ -363,7 +397,9 @@ export function MemberDetailSheet({
       // was in flight — ignore a result that's no longer for the open member.
       if (dmTargetUserIdRef.current !== requestedUserId) return;
       const channelId =
-        dm && typeof dm === "object" && typeof (dm as { id?: unknown }).id === "string"
+        dm &&
+        typeof dm === "object" &&
+        typeof (dm as { id?: unknown }).id === "string"
           ? (dm as { id: string }).id
           : null;
       if (!channelId) {
@@ -447,7 +483,8 @@ export function MemberDetailSheet({
 
         {memberQuery.isError && !usingPreviewData ? (
           <div className="mt-6 rounded-md border border-destructive/[.28] bg-destructive-tint p-3 text-sm text-destructive-text">
-            Could not load the latest member profile. Retry from the directory to re-open this member.
+            Could not load the latest member profile. Retry from the directory
+            to re-open this member.
           </div>
         ) : null}
 
@@ -488,8 +525,13 @@ export function MemberDetailSheet({
             <p className="text-sm font-semibold">Custom fields</p>
             <div className="grid gap-3 sm:grid-cols-2">
               {customFields.map((field) => (
-                <div key={field.field_id} className="rounded-md border border-border p-3">
-                  <p className="text-caption text-muted-foreground">{field.label}</p>
+                <div
+                  key={field.field_id}
+                  className="rounded-md border border-border p-3"
+                >
+                  <p className="text-caption text-muted-foreground">
+                    {field.label}
+                  </p>
                   <p className="mt-1 text-sm">{formatCustomValue(field)}</p>
                 </div>
               ))}
@@ -507,16 +549,18 @@ export function MemberDetailSheet({
               <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
                 No roles are available for this chapter yet.
               </div>
-            ) : roleOptions.map((role) => (
-              <RoleChecklistItem
-                key={role.id}
-                title={role.name}
-                subtitle={role.id}
-                checked={selectedRoleIds.includes(role.id)}
-                disabled={!canEditRoles}
-                onChange={(isChecked) => handleRoleChange(role.id, isChecked)}
-              />
-            ))}
+            ) : (
+              roleOptions.map((role) => (
+                <RoleChecklistItem
+                  key={role.id}
+                  title={role.name}
+                  subtitle={role.id}
+                  checked={selectedRoleIds.includes(role.id)}
+                  disabled={!canEditRoles}
+                  onChange={(isChecked) => handleRoleChange(role.id, isChecked)}
+                />
+              ))
+            )}
           </div>
         </section>
 
