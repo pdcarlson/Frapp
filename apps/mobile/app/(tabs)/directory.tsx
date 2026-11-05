@@ -365,6 +365,11 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       gap: tokens.spacing.md,
       paddingVertical: tokens.spacing.md,
+      // Pads itself by `sm` and bleeds that `sm` into the screen gutter, as
+      // Chat home's channel rows do: the avatar and text stay on the gutter
+      // line, and the ripple and lift clear them instead of stopping flush.
+      paddingHorizontal: tokens.spacing.sm,
+      marginHorizontal: -tokens.spacing.sm,
       minHeight: tokens.touch.minimum,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: tokens.color.border.hairline,

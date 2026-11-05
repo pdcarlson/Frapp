@@ -251,6 +251,21 @@ describe("s13's member rows", () => {
     expect(held).not.toHaveProperty("opacity");
   });
 
+  // The row pads itself by `sm` and bleeds that same `sm` into the screen
+  // gutter, as Chat home's channel rows do: without the padding the ripple
+  // and lift stop flush at the avatar and text, and without the bleed the
+  // content moves off the gutter line.
+  it("bleeds its own padding into the screen gutter", () => {
+    const row = pressableOf(vi.fn());
+    const resting = Object.assign(
+      {},
+      ...[row.props.style({ pressed: false })].flat(Infinity),
+    ) as Record<string, unknown>;
+
+    expect(resting.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
+    expect(resting.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
+  });
+
   it("gives a row with nothing to open no feedback", () => {
     const row = pressableOf(undefined);
     expect(row.props.android_ripple).toBeUndefined();

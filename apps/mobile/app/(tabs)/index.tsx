@@ -410,7 +410,8 @@ export default function ChatHomeScreen() {
           {arranged.emptiedByFilters ? (
             <EmptyState
               glyph="⌕"
-              title="No matches"
+              // No title: writing.md § Arrange the channel list gives this
+              // state none, and web shows none either.
               body={NO_MATCHING_CHANNELS}
               action={
                 <EmptyStateAction

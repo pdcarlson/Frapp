@@ -603,6 +603,9 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     // The state family's empty card, with its CTA, not a hand-rolled block.
     const empty = tree.root.findByType(EmptyState);
     expect(empty.findAllByType(EmptyStateAction)).toHaveLength(1);
+    // writing.md § Arrange the channel list gives this state no title, and
+    // every string it shows lives in `@repo/hooks`; web shows none either.
+    expect(empty.props.title).toBeUndefined();
     expect(
       tree.root.findAll(
         (node) =>

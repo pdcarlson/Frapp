@@ -78,20 +78,22 @@ export function listRowHint(
 }
 
 /**
- * A list row's press feedback. The rule, and which rows follow it, is
- * `spec/ui/mobile/README.md` § Native-feel rules; this is only the mechanism.
+ * A list row's press feedback. The rule is `spec/ui/mobile/README.md`
+ * § Native-feel rules: a row that answers a press uses this hook, so searching
+ * for it finds them, and a row that draws its own press state is the exception.
+ * This is only the mechanism.
  *
  * `ripple` goes to `android_ripple` (iOS ignores it). The ripple is bounded by
  * the row, so a row that wants its feedback to clear the text pads itself
  * rather than relying on a parent, and a rounded row clips it with
  * `overflow: "hidden"`. `lift(pressed)` goes into the `style` callback: on iOS
- * it raises the row one step up the surface ladder while it is held, and on
- * Android it returns nothing, since the ripple is already the signal.
+ * it fills the row with a higher surface while it is held, and on Android it
+ * returns nothing, since the ripple is already the signal.
  *
- * A row on the screen background or a grouped list lifts to `surface.card`.
- * A row that is itself a card (a task, the profile card) passes `onCard` and
- * lifts to `surface.popover` instead: a card lifted to its own colour shows
- * nothing.
+ * The default lift is `surface.card`: a row on the screen background rises two
+ * steps to it, and a `ListRow` on its `surface1` group one. A row that is
+ * itself a card (a task, the profile card) passes `onCard` and lifts to
+ * `surface.popover` instead: a card lifted to its own colour shows nothing.
  */
 export type PressFeedback = {
   ripple: PressableAndroidRippleConfig;

@@ -156,6 +156,64 @@ describe("EmptyState", () => {
       ]),
     );
   });
+
+  // writing.md gives some empty states no title (Chat home's filtered-to-
+  // nothing state). The card then draws tile glyph, body and action, with no
+  // empty title line holding a gap open between them.
+  it("draws no title line when given no title", () => {
+    const tree = render(
+      <EmptyState
+        glyph="⌕"
+        body="No channels match."
+        action={<Text>Show all</Text>}
+      />,
+    );
+    expect(texts(tree)).toEqual(["⌕", "No channels match.", "Show all"]);
+    // An empty `Text` would still take a slot in the card's gap.
+    expect(
+      tree.root.findAllByType("Text" as unknown as React.ComponentType),
+    ).toHaveLength(3);
+  });
+});
+
+describe("the state buttons", () => {
+  // §10 gives empty and error the same anatomy, so the CTA and the retry share
+  // one geometry and differ only in colour.
+  it("draws the empty CTA and the error retry on one geometry", () => {
+    const pressableStyle = (tree: ReactTestRenderer) => {
+      const button = tree.root.find(
+        (node) => (node.type as unknown) === "Pressable",
+      );
+      return flatten(button.props.style({ pressed: false }));
+    };
+    const geometry = (style: Record<string, unknown>) => ({
+      marginTop: style.marginTop,
+      minHeight: style.minHeight,
+      justifyContent: style.justifyContent,
+      borderRadius: style.borderRadius,
+      borderWidth: style.borderWidth,
+      paddingHorizontal: style.paddingHorizontal,
+    });
+    const cta = pressableStyle(
+      render(<EmptyStateAction label="Show all" onPress={vi.fn()} />),
+    );
+    const retry = pressableStyle(
+      render(
+        <ErrorState title="Couldn't load" body="Gone." onRetry={vi.fn()} />,
+      ),
+    );
+
+    expect(geometry(cta)).toEqual(geometry(retry));
+    expect(geometry(retry)).toEqual({
+      marginTop: signetDarkTokens.spacing.xs,
+      minHeight: signetDarkTokens.touch.minimum,
+      justifyContent: "center",
+      borderRadius: signetDarkTokens.radius.control,
+      borderWidth: 1,
+      paddingHorizontal: signetDarkTokens.spacing.lg,
+    });
+    expect(cta.borderColor).not.toBe(retry.borderColor);
+  });
 });
 
 describe("EmptyStateAction", () => {
@@ -233,6 +291,30 @@ describe("SkeletonLines", () => {
     const blocks = tree.root.findAllByType(SkeletonBlock);
 
     expect(blocks).toHaveLength(4);
-    expect(blocks[0]!.props.radius).toBe(signetDarkTokens.radius.control);
+    // What each block draws, not what it was passed: §10's control-sized tile
+    // takes the control radius, text lines the chip radius (TODO-DESIGN: 6).
+    const drawn = blocks.map((block) =>
+      flatten(
+        block.findByType("View" as unknown as React.ComponentType).props.style,
+      ),
+    );
+    expect(drawn[0]!.borderRadius).toBe(signetDarkTokens.radius.control);
+    expect(drawn[0]!.width).toBe(signetDarkTokens.touch.minimum);
+    for (const line of drawn.slice(1)) {
+      expect(line.borderRadius).toBe(signetDarkTokens.radius.chip);
+    }
+  });
+
+  // The card centres its contents (the empty and error stacks), but a
+  // skeleton stands in for rows, which start at the left edge.
+  it("left-aligns its blocks inside the centred card", () => {
+    const tree = render(<SkeletonLines lines={2} showTile />);
+    const [, stack] = tree.root.findAllByType(
+      "View" as unknown as React.ComponentType,
+    );
+    const style = flatten(stack!.props.style);
+
+    expect(style.alignItems).toBe("flex-start");
+    expect(style.alignSelf).toBe("stretch");
   });
 });

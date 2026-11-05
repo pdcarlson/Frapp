@@ -25,7 +25,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * Which screens use these is found by searching for the exports, not listed
  * here, because the list changes with every migration. Some screens still
  * draw their own copies; moving them over is a mechanical change with its own
- * review surface, and is not yet tracked.
+ * review surface, tracked in #1050.
  *
  * ## Why there is no pull-to-refresh anywhere here
  *
@@ -138,13 +138,20 @@ export function SkeletonBlock({
 /**
  * Empty — "inviting, never alarming" (§10). Accent and neutral only; a semantic
  * hue here would read as a fault when nothing is wrong.
+ *
+ * `title` is optional because writing.md gives some empty states none: Chat
+ * home's filtered-to-nothing state is a description and an action, and every
+ * string it shows lives once in `@repo/hooks` for both clients. Without a
+ * title the card draws no title line and no gap for one, so it reads tile,
+ * body, action, in that order, to a screen reader as to the eye.
  */
 export function EmptyState({
   title,
   body,
   glyph = "+",
   action,
-}: StateBlockProps & {
+}: Omit<StateBlockProps, "title"> & {
+  title?: string;
   /**
    * A single character standing in for the drawn feature glyph.
    *
@@ -166,7 +173,7 @@ export function EmptyState({
       <View style={[styles.tile, { backgroundColor: tint(accent) }]}>
         <Text style={[styles.glyph, { color: accent }]}>{glyph}</Text>
       </View>
-      <Text style={styles.title}>{title}</Text>
+      {title ? <Text style={styles.title}>{title}</Text> : null}
       <Text style={styles.body}>{body}</Text>
       {action}
     </View>
@@ -197,7 +204,7 @@ export function EmptyStateAction({
       hitSlop={tokens.spacing.sm}
       onPress={onPress}
       style={({ pressed }) => [
-        styles.action,
+        styles.stateButton,
         { backgroundColor: accentSubtle, borderColor: accentBorder },
         pressed ? styles.pressed : null,
       ]}
@@ -242,6 +249,7 @@ export function ErrorState({
           hitSlop={tokens.spacing.sm}
           onPress={onRetry}
           style={({ pressed }) => [
+            styles.stateButton,
             styles.retry,
             pressed ? styles.pressed : null,
           ]}
@@ -326,28 +334,25 @@ function createStyles(tokens: SignetTokens) {
       // §10 caps the body at ~220px so it never runs the full card width.
       maxWidth: 220,
     },
-    retry: {
+    // The empty card's CTA and the error card's retry: §10 gives the two cards
+    // the same anatomy, so they share this geometry and differ only in colour
+    // (`retry` here, the chapter accent inline in `EmptyStateAction`). §10
+    // sets the button 14px below the body; the card's 8pt gap plus `xs` makes
+    // 12, the nearest the spacing scale reaches.
+    stateButton: {
       marginTop: tokens.spacing.xs,
       minHeight: tokens.touch.minimum,
       justifyContent: "center",
       borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.border.input,
       paddingHorizontal: tokens.spacing.lg,
+    },
+    retry: {
+      borderColor: tokens.color.border.input,
     },
     retryText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
-    },
-    // §10 sets the CTA 14px below the body. The card's 8pt gap plus `xs`
-    // makes 12, the nearest the spacing scale reaches.
-    action: {
-      marginTop: tokens.spacing.xs,
-      minHeight: tokens.touch.minimum,
-      justifyContent: "center",
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      paddingHorizontal: tokens.spacing.lg,
     },
     actionText: {
       ...typeRole({
