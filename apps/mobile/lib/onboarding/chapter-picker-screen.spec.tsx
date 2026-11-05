@@ -18,10 +18,9 @@ import { drawnText } from "@/test/screen-text";
  * anchored under it, so "something to go back to" doesn't mean More. The row
  * goes back rather than opening More again, and holds while a switch runs. The
  * chapter that's open now is marked, and a tap on it selects it again like any
- * row, since the mark reads a token claim that can lag the server. Unlike any
- * other row, it leaves even when that fails, unless the last switch it saw
- * reach the server since it opened put the server on another chapter, or the
- * server refused it (the member is no longer in that chapter).
+ * row, since the mark reads a token claim that can lag the server. Whether a
+ * failed select leaves is `handleSelect`'s exit rule (its comment states it);
+ * these pin each case of it.
  *
  * Here, not beside the screen: a spec under `app/` is a route module and
  * ships in the bundle (`lib/routes.spec.ts`).
@@ -47,21 +46,23 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#CB9FFF" }),
 }));
 
+const TAU_NU = {
+  chapter_id: "chapter-tau-nu",
+  chapter: { name: "FIJI Tau Nu", university: "Rensselaer" },
+};
+const ETA = {
+  chapter_id: "chapter-eta",
+  chapter: { name: "Sigma Phi Epsilon", university: "UCLA" },
+};
+let chapters = [TAU_NU, ETA];
+const refetchChapters = vi.fn();
+
 vi.mock("@repo/hooks", () => ({
   useListChapters: () => ({
-    data: [
-      {
-        chapter_id: "chapter-tau-nu",
-        chapter: { name: "FIJI Tau Nu", university: "Rensselaer" },
-      },
-      {
-        chapter_id: "chapter-eta",
-        chapter: { name: "Sigma Phi Epsilon", university: "UCLA" },
-      },
-    ],
+    data: chapters,
     isPending: false,
     isError: false,
-    refetch: vi.fn(),
+    refetch: refetchChapters,
   }),
 }));
 
@@ -146,6 +147,7 @@ function rowFor(root: Node, name: string): Node {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  chapters = [TAU_NU, ETA];
   selectChapter.mockResolvedValue(true);
   // Something is under the picker either way: the More tab, or sign-in,
   // which `(auth)/_layout.tsx` anchors under a screen a link opens.
@@ -308,6 +310,58 @@ describe("chapter picker, opened from More", () => {
     expect(router.replace).not.toHaveBeenCalled();
     expect(drawnText(tree.root)).toContain(REFUSED);
     expect(drawnText(tree.root)).not.toContain("Check your connection");
+  });
+
+  // The server dropped the member from that chapter, so the list asks again
+  // and the row goes; the refetch lands before the screen draws again here.
+  it("drops a refused chapter from the list, and keeps the others", async () => {
+    refusedSwitch();
+    refetchChapters.mockImplementationOnce(() => {
+      chapters = [ETA];
+    });
+    const tree = render();
+
+    await act(async () => {
+      rowFor(tree.root, "FIJI Tau Nu").props.onPress();
+    });
+    expect(refetchChapters).toHaveBeenCalledTimes(1);
+    expect(drawnText(tree.root)).not.toContain("FIJI Tau Nu");
+    expect(drawnText(tree.root)).toContain("Sigma Phi Epsilon");
+    expect(drawnText(tree.root)).toContain(REFUSED);
+  });
+
+  it("offers Join once a refused chapter was the member's only one", async () => {
+    chapters = [TAU_NU];
+    refusedSwitch();
+    refetchChapters.mockImplementationOnce(() => {
+      chapters = [];
+    });
+    // A link opened it: no ‹ More, so before the refetch Sign out was the
+    // only way off.
+    vi.mocked(useLocalSearchParams).mockReturnValue({});
+    const tree = render();
+
+    await act(async () => {
+      rowFor(tree.root, "FIJI Tau Nu").props.onPress();
+    });
+    expect(drawnText(tree.root)).toContain("not a member of any chapter yet");
+    // "Pick another chapter" would point at nothing.
+    expect(drawnText(tree.root)).not.toContain(REFUSED);
+    await act(async () => {
+      rowFor(tree.root, "Join or start a chapter").props.onPress();
+    });
+    expect(router.push).toHaveBeenCalledWith("/join");
+  });
+
+  it("doesn't fetch the list again when a switch fails offline", async () => {
+    selectChapter.mockResolvedValueOnce(false);
+    const tree = render();
+
+    await act(async () => {
+      rowFor(tree.root, "Sigma Phi Epsilon").props.onPress();
+    });
+    expect(refetchChapters).not.toHaveBeenCalled();
+    expect(drawnText(tree.root)).toContain("Could not switch chapters");
   });
 
   it("says another row was refused, rather than blaming the connection", async () => {

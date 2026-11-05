@@ -7,7 +7,6 @@ import {
   ORG_PROFILES,
   orgColorsFor,
   orgDefaultAccent,
-  orgMarkFields,
   orgProfileFor,
 } from "@repo/org-archetypes";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -284,22 +283,5 @@ describe("org profiles", () => {
     expect(orgDefaultAccent("Phi Gamma Delta")).toBe(FIJI[0]!.hex);
     expect(FIJI[0]!.name).toBe("Royal Purple");
     expect(orgProfileFor("Phi Gamma Delta")?.displaysGreekLetters).toBe(false);
-  });
-
-  it("hides FIJI's letters on a match, and undoes that for the next row", () => {
-    const founder = { shortName: "", showGreekLetters: true };
-    const fiji = orgMarkFields("Phi Gamma Delta", "", founder);
-    expect(fiji).toEqual({ shortName: "FIJI", showGreekLetters: false });
-    // Picked FIJI by mistake, then Sigma Phi Epsilon: back to the founder's.
-    expect(orgMarkFields("Sigma Phi Epsilon", "Phi Gamma Delta", fiji)).toEqual(
-      founder,
-    );
-    // A short name the founder typed themselves stays.
-    expect(
-      orgMarkFields("Sigma Phi Epsilon", "", {
-        shortName: "SigEp",
-        showGreekLetters: false,
-      }),
-    ).toEqual({ shortName: "SigEp", showGreekLetters: false });
   });
 });

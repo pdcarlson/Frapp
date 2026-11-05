@@ -464,8 +464,8 @@ describe("chapter setup — Greek letters", () => {
 
   // The match web's setup makes (`orgHidingGreekLettersIn`), not only the
   // directory's exact name. The letters are typed under another name first,
-  // so the switch is still on when the name changes: nothing but the match
-  // keeps them off the mark and out of what is sent.
+  // with the switch on, so the switch going off is the name's doing
+  // (`orgMarkFieldsFor`), which also fills the empty short name.
   it.each(["FIJI", "Phi Gamma Delta (FIJI)", "phi gamma delta tau nu"])(
     "hides the letters for %s typed by hand, and sends them off",
     async (orgName) => {
@@ -484,6 +484,7 @@ describe("chapter setup — Greek letters", () => {
         `["Phi Gamma Delta"," doesn't display its Greek letters`,
       );
       expect(allText(root)).not.toContain("ΦΓΔ");
+      expect(inputValues(root)).toContain('["Short name","FIJI"]');
 
       await act(async () => {
         radios(root)[0].props.onPress();
@@ -496,12 +497,88 @@ describe("chapter setup — Greek letters", () => {
       });
       await settle();
       const body = onboard.mock.calls[0]?.[0] as {
-        branding: { show_greek_letters?: boolean };
+        branding: { show_greek_letters?: boolean; short_name?: string };
       };
       expect(body.branding.show_greek_letters).toBe(false);
+      expect(body.branding.short_name).toBe("FIJI");
       expect(allText(root)).not.toContain("ΦΓΔ");
     },
   );
+
+  /** Submit from the confirm step of a match, and return what was sent. */
+  async function submitMatch(root: Node): Promise<SentBranding> {
+    await press(root, "Continue");
+    expect(allText(root)).not.toContain("ΦΓΔ");
+    await press(root, "agree");
+    await act(async () => {
+      primary(root).props.onPress();
+    });
+    await settle();
+    expect(allText(root)).not.toContain("ΦΓΔ");
+    return (onboard.mock.calls[0]?.[0] as { branding: SentBranding })
+      .branding;
+  }
+
+  type SentBranding = { show_greek_letters?: boolean; short_name?: string };
+
+  // FIJI's row is FIJI whatever its name field says later, as on web: typing
+  // the chapter onto the name keeps the short name, and a name that no longer
+  // names FIJI at all still hides the letters.
+  it.each(["Phi Gamma Delta Tau Nu", "Phi Gamma Delt", "Tau Nu Chapter"])(
+    "keeps FIJI's row hidden and its short name when the name becomes %s",
+    async (orgName) => {
+      const { root } = await render();
+      await pickRow(root, "Phi Gamma Delta");
+      await press(root, "Edit details");
+      typeInto(root, "Organization", orgName);
+
+      expect(inputValues(root)).toContain(`["Organization","${orgName}"]`);
+      expect(inputValues(root)).toContain('["Short name","FIJI"]');
+      expect(lettersSwitch(root)).toBeUndefined();
+      expect(inputValues(root)).not.toContain("ΦΓΔ");
+      expect(allText(root)).toContain(
+        `["Phi Gamma Delta"," doesn't display its Greek letters`,
+      );
+      expect(allText(root)).not.toContain("ΦΓΔ");
+
+      const sent = await submitMatch(root);
+      expect(sent.show_greek_letters).toBe(false);
+      expect(sent.short_name).toBe("FIJI");
+    },
+  );
+
+  // Another organization's row renamed to FIJI changes the name alone, as on
+  // web, so its switch is still on: the last-line guard keeps the letters
+  // off what is drawn and sent.
+  it("hides the letters when another row's name is changed to FIJI", async () => {
+    const { root } = await render();
+    await pickRow(root, "Sigma Phi Epsilon");
+    await press(root, "Edit details");
+    typeInto(root, "Greek letters", "ΦΓΔ");
+    typeInto(root, "Organization", "FIJI");
+    expect(lettersSwitch(root)).toBeUndefined();
+    expect(inputValues(root)).not.toContain("ΦΓΔ");
+
+    const sent = await submitMatch(root);
+    expect(sent.show_greek_letters).toBe(false);
+  });
+
+  it("fills the short name when FIJI is typed by hand, and leaves a typed one", async () => {
+    const { root } = await render();
+    await press(root, "Not in our directory?");
+    await press(root, "More details (optional)");
+    typeInto(root, "Organization", "FIJI");
+    expect(inputValues(root)).toContain('["Short name","FIJI"]');
+
+    // Leaving FIJI undoes its short name; a short name the founder typed
+    // stays when the name comes back to FIJI.
+    typeInto(root, "Organization", "Sigma Nu");
+    expect(inputValues(root)).toContain('["Short name",""]');
+    typeInto(root, "Short name", "TN");
+    typeInto(root, "Organization", "FIJI");
+    expect(inputValues(root)).toContain('["Short name","TN"]');
+    expect(lettersSwitch(root)).toBeUndefined();
+  });
 
   it("sends FIJI's branding with the letters switched off", async () => {
     const { root } = await render();
@@ -876,30 +953,34 @@ describe("chapter setup — motion", () => {
       .findAllByType("Animated.View" as never, { deep: true })
       .map((view) => view.props.entering as { reduceMotionMode?: string });
   }
+  const stepFade = expect.objectContaining({
+    animation: "FadeIn",
+    durationMs: signetDarkTokens.motion.duration.standard,
+    reduceMotionMode: ReduceMotion.System,
+  });
 
   it("fades every step in, and holds still for reduced motion", async () => {
     const { root } = await render();
-    expect(entering(root)).toEqual([
-      expect.objectContaining({ reduceMotionMode: ReduceMotion.System }),
-    ]);
+    expect(entering(root)).toEqual([stepFade]);
 
     await pickRow(root, "Phi Gamma Delta");
     await press(root, "Continue");
     expect(title(root)).toBe(SETUP_TITLES.color);
-    expect(entering(root)).toEqual([
-      expect.objectContaining({ reduceMotionMode: ReduceMotion.System }),
-    ]);
+    expect(entering(root)).toEqual([stepFade]);
 
     await press(root, "agree");
     await act(async () => {
       primary(root).props.onPress();
     });
     await settle();
-    // The mark's zoom and the step's fade.
+    // The mark's zoom above the step, then the step's fade.
     expect(title(root)).toBe("FIJI is live");
     expect(entering(root)).toEqual([
-      expect.objectContaining({ reduceMotionMode: ReduceMotion.System }),
-      expect.objectContaining({ reduceMotionMode: ReduceMotion.System }),
+      expect.objectContaining({
+        animation: "ZoomIn",
+        reduceMotionMode: ReduceMotion.System,
+      }),
+      stepFade,
     ]);
   });
 });

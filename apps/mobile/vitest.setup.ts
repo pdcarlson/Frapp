@@ -259,10 +259,11 @@ vi.mock("react-native-gesture-handler", () => {
 // thread does, so a spec that runs a gesture callback can read the result.
 vi.mock("react-native-reanimated", () => {
   // Entering animations are builders: each modifier returns a new builder
-  // that keeps what it was given, so a spec can read the reduced-motion
-  // setting (`entering.reduceMotionMode`) off the view the builder was handed
-  // to. One builder for every entering animation the app uses, so a modifier
-  // a screen starts calling is added once.
+  // that keeps what it was given, so a spec can read which animation a view
+  // was handed (`entering.animation`, "ZoomIn" or "FadeIn") and its
+  // reduced-motion setting (`entering.reduceMotionMode`). One builder for
+  // every entering animation the app uses, so a modifier a screen starts
+  // calling is added once.
   const entering = (config: object): object => ({
     ...config,
     duration: (ms: number) => entering({ ...config, durationMs: ms }),
@@ -295,8 +296,8 @@ vi.mock("react-native-reanimated", () => {
       }),
     withTiming: <T>(value: T) => value,
     // Setup's live mark zooms in; join's views and setup's steps fade in.
-    ZoomIn: entering({}),
-    FadeIn: entering({}),
+    ZoomIn: entering({ animation: "ZoomIn" }),
+    FadeIn: entering({ animation: "FadeIn" }),
     ReduceMotion: { System: "system", Always: "always", Never: "never" },
   };
 });

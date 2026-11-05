@@ -90,6 +90,7 @@ export default function ChapterPicker() {
   }
 
   const { data, isPending, isError, refetch } = useListChapters();
+  const listEmpty = !isPending && !isError && (!data || data.length === 0);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [selectError, setSelectError] = useState<string | null>(null);
   // The chapter the last activate to land in this visit put the server on,
@@ -139,7 +140,9 @@ export default function ChapterPicker() {
       // stays, on any row, the Current one included, with an error that says
       // to pick another. Nothing moved, a retry can't succeed, and leaving
       // from Current would put the member on tabs whose every request the
-      // chapter guard refuses for the same reason.
+      // chapter guard refuses for the same reason. The list is fetched again,
+      // so the chapter they left drops off it, and when it was their only one
+      // the empty state's way to join or start a chapter appears.
       //
       // Otherwise (offline, say), a failed re-select of the row marked Current
       // leaves anyway when nothing in this visit may have moved the server
@@ -160,6 +163,7 @@ export default function ChapterPicker() {
       // server, to the chapter the member chose there.
       // Any other row keeps the error: its switch hasn't taken.
       if (!ok && outcome.refused) {
+        void refetch();
         setSelectError(
           "You can't open that chapter because you're no longer a member of it. Pick another chapter.",
         );
@@ -252,7 +256,7 @@ export default function ChapterPicker() {
                 <Text style={styles.primaryButtonText}>Try again</Text>
               </OnboardingPressable>
             </View>
-          ) : !data || data.length === 0 ? (
+          ) : listEmpty || !data ? (
             // Not reachable through the normal hook path, but a member with no
             // membership at all would otherwise be stranded on a blank screen
             // with no way back to sign-in.
@@ -312,7 +316,10 @@ export default function ChapterPicker() {
             </View>
           )}
 
-          {selectError ? (
+          {/* Not under the empty state: once a refusal's refetch empties the
+            list, "Pick another chapter" would point at nothing, and the
+            empty state says what to do. */}
+          {selectError && !listEmpty ? (
             <Text style={styles.errorText}>{selectError}</Text>
           ) : null}
 

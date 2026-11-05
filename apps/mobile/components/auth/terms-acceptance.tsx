@@ -1,10 +1,11 @@
 import { Fragment } from "react";
 import * as WebBrowser from "expo-web-browser";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { LEGAL_ACCEPTANCE_LABEL } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ACCEPTANCE_LINKS } from "@/lib/more/legal";
+import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /** Each document link's slop; see `TermsAcceptance` for the geometry. */
@@ -20,7 +21,9 @@ const TERMS_LINK_SLOP = { top: 12, bottom: 12, left: 6, right: 6 };
  * check in the fill's own ink, while the whole row is the 44pt target. It was
  * a 44pt square that filled solid gold with no check, which read as a button
  * rather than a ticked box. House gold, since none of the three screens is
- * inside a chapter yet.
+ * inside a chapter yet. The row and the links are quiet lines of the flow
+ * (`OnboardingPressable`): a ripple on Android, the text dimmed while held on
+ * iOS.
  *
  * The two documents sit on one line under it, each a 20pt line with 12pt of
  * slop above and below, which makes the 44pt minimum. Two gaps keep that slop
@@ -50,16 +53,14 @@ export function TermsAcceptance({
   const styles = createStyles(tokens);
   return (
     <View style={styles.block}>
-      <Pressable
+      <OnboardingPressable
         accessibilityRole="checkbox"
         accessibilityState={{ checked: accepted, disabled }}
         accessibilityLabel={LEGAL_ACCEPTANCE_LABEL}
         disabled={disabled}
         onPress={() => onAcceptedChange(!accepted)}
-        style={({ pressed }) => [
-          styles.row,
-          pressed && !disabled ? styles.pressed : null,
-        ]}
+        quiet
+        style={styles.row}
       >
         <View
           testID="terms-checkbox"
@@ -68,7 +69,7 @@ export function TermsAcceptance({
           {accepted ? <CheckGlyph color={tokens.color.gold.onHouse} /> : null}
         </View>
         <Text style={styles.label}>{LEGAL_ACCEPTANCE_LABEL}</Text>
-      </Pressable>
+      </OnboardingPressable>
       <View style={styles.links}>
         {ACCEPTANCE_LINKS.map((link, index) => (
           <Fragment key={link.url}>
@@ -81,20 +82,18 @@ export function TermsAcceptance({
                 ·
               </Text>
             ) : null}
-            <Pressable
+            <OnboardingPressable
               accessibilityRole="link"
               accessibilityLabel={link.label}
               hitSlop={TERMS_LINK_SLOP}
               onPress={() => {
                 void WebBrowser.openBrowserAsync(link.url);
               }}
-              style={({ pressed }) => [
-                styles.link,
-                pressed ? styles.pressed : null,
-              ]}
+              quiet
+              style={styles.link}
             >
               <Text style={styles.linkText}>{link.label}</Text>
-            </Pressable>
+            </OnboardingPressable>
           </Fragment>
         ))}
       </View>
@@ -128,9 +127,6 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       gap: tokens.spacing.md,
       minHeight: tokens.touch.minimum,
-    },
-    pressed: {
-      opacity: 0.7,
     },
     checkbox: {
       width: 24,

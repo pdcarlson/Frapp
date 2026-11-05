@@ -30,7 +30,7 @@ import {
   orgColorsFor,
   orgDefaultAccent,
   orgHidingGreekLettersIn,
-  orgMarkFields,
+  orgMarkFieldsFor,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import { SignetTokens } from "@repo/theme/signet";
@@ -95,9 +95,12 @@ import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * The archetype comes from the directory match and is asked only when the
  * chapter is entered by hand (or the match carries no known archetype), with
  * nothing preselected. Some organizations don't display their Greek letters
- * (Phi Gamma Delta, `orgHidingGreekLettersIn`): for them the letters appear
- * nowhere here and the created chapter is sent with them off; a directory
- * match also fills in the short name.
+ * (Phi Gamma Delta): for them the letters appear nowhere here and the created
+ * chapter is sent with them off. The short name and the letters switch follow
+ * `orgMarkFieldsFor`, as web's setup does: naming such an organization, by its
+ * directory row or by hand ("FIJI", "Phi Gamma Delta Tau Nu"), turns the
+ * switch off and fills an empty short name. A chapter picked from its row
+ * keeps the letters hidden whatever its name field says later.
  */
 
 type Step = "find" | "confirm" | "color" | "live" | "primer" | "invite";
@@ -136,50 +139,65 @@ function knownArchetype(value: string | null | undefined): ArchetypeKey | null {
 }
 
 /**
- * The organization whose Greek letters setup must not draw for this name, or
- * `undefined`. The match web's setup makes: the organization's name as whole
- * words in any case ("Phi Gamma Delta (FIJI)") or its short name as written
- * ("FIJI"), not only the directory's exact name, so a founder typing their
- * chapter in by hand never gets the letters field, the switch, or a mark
- * drawn from the letters. It can only hide letters, never show them.
+ * The organization whose Greek letters setup must not draw, or `null`: the
+ * picked directory row's organization first, because a chapter from FIJI's
+ * row is FIJI whatever its name field says later, then the name as typed
+ * ("FIJI", "Phi Gamma Delta Tau Nu"). Web's setup decides the same way. The
+ * match (`orgHidingGreekLettersIn`) can hide letters, never show them.
  */
-function lettersHiddenBy(orgName: string | null | undefined): string | null {
-  return orgHidingGreekLettersIn(orgName) ?? null;
+function lettersHiddenBy(
+  matchedOrgName: string | null,
+  identity: ChapterIdentityForm,
+): string | null {
+  return (
+    orgHidingGreekLettersIn(matchedOrgName) ??
+    orgHidingGreekLettersIn(identity.name) ??
+    null
+  );
 }
 
 /**
- * The branding setup previews and sends: the form's, with the letters off
- * whenever the organization hides them, whatever the switch holds. Only an
- * exact name turns the switch off (`orgMarkFields`), so "FIJI" typed by hand
- * leaves it on; the letters stay stored, as below.
+ * The branding setup previews and sends. The form already holds the switch
+ * off for an organization that hides its letters (`withOrgName`); this is
+ * the last line for any form that doesn't. One does on purpose: a row from
+ * another organization renamed to FIJI changes the name alone, as on web,
+ * so the switch that row left on is overridden here. The letters themselves
+ * stay stored, as web's wizard stores them (branding.md: the switch hides,
+ * it doesn't delete); setup never draws them or sends them shown.
  */
-function setupBranding(identity: ChapterIdentityForm) {
+function setupBranding(
+  identity: ChapterIdentityForm,
+  hiddenBy: string | null,
+) {
   const branding = chapterIdentityBranding(identity);
-  return lettersHiddenBy(identity.name)
-    ? { ...branding, show_greek_letters: false }
-    : branding;
+  return hiddenBy ? { ...branding, show_greek_letters: false } : branding;
 }
 
 /**
- * The identity after the organization's name changes: a profile's short name
- * and letters switch follow it (`orgMarkFields`). Letters an organization
- * hides are still stored, as web's wizard stores them (branding.md: the
- * switch hides, it doesn't delete); setup just never draws them.
+ * The identity after the Organization field changes. By hand, the short name
+ * and the letters switch follow `orgMarkFieldsFor`, as web's setup does:
+ * naming an organization fills an empty short name from its profile and
+ * turns the switch off when it hides its letters, typing on past it ("Phi
+ * Gamma Delta Tau Nu") keeps both, and leaving it undoes both. After a
+ * directory pick the row decides the organization, so editing the name
+ * changes the name alone.
  */
 function withOrgName(
   identity: ChapterIdentityForm,
   name: string,
+  fromDirectory: boolean,
 ): ChapterIdentityForm {
+  if (fromDirectory) return { ...identity, name };
   return {
     ...identity,
     name,
-    ...orgMarkFields(name, identity.name, identity),
+    ...orgMarkFieldsFor(name, identity.name, identity),
   };
 }
 
 /** How a directory row reads in the results: never letters a group hides. */
 export function directoryRowTitle(row: ChapterDirectoryResult): string {
-  return !lettersHiddenBy(row.org_name) && row.org_letters
+  return !orgHidingGreekLettersIn(row.org_name) && row.org_letters
     ? `${row.org_letters} · ${row.org_name}`
     : row.org_name;
 }
@@ -201,6 +219,9 @@ export default function CreateChapter() {
   const [rawQuery, setRawQuery] = useState("");
   const debouncedQuery = useDebouncedValue(rawQuery, 250);
   const [directoryId, setDirectoryId] = useState<string | null>(null);
+  // The organization the picked directory row names, which keeps its letters
+  // hidden however the name is edited after (`lettersHiddenBy`).
+  const [matchedOrgName, setMatchedOrgName] = useState<string | null>(null);
   const [archetype, setArchetype] = useState<ArchetypeKey | null>(null);
   // Whether the confirm step asks for the archetype: by hand, or a match
   // whose archetype this app doesn't know. Fixed when the step opens, so
@@ -236,25 +257,22 @@ export default function CreateChapter() {
     identity.shortName.trim() || identity.name.trim() || "Your chapter";
   const canConfirm = chapterIdentityIsValid(identity) && archetype !== null;
   const canSubmit = canConfirm && acceptedLegal && accentValid;
+  const lettersHidden = lettersHiddenBy(matchedOrgName, identity);
 
   function applyDirectoryMatch(row: ChapterDirectoryResult) {
     const known = knownArchetype(row.archetype);
     setDirectoryId(row.id);
+    setMatchedOrgName(row.org_name ?? null);
     setArchetype(known);
     setAsksArchetype(known === null);
-    // The directory knows letters, not whether an organization shows them:
-    // FIJI's profile switches them off and fills the short name.
-    const seeded: ChapterIdentityForm = {
-      ...identity,
-      greekLetters: row.org_letters ?? "",
-    };
-    const named = withOrgName(seeded, row.org_name ?? "");
     setIdentity({
-      name: named.name,
+      name: row.org_name ?? "",
       university: row.university ?? "",
-      greekLetters: named.greekLetters,
-      shortName: named.shortName,
-      showGreekLetters: named.showGreekLetters,
+      greekLetters: row.org_letters ?? "",
+      // The directory knows letters, not whether an organization shows them:
+      // FIJI's profile switches them off (`orgMarkFieldsFor`), and fills the
+      // short name only if the founder left it empty.
+      ...orgMarkFieldsFor(row.org_name, identity.name, identity),
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
@@ -272,10 +290,11 @@ export default function CreateChapter() {
 
   function startManualEntry() {
     setDirectoryId(null);
+    setMatchedOrgName(null);
     setArchetype(null);
     setAsksArchetype(true);
     // A name carried over from the search gets its profile, as a typed one does.
-    setIdentity(withOrgName(EMPTY_CHAPTER_IDENTITY, rawQuery.trim()));
+    setIdentity(withOrgName(EMPTY_CHAPTER_IDENTITY, rawQuery.trim(), false));
     setDetailsOpen(false);
     setAcceptedLegal(false);
     setError(null);
@@ -318,7 +337,7 @@ export default function CreateChapter() {
         org_archetype: archetype,
         directory_id: directoryId ?? undefined,
         accept_terms_privacy: true,
-        branding: setupBranding(identity),
+        branding: setupBranding(identity, lettersHidden),
       });
       const id = onboardedChapterId(chapter);
       const active = id ? await selectChapter(id) : false;
@@ -431,7 +450,7 @@ export default function CreateChapter() {
   const setupIndex = SETUP_STEPS.indexOf(step);
   const mark = resolveChapterMark({
     logoUrl,
-    branding: setupBranding(identity),
+    branding: setupBranding(identity, lettersHidden),
     name: identity.name,
   });
   const accent = normalizeAccentInput(identity.colorAccent);
@@ -546,6 +565,7 @@ export default function CreateChapter() {
                   identity={identity}
                   onChange={setIdentity}
                   isManual={isManual}
+                  lettersHidden={lettersHidden}
                   detailsOpen={detailsOpen}
                   onToggleDetails={() => setDetailsOpen((open) => !open)}
                   asksArchetype={asksArchetype}
@@ -927,6 +947,7 @@ function ConfirmStep({
   identity,
   onChange,
   isManual,
+  lettersHidden,
   detailsOpen,
   onToggleDetails,
   asksArchetype,
@@ -938,6 +959,8 @@ function ConfirmStep({
   identity: ChapterIdentityForm;
   onChange: (next: ChapterIdentityForm) => void;
   isManual: boolean;
+  /** The organization whose letters this chapter hides, or `null`. */
+  lettersHidden: string | null;
   detailsOpen: boolean;
   onToggleDetails: () => void;
   asksArchetype: boolean;
@@ -952,8 +975,6 @@ function ConfirmStep({
   ) {
     onChange({ ...identity, [key]: value });
   }
-  const lettersHidden = lettersHiddenBy(identity.name);
-
   const meta = [identity.designation.trim(), identity.university.trim()]
     .filter(Boolean)
     .join(" · ");
@@ -999,7 +1020,9 @@ function ConfirmStep({
       <Field
         label="Organization"
         value={identity.name}
-        onChangeText={(value) => onChange(withOrgName(identity, value))}
+        onChangeText={(value) =>
+          onChange(withOrgName(identity, value, !isManual))
+        }
         placeholder="Sigma Phi Epsilon"
         autoCapitalize="words"
         styles={styles}

@@ -12,8 +12,7 @@ import {
 } from "react-native";
 import * as Linking from "expo-linking";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { signetDarkTokens } from "@repo/theme/signet";
-import { FrappThemeProvider, tint } from "@/lib/theme";
+import { FrappThemeProvider } from "@/lib/theme";
 import type { ClientPolicy } from "@/lib/client-policy";
 import { flatStyle } from "@/test/flat-style";
 
@@ -25,6 +24,20 @@ vi.mock("@/lib/client-policy", () => ({
 }));
 
 import { ClientPolicyGate, UPDATE_REQUIRED_COPY } from "./client-policy-gate";
+import { OnboardingPrimaryButton } from "./onboarding/onboarding-primary-button";
+
+/** The ripple a standalone onboarding primary draws. */
+function primaryRipple(): unknown {
+  let renderer!: ReactTestRenderer;
+  act(() => {
+    renderer = create(
+      <FrappThemeProvider>
+        <OnboardingPrimaryButton label="Continue" onPress={() => {}} />
+      </FrappThemeProvider>,
+    );
+  });
+  return renderer.root.findByType(Pressable).props.android_ripple;
+}
 
 function render(): ReactTestRenderer {
   let renderer!: ReactTestRenderer;
@@ -137,11 +150,14 @@ describe("ClientPolicyGate", () => {
 
   it("presses as the onboarding primary: a ripple on Android, the held dim on iOS", () => {
     policy.current = { updateRequired: true, updateUrl: "https://a.test/app" };
-    const button = render().root.findByType(Pressable);
-    // Toward gold's own ink, as `OnboardingPrimaryButton`'s ripple is.
-    expect(button.props.android_ripple).toEqual({
-      color: tint(signetDarkTokens.color.gold.onHouse, 0.16),
-    });
+    const root = render().root;
+    // The primary itself, not a copy of its paint (onboarding-primary-button
+    // .spec pins how it looks and presses).
+    expect(root.findByType(OnboardingPrimaryButton).props.label).toBe(
+      UPDATE_REQUIRED_COPY.cta,
+    );
+    const button = root.findByType(Pressable);
+    expect(button.props.android_ripple).toEqual(primaryRipple());
     expect(flatStyle(button.props.style, true).opacity).toBe(0.85);
 
     // Android shows the ripple instead, so the fill doesn't also dim.

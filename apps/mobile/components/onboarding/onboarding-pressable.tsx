@@ -9,13 +9,15 @@ import {
 import { tint, useFrappTheme } from "@/lib/theme";
 
 /**
- * How a house-gold control answers a press, in one place: the gold primary,
- * the outlined secondary, sign-in's light provider button, join's Account
- * menu rows, the quiet text lines beside them (`quiet`), the chapter picker's
- * Tinted buttons, and the update-required gate's Update button, which shows
- * over the whole app but, like `(auth)`, never takes a chapter's accent. Each
- * had grown its own copy of the same machinery, which would have let one
- * screen's press drift from the next.
+ * How a house-gold control answers a press, in one place: the gold primary
+ * (which the update-required gate's Update button renders too: it shows over
+ * the whole app but, like `(auth)`, never takes a chapter's accent), the
+ * outlined secondary, sign-in's light provider button and its Password and
+ * Magic link mode buttons, join's Account menu rows, the quiet text lines
+ * beside them (`quiet`, the Terms checkbox row and its document links among
+ * them), and the chapter picker's Tinted buttons. Each had grown its own copy
+ * of the same machinery, which would have let one screen's press drift from
+ * the next.
  *
  * Android draws a ripple in `rippleColor` (by default the neutral ripple
  * `ListRow` draws), kept inside the control's rounded corners by `overflow:

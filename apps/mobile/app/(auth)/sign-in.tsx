@@ -4,7 +4,6 @@ import {
   BackHandler,
   Image,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -320,14 +319,13 @@ export default function SignIn() {
               </View>
 
               <View style={styles.modeRow}>
-                <Pressable
+                <OnboardingPressable
                   accessibilityRole="button"
                   accessibilityState={{ selected: authMode === "password" }}
                   onPress={() => setAuthMode("password")}
-                  style={({ pressed }) => [
+                  style={[
                     styles.modeButton,
                     authMode === "password" ? styles.modeButtonActive : null,
-                    pressed ? styles.modeButtonPressed : null,
                   ]}
                 >
                   <Text
@@ -340,15 +338,14 @@ export default function SignIn() {
                   >
                     Password
                   </Text>
-                </Pressable>
-                <Pressable
+                </OnboardingPressable>
+                <OnboardingPressable
                   accessibilityRole="button"
                   accessibilityState={{ selected: authMode === "magic_link" }}
                   onPress={() => setAuthMode("magic_link")}
-                  style={({ pressed }) => [
+                  style={[
                     styles.modeButton,
                     authMode === "magic_link" ? styles.modeButtonActive : null,
-                    pressed ? styles.modeButtonPressed : null,
                   ]}
                 >
                   <Text
@@ -361,7 +358,7 @@ export default function SignIn() {
                   >
                     Magic link
                   </Text>
-                </Pressable>
+                </OnboardingPressable>
               </View>
 
               {authMode === "password" ? (
@@ -635,9 +632,6 @@ function createStyles(tokens: SignetTokens) {
     // flow's one blue selection.
     modeButtonActive: {
       backgroundColor: tint(tokens.color.gold.house),
-    },
-    modeButtonPressed: {
-      opacity: 0.7,
     },
     modeButtonText: {
       ...typeRole(tokens.typography.role.label),

@@ -20,6 +20,17 @@ import { flatStyle } from "@/test/flat-style";
 
 type Node = ReactTestRenderer["root"];
 
+/**
+ * The host `View` a control sits in. The controls press through
+ * `OnboardingPressable`, so a host `Pressable`'s own parent is that wrapper.
+ */
+function hostParent(node: Node): Node {
+  let parent = node.parent;
+  while (parent && (parent.type as unknown) !== "View") parent = parent.parent;
+  if (!parent) throw new Error("No host View above this control");
+  return parent;
+}
+
 function render(accepted: boolean, onAcceptedChange = vi.fn()) {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -73,7 +84,9 @@ describe("TermsAcceptance", () => {
   it("toggles from anywhere on the row, and shows the press", () => {
     const { row, onAcceptedChange } = render(false);
 
-    expect(flatStyle(row.props.style, true).opacity).toBe(0.7);
+    // A quiet line's held dim (`OnboardingPressable`); onboarding-press.spec
+    // pins its Android ripple.
+    expect(flatStyle(row.props.style, true).opacity).toBe(0.6);
     act(() => {
       row.props.onPress();
     });
@@ -98,13 +111,13 @@ describe("TermsAcceptance", () => {
         flatStyle(link.props.style).minHeight + top + bottom,
       ).toBeGreaterThanOrEqual(signetDarkTokens.touch.minimum);
     }
-    const line = links[0]!.parent!;
+    const line = hostParent(links[0]!);
     expect(flatStyle(line.props.style).flexDirection).toBe("row");
   });
 
   it("keeps each link's slop out of the checkbox row above it", () => {
     const { tree, row } = render(false);
-    const block = row.parent!;
+    const block = hostParent(row);
     const links = tree.root.findAll(
       (node: Node) =>
         (node.type as unknown) === "Pressable" &&
@@ -113,7 +126,7 @@ describe("TermsAcceptance", () => {
 
     // The row, then the line of links, a gap apart: a top slop wider than
     // the gap would take the row's bottom edge from the checkbox.
-    expect(block.children[0]).toBe(row);
+    expect(block.children[0]).toBe(row.parent);
     const gap = flatStyle(block.props.style).gap as number;
     expect(gap).toBeGreaterThan(0);
     for (const link of links) {
@@ -128,7 +141,7 @@ describe("TermsAcceptance", () => {
         (node.type as unknown) === "Pressable" &&
         node.props.accessibilityRole === "link",
     );
-    const line = flatStyle(links[0]!.parent!.props.style);
+    const line = flatStyle(hostParent(links[0]!).props.style);
 
     // Large text wraps the links onto two lines. One line's bottom slop and
     // the next one's top slop have to fit in the gap between them, or the

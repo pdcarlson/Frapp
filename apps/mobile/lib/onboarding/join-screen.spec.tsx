@@ -1388,7 +1388,10 @@ describe("join screen — polish", () => {
         .findAllByType("Animated.View" as never, { deep: true })
         .map((view) => view.props.entering as { reduceMotionMode?: string });
     const still = [
-      expect.objectContaining({ reduceMotionMode: ReduceMotion.System }),
+      expect.objectContaining({
+        animation: "FadeIn",
+        reduceMotionMode: ReduceMotion.System,
+      }),
     ];
 
     expect(entering()).toEqual(still);
