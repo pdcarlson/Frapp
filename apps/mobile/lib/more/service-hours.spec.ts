@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { formatMinutesRounded } from "@repo/formatting";
+import { getSignetTokens } from "@repo/theme/signet";
 import {
-  parseDurationInput,
+  DEFAULT_SERVICE_DATE_CHOICE,
+  DURATION_STEP_MINUTES,
+  MAX_DURATION_MINUTES,
+  resolveServiceDate,
   selectServiceEntryRows,
+  serviceDateChoiceOf,
+  serviceDatePresets,
+  serviceStatusHue,
+  stepDuration,
   summarizeServiceEntries,
 } from "./service-hours";
 
@@ -101,41 +109,126 @@ describe("summarizeServiceEntries", () => {
   });
 });
 
-describe("parseDurationInput", () => {
-  // Both forms because members write both — "1:30" and "1.5" are the same shift,
-  // and rejecting one would be a validation error over nothing.
-  it("accepts clock and decimal forms alike", () => {
-    expect(parseDurationInput("1:30")).toBe(90);
-    expect(parseDurationInput("1.5")).toBe(90);
-    expect(parseDurationInput("2")).toBe(120);
-    expect(parseDurationInput("0:45")).toBe(45);
-    expect(parseDurationInput(" 3 ")).toBe(180);
+describe("stepDuration", () => {
+  it("steps in half hours", () => {
+    expect(stepDuration(60, 1)).toBe(90);
+    expect(stepDuration(90, -1)).toBe(60);
   });
 
-  it("accepts a bare decimal point, which a numeric keypad invites", () => {
-    expect(parseDurationInput(".5")).toBe(30);
+  // A zero-minute entry is not a submission, and a single shift longer than a
+  // day is a slip of the thumb, not a shift.
+  it("stops at half an hour and at a day", () => {
+    expect(stepDuration(DURATION_STEP_MINUTES, -1)).toBe(DURATION_STEP_MINUTES);
+    expect(stepDuration(MAX_DURATION_MINUTES, 1)).toBe(MAX_DURATION_MINUTES);
+  });
+});
+
+describe("serviceDatePresets", () => {
+  // Thursday 2026-11-05, mid-afternoon local time.
+  const now = new Date(2026, 10, 5, 15, 30);
+
+  it("offers today, yesterday and the two days before, newest first", () => {
+    expect(serviceDatePresets(now)).toEqual([
+      { daysAgo: 0, label: "Today", date: "2026-11-05", relative: true },
+      { daysAgo: 1, label: "Yesterday", date: "2026-11-04", relative: true },
+      {
+        daysAgo: 2,
+        label: new Date(2026, 10, 3).toLocaleDateString(undefined, {
+          weekday: "short",
+        }),
+        date: "2026-11-03",
+        relative: false,
+      },
+      {
+        daysAgo: 3,
+        label: new Date(2026, 10, 2).toLocaleDateString(undefined, {
+          weekday: "short",
+        }),
+        date: "2026-11-02",
+        relative: false,
+      },
+    ]);
   });
 
-  it("rejects anything that is not a duration", () => {
-    expect(parseDurationInput("")).toBeNull();
-    expect(parseDurationInput("an hour")).toBeNull();
-    expect(parseDurationInput("1:60")).toBeNull();
-    expect(parseDurationInput("-1")).toBeNull();
+  it("crosses a month boundary by calendar day", () => {
+    const dates = serviceDatePresets(new Date(2026, 2, 1, 0, 5)).map(
+      (preset) => preset.date,
+    );
+    expect(dates).toEqual([
+      "2026-03-01",
+      "2026-02-28",
+      "2026-02-27",
+      "2026-02-26",
+    ]);
+  });
+});
+
+/**
+ * s20's date chips across a day change: "Today" and "Yesterday" re-derive
+ * from the day the entry is filed, and a weekday chip holds the date it named.
+ */
+describe("resolveServiceDate", () => {
+  // Wednesday 2026-11-04, Thursday the 5th, Friday the 6th.
+  const wednesday = new Date(2026, 10, 4, 20);
+  const thursday = new Date(2026, 10, 5, 8);
+  const friday = new Date(2026, 10, 6, 8);
+  /** What the entry holds after the chip `daysAgo` back is picked on `day`. */
+  const picked = (day: Date, daysAgo: number) =>
+    serviceDateChoiceOf(serviceDatePresets(day)[daysAgo]!);
+
+  it("files a new entry today", () => {
+    expect(resolveServiceDate(DEFAULT_SERVICE_DATE_CHOICE, thursday)).toEqual({
+      date: "2026-11-05",
+      daysAgo: 0,
+    });
   });
 
-  // A bare number reads as hours, so "45" — a plausible way to mean 45 minutes
-  // — would otherwise log 45 hours against a member with no way to correct it.
-  it("rejects a shift longer than a day", () => {
-    expect(parseDurationInput("45")).toBeNull();
-    expect(parseDurationInput("25:00")).toBeNull();
-    expect(parseDurationInput("24")).toBe(1440);
-    expect(parseDurationInput("23:59")).toBe(1439);
+  it("reads Today and Yesterday against the day the entry is filed", () => {
+    expect(resolveServiceDate(picked(wednesday, 0), thursday)).toEqual({
+      date: "2026-11-05",
+      daysAgo: 0,
+    });
+    expect(resolveServiceDate(picked(wednesday, 1), thursday)).toEqual({
+      date: "2026-11-04",
+      daysAgo: 1,
+    });
   });
 
-  // A zero-minute entry is not a submission — the sheet should stay blocked
-  // rather than POST something the reviewer has to reject.
-  it("rejects zero", () => {
-    expect(parseDurationInput("0")).toBeNull();
-    expect(parseDurationInput("0:00")).toBeNull();
+  it("holds a weekday chip's date, under the chip that names it now", () => {
+    // Wednesday's "Mon" is Monday the 2nd; on Thursday it is the oldest chip.
+    const monday = picked(wednesday, 2);
+    expect(monday).toEqual({ kind: "date", date: "2026-11-02" });
+    expect(resolveServiceDate(monday, thursday)).toEqual({
+      date: "2026-11-02",
+      daysAgo: 3,
+    });
+  });
+
+  it("falls back to Today once a held date leaves the chip window", () => {
+    // Friday's chips reach back to Tuesday the 3rd.
+    expect(resolveServiceDate(picked(wednesday, 2), friday)).toEqual({
+      date: "2026-11-06",
+      daysAgo: 0,
+    });
+    expect(resolveServiceDate(picked(wednesday, 3), thursday)).toEqual({
+      date: "2026-11-05",
+      daysAgo: 0,
+    });
+  });
+});
+
+describe("serviceStatusHue", () => {
+  const tokens = getSignetTokens();
+
+  it("paints each status in its status color, never the accent", () => {
+    expect(serviceStatusHue("APPROVED", tokens)).toBe(
+      tokens.color.semantic.success,
+    );
+    expect(serviceStatusHue("REJECTED", tokens)).toBe(
+      tokens.color.semantic.destructive,
+    );
+    expect(serviceStatusHue("PENDING", tokens)).toBe(
+      tokens.color.semantic.warning,
+    );
   });
 });

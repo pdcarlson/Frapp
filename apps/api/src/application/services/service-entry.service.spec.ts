@@ -4,7 +4,10 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { MAX_UPLOAD_BYTES } from '@repo/validation';
+import {
+  MAX_UPLOAD_BYTES,
+  SERVICE_RECEIPT_REQUIRED_MESSAGE,
+} from '@repo/validation';
 import { ServiceEntryService } from './service-entry.service';
 import { SERVICE_ENTRY_REPOSITORY } from '#domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '#domain/repositories/service-entry.repository.interface';
@@ -23,6 +26,24 @@ import { ChapterServiceConfigService } from './chapter-service-config.service';
 import { ChatService } from './chat.service';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+
+/**
+ * The receipt-policy refusal, pinned to its wire body. Mobile s20 asks for a
+ * photo when it sees this code, and an installed build keeps matching the
+ * literal it shipped with, so the code is spelled out here rather than read
+ * from `@repo/validation`: renaming the constant's value must fail this.
+ */
+async function expectReceiptRequired(pending: Promise<unknown>) {
+  const error: unknown = await pending.then(
+    () => undefined,
+    (thrown: unknown) => thrown,
+  );
+  expect(error).toBeInstanceOf(BadRequestException);
+  expect((error as BadRequestException).getResponse()).toEqual({
+    code: 'service_entry.receipt_required',
+    message: SERVICE_RECEIPT_REQUIRED_MESSAGE,
+  });
+}
 
 describe('ServiceEntryService', () => {
   let service: ServiceEntryService;
@@ -342,7 +363,7 @@ describe('ServiceEntryService', () => {
           description: 'Community cleanup',
         }),
       ).rejects.toThrow(BadRequestException);
-      await expect(
+      await expectReceiptRequired(
         service.create({
           chapter_id: 'ch-1',
           user_id: 'user-1',
@@ -350,7 +371,7 @@ describe('ServiceEntryService', () => {
           duration_minutes: 60,
           description: 'Community cleanup',
         }),
-      ).rejects.toThrow(/requires a receipt/);
+      );
       expect(mockChapterWorkflows.getWorkflow).toHaveBeenCalledWith(
         'ch-1',
         WORKFLOW_HOURS_RECEIPT,
@@ -391,7 +412,7 @@ describe('ServiceEntryService', () => {
     it('should reject whitespace-only proof when wf_hours_receipt is enabled', async () => {
       mockChapterWorkflows.getWorkflow.mockResolvedValue(receiptWorkflow(true));
 
-      await expect(
+      await expectReceiptRequired(
         service.create({
           chapter_id: 'ch-1',
           user_id: 'user-1',
@@ -400,7 +421,7 @@ describe('ServiceEntryService', () => {
           description: 'Community cleanup',
           proof_path: '   ',
         }),
-      ).rejects.toThrow(/requires a receipt/);
+      );
       expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
     });
 
