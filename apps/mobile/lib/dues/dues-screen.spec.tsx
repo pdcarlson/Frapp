@@ -4,6 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
+import { focusManager } from "@tanstack/react-query";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
 
@@ -72,6 +73,8 @@ let invoicesPending = false;
 /** A failed read: TanStack keeps the last data beside `isError`. */
 let invoicesError = false;
 let viewerError = false;
+/** `null` while `/v1/users/me` hasn't answered. */
+let viewerId: string | null = VIEWER;
 const refetchInvoices = vi.fn();
 const payInvoice = vi.fn();
 const awaitPaid = vi.fn();
@@ -79,7 +82,7 @@ const awaitPaid = vi.fn();
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => chapterId,
-  useViewerUserId: () => VIEWER,
+  useViewerUserId: () => viewerId,
   useCurrentUser: () => ({
     isError: viewerError,
     isFetching: false,
@@ -184,6 +187,8 @@ beforeEach(() => {
   invoicesPending = false;
   invoicesError = false;
   viewerError = false;
+  viewerId = VIEWER;
+  focusManager.setFocused(undefined);
   refetchInvoices.mockReset().mockResolvedValue(undefined);
   payInvoice.mockReset().mockResolvedValue({ client_secret: "pi_secret" });
   awaitPaid.mockReset().mockResolvedValue(false);
@@ -465,13 +470,29 @@ describe("Dues after a captured payment", () => {
       await tapPay(tree);
       refetchInvoices.mockClear();
 
-      act(() => vi.advanceTimersByTime(10_000));
+      act(() => vi.advanceTimersByTime(9_999));
+      expect(refetchInvoices).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(1));
       expect(refetchInvoices).toHaveBeenCalledTimes(1);
+      // It joins a read still in flight instead of cancelling it, so on a
+      // network slower than 10s one read still finishes.
+      expect(refetchInvoices).toHaveBeenLastCalledWith({
+        cancelRefetch: false,
+      });
+      act(() => vi.advanceTimersByTime(10_000));
+      expect(refetchInvoices).toHaveBeenCalledTimes(2);
+      refetchInvoices.mockClear();
+
+      // The app in the background (AppState, through focusManager): no reads.
+      act(() => focusManager.setFocused(false));
+      act(() => vi.advanceTimersByTime(30_000));
+      expect(refetchInvoices).not.toHaveBeenCalled();
+      act(() => focusManager.setFocused(undefined));
 
       // Another screen over it: no reads while nobody is looking.
       act(() => blur());
       act(() => vi.advanceTimersByTime(30_000));
-      expect(refetchInvoices).toHaveBeenCalledTimes(1);
+      expect(refetchInvoices).not.toHaveBeenCalled();
       await refocus();
       refetchInvoices.mockClear();
 
@@ -480,6 +501,32 @@ describe("Dues after a captured payment", () => {
       rerender(tree);
       act(() => vi.advanceTimersByTime(30_000));
       expect(refetchInvoices).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends no re-read while the viewer is unknown, which would go out unfiltered", async () => {
+    // A billing:view holder's unfiltered read is the whole chapter's ledger.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const tree = mount();
+      await tapPay(tree);
+      viewerId = null;
+      rerender(tree);
+      refetchInvoices.mockClear();
+
+      act(() => vi.advanceTimersByTime(30_000));
+      act(() => blur());
+      await refocus();
+      expect(refetchInvoices).not.toHaveBeenCalled();
+      // Still holding, so the pending line stands on the skeleton.
+      expect(screenText(tree)).toContain(PENDING_COPY);
+
+      viewerId = VIEWER;
+      rerender(tree);
+      act(() => vi.advanceTimersByTime(10_000));
+      expect(refetchInvoices).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }

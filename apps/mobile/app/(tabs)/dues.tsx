@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
+import { focusManager } from "@tanstack/react-query";
 import { StyleSheet, Text, View } from "react-native";
 import {
   payIntentErrorCopy,
@@ -70,20 +71,23 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * makes the list re-read (`useAwaitInvoicePaid`'s onSettled), so the card
  * never says Paid beside a Pending chip.
  *
- * Other open invoices wait meanwhile, which is usually seconds, until the
- * webhook lands. The card stays on the confirming invoice, and the OPEN list
- * shows the rest with their own amounts and due chips.
+ * Other open invoices wait meanwhile, until the webhook lands: usually
+ * seconds, but if the webhook is stuck, until the hold ends as below. The card
+ * stays on the confirming invoice, and the OPEN list shows the rest with their
+ * own amounts and due chips.
  *
  * ## How long the hold lasts
  *
  * Until the list reads the invoice as no longer OPEN, with no time bound,
  * because until then Pay has nothing honest to offer: the server already has
  * the payment, and a second tap would only meet its refusal below. The list
- * is re-read every {@link HOLD_REREAD_MS} while the hold stands and the screen
- * is up, so a webhook that lands after the poll gives up still ends it in
- * front of the member, and again when they come back to the screen (Dues is a
- * hidden tab route, `href: null` in `app/(tabs)/_layout.tsx`, which the tab
- * navigator keeps mounted, so coming back doesn't reset it).
+ * is re-read every {@link HOLD_REREAD_MS} while the hold stands, the screen
+ * is up and the app is in the foreground, so a webhook that lands after the
+ * poll gives up still ends it in front of the member, and again when they come
+ * back to the screen (Dues is a hidden tab route, `href: null` in
+ * `app/(tabs)/_layout.tsx`, which the tab navigator keeps mounted, so coming
+ * back doesn't reset it). Re-reads wait for the viewer's id, so none goes out
+ * unfiltered.
  *
  * The hold lives in this screen's state, so a chapter switch, which remounts
  * the screen ({@link DuesScreen}), or the app being closed ends it. If the
@@ -227,10 +231,16 @@ function ChapterDues() {
   // still be yesterday's when the member reopens the app — and "Past due" is
   // exactly the label that must not be a day stale.
   const [now, setNow] = useState(() => new Date());
+  // Re-reads ask for the viewer's own rows only. While the viewer's id is
+  // unknown the query is disabled, and an explicit refetch would still send
+  // it, without the `user_id` filter (see `useInvoices` above).
+  const rereads = isHolding && viewerUserId !== null;
   const isHoldingRef = useRef(isHolding);
+  const rereadsRef = useRef(rereads);
   useEffect(() => {
     isHoldingRef.current = isHolding;
-  }, [isHolding]);
+    rereadsRef.current = rereads;
+  }, [isHolding, rereads]);
   useFocusEffect(
     useCallback(() => {
       setNow(new Date());
@@ -241,20 +251,26 @@ function ChapterDues() {
       // while the member was elsewhere settles it on this read, which the
       // list's 30s staleTime would otherwise skip.
       setFailure(null);
-      if (isHoldingRef.current) void refetchInvoicesRef.current();
-      else setCapturedId(null);
+      if (!isHoldingRef.current) setCapturedId(null);
+      else if (rereadsRef.current) {
+        void refetchInvoicesRef.current({ cancelRefetch: false });
+      }
       return undefined;
     }, []),
   );
   useFocusEffect(
     useCallback(() => {
-      if (!isHolding) return undefined;
-      const timer = setInterval(
-        () => void refetchInvoicesRef.current(),
-        HOLD_REREAD_MS,
-      );
+      if (!rereads) return undefined;
+      const timer = setInterval(() => {
+        // Navigation focus doesn't see the app going to the background;
+        // TanStack's focusManager does (`lib/connection/query-connectivity.ts`
+        // drives it from AppState). And a tick joins a read still in flight
+        // rather than cancelling it, so on a slow network one still finishes.
+        if (!focusManager.isFocused()) return;
+        void refetchInvoicesRef.current({ cancelRefetch: false });
+      }, HOLD_REREAD_MS);
       return () => clearInterval(timer);
-    }, [isHolding]),
+    }, [rereads]),
   );
 
   // Memoized rather than re-derived inside `renderBody`, which re-runs on every
