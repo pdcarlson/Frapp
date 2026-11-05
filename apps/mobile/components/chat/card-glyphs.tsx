@@ -1,9 +1,12 @@
 import { Path } from "react-native-svg";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { ServiceGlyph } from "@/components/more/more-glyphs";
+import { NavGlyph } from "@/components/nav-glyph";
 import {
   GlyphFrame,
   glyphPaint,
   STROKE_WIDTH,
+  TAB_GLYPH_SIZE,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
 
@@ -18,24 +21,22 @@ import {
  * `CardEyebrow` draws: the primary silhouette carries the stroke's own hue at
  * low opacity, and the detail strokes stay stroke-only.
  *
- * The event and task cards draw the Events and Tasks tab glyphs themselves.
- * The hours card's heart is the More hub's `ServiceGlyph`, adapted below
+ * Points draws the shared nav set's trophy (iconography.md §1.1) like web's
+ * card; the others below keep the stroke recipe. The event and task cards draw
+ * the Events and Tasks tab glyphs themselves.
+ * The hours card's hand-heart is the More hub's `ServiceGlyph`, adapted below
  * rather than drawn a second time.
  */
 
-/** Points — the star. */
-export function PointsGlyph(props: TabGlyphProps) {
-  const { stroke, fill } = glyphPaint(props);
+/** Points: the nav set's trophy, as the web sidebar and web's card draw it. */
+export function PointsGlyph({ focused, accent, muted, size }: TabGlyphProps) {
   return (
-    <GlyphFrame size={props.size}>
-      <Path
-        d="M12 3.5l2.3 4.9 5.2.6-3.9 3.6 1.1 5.2-4.7-2.7-4.7 2.7 1.1-5.2-3.9-3.6 5.2-.6z"
-        fill={fill}
-        stroke={stroke}
-        strokeWidth={STROKE_WIDTH}
-        strokeLinejoin="round"
-      />
-    </GlyphFrame>
+    <NavGlyph
+      paths={NAV_GLYPHS.points}
+      color={focused ? accent : muted}
+      active={focused}
+      size={size ?? TAB_GLYPH_SIZE}
+    />
   );
 }
 
@@ -111,13 +112,9 @@ export function AuditGlyph(props: TabGlyphProps) {
   );
 }
 
-/** Service hours — the More hub's heart, in the eyebrow's props. */
+/** Service hours: the More hub's hand-heart, in the eyebrow's props. */
 export function ServiceHoursGlyph({ focused, accent, muted, size }: TabGlyphProps) {
   return (
-    <ServiceGlyph
-      color={focused ? accent : muted}
-      neutral={!focused}
-      size={size}
-    />
+    <ServiceGlyph color={focused ? accent : muted} size={size} />
   );
 }

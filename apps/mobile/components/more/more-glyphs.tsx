@@ -1,28 +1,27 @@
 import type { ReactNode } from "react";
-import Svg, { Circle, Path, Rect } from "react-native-svg";
+import Svg, { Path } from "react-native-svg";
+import { NAV_GLYPHS, type NavGlyphName } from "@repo/theme/nav-glyphs";
+import { NavGlyph } from "@/components/nav-glyph";
 import { tint } from "@/lib/theme";
 
 /**
- * The More hub's leading row glyphs (s09, `canvas-screens.dc.html:326`).
+ * The More hub's leading row glyphs, and the stroke recipe a few other
+ * glyphs outside the hub still use.
  *
- * Geometry is transcribed from the board where it draws the row (Study hours,
- * Dues, Documents, Directory, Notifications, Settings, Host check-in), and
- * from the web shell's `apps/web/components/layout/nav-glyphs.tsx` where it
- * does not: Service hours is web's `ServiceGlyph` heart, and Settings follows
- * web's gear rather than the board's half-drawn cog, so one intent draws one
- * shape on both surfaces (`spec/ui/design-system/iconography.md` §6.2). The
- * chapter switcher is the one shape neither draws.
+ * The hub rows draw the shared nav set in `@repo/theme/nav-glyphs` (see
+ * {@link HubGlyph} below), so a destination has the same silhouette here as in
+ * the web sidebar (`spec/ui/design-system/iconography.md` §6.2). They render at
+ * 20px, §2's size for a list row's leading icon.
  *
- * The recipe is iconography.md §1: a 1.6px stroke on a 24px grid, the primary
- * silhouette filled with its own hue at low opacity, secondary strokes
- * stroke-only. Rendered at 20px, §2's size for a list row's leading icon (the
- * board draws 22, which is off the scale).
+ * Color is a prop, never baked. Member rows are painted in the chapter accent,
+ * which is house gold only for a chapter without a served palette; Admin rows
+ * in `text.muted`.
  *
- * Color is a prop, never baked. The board paints the member rows in
- * `gold.askText`; the app paints them in the chapter accent, which is house
- * gold only for a chapter without a served palette, for the reason
- * `components/tab-glyphs.tsx` records. The admin rows are drawn neutral
- * (`text.muted` over white at 6%), as the board draws them.
+ * `paint`, `Frame` and `STROKE_WIDTH` are the older stroke recipe (a 1.6px
+ * stroke on a 24px grid, silhouette at 16% of the hue or 6% white when
+ * neutral). The bell and the glyphs built on `paint` elsewhere
+ * (`components/search-glyph.tsx`, `documents/document-glyphs.tsx`) still draw
+ * in it.
  */
 
 export const MORE_GLYPH_SIZE = 20;
@@ -98,63 +97,6 @@ export function Frame({
   );
 }
 
-export function StudyGlyph(props: MoreGlyphProps) {
-  const { body, detail } = paint(props);
-  return (
-    <Frame>
-      <Circle cx={12} cy={12} r={8.5} {...body} />
-      <Path d="M12 7.5V12l3 2" {...detail} />
-    </Frame>
-  );
-}
-
-export function ServiceGlyph(props: MoreGlyphProps) {
-  const { body } = paint(props);
-  return (
-    <Frame size={props.size}>
-      <Path
-        d="M12 20.2s-6.8-4.2-8.7-8.2a4.9 4.9 0 018.7-4.5 4.9 4.9 0 018.7 4.5c-1.9 4-8.7 8.2-8.7 8.2z"
-        {...body}
-      />
-    </Frame>
-  );
-}
-
-export function DuesGlyph(props: MoreGlyphProps) {
-  const { body, detail } = paint(props);
-  return (
-    <Frame>
-      <Rect x={3.5} y={6} width={17} height={12.5} rx={3} {...body} />
-      <Path d="M3.5 10h17" {...detail} />
-    </Frame>
-  );
-}
-
-export function DocumentsGlyph(props: MoreGlyphProps) {
-  const { body, detail } = paint(props);
-  return (
-    <Frame size={props.size}>
-      <Path
-        d="M6 3.5h8l4 4V20a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 015 20V5A1.5 1.5 0 016.5 3.5z"
-        {...body}
-      />
-      <Path d="M14 3.5V8h4.5" {...detail} />
-    </Frame>
-  );
-}
-
-export function DirectoryGlyph(props: MoreGlyphProps) {
-  const { body, detail } = paint(props);
-  return (
-    <Frame>
-      <Circle cx={9} cy={9} r={3.4} {...body} />
-      <Path d="M3.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5" {...detail} />
-      <Circle cx={16.5} cy={10} r={2.6} {...detail} />
-      <Path d="M16 15.5c2.4 0 4 1.4 4.5 3.5" {...detail} />
-    </Frame>
-  );
-}
-
 export function NotificationsGlyph(props: MoreGlyphProps) {
   const { body, detail } = paint(props);
   return (
@@ -168,45 +110,61 @@ export function NotificationsGlyph(props: MoreGlyphProps) {
   );
 }
 
-export function SettingsGlyph(props: MoreGlyphProps) {
-  const { body, detail } = paint(props);
-  return (
-    <Frame>
-      <Path
-        d="M10.7 3.2h2.6l.5 2.2a7 7 0 012 1.2l2.1-.8 1.3 2.3-1.7 1.5a7.2 7.2 0 010 2.3l1.7 1.5-1.3 2.3-2.1-.8a7 7 0 01-2 1.2l-.5 2.2h-2.6l-.5-2.2a7 7 0 01-2-1.2l-2.1.8-1.3-2.3 1.7-1.5a7.2 7.2 0 010-2.3L4.8 8.1l1.3-2.3 2.1.8a7 7 0 012-1.2z"
-        {...body}
-      />
-      <Circle cx={12} cy={12} r={2.7} {...detail} />
-    </Frame>
-  );
-}
+/* ── Hub rows: the shared nav set ───────────────────────────────────────── */
 
 /**
- * Switch chapter. Neither board draws this row (`spec/ui/mobile/navigation.md`
- * § More hub lists it as a reachability row), so the shape is new: a crest
- * carrying the two opposed arrows of a swap, drawn in the §1 recipe.
+ * A hub row's glyph. These draw the shared nav set (`@repo/theme/nav-glyphs`),
+ * the same shapes as the web sidebar, so Study hours or Settings looks the same
+ * in the More hub as in the web nav. The silhouette is always the glyph's own
+ * hue at 20%; a row's emphasis comes from `color` alone (the chapter accent for
+ * member rows, `text.muted` for Admin).
  */
-export function ChapterGlyph(props: MoreGlyphProps) {
-  const { body, detail } = paint(props);
-  return (
-    <Frame>
-      <Path
-        d="M12 3.2l7 2.6v5.4c0 4.6-3 7.7-7 9.3-4-1.6-7-4.7-7-9.3V5.8z"
-        {...body}
-      />
-      <Path d="M9 10h6l-1.8-1.8M15 13.6H9l1.8 1.8" {...detail} />
-    </Frame>
-  );
+export type HubGlyphProps = {
+  color: string;
+  /** Another §2 size, for a glyph drawn outside the hub. */
+  size?: number;
+};
+
+function HubGlyph({
+  name,
+  color,
+  size = MORE_GLYPH_SIZE,
+}: HubGlyphProps & { name: NavGlyphName }) {
+  return <NavGlyph paths={NAV_GLYPHS[name]} color={color} size={size} />;
 }
 
-export function HostCheckInGlyph(props: MoreGlyphProps) {
-  const { body, detail } = paint(props);
-  return (
-    <Frame>
-      <Rect x={4} y={4} width={6.5} height={6.5} rx={1.6} {...body} />
-      <Rect x={13.5} y={4} width={6.5} height={6.5} rx={1.6} {...body} />
-      <Rect x={4} y={13.5} width={6.5} height={6.5} rx={1.6} {...body} />
-      <Path d="M13.5 16.5h3.5v3.5M20 13.5v2" {...detail} />
-    </Frame>
-  );
+export function StudyGlyph(props: HubGlyphProps) {
+  return <HubGlyph name="study" {...props} />;
+}
+
+/** Also the chat hours card's eyebrow (16). */
+export function ServiceGlyph(props: HubGlyphProps) {
+  return <HubGlyph name="service" {...props} />;
+}
+
+/** Dues: web's Billing card. */
+export function DuesGlyph(props: HubGlyphProps) {
+  return <HubGlyph name="billing" {...props} />;
+}
+
+/** Also s21's file card (24) and the documents empty state. */
+export function DocumentsGlyph(props: HubGlyphProps) {
+  return <HubGlyph name="documents" {...props} />;
+}
+
+export function DirectoryGlyph(props: HubGlyphProps) {
+  return <HubGlyph name="directory" {...props} />;
+}
+
+export function SettingsGlyph(props: HubGlyphProps) {
+  return <HubGlyph name="settings" {...props} />;
+}
+
+/** Switch chapter and Create a chapter: the columned chapter house. */
+export function ChapterGlyph(props: HubGlyphProps) {
+  return <HubGlyph name="chapter" {...props} />;
+}
+
+export function HostCheckInGlyph(props: HubGlyphProps) {
+  return <HubGlyph name="hostCheckIn" {...props} />;
 }
