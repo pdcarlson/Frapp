@@ -1,5 +1,13 @@
-import { ReactNode } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { ReactNode, useMemo } from "react";
+import {
+  Platform,
+  Pressable,
+  type PressableAndroidRippleConfig,
+  StyleSheet,
+  Text,
+  View,
+  type ViewStyle,
+} from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -69,6 +77,41 @@ export function listRowHint(
     .join(" ");
 }
 
+/**
+ * The one press feedback a list row gives, on every screen: Android ripples,
+ * iOS lifts the row to `surface.card` while it is held. Never an opacity fade.
+ *
+ * Each platform gets its own convention because that is what reads as native.
+ * Android's ripple is the tab bar's own feedback (react-navigation's
+ * `PlatformPressable`), the one the owner singled out on the first Android
+ * test. iOS has no ripple; a held table cell highlights instead. Before this
+ * was shared, More's rows rippled while every row on Chat home and the inbox
+ * faded to 60–70%, so the same gesture answered differently a tab apart.
+ *
+ * `ripple` goes to `android_ripple` (iOS ignores it); `lift(pressed)` goes into
+ * the `style` callback and returns nothing on Android, where the ripple is
+ * already the signal. The ripple is bounded by the row, so a row that wants
+ * its feedback to clear the text pads itself rather than relying on a parent.
+ */
+export type PressFeedback = {
+  ripple: PressableAndroidRippleConfig;
+  lift: (pressed: boolean) => ViewStyle | null;
+};
+
+export function usePressFeedback(): PressFeedback {
+  const { tokens } = useFrappTheme();
+  return useMemo(() => {
+    const lifted: ViewStyle | null =
+      Platform.OS === "android"
+        ? null
+        : { backgroundColor: tokens.color.surface.card };
+    return {
+      ripple: { color: tint(tokens.color.text.foreground, 0.12) },
+      lift: (pressed: boolean) => (pressed ? lifted : null),
+    };
+  }, [tokens]);
+}
+
 export type ListRowProps = {
   label: string;
   /**
@@ -109,6 +152,7 @@ export function ListRow({
 }: ListRowProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const feedback = usePressFeedback();
 
   const content = (
     <View style={styles.row}>
@@ -151,14 +195,10 @@ export function ListRow({
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      // Press feedback per platform. Android gets the ripple the tab bar
-      // already draws (react-navigation's `PlatformPressable`), bounded by the
-      // row because `ListSection` clips its children. iOS has no ripple, so
-      // the row lifts one rung up the surface ladder while it is held.
-      android_ripple={disabled ? undefined : { color: styles.ripple.color }}
-      style={({ pressed }) =>
-        pressed && Platform.OS !== "android" ? styles.pressed : null
-      }
+      // `usePressFeedback`: a ripple on Android, bounded by the row because
+      // `ListSection` clips its children, and a one-rung lift on iOS.
+      android_ripple={disabled ? undefined : feedback.ripple}
+      style={({ pressed }) => feedback.lift(pressed)}
     >
       {content}
     </Pressable>
@@ -221,14 +261,6 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.muted,
       flexShrink: 0,
-    },
-    pressed: {
-      backgroundColor: tokens.color.surface.card,
-    },
-    // Not a style a view takes: the ripple's color, kept in the factory so
-    // it derives from a token like everything else here.
-    ripple: {
-      color: tint(tokens.color.text.foreground, 0.12),
     },
   });
 }

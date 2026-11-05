@@ -1,13 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   arrangeChannelSidebar,
@@ -47,7 +40,13 @@ import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
 import { NotificationsBell } from "@/components/chat/notifications-bell";
 import { ToggleChips } from "@/components/filter-chips";
-import { ChannelRow, UnreadBadge } from "@/components/chat/channel-row";
+import {
+  ChannelListSkeleton,
+  ChannelRow,
+  UnreadBadge,
+} from "@/components/chat/channel-row";
+import { usePressFeedback } from "@/components/list-section";
+import { EmptyState, ErrorState } from "@/components/state-block";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
 import { isAskAvailable } from "@/lib/ask/flag";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -87,6 +86,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 export default function ChatHomeScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const feedback = usePressFeedback();
   const router = useRouter();
   // s17 is a sheet hosted by its parent screen, not a route
   // (`spec/ui/mobile/patterns.md` § Bottom sheets), so this screen owns the
@@ -289,49 +289,25 @@ export default function ChatHomeScreen() {
       ) : null}
 
       {channelsQuery.isPending ? (
-        <View style={styles.stateBlock}>
-          <ActivityIndicator color={tokens.color.text.muted} />
-          <Text style={styles.stateBody}>Loading channels…</Text>
-        </View>
+        <ChannelListSkeleton />
       ) : channelsQuery.isError ? (
-        <View style={styles.stateBlock}>
-          <Text style={styles.stateTitle}>Couldn&apos;t load channels</Text>
-          <Text style={styles.stateBody}>
-            Chat couldn&apos;t reach the server.
-          </Text>
-          {/*
-            An explicit control, because nothing else here would recover: this
-            screen is a tab that stays mounted for the session, `ScreenShell`'s
-            ScrollView has no RefreshControl to pull, and the copy would
-            otherwise have named a pull-to-refresh that does not exist.
-
-            C8 (#998) has since wired `onlineManager` and `focusManager`
-            (`lib/connection/query-connectivity.ts`), so a *connectivity* blip
-            now recovers on its own and this is no longer the only way back.
-            It stays because a server error still has no other recovery.
-          */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Try loading channels again"
-            disabled={channelsQuery.isFetching}
-            onPress={() => void channelsQuery.refetch()}
-            style={({ pressed }) => [
-              styles.retryButton,
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={styles.retryText}>
-              {channelsQuery.isFetching ? "Retrying…" : "Try again"}
-            </Text>
-          </Pressable>
-        </View>
+        // An explicit retry, because nothing else here recovers from a server
+        // error: this tab stays mounted for the session and `ScreenShell`'s
+        // ScrollView has no RefreshControl to pull. A *connectivity* blip
+        // recovers on its own since C8 (#998) wired `onlineManager` and
+        // `focusManager` (`lib/connection/query-connectivity.ts`).
+        <ErrorState
+          title="Couldn't load channels"
+          body="Chat couldn't reach the server."
+          onRetry={() => void channelsQuery.refetch()}
+          isRetrying={channelsQuery.isFetching}
+        />
       ) : allChannels.length === 0 ? (
-        <View style={styles.stateBlock}>
-          <Text style={styles.stateTitle}>No channels yet</Text>
-          <Text style={styles.stateBody}>
-            Channels your chapter creates will appear here.
-          </Text>
-        </View>
+        <EmptyState
+          glyph="#"
+          title="No channels yet"
+          body="Channels your chapter creates will appear here."
+        />
       ) : (
         <>
           {/*
@@ -399,9 +375,10 @@ export default function ChatHomeScreen() {
                     collapsed: !section.collapsed,
                   })
                 }
+                android_ripple={feedback.ripple}
                 style={({ pressed }) => [
                   styles.sectionHeader,
-                  pressed ? styles.pressed : null,
+                  feedback.lift(pressed),
                 ]}
               >
                 <Text style={styles.sectionChevron}>
@@ -435,11 +412,13 @@ export default function ChatHomeScreen() {
                   setSidebarFilter({ unread_only: false, hide_muted: false })
                 }
                 style={({ pressed }) => [
-                  styles.retryButton,
+                  styles.showAllButton,
                   pressed ? styles.pressed : null,
                 ]}
               >
-                <Text style={styles.retryText}>{SHOW_ALL_CHANNELS_LABEL}</Text>
+                <Text style={styles.showAllText}>
+                  {SHOW_ALL_CHANNELS_LABEL}
+                </Text>
               </Pressable>
             </View>
           ) : null}
@@ -450,9 +429,10 @@ export default function ChatHomeScreen() {
                 accessibilityRole="button"
                 accessibilityState={{ expanded: showHidden }}
                 onPress={() => setShowHidden((open) => !open)}
+                android_ripple={feedback.ripple}
                 style={({ pressed }) => [
                   styles.hiddenToggle,
-                  pressed ? styles.pressed : null,
+                  feedback.lift(pressed),
                 ]}
               >
                 <Text style={styles.sectionLabel}>
@@ -500,11 +480,17 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
       marginBottom: tokens.spacing.xs,
     },
+    // The fold header and the Hidden conversations toggle bleed into the
+    // gutter as `ChannelRow` does, so their captions line up with the rows'
+    // sigils and the press lift has room around the text.
     sectionHeader: {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.xs,
       minHeight: tokens.touch.minimum,
+      paddingHorizontal: tokens.spacing.sm,
+      marginHorizontal: -tokens.spacing.sm,
+      borderRadius: tokens.radius.control,
     },
     // Inside the fold control the row carries the spacing, so the label drops
     // its own bottom margin and gives up width to the badge.
@@ -516,7 +502,7 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
     },
-    retryButton: {
+    showAllButton: {
       marginTop: tokens.spacing.sm,
       minHeight: tokens.touch.minimum,
       justifyContent: "center",
@@ -526,16 +512,22 @@ function createStyles(tokens: SignetTokens) {
       borderColor: tokens.color.border.input,
       backgroundColor: tokens.color.surface.card,
     },
-    retryText: {
+    showAllText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
     },
+    // The Show all channels button's only. It is a button, not a list row, so
+    // it keeps the fade rather than `usePressFeedback`: mobile carries no
+    // `--card-hover` token for components.md §3's Secondary pressed fill.
     pressed: {
       opacity: 0.7,
     },
     hiddenToggle: {
       minHeight: tokens.touch.minimum,
       justifyContent: "center",
+      paddingHorizontal: tokens.spacing.sm,
+      marginHorizontal: -tokens.spacing.sm,
+      borderRadius: tokens.radius.control,
     },
     unreadWarning: {
       ...typeRole(tokens.typography.role.caption),
@@ -545,10 +537,6 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.sm,
       paddingVertical: tokens.spacing.xl,
       alignItems: "center",
-    },
-    stateTitle: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
     },
     stateBody: {
       ...typeRole(tokens.typography.role.body),

@@ -65,7 +65,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMarkNotificationRead: () => ({ mutateAsync: vi.fn() }),
 }));
 
-import NotificationsScreen from "@/app/(tabs)/notifications";
+import { signetDarkTokens } from "@repo/theme/signet";
+import NotificationsScreen, {
+  NotificationListRow,
+} from "@/app/(tabs)/notifications";
 
 /**
  * Unmounted in `afterEach`, not at the end of each test: the shared clock is
@@ -129,5 +132,58 @@ describe("Notifications back row (#3022)", () => {
 
   it("draws ‹ Chat, the screen the bell opens it from", () => {
     expectBackRow(render(), "Chat", "/");
+  });
+});
+
+/**
+ * Every list row answers a press the same way (`usePressFeedback`): a ripple
+ * on Android, a lift on iOS. A read row recedes through its text, not the
+ * whole row, so its press lift is as strong as an unread row's.
+ */
+describe("Notification row press feedback", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+  });
+
+  function renderRow(isUnread: boolean) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NotificationListRow
+            row={{
+              id: "n1",
+              title: "Dues reminder",
+              body: null,
+              categoryLabel: "Dues",
+              href: "/dues",
+              time: "4:00 PM",
+              createdAt: CREATED_AT.toISOString(),
+              isUnread,
+            }}
+            onPress={vi.fn()}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    mounted.push(tree);
+    return tree.root.find(
+      (node) => (node.type as unknown as string) === "Pressable",
+    );
+  }
+
+  it("ripples on Android and lifts on iOS, never fading the row", () => {
+    for (const isUnread of [true, false]) {
+      const row = renderRow(isUnread);
+      expect(row.props.android_ripple?.color).toMatch(/^rgba\(/);
+      // The suite's react-native stub runs as iOS.
+      const held = row.props.style({ pressed: true });
+      expect(held).toContainEqual({
+        backgroundColor: signetDarkTokens.color.surface.card,
+      });
+      expect(JSON.stringify(held)).not.toContain("opacity");
+    }
   });
 });

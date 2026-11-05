@@ -1,5 +1,11 @@
 import { ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  type DimensionValue,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -16,9 +22,9 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * semantic error border) and why the retry button drifted below the 44pt
  * minimum in the newest copies.
  *
- * The six More-hub screens use these. The existing copies in the chat, events
- * and check-in screens are left alone deliberately — migrating them is a
- * mechanical change with its own review surface, tracked separately.
+ * The six More-hub screens and Chat home use these. The existing copies in the
+ * events and check-in screens are left alone deliberately — migrating them is
+ * a mechanical change with its own review surface, tracked separately.
  *
  * ## Why there is no pull-to-refresh anywhere here
  *
@@ -86,6 +92,24 @@ export function SkeletonLines({
       ))}
     </View>
   );
+}
+
+/**
+ * One skeleton block, unframed, for a list whose loading shape is its own rows
+ * rather than {@link SkeletonLines}' card: Chat home draws channel-row
+ * skeletons with it (`ChannelListSkeleton`). Same fill and radius as the lines
+ * above, so when the shimmer lands it lands here once for both.
+ */
+export function SkeletonBlock({
+  width,
+  height,
+}: {
+  width: DimensionValue;
+  height: number;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return <View style={[styles.skeletonBlock, { width, height }]} />;
 }
 
 /**
@@ -273,6 +297,10 @@ function createStyles(tokens: SignetTokens) {
       // TODO-DESIGN: §10 specifies radius 6 for skeleton text lines. `chip` (8)
       // is the nearest token; a raw 6 would be a hard-coded value, which
       // foundations.md bans.
+      borderRadius: tokens.radius.chip,
+      backgroundColor: tokens.color.surface.popover,
+    },
+    skeletonBlock: {
       borderRadius: tokens.radius.chip,
       backgroundColor: tokens.color.surface.popover,
     },

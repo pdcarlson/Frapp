@@ -26,6 +26,7 @@ import { FrappThemeProvider } from "@/lib/theme";
 import {
   accessibilityLabelFor,
   badgeLabel,
+  ChannelListSkeleton,
   ChannelRow,
   HIDE_ACTION,
   PIN_ACTION,
@@ -297,5 +298,87 @@ describe("ChannelRow pin and DM badge (#2877)", () => {
     expect(channelStyle?.backgroundColor).toBe(
       signetDarkTokens.color.border.input,
     );
+  });
+});
+
+// The board draws unread as type alone: a 700 title in foreground over a read
+// row's 600 in muted-foreground. The row itself never takes a fill at rest;
+// the surface lift is only the iOS press state, shared with every list row.
+describe("ChannelRow unread emphasis and press feedback", () => {
+  function pressable(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) => (node.type as unknown as string) === "Pressable",
+      { deep: true },
+    )[0]!;
+  }
+
+  function titleStyle(tree: ReactTestRenderer) {
+    const title = tree.root.findAll(
+      (node) =>
+        (node.type as unknown as string) === "Text" &&
+        node.props.children === "general",
+      { deep: true },
+    )[0]!;
+    return flatten(title.props.style);
+  }
+
+  it("draws an unread title bold and bright, a read one lighter and muted", () => {
+    const unread = titleStyle(renderRow({ unreadCount: 7 }));
+    const read = titleStyle(renderRow({}));
+
+    expect(unread.fontFamily).toBe("Figtree_700Bold");
+    expect(unread.color).toBe(signetDarkTokens.color.text.foreground);
+    expect(read.fontFamily).toBe("Figtree_600SemiBold");
+    expect(read.color).toBe(signetDarkTokens.color.text.mutedForeground);
+  });
+
+  it("gives an unread row no fill at rest", () => {
+    const row = pressable(renderRow({ unreadCount: 7, mentionCount: 1 }));
+
+    expect(flatten(row.props.style({ pressed: false }))).not.toHaveProperty(
+      "backgroundColor",
+    );
+  });
+
+  it("ripples on Android and lifts on iOS while held, never fading", () => {
+    const row = pressable(renderRow({ unreadCount: 7 }));
+    const held = flatten(row.props.style({ pressed: true }));
+
+    expect(row.props.android_ripple?.color).toMatch(/^rgba\(/);
+    // The suite's react-native stub runs as iOS.
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(held).not.toHaveProperty("opacity");
+  });
+});
+
+describe("ChannelListSkeleton", () => {
+  it("draws channel-shaped rows on the row's own geometry, with no spinner", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ChannelListSkeleton rows={4} />
+        </FrappThemeProvider>,
+      );
+    });
+    const list = tree.root.find(
+      (node) => node.props.accessibilityRole === "progressbar",
+    );
+    expect(list.props.accessibilityLabel).toBe("Loading channels");
+
+    // A skeleton row is a `ChannelRow` row: same padding, same direction.
+    const rows = tree.root.findAll(
+      (node) =>
+        (node.type as unknown as string) === "View" &&
+        flatten(node.props.style).flexDirection === "row" &&
+        flatten(node.props.style).paddingVertical ===
+          signetDarkTokens.spacing.md,
+    );
+    expect(rows).toHaveLength(4);
+    expect(
+      tree.root.findAll(
+        (node) => (node.type as unknown as string) === "ActivityIndicator",
+      ),
+    ).toHaveLength(0);
   });
 });

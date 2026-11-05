@@ -1,8 +1,13 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
-import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
+import {
+  type ChapterBranding,
+  useChapterBranding,
+} from "@/lib/chapter-branding";
 import { initialsFor } from "@/lib/chat/display-name";
+import { usePressFeedback } from "@/components/list-section";
+import { SkeletonBlock } from "@/components/state-block";
 import {
   HIDE_CONVERSATION_LABEL,
   countsAddressMember,
@@ -24,6 +29,13 @@ import {
  *   channel takes the `border.input` fill with `text.foreground` text, plus an
  *   emphasized row: bold title over a muted preview. A read row drops to a
  *   lighter title, a dimmer preview, and no badge at all.
+ *
+ * The emphasis is type alone, as the board draws it: a 700 title in
+ * `text.foreground` against a read row's 600 in `text.mutedForeground`. The row
+ * itself never takes a fill at rest. It used to lift every unread row onto
+ * `surface1`, which on a busy chapter striped the list in card-coloured bars
+ * that said nothing the badge didn't; the lift is now only the iOS press
+ * state (`usePressFeedback`).
  *
  * "fill and text are the only difference, so badge geometry stays one recipe" —
  * hence a single `styles.badge` with two colour overlays rather than two badges.
@@ -100,6 +112,7 @@ export function ChannelRow({
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
+  const feedback = usePressFeedback();
 
   // Red means "you were addressed": an @-mention, or anything unread in a
   // direct message (foundations.md §5). The DM half was missing here until
@@ -151,11 +164,8 @@ export function ChannelRow({
             }
           : undefined
       }
-      style={({ pressed }) => [
-        styles.row,
-        isUnread ? styles.rowUnread : null,
-        pressed ? styles.pressed : null,
-      ]}
+      android_ripple={feedback.ripple}
+      style={({ pressed }) => [styles.row, feedback.lift(pressed)]}
     >
       {isDirect ? (
         <View style={styles.avatar}>
@@ -232,6 +242,49 @@ export function UnreadBadge({
   );
 }
 
+/** Title-bar widths, cycled, so the placeholder list doesn't read as a grid. */
+const SKELETON_TITLE_WIDTHS = ["42%", "28%", "55%", "36%", "48%"] as const;
+
+/**
+ * Chat home's loading state: a section caption and channel-shaped rows on the
+ * row's own geometry, so the real list replaces it in place rather than
+ * pushing in under a spinner (components.md §10: content-shaped, no
+ * spinner-in-a-box). Static, like every skeleton here until the shimmer
+ * lands (`components/state-block.tsx`).
+ */
+export function ChannelListSkeleton({ rows = 5 }: { rows?: number }) {
+  const { tokens } = useFrappTheme();
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityLabel="Loading channels"
+      style={styles.skeletonList}
+    >
+      <View style={styles.skeletonCaption}>
+        <SkeletonBlock
+          width={tokens.spacing["3xl"]}
+          height={tokens.spacing.sm}
+        />
+      </View>
+      {Array.from({ length: rows }, (_, index) => (
+        <View key={index} style={styles.row}>
+          <SkeletonBlock width={tokens.spacing.md} height={tokens.spacing.lg} />
+          <View style={styles.skeletonTitle}>
+            <SkeletonBlock
+              width={
+                SKELETON_TITLE_WIDTHS[index % SKELETON_TITLE_WIDTHS.length]
+              }
+              height={tokens.spacing.md}
+            />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /** Exported so the spec asserts the spoken form, not just the drawn one. */
 export function accessibilityLabelFor({
   name,
@@ -268,15 +321,24 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       minHeight: tokens.touch.minimum,
       paddingVertical: tokens.spacing.md,
       paddingHorizontal: tokens.spacing.sm,
+      // The row bleeds its own padding into the screen gutter, as the board
+      // draws it: the sigil lines up with the section captions and the UP
+      // NEXT glyphs, and the press lift still clears the text on both sides.
+      marginHorizontal: -tokens.spacing.sm,
       borderRadius: tokens.radius.control,
     },
-    // Elevation is a lighter surface step, never a shadow
-    // (foundations.md:132) — an unread row lifts off the background.
-    rowUnread: {
-      backgroundColor: tokens.color.surface.surface1,
+    skeletonList: {
+      gap: tokens.spacing.xs,
     },
-    pressed: {
-      opacity: 0.7,
+    skeletonCaption: {
+      minHeight: tokens.touch.minimum,
+      justifyContent: "center",
+    },
+    // A body line's height, so a skeleton row stands as tall as a real one.
+    skeletonTitle: {
+      flex: 1,
+      height: tokens.typography.role.body.lineHeight,
+      justifyContent: "center",
     },
     sigil: {
       ...typeRole(tokens.typography.role.title),
@@ -302,12 +364,20 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       flex: 1,
       gap: 2,
     },
+    // Weight and brightness together carry unread: 700 over a read row's 600
+    // (the board's two title weights), foreground over muted-foreground.
     titleUnread: {
-      ...typeRole(tokens.typography.role.body),
+      ...typeRole({
+        ...tokens.typography.role.body,
+        weight: tokens.typography.weight.bold,
+      }),
       color: tokens.color.text.foreground,
     },
     titleRead: {
-      ...typeRole(tokens.typography.role.body),
+      ...typeRole({
+        ...tokens.typography.role.body,
+        weight: tokens.typography.weight.semibold,
+      }),
       color: tokens.color.text.mutedForeground,
     },
     previewUnread: {

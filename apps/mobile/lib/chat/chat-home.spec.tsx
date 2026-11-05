@@ -6,7 +6,12 @@ import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { drawnText as screenTextOf, textHeadings } from "@/test/screen-text";
+import { signetDarkTokens } from "@repo/theme/signet";
+import {
+  drawnText as screenTextOf,
+  screenText,
+  textHeadings,
+} from "@/test/screen-text";
 
 /**
  * #2303 — the chat home's wiring of Hide conversation, rendered for real.
@@ -36,6 +41,7 @@ const {
   writeOptions,
   queryErrors,
   notificationsData,
+  channelsState,
 } = vi.hoisted(() => ({
   channelsData: { value: [] as unknown[] },
   categoriesData: { value: [] as unknown },
@@ -70,6 +76,15 @@ const {
   // The inbox rows behind the title row's bell (#3362).
   notificationsData: {
     value: [] as { id: string; read_at: string | null; data?: unknown }[],
+  },
+  // The channel list's own read state, for the loading and error branches.
+  channelsState: {
+    value: {
+      isPending: false,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    },
   },
 }));
 
@@ -130,7 +145,10 @@ vi.mock("@repo/hooks", async () => {
       isError: queryErrors.levels,
     }),
     useNowDate: () => new Date("2026-09-25T18:00:00Z"),
-    useChannels: () => query(channelsData.value),
+    useChannels: () => ({
+      ...query(channelsData.value),
+      ...channelsState.value,
+    }),
     useCategories: () => query(categoriesData.value),
     useChannelUnreadCounts: () => ({
       ...query(unreadData.value),
@@ -165,7 +183,8 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import ChatHomeScreen from "@/app/(tabs)/index";
-import { ChannelRow } from "@/components/chat/channel-row";
+import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
+import { ErrorState } from "@/components/state-block";
 
 const general = { id: "c-general", name: "general", type: "PUBLIC" };
 const dmAlice = {
@@ -247,6 +266,12 @@ beforeEach(() => {
   notificationsData.value = [];
   queryErrors.unread = false;
   queryErrors.levels = false;
+  channelsState.value = {
+    isPending: false,
+    isError: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  };
   sidebarPrefs.value = {
     pinnedIds: new Set(),
     collapsed: new Set(),
@@ -855,5 +880,74 @@ describe("Chat home notifications bell (#3362)", () => {
     });
 
     expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/notifications");
+  });
+});
+
+/**
+ * Chat home is the first screen after launch, so its loading and error states
+ * are the state family's (components.md §10), not a spinner over "Loading
+ * channels…" and a hand-rolled retry.
+ */
+describe("Chat home loading and error states", () => {
+  it("loads on channel-shaped skeletons, with no spinner or loading copy", () => {
+    channelsState.value = { ...channelsState.value, isPending: true };
+    const tree = render();
+
+    expect(tree.root.findAllByType(ChannelListSkeleton)).toHaveLength(1);
+    expect(
+      tree.root.findAll(
+        (node) => (node.type as unknown) === "ActivityIndicator",
+      ),
+    ).toHaveLength(0);
+    expect(screenText(tree)).not.toContain("Loading channels");
+    expect(rows(tree)).toHaveLength(0);
+  });
+
+  it("fails on the shared error state, whose retry refetches the channels", () => {
+    const refetch = vi.fn();
+    channelsState.value = { ...channelsState.value, isError: true, refetch };
+    const tree = render();
+
+    const error = tree.root.findByType(ErrorState);
+    expect(error.props.title).toBe("Couldn't load channels");
+    act(() => {
+      pressableLabelled(tree, "Try again").props.onPress();
+    });
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("says Retrying… and holds the control while a retry is in flight", () => {
+    channelsState.value = {
+      ...channelsState.value,
+      isError: true,
+      isFetching: true,
+    };
+    const tree = render();
+
+    const retry = pressableLabelled(tree, "Try again");
+    expect(retry.props.disabled).toBe(true);
+    expect(screenTextOf(retry)).toBe("Retrying…");
+  });
+});
+
+describe("Chat home press feedback", () => {
+  it("gives section headers and the Hidden toggle the rows' feedback, not a fade", () => {
+    const tree = render();
+    const headers = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "header",
+    );
+    expect(headers.length).toBeGreaterThan(0);
+
+    for (const control of [...headers, hiddenToggle(tree)]) {
+      expect(control.props.android_ripple?.color).toMatch(/^rgba\(/);
+      // The suite's react-native stub runs as iOS.
+      const held = control.props.style({ pressed: true });
+      expect(held).toContainEqual({
+        backgroundColor: signetDarkTokens.color.surface.card,
+      });
+      expect(JSON.stringify(held)).not.toContain("opacity");
+    }
   });
 });
