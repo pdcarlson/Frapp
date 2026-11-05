@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -179,18 +178,21 @@ export function PointsAdjustmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {/*
+        No description: the one it had restated what the required Reason field
+        already says. `aria-describedby={undefined}` tells Radix the omission is
+        deliberate, so it does not warn about a missing `Description`.
+      */}
       <DialogContent
         className="sm:max-w-lg"
         onCloseAutoFocus={onCloseAutoFocus}
+        aria-describedby={undefined}
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AdjustGlyph className="h-5 w-5" />
             Adjust points
           </DialogTitle>
-          <DialogDescription>
-            Apply a manual adjustment with a required reason for audit trail integrity.
-          </DialogDescription>
         </DialogHeader>
 
         {/*

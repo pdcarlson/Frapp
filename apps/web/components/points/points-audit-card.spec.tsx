@@ -1,6 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { formatDayTime, formatTimestampFull } from "@repo/formatting";
+import { denseListClassName } from "@/components/shared/table-controls";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 import {
   AUDIT_PAGE_SIZE,
   olderAuditCursor,
@@ -52,8 +55,16 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   },
 }));
 
+const gate = vi.hoisted(() => ({ denied: false }));
+
 vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Can: ({
+    children,
+    deniedFallback,
+  }: {
+    children: React.ReactNode;
+    deniedFallback?: React.ReactNode;
+  }) => <>{gate.denied ? deniedFallback : children}</>,
 }));
 
 const { PointsAuditCard } = await import("./points-audit-card");
@@ -194,7 +205,10 @@ describe("PointsAuditCard pagination", () => {
     await user.click(screen.getByRole("button", { name: "Older transactions" }));
     expect(fixtures.lastOptions?.before).toBe(MICROSECOND_CURSOR);
 
-    await user.click(screen.getByRole("button", { name: "Show flagged only" }));
+    const flaggedToggle = screen.getByRole("button", { name: "Flagged only" });
+    expect(flaggedToggle).toHaveAttribute("aria-pressed", "false");
+    await user.click(flaggedToggle);
+    expect(flaggedToggle).toHaveAttribute("aria-pressed", "true");
     expect(fixtures.lastOptions).toMatchObject({
       before: undefined,
       flagged: true,
@@ -237,5 +251,86 @@ describe("PointsAuditCard pagination", () => {
       before: undefined,
       userId: "user-1",
     });
+  });
+});
+
+describe("PointsAuditCard on the page surface", () => {
+  beforeEach(() => {
+    fixtures.data = [];
+    fixtures.isPending = false;
+    fixtures.isError = false;
+    fixtures.isFetching = false;
+    gate.denied = false;
+  });
+
+  it("is a flush Audit section with the chapter's limits as one state line", () => {
+    fixtures.data = page(2);
+    const { container } = render(<PointsAuditCard />);
+
+    expect(screen.getByRole("region", { name: "Audit" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Flags at ±100 points · 50 adjustments per admin per hour"),
+    ).toBeInTheDocument();
+    // The policy explanation the card used to carry is gone.
+    expect(screen.queryByText(/chapter-configurable/)).not.toBeInTheDocument();
+    expect(screen.getByRole("list")).toHaveClass(
+      ...denseListClassName.split(" "),
+    );
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  it("labels the category in sentence case and dates the row in the house shape", () => {
+    const at = "2026-03-14T17:00:00Z";
+    fixtures.data = [
+      {
+        id: "tx-1",
+        user_id: "user-1",
+        amount: -5,
+        category: "FINE",
+        description: "Late to chapter",
+        created_at: at,
+      },
+    ];
+    render(<PointsAuditCard />);
+
+    const row = screen.getByRole("listitem");
+    expect(row).toHaveTextContent("Fine");
+    expect(row).not.toHaveTextContent("FINE");
+    const time = row.querySelector("time");
+    expect(time).toHaveAttribute("datetime", at);
+    expect(time?.textContent).toBe(formatDayTime(at));
+    expect(time).toHaveAttribute("title", formatTimestampFull(at));
+    // No seconds in the visible date.
+    expect(time?.textContent).not.toMatch(/:\d\d:\d\d/);
+    expect(row).toHaveTextContent("-5 points");
+  });
+
+  it("draws no category, and no UNKNOWN, for a row without one", () => {
+    fixtures.data = [{ id: "tx-1", user_id: "user-1", amount: 3 }];
+    render(<PointsAuditCard />);
+
+    expect(screen.queryByText("UNKNOWN")).not.toBeInTheDocument();
+    expect(screen.getByRole("listitem")).toHaveTextContent("Alex");
+  });
+
+  it("offers every ledger category in the filter, Academic included", async () => {
+    const user = userEvent.setup();
+    render(<PointsAuditCard />);
+
+    await user.click(
+      screen.getByRole("combobox", { name: "Filter audit by category" }),
+    );
+    expect(screen.getByRole("option", { name: "Academic" })).toBeInTheDocument();
+  });
+
+  it("says why the list is missing in one caption under the label when denied", () => {
+    gate.denied = true;
+    const { container } = render(<PointsAuditCard />);
+
+    expect(screen.getByRole("region", { name: "Audit" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Seeing every transaction needs points:view_all."),
+    ).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
   });
 });
