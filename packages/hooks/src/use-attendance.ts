@@ -5,6 +5,7 @@ import {
   isRetryableFailure,
   serverMessageOf,
   statusOf,
+  throwUnlessOk,
 } from "@repo/api-sdk";
 import { useFrappClient } from "./use-frapp-client";
 
@@ -30,12 +31,13 @@ export function useAttendance(
   return useQuery({
     queryKey: ["attendance", eventId],
     queryFn: async () => {
-      const { data, error } = await client.GET(
-        "/v1/events/{eventId}/attendance",
-        { params: { path: { eventId } } },
-      );
-      if (error) throw error;
-      return data;
+      const result = await client.GET("/v1/events/{eventId}/attendance", {
+        params: { path: { eventId } },
+      });
+      // On the status, not `error` (see `throwUnlessOk`): an empty-bodied 5xx
+      // would otherwise be a successful read with no roster in it.
+      throwUnlessOk(result);
+      return result.data;
     },
     staleTime: 30_000,
     enabled: !!eventId,
@@ -86,12 +88,16 @@ export function useCheckIn() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ eventId, ...payload }: CheckInVariables) => {
-      const { data, error } = await client.POST(
+      const result = await client.POST(
         "/v1/events/{eventId}/attendance/check-in",
         { params: { path: { eventId } }, body: payload },
       );
-      if (error) throw error;
-      return data;
+      // On the status, not `error`: openapi-fetch returns an empty error body
+      // as `undefined` or `""`, so an edge's empty-bodied 502 during a deploy
+      // would read as a check-in, and with no outbox the member would leave
+      // believing they were on the roster.
+      throwUnlessOk(result);
+      return result.data;
     },
     onSuccess: (_data, { eventId }) => {
       queryClient.invalidateQueries({ queryKey: ["attendance", eventId] });
@@ -180,7 +186,8 @@ export interface MintedCheckInTokenResult {
 
 /**
  * Until a response says when it rotates, and after a failed request that may
- * go through next time ({@link isTransientCheckInFailure}).
+ * go through next time ({@link isTransientCheckInFailure}, or a 401: see
+ * {@link checkInTokenRefetchMs}).
  */
 export const CHECK_IN_TOKEN_FALLBACK_POLL_MS = 10_000;
 /**
@@ -204,11 +211,24 @@ function rotatesInMsOf(response: unknown): number | null {
 /**
  * How long to wait before asking for the next code, or `false` for not on a
  * timer: just after the current one rotates; on the fallback poll while there
- * is nothing to time from, or after a failure that may go through next time;
- * and not at all after one that won't (a 403 for a member who isn't an
- * officer, the unconfigured 503). Exported for the spec; the hook hands it
- * TanStack's query state as a `refetchInterval` function, which is re-read
- * after every fetch and every render.
+ * is nothing to time from, after a failure that may go through next time, and
+ * after a 401; and not at all after a refusal that won't change by asking (a
+ * 403 for a member who isn't an officer, a 404, the unconfigured 503).
+ * Exported for the spec; the hook hands it TanStack's query state as a
+ * `refetchInterval` function, which is re-read after every fetch and every
+ * render.
+ *
+ * A 401 is polled because here it is most often a sign-in being renewed,
+ * not a refusal. The host display is left up while the phone sleeps past the
+ * access token's expiry, and on waking the focus refetch races the token's
+ * auto-refresh, so the request goes out with the expired token. The renewed
+ * token then lands without asking this query again: the query isn't keyed on
+ * the token, and a renewal for the same member clears no cache. Without the
+ * timer the screen would sit on "Code unavailable" until someone tapped Try
+ * again. A real sign-out leaves the tabs for sign-in, so a 401 that won't
+ * clear isn't polled for long. Only this poll treats a 401 so:
+ * {@link isTransientCheckInFailure}, which s18's sheet reads too, leaves it
+ * out.
  */
 export function checkInTokenRefetchMs(
   state: {
@@ -221,7 +241,8 @@ export function checkInTokenRefetchMs(
   // A failed refetch keeps the last data, whose rotation is past: timing off
   // it would ask again every second.
   if (state.status === "error") {
-    return isTransientCheckInFailure(state.error)
+    return isTransientCheckInFailure(state.error) ||
+      statusOf(state.error) === 401
       ? CHECK_IN_TOKEN_FALLBACK_POLL_MS
       : false;
   }
@@ -248,12 +269,14 @@ export function checkInTokenRefetchMs(
  * server still owns the boundary: the client only counts down to the moment
  * the server named, on the device's clocks (see
  * {@link MintedCheckInTokenResult}). A 10s poll stands in while there is no
- * answer to time from, and after a failure that may go through next time; a
- * refusal stops the timer ({@link checkInTokenRefetchMs}).
+ * answer to time from, and after a failure that may go through next time or a
+ * 401; a refusal stops the timer ({@link checkInTokenRefetchMs}).
  *
  * `staleTime: 0` and no structural sharing of a stale token — a code that is one
  * window old is still redeemable, so a slightly late refetch degrades to "the
- * previous code", never to a dead screen.
+ * previous code", never to a dead screen. A failed refetch keeps the last
+ * code as `data` beside its error, and s22 goes on drawing it while it still
+ * redeems.
  */
 export function useMintCheckInToken(eventId: string, enabled = true) {
   const client = useFrappClient();
@@ -261,20 +284,23 @@ export function useMintCheckInToken(eventId: string, enabled = true) {
     queryKey: ["attendance", eventId, "check-in-token"],
     queryFn: async (): Promise<MintedCheckInTokenResult> => {
       const requestedAt = deviceNow();
-      const { data, error } = await client.GET(
+      const result = await client.GET(
         "/v1/events/{eventId}/attendance/check-in-token",
         { params: { path: { eventId } } },
       );
-      if (error) throw error;
-      return { response: data, requestedAt };
+      // On the status, not `error` (see `throwUnlessOk`). An empty-bodied
+      // 5xx read as a success would replace the code on screen, which still
+      // redeems, with an answer that has no code in it.
+      throwUnlessOk(result);
+      return { response: result.data, requestedAt };
     },
     enabled: enabled && !!eventId,
     staleTime: 0,
     refetchInterval: (query) => checkInTokenRefetchMs(query.state, deviceNow()),
     refetchOnWindowFocus: true,
     // A 403 (not an officer) or 503 (unconfigured) will not fix itself by
-    // asking again, and a transient failure is asked again by the fallback
-    // poll, not at once.
+    // asking again, and a transient failure or a 401 is asked again by the
+    // fallback poll, not at once.
     retry: false,
   });
 }
@@ -295,12 +321,13 @@ export function useUpdateAttendanceStatus() {
         excuse_reason?: string;
       };
     }) => {
-      const { data, error } = await client.PATCH(
+      const result = await client.PATCH(
         "/v1/events/{eventId}/attendance/{userId}",
         { params: { path: { eventId, userId } }, body },
       );
-      if (error) throw error;
-      return data;
+      // On the status, not `error` (see `throwUnlessOk`).
+      throwUnlessOk(result);
+      return result.data;
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
@@ -315,12 +342,13 @@ export function useAutoAbsent() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (eventId: string) => {
-      const { data, error } = await client.POST(
+      const result = await client.POST(
         "/v1/events/{eventId}/attendance/auto-absent",
         { params: { path: { eventId } } },
       );
-      if (error) throw error;
-      return data;
+      // On the status, not `error` (see `throwUnlessOk`).
+      throwUnlessOk(result);
+      return result.data;
     },
     onSuccess: (_data, eventId) => {
       queryClient.invalidateQueries({ queryKey: ["attendance", eventId] });

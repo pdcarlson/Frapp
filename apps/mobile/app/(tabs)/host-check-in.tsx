@@ -70,6 +70,12 @@ import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
  * ({@link SCAN_MARGIN_MS}), and the blank card stands in until the new one
  * lands.
  *
+ * The same bound, and nothing else, decides whether a failed request takes
+ * the code off screen. A refetch that fails keeps the last code beside its
+ * error, and while that code is inside its bound it stays drawn, with no
+ * error card, because members can still redeem it. "Code unavailable" shows
+ * only when there is no live code to draw.
+ *
  * ## The phone's clocks, from when the code was asked for
  *
  * The server signs window `floor(t / 30s)` and accepts the current window and
@@ -112,13 +118,19 @@ const ATTENDANCE_POLL_MS = 10_000;
  * phone and decode it, s18 may need a location fix (a cold one at the
  * "balanced" accuracy it asks for takes a few seconds), and the check-in then
  * has to reach the server. Ten seconds covers that on poor venue Wi-Fi. A code
- * is drawn as live only while less than `rotatesInMs + window - margin` has
- * elapsed since it was asked for. While the screen is up, the rotation
- * refetch normally replaces it within a round trip of its rotation, so the
- * margin blanks a code left over from an earlier visit or from before the
- * phone slept, and, on a focused screen, one whose refetches keep failing:
- * after a failed refetch the next try is 10s later, so two failures in a row
- * run past it.
+ * is drawn as live while, and only while, less than
+ * `rotatesInMs + window - margin` has elapsed since it was asked for, whether
+ * or not the requests since then failed.
+ *
+ * While the screen is up, the rotation refetch normally replaces the code
+ * within a round trip of its rotation, so the margin takes a code off screen
+ * in three cases: one left over from an earlier visit, one from before the
+ * phone slept, and, on a focused screen, the last good code once its
+ * refetches have kept failing past the bound. The first refetch goes out half
+ * a second after the rotation and each one after a failure 10s after it, so a
+ * code stays drawn through two failures in a row and the bound passes before
+ * the third try. With no live code, the screen draws the error card if the
+ * last request failed, and otherwise the blank card until the new code lands.
  */
 const SCAN_MARGIN_MS = 10_000;
 
@@ -184,8 +196,10 @@ export default function HostCheckInScreen() {
   );
   const age = cached ? elapsedSince(cached.requestedAt, now) : 0;
   // The code to draw: the cached one only while it will still redeem for a
-  // scan (see `SCAN_MARGIN_MS`). Past that the screen shows the blank card it
-  // shows while loading, and the refetch focus started replaces it.
+  // scan (see `SCAN_MARGIN_MS`), even when the last request failed. Past that
+  // the screen shows the error card if that request failed, and otherwise the
+  // blank card it shows while loading, until the refetch focus started
+  // replaces it.
   const minted =
     cached &&
     age < cached.rotatesInMs + CHECK_IN_TOKEN_WINDOW_MS - SCAN_MARGIN_MS
@@ -262,17 +276,21 @@ export default function HostCheckInScreen() {
             body="Hosting check-in needs the events permission."
           />
         </View>
-      ) : tokenQuery.isError || (!tokenQuery.isPending && !cached) ? (
+      ) : !minted &&
+        (tokenQuery.isError || (!tokenQuery.isPending && !cached)) ? (
         <View style={styles.stateWrap}>
           {/*
+            Only with no live code to draw: a code that still redeems stays
+            on screen through a failed refetch (see `SCAN_MARGIN_MS`).
+
             Two genuinely different causes, and the screen must not assert the
             wrong one. The unconfigured 503 means the environment has no signing
             secret and no amount of waiting fixes it, so it offers no retry and
             the hook stops asking; anything else gets a retry, and a failure
-            that may go through next time (a network blip, a 5xx) is asked
-            again on the hook's 10s poll too. Naming "not configured" for a
-            dropped request would send an officer to chase an infra problem that
-            does not exist.
+            that may go through next time (a network blip, a 5xx) or a sign-in
+            being renewed (a 401) is asked again on the hook's 10s poll too.
+            Naming "not configured" for a dropped request would send an officer
+            to chase an infra problem that does not exist.
           */}
           <ErrorState
             title="Code unavailable"

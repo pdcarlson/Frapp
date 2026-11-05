@@ -4,7 +4,12 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
-import { CHECK_IN_CODES_UNCONFIGURED_MESSAGE } from "@repo/hooks";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { createFrappClient } from "@repo/api-sdk";
+import {
+  CHECK_IN_CODES_UNCONFIGURED_MESSAGE,
+  FrappClientProvider,
+} from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText, textHeadings } from "@/test/screen-text";
 
@@ -35,21 +40,31 @@ const hooks = vi.hoisted(() => ({
   attendance: [] as unknown,
   mintCalls: [] as unknown[][],
   attendanceCalls: [] as unknown[][],
+  /**
+   * The real `useMintCheckInToken`, on the client `renderWithClient`
+   * provides, in place of `token`. Set for the life of one tree.
+   */
+  realMint: false,
 }));
 
-vi.mock("@repo/hooks", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@repo/hooks")>()),
-  usePermissionList: () => ["*"],
-  useEvent: () => ({ data: hooks.event }),
-  useMintCheckInToken: (...args: unknown[]) => {
-    hooks.mintCalls.push(args);
-    return hooks.token;
-  },
-  useAttendance: (...args: unknown[]) => {
-    hooks.attendanceCalls.push(args);
-    return { data: hooks.attendance };
-  },
-}));
+vi.mock("@repo/hooks", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/hooks")>();
+  return {
+    ...actual,
+    usePermissionList: () => ["*"],
+    useEvent: () => ({ data: hooks.event }),
+    useMintCheckInToken: (eventId: string, enabled?: boolean) => {
+      hooks.mintCalls.push([eventId, enabled]);
+      return hooks.realMint
+        ? actual.useMintCheckInToken(eventId, enabled)
+        : hooks.token;
+    },
+    useAttendance: (...args: unknown[]) => {
+      hooks.attendanceCalls.push(args);
+      return { data: hooks.attendance };
+    },
+  };
+});
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
@@ -119,6 +134,28 @@ function render(): ReactTestRenderer {
       <FrappThemeProvider>
         <HostCheckInScreen />
       </FrappThemeProvider>,
+    );
+  });
+  return tree;
+}
+
+/** The screen on the real `useMintCheckInToken` (`hooks.realMint`). */
+function renderWithClient(
+  client: unknown,
+  queryClient: QueryClient,
+): ReactTestRenderer {
+  let tree!: ReactTestRenderer;
+  act(() => {
+    tree = create(
+      <FrappClientProvider
+        client={client as ReturnType<typeof createFrappClient>}
+      >
+        <QueryClientProvider client={queryClient}>
+          <FrappThemeProvider>
+            <HostCheckInScreen />
+          </FrappThemeProvider>
+        </QueryClientProvider>
+      </FrappClientProvider>,
     );
   });
   return tree;
@@ -363,6 +400,38 @@ describe("Host check-in while the room fills", () => {
         act(() => tree.unmount());
       });
 
+      it("keeps a code that still redeems on screen through failed refetches, then says it didn't load", () => {
+        // The rotation refetch failed, and the one 10s later too. TanStack
+        // keeps the last code beside the error, and members can still redeem
+        // it, so swapping it for "Code unavailable" would leave the door with
+        // nothing to scan for the rest of its window.
+        hooks.token = {
+          ...mintedAgo(ROTATES_IN_MS + 10_500),
+          error: { statusCode: 502 },
+          isError: true,
+        };
+        const tree = render();
+        expect(qrCount(tree)).toBe(1);
+        expect(screenText(tree)).toContain("4KQ-88");
+        expect(screenText(tree)).not.toContain("Code unavailable");
+
+        // Past its bound, with the requests still failing: no live code, so
+        // the error card, with its retry.
+        advance(LIVE_FOR_MS - (ROTATES_IN_MS + 10_500));
+        tick();
+        expect(qrCount(tree)).toBe(0);
+        const text = screenText(tree);
+        expect(text).not.toContain("4KQ-88");
+        expect(text).toContain("Code unavailable");
+        expect(text).toContain("didn't load");
+        expect(
+          tree.root.findAll(
+            (node) => node.props.accessibilityLabel === "Try again",
+          ),
+        ).not.toHaveLength(0);
+        act(() => tree.unmount());
+      });
+
       it("blanks the code it showed before the phone slept", () => {
         // Android's monotonic clock stops while the phone sleeps; the wall
         // clock doesn't. Judged on the monotonic clock alone, a code that
@@ -433,5 +502,98 @@ describe("Host check-in while the room fills", () => {
       ),
     ).toHaveLength(0);
     act(() => unconfigured.unmount());
+  });
+});
+
+/**
+ * What the screen draws from the real `useMintCheckInToken`. An edge's
+ * empty-bodied 5xx is `error: undefined` or `""` to openapi-fetch 0.17: read
+ * as a success, a rotation refetch's would replace a code that still redeems
+ * with an answer that has no code in it.
+ */
+describe("Host check-in on the real code request", () => {
+  const TOKEN_KEY = ["attendance", "evt-1", "check-in-token"];
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      eventId: "evt-1",
+    });
+    hooks.event = EVENT;
+    hooks.attendance = [];
+    hooks.realMint = true;
+    queryClient = new QueryClient();
+  });
+  afterEach(() => {
+    hooks.realMint = false;
+    queryClient.clear();
+  });
+
+  const MINT = {
+    data: {
+      qrPayload: "frapp-checkin:v1:evt-1:signed",
+      manualCode: "4KQ-88",
+      expiresAt: "2099-01-01T00:00:00Z",
+      rotatesInMs: ROTATES_IN_MS,
+    },
+    error: undefined,
+    response: new Response(null, { status: 200 }),
+  };
+  const emptyBodied = (error: undefined | "") => ({
+    data: undefined,
+    error,
+    response: new Response(null, { status: 502 }),
+  });
+  /** Lets the request in flight answer, and the screen draw it. */
+  const settle = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+  it("keeps the code on screen when a refetch gets an empty-bodied 5xx", async () => {
+    for (const error of [undefined, ""] as const) {
+      queryClient.clear();
+      const get = vi
+        .fn()
+        .mockResolvedValueOnce(MINT)
+        .mockResolvedValue(emptyBodied(error));
+      const tree = renderWithClient({ GET: get }, queryClient);
+      try {
+        await settle();
+        expect(tree.root.findAllByType("QRCode" as never)).toHaveLength(1);
+
+        await act(async () => {
+          await queryClient.refetchQueries({ queryKey: TOKEN_KEY });
+        });
+        await settle();
+        expect(get).toHaveBeenCalledTimes(2);
+        expect(queryClient.getQueryState(TOKEN_KEY)?.status).toBe("error");
+        expect(tree.root.findAllByType("QRCode" as never)).toHaveLength(1);
+        const text = screenText(tree);
+        expect(text).toContain("4KQ-88");
+        expect(text).not.toContain("Code unavailable");
+      } finally {
+        act(() => tree.unmount());
+      }
+    }
+  });
+
+  it("says the code didn't load, with a retry, when the first request gets one", async () => {
+    const get = vi.fn().mockResolvedValue(emptyBodied(undefined));
+    const tree = renderWithClient({ GET: get }, queryClient);
+    try {
+      await settle();
+      expect(queryClient.getQueryState(TOKEN_KEY)?.status).toBe("error");
+      const text = screenText(tree);
+      expect(text).toContain("didn't load");
+      expect(text).not.toContain("aren't set up");
+      expect(
+        tree.root.findAll(
+          (node) => node.props.accessibilityLabel === "Try again",
+        ),
+      ).not.toHaveLength(0);
+    } finally {
+      act(() => tree.unmount());
+    }
   });
 });

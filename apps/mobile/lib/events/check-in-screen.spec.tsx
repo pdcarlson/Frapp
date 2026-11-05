@@ -5,12 +5,17 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
 import { AccessibilityInfo, Platform } from "react-native";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { createFrappClient } from "@repo/api-sdk";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText, textHeadings } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
-import { CHECK_IN_CODES_UNCONFIGURED_MESSAGE } from "@repo/hooks";
+import {
+  CHECK_IN_CODES_UNCONFIGURED_MESSAGE,
+  FrappClientProvider,
+} from "@repo/hooks";
 import {
   ALREADY_CHECKED_IN_COPY,
   CHECK_IN_CODE_REFUSED_MESSAGE,
@@ -75,6 +80,12 @@ const state = vi.hoisted(() => ({
   useEvent: null as null | ((id: string) => Record<string, unknown>),
   /** Check-ins sent and not yet answered, for `useCheckIn`'s `isPending`. */
   pendingCheckIns: 0,
+  /**
+   * The real `useCheckIn`, on the client `renderWithClient` provides, for a
+   * spec that has to see what the hook makes of a response. Set for the life
+   * of one tree.
+   */
+  realCheckIn: false,
 }));
 
 /**
@@ -93,17 +104,20 @@ function sendCheckIn(variables: unknown) {
   return answer;
 }
 
-vi.mock("@repo/hooks", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useEvent: (id: string) =>
-    state.useEvent
-      ? state.useEvent(id)
-      : { data: id === OTHER_EVENT.id ? OTHER_EVENT : EVENT },
-  useCheckIn: () => ({
-    mutateAsync: sendCheckIn,
-    isPending: state.pendingCheckIns > 0,
-  }),
-}));
+vi.mock("@repo/hooks", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/hooks")>();
+  return {
+    ...actual,
+    useEvent: (id: string) =>
+      state.useEvent
+        ? state.useEvent(id)
+        : { data: id === OTHER_EVENT.id ? OTHER_EVENT : EVENT },
+    useCheckIn: () =>
+      state.realCheckIn
+        ? actual.useCheckIn()
+        : { mutateAsync: sendCheckIn, isPending: state.pendingCheckIns > 0 },
+  };
+});
 
 beforeEach(() => {
   state.pendingCheckIns = 0;
@@ -160,6 +174,35 @@ function render(): ReactTestRenderer {
       <FrappThemeProvider>
         <CheckInScreen />
       </FrappThemeProvider>,
+      {
+        createNodeMock: (element) =>
+          element.type === "BottomSheetModal" ? sheetHandle : null,
+      },
+    );
+  });
+  return tree;
+}
+
+/**
+ * The screen on the real `useCheckIn` (`state.realCheckIn`), which sends
+ * through `client`.
+ */
+function renderWithClient(client: unknown): ReactTestRenderer {
+  const queryClient = new QueryClient({
+    defaultOptions: { mutations: { retry: 0 } },
+  });
+  let tree!: ReactTestRenderer;
+  act(() => {
+    tree = create(
+      <FrappClientProvider
+        client={client as ReturnType<typeof createFrappClient>}
+      >
+        <QueryClientProvider client={queryClient}>
+          <FrappThemeProvider>
+            <CheckInScreen />
+          </FrappThemeProvider>
+        </QueryClientProvider>
+      </FrappClientProvider>,
       {
         createNodeMock: (element) =>
           element.type === "BottomSheetModal" ? sheetHandle : null,
@@ -685,28 +728,44 @@ describe("Check-in keeps each event's state to itself", () => {
     act(() => tree.unmount());
   });
 
-  it("leaves nothing sending at an event whose check-in settled while the screen was elsewhere", async () => {
+  it("leaves nothing sending at an event whose check-in settled while the screen was elsewhere, and sends again there", async () => {
+    // Its latch is released wherever the screen was when it answered. Held
+    // until the screen came back to it, every scan and typed code at that
+    // event would be dropped in silence, under controls that look armed.
     for (const settle of [
       (answer: ReturnType<typeof pendingCheckIn>) => answer.land(),
       (answer: ReturnType<typeof pendingCheckIn>) => answer.refuse(FAILED),
     ]) {
-      checkIn.mockReset();
-      const answer = pendingCheckIn();
-      const tree = render();
-      try {
-        await submitManualCode(tree);
-        moveTo(tree, OTHER_EVENT.id);
-        await act(async () => settle(answer));
+      for (const sendAgain of [
+        (tree: ReactTestRenderer) => scan(tree, qrFor("evt-1")),
+        (tree: ReactTestRenderer) => submitManualCode(tree),
+      ]) {
+        checkIn.mockReset();
+        const answer = pendingCheckIn();
+        const tree = render();
+        try {
+          await submitManualCode(tree);
+          moveTo(tree, OTHER_EVENT.id);
+          await act(async () => settle(answer));
 
-        moveTo(tree, "evt-1");
-        expect(screenText(tree)).not.toContain("Checking you in");
-        expect(camera(tree).props.onBarcodeScanned).toEqual(
-          expect.any(Function),
-        );
-        act(() => manualInput(tree).props.onChangeText("4KQ88"));
-        expect(manualSubmit(tree).props.disabled).toBe(false);
-      } finally {
-        act(() => tree.unmount());
+          moveTo(tree, "evt-1");
+          expect(screenText(tree)).not.toContain("Checking you in");
+          expect(camera(tree).props.onBarcodeScanned).toEqual(
+            expect.any(Function),
+          );
+          act(() => manualInput(tree).props.onChangeText("4KQ88"));
+          expect(manualSubmit(tree).props.disabled).toBe(false);
+
+          checkIn.mockResolvedValue({});
+          await sendAgain(tree);
+          expect(checkIn).toHaveBeenCalledTimes(2);
+          expect(checkIn).toHaveBeenLastCalledWith(
+            expect.objectContaining({ eventId: "evt-1" }),
+          );
+          expect(screenText(tree)).toContain("You're checked in");
+        } finally {
+          act(() => tree.unmount());
+        }
       }
     }
   });
@@ -1027,6 +1086,103 @@ describe("Check-in's manual code", () => {
       expect(checkIn).toHaveBeenCalledTimes(1);
       act(() => tree.unmount());
     });
+  });
+});
+
+describe("Check-in after a failed attempt", () => {
+  beforeEach(() => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      eventId: "evt-1",
+    });
+    checkIn.mockReset();
+  });
+
+  it("sends the same event's next scan, and its next typed code", async () => {
+    // The latch is released when the check-in fails as well as when it
+    // lands. Left held, the scanner would look armed and drop every code.
+    for (const attempt of [
+      (tree: ReactTestRenderer) => scan(tree, qrFor("evt-1")),
+      (tree: ReactTestRenderer) => submitManualCode(tree),
+    ]) {
+      checkIn.mockReset();
+      checkIn.mockRejectedValueOnce(FAILED).mockResolvedValue({});
+      const tree = render();
+      try {
+        await attempt(tree);
+        expect(screenText(tree)).toContain(FAILED.message);
+
+        await attempt(tree);
+        expect(checkIn).toHaveBeenCalledTimes(2);
+        expect(screenText(tree)).toContain("You're checked in");
+      } finally {
+        act(() => tree.unmount());
+      }
+    }
+  });
+});
+
+/**
+ * What the real `useCheckIn` makes of a response the API never shaped. An
+ * edge's empty-bodied 5xx (during a deploy, say) is `error: undefined` or
+ * `""` to openapi-fetch 0.17, so a hook that trusted `error` would resolve,
+ * and the screen would confirm a check-in nothing wrote. Check-in has no
+ * outbox: the member would leave believing they were on the roster.
+ */
+describe("Check-in on an empty-bodied 5xx", () => {
+  beforeEach(() => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      eventId: "evt-1",
+    });
+    successHaptic.mockClear();
+    vi.mocked(AccessibilityInfo.announceForAccessibility).mockClear();
+    state.realCheckIn = true;
+  });
+  afterEach(() => {
+    state.realCheckIn = false;
+  });
+
+  it("says the check-in didn't go through, and leaves the scanner armed to try again", async () => {
+    for (const error of [undefined, ""] as const) {
+      const post = vi.fn(async () => ({
+        data: undefined,
+        error,
+        response: new Response(null, { status: 502 }),
+      }));
+      const tree = renderWithClient({ POST: post });
+      try {
+        await scan(tree, qrFor("evt-1"));
+        expect(post).toHaveBeenCalledTimes(1);
+
+        const text = screenText(tree);
+        expect(text).not.toContain("You're checked in");
+        expect(text).toContain("Couldn't check you in.");
+        expect(successHaptic).not.toHaveBeenCalled();
+        expect(
+          AccessibilityInfo.announceForAccessibility,
+        ).not.toHaveBeenCalled();
+        expect(camera(tree).props.onBarcodeScanned).toEqual(
+          expect.any(Function),
+        );
+      } finally {
+        act(() => tree.unmount());
+      }
+    }
+  });
+
+  it("confirms a check-in the API answered with a 2xx", async () => {
+    // The same path, so the spec above fails for the right reason.
+    const post = vi.fn(async () => ({
+      data: {},
+      error: undefined,
+      response: new Response(null, { status: 201 }),
+    }));
+    const tree = renderWithClient({ POST: post });
+    try {
+      await scan(tree, qrFor("evt-1"));
+      expect(screenText(tree)).toContain("You're checked in");
+    } finally {
+      act(() => tree.unmount());
+    }
   });
 });
 

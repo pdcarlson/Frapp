@@ -14,10 +14,38 @@ import {
   isCheckInCodesUnconfigured,
   isTransientCheckInFailure,
   useAttendance,
+  useAutoAbsent,
   useCheckIn,
   useMintCheckInToken,
+  useUpdateAttendanceStatus,
 } from "./use-attendance";
 import { FrappClientProvider } from "./use-frapp-client";
+
+/** A 2xx, as openapi-fetch resolves it. */
+const answered = (data: unknown, status = 200) => ({
+  data,
+  error: undefined,
+  response: { status, ok: true },
+});
+
+/** A refusal, as openapi-fetch resolves it: the API's error body. */
+const refusedWith = (error: { statusCode: number; message?: unknown }) => ({
+  data: undefined,
+  error,
+  response: { status: error.statusCode, ok: false },
+});
+
+/**
+ * openapi-fetch 0.17's shape for a non-2xx with an empty body, such as an
+ * edge's 502 during a deploy: `error: undefined` when the response says
+ * `Content-Length: 0`, `""` otherwise. Both are falsy, so only the status
+ * tells it from a success.
+ */
+const emptyBodied = (status: number, error: undefined | "" = undefined) => ({
+  data: undefined,
+  error,
+  response: { status, ok: false },
+});
 
 describe("useAttendance", () => {
   let queryClient: QueryClient;
@@ -54,10 +82,7 @@ describe("useAttendance", () => {
       },
     ];
 
-    const mockGet = vi.fn().mockResolvedValue({
-      data: mockAttendance,
-      error: null,
-    });
+    const mockGet = vi.fn().mockResolvedValue(answered(mockAttendance));
 
     const mockClient = {
       GET: mockGet,
@@ -78,11 +103,8 @@ describe("useAttendance", () => {
   });
 
   it("surfaces an error when attendance request fails", async () => {
-    const mockError = new Error("Failed to fetch attendance");
-    const mockGet = vi.fn().mockResolvedValue({
-      data: null,
-      error: mockError,
-    });
+    const mockError = { statusCode: 404, message: "Event not found" };
+    const mockGet = vi.fn().mockResolvedValue(refusedWith(mockError));
 
     const mockClient = {
       GET: mockGet,
@@ -97,6 +119,20 @@ describe("useAttendance", () => {
     });
 
     expect(result.current.error).toBe(mockError);
+  });
+
+  it("fails on an empty-bodied 5xx rather than reading a roster of nothing", async () => {
+    for (const error of [undefined, ""] as const) {
+      queryClient.clear();
+      const mockGet = vi.fn().mockResolvedValue(emptyBodied(502, error));
+      const { result, unmount } = renderHook(() => useAttendance("event-1"), {
+        wrapper: createWrapper({ GET: mockGet }),
+      });
+
+      await waitFor(() => expect(result.current.isError).toBe(true));
+      expect(result.current.error).toMatchObject({ statusCode: 502 });
+      unmount();
+    }
   });
 
   it("does not request attendance when the event id is empty", async () => {
@@ -136,7 +172,7 @@ describe("useAttendance", () => {
         | undefined;
 
     it("polls at the interval a caller passes", async () => {
-      const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
+      const mockGet = vi.fn().mockResolvedValue(answered([]));
       renderHook(
         () => useAttendance("event-123", { refetchInterval: 10_000 }),
         { wrapper: createWrapper({ GET: mockGet }) },
@@ -147,7 +183,7 @@ describe("useAttendance", () => {
     });
 
     it("does not poll by default, so web's roster and chat card are unchanged", async () => {
-      const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
+      const mockGet = vi.fn().mockResolvedValue(answered([]));
       renderHook(() => useAttendance("event-123"), {
         wrapper: createWrapper({ GET: mockGet }),
       });
@@ -161,11 +197,10 @@ describe("useAttendance", () => {
       try {
         const mockGet = vi
           .fn()
-          .mockResolvedValueOnce({ data: [{ status: "PRESENT" }], error: null })
-          .mockResolvedValue({
-            data: [{ status: "PRESENT" }, { status: "LATE" }],
-            error: null,
-          });
+          .mockResolvedValueOnce(answered([{ status: "PRESENT" }]))
+          .mockResolvedValue(
+            answered([{ status: "PRESENT" }, { status: "LATE" }]),
+          );
         const { result } = renderHook(
           () => useAttendance("event-123", { refetchInterval: 10_000 }),
           { wrapper: createWrapper({ GET: mockGet }) },
@@ -220,13 +255,7 @@ describe("useMintCheckInToken", () => {
   };
 
   /** A mint whose window has `rotatesInMs` left, as the GET resolves it. */
-  const minted = (rotatesInMs: number) => ({
-    data: { ...MINTED, rotatesInMs },
-    error: null,
-  });
-
-  /** A failed GET, as openapi-fetch resolves it: the API's error body. */
-  const refused = (error: unknown) => ({ data: undefined, error });
+  const minted = (rotatesInMs: number) => answered({ ...MINTED, rotatesInMs });
 
   /** Runs `test` on fake timers, which fake both of the device's clocks. */
   async function withFakeTimers(test: () => Promise<void>) {
@@ -329,7 +358,9 @@ describe("useMintCheckInToken", () => {
       const mockGet = vi
         .fn()
         .mockResolvedValueOnce(minted(7_000))
-        .mockResolvedValueOnce(refused({ statusCode: 502, message: "Bad Gateway" }))
+        .mockResolvedValueOnce(
+          refusedWith({ statusCode: 502, message: "Bad Gateway" }),
+        )
         .mockResolvedValue(minted(30_000));
       const { result } = renderHook(() => useMintCheckInToken("event-123"), {
         wrapper: createWrapper({ GET: mockGet }),
@@ -347,14 +378,89 @@ describe("useMintCheckInToken", () => {
       expect(mockGet).toHaveBeenCalledTimes(3);
     }));
 
+  it("asks again on the fallback poll after a 401, and the renewed sign-in's answer lands", () =>
+    // The phone slept past the access token's expiry. On waking, the focus
+    // refetch beats the token's renewal and goes out with the expired token;
+    // the renewed one then lands without asking this query again.
+    withFakeTimers(async () => {
+      const mockGet = vi
+        .fn()
+        .mockResolvedValueOnce(minted(7_000))
+        .mockResolvedValueOnce(
+          refusedWith({ statusCode: 401, message: "Unauthorized" }),
+        )
+        .mockResolvedValue(minted(30_000));
+      const { result } = renderHook(() => useMintCheckInToken("event-123"), {
+        wrapper: createWrapper({ GET: mockGet }),
+      });
+      await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+
+      await advance(7_600);
+      expect(mockGet).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(result.current.isError).toBe(true));
+      expect(result.current.error).toMatchObject({ statusCode: 401 });
+
+      await advance(10_500);
+      expect(mockGet).toHaveBeenCalledTimes(3);
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(result.current.data?.response).toMatchObject({
+        rotatesInMs: 30_000,
+      });
+    }));
+
+  it("reads an empty-bodied 5xx as the failure it is", () =>
+    withFakeTimers(async () => {
+      for (const error of [undefined, ""] as const) {
+        queryClient.clear();
+        const mockGet = vi
+          .fn()
+          .mockResolvedValueOnce(emptyBodied(502, error))
+          .mockResolvedValue(minted(30_000));
+        const { result, unmount } = renderHook(
+          () => useMintCheckInToken("event-123"),
+          { wrapper: createWrapper({ GET: mockGet }) },
+        );
+        await waitFor(() => expect(result.current.isError).toBe(true));
+        expect(result.current.error).toMatchObject({ statusCode: 502 });
+
+        // Transient, so the fallback poll asks again.
+        await advance(10_500);
+        expect(mockGet).toHaveBeenCalledTimes(2);
+        unmount();
+      }
+    }));
+
+  it("keeps the last code through a rotation refetch answered by an empty-bodied 5xx", () =>
+    // That code still redeems for a window, and s22 goes on drawing it. Read
+    // as a success, the empty answer would replace it with no code at all.
+    withFakeTimers(async () => {
+      const mockGet = vi
+        .fn()
+        .mockResolvedValueOnce(minted(7_000))
+        .mockResolvedValue(emptyBodied(502));
+      const { result } = renderHook(() => useMintCheckInToken("event-123"), {
+        wrapper: createWrapper({ GET: mockGet }),
+      });
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      await advance(7_600);
+      await waitFor(() => expect(result.current.isError).toBe(true));
+      expect(mockGet).toHaveBeenCalledTimes(2);
+      expect(result.current.data?.response).toEqual({
+        ...MINTED,
+        rotatesInMs: 7_000,
+      });
+    }));
+
   it("stops asking after a refusal that asking again won't fix", () =>
     withFakeTimers(async () => {
       for (const refusal of [
         { statusCode: 403, message: "Forbidden" },
+        { statusCode: 404, message: "Event not found" },
         { statusCode: 503, message: CHECK_IN_CODES_UNCONFIGURED_MESSAGE },
       ]) {
         queryClient.clear();
-        const mockGet = vi.fn().mockResolvedValue(refused(refusal));
+        const mockGet = vi.fn().mockResolvedValue(refusedWith(refusal));
         const { result, unmount } = renderHook(
           () => useMintCheckInToken("event-123"),
           { wrapper: createWrapper({ GET: mockGet }) },
@@ -432,6 +538,15 @@ describe("useMintCheckInToken", () => {
           CHECK_IN_TOKEN_FALLBACK_POLL_MS,
         );
       }
+    });
+
+    it("polls on the fallback after a 401, which a renewed sign-in clears", () => {
+      expect(
+        checkInTokenRefetchMs(
+          failed({ statusCode: 401, message: "Unauthorized" }),
+          after(9_999_999),
+        ),
+      ).toBe(CHECK_IN_TOKEN_FALLBACK_POLL_MS);
     });
 
     it("stops after a refusal", () => {
@@ -545,10 +660,9 @@ describe("useCheckIn", () => {
   };
 
   it("calls the check-in endpoint and invalidates attendance query on success", async () => {
-    const mockPost = vi.fn().mockResolvedValue({
-      data: { success: true },
-      error: null,
-    });
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue(answered({ success: true }, 201));
 
     const mockClient = {
       POST: mockPost,
@@ -575,11 +689,8 @@ describe("useCheckIn", () => {
   });
 
   it("surfaces an error when check-in request fails", async () => {
-    const mockError = new Error("Failed to check in");
-    const mockPost = vi.fn().mockResolvedValue({
-      data: null,
-      error: mockError,
-    });
+    const mockError = { statusCode: 400, message: "You're outside the zone." };
+    const mockPost = vi.fn().mockResolvedValue(refusedWith(mockError));
 
     const mockClient = {
       POST: mockPost,
@@ -591,14 +702,32 @@ describe("useCheckIn", () => {
 
     await expect(
       result.current.mutateAsync({ eventId: "event-999" }),
-    ).rejects.toThrowError(mockError);
+    ).rejects.toBe(mockError);
+  });
+
+  it("rejects an empty-bodied 5xx, which wrote nothing, rather than reading it as a check-in", async () => {
+    // An edge's 502 during a deploy. Check-in has no outbox: read as a
+    // success, the member would leave believing they were on the roster.
+    for (const error of [undefined, ""] as const) {
+      const mockPost = vi.fn().mockResolvedValue(emptyBodied(502, error));
+      const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+      const { result, unmount } = renderHook(() => useCheckIn(), {
+        wrapper: createWrapper({ POST: mockPost }),
+      });
+
+      await expect(
+        result.current.mutateAsync({ eventId: "event-123", token: "signed" }),
+      ).rejects.toMatchObject({ statusCode: 502 });
+      expect(invalidateQueriesSpy).not.toHaveBeenCalled();
+      invalidateQueriesSpy.mockRestore();
+      unmount();
+    }
   });
 
   it("ensures queryClient.invalidateQueries is called on success", async () => {
-    const mockPost = vi.fn().mockResolvedValue({
-      data: { success: true },
-      error: null,
-    });
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue(answered({ success: true }, 201));
 
     const mockClient = {
       POST: mockPost,
@@ -624,10 +753,9 @@ describe("useCheckIn", () => {
   // silently dropped `token` would still check members in — just without the
   // code ever having been verified.
   it("sends the scanner token and coordinates as the request body", async () => {
-    const mockPost = vi.fn().mockResolvedValue({
-      data: { success: true },
-      error: null,
-    });
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue(answered({ success: true }, 201));
 
     const { result } = renderHook(() => useCheckIn(), {
       wrapper: createWrapper({ POST: mockPost }),
@@ -646,4 +774,86 @@ describe("useCheckIn", () => {
     });
   });
 
+});
+
+/**
+ * An officer's roster writes. An empty-bodied 5xx would otherwise read as a
+ * status set, or absentees marked, when nothing was written.
+ */
+describe("the officer's attendance writes", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient();
+  });
+
+  const createWrapper = (mockClient: unknown) => {
+    const Wrapper = ({ children }: { children: React.ReactNode }) => (
+      <FrappClientProvider
+        client={mockClient as ReturnType<typeof createFrappClient>}
+      >
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      </FrappClientProvider>
+    );
+
+    Wrapper.displayName = "AttendanceWritesWrapper";
+    return Wrapper;
+  };
+
+  it("rejects an empty-bodied 5xx when setting a member's status", async () => {
+    for (const error of [undefined, ""] as const) {
+      const mockPatch = vi.fn().mockResolvedValue(emptyBodied(502, error));
+      const { result, unmount } = renderHook(
+        () => useUpdateAttendanceStatus(),
+        { wrapper: createWrapper({ PATCH: mockPatch }) },
+      );
+
+      await expect(
+        result.current.mutateAsync({
+          eventId: "event-1",
+          userId: "user-1",
+          body: { status: "PRESENT" },
+        }),
+      ).rejects.toMatchObject({ statusCode: 502 });
+      unmount();
+    }
+  });
+
+  it("rejects an empty-bodied 5xx when marking absentees", async () => {
+    for (const error of [undefined, ""] as const) {
+      const mockPost = vi.fn().mockResolvedValue(emptyBodied(502, error));
+      const { result, unmount } = renderHook(() => useAutoAbsent(), {
+        wrapper: createWrapper({ POST: mockPost }),
+      });
+
+      await expect(result.current.mutateAsync("event-1")).rejects.toMatchObject(
+        { statusCode: 502 },
+      );
+      unmount();
+    }
+  });
+
+  it("resolves with the server's answer on a 2xx", async () => {
+    const mockPatch = vi.fn().mockResolvedValue(answered({ id: "row-1" }));
+    const mockPost = vi.fn().mockResolvedValue(answered({ marked: 3 }, 201));
+    const status = renderHook(() => useUpdateAttendanceStatus(), {
+      wrapper: createWrapper({ PATCH: mockPatch }),
+    });
+    const absent = renderHook(() => useAutoAbsent(), {
+      wrapper: createWrapper({ POST: mockPost }),
+    });
+
+    await expect(
+      status.result.current.mutateAsync({
+        eventId: "event-1",
+        userId: "user-1",
+        body: { status: "LATE" },
+      }),
+    ).resolves.toEqual({ id: "row-1" });
+    await expect(absent.result.current.mutateAsync("event-1")).resolves.toEqual(
+      { marked: 3 },
+    );
+  });
 });
