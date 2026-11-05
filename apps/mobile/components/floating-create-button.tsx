@@ -25,7 +25,7 @@ export type CreateAction = {
 /**
  * The screen's one create action, a glass "+" floating bottom right just above
  * the tab bar, where the thumb already is (owner ask 2026-11-05;
- * `spec/ui/mobile/patterns.md` § Create action). Tasks' New task, Service
+ * `spec/ui/mobile/patterns.md` § Create actions). Tasks' New task, Service
  * hours' Log service hours and Documents' upload all sit here, in the same
  * spot, so a member learns it once. It replaced the accent "+" tile in the
  * title row (`HeaderAddButton`), which sat at the far top corner.
@@ -77,6 +77,9 @@ function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     button: {
       position: "absolute",
+      // Rendered before the screen's content for reading order, so it needs
+      // the lift to draw over it.
+      zIndex: 2,
       right: tokens.spacing.lg,
       width: CREATE_BUTTON_SIZE,
       height: CREATE_BUTTON_SIZE,

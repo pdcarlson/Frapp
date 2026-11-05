@@ -396,17 +396,17 @@ the operating system would draw light controls on a dark page for anyone whose O
 
 ## 15. Glass
 
-Owner pick 2026-11-05 ("Floating bar, no glow"). The recipe is `signetGlass` in `packages/theme/src/glass.ts`, shared by both clients.
+Owner pick 2026-11-05 ("Floating bar, no glow"). The recipe is `signetGlass` in `packages/theme/src/glass.ts`. Mobile reads it through `GlassSurface`; web's dialog and sheet scrims spell the scrim blur as a Tailwind class (`backdrop-blur-[6px]`), so a change to `scrimBlur` moves both.
 
 **Glass is chrome only.** It is for what floats over content: the mobile tab bar, back capsules, the floating create button, and the blur under a sheet or dialog scrim. Never a sheet, a card or an input. Those stay solid steps on the ladder (§2) so their text keeps the contrast measured against a known fill.
 
 | Part | Value |
 | ---- | ----- |
 | Fill | `surface-1` at 56% over a blur, so colour shows through (`glassFill`). Where nothing blurs behind it, 92% |
-| Blur | 26px backdrop blur, saturated 1.75 |
+| Blur | 26px backdrop blur |
 | Edge | 1px (a hairline on mobile) of white at 10%, a step brighter than §3's 8% hairline so the shape reads over any content |
 | Sheen | white at 7% at the top, gone by 46% of the height |
-| Scrim | a 6px blur under the existing 55% black |
+| Scrim | a 6px blur under the existing 55% black, on web's dialogs and sheets. Mobile's sheet scrim has none yet ([#3545](https://github.com/pdcarlson/Frapp/issues/3545)) |
 
 The fill moves with the ladder because it is `surface-1`, never a hex of its own. Elevation stays luminance (§10): the edge and the sheen are light, and glass casts no shadow.
 
@@ -414,7 +414,7 @@ The fill moves with the ladder because it is `surface-1`, never a hex of its own
 
 - **iOS 26:** the system's own Liquid Glass (`expo-glass-effect`), which brings its own refraction and press response, so nothing is layered on top.
 - **iOS before 26, and web:** the blur (`expo-blur`; CSS `backdrop-filter` on web) under the 56% fill, the edge and the sheen.
-- **Android:** the 92% fill with the edge and sheen, no blur, until each screen is wrapped in the blur target Android's blur needs.
+- **Android:** the 92% fill with the edge and sheen, no blur, until each screen is wrapped in the blur target Android's blur needs ([#3545](https://github.com/pdcarlson/Frapp/issues/3545)).
 - **Reduce Transparency on:** plain `surface-1` and §3's hairline, nothing see-through. Web reads `prefers-reduced-transparency`.
 
 `glass-surface.spec.tsx` pins the modes and `glass.spec.ts` the recipe.

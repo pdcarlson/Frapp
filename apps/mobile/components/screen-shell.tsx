@@ -120,37 +120,44 @@ export function ScreenShell({
 
   return (
     <View style={styles.frame}>
+      {/* First in the tree so a screen reader reaches the screen's one create
+          action without swiping past every row; drawn over them by zIndex. */}
+      {createAction ? <FloatingCreateButton {...createAction} /> : null}
       <SafeAreaView
         style={styles.safeArea}
         edges={["top", "left", "right", "bottom"]}
       >
-        {back ? <PinnedBackRow back={back} trailing={backAction} /> : null}
-        <ScrollView
-          contentContainerStyle={[
-            styles.content,
-            back ? { paddingTop: pinnedBackClearance(tokens) } : null,
-            { paddingBottom: tokens.spacing.lg + clearance },
-          ]}
-          refreshControl={
-            refresh ? <ThemedRefreshControl refresh={refresh} /> : undefined
-          }
-        >
-          <View style={styles.header}>
-            <View style={styles.headerRow}>
-              {titleMark}
-              <Text accessibilityRole="header" style={styles.title}>
-                {title}
-              </Text>
-              {headerAction ? (
-                <View style={styles.headerAction}>{headerAction}</View>
+        {/* Unpadded, so the pinned row sits where the content starts. */}
+        <View style={styles.safeArea}>
+          {back ? <PinnedBackRow back={back} trailing={backAction} /> : null}
+          <ScrollView
+            contentContainerStyle={[
+              styles.content,
+              back ? { paddingTop: pinnedBackClearance(tokens) } : null,
+              { paddingBottom: tokens.spacing.lg + clearance },
+            ]}
+            refreshControl={
+              refresh ? <ThemedRefreshControl refresh={refresh} /> : undefined
+            }
+          >
+            <View style={styles.header}>
+              <View style={styles.headerRow}>
+                {titleMark}
+                <Text accessibilityRole="header" style={styles.title}>
+                  {title}
+                </Text>
+                {headerAction ? (
+                  <View style={styles.headerAction}>{headerAction}</View>
+                ) : null}
+              </View>
+              {subtitle ? (
+                <Text style={styles.subtitle}>{subtitle}</Text>
               ) : null}
             </View>
-            {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-          </View>
-          {children}
-        </ScrollView>
+            {children}
+          </ScrollView>
+        </View>
       </SafeAreaView>
-      {createAction ? <FloatingCreateButton {...createAction} /> : null}
     </View>
   );
 }

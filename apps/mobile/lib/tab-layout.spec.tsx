@@ -157,7 +157,7 @@ describe("tab bar inset (#3344)", () => {
       expect(style.height).toBe(62);
       expect(style.paddingTop).toBe(6);
       expect(style.paddingBottom).toBe(6);
-      // Wholly above an Android swipe bar or the iPhone home indicator.
+      // Tucked 8pt into the iPhone home indicator's 34pt inset.
       expect(style.bottom).toBe(34 - 8);
       expect(style.borderRadius).toBe(31);
       expect(style.left).toBe(14);

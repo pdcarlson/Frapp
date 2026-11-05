@@ -10,6 +10,7 @@ import { FrappThemeProvider, typeRole } from "@/lib/theme";
 import { screenText, textHeadings } from "@/test/screen-text";
 import { expectBackRow } from "@/test/back-row";
 import { BACK_TO_MORE } from "./back-row";
+import { floatingScreenLayout } from "@/lib/floating-chrome";
 
 // The back row paints the chapter accent; its value is back-row.spec.tsx's.
 vi.mock("@/lib/chapter-branding", () => ({
@@ -199,5 +200,95 @@ describe("ScreenShell refresh (#3385)", () => {
 
     expect(refreshControl(without)).toBeUndefined();
     expect(refreshControl(withRefresh)).toBeTruthy();
+  });
+});
+
+/**
+ * The floating chrome. Content scrolls under the glass bar, so the shell pads
+ * its scroll end clear of it, and of the create button above it when there is
+ * one; the create button comes first in the tree, so a screen reader reaches
+ * it without swiping past every row.
+ */
+describe("ScreenShell over the floating tab bar", () => {
+  function renderInTabs(element: React.ReactElement) {
+    return render(
+      floatingScreenLayout({
+        route: { name: "tasks" },
+        navigation: { addListener: () => () => {} },
+        options: {},
+        children: element,
+      }),
+    );
+  }
+  const scrollEnd = (tree: ReactTestRenderer) => {
+    const scroll = tree.root.find(
+      (node) => (node.type as unknown) === "ScrollView",
+    );
+    return Object.assign(
+      {},
+      ...[scroll.props.contentContainerStyle].flat(Infinity),
+    ).paddingBottom;
+  };
+  const lg = getSignetTokens("dark").spacing.lg;
+
+  it("ends its scroll clear of the bar", () => {
+    const tree = renderInTabs(
+      <ScreenShell title="Events">
+        <Text>Body</Text>
+      </ScreenShell>,
+    );
+
+    // The safe-area mock's inset is 0: the bar's top is 12 + 62 up, plus 14.
+    expect(scrollEnd(tree)).toBe(lg + 12 + 62 + 14);
+  });
+
+  it("clears the create button too, and puts it first in reading order", () => {
+    const tree = renderInTabs(
+      <ScreenShell
+        title="Tasks"
+        createAction={{ label: "New task", onPress: vi.fn() }}
+      >
+        <Text>Body</Text>
+      </ScreenShell>,
+    );
+
+    expect(scrollEnd(tree)).toBe(lg + 12 + 62 + 14 + 56 + 14);
+    const labels = tree.root
+      .findAll((node) => typeof node.props.accessibilityLabel === "string")
+      .map((node) => node.props.accessibilityLabel);
+    expect(labels[0]).toBe("New task");
+  });
+
+  it("pads nothing extra outside the tabs", () => {
+    const tree = render(
+      <ScreenShell title="Tasks">
+        <Text>Body</Text>
+      </ScreenShell>,
+    );
+
+    expect(scrollEnd(tree)).toBe(lg);
+  });
+
+  it("pins the back row inside the safe area's content, reading no insets", () => {
+    const tree = render(
+      <ScreenShell back={BACK_TO_MORE} title="Dues">
+        <Text>Body</Text>
+      </ScreenShell>,
+    );
+    const pin = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        Object.assign({}, ...[node.props.style].flat(Infinity)).position ===
+          "absolute",
+    );
+
+    // Its parent is a plain View inside the SafeAreaView, so the pin starts
+    // where the content does, under an offline banner as much as a notch.
+    let host = pin.parent;
+    while (host && typeof host.type !== "string") host = host.parent;
+    expect(host?.type).toBe("View");
+    expect(pin.props.style).toMatchObject({
+      top: getSignetTokens("dark").spacing.xs,
+    });
   });
 });

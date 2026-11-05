@@ -20,14 +20,12 @@ export const signetGlass = {
   unblurredFillAlpha: 0.92,
   /** Backdrop blur radius in px (web `backdrop-filter`, iOS before 26 via `expo-blur` intensity). */
   blur: 26,
-  /** Backdrop saturation, so colour under the glass reads as colour rather than mud. */
-  saturate: 1.75,
   /** The 1px edge: white at 10%, a step brighter than the 8% hairline so the shape reads over any content. */
   edge: "rgba(255,255,255,0.10)",
   /** White at the top of the specular sheen, fading to nothing by `specularStop`. */
   specular: 0.07,
   specularStop: 0.46,
-  /** Blur under a sheet or dialog scrim, in px, beneath the existing 55% black. */
+  /** Blur under a sheet or dialog scrim, in px, beneath the existing 55% black. Web spells it `backdrop-blur-[6px]` in `components/ui/dialog.tsx` and `sheet.tsx`; move those with it. */
   scrimBlur: 6,
 } as const;
 

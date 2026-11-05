@@ -133,16 +133,44 @@ describe("BackRow in (auth)", () => {
     ).toEqual(expect.objectContaining({ opacity: 0.5 }));
   });
 
-  it("shows a press", () => {
+  it("shows a press on the glass, as a lift to popover, never a fade", () => {
     const tree = render(<BackRow {...BACK_TO_MORE} />);
+    const capsuleStyle = () =>
+      Object.assign(
+        {},
+        ...[tree.root.findByType(GlassSurface).props.style].flat(Infinity),
+      );
 
-    // A lift to `popover` while held, never an opacity fade
-    // (`spec/ui/mobile/README.md` § Pressing a list row).
-    const held = Object.assign(
-      {},
-      ...[pressable(tree).props.style({ pressed: true })].flat(Infinity),
+    // `spec/ui/mobile/README.md` § Pressing a list row.
+    act(() => {
+      pressable(tree).props.onPressIn();
+    });
+    expect(capsuleStyle().backgroundColor).toBe(
+      signetDarkTokens.color.surface.popover,
     );
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
-    expect(held).not.toHaveProperty("opacity");
+    expect(capsuleStyle()).not.toHaveProperty("opacity");
+
+    act(() => {
+      pressable(tree).props.onPressOut();
+    });
+    expect(capsuleStyle()).not.toHaveProperty("backgroundColor");
+  });
+
+  it("takes taps across a 44pt target, the capsule centred in it", () => {
+    const tree = render(<BackRow {...BACK_TO_MORE} />);
+    const target = Object.assign(
+      {},
+      ...[pressable(tree).props.style].flat(Infinity),
+    );
+
+    // The target is the row, not a hit slop: the glass clips to its capsule,
+    // and a slop outside a clipping parent takes no touches.
+    expect(target.minHeight).toBe(44);
+    expect(target.justifyContent).toBe("center");
+    expect(pressable(tree).props.hitSlop).toBeUndefined();
+    // The capsule sits inside the target, not around it.
+    expect(
+      pressable(tree).findAllByType(GlassSurface),
+    ).toHaveLength(1);
   });
 });

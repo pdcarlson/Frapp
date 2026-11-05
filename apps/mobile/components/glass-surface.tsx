@@ -23,7 +23,7 @@ import { useFrappTheme } from "@/lib/theme";
  *   `backdrop-filter`.
  * - `tinted`: no blur, a near-solid `surface1` fill with the edge and sheen.
  *   Android, until each screen is wrapped in the `BlurTargetView` its blur
- *   needs (tracked as a follow-up); a blur with no target draws nothing useful.
+ *   needs (#3545); a blur with no target draws nothing useful.
  * - `solid`: plain `surface1` and a hairline, nothing see-through. Whenever the
  *   member has Reduce Transparency on.
  */

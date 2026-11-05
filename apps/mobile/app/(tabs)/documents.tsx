@@ -54,14 +54,16 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## Upload, for whoever may
  *
- * Canvas draws an upload glyph at the far end of the `‹ More` row, opening the
- * s21 sheet (`components/documents/upload-document-sheet.tsx`, #3399). It is
+ * The floating create button (Upload document) opens the s21 sheet
+ * (`components/documents/upload-document-sheet.tsx`, #3399). Canvas draws an
+ * upload glyph at the far end of the `‹ More` row; it moved to the thumb's
+ * reach on 2026-11-05 (`spec/ui/mobile/patterns.md` § Create actions). It is
  * drawn only for a viewer who holds `chapter_docs:upload`, the permission both
  * upload routes carry, as web's `<Can permission="chapter_docs:upload">` does:
  * by default that is the President alone (`DEFAULT_SYSTEM_ROLES`), so most
  * members never see a control the server would refuse them. `can` reads the
  * owner's `*` the way the server's guard does. While the permission read is
- * loading the glyph is absent, which fails closed.
+ * loading the button is absent, which fails closed.
  *
  * Photos only: a PDF needs `expo-document-picker`, a native module that waits
  * for a store build.

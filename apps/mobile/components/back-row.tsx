@@ -1,23 +1,29 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { SignetTokens } from "@repo/theme/signet";
 import { GlassSurface } from "@/components/glass-surface";
-import { usePressFeedback } from "@/components/list-section";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
-/** The capsule as drawn: 36pt tall, fully round, a 44pt target with its slop. */
+/** The capsule as drawn: 36pt tall and fully round. */
 export const BACK_CAPSULE_HEIGHT = 36;
 
 /**
- * Top padding a screen's scrolling content takes under a pinned capsule: the
- * capsule's offset, its height and the gap to the title.
+ * The row's touch target, 44pt (`touch.minimum`), with the capsule centred in
+ * it. The target is the row itself rather than a hit slop, because the glass
+ * clips to its capsule and a slop outside a clipping parent takes no touches.
+ */
+export const BACK_ROW_HEIGHT = 44;
+
+/**
+ * Top padding a screen's scrolling content takes under a pinned row: the row's
+ * offset, its height and the gap to the title. The capsule lands where an
+ * in-flow row's would, 8pt down with 12pt under it.
  */
 export function pinnedBackClearance(tokens: SignetTokens): number {
-  return tokens.spacing.sm + BACK_CAPSULE_HEIGHT + tokens.spacing.md;
+  return tokens.spacing.xs + BACK_ROW_HEIGHT + tokens.spacing.sm;
 }
 
 /** Where a back row leads: the name it shows, and the route it opens. */
@@ -41,7 +47,7 @@ type BackRowProps = {
   label: string;
   /**
    * A control at the row's far end, where the board draws s15's Edit
-   * (`‹ More` … `Edit`) and s12's upload glyph, and setup its progress ticks.
+   * (`‹ More` … `Edit`), and setup its progress ticks.
    * Optional; every other screen draws the row alone.
    */
   trailing?: ReactNode;
@@ -125,43 +131,50 @@ function BackRowView({
   const router = useRouter();
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const feedback = usePressFeedback({ onCard: true });
+  // Held state drives the capsule's lift. The glass, not the target, is what
+  // lifts, so the feedback keeps the capsule's shape on every platform rather
+  // than an Android ripple filling the 44pt rectangle around it.
+  const [held, setHeld] = useState(false);
 
   return (
     <View style={styles.row} testID="back-row">
-      <GlassSurface style={[styles.capsule, disabled ? styles.disabled : null]}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={accessibilityLabel ?? `Back to ${label}`}
-          accessibilityState={disabled ? { disabled } : undefined}
-          disabled={disabled}
-          // 36pt drawn; the slop brings the target to the 44pt minimum.
-          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-          android_ripple={disabled ? undefined : feedback.ripple}
-          onPress={() => {
-            if (onPress) onPress();
-            else if (href) router.navigate(href);
-          }}
-          style={({ pressed }) => [
-            styles.press,
-            disabled ? null : feedback.lift(pressed),
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel ?? `Back to ${label}`}
+        accessibilityState={disabled ? { disabled } : undefined}
+        disabled={disabled}
+        onPressIn={() => setHeld(true)}
+        onPressOut={() => setHeld(false)}
+        onPress={() => {
+          if (onPress) onPress();
+          else if (href) router.navigate(href);
+        }}
+        style={styles.target}
+      >
+        <GlassSurface
+          style={[
+            styles.capsule,
+            held && !disabled ? styles.held : null,
+            disabled ? styles.disabled : null,
           ]}
         >
-          <Svg
-            width={18}
-            height={18}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={color}
-            strokeWidth={2.2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <Path d="m14.5 6-6 6 6 6" />
-          </Svg>
-          <Text style={styles.text}>{label}</Text>
-        </Pressable>
-      </GlassSurface>
+          <View style={styles.content}>
+            <Svg
+              width={18}
+              height={18}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={color}
+              strokeWidth={2.2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <Path d="m14.5 6-6 6 6 6" />
+            </Svg>
+            <Text style={styles.text}>{label}</Text>
+          </View>
+        </GlassSurface>
+      </Pressable>
       {trailing}
     </View>
   );
@@ -174,14 +187,23 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "space-between",
       gap: tokens.spacing.sm,
-      marginBottom: tokens.spacing.sm,
+      // The 44pt target already carries 4pt of air under the capsule.
+      marginBottom: tokens.spacing.xs,
+    },
+    target: {
+      alignSelf: "flex-start",
+      minHeight: BACK_ROW_HEIGHT,
+      justifyContent: "center",
     },
     capsule: {
-      alignSelf: "flex-start",
       height: BACK_CAPSULE_HEIGHT,
       borderRadius: BACK_CAPSULE_HEIGHT / 2,
     },
-    press: {
+    // A press lifts the glass to the popover step, as a list row lifts.
+    held: {
+      backgroundColor: tokens.color.surface.popover,
+    },
+    content: {
       flex: 1,
       flexDirection: "row",
       alignItems: "center",
@@ -204,10 +226,17 @@ function createStyles(tokens: SignetTokens) {
 /**
  * A back capsule pinned over a screen's top left, so the way back never
  * scrolls away (`spec/ui/mobile/navigation.md` § Back rows). Render it inside
- * the screen's safe area, before the scroll view: first in the tree, so a
- * screen reader meets it before the title, and `zIndex` draws it over the
- * content that scrolls under it. The scroll view's content takes
- * `pinnedBackClearance` at its top.
+ * a plain View that fills the safe area's content box, before the scroll
+ * view: first in the tree, so a screen reader meets it before the title, and
+ * `zIndex` draws it over the content that scrolls under it. The scroll view's
+ * content takes `pinnedBackClearance` at its top.
+ *
+ * It reads no insets. An absolute child ignores its parent's padding, so a
+ * `SafeAreaView` parent would put it under the notch, and adding
+ * `useSafeAreaInsets().top` by hand double-counts whenever something above
+ * the screen (the offline banner) has already taken the inset and the native
+ * safe area pads 0. Inside an unpadded View within the safe area, it sits
+ * where the content starts whatever pushed it there.
  */
 export function PinnedBackRow({
   back,
@@ -217,17 +246,14 @@ export function PinnedBackRow({
   trailing?: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
-  const insets = useSafeAreaInsets();
   return (
     <View
-      // An absolute child ignores the safe area's padding, so it adds the
-      // insets itself.
       style={{
         position: "absolute",
         zIndex: 1,
-        top: insets.top + tokens.spacing.sm,
-        left: insets.left + tokens.spacing.lg,
-        right: insets.right + tokens.spacing.lg,
+        top: tokens.spacing.xs,
+        left: tokens.spacing.lg,
+        right: tokens.spacing.lg,
       }}
       pointerEvents="box-none"
     >

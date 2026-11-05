@@ -9,8 +9,8 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
 /**
- * #3399. s12 draws the board's upload glyph on its `‹ More` row only for a
- * viewer who holds `chapter_docs:upload`, the permission both upload routes
+ * #3399. s12 draws its floating Upload document button only for a viewer who
+ * holds `chapter_docs:upload`, the permission both upload routes
  * carry, so a member never meets a control the server would refuse.
  *
  * It renders `app/(tabs)/documents.tsx` but lives here: a spec under `app/`

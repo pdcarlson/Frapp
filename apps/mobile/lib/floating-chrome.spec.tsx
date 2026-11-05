@@ -1,5 +1,14 @@
+/** @vitest-environment jsdom */
+import React from "react";
+import { act } from "react";
+import { create } from "react-test-renderer";
 import { describe, expect, it } from "vitest";
-import { floatingTabBarBottom, floatingTabBarTop } from "./floating-chrome";
+import {
+  floatingScreenLayout,
+  floatingTabBarBottom,
+  floatingTabBarTop,
+  useTabBarClearance,
+} from "./floating-chrome";
 
 describe("floatingTabBarBottom", () => {
   it("tucks 8pt into a home indicator or gesture bar", () => {
@@ -17,5 +26,51 @@ describe("floatingTabBarBottom", () => {
 
   it("measures the bar's top as its bottom plus the drawn 62pt", () => {
     expect(floatingTabBarTop(34)).toBe(26 + 62);
+  });
+});
+
+/**
+ * What a screen pads its scroll end by, read through the layout every tab
+ * screen gets. The safe-area mock's bottom inset is 0, so the bar's top is
+ * 12 + 62 off the edge, and the gap adds 14.
+ */
+describe("useTabBarClearance", () => {
+  function clearanceUnder(options: { tabBarStyle?: unknown }): number {
+    let seen = -1;
+    function Probe() {
+      seen = useTabBarClearance();
+      return null;
+    }
+    act(() => {
+      create(
+        floatingScreenLayout({
+          route: { name: "tasks" },
+          navigation: { addListener: () => () => {} },
+          options,
+          children: <Probe />,
+        }),
+      );
+    });
+    return seen;
+  }
+
+  it("clears the bar's top plus the gap on a screen the bar floats over", () => {
+    expect(clearanceUnder({})).toBe(12 + 62 + 14);
+  });
+
+  it("is 0 on a full-window screen, where no bar floats", () => {
+    expect(clearanceUnder({ tabBarStyle: { display: "none" } })).toBe(0);
+  });
+
+  it("is 0 outside the tab layout", () => {
+    let seen = -1;
+    function Probe() {
+      seen = useTabBarClearance();
+      return null;
+    }
+    act(() => {
+      create(<Probe />);
+    });
+    expect(seen).toBe(0);
   });
 });
