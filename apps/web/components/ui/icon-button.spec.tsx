@@ -51,11 +51,14 @@ describe("IconButton", () => {
     ).toHaveAttribute("title", "Revoke the Member invite");
   });
 
-  it("defaults to the quiet paint at the row size", () => {
+  it("defaults to the quiet paint at the scale's Small step", () => {
+    // foundations.md §9: an icon button is 36 to a mouse and 44 to a finger.
     render(<IconButton label="Edit North Library">×</IconButton>);
     const button = screen.getByRole("button", { name: "Edit North Library" });
     expect(button.className).toContain("text-muted-foreground");
+    expect(button.className).toMatch(/(^| )h-9( |$)/);
+    expect(button.className).toMatch(/(^| )w-9( |$)/);
     expect(button.className).toContain("pointer-coarse:h-11");
-    expect(button.className).toContain("h-8");
+    expect(button.className).toContain("pointer-coarse:w-11");
   });
 });

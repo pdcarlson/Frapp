@@ -1,7 +1,6 @@
 import * as React from "react";
 
 import { Button, type ButtonProps } from "@/components/ui/button";
-import { compactControlClassName } from "@/components/shared/table-controls";
 import { cn } from "@/lib/utils";
 
 /*
@@ -33,6 +32,11 @@ import { cn } from "@/lib/utils";
  *
  * Paint defaults to `quiet`: a row action sits in the text's own tone and
  * lights up on hover, so a column of them never outshines the row.
+ *
+ * Size is the Small step of `foundations.md` §9's control size scale, 36 to a
+ * mouse and 44 to a finger, wherever the control sits. It is set here rather
+ * than inherited from Button's `icon` size so the step holds whichever way
+ * that size moves.
  */
 export interface IconButtonProps extends Omit<
   ButtonProps,
@@ -40,18 +44,13 @@ export interface IconButtonProps extends Omit<
 > {
   /** What the control does, for the screen reader and the hover tooltip. */
   label: string;
-  /**
-   * `row` (the default) is 32px on a mouse and the 44px touch floor on a
-   * finger, for list rows and card footers. `standalone` is 44 everywhere.
-   */
-  size?: "row" | "standalone";
 }
 
+/** foundations.md §9's Small step: 36 to a mouse, 44 to a finger. */
+const SMALL_SQUARE = "h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11";
+
 const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
-  (
-    { label, title, size = "row", variant = "quiet", className, ...props },
-    ref,
-  ) => (
+  ({ label, title, variant = "quiet", className, ...props }, ref) => (
     <Button
       ref={ref}
       variant={variant}
@@ -60,7 +59,7 @@ const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
       title={title ? `${label}. ${title}` : label}
       className={cn(
         "disabled:pointer-events-auto disabled:cursor-not-allowed",
-        size === "row" && compactControlClassName,
+        SMALL_SQUARE,
         className,
       )}
       {...props}

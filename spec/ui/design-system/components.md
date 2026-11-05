@@ -114,7 +114,7 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 - Touch has no hover, on the app or on the web dashboard in a phone's browser, so a finger never sees the tooltip. That is why the list above is short: the glyph has to be one a member already knows. If it isn't, the button keeps its word.
 - A label names its object when a screen has several of the same control: "Download Bylaws", "Delete North Library", "Revoke the Member invite", never a column of bare "Delete".
 
-**What it looks like.** A row action is Quiet (above) at 32px to a mouse and 44 to a finger (`IconButton`'s default `row` size, `compactControlClassName`); a standalone one is 44 everywhere. On mobile the glyph is 20pt in a box its own size with 12pt of slop on each side, which reaches the 44pt floor (§2) without taking layout height, so a one-line banner doesn't grow. Every dismiss is the same ×: Lucide `X` on web, `CloseGlyph` on mobile ([iconography.md](iconography.md) §6.1.5). A control that was busy says so in the glyph's place (a spinner) instead of swapping in a word like "Marking…".
+**What it looks like.** An icon button is Quiet (above) and takes the Small step of [foundations.md](foundations.md) §9's control size scale, 36px to a mouse and 44 to a finger, in a row or standing alone (`IconButton` sets it). On mobile the glyph is 20pt in a box its own size with 12pt of slop on each side, which reaches the 44pt floor (§2) without taking layout height, so a one-line banner doesn't grow. Every dismiss is the same ×: Lucide `X` on web, `CloseGlyph` on mobile ([iconography.md](iconography.md) §6.1.5). A control that was busy says so in the glyph's place (a spinner) instead of swapping in a word like "Marking…".
 
 ## 4. Inputs and selection
 

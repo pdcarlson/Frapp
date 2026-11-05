@@ -152,8 +152,6 @@ export function ProfilePhotoControl({
         <IconButton
           type="button"
           label="Remove photo"
-          // The toolbar height, so it stands level with Change photo.
-          className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
           disabled={disabled || busy !== null}
           aria-busy={busy === "remove"}
           onClick={() => void handleRemove()}
