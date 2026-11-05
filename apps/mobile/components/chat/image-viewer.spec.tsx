@@ -2,7 +2,7 @@
 import React, { useEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
-import { AccessibilityInfo, BackHandler, Keyboard } from "react-native";
+import { AccessibilityInfo, BackHandler, Keyboard, Text } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 
@@ -207,7 +207,7 @@ describe("opening and closing", () => {
     expect(subscription.remove).toHaveBeenCalledTimes(1);
   });
 
-  it("moves a screen reader's focus onto its title", () => {
+  it("moves a screen reader's focus onto the image, named after the file", () => {
     // Opening hides the image that had focus, which clears it rather than
     // moving it.
     vi.useFakeTimers();
@@ -221,14 +221,38 @@ describe("opening and closing", () => {
 
       const calls = vi.mocked(AccessibilityInfo.sendAccessibilityEvent).mock
         .calls as unknown as [
-        { element: { props: { children?: unknown } } },
+        { element: { props: { accessibilityLabel?: unknown } } },
         string,
       ][];
       expect(calls).toHaveLength(1);
       expect(calls[0]![1]).toBe("focus");
-      expect(calls[0]![0].element.props.children).toBe("photo-2.png");
+      expect(calls[0]![0].element.props.accessibilityLabel).toBe(
+        "photo-2.png",
+      );
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it("draws no filename and no words on its controls", () => {
+    // A filename is whatever the sender's phone called the file; it is the
+    // image's accessible name, never a caption. The controls are icons.
+    const tree = render();
+    openOn([image(1), image(2)], 0);
+
+    const drawn = tree.root
+      .findAllByType(Text)
+      .map((node) => JSON.stringify(node.props.children));
+    expect(drawn.join(" ")).not.toContain("photo-1.png");
+    for (const label of [
+      "Close image",
+      "Share image",
+      "Previous image",
+      "Next image",
+    ]) {
+      expect(
+        button(tree, label).findAllByType(Text),
+      ).toHaveLength(0);
     }
   });
 
