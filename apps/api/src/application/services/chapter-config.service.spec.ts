@@ -612,6 +612,54 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       );
     });
 
+    // The 2026-11-05 prod incident: Settings → Chapter → Save mark sent
+    // `{ short_name, show_greek_letters }`, the DTO arrived with an own
+    // `undefined` for every other branding key, and the merge stored their
+    // absence: accent, letters, designation, school and founding year gone,
+    // and the palette re-derived from no seed. An `undefined` is a key the
+    // client never sent, so the stored value stands.
+    it('keeps every stored branding key a PATCH carries only as undefined', async () => {
+      const stored = {
+        colors: { accent: '#35005F' },
+        greek_letters: 'ΦΓΔ',
+        designation: 'Tau Nu',
+        school_short: 'RPI',
+        founded_at: 1878,
+      };
+      const repos = makeRepos([], null, {}, null, null, {
+        chapterBranding: stored,
+      });
+      const service = await buildService(repos);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        branding: {
+          short_name: 'FIJI',
+          show_greek_letters: false,
+          greek_letters: undefined,
+          designation: undefined,
+          school_short: undefined,
+          founded_at: undefined,
+          colors: undefined,
+        },
+      });
+
+      const [, write] = repos.chapterUpdate.mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      expect(write.branding).toEqual({
+        ...stored,
+        short_name: 'FIJI',
+        show_greek_letters: false,
+      });
+      expect(write).not.toHaveProperty('accent_color');
+      expect(repos.paletteWrite).toHaveBeenCalledWith(
+        CHAPTER_ID,
+        expect.anything(),
+        '#35005F',
+      );
+    });
+
     it('leaves the engine stamp alone on a PATCH that writes no branding', async () => {
       const repos = makeRepos([]);
       const service = await buildService(repos);
