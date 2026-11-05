@@ -160,8 +160,8 @@ describe("Directory on the greenfield shell", () => {
     expect(list?.querySelectorAll("li")).toHaveLength(MEMBERS.length);
     expect(cardFilledContainers(container)).toHaveLength(0);
 
-    // The card titles the wrappers carried are gone with them. `PageHeader`
-    // owns the route's only heading and it lives one component up.
+    // The card titles the wrappers carried are gone with them. The top bar
+    // owns the route's only heading (`top-bar.tsx`).
     expect(screen.queryByText("Members Directory")).toBeNull();
     expect(screen.queryByText("Member Records")).toBeNull();
     expect(

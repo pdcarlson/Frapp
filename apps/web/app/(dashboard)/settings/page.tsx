@@ -1,7 +1,7 @@
 import { SettingsPage } from "@/components/settings/settings-page";
 
 export const metadata = {
-  title: "Chapter settings",
+  title: "Settings",
 };
 
 export default function Settings() {
