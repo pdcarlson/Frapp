@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { sheetFieldStyles } from "@/components/sheet-scaffold";
+import { flatStyle } from "@/test/flat-style";
 import { OnboardingTextInput } from "./onboarding-field";
 
 /**
@@ -13,13 +14,6 @@ import { OnboardingTextInput } from "./onboarding-field";
  * 44pt tall, held at the spec's 48 for sign-in, join and setup. That height
  * is one override on a shared style other work edits, so it's pinned here.
  */
-
-function flat(style: unknown): Record<string, unknown> {
-  if (Array.isArray(style)) {
-    return Object.assign({}, ...style.map((item) => flat(item)));
-  }
-  return (style ?? {}) as Record<string, unknown>;
-}
 
 function renderField(): ReactTestRenderer["root"] {
   let tree!: ReactTestRenderer;
@@ -42,7 +36,7 @@ describe("OnboardingTextInput", () => {
     ).field;
 
     expect(sheetField.minHeight).toBe(signetDarkTokens.touch.minimum);
-    expect(flat(input.props.style).minHeight).toBe(
+    expect(flatStyle(input.props.style).minHeight).toBe(
       signetDarkTokens.touch.buttonLarge,
     );
   });

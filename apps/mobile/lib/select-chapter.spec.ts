@@ -125,6 +125,37 @@ describe("useSelectChapter", () => {
     expect(mockState.calls).toEqual(["activate:chapter-a", "refreshSession"]);
   });
 
+  it("says when the activate has landed, before the refresh", async () => {
+    // The chapter picker reads this to tell a refused switch (nothing moved)
+    // from one the server took while the token stayed put.
+    const selectChapter = renderSelect();
+    const onActivated = vi.fn(() => mockState.calls.push("onActivated"));
+
+    mockState.refreshError = { message: "network down" };
+    await expect(selectChapter("chapter-a", { onActivated })).resolves.toBe(
+      false,
+    );
+    expect(mockState.calls).toEqual([
+      "activate:chapter-a",
+      "onActivated",
+      "refreshSession",
+    ]);
+  });
+
+  it("doesn't say so when the activate fails or can't be sent", async () => {
+    const onActivated = vi.fn();
+    mockState.activateError = new Error("activate failed");
+    await expect(renderSelect()("chapter-a", { onActivated })).resolves.toBe(
+      false,
+    );
+
+    mockState.client = null;
+    await expect(renderSelect()("chapter-a", { onActivated })).resolves.toBe(
+      false,
+    );
+    expect(onActivated).not.toHaveBeenCalled();
+  });
+
   it("never throws, so a caller cannot roll back a completed action", async () => {
     mockState.activateError = new Error("boom");
     const selectChapter = renderSelect();

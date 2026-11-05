@@ -139,7 +139,7 @@ function createStyles(tokens: SignetTokens, color: string) {
     pressed: {
       opacity: 0.6,
     },
-    // ListRow's disabled treatment: a control that can't respond looks it.
+    // The whole row dims while it holds: a control that can't respond looks it.
     disabled: {
       opacity: 0.5,
     },

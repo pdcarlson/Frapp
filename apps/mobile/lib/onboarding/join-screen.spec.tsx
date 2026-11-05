@@ -15,6 +15,7 @@ import {
   DELETE_ACCOUNT_FAILURE_BODY,
   DELETE_ACCOUNT_FAILURE_TITLE,
 } from "@/lib/account/delete-account-prompt";
+import { flatStyle } from "@/test/flat-style";
 
 /**
  * #2295 — Apple 5.1.1(v).
@@ -251,15 +252,6 @@ function textOf(children: unknown): string {
   }
   if (Array.isArray(children)) return children.map(textOf).join("");
   return "";
-}
-
-/** Resolves a `({ pressed }) => style` the way Pressable would. */
-function flat(style: unknown, pressed = false): Record<string, unknown> {
-  if (typeof style === "function") return flat(style({ pressed }), pressed);
-  if (Array.isArray(style)) {
-    return Object.assign({}, ...style.map((item) => flat(item, pressed)));
-  }
-  return (style ?? {}) as Record<string, unknown>;
 }
 
 function allText(root: Node): string {
@@ -1372,19 +1364,19 @@ describe("join screen — polish", () => {
       const row = control(tree.root, label)!;
       // `ListRow`'s press on iOS (the suite's platform): one rung up the
       // surface ladder, with no dim.
-      expect(flat(row.props.style, true).backgroundColor).toBe(
+      expect(flatStyle(row.props.style, true).backgroundColor).toBe(
         signetDarkTokens.color.surface.card,
       );
-      expect(flat(row.props.style, true).opacity).toBeUndefined();
+      expect(flatStyle(row.props.style, true).opacity).toBeUndefined();
     }
 
-    // A deletion running locks both rows, at `ListRow`'s disabled dim.
+    // A deletion running locks both rows, each dimmed whole to 0.5.
     isPending = true;
     const locked = render();
     for (const label of ["Sign out", "Deleting account"]) {
       const row = control(locked.root, label)!;
       expect(row.props.disabled).toBe(true);
-      expect(flat(row.props.style, false).opacity).toBe(0.5);
+      expect(flatStyle(row.props.style, false).opacity).toBe(0.5);
     }
   });
 

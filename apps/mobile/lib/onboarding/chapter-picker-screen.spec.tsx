@@ -15,8 +15,9 @@ import { drawnText } from "@/test/screen-text";
  * anchored under it, so "something to go back to" doesn't mean More. The row
  * goes back rather than opening More again, and holds while a switch runs. The
  * chapter that's open now is marked, and a tap on it selects it again like any
- * row, since the mark reads a token claim that can lag the server; unlike any
- * other row, it leaves even when that fails.
+ * row, since the mark reads a token claim that can lag the server. Unlike any
+ * other row, it leaves even when that fails, unless a switch made since the
+ * picker opened may have put the server on another chapter.
  *
  * Here, not beside the screen: a spec under `app/` is a route module and
  * ships in the bundle (`lib/routes.spec.ts`).
@@ -95,6 +96,22 @@ function pendingSwitch(): (ok: boolean) => Promise<void> {
       settle(ok);
     });
   };
+}
+
+/** The chapters the picker asked `selectChapter` for, in order. */
+const selected = () => selectChapter.mock.calls.map(([id]) => id);
+
+/**
+ * A switch whose activate lands and whose refresh then fails: the server holds
+ * the chapter while the token in hand, and so `Current`, doesn't.
+ */
+function halfAppliedSwitch() {
+  selectChapter.mockImplementationOnce(
+    async (_id: string, options?: { onActivated?: () => void }) => {
+      options?.onActivated?.();
+      return false;
+    },
+  );
 }
 
 function rowFor(root: Node, name: string): Node {
@@ -216,7 +233,7 @@ describe("chapter picker, opened from More", () => {
     await act(async () => {
       current.props.onPress();
     });
-    expect(selectChapter).toHaveBeenCalledWith("chapter-tau-nu");
+    expect(selected()).toEqual(["chapter-tau-nu"]);
     expect(router.back).toHaveBeenCalledTimes(1);
   });
 
@@ -229,7 +246,63 @@ describe("chapter picker, opened from More", () => {
     await act(async () => {
       rowFor(tree.root, "FIJI Tau Nu").props.onPress();
     });
-    expect(selectChapter).toHaveBeenCalledWith("chapter-tau-nu");
+    expect(selected()).toEqual(["chapter-tau-nu"]);
+    expect(router.back).toHaveBeenCalledTimes(1);
+    expect(drawnText(tree.root)).not.toContain("Could not switch chapters");
+  });
+
+  it("keeps the error on the Current row after a switch here reached the server", async () => {
+    const tree = render();
+    halfAppliedSwitch();
+    await act(async () => {
+      rowFor(tree.root, "Sigma Phi Epsilon").props.onPress();
+    });
+    expect(drawnText(tree.root)).toContain("Could not switch chapters");
+
+    // The way back fails outright. The server is on Sigma Phi Epsilon, so the
+    // next token would move the member there: leaving would hide that.
+    selectChapter.mockResolvedValueOnce(false);
+    await act(async () => {
+      rowFor(tree.root, "FIJI Tau Nu").props.onPress();
+    });
+    expect(selected()).toEqual(["chapter-eta", "chapter-tau-nu"]);
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(drawnText(tree.root)).toContain("Could not switch chapters");
+  });
+
+  it("leaves from the Current row once the way back reaches the server", async () => {
+    const tree = render();
+    halfAppliedSwitch();
+    await act(async () => {
+      rowFor(tree.root, "Sigma Phi Epsilon").props.onPress();
+    });
+
+    // Its activate lands, so the server is back on the chapter the token
+    // names, and only the refresh after it fails.
+    halfAppliedSwitch();
+    await act(async () => {
+      rowFor(tree.root, "FIJI Tau Nu").props.onPress();
+    });
+    expect(selected()).toEqual(["chapter-eta", "chapter-tau-nu"]);
+    expect(router.back).toHaveBeenCalledTimes(1);
+    expect(drawnText(tree.root)).not.toContain("Could not switch chapters");
+  });
+
+  it("leaves from the Current row after a switch whose activate failed", async () => {
+    // Nothing reached the server, so it never left FIJI Tau Nu.
+    const tree = render();
+    selectChapter.mockResolvedValueOnce(false);
+    await act(async () => {
+      rowFor(tree.root, "Sigma Phi Epsilon").props.onPress();
+    });
+    expect(drawnText(tree.root)).toContain("Could not switch chapters");
+
+    selectChapter.mockResolvedValueOnce(false);
+    await act(async () => {
+      rowFor(tree.root, "FIJI Tau Nu").props.onPress();
+    });
+    expect(selected()).toEqual(["chapter-eta", "chapter-tau-nu"]);
     expect(router.back).toHaveBeenCalledTimes(1);
     expect(drawnText(tree.root)).not.toContain("Could not switch chapters");
   });
@@ -241,7 +314,7 @@ describe("chapter picker, opened from More", () => {
     await act(async () => {
       rowFor(tree.root, "Sigma Phi Epsilon").props.onPress();
     });
-    expect(selectChapter).toHaveBeenCalledWith("chapter-eta");
+    expect(selected()).toEqual(["chapter-eta"]);
     expect(router.back).not.toHaveBeenCalled();
     expect(router.replace).not.toHaveBeenCalled();
     expect(drawnText(tree.root)).toContain("Could not switch chapters");
@@ -253,7 +326,7 @@ describe("chapter picker, opened from More", () => {
     await act(async () => {
       rowFor(tree.root, "Sigma Phi Epsilon").props.onPress();
     });
-    expect(selectChapter).toHaveBeenCalledWith("chapter-eta");
+    expect(selected()).toEqual(["chapter-eta"]);
     expect(router.back).toHaveBeenCalledTimes(1);
   });
 });

@@ -47,7 +47,7 @@ The admin section renders only for members whose role grants the underlying perm
 Two rows above are not drawn in Canvas and exist for reachability:
 
 - **Service hours** — `service-hours.tsx` is a live route hosting the s20 sheet, and without a row it would be unreachable.
-- **Switch chapter** — the only entry to `(auth)/chapter-picker.tsx`. The picker is deliberately *not* forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why claim-absence is not a destination), so it needs a door.
+- **Switch chapter** — the only in-app entry to `(auth)/chapter-picker.tsx` (a `frapp://chapter-picker` link also opens it). The picker is deliberately *not* forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why claim-absence is not a destination), so it needs a door.
 
 **Implementation status.** Every row above except Adjust points is routed, the admin section included — its gate landed with C4 of #937. The gate is `usePermissionList()` (a thin wrapper over `useMyPermissions()`) plus `can` from `@repo/validation` (`canAny` when a gate is composite), never a bare `permissions.includes(…)`: an owner's grant is the wildcard `*`, so a membership test would hide these rows from exactly the people they exist for. Today the section's gate is `events:update` alone — see Host check-in below.
 

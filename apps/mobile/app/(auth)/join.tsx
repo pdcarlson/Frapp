@@ -879,9 +879,10 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
       textAlign: "center",
     },
-    // Mirrors `ListRow`'s disabled treatment: a control that cannot respond has
-    // to look like it, or a user on a slow delete taps a dead full-strength
-    // button and concludes the app has frozen.
+    // The Account menu's rows, while a join or a deletion is in flight
+    // (`submitting`): each row dims as a whole, to 0.5. A control that cannot
+    // respond has to look like it, or a user on a slow delete taps a dead
+    // full-strength button and concludes the app has frozen.
     disabled: {
       opacity: 0.5,
     },

@@ -29,11 +29,27 @@ import { getSupabaseClient } from "./supabase";
  *
  * See spec/behavior/multi-tenancy.md.
  */
+export interface SelectChapterOptions {
+  /**
+   * Called once step 1 has landed, before the refresh: from here the server
+   * holds `chapterId` whatever the result says. So a `false` result after this
+   * call means the server moved and the token in hand didn't, and a `false`
+   * with no call means nothing changed anywhere. Only the chapter picker needs
+   * the difference (`app/(auth)/chapter-picker.tsx`); join and chapter setup
+   * call with the id alone. Keep it to bookkeeping: it runs inside a selection
+   * that otherwise never throws.
+   */
+  onActivated?: () => void;
+}
+
 export function useSelectChapter() {
   const activateChapter = useActivateChapter();
 
   return useCallback(
-    async (chapterId: string): Promise<boolean> => {
+    async (
+      chapterId: string,
+      options?: SelectChapterOptions,
+    ): Promise<boolean> => {
       const supabase = getSupabaseClient();
       if (!supabase) return false;
 
@@ -41,9 +57,11 @@ export function useSelectChapter() {
         await activateChapter.mutateAsync(chapterId);
       } catch {
         // Nothing happened server-side, so the member is exactly where they
-        // started and a retry is safe.
+        // started and a retry is safe. (Short of an answer lost on the way
+        // back after the server applied it, which nothing here can see.)
         return false;
       }
+      options?.onActivated?.();
 
       // `refreshSession` reports failure BOTH ways, so both have to be handled.
       //
@@ -72,7 +90,9 @@ export function useSelectChapter() {
         // the token in hand still carries the old claim, so the switch has not
         // taken effect — but the next token issuance will pick the new chapter
         // up. Nothing local was written either way, so `x-chapter-id` never
-        // disagrees with the token and no request 403s in the meantime.
+        // disagrees with the token and no request 403s in the meantime. A
+        // caller that has to tell this apart from a refused activate passes
+        // `onActivated`, which has already run by now.
         return false;
       }
 
