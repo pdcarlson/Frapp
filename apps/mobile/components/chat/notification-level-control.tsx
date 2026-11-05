@@ -172,8 +172,12 @@ export function NotificationLevelControl({
       onPress={menu.toggle}
       style={({ pressed }) => [styles.trigger, pressed ? styles.pressed : null]}
     >
+      {/*
+        The glyph alone (components.md § Icon-only actions). Muted already
+        draws its own × over the speaker, and the label says "Muted" to a
+        screen reader, so a "Muted" word beside it said the same thing twice.
+      */}
       <MuteGlyph color={glyphColor} active={isMuted} size={24} />
-      {isMuted ? <Text style={styles.mutedLabel}>Muted</Text> : null}
     </Pressable>
   );
 }
@@ -292,10 +296,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       minHeight: 44,
       minWidth: 44,
       justifyContent: "center",
-    },
-    mutedLabel: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.foreground,
     },
     pressed: {
       opacity: 0.6,

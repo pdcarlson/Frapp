@@ -24,8 +24,8 @@
  *
  * **Control furniture stays Lucide**, as it does in the shell, in chat and in
  * the Directory family (§6.2.2, §6.2.3). That is `Loader2`, `AlertCircle`,
- * `AlertTriangle`, `Trash2`, `Plus`, `Save`, and the event sheet's header
- * `Pencil` and `CalendarPlus`, plus — and this is the line
+ * `AlertTriangle`, `Trash2`, `Pencil`, `Plus`, `Save`, and the event sheet's
+ * `CalendarPlus`, plus — and this is the line
  * worth stating, because this family has more of them than any other — every
  * pair that names a *control's own action* rather than a domain object:
  * `Play`/`Pause`/`Square` on the study timer, `Eye`/`EyeOff` on its tracking

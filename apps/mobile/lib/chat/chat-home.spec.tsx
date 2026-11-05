@@ -44,6 +44,7 @@ const {
   queryErrors,
   notificationsData,
   channelsState,
+  refetches,
 } = vi.hoisted(() => ({
   channelsData: { value: [] as unknown[] },
   categoriesData: { value: [] as unknown },
@@ -88,6 +89,19 @@ const {
       refetch: vi.fn(),
     },
   },
+  // Each read's refetch but the channels' (in `channelsState`), so a pull is
+  // observable (#3385).
+  refetches: {
+    categories: vi.fn(),
+    unread: vi.fn(),
+    events: vi.fn(),
+    tasks: vi.fn(),
+    levels: vi.fn(),
+    sidebar: vi.fn(),
+    roster: vi.fn(),
+    viewer: vi.fn(),
+    inbox: vi.fn(),
+  },
 }));
 
 vi.mock("@repo/hooks", async () => {
@@ -95,12 +109,12 @@ vi.mock("@repo/hooks", async () => {
   // them wrongly, and a stub would decide the answer itself.
   const actual =
     await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
-  const query = (data: unknown) => ({
+  const query = (data: unknown, refetch = vi.fn()) => ({
     data,
     isPending: false,
     isError: false,
     isFetching: false,
-    refetch: vi.fn(),
+    refetch,
   });
   return {
     canHideConversation: actual.canHideConversation,
@@ -129,6 +143,8 @@ vi.mock("@repo/hooks", async () => {
     SIDEBAR_SAVE_FAILED_TITLE: actual.SIDEBAR_SAVE_FAILED_TITLE,
     UNPIN_FROM_TOP_LABEL: actual.UNPIN_FROM_TOP_LABEL,
     UNREAD_ONLY_LABEL: actual.UNREAD_ONLY_LABEL,
+    useChapterRoster: () => query([], refetches.roster),
+    useSidebarPreferencesRefetch: () => ({ refetch: refetches.sidebar }),
     useSidebarPreferences: () => sidebarPrefs.value,
     useSetChannelPinned: (options?: { onError?: () => void }) => {
       writeOptions.pin = options;
@@ -143,7 +159,7 @@ vi.mock("@repo/hooks", async () => {
       return { mutate: setFilter };
     },
     useChannelNotificationPreferences: () => ({
-      ...query(levelsData.value),
+      ...query(levelsData.value, refetches.levels),
       isError: queryErrors.levels,
     }),
     useNowDate: () => new Date("2026-09-25T18:00:00Z"),
@@ -151,14 +167,15 @@ vi.mock("@repo/hooks", async () => {
       ...query(channelsData.value),
       ...channelsState.value,
     }),
-    useCategories: () => query(categoriesData.value),
+    useCategories: () => query(categoriesData.value, refetches.categories),
     useChannelUnreadCounts: () => ({
-      ...query(unreadData.value),
+      ...query(unreadData.value, refetches.unread),
       isError: queryErrors.unread,
     }),
-    useEvents: () => query([]),
-    useNotifications: () => query(notificationsData.value),
-    useTasks: () => query([]),
+    useEvents: () => query([], refetches.events),
+    useNotifications: () => query(notificationsData.value, refetches.inbox),
+    useCurrentUser: () => query({ id: VIEWER }, refetches.viewer),
+    useTasks: () => query([], refetches.tasks),
     useViewerUserId: () => VIEWER,
     useMemberDisplayNames: () => ({
       byId: { [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" },
@@ -956,6 +973,30 @@ describe("Chat home loading and error states", () => {
     const empty = tree.root.findByType(EmptyState);
     expect(empty.props.title).toBe("No channels yet");
     expect(empty.props.body).toBe("Ask an admin to add one.");
+  });
+});
+
+describe("Chat home pull-to-refresh (#3385)", () => {
+  it("refreshes everything the screen draws on a pull (#3385)", async () => {
+    const tree = render();
+
+    // The scroll view is a host stand-in, so its control is never mounted;
+    // the pull is the control's own `refresh`, called directly.
+    const scroll = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "ScrollView" &&
+        node.props.refreshControl !== undefined,
+    );
+    await act(async () => {
+      await scroll.props.refreshControl.props.refresh();
+    });
+
+    for (const refetch of [
+      channelsState.value.refetch,
+      ...Object.values(refetches),
+    ]) {
+      expect(refetch).toHaveBeenCalledWith({ cancelRefetch: true });
+    }
   });
 });
 
