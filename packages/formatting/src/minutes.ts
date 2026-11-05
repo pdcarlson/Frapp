@@ -6,9 +6,12 @@
  *
  * Two members stay distinct on purpose:
  * - {@link formatMinutesExact} — no rounding; interpolates the number as-is.
- *   Web service hours.
+ *   Web chat's hours card and the API's service-entry text.
  * - {@link formatMinutesRounded} — `Math.max(0, Math.round(minutes))`.
- *   Mobile service hours.
+ *   Web's service and study hours (moved here 2026-11-05) and mobile's service
+ *   hours, so those read the same total on either app. Mobile's study screen
+ *   still formats its own way (`apps/mobile/lib/study/format.ts`, "2.1 hrs";
+ *   #3420).
  *
  * Do not fold either into {@link formatPaddedStopwatch} / {@link formatTimer}
  * or into {@link formatLocaleDateTime}.

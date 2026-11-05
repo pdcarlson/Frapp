@@ -167,7 +167,9 @@ vi.mock("@repo/hooks", () => ({
   DISCORD_CONNECT_MESSAGES: {},
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
 import { ImportWizard } from "./import-wizard";
@@ -544,7 +546,7 @@ describe("ImportWizard — the bot path", () => {
     fireEvent.change(screen.getByLabelText("Who can read it"), {
       target: { value: "restricted" },
     });
-    fireEvent.click(screen.getByLabelText(/chapter-config:manage/));
+    fireEvent.click(screen.getByLabelText(/Change chapter settings/));
     await waitFor(() =>
       expect((continueButton as HTMLButtonElement).disabled).toBe(false),
     );
@@ -1413,7 +1415,7 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
       { target: { value: "restricted" } },
     );
     const box = () =>
-      screen.getByLabelText(/chapter-config:manage/) as HTMLInputElement;
+      screen.getByLabelText(/Change chapter settings/) as HTMLInputElement;
     expect(box().checked).toBe(true);
 
     // Another control (the server-level one, or a row) makes the channel
@@ -1433,7 +1435,7 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
       screen.getByLabelText("Who can read the new channels in Exec"),
       { target: { value: "restricted" } },
     );
-    fireEvent.click(screen.getByLabelText(/chapter-config:manage/));
+    fireEvent.click(screen.getByLabelText(/Change chapter settings/));
     const next = onChange.mock.calls.at(-1)![0] as Record<
       string,
       { action: string; visibility?: string; requiredPermissions?: string[] }
@@ -1501,10 +1503,10 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
       },
     };
     renderStep({ choices });
-    expect(screen.getByText("chapter-config:manage")).toBeInTheDocument();
+    expect(screen.getByText("Change chapter settings")).toBeInTheDocument();
     expect(screen.getByText("Treasurer")).toBeInTheDocument();
     // A role's custom permission is offered even though the catalog lacks it.
-    expect(screen.getByText("cabinet:read")).toBeInTheDocument();
+    expect(screen.getByText("Read cabinet")).toBeInTheDocument();
   });
 
   it("keeps the permission grid through a failed catalog refresh", () => {
@@ -1520,9 +1522,9 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
         },
       };
       renderStep({ choices });
-      expect(screen.getByText("chapter-config:manage")).toBeInTheDocument();
+      expect(screen.getByText("Change chapter settings")).toBeInTheDocument();
       expect(
-        screen.queryByText(/Couldn.t load the permission catalog/),
+        screen.queryByText(/Couldn.t load the permission list/),
       ).toBeNull();
     } finally {
       catalogStale.value = false;

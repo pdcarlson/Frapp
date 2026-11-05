@@ -75,6 +75,15 @@ export interface PushChannelInput {
   lightColor?: string;
 }
 
+/**
+ * `NotificationChannel`, narrowed to what we read. `importance` is the same
+ * numeric `AndroidImportance` value as on `PushChannelInput`; a channel the
+ * member switched off in the OS settings reads as `NONE`, which is `2`.
+ */
+export interface PushChannel {
+  importance: number;
+}
+
 export interface PushScheduleRequest {
   content: {
     title: string;
@@ -91,6 +100,8 @@ export interface NotificationsModule {
     channelId: string,
     channel: PushChannelInput,
   ): Promise<unknown>;
+  /** `null` for no such channel, and on Android before 8, which has none. */
+  getNotificationChannelAsync(channelId: string): Promise<PushChannel | null>;
   getPermissionsAsync(): Promise<PushPermissionStatus>;
   requestPermissionsAsync(): Promise<PushPermissionStatus>;
   getExpoPushTokenAsync(options?: {

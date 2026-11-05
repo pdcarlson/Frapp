@@ -27,7 +27,9 @@ describe("PermissionCheckboxGrid", () => {
         onToggle={onToggle}
       />,
     );
-    expect(screen.getByText("channels:read:exec")).toBeInTheDocument();
+    // In words, as the roles matrix reads it, never the raw string.
+    expect(screen.getByText("Read exec channels")).toBeInTheDocument();
+    expect(screen.queryByText("channels:read:exec")).not.toBeInTheDocument();
     expect(screen.getByText("no role holds this")).toBeInTheDocument();
     const box = screen.getAllByRole("checkbox")[1] as HTMLInputElement;
     expect(box.checked).toBe(true);
@@ -68,21 +70,30 @@ describe("PermissionCheckboxGrid", () => {
       // and failed, so it arrives here as `catalogUnavailable`.
       network.isOffline = true;
       renderCatalog({ loading: false, unavailable: true });
-      expect(screen.getByText(/can't load the permission list/i)).toBeInTheDocument();
-      expect(screen.queryByText("members:view")).not.toBeInTheDocument();
+      expect(
+        screen.getByText(/can't load the permission list/i),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/full directory/)).not.toBeInTheDocument();
     });
 
     it("reports a catalog paused offline as offline, not as loading", () => {
       network.isOffline = true;
       renderCatalog({ loading: true, unavailable: false });
-      expect(screen.getByText(/can't load the permission list/i)).toBeInTheDocument();
-      expect(screen.queryByText(/loading permissions/i)).not.toBeInTheDocument();
+      expect(
+        screen.getByText(/can't load the permission list/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/loading permissions/i),
+      ).not.toBeInTheDocument();
     });
 
-    it("still names the missing permission when the catalog fails online", () => {
+    it("still names what the list needs when the catalog fails online", () => {
       renderCatalog({ loading: false, unavailable: true });
-      expect(screen.getByText("members:view")).toBeInTheDocument();
-      expect(screen.queryByText(/can't load the permission list/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/see the full directory/)).toBeInTheDocument();
+      expect(screen.queryByText(/members:view/)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/can't load the permission list/i),
+      ).not.toBeInTheDocument();
     });
   });
 });

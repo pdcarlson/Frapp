@@ -30,8 +30,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
-import { formatLocaleDateTime as formatDate } from "@repo/formatting";
-import { asArray } from "@/lib/utils";
+import { asArray, getErrorMessage } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { Can } from "@/components/shared/can";
 import {
@@ -39,6 +38,7 @@ import {
   attendanceStatusLabel,
 } from "@/components/events/attendance-status";
 import type { AttendanceStatus } from "@/components/events/attendance-status";
+import { checkInLabel } from "@/components/events/event-labels";
 
 type AttendanceRow = {
   id?: string;
@@ -49,7 +49,17 @@ type AttendanceRow = {
   excuse_reason?: string | null;
 };
 
-export function AttendancePanel({ eventId }: { eventId: string }) {
+export function AttendancePanel({
+  eventId,
+  eventStart,
+}: {
+  eventId: string;
+  /**
+   * The event's `start_time`, so a check-in on the event's own day reads as a
+   * time alone ("Checked in 5:03 PM") and one on another day names the day.
+   */
+  eventStart?: unknown;
+}) {
   const chapterId = useActiveChapterId();
   const { toast } = useToast();
   const attendanceQuery = useAttendance(eventId);
@@ -175,10 +185,10 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
     } catch (error) {
       toast({
         title: "Couldn't update attendance",
-        description:
-          error instanceof Error
-            ? error.message
-            : "Retry in a moment. Your change hasn't been saved.",
+        description: getErrorMessage(
+          error,
+          "Retry in a moment. Your change hasn't been saved.",
+        ),
         variant: "destructive",
       });
       throw error;
@@ -192,15 +202,12 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
       toast({
         title: "Auto-absent marking complete",
         description:
-          "Members required to attend who weren't checked in or excused are now ABSENT.",
+          "Members required to attend who weren't checked in or excused are now marked absent.",
       });
     } catch (error) {
       toast({
         title: "Couldn't run auto-absent",
-        description:
-          error instanceof Error
-            ? error.message
-            : "Check your permissions and retry.",
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -230,7 +237,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
       <div role="status" aria-live="polite">
         <NestedError
           title="Attendance unavailable"
-          description="Couldn't load attendance for this event. Retry or confirm you have events:update or permission to view attendance."
+          description="Couldn't load attendance for this event. Confirm your chapter access and retry."
           onRetry={() => void attendanceQuery.refetch()}
         />
       </div>
@@ -261,7 +268,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
       <div role="status" aria-live="polite">
         <NestedEmpty
           title="No attendance records yet"
-          description="Once members check in — or you record attendance manually — they'll show up here."
+          description="Once members check in, or you record attendance manually, they'll show up here."
         />
       </div>
     );
@@ -363,55 +370,60 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
           </p>
         ) : (
           <ul className="divide-y divide-border">
-            {filteredRows.map((row) => (
-              <li
-                key={row.userId}
-                className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">
-                    {row.displayName}
-                  </p>
-                  {row.email ? (
-                    <p className="truncate text-caption text-muted-foreground">
-                      {row.email}
+            {filteredRows.map((row) => {
+              const checkedIn =
+                row.status === "PRESENT" || row.status === "LATE"
+                  ? checkInLabel(row.checkInTime, eventStart)
+                  : null;
+              return (
+                <li
+                  key={row.userId}
+                  className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">
+                      {row.displayName}
                     </p>
-                  ) : null}
-                  {row.status === "PRESENT" || row.status === "LATE" ? (
-                    <p className="text-caption text-muted-foreground">
-                      Checked in: {formatDate(row.checkInTime)}
-                    </p>
-                  ) : null}
-                  {row.status === "EXCUSED" && row.excuseReason ? (
-                    <p className="text-caption text-muted-foreground">
-                      Reason: {row.excuseReason}
-                    </p>
-                  ) : null}
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Badge variant={attendanceStatusKind(row.status)}>
-                    {attendanceStatusLabel(row.status)}
-                  </Badge>
-                  <Can
-                    permission="events:update"
-                    deniedFallback={
-                      <span className="text-caption text-muted-foreground">
-                        View only
-                      </span>
-                    }
-                  >
-                    <Select
-                      value={row.status === "UNRECORDED" ? "" : row.status}
-                      onValueChange={(value) => {
-                        if (!value) return;
-                        void changeStatus(
-                          row.userId,
-                          value as AttendanceStatus,
-                          row.status,
-                        );
-                      }}
+                    {row.email ? (
+                      <p className="truncate text-caption text-muted-foreground">
+                        {row.email}
+                      </p>
+                    ) : null}
+                    {checkedIn ? (
+                      <p className="text-caption text-muted-foreground">
+                        {checkedIn}
+                      </p>
+                    ) : null}
+                    {row.status === "EXCUSED" && row.excuseReason ? (
+                      <p className="text-caption text-muted-foreground">
+                        Reason: {row.excuseReason}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Badge variant={attendanceStatusKind(row.status)}>
+                      {attendanceStatusLabel(row.status)}
+                    </Badge>
+                    <Can
+                      permission="events:update"
+                      deniedFallback={
+                        <span className="text-caption text-muted-foreground">
+                          View only
+                        </span>
+                      }
                     >
-                      {/*
+                      <Select
+                        value={row.status === "UNRECORDED" ? "" : row.status}
+                        onValueChange={(value) => {
+                          if (!value) return;
+                          void changeStatus(
+                            row.userId,
+                            value as AttendanceStatus,
+                            row.status,
+                          );
+                        }}
+                      >
+                        {/*
                         The per-row status write hits the same guard as
                         auto-absent, so gating only the header button would
                         have the panel claim writes are blocked while still
@@ -419,24 +431,25 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
                         rather than the Radix root — the root is not a DOM
                         node, so `aria-describedby` would be dropped there.
                       */}
-                      <SelectTrigger
-                        className="w-full sm:w-[150px]"
-                        aria-label={`Update attendance for ${row.displayName}`}
-                        {...gate.controlProps()}
-                      >
-                        <SelectValue placeholder="Set status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="PRESENT">Present</SelectItem>
-                        <SelectItem value="LATE">Late</SelectItem>
-                        <SelectItem value="EXCUSED">Excused</SelectItem>
-                        <SelectItem value="ABSENT">Absent</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Can>
-                </div>
-              </li>
-            ))}
+                        <SelectTrigger
+                          className="w-full sm:w-[150px]"
+                          aria-label={`Update attendance for ${row.displayName}`}
+                          {...gate.controlProps()}
+                        >
+                          <SelectValue placeholder="Set status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="PRESENT">Present</SelectItem>
+                          <SelectItem value="LATE">Late</SelectItem>
+                          <SelectItem value="EXCUSED">Excused</SelectItem>
+                          <SelectItem value="ABSENT">Absent</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Can>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
