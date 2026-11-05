@@ -38,10 +38,11 @@ import { cn } from "@/lib/utils";
  *    recolored" — is the half that governs, and the wash is the half that
  *    contradicts it. Quiet is carried instead by what the board also draws: no
  *    border, no interaction, `alt=""`, and the crest's own `#1A1A1A` field
- *    sitting on a `--surface-1` page. Until 2026-11-05 the two were the same
- *    hex, so the tile edge was invisible; the neutral ladder moved
- *    `--surface-1` to `#111111` (foundations.md §2), so the crest now reads as
- *    a quiet rounded tile one step lighter, the way the system avatar draws it.
+ *    sitting flush on the page, so the tile edge does not show and the glyph
+ *    floats. Until 2026-11-05 the page was `--surface-1`, which was `#1A1A1A`
+ *    exactly. The neutral ladder (foundations.md §2) moved `--surface-1` to
+ *    `#111111`, where the field read as a 1.085:1 square (assets.md, #2580),
+ *    so the page now paints `--card` (`#171717`), 1.03:1 off the field.
  * 2. **Radius 24 rounds onto 20.** `foundations.md` §8 locks the map at a 20
  *    ceiling and calls an off-map radius "a defect, exactly as a raw hex value
  *    is". `signet-mark.tsx` already rounds its 30px chip from 9 onto the
@@ -107,7 +108,7 @@ export function CrestPage({
   children: React.ReactNode;
 }) {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-surface-1 px-6 py-12 sm:flex-row sm:gap-12">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-card px-6 py-12 sm:flex-row sm:gap-12">
       {/*
         `aria-hidden` and an empty `alt`: the crest is a decorative restatement
         of a page that already says what happened in text, the same call

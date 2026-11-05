@@ -32,8 +32,11 @@ import { cn } from "@/lib/utils"
  * worst at 1.032, and the best of them reaches only 1.143. So luminance
  * separation is not something the tint can be relied on to provide at all. What
  * it does buy is **hue** — its channel spread from `--card` is 7–86 against the
- * neutral step's 3, and that holds for every seed including the achromatic
- * three.
+ * neutral step's 3, and that held for every seed including the achromatic
+ * three on the warm ladder. On the neutral ladder (2026-11-05) the tint beats
+ * the neutral step on luminance for every seed (1.089–1.179:1 against 1.075),
+ * but the achromatic three (black, silver, white) tint to a neutral `#222222`
+ * and carry no hue, only that small luminance lift (1.127:1).
  *
  * So the two states are separated from each other, and from the base row, by
  * three different mechanisms rather than one:

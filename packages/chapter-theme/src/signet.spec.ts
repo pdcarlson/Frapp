@@ -309,7 +309,10 @@ describe("deriveSignetPalette", () => {
         navyChecks
           .filter((check) => !check.passes)
           .map((check) => `${check.role} ${check.against}`),
-      ).toEqual(["--signet-accent-hover --card", "--signet-accent-hover --popover"]);
+      ).toEqual([
+        "--signet-accent-hover --card",
+        "--signet-accent-hover --popover",
+      ]);
     });
 
     it("judges each lift candidate by the fill the generator paints", () => {
@@ -470,10 +473,13 @@ describe("deriveSignetPalette", () => {
         if (keptChromaFits) {
           expect(Math.abs(now.c - was.c), `${seed} chroma`).toBeLessThan(0.003);
           if (was.c > 0.01) {
-            // 1 degree, not 0.5: `#1F4E79`'s lift (2026-11-05) lands 0.62
-            // degrees off from 8-bit rounding alone, still far below a hue
-            // change anyone could see.
-            expect(Math.abs(now.h - was.h), `${seed} hue`).toBeLessThan(1);
+            // `#1F4E79`'s lift (2026-11-05) lands 0.62 degrees off from 8-bit
+            // rounding alone, so it alone gets 1 degree; every other seed
+            // stays held to 0.5.
+            const hueTolerance = seed === "#1F4E79" ? 1 : 0.5;
+            expect(Math.abs(now.h - was.h), `${seed} hue`).toBeLessThan(
+              hueTolerance,
+            );
           }
         } else {
           expect(now.c, `${seed} chroma`).toBeLessThan(was.c);

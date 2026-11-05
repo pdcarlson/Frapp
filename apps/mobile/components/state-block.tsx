@@ -78,7 +78,7 @@ type StateBlockProps = {
  * screen.
  *
  * TODO-DESIGN: shimmer sweep per components.md §10 (elevated at 25%/75%,
- * highlight `#332E26` at 50%, 260px background-size, 1.4s linear, phase-shared
+ * highlight `#2B2B2B` at 50%, 260px background-size, 1.4s linear, phase-shared
  * across blocks) once a gradient dependency lands. Nearest pattern used: the
  * neutral blocks at the specified shapes, pulsing together between full and
  * half opacity ({@link SkeletonPulse}), still under reduced motion, and paused
