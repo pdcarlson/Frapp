@@ -45,7 +45,12 @@ export function useBackworkResource(id: string) {
   });
 }
 
-export function useDepartments() {
+/**
+ * `enabled` lets a caller outside the library skip the read: the route is
+ * behind `backwork:upload` / `backwork:admin`, so for anyone else it can only
+ * 403 (and the web client retries a failure three times).
+ */
+export function useDepartments(options: { enabled?: boolean } = {}) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["backwork", "departments"],
@@ -55,6 +60,7 @@ export function useDepartments() {
       return data;
     },
     staleTime: 60_000,
+    enabled: options.enabled ?? true,
   });
 }
 

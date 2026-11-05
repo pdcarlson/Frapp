@@ -16,7 +16,6 @@ import { Can } from "@/components/shared/can";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SectionLabel } from "@/components/shared/section-label";
-import { PageHeader } from "@/components/layout/page-header";
 import {
   anyReadUncached,
   PermissionsOfflineSurface,
@@ -24,7 +23,6 @@ import {
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { denseListClassName } from "@/components/shared/table-controls";
@@ -54,6 +52,7 @@ import {
   purgeLine,
 } from "./delete-import-copy";
 import type { ImportSource } from "./source-step";
+import { DiscordImportsSkeleton } from "@/components/discord-import/discord-import-skeleton";
 
 const STATUS_VARIANT: Record<
   string,
@@ -187,14 +186,13 @@ export function DiscordImportPage() {
   return (
     <>
       {/*
-        Outside the `<Can>` so the permission-denied branch keeps the route's
-        heading — the shell no longer supplies one (#2141). The denied card's
-        `<CardTitle>` and the body's were that same title said twice, so both
-        are gone, and so is the card that framed the one denied sentence.
+        The route's heading is the top bar's (`top-bar.tsx`). The denied
+        card's `<CardTitle>` and the body's were that same title said again, so
+        both are gone, and so is the card that framed the one denied sentence.
       */}
-      <PageHeader title="Discord import" />
       <Can
         permission="channels:manage"
+        fallback={<DiscordImportsSkeleton />}
         deniedFallback={
           <p className="text-sm text-muted-foreground">
             Your role can&apos;t import Discord history. Ask your chapter
@@ -326,7 +324,7 @@ function DiscordImportList({
     );
   }
   if (imports.isLoading || paused) {
-    return <NestedLoading sole message="Loading imports..." />;
+    return <DiscordImportsSkeleton />;
   }
   // `data === undefined`, not `isError` alone: a failed background read keeps
   // the rows TanStack already holds, and while a deletion is being polled an

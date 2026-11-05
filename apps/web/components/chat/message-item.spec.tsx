@@ -231,6 +231,23 @@ describe("MessageItem compact layout (#2873)", () => {
     expect(name.className).not.toContain("text-accent-text");
   });
 
+  it("paints someone else's name in their role color, never the viewer's (#3485)", () => {
+    const other = renderItemWithProps({
+      message: message({ sender_id: OTHER }),
+      authorColor: "#6FD08C",
+    });
+    expect(screen.getByText("Alice Chen")).toHaveStyle({ color: "#6FD08C" });
+    other.unmount();
+
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      authorColor: "#6FD08C",
+    });
+    const you = screen.getByText("You");
+    expect(you.className).toContain("text-accent-text");
+    expect(you.getAttribute("style")).toBeNull();
+  });
+
   it("puts the time of day on the author line, never the date", () => {
     const { container } = renderItem(message());
     const line = authorLine(container)!;

@@ -26,10 +26,8 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   ErrorState,
   anyReadUncached,
-  LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
-import { PageHeader } from "@/components/layout/page-header";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useSubscriptionGate } from "@/components/shared/subscription-gate";
@@ -69,6 +67,10 @@ import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
+import {
+  SettingsBodySkeleton,
+  SettingsTabSkeleton,
+} from "@/components/settings/settings-skeleton";
 
 type Branding = {
   greek_letters?: string;
@@ -237,7 +239,7 @@ function SettingsPageContent() {
       />
     );
   } else if (chapterQuery.isLoading || chapterPaused) {
-    stateBanner = <LoadingState message="Loading chapter settings..." />;
+    stateBanner = <SettingsBodySkeleton />;
   } else if (chapterQuery.isError) {
     stateBanner = (
       <ErrorState
@@ -417,7 +419,7 @@ function SettingsPageContent() {
 
   function renderConfigGated(node: React.ReactNode) {
     if (orgConfigQuery.isPending) {
-      return <LoadingState message="Loading chapter configuration..." />;
+      return <SettingsTabSkeleton />;
     }
     if (orgConfigQuery.isError) {
       return (
@@ -655,15 +657,7 @@ function SettingsPageContent() {
 export function SettingsPage() {
   return (
     <>
-      {/*
-        Outside the Suspense boundary so the heading is there on the pending
-        path too — the shell no longer supplies one (#2141), and the content
-        below deliberately renders none of its own.
-      */}
-      <PageHeader title="Chapter settings" />
-      <Suspense
-        fallback={<LoadingState message="Loading chapter settings..." />}
-      >
+      <Suspense fallback={<SettingsBodySkeleton />}>
         <SettingsPageContent />
       </Suspense>
     </>

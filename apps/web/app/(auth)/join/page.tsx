@@ -202,17 +202,7 @@ function JoinPageContent() {
     <AuthScreen
       title="Join your chapter"
       subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
-      footer={
-        <>
-          Starting a chapter?{" "}
-          <Link
-            href="/chat"
-            className="font-semibold text-accent-text hover:underline"
-          >
-            Create a chapter
-          </Link>
-        </>
-      }
+      footer={JOIN_FOOTER}
     >
       <form className="flex flex-col gap-4" onSubmit={handleRedeem}>
         <div className="space-y-1.5">
@@ -271,6 +261,16 @@ function JoinPageContent() {
   );
 }
 
+/** Shared with the Suspense fallback, so the column does not grow on hydration. */
+const JOIN_FOOTER = (
+  <p>
+    Starting a chapter?{" "}
+    <Link href="/chat" className="font-semibold text-accent-text hover:underline">
+      Create a chapter
+    </Link>
+  </p>
+);
+
 export default function JoinPage() {
   return (
     <Suspense
@@ -278,6 +278,7 @@ export default function JoinPage() {
         <AuthScreen
           title="Join your chapter"
           subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
+          footer={JOIN_FOOTER}
         >
           <div role="status" aria-busy="true" aria-live="polite">
             <span className="sr-only">Loading the invite form…</span>

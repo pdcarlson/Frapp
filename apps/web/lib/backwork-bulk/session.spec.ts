@@ -35,6 +35,9 @@ const flush = async () => {
   for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
 };
 const spies: { mockRestore: () => void }[] = [];
+// Hashing and the stubbed load go through real async work, which a busy
+// full-suite run can slow past vitest's 1 s default.
+const WAIT = { timeout: 5000 };
 
 function pdf(name: string, body = name): File {
   return new File([`%PDF ${body}`], name, { type: "application/pdf" });
@@ -111,7 +114,7 @@ describe("bulk upload session", () => {
     const session = getBulkSession("u1", "c1");
     const confirm = bindMutations(session);
     session.queue.add([pdf("a.pdf")]);
-    await vi.waitFor(() => expect(statusOf(session, "a.pdf")).toBe("ready"));
+    await vi.waitFor(() => expect(statusOf(session, "a.pdf")).toBe("ready"), WAIT);
     session.queue.submit(idOf(session, "a.pdf"), { fields, boxes: {}, flatten: false });
     endBulkSessions();
     await flush();
@@ -123,27 +126,27 @@ describe("bulk upload session", () => {
     const session = getBulkSession("u1", "c1");
     const confirm = bindMutations(session);
     session.queue.add([pdf("a.pdf"), pdf("b.pdf")]);
-    await vi.waitFor(() => expect(session.queue.getSnapshot().items.map((it) => `${it.status}:${it.error ?? ""}`)).toEqual(["ready:", "ready:"]));
+    await vi.waitFor(() => expect(session.queue.getSnapshot().items.map((it) => `${it.status}:${it.error ?? ""}`)).toEqual(["ready:", "ready:"]), WAIT);
     session.queue.submit(idOf(session, "a.pdf"), { fields, boxes: {}, flatten: false });
-    await vi.waitFor(() => expect(statusOf(session, "a.pdf")).toBe("done"));
+    await vi.waitFor(() => expect(statusOf(session, "a.pdf")).toBe("done"), WAIT);
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(toast).not.toHaveBeenCalled();
 
     confirm.mockRejectedValueOnce(new Error("Server error"));
     session.queue.submit(idOf(session, "b.pdf"), { fields, boxes: {}, flatten: false });
-    await vi.waitFor(() => expect(statusOf(session, "b.pdf")).toBe("failed"));
+    await vi.waitFor(() => expect(statusOf(session, "b.pdf")).toBe("failed"), WAIT);
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: "A backwork upload failed" }));
   });
 
   it("refuses a second copy of a file while the first is in the batch", async () => {
     const session = getBulkSession("u1", "c1");
     session.queue.add([pdf("a.pdf", "same"), pdf("copy.pdf", "same")]);
-    await vi.waitFor(() => expect(statusOf(session, "copy.pdf")).toBe("failed"));
+    await vi.waitFor(() => expect(statusOf(session, "copy.pdf")).toBe("failed"), WAIT);
     expect(statusOf(session, "a.pdf")).toBe("ready");
 
     session.queue.remove(idOf(session, "a.pdf"));
     session.queue.retry(idOf(session, "copy.pdf"));
-    await vi.waitFor(() => expect(statusOf(session, "copy.pdf")).toBe("ready"));
+    await vi.waitFor(() => expect(statusOf(session, "copy.pdf")).toBe("ready"), WAIT);
   });
 
   it("ends another account's batch, and keeps the new account's", () => {
@@ -162,10 +165,10 @@ describe("bulk upload session", () => {
     const session = getBulkSession("u1", "c1");
     const confirm = bindMutations(session);
     session.queue.add([pdf("a.pdf")]);
-    await vi.waitFor(() => expect(statusOf(session, "a.pdf")).toBe("ready"));
+    await vi.waitFor(() => expect(statusOf(session, "a.pdf")).toBe("ready"), WAIT);
     auth.userId = "u2";
     session.queue.submit(idOf(session, "a.pdf"), { fields, boxes: {}, flatten: false });
-    await vi.waitFor(() => expect(statusOf(session, "a.pdf")).toBe("failed"));
+    await vi.waitFor(() => expect(statusOf(session, "a.pdf")).toBe("failed"), WAIT);
     expect(confirm).not.toHaveBeenCalled();
   });
 

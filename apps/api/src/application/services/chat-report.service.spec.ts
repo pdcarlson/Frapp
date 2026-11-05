@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import {
   ChatReportService,
   REPORT_FILED_NOTIFICATION,
@@ -23,6 +24,14 @@ import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-modera
 import type { IChatMessageReportRepository } from '#domain/repositories/chat-moderation.repository.interface';
 import type { ChatMessage } from '#domain/entities/chat.entity';
 import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
+const captureMessage = jest.mocked(Sentry.captureMessage);
 
 /**
  * `spec/behavior/chat/README.md` § Report and block, as tests.
@@ -87,6 +96,8 @@ describe('ChatReportService', () => {
   let notificationService: { notifyUser: jest.Mock };
 
   beforeEach(async () => {
+    captureException.mockClear();
+    captureMessage.mockClear();
     reportRepo = {
       create: jest
         .fn()
@@ -924,6 +935,47 @@ describe('ChatReportService', () => {
         service.removeReportedMessage('report-1', CHAPTER, OFFICER),
       ).rejects.toBe(failure);
       expect(error).toHaveBeenCalledTimes(1);
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'db down' }),
+        expect.objectContaining({
+          level: 'error',
+          tags: { caught_at: 'chat-report-claim-release-failed' },
+          fingerprint: [
+            'caught-failure',
+            'chat-report-claim-release-failed',
+            'Error',
+          ],
+        }),
+      );
+    });
+
+    it("keeps the removal's own error, and reports, when the claim release is refused", async () => {
+      const failure = new NotFoundException('Message not found');
+      chatService.deleteReportedMessage.mockRejectedValue(failure);
+      reportRepo.releaseClaim.mockResolvedValue(false);
+      const error = jest
+        .spyOn(
+          (service as unknown as { logger: { error: jest.Mock } }).logger,
+          'error',
+        )
+        .mockImplementation(() => undefined);
+
+      await expect(
+        service.removeReportedMessage('report-1', CHAPTER, OFFICER),
+      ).rejects.toBe(failure);
+      expect(error).toHaveBeenCalledWith(
+        `A failed chat report removal left its claim in place (report report-1, chapter ${CHAPTER})`,
+      );
+      expect(captureMessage).toHaveBeenCalledTimes(1);
+      expect(captureMessage).toHaveBeenCalledWith(
+        'caught failure: chat-report-claim-release-refused',
+        {
+          level: 'error',
+          tags: { caught_at: 'chat-report-claim-release-refused' },
+          fingerprint: ['caught-failure', 'chat-report-claim-release-refused'],
+        },
+      );
     });
 
     it('answers 500 when the sweep fails after the removal, leaving the removal in place', async () => {

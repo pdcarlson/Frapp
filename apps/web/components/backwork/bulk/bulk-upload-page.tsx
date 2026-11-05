@@ -8,10 +8,8 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import Link from "next/link";
 import {
   AlertTriangle,
-  ArrowLeft,
   CheckCircle2,
   FolderOpen,
   Loader2,
@@ -30,7 +28,6 @@ import {
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
@@ -79,7 +76,6 @@ export function BulkUploadPage() {
   if (!activeChapterId) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Bulk upload" />
         <EmptyState
           title="No chapter selected"
           description="Pick a chapter from the switcher to upload backwork to it."
@@ -98,7 +94,6 @@ export function BulkUploadPage() {
       )}
       deniedFallback={
         <div className="space-y-6">
-          <PageHeader title="Bulk upload" />
           <EmptyState
             title="You can't upload backwork"
             description="Uploading backwork needs the backwork upload permission. Ask an officer who manages roles."
@@ -225,16 +220,7 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Bulk upload"
-        actions={
-          <Button asChild variant="quiet" size="toolbar" className="gap-1.5">
-            <Link href="/backwork">
-              <ArrowLeft className="h-4 w-4" /> Backwork
-            </Link>
-          </Button>
-        }
-      />
+      {/* The top bar titles this "Backwork › Bulk upload", and the crumb links back. */}
       <SubscriptionNotice gate={gate} feature="uploading backwork" />
 
       {snapshot.items.length === 0 ? (

@@ -1,12 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AuditGlyph,
-  DirectMessageGlyph,
-  LockGlyph,
-  MuteGlyph,
-} from "./chat-glyphs";
+import { MuteGlyph } from "./chat-glyphs";
+import { channelDescription } from "@repo/hooks/channel-start";
+import { ChannelMark, ChannelStart } from "./channel-start";
 import { EmptyState, ErrorState } from "@/components/shared/async-states";
 import {
   canHideConversation,
@@ -83,11 +80,7 @@ import {
   MessageTimelineSkeleton,
   type MessageTimelineHandle,
 } from "./message-timeline";
-import {
-  Composer,
-  ComposerShell,
-  notifyDispatchOutcome,
-} from "./composer";
+import { Composer, ComposerShell, notifyDispatchOutcome } from "./composer";
 import {
   channelAllowsReplies,
   DELETE_MESSAGE_CONFIRM_BODY,
@@ -164,37 +157,6 @@ const UNREACHABLE_COPY: Record<UnreachableReason, string> = {
   error: "Couldn't load the messages needed to reach that message.",
   unloaded: "Couldn't load this channel's messages to reach that message.",
 };
-
-/**
- * Leading mark for the channel header.
- *
- * A plain channel takes a **text `#`**, not a glyph: `canvas-screens.dc.html`
- * s04/s05 draw the sigil as type (17px / 700), and the reference wins over a
- * tidier all-icons row. Everything the reference does not draw — audit, direct,
- * private — takes its duotone intent glyph at the 20px list-row size
- * (`iconography.md` §2).
- */
-function ChannelHeaderMark({
-  channel,
-  className,
-}: {
-  channel: ChatChannel | null;
-  className?: string;
-}) {
-  if (channel?.name === "chapter-audit")
-    return <AuditGlyph className={className} />;
-  if (channel?.type === "DM" || channel?.type === "GROUP_DM")
-    return <DirectMessageGlyph className={className} />;
-  if (channel?.type === "PRIVATE" || channel?.type === "ROLE_GATED")
-    return <LockGlyph className={className} />;
-  return (
-    <span aria-hidden="true" className="font-bold text-muted-foreground">
-      #
-    </span>
-  );
-}
-
-
 
 /**
  * The chat surface: channels column, then thread and composer.
@@ -277,7 +239,12 @@ export function ChatShell({
   const categoriesQuery = useCategories();
   // Names for message authors and DM titles. Shares its query key with the
   // roster read below, so react-query serves both from one fetch.
-  const { byId: memberNames, nameFor, avatarFor } = useMemberDisplayNames();
+  const {
+    byId: memberNames,
+    nameFor,
+    avatarFor,
+    roleColorFor,
+  } = useMemberDisplayNames();
   // Per-channel notification levels, from their own endpoint rather than the
   // channel payload — the same split unread counts use, and for the same
   // recorded reason (see `channel-list.tsx`, which explains how a `muted` field
@@ -401,9 +368,7 @@ export function ChatShell({
   } | null>(null);
   // The jump currently paging older history to reach its target, for the
   // "Finding that message..." line. Keyed like the notice, by message.
-  const [seekingMessageId, setSeekingMessageId] = useState<string | null>(
-    null,
-  );
+  const [seekingMessageId, setSeekingMessageId] = useState<string | null>(null);
   // Older pages this jump has asked for, bounded by `JUMP_MAX_OLDER_PAGES`.
   // Keyed on the attempt and the message, so a new request starts from zero.
   // `caughtUp` records the one forward read (`loadNewer`) each request makes
@@ -534,6 +499,9 @@ export function ChatShell({
 
   // DM channels are stored as `dm-<uuidA>-<uuidB>`; the header, the composer
   // placeholder and the sidebar must all show the resolved title instead.
+  const activeChannelDescription = channelDescription(
+    activeChannel?.description,
+  );
   const activeChannelName = useMemo(() => {
     if (!activeChannel) return "";
     return directChannelDisplayName(
@@ -719,6 +687,20 @@ export function ChatShell({
   const canManageChannel = can(
     "channels:manage",
     permissionsPayload?.permissions,
+  );
+
+  // Memoised because the timeline hands it to the virtualizer's header
+  // context, and a new element every render would re-render that row.
+  const channelStartNode = useMemo(
+    () =>
+      activeChannel ? (
+        <ChannelStart
+          channel={activeChannel}
+          displayName={activeChannelName}
+          canEdit={canManageChannel}
+        />
+      ) : undefined,
+    [activeChannel, activeChannelName, canManageChannel],
   );
 
   // Bookmarks (#462). One chapter-wide query backs both the panel and every
@@ -1424,7 +1406,8 @@ export function ChatShell({
           : !activeChapterId
             ? "no-chapter"
             : "empty";
-  const timelineReady = channelsPaneState === "ready" && !requestedChannelMissing;
+  const timelineReady =
+    channelsPaneState === "ready" && !requestedChannelMissing;
 
   /**
    * Whether focus is in `ComposerShell` right now — the one thing the upgrade
@@ -1621,14 +1604,9 @@ export function ChatShell({
           ) : null}
           <div className="flex min-w-0 flex-1 items-baseline gap-2">
             {/*
-              `h1`, not `h2`. This was correctly a sub-heading while the
-              dashboard shell rendered an `<h1>Chat</h1>` above it; #2141
-              deleted that, so the channel name is now the top heading on
-              this route - and it IS the page's title here, the way a chat
-              app names a screen. Left as `h2` the route would start its
-              outline at level 2, and a screen-reader user jumping by
-              heading level 1 would land nowhere.
-              Styling is explicit, so the tag change is visually identical.
+              `h2`, under the top bar's `<h1>Chat</h1>` (`top-bar.tsx`). It was
+              the route's `h1` while no title sat above it (#2141 to
+              2026-11-05). Styling is explicit, so the tag is visually free.
             */}
             {/*
               `min-w-0`, and deliberately NOT `shrink-0`: the `truncate` on the
@@ -1636,10 +1614,10 @@ export function ChatShell({
               its content. With `shrink-0` a long channel name simply overflows
               and paints under the `⋯` trigger beside it.
             */}
-            <h1 className="flex min-w-0 items-center gap-2 text-label font-bold text-foreground">
+            <h2 className="flex min-w-0 items-center gap-2 text-label font-bold text-foreground">
               {activeChannel ? (
                 <>
-                  <ChannelHeaderMark
+                  <ChannelMark
                     channel={activeChannel}
                     className="h-4 w-4 shrink-0 text-muted-foreground"
                   />
@@ -1671,11 +1649,24 @@ export function ChatShell({
               ) : (
                 "Pick a channel"
               )}
-            </h1>
-            {activeChannel?.description ? (
-              <p className="truncate text-caption text-muted-foreground">
-                {activeChannel.description}
-              </p>
+            </h2>
+            {/*
+              "# name • description", the description muted and cut off on
+              one line (owner's reference, 2026-11-05). The dot is decoration:
+              the name is the heading and the description its own paragraph.
+            */}
+            {activeChannelDescription ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="shrink-0 text-caption text-muted-foreground"
+                >
+                  •
+                </span>
+                <p className="min-w-0 truncate text-caption text-muted-foreground">
+                  {activeChannelDescription}
+                </p>
+              </>
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -1922,20 +1913,20 @@ export function ChatShell({
           </>
         ) : null}
         {timelineReady ? (
-        <>
-        {/*
+          <>
+            {/*
           Above the timeline rather than inside it: the timeline virtualizes,
           and this is the one line that says rows are being held off it while
           the block list cannot vouch for them (#2313).
         */}
-        <BlockListNotice
-          status={blockList.status}
-          heldCount={thread.heldCount}
-          onRetry={blockList.retry}
-          isRetrying={blockList.isRetrying}
-          isPaused={blockList.isPaused}
-        />
-        {/*
+            <BlockListNotice
+              status={blockList.status}
+              heldCount={thread.heldCount}
+              onRetry={blockList.retry}
+              isRetrying={blockList.isRetrying}
+              isPaused={blockList.isPaused}
+            />
+            {/*
           `role="log"` alone still carries an ARIA-spec *implicit* default of
           `aria-live="polite"` / `aria-relevant="additions text"` — so making
           this genuinely non-live takes an explicit `aria-live="off"`, not
@@ -1947,116 +1938,120 @@ export function ChatShell({
           below is the decoupled, non-virtualized replacement — it updates
           only when a genuinely new message lands, never on scroll.
         */}
-        <div
-          id="chat-timeline"
-          tabIndex={-1}
-          role="log"
-          aria-live="off"
-          aria-label="Chat timeline"
-          // `FOCUS_RING`, not `FOCUS_RING_ALWAYS`: this container is a large
-          // panel most of whose area is an ordinary mouse-click target (blank
-          // space below the last message), not a control reached only
-          // programmatically — `FOCUS_RING_ALWAYS`'s plain `focus:` would
-          // leave the ring painted after a routine click into that space.
-          // `focus-visible:` still shows it for the skip link's keyboard-
-          // driven jump, which is the case this needs to stay visible for.
-          className={cn(
-            "min-h-0 flex-1 overflow-hidden rounded-md",
-            FOCUS_RING,
-          )}
-        >
-          <MessageTimeline
-            ref={timeline}
-            channelId={activeChannel?.id}
-            nameFor={nameFor}
-            avatarFor={avatarFor}
-            messages={channel.messages}
-            blockList={{ blockState, thread }}
-            onUnblock={handleUnblock}
-            onReloadMasked={handleReloadMasked}
-            maskedRefresh={maskedRefresh}
-            viewerId={userId}
-            isLoading={channel.isLoading}
-            loadError={channel.loadError}
-            hasOlder={channel.hasOlder}
-            isLoadingOlder={channel.isLoadingOlder}
-            olderError={channel.olderError}
-            onLoadOlder={loadOlderHistory}
-            // Only while the jump is still working. Once it has settled on a
-            // notice the target stays pending (so a late arrival still lands),
-            // but holding follow through that would stop new messages
-            // scrolling into view until the member dismissed it.
-            holdFollow={
-              pendingMessageId !== null &&
-              (pendingJumpChannelId === null ||
-                pendingJumpChannelId === activeChannelId) &&
-              !showUnreachableNotice
-            }
-            onReact={channel.react}
-            onUnreact={channel.unreact}
-            onReply={canReplyHere ? startReply : undefined}
-            // The quote above a reply scrolls to the message it quotes. It used
-            // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
-            // this is the same machinery pins and saved messages already use.
-            onJumpToParent={(message) => jumpToMessage(message.id)}
-            onRetry={channel.retry}
-            onDiscard={channel.discard}
-            // Heavy-command rows bypass the outbox, so `channel.retry` above
-            // cannot reach them. This replays the original request under its
-            // original idempotency key and toasts the outcome through the same
-            // three-way channel a first dispatch uses (#1733).
-            onRetryUnconfirmed={async (replay) => {
-              // Every path here must end in a toast. The first dispatch gets
-              // that guarantee from `runDispatch` in the composer (which also
-              // tags Sentry); this control sits in the timeline and had
-              // neither, so a throw produced a blinking spinner, no message,
-              // and no telemetry — and an officer who concludes Retry is broken
-              // re-types the command, mints a fresh key and double-grants.
-              try {
-                const result = await channel.retryUnconfirmed(replay);
-                notifyDispatchOutcome(toast, replay.command, result);
-              } catch (error) {
-                Sentry.captureException(error, {
-                  tags: { slash_command: `${replay.command}_retry` },
-                });
-                // Non-destructive on purpose: the retry failing says nothing
-                // about whether the original attempt committed, and a red
-                // "failed" is what invites the re-type.
-                toast({
-                  title: "Couldn't retry that command",
-                  description:
-                    "The retry didn't go through. Check the points ledger before running the command again. A second run would record the points twice.",
-                });
-              }
-            }}
-            onAct={(messageId, actionType, payload) =>
-              void channel.act(messageId, actionType, payload)
-            }
-            // An edit authorizes as a post (`spec/behavior/chat/README.md`
-            // § Channels → Channel-access enforcement), so a member who can't
-            // post here, such as an alumnus in an ordinary channel, isn't
-            // offered one (#2775).
-            onEdit={activeChannel?.can_post !== false ? channel.edit : undefined}
-            onDelete={handleDeleteMessage}
-            bookmarkedMessageIds={bookmarkedMessageIds}
-            onToggleBookmark={handleToggleBookmark}
-            canManageChannel={canManageChannel}
-          />
-        </div>
-        {/*
+            <div
+              id="chat-timeline"
+              tabIndex={-1}
+              role="log"
+              aria-live="off"
+              aria-label="Chat timeline"
+              // `FOCUS_RING`, not `FOCUS_RING_ALWAYS`: this container is a large
+              // panel most of whose area is an ordinary mouse-click target (blank
+              // space below the last message), not a control reached only
+              // programmatically — `FOCUS_RING_ALWAYS`'s plain `focus:` would
+              // leave the ring painted after a routine click into that space.
+              // `focus-visible:` still shows it for the skip link's keyboard-
+              // driven jump, which is the case this needs to stay visible for.
+              className={cn(
+                "min-h-0 flex-1 overflow-hidden rounded-md",
+                FOCUS_RING,
+              )}
+            >
+              <MessageTimeline
+                ref={timeline}
+                channelId={activeChannel?.id}
+                nameFor={nameFor}
+                roleColorFor={roleColorFor}
+                avatarFor={avatarFor}
+                messages={channel.messages}
+                blockList={{ blockState, thread }}
+                onUnblock={handleUnblock}
+                onReloadMasked={handleReloadMasked}
+                maskedRefresh={maskedRefresh}
+                viewerId={userId}
+                isLoading={channel.isLoading}
+                loadError={channel.loadError}
+                hasOlder={channel.hasOlder}
+                isLoadingOlder={channel.isLoadingOlder}
+                olderError={channel.olderError}
+                onLoadOlder={loadOlderHistory}
+                channelStart={channelStartNode}
+                // Only while the jump is still working. Once it has settled on a
+                // notice the target stays pending (so a late arrival still lands),
+                // but holding follow through that would stop new messages
+                // scrolling into view until the member dismissed it.
+                holdFollow={
+                  pendingMessageId !== null &&
+                  (pendingJumpChannelId === null ||
+                    pendingJumpChannelId === activeChannelId) &&
+                  !showUnreachableNotice
+                }
+                onReact={channel.react}
+                onUnreact={channel.unreact}
+                onReply={canReplyHere ? startReply : undefined}
+                // The quote above a reply scrolls to the message it quotes. It used
+                // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
+                // this is the same machinery pins and saved messages already use.
+                onJumpToParent={(message) => jumpToMessage(message.id)}
+                onRetry={channel.retry}
+                onDiscard={channel.discard}
+                // Heavy-command rows bypass the outbox, so `channel.retry` above
+                // cannot reach them. This replays the original request under its
+                // original idempotency key and toasts the outcome through the same
+                // three-way channel a first dispatch uses (#1733).
+                onRetryUnconfirmed={async (replay) => {
+                  // Every path here must end in a toast. The first dispatch gets
+                  // that guarantee from `runDispatch` in the composer (which also
+                  // tags Sentry); this control sits in the timeline and had
+                  // neither, so a throw produced a blinking spinner, no message,
+                  // and no telemetry — and an officer who concludes Retry is broken
+                  // re-types the command, mints a fresh key and double-grants.
+                  try {
+                    const result = await channel.retryUnconfirmed(replay);
+                    notifyDispatchOutcome(toast, replay.command, result);
+                  } catch (error) {
+                    Sentry.captureException(error, {
+                      tags: { slash_command: `${replay.command}_retry` },
+                    });
+                    // Non-destructive on purpose: the retry failing says nothing
+                    // about whether the original attempt committed, and a red
+                    // "failed" is what invites the re-type.
+                    toast({
+                      title: "Couldn't retry that command",
+                      description:
+                        "The retry didn't go through. Check the points ledger before running the command again. A second run would record the points twice.",
+                    });
+                  }
+                }}
+                onAct={(messageId, actionType, payload) =>
+                  void channel.act(messageId, actionType, payload)
+                }
+                // An edit authorizes as a post (`spec/behavior/chat/README.md`
+                // § Channels → Channel-access enforcement), so a member who can't
+                // post here, such as an alumnus in an ordinary channel, isn't
+                // offered one (#2775).
+                onEdit={
+                  activeChannel?.can_post !== false ? channel.edit : undefined
+                }
+                onDelete={handleDeleteMessage}
+                bookmarkedMessageIds={bookmarkedMessageIds}
+                onToggleBookmark={handleToggleBookmark}
+                canManageChannel={canManageChannel}
+              />
+            </div>
+            {/*
           Directly above the composer, which is where Discord and Slack both put
           it and where a 48px header has no room for it. Reserves no space when
           nobody is typing: it is transient status, and a permanently reserved
           strip would push the composer down by a line on every channel.
         */}
-        {typingUsers.length > 0 ? (
-          <p className="shrink-0 px-4 pb-1 text-caption text-muted-foreground">
-            {typingUsers.length === 1
-              ? "Someone is typing…"
-              : `${typingUsers.length} people are typing…`}
-          </p>
-        ) : null}
-        </>
+            {typingUsers.length > 0 ? (
+              <p className="shrink-0 px-4 pb-1 text-caption text-muted-foreground">
+                {typingUsers.length === 1
+                  ? "Someone is typing…"
+                  : `${typingUsers.length} people are typing…`}
+              </p>
+            ) : null}
+          </>
         ) : null}
         {activeChannel ? (
           <Composer

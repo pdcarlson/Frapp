@@ -17,6 +17,8 @@ import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notif
 import { AccountMenu } from "@/components/layout/account-menu";
 import { persistNavCollapsed } from "@/components/layout/nav-collapse";
 import { isFullBleedRoute } from "@/components/layout/full-bleed-routes";
+import { resolvePageTitle } from "@/components/layout/page-title";
+import { isNavItemVisible } from "@/components/layout/protected-nav-item";
 import { useChapterTheme } from "@/lib/hooks/use-chapter-theme";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard-gate";
@@ -36,13 +38,15 @@ import { cn } from "@/lib/utils";
  *
  * What this shell deliberately no longer does:
  *
- * - **No ⌘K palette and no keydown listener for it.** The find field in the top
- *   bar is the replacement, on Cmd/Ctrl+F, and it is visible rather than
- *   summoned. The `cmdk` dependency stays: `components/ui/command.tsx` still
+ * - **No ⌘K palette and no keydown listener for it.** Find in the top bar is
+ *   the replacement: a visible field that opens a centered dialog, as does
+ *   Cmd/Ctrl+F, both owned by `find-bar.tsx`. The `cmdk` dependency stays: `components/ui/command.tsx` still
  *   serves the chat slash palette and the chapter wizard.
- * - **No page title.** Routes name themselves with `PageHeader`. The shell has
- *   no route-to-title map any more, which also retires the "a route with no nav
- *   row is called Dashboard" defect rather than patching it again.
+ * - **The page title is the top bar's**, derived from the route by
+ *   `page-title.ts` (2026-11-05). It reads the nav rows' own labels rather
+ *   than keeping a table of its own, and a route it does not know gets no
+ *   title rather than a made-up one: the "a route with no nav row is called
+ *   Dashboard" defect stays retired.
  * - **No account menu in the nav, no subscription card, no BETA row.** Identity
  *   moved to the top-bar avatar; the other two are deleted outright (`1t`).
  *
@@ -90,6 +94,15 @@ export function DashboardShell({
   // out during the initial load. Read from the member-readable current chapter,
   // never the officer-only config read (#1982; the hook says why).
   const isModuleEnabled = useChapterModuleGate();
+  // The crumb's parent link follows its nav row's gates, so the top bar never
+  // offers a member the Settings door the nav hides from them.
+  const pageTitle = useMemo(
+    () =>
+      resolvePageTitle(pathname, (item) =>
+        isNavItemVisible(item, permissions, isModuleEnabled),
+      ),
+    [pathname, permissions, isModuleEnabled],
+  );
 
   const { data: notificationsData } = useNotifications();
   const unreadNotifications = useMemo(() => {
@@ -190,6 +203,7 @@ export function DashboardShell({
       */}
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
+          pageTitle={pageTitle}
           unreadNotifications={unreadNotifications}
           onOpenNotifications={() => setNotificationDrawerOpen(true)}
           onOpenMobileNav={() => setMobileNavOpen(true)}
@@ -210,7 +224,9 @@ export function DashboardShell({
           id="main-content"
           className={cn(
             "flex min-h-0 flex-1 flex-col",
-            fullBleed ? "overflow-hidden" : "gap-3 overflow-y-auto px-4 py-4 sm:px-6",
+            fullBleed
+              ? "overflow-hidden"
+              : "gap-3 overflow-y-auto px-4 py-4 sm:px-6",
           )}
         >
           {children}

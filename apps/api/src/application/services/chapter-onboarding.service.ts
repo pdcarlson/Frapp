@@ -12,7 +12,7 @@ import { LEGAL_POLICY_VERSION } from '#domain/constants/legal';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type { Chapter } from '#domain/entities/chapter.entity';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 import {
@@ -172,30 +172,31 @@ export class ChapterOnboardingService {
     // Best-effort: a failed custom-field / welcome / directory-request write
     // must not roll back an otherwise successfully created chapter, so each
     // rejection (a PostgREST error the repository threw, or fetch/DNS/TLS) is
-    // logged here and nowhere else.
-    // The field seed logs at `error`, not `warn`: a failure is silent from the
-    // officer's side — onboarding still returns 201 — and it fails for *every*
-    // chapter, not one, since the rows are identical each time. A wrong
-    // conflict target or a renamed column would otherwise seed nothing
+    // logged and reported to Sentry here, and nowhere else.
+    // The field seed and the directory request report at `error`, not `warn`:
+    // a failure is silent from the officer's side — onboarding still returns
+    // 201 — and nothing retries either write. The field seed also fails for
+    // *every* chapter, not one, since the rows are identical each time. A
+    // wrong conflict target or a renamed column would otherwise seed nothing
     // indefinitely with no signal above debug noise.
     await this.provisionCustomFields(chapter.id, seed.customFields).catch(
       (err) =>
-        logThrowable(
-          this.logger,
-          'error',
-          'Failed to provision archetype custom fields',
-          err,
-        ),
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'onboarding-custom-field-seed',
+          message: 'Failed to provision archetype custom fields',
+          error: err,
+        }),
     );
 
     await this.postWelcomeMessage(chapter.id, chapter.name, branding).catch(
       (err) =>
-        logThrowable(
-          this.logger,
-          'warn',
-          'Failed to post onboarding welcome message',
-          err,
-        ),
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'onboarding-welcome-message',
+          message: 'Failed to post onboarding welcome message',
+          error: err,
+        }),
     );
 
     if (!dto.directory_id) {
@@ -206,12 +207,12 @@ export class ChapterOnboardingService {
         branding,
         seed.archetype,
       ).catch((err) =>
-        logThrowable(
-          this.logger,
-          'warn',
-          'Failed to record chapter directory request',
-          err,
-        ),
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'onboarding-directory-request',
+          message: 'Failed to record chapter directory request',
+          error: err,
+        }),
       );
     }
 

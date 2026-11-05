@@ -40,15 +40,18 @@ import { anyReadUncached } from "@/components/shared/async-states";
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
-import { PageHeader } from "@/components/layout/page-header";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { Switch } from "@/components/ui/switch";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { getErrorMessage, initials, parseGuardedInt } from "@/lib/utils";
+import {
+  NotificationSettingsSkeleton,
+  ProfilePageSkeleton,
+  QuietHoursSkeleton,
+} from "@/components/profile/profile-skeleton";
 
 type CurrentUser = {
   id?: string;
@@ -179,7 +182,6 @@ export function ProfilePanel() {
   if (isOffline && anyReadUncached(userQuery)) {
     return (
       <>
-        <PageHeader title="Profile" />
         <NestedOffline
           title="Your profile is unavailable offline"
           description="Reconnect to load your directory entry and notification preferences."
@@ -190,17 +192,11 @@ export function ProfilePanel() {
     );
   }
   if (userQuery.isLoading || userPaused) {
-    return (
-      <>
-        <PageHeader title="Profile" />
-        <NestedLoading message="Loading your profile..." sole />
-      </>
-    );
+    return <ProfilePageSkeleton />;
   }
   if (userQuery.isError && anyReadUncached(userQuery)) {
     return (
       <>
-        <PageHeader title="Profile" />
         <NestedError
           title="Couldn't load your profile"
           description="You're signed in, but Frapp couldn't be reached. Try again in a moment."
@@ -332,10 +328,11 @@ export function ProfilePanel() {
    * body and toasted "Preferences saved". That is #1209's "reports a failed
    * fetch as success", one screen over.
    *
-   * `sole` is deliberately NOT passed. The panel already owns a screen-scale
-   * `LoadingState` above, so the live region and the `<h2>` promotion belong to
-   * that one — which is exactly the case `nested-states.tsx` describes as the
-   * default, and the reason the prop defaults off.
+   * `sole` is deliberately NOT passed to the nested error and offline states:
+   * they sit inside an already-loaded profile page, which is exactly the case
+   * `nested-states.tsx` describes as the default, and the reason the prop
+   * defaults off. The loading branch is `QuietHoursSkeleton`, which carries
+   * its own one-line status.
    */
   const settingsPaused =
     settingsQuery.isPending && settingsQuery.fetchStatus === "paused";
@@ -349,9 +346,7 @@ export function ProfilePanel() {
       />
     );
   } else if (settingsQuery.isLoading || settingsPaused) {
-    preferencesState = (
-      <NestedLoading message="Loading your preferences..." lines={3} />
-    );
+    preferencesState = <QuietHoursSkeleton />;
   } else if (settingsQuery.isError && anyReadUncached(settingsQuery)) {
     preferencesState = (
       <NestedError
@@ -421,12 +416,7 @@ export function ProfilePanel() {
       />
     );
   } else if (preferencesQuery.isLoading || preferencesPaused) {
-    categoriesState = (
-      <NestedLoading
-        message="Loading your notification settings..."
-        lines={6}
-      />
-    );
+    categoriesState = <NotificationSettingsSkeleton />;
   } else if (preferencesQuery.isError && anyReadUncached(preferencesQuery)) {
     categoriesState = (
       <NestedError
@@ -499,7 +489,6 @@ export function ProfilePanel() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Profile" />
       {/*
         One column, capped at a form's width: a 1,100px name field is not a
         form anyone reads. Each block is a section on the page surface under

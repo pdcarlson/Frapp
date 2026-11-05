@@ -111,16 +111,15 @@ export type SignetTokens = {
   touch: { minimum: number; button: number; buttonLarge: number; tabBar: number };
   focus: { ringWidth: number; ringOpacity: number };
   /**
-   * Scrollbars are board chrome, not a per-surface opt-in: an 8px gold thumb
-   * on a fixed `#1A1A1A` track, drawn everywhere (web-framework board option
-   * `3a`, "never hidden"). The greenfield shell is the surface that settled
-   * this; see the `@layer components` block in `signet.css` for the engine
-   * split and for why the previous low-opacity-white opt-in was retired.
+   * Scrollbars are quiet chrome drawn on every scroll region: a thin neutral
+   * thumb on a clear track, so the bar blends into whichever surface it sits
+   * on. It replaced the board's gold-on-`#1A1A1A` bar (option `3a`) on
+   * 2026-11-05 at the owner's request: the gold bar read as the loudest thing on
+   * the chat screen. See the `@layer components` block in `signet.css` for the
+   * engine split.
    *
-   * Both colors are FIXED literals and never retint per chapter. The thumb is
-   * mark gold, which the brand lock keeps out of the accent engine entirely
-   * (`spec/ui/brand-identity.md` §2), so wiring it to `--primary` would be the
-   * same house-tenant mistake as painting the mark with a tenant accent.
+   * Both colors are FIXED literals and never retint per chapter. A scrollbar
+   * is not an accent role, so the accent engine must not reach it.
    */
   scrollbar: {
     width: number;
@@ -192,13 +191,13 @@ const SIGNET_DARK: SignetTokens = {
     avatar: "50%",
   },
   spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, "2xl": 32, "3xl": 48 },
-  touch: { minimum: 44, button: 46, buttonLarge: 48, tabBar: 56 },
+  touch: { minimum: 44, button: 44, buttonLarge: 48, tabBar: 56 },
   focus: { ringWidth: 3, ringOpacity: 0.25 },
   scrollbar: {
-    width: 8,
-    thumb: "#DDB844",
-    thumbHover: "#F0CD5E",
-    track: "#1A1A1A",
+    width: 6,
+    thumb: "rgba(255,255,255,0.12)",
+    thumbHover: "rgba(255,255,255,0.22)",
+    track: "rgba(0,0,0,0)",
   },
   motion: motionTokens,
 };
@@ -290,8 +289,9 @@ export function getSignetCssVars(
     "--space-2xl": `${t.spacing["2xl"]}px`,
     "--space-3xl": `${t.spacing["3xl"]}px`,
 
-    // Touch floors (foundations.md §9). Web honors the same 44px minimum;
-    // pointer input does not make a small target acceptable.
+    // Touch floors (foundations.md §9). Web honors the same 44px minimum
+    // wherever a finger lands (`pointer: coarse`); a mouse gets the denser
+    // steps of the control size scale.
     "--touch-min": `${t.touch.minimum}px`,
     "--touch-button": `${t.touch.button}px`,
 

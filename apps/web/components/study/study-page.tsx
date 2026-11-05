@@ -31,10 +31,8 @@ import { denseListClassName } from "@/components/shared/table-controls";
 import {
   ErrorState,
   anyReadUncached,
-  LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
-import { PageHeader } from "@/components/layout/page-header";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -51,6 +49,7 @@ import {
   creditedSeconds,
   selectActiveSession,
 } from "@/components/study/credited-time";
+import { StudyPageSkeleton } from "@/components/study/study-skeleton";
 
 type Geofence = {
   id: string;
@@ -528,7 +527,6 @@ export function StudyPage() {
   ) {
     return (
       <>
-        <PageHeader title="Study hours" />
         <OfflineState
           title="Study hours unavailable offline"
           description="Reconnect to start a session. Tracking needs a live location check."
@@ -542,18 +540,12 @@ export function StudyPage() {
   }
 
   if (geofencesQuery.isPending || sessionsQuery.isPending) {
-    return (
-      <>
-        <PageHeader title="Study hours" />
-        <LoadingState message="Loading study zones..." />
-      </>
-    );
+    return <StudyPageSkeleton />;
   }
 
   if (geofencesQuery.isError || sessionsQuery.isError) {
     return (
       <>
-        <PageHeader title="Study hours" />
         <ErrorState
           title="Couldn't load study data"
           description="Confirm your chapter access and retry."
@@ -568,8 +560,6 @@ export function StudyPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Study hours" />
-
       {/*
         Disable, don't hide (§5 rule 4): session history is a read and stays
         visible, so the notice sits above both the live session and the starter

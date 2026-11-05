@@ -52,6 +52,7 @@ import {
   type AuditDiff,
 } from './chapter-audit-log.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /**
  * Paid module keys, read from the catalog rather than a second hand-kept list —
@@ -78,11 +79,19 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * Recursively merges `patch` onto `base`. Nested plain objects merge key by
  * key; everything else (scalars, arrays) is replaced by the patch value.
  * Used so a partial config PATCH preserves untouched keys in JSON columns.
+ *
+ * An `undefined` value is a key the client did not send, never a request to
+ * delete one: JSON cannot carry `undefined`, so only a DTO instance with an
+ * emitted class field can produce it. Merging it would store the key's
+ * absence, which is how a Save mark wiped a chapter's accent, letters and
+ * founding year (`useDefineForClassFields` in this app's tsconfig). Clearing
+ * a branding text field is an empty string instead.
  */
 function deepMerge(base: unknown, patch: unknown): unknown {
   if (!isPlainObject(base) || !isPlainObject(patch)) return patch;
   const result: Record<string, unknown> = { ...base };
   for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
     result[key] =
       isPlainObject(value) && isPlainObject(result[key])
         ? deepMerge(result[key], value)
@@ -464,10 +473,11 @@ export class ChapterConfigService {
       // merged object as `getConfig` read it, accent included, so a Settings
       // accent save landing between that read and this write gets its seed
       // replaced under the palette it just stamped current. The recompute
-      // re-derives from the seed stored here; if it fails, which is only
-      // logged, the cleared stamp leaves the row for the stale-palette sweep
-      // instead of stamped current over a palette from another seed. (The
-      // accent save itself is still lost in that race: #2607.)
+      // re-derives from the seed stored here; if it fails, which is reported
+      // and not thrown, the cleared stamp leaves the row for the
+      // stale-palette sweep instead of stamped current over a palette from
+      // another seed. (The accent save itself is still lost in that race:
+      // #2607.)
       update['theme_palette_engine_version'] = null;
 
       const readAccent = (branding: unknown): string | undefined =>
@@ -683,7 +693,12 @@ export class ChapterConfigService {
         );
         if (written) committedThemePalette = build.palette;
       } catch (err) {
-        logThrowable(this.logger, 'warn', 'Failed to recompute palette', err);
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'chapter-config-palette-recompute',
+          message: 'Failed to recompute palette',
+          error: err,
+        });
       }
     }
 
@@ -698,12 +713,12 @@ export class ChapterConfigService {
     try {
       return await this.getConfig(chapterId);
     } catch (err) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `trailing getConfig after committed patch failed for chapter ${chapterId}; returning locally-merged state`,
-        err,
-      );
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chapter-config-trailing-read',
+        message: `trailing getConfig after committed patch failed for chapter ${chapterId}; returning locally-merged state`,
+        error: err,
+      });
       return this.configAfterCommittedPatch(existing, {
         update,
         workflowUpserts,
@@ -911,6 +926,8 @@ export class ChapterConfigService {
     try {
       return await read();
     } catch (err) {
+      // caught-failure-exempt: rethrown; AllExceptionsFilter reports the 5xx,
+      // and patchConfig's trailing-read catch reports the swallowed case
       logThrowable(
         this.logger,
         'error',
@@ -929,6 +946,8 @@ export class ChapterConfigService {
     try {
       return await call();
     } catch (err) {
+      // caught-failure-exempt: rethrown; AllExceptionsFilter reports the 5xx,
+      // and patchConfig's palette-recompute catch reports the swallowed case
       logThrowable(this.logger, 'error', message, err);
       throw err;
     }

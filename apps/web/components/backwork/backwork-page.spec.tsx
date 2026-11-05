@@ -130,7 +130,7 @@ describe("BackworkPage disabled-query handling", () => {
 
   it("offers a retry when offline rather than spinning on a paused query", () => {
     // README §4 item 4. `paused` was routed to the loading copy, so an
-    // offline member with no cached archive sat on "Loading backwork..."
+    // offline member with no cached archive sat on "Loading backwork"
     // for as long as they stayed offline.
     mockOffline.value = true;
     resourcesQuery.data = undefined as unknown as unknown[];
@@ -142,7 +142,7 @@ describe("BackworkPage disabled-query handling", () => {
     expect(
       screen.getByText(/backwork unavailable offline/i),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Loading backwork...")).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading backwork")).not.toBeInTheDocument();
   });
 
   it("announces the load, which moving to the nested state family nearly cost", () => {
@@ -156,7 +156,7 @@ describe("BackworkPage disabled-query handling", () => {
     render(<BackworkPage />);
 
     const live = screen.getByRole("status");
-    expect(live).toHaveTextContent("Loading backwork...");
+    expect(live).toHaveTextContent("Loading backwork");
     expect(live).toHaveAttribute("aria-live", "polite");
   });
 
@@ -183,7 +183,7 @@ describe("BackworkPage disabled-query handling", () => {
     render(<BackworkPage />);
 
     expect(screen.getByText("CS 3320 Midterm")).toBeInTheDocument();
-    expect(screen.queryByText("Loading backwork...")).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading backwork")).not.toBeInTheDocument();
   });
 
   it("keeps the upload trigger reachable while the list is offline", () => {
@@ -211,7 +211,7 @@ describe("BackworkPage disabled-query handling", () => {
 
     render(<BackworkPage />);
 
-    expect(screen.queryByText("Loading backwork...")).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading backwork")).not.toBeInTheDocument();
     expect(screen.getByText("No chapter selected")).toBeInTheDocument();
     expect(
       screen.getByText(/pick a chapter from the switcher/i),
@@ -226,7 +226,7 @@ describe("BackworkPage disabled-query handling", () => {
 
     render(<BackworkPage />);
 
-    expect(screen.queryByText("Loading backwork...")).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading backwork")).not.toBeInTheDocument();
   });
 
   it("still spins while a fetch is actually in flight", () => {
@@ -237,7 +237,7 @@ describe("BackworkPage disabled-query handling", () => {
 
     render(<BackworkPage />);
 
-    expect(screen.getByText("Loading backwork...")).toBeInTheDocument();
+    expect(screen.getByText("Loading backwork")).toBeInTheDocument();
   });
 
   it("spins when the query is paused (offline) instead of showing an empty library", () => {
@@ -248,7 +248,7 @@ describe("BackworkPage disabled-query handling", () => {
 
     render(<BackworkPage />);
 
-    expect(screen.getByText("Loading backwork...")).toBeInTheDocument();
+    expect(screen.getByText("Loading backwork")).toBeInTheDocument();
     expect(
       screen.queryByText("No backwork matches this view"),
     ).not.toBeInTheDocument();

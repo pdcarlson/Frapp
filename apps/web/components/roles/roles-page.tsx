@@ -38,9 +38,9 @@ import {
   EmptyState,
   ErrorState,
   anyReadUncached,
-  LoadingState,
   OfflineState,
   PermissionsOfflineSurface,
+  Skeleton,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { RolesGlyph } from "@/components/layout/nav-glyphs";
@@ -55,7 +55,10 @@ import {
   parseGuardedInt,
 } from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
-import { signetDarkTokens } from "@repo/theme/signet";
+import { roleColorOrNull, type RoleColorHex } from "@repo/validation";
+import { RoleColorSwatches } from "@/components/roles/role-color-swatches";
+import { SectionSkeleton } from "@/components/shared/page-skeletons";
+import { SettingsListCard } from "@/components/settings/settings-skeleton";
 
 type Role = {
   id: string;
@@ -67,32 +70,6 @@ type Role = {
   color: string | null;
   created_at: string;
 };
-
-/**
- * What the colour picker opens on when a role has none.
- *
- * The two pickers seeded themselves `#2563EB` and `#10B981` — one concept,
- * two arbitrary values, and both of them from the palette this cutover is
- * replacing. `#2563EB` is the royal blue the cutover skill bans by name
- * ("never brown-bronze, never royal blue"); `#10B981` is #916's conflicting
- * emerald, the raw Tailwind green that shipped beside `--success`.
- *
- * A literal hex rather than a `var(--…)`: `roles.color` is chapter data written
- * to the database and rendered as a raw swatch, so a token reference here
- * would be stored as the string `"var(--primary)"` and paint nothing. The
- * house seed is the system's own default, which opens the picker on the
- * product's colour instead of a stranger's blue.
- *
- * Read from `@repo/theme/signet` rather than `@repo/chapter-theme`, which also
- * exports it as `HOUSE_SEED`: that package's `index.ts` re-exports through a
- * `./signet.js` specifier Turbopack cannot resolve from source, so importing
- * it here type-checks and passes vitest and then fails `next build`. It is
- * fine in `tests/`, which is why the contrast guards use it.
- *
- * The column's server default is `null` and stays that way — this only decides
- * where the picker starts, never what an untouched role stores.
- */
-const DEFAULT_ROLE_SWATCH = signetDarkTokens.color.gold.seed;
 
 /**
  * "This chapter needs a new President" recovery prompt
@@ -217,12 +194,16 @@ export function RolesAndPermissionsPage() {
 
   // Draft state for editing the active role.
   const [nameDraft, setNameDraft] = useState("");
-  const [colorDraft, setColorDraft] = useState("");
+  const [colorDraft, setColorDraft] = useState<RoleColorHex | null>(null);
+  // Whether the officer picked a swatch since selecting the role. An
+  // off-palette stored value shows as "No color", so the draft alone can't
+  // tell "left alone" from "cleared on purpose".
+  const [colorTouched, setColorTouched] = useState(false);
   const [displayOrderDraft, setDisplayOrderDraft] = useState("");
 
   // Draft state for creating a new role.
   const [createName, setCreateName] = useState("");
-  const [createColor, setCreateColor] = useState("");
+  const [createColor, setCreateColor] = useState<RoleColorHex | null>(null);
 
   // Presidency transfer draft.
   const [transferTargetMemberId, setTransferTargetMemberId] =
@@ -231,7 +212,10 @@ export function RolesAndPermissionsPage() {
   function selectRole(role: Role) {
     setActiveRoleId(role.id);
     setNameDraft(role.name);
-    setColorDraft(role.color ?? "");
+    // An off-palette value (a pre-#3485 seed or free pick) reads as none,
+    // which is also how every client paints it.
+    setColorDraft(roleColorOrNull(role.color));
+    setColorTouched(false);
     setDisplayOrderDraft(String(role.display_order ?? 0));
   }
 
@@ -242,7 +226,14 @@ export function RolesAndPermissionsPage() {
         id: activeRole.id,
         body: {
           name: nameDraft || undefined,
-          color: colorDraft || undefined,
+          // Sent only when the officer picked one that differs from what is
+          // stored, and `null` clears it. Re-saving an untouched role leaves
+          // the column alone (no no-op audit row), and picking "No color" on
+          // a role holding an off-palette hex does clear it.
+          color:
+            colorTouched && colorDraft !== (activeRole.color ?? null)
+              ? colorDraft
+              : undefined,
           display_order: parseGuardedInt(displayOrderDraft),
           // **No `permissions` key.** This form no longer edits them, and
           // sending the draft anyway would post whatever the role held when it
@@ -273,7 +264,7 @@ export function RolesAndPermissionsPage() {
     try {
       await createRole.mutateAsync({
         name: createName.trim(),
-        color: createColor || undefined,
+        color: createColor ?? undefined,
         // Empty by design: the `4e` matrix grants permissions, and it is the
         // only surface that does. The board's flow is "+ New role" then flip
         // the new column's cells.
@@ -284,7 +275,7 @@ export function RolesAndPermissionsPage() {
         description: `${createName} is ready to assign.`,
       });
       setCreateName("");
-      setCreateColor("");
+      setCreateColor(null);
     } catch (error) {
       toast({
         title: "Couldn't create role",
@@ -403,7 +394,15 @@ export function RolesAndPermissionsPage() {
       />
     );
   } else if (rolesQuery.isLoading || paused) {
-    body = <LoadingState message="Loading roles and permissions..." />;
+    body = (
+      <SectionSkeleton label="Loading roles and permissions">
+        <Skeleton className="h-4 w-32" />
+        <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
+          <SettingsListCard rows={4} />
+          <SettingsListCard rows={2} />
+        </div>
+      </SectionSkeleton>
+    );
   } else if (rolesQuery.isError) {
     body = (
       <ErrorState
@@ -476,7 +475,8 @@ export function RolesAndPermissionsPage() {
                             aria-hidden="true"
                             className="h-3 w-3 rounded-full border"
                             style={{
-                              backgroundColor: role.color ?? "transparent",
+                              backgroundColor:
+                                roleColorOrNull(role.color) ?? "transparent",
                             }}
                           />
                           <span className="truncate text-sm font-medium">
@@ -544,13 +544,15 @@ export function RolesAndPermissionsPage() {
                       }}
                     />
                   </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="role-color">Accent color</Label>
-                    <Input
-                      id="role-color"
-                      type="color"
-                      value={colorDraft || DEFAULT_ROLE_SWATCH}
-                      onChange={(event) => setColorDraft(event.target.value)}
+                  <div className="grid gap-1 sm:col-span-2">
+                    <Label id="role-color-label">Color</Label>
+                    <RoleColorSwatches
+                      labelId="role-color-label"
+                      value={colorDraft}
+                      onChange={(next) => {
+                        setColorDraft(next);
+                        setColorTouched(true);
+                      }}
                     />
                   </div>
                 </div>
@@ -614,12 +616,11 @@ export function RolesAndPermissionsPage() {
                   />
                 </div>
                 <div className="grid gap-1">
-                  <Label htmlFor="create-role-color">Accent color</Label>
-                  <Input
-                    id="create-role-color"
-                    type="color"
-                    value={createColor || DEFAULT_ROLE_SWATCH}
-                    onChange={(event) => setCreateColor(event.target.value)}
+                  <Label id="create-role-color-label">Color</Label>
+                  <RoleColorSwatches
+                    labelId="create-role-color-label"
+                    value={createColor}
+                    onChange={setCreateColor}
                   />
                 </div>
               </div>

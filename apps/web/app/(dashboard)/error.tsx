@@ -83,15 +83,12 @@ import { cn } from "@/lib/utils";
  * §10 card, and stretching one across a 1440px display is what `CrestPage` was
  * quietly preventing before.
  *
- * ## It renders the `h1`
+ * ## The heading is an `h2`
  *
- * Not a detail: this boundary renders *instead of* the page, and the page's
- * `PageHeader` is what owns the route's only `h1` now that the shell's was
- * deleted. Left at `ErrorState`'s default `h2`, a member navigating by heading
- * would land on an orphan with no page title — and `page-header.tsx` names that
- * exact failure ("a page that mounts this only on its success path loses its
- * heading exactly when the member is most lost"). `app/error.tsx`, which used
- * to catch these, renders an `h1` through `CrestPage`; this keeps it.
+ * The route's `h1` is the top bar's page title (`top-bar.tsx`), which the shell
+ * renders around this boundary as it does around the page, so the error's own
+ * heading sits one level under it. It rendered an `h1` while the title lived
+ * inside each page and this boundary replaced it (2026-09 to 2026-11-05).
  */
 export default function DashboardSegmentError({
   error,
@@ -104,7 +101,7 @@ export default function DashboardSegmentError({
 
   return (
     <div className={cn("w-full max-w-md", fullBleed && "p-4")}>
-      <SegmentError error={error} retry={retry} headingLevel="h1" />
+      <SegmentError error={error} retry={retry} />
     </div>
   );
 }

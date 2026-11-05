@@ -140,9 +140,7 @@ describe("PollsPage disabled-query handling", () => {
 
     render(<PollsPage />);
 
-    expect(
-      screen.queryByText("Loading chapter polls..."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading chapter polls")).not.toBeInTheDocument();
     // Inside the granted `<Can>` the permission half of `enabled` is already
     // true, so an idle query settles on the empty state rather than repeating
     // the denied copy, which lives in `deniedFallback` alone.
@@ -159,7 +157,7 @@ describe("PollsPage disabled-query handling", () => {
 
     render(<PollsPage />);
 
-    expect(screen.getByText("Loading chapter polls...")).toBeInTheDocument();
+    expect(screen.getByText("Loading chapter polls")).toBeInTheDocument();
   });
 
   it("spins when the query is paused (offline) rather than claiming view_all is missing", () => {
@@ -174,7 +172,7 @@ describe("PollsPage disabled-query handling", () => {
 
     render(<PollsPage />);
 
-    expect(screen.getByText("Loading chapter polls...")).toBeInTheDocument();
+    expect(screen.getByText("Loading chapter polls")).toBeInTheDocument();
     expect(
       screen.queryByText("No polls match this view"),
     ).not.toBeInTheDocument();
@@ -182,7 +180,7 @@ describe("PollsPage disabled-query handling", () => {
 
   it("offers a retry when offline instead of a spinner that cannot resolve", () => {
     // README §4 item 4. A paused query is `isPending`, so without this branch
-    // an offline member with no cached polls sat on "Loading chapter polls..."
+    // an offline member with no cached polls sat on "Loading chapter polls"
     // for as long as they stayed offline.
     mockOffline.value = true;
     pollsQuery.data = undefined as unknown as unknown[];
@@ -192,9 +190,7 @@ describe("PollsPage disabled-query handling", () => {
     render(<PollsPage />);
 
     expect(screen.getByText(/polls unavailable offline/i)).toBeInTheDocument();
-    expect(
-      screen.queryByText("Loading chapter polls..."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading chapter polls")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
   });
 
@@ -225,9 +221,7 @@ describe("PollsPage disabled-query handling", () => {
     render(<PollsPage />);
 
     expect(screen.getAllByText("Pizza night?").length).toBeGreaterThan(0);
-    expect(
-      screen.queryByText("Loading chapter polls..."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading chapter polls")).not.toBeInTheDocument();
   });
 
   it("answers the permission question before the network one", () => {
@@ -254,22 +248,20 @@ describe("PollsPage disabled-query handling", () => {
 
     render(<PollsPage />);
 
-    expect(
-      screen.queryByText("Loading chapter polls..."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading chapter polls")).not.toBeInTheDocument();
     expect(screen.getByText(/can.t see every poll/i)).toBeInTheDocument();
     expect(screen.getByText(/you can still vote in chat/i)).toBeInTheDocument();
   });
 
-  it("keeps the title on the denied path but offers no filters", () => {
+  it("offers no filters on the denied path", () => {
     // The toolbar drives a read this member cannot make, so it rides on the
-    // granted branch only; the heading does not.
+    // granted branch only. The title is the top bar's, on every branch.
     mockCanGrant.value = false;
 
     render(<PollsPage />);
 
     expect(
-      screen.getByRole("heading", { level: 1, name: "Polls" }),
+      screen.getByText(/your role can't see every poll/i),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("combobox", { name: /filter polls by channel/i }),
@@ -293,18 +285,19 @@ describe("PollsPage layout", () => {
     const { container } = render(<PollsPage />);
 
     expect(cardFilledContainers(container)).toEqual([]);
-    const tiles = within(screen.getByRole("list", { name: "Polls" })).getAllByRole(
-      "listitem",
-    );
+    const tiles = within(
+      screen.getByRole("list", { name: "Polls" }),
+    ).getAllByRole("listitem");
     expect(tiles).toHaveLength(2);
     expect(tiles[0]!.className).toContain("border-border");
   });
 
-  it("puts the filters and refresh in the title row", () => {
+  it("puts the filters and refresh in one action row", () => {
     render(<PollsPage />);
 
-    const titleRow = screen.getByRole("heading", { level: 1, name: "Polls" })
-      .parentElement!;
+    const titleRow = screen.getByRole("button", {
+      name: /refresh polls/i,
+    }).parentElement!;
     expect(
       within(titleRow).getByRole("combobox", {
         name: /filter polls by channel/i,

@@ -23,6 +23,12 @@ export type SwallowedReport = (
        * with `details`.
        */
       error: unknown;
+      /**
+       * Replaces the {@link errorFingerprint} grouping. Only for a caller
+       * whose grouping is the site that caught the error, not its stack:
+       * `reportCaughtFailure`.
+       */
+      fingerprint?: string[];
     }
 ) & {
   level: SeverityLevel;
@@ -74,7 +80,7 @@ export function reportSwallowed(
     };
     if ('error' in report) {
       const reported = toReportableError(report.error);
-      const fingerprint = errorFingerprint(reported);
+      const fingerprint = report.fingerprint ?? errorFingerprint(reported);
       return Sentry.captureException(reported, {
         ...context,
         ...(fingerprint ? { fingerprint } : {}),

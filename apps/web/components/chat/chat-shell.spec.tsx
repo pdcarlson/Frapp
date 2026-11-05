@@ -4,6 +4,7 @@ import {
   screen,
   fireEvent,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useEffect } from "react";
@@ -733,9 +734,18 @@ vi.mock("./message-timeline", async () => {
       onEdit?: (messageId: string, content: string) => Promise<void>;
       canManageChannel?: boolean;
       holdFollow?: boolean;
+      channelStart?: React.ReactNode;
     }
   >(function MessageTimeline(
-    { messages, onDelete, onReply, onEdit, canManageChannel, holdFollow },
+    {
+      messages,
+      onDelete,
+      onReply,
+      onEdit,
+      canManageChannel,
+      holdFollow,
+      channelStart,
+    },
     ref,
   ) {
     // Models the REAL contract: the timeline can only scroll to a message it
@@ -754,6 +764,11 @@ vi.mock("./message-timeline", async () => {
       <div data-testid="message-timeline">
         <span data-testid="can-manage-channel">{String(canManageChannel)}</span>
         <span data-testid="hold-follow">{String(!!holdFollow)}</span>
+        {/* Hidden, so its region doesn't count as a shell column; its
+            queries pass `hidden: true`. */}
+        <div data-testid="channel-start" hidden>
+          {channelStart}
+        </div>
         {/* Whether the shell offered a Reply handler at all — the read-only
             rule (#489 AC 4) is expressed by withholding the prop, so it is
             invisible without this echo. */}
@@ -1845,6 +1860,62 @@ describe("ChatShell accessibility landmarks (#396)", () => {
  * call the handler back) — this is the one place that logic can be tested
  * without a real Virtuoso/DOM-heavy `MessageTimeline`.
  */
+/**
+ * The channel's description in the header, and the channel start the shell
+ * hands the timeline: an officer's shortcut into Chat admin, a member's none.
+ */
+describe("ChatShell channel description and start", () => {
+  const described = () => {
+    channelsQueryState.value = {
+      data: CHANNELS.map((c) =>
+        c.id === "chan-general"
+          ? { ...c, description: "The whole chapter." }
+          : c,
+      ),
+    };
+  };
+
+  it("shows the description in the header and hands the timeline the channel start", async () => {
+    described();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    const lines = await screen.findAllByText("The whole chapter.");
+    const header = lines
+      .map((line) => line.closest("header"))
+      .find((found) => found !== null)!;
+    expect(header).toBeTruthy();
+    // The channel name is the thread's own h2, so the start's h3 sits under it.
+    expect(within(header).getByRole("heading", { level: 2 })).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("channel-start")).getByRole("heading", {
+        level: 3,
+        hidden: true,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers an officer Edit channel and a member nothing", async () => {
+    described();
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["channels:manage"] },
+    });
+    const { unmount } = render(<ChatShell initialChannelId="chan-general" />);
+    const start = await screen.findByTestId("channel-start");
+    expect(
+      within(start).getByRole("link", { name: "Edit channel", hidden: true }),
+    ).toHaveAttribute("href", "/chat-admin?channel=chan-general");
+    unmount();
+
+    mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(
+      within(await screen.findByTestId("channel-start")).queryByRole("link", {
+        hidden: true,
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("ChatShell delete-message wiring", () => {
   it("derives canManageChannel from the channels:manage permission", async () => {
     mockUseMyPermissions.mockReturnValue({
@@ -3290,5 +3361,18 @@ describe("ChatShell block list (#2313)", () => {
     render(<ChatShell initialChannelId="chan-general" />);
 
     expect(screen.getByText("Someone is typing…")).toBeInTheDocument();
+  });
+});
+
+describe("ChatShell heading level", () => {
+  it("names the channel in an h2, under the top bar's h1", () => {
+    // The route's h1 is the top bar's "Chat" (`top-bar.tsx`), rendered by the
+    // shell around this component, so an h1 here would give /chat two.
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+    expect(screen.getAllByRole("heading", { level: 2 }).length).toBeGreaterThan(
+      0,
+    );
   });
 });

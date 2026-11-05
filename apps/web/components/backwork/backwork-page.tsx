@@ -41,13 +41,12 @@ import { denseListClassName } from "@/components/shared/table-controls";
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { BackworkGlyph } from "@/components/documents/resources-glyphs";
 import { BackworkTaxonomyDrawer } from "@/components/backwork/backwork-taxonomy-drawer";
 import { Can } from "@/components/shared/can";
-import { PageHeader } from "@/components/layout/page-header";
+import { PageActions } from "@/components/layout/page-actions";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -72,6 +71,7 @@ import {
   inspectUploadFile,
   readSignedUpload,
 } from "@repo/validation";
+import { BackworkRowsSkeleton } from "@/components/backwork/backwork-skeleton";
 
 type Department = { id: string; code: string; name: string | null };
 type Professor = { id: string; name: string };
@@ -412,7 +412,6 @@ export function BackworkPage() {
   if (!activeChapterId) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Backwork" />
         <EmptyState
           title="No chapter selected"
           description="Pick a chapter from the switcher to browse its backwork."
@@ -423,322 +422,314 @@ export function BackworkPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Backwork"
-        actions={
-          <>
-            <Can permission="backwork:admin">
-              <BackworkTaxonomyDrawer />
-            </Can>
-            <Can permission="backwork:upload">
-              <Button asChild size="toolbar" variant="secondary" className="gap-2">
-                <Link href="/backwork/upload">
-                  <FolderUp className="h-4 w-4" /> Bulk upload
-                </Link>
-              </Button>
-            </Can>
-            <Can permission="backwork:upload">
-              {/*
-                Cleared on OPEN, not on close. Cancel calls
-                `uploadDialog.setOpen(false)` and `useGatedDialog`'s revoke
-                effect calls its own `setOpenState(false)`; both only change the
-                controlled prop, and Radix's `useControllableState` fires
-                `onOpenChange` for its own setter alone — so clearing on close
-                missed two of the three ways this sheet shuts, and a spent
-                rejection survived a Cancel into the next open. Every open is a
-                `DialogTrigger` press (nothing calls `setOpen(true)`), which
-                does reach the handler. Same reasoning as `/documents`, written
-                out there.
+      <PageActions>
+        <Can permission="backwork:admin">
+          <BackworkTaxonomyDrawer />
+        </Can>
+        <Can permission="backwork:upload">
+          <Button asChild size="toolbar" variant="secondary" className="gap-2">
+            <Link href="/backwork/upload">
+              <FolderUp className="h-4 w-4" /> Bulk upload
+            </Link>
+          </Button>
+        </Can>
+        <Can permission="backwork:upload">
+          {/*
+              Cleared on OPEN, not on close. Cancel calls
+              `uploadDialog.setOpen(false)` and `useGatedDialog`'s revoke
+              effect calls its own `setOpenState(false)`; both only change the
+              controlled prop, and Radix's `useControllableState` fires
+              `onOpenChange` for its own setter alone — so clearing on close
+              missed two of the three ways this sheet shuts, and a spent
+              rejection survived a Cancel into the next open. Every open is a
+              `DialogTrigger` press (nothing calls `setOpen(true)`), which
+              does reach the handler. Same reasoning as `/documents`, written
+              out there.
 
-                The draft survives on purpose: a half-typed course number is
-                worth keeping, a spent error is not.
-              */}
-              <Dialog
-                {...uploadDialog.dialogProps}
-                onOpenChange={(next) => {
-                  if (next) setUploadError(null);
-                  uploadDialog.dialogProps.onOpenChange(next);
-                }}
+              The draft survives on purpose: a half-typed course number is
+              worth keeping, a spent error is not.
+            */}
+          <Dialog
+            {...uploadDialog.dialogProps}
+            onOpenChange={(next) => {
+              if (next) setUploadError(null);
+              uploadDialog.dialogProps.onOpenChange(next);
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
+                <Upload className="h-4 w-4" /> Upload
+              </Button>
+            </DialogTrigger>
+            <UploadSheetContent {...uploadDialog.contentProps}>
+              <UploadSheetTitle>Upload backwork</UploadSheetTitle>
+              <UploadSheetBody
+                id="backwork-upload-form"
+                onSubmit={handleUpload}
               >
-                <DialogTrigger asChild>
-                  <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
-                    <Upload className="h-4 w-4" /> Upload
-                  </Button>
-                </DialogTrigger>
-                <UploadSheetContent {...uploadDialog.contentProps}>
-                  <UploadSheetTitle>Upload backwork</UploadSheetTitle>
-                  <UploadSheetBody
-                    id="backwork-upload-form"
-                    onSubmit={handleUpload}
-                  >
-                    <UploadFileField
-                      id="bw-file"
-                      label="File"
-                      hint={`Up to ${MAX_BACKWORK_UPLOAD_LABEL}. PDFs, Office files, text, CSV, and common images. No SVGs or executables.`}
-                      accept={acceptAttribute("document")}
-                      file={uploadDraft.file}
-                      error={uploadError}
-                      disabled={uploading}
-                      onSelect={(file) => {
-                        setUploadError(null);
-                        setUploadDraft((prev) => ({ ...prev, file }));
+                <UploadFileField
+                  id="bw-file"
+                  label="File"
+                  hint={`Up to ${MAX_BACKWORK_UPLOAD_LABEL}. PDFs, Office files, text, CSV, and common images. No SVGs or executables.`}
+                  accept={acceptAttribute("document")}
+                  file={uploadDraft.file}
+                  error={uploadError}
+                  disabled={uploading}
+                  onSelect={(file) => {
+                    setUploadError(null);
+                    setUploadDraft((prev) => ({ ...prev, file }));
+                  }}
+                />
+                {/*
+                    The dialog's instructional paragraph is deleted with the
+                    rest of the page's narration, and the one fact in it that
+                    a member could act on is now field help where it applies:
+                    "unknown departments or professors are auto-created" sits
+                    under those two fields, not over the whole form. "Every
+                    metadata field except the file itself is optional" is what
+                    the field labels already say by not being marked required.
+                  */}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <UploadField id="bw-title" label="Title">
+                    <Input
+                      id="bw-title"
+                      className={UPLOAD_FIELD_CLASS}
+                      value={uploadDraft.title}
+                      onChange={(event) =>
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          title: event.target.value,
+                        }))
+                      }
+                      placeholder="CS 3320 Midterm"
+                    />
+                  </UploadField>
+                  <UploadField id="bw-department" label="Department code">
+                    <Input
+                      id="bw-department"
+                      aria-describedby="bw-taxonomy-note"
+                      className={UPLOAD_FIELD_CLASS}
+                      value={uploadDraft.department_code}
+                      onChange={(event) =>
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          department_code: event.target.value,
+                        }))
+                      }
+                      placeholder="CS, MATH, ECON"
+                    />
+                  </UploadField>
+                  <UploadField id="bw-course" label="Course number">
+                    <Input
+                      id="bw-course"
+                      className={UPLOAD_FIELD_CLASS}
+                      value={uploadDraft.course_number}
+                      onChange={(event) =>
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          course_number: event.target.value,
+                        }))
+                      }
+                      placeholder="3320"
+                    />
+                  </UploadField>
+                  <UploadField id="bw-professor" label="Professor">
+                    <Input
+                      id="bw-professor"
+                      aria-describedby="bw-taxonomy-note"
+                      className={UPLOAD_FIELD_CLASS}
+                      value={uploadDraft.professor_name}
+                      onChange={(event) =>
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          professor_name: event.target.value,
+                        }))
+                      }
+                      placeholder="Dr. Lastname"
+                    />
+                  </UploadField>
+                  <UploadField id="bw-year" label="Year">
+                    <Input
+                      id="bw-year"
+                      type="number"
+                      min={2000}
+                      max={2100}
+                      className={UPLOAD_FIELD_CLASS}
+                      value={uploadDraft.year}
+                      onChange={(event) => {
+                        // Its floor waits for submit: a guard at 1900
+                        // would refuse the "2" of "2026".
+                        const next = guardIntDraft(event.target.value);
+                        if (next === undefined) return;
+                        setUploadDraft((prev) => ({ ...prev, year: next }));
                       }}
                     />
-                    {/*
-                      The dialog's instructional paragraph is deleted with the
-                      rest of the page's narration, and the one fact in it that
-                      a member could act on is now field help where it applies:
-                      "unknown departments or professors are auto-created" sits
-                      under those two fields, not over the whole form. "Every
-                      metadata field except the file itself is optional" is what
-                      the field labels already say by not being marked required.
-                    */}
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <UploadField id="bw-title" label="Title">
-                        <Input
-                          id="bw-title"
-                          className={UPLOAD_FIELD_CLASS}
-                          value={uploadDraft.title}
-                          onChange={(event) =>
-                            setUploadDraft((prev) => ({
-                              ...prev,
-                              title: event.target.value,
-                            }))
-                          }
-                          placeholder="CS 3320 Midterm"
-                        />
-                      </UploadField>
-                      <UploadField id="bw-department" label="Department code">
-                        <Input
-                          id="bw-department"
-                          aria-describedby="bw-taxonomy-note"
-                          className={UPLOAD_FIELD_CLASS}
-                          value={uploadDraft.department_code}
-                          onChange={(event) =>
-                            setUploadDraft((prev) => ({
-                              ...prev,
-                              department_code: event.target.value,
-                            }))
-                          }
-                          placeholder="CS, MATH, ECON"
-                        />
-                      </UploadField>
-                      <UploadField id="bw-course" label="Course number">
-                        <Input
-                          id="bw-course"
-                          className={UPLOAD_FIELD_CLASS}
-                          value={uploadDraft.course_number}
-                          onChange={(event) =>
-                            setUploadDraft((prev) => ({
-                              ...prev,
-                              course_number: event.target.value,
-                            }))
-                          }
-                          placeholder="3320"
-                        />
-                      </UploadField>
-                      <UploadField id="bw-professor" label="Professor">
-                        <Input
-                          id="bw-professor"
-                          aria-describedby="bw-taxonomy-note"
-                          className={UPLOAD_FIELD_CLASS}
-                          value={uploadDraft.professor_name}
-                          onChange={(event) =>
-                            setUploadDraft((prev) => ({
-                              ...prev,
-                              professor_name: event.target.value,
-                            }))
-                          }
-                          placeholder="Dr. Lastname"
-                        />
-                      </UploadField>
-                      <UploadField id="bw-year" label="Year">
-                        <Input
-                          id="bw-year"
-                          type="number"
-                          min={2000}
-                          max={2100}
-                          className={UPLOAD_FIELD_CLASS}
-                          value={uploadDraft.year}
-                          onChange={(event) => {
-                            // Its floor waits for submit: a guard at 1900
-                            // would refuse the "2" of "2026".
-                            const next = guardIntDraft(event.target.value);
-                            if (next === undefined) return;
-                            setUploadDraft((prev) => ({ ...prev, year: next }));
-                          }}
-                        />
-                      </UploadField>
-                      <UploadField id="bw-semester" label="Semester">
-                        <Select
-                          value={uploadDraft.semester}
-                          onValueChange={(value) =>
-                            setUploadDraft((prev) => ({
-                              ...prev,
-                              semester: value,
-                            }))
-                          }
-                        >
-                          {/*
-                            "Pick one" is the board's own unset-value copy
-                            (`1j`). It replaces a bare em dash, which the
-                            greenfield brand lock bans in product copy and which
-                            a screen reader announced as nothing at all.
-                          */}
-                          <SelectTrigger
-                            id="bw-semester"
-                            className={UPLOAD_FIELD_CLASS}
-                          >
-                            <SelectValue placeholder="Pick one" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {SEMESTERS.map((s) => (
-                              <SelectItem key={s} value={s}>
-                                {s}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </UploadField>
-                      <UploadField
-                        id="bw-assignment-type"
-                        label="Assignment type"
-                      >
-                        <Select
-                          value={uploadDraft.assignment_type}
-                          onValueChange={(value) =>
-                            setUploadDraft((prev) => ({
-                              ...prev,
-                              assignment_type: value,
-                            }))
-                          }
-                        >
-                          <SelectTrigger
-                            id="bw-assignment-type"
-                            className={UPLOAD_FIELD_CLASS}
-                          >
-                            <SelectValue placeholder="Pick one" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ASSIGNMENT_TYPES.map((t) => (
-                              <SelectItem key={t} value={t}>
-                                {t}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </UploadField>
-                      <UploadField
-                        id="bw-assignment-number"
-                        label="Assignment number"
-                      >
-                        <Input
-                          id="bw-assignment-number"
-                          type="number"
-                          min={1}
-                          className={UPLOAD_FIELD_CLASS}
-                          value={uploadDraft.assignment_number}
-                          onChange={(event) => {
-                            // Its floor of 1 waits for submit, so deleting
-                            // the 1 of "10" isn't refused mid-edit.
-                            const next = guardIntDraft(event.target.value);
-                            if (next === undefined) return;
-                            setUploadDraft((prev) => ({
-                              ...prev,
-                              assignment_number: next,
-                            }));
-                          }}
-                        />
-                      </UploadField>
-                      <UploadField id="bw-variant" label="Document variant">
-                        <Select
-                          value={uploadDraft.document_variant}
-                          onValueChange={(value) =>
-                            setUploadDraft((prev) => ({
-                              ...prev,
-                              document_variant: value,
-                            }))
-                          }
-                        >
-                          <SelectTrigger
-                            id="bw-variant"
-                            className={UPLOAD_FIELD_CLASS}
-                          >
-                            <SelectValue placeholder="Pick one" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {DOCUMENT_VARIANTS.map((v) => (
-                              <SelectItem key={v} value={v}>
-                                {v}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </UploadField>
-                    </div>
-                    {/*
-                      Carries an id and is referenced by the two fields it is
-                      about. Field help that is only positioned near a control
-                      reaches sighted users and nobody else — and this sentence
-                      is the one fact rescued from the deleted dialog
-                      description, where Radix had wired it to the dialog for
-                      free.
-                    */}
-                    <p id="bw-taxonomy-note" className="text-caption text-muted">
-                      A department code or professor the chapter has not used
-                      before is created for this chapter on upload.
-                    </p>
-                    <UploadField id="bw-tags" label="Tags (comma-separated)">
-                      <Input
-                        id="bw-tags"
+                  </UploadField>
+                  <UploadField id="bw-semester" label="Semester">
+                    <Select
+                      value={uploadDraft.semester}
+                      onValueChange={(value) =>
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          semester: value,
+                        }))
+                      }
+                    >
+                      {/*
+                          "Pick one" is the board's own unset-value copy
+                          (`1j`). It replaces a bare em dash, which the
+                          greenfield brand lock bans in product copy and which
+                          a screen reader announced as nothing at all.
+                        */}
+                      <SelectTrigger
+                        id="bw-semester"
                         className={UPLOAD_FIELD_CLASS}
-                        value={uploadDraft.tags}
-                        onChange={(event) =>
-                          setUploadDraft((prev) => ({
-                            ...prev,
-                            tags: event.target.value,
-                          }))
-                        }
-                        placeholder="curved, rubric-provided"
-                      />
-                    </UploadField>
-                  </UploadSheetBody>
-                  <UploadSheetFooter>
-                    {/*
-                    Cancel is not gated: it closes the dialog rather than writing,
-                    and a revoked subscription must still leave a way out.
+                      >
+                        <SelectValue placeholder="Pick one" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SEMESTERS.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {s}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </UploadField>
+                  <UploadField id="bw-assignment-type" label="Assignment type">
+                    <Select
+                      value={uploadDraft.assignment_type}
+                      onValueChange={(value) =>
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          assignment_type: value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger
+                        id="bw-assignment-type"
+                        className={UPLOAD_FIELD_CLASS}
+                      >
+                        <SelectValue placeholder="Pick one" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ASSIGNMENT_TYPES.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {t}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </UploadField>
+                  <UploadField
+                    id="bw-assignment-number"
+                    label="Assignment number"
+                  >
+                    <Input
+                      id="bw-assignment-number"
+                      type="number"
+                      min={1}
+                      className={UPLOAD_FIELD_CLASS}
+                      value={uploadDraft.assignment_number}
+                      onChange={(event) => {
+                        // Its floor of 1 waits for submit, so deleting
+                        // the 1 of "10" isn't refused mid-edit.
+                        const next = guardIntDraft(event.target.value);
+                        if (next === undefined) return;
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          assignment_number: next,
+                        }));
+                      }}
+                    />
+                  </UploadField>
+                  <UploadField id="bw-variant" label="Document variant">
+                    <Select
+                      value={uploadDraft.document_variant}
+                      onValueChange={(value) =>
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          document_variant: value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger
+                        id="bw-variant"
+                        className={UPLOAD_FIELD_CLASS}
+                      >
+                        <SelectValue placeholder="Pick one" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DOCUMENT_VARIANTS.map((v) => (
+                          <SelectItem key={v} value={v}>
+                            {v}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </UploadField>
+                </div>
+                {/*
+                    Carries an id and is referenced by the two fields it is
+                    about. Field help that is only positioned near a control
+                    reaches sighted users and nobody else — and this sentence
+                    is the one fact rescued from the deleted dialog
+                    description, where Radix had wired it to the dialog for
+                    free.
                   */}
-                    <Button
-                      variant="secondary"
-                      className={UPLOAD_SHEET_BUTTON_CLASS}
-                      onClick={() => uploadDialog.setOpen(false)}
-                      disabled={uploading}
-                    >
-                      Cancel
-                    </Button>
-                    {/*
-                      Enabled with no file chosen, per the board. The gate still
-                      disables it — that is a verdict about the chapter, not
-                      about this form.
-                    */}
-                    <Button
-                      form="backwork-upload-form"
-                      type="submit"
-                      className={UPLOAD_SHEET_BUTTON_CLASS}
-                      {...gate.controlProps(uploading)}
-                    >
-                      {uploading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : null}
-                      Upload
-                    </Button>
-                  </UploadSheetFooter>
-                </UploadSheetContent>
-              </Dialog>
-            </Can>
-          </>
-        }
-      />
+                <p id="bw-taxonomy-note" className="text-caption text-muted">
+                  A department code or professor the chapter has not used before
+                  is created for this chapter on upload.
+                </p>
+                <UploadField id="bw-tags" label="Tags (comma-separated)">
+                  <Input
+                    id="bw-tags"
+                    className={UPLOAD_FIELD_CLASS}
+                    value={uploadDraft.tags}
+                    onChange={(event) =>
+                      setUploadDraft((prev) => ({
+                        ...prev,
+                        tags: event.target.value,
+                      }))
+                    }
+                    placeholder="curved, rubric-provided"
+                  />
+                </UploadField>
+              </UploadSheetBody>
+              <UploadSheetFooter>
+                {/*
+                  Cancel is not gated: it closes the dialog rather than writing,
+                  and a revoked subscription must still leave a way out.
+                */}
+                <Button
+                  variant="secondary"
+                  className={UPLOAD_SHEET_BUTTON_CLASS}
+                  onClick={() => uploadDialog.setOpen(false)}
+                  disabled={uploading}
+                >
+                  Cancel
+                </Button>
+                {/*
+                    Enabled with no file chosen, per the board. The gate still
+                    disables it — that is a verdict about the chapter, not
+                    about this form.
+                  */}
+                <Button
+                  form="backwork-upload-form"
+                  type="submit"
+                  className={UPLOAD_SHEET_BUTTON_CLASS}
+                  {...gate.controlProps(uploading)}
+                >
+                  {uploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  Upload
+                </Button>
+              </UploadSheetFooter>
+            </UploadSheetContent>
+          </Dialog>
+        </Can>
+      </PageActions>
       {/*
         The page-narration paragraph that sat here is deleted, not restyled.
         The framework board lists "page-narration paragraphs" under Removed
@@ -796,141 +787,141 @@ export function BackworkPage() {
           Filters
         </h2>
         <form onSubmit={applyFilters} className="grid gap-3 md:grid-cols-3">
-            <div className="grid gap-1 md:col-span-2">
-              <Label htmlFor="bw-search">Search</Label>
-              <Input
-                id="bw-search"
-                value={filters.search}
-                onChange={(event) =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    search: event.target.value,
-                  }))
-                }
-                placeholder="Title, tag, or course text"
-              />
-            </div>
-            <div className="grid gap-1">
-              <Label htmlFor="filter-department">Department</Label>
-              <Select
-                value={filters.department_id || ANY}
-                onValueChange={(value) =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    department_id: value === ANY ? "" : value,
-                  }))
-                }
-              >
-                <SelectTrigger id="filter-department">
-                  <SelectValue placeholder="All departments" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ANY}>All departments</SelectItem>
-                  {departments.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
-                      {d.code}
-                      {d.name ? ` · ${d.name}` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1">
-              <Label htmlFor="filter-professor">Professor</Label>
-              <Select
-                value={filters.professor_id || ANY}
-                onValueChange={(value) =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    professor_id: value === ANY ? "" : value,
-                  }))
-                }
-              >
-                <SelectTrigger id="filter-professor">
-                  <SelectValue placeholder="All professors" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ANY}>All professors</SelectItem>
-                  {professors.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1">
-              <Label htmlFor="filter-semester">Semester</Label>
-              <Select
-                value={filters.semester || ANY}
-                onValueChange={(value) =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    semester: value === ANY ? "" : value,
-                  }))
-                }
-              >
-                <SelectTrigger id="filter-semester">
-                  <SelectValue placeholder="Any" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ANY}>Any semester</SelectItem>
-                  {SEMESTERS.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1">
-              <Label htmlFor="filter-type">Assignment type</Label>
-              <Select
-                value={filters.assignment_type || ANY}
-                onValueChange={(value) =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    assignment_type: value === ANY ? "" : value,
-                  }))
-                }
-              >
-                <SelectTrigger id="filter-type">
-                  <SelectValue placeholder="Any type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ANY}>Any type</SelectItem>
-                  {ASSIGNMENT_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1">
-              <Label htmlFor="filter-variant">Variant</Label>
-              <Select
-                value={filters.document_variant || ANY}
-                onValueChange={(value) =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    document_variant: value === ANY ? "" : value,
-                  }))
-                }
-              >
-                <SelectTrigger id="filter-variant">
-                  <SelectValue placeholder="Any variant" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ANY}>Any variant</SelectItem>
-                  {DOCUMENT_VARIANTS.map((v) => (
-                    <SelectItem key={v} value={v}>
-                      {v}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="grid gap-1 md:col-span-2">
+            <Label htmlFor="bw-search">Search</Label>
+            <Input
+              id="bw-search"
+              value={filters.search}
+              onChange={(event) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  search: event.target.value,
+                }))
+              }
+              placeholder="Title, tag, or course text"
+            />
+          </div>
+          <div className="grid gap-1">
+            <Label htmlFor="filter-department">Department</Label>
+            <Select
+              value={filters.department_id || ANY}
+              onValueChange={(value) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  department_id: value === ANY ? "" : value,
+                }))
+              }
+            >
+              <SelectTrigger id="filter-department">
+                <SelectValue placeholder="All departments" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY}>All departments</SelectItem>
+                {departments.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.code}
+                    {d.name ? ` · ${d.name}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1">
+            <Label htmlFor="filter-professor">Professor</Label>
+            <Select
+              value={filters.professor_id || ANY}
+              onValueChange={(value) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  professor_id: value === ANY ? "" : value,
+                }))
+              }
+            >
+              <SelectTrigger id="filter-professor">
+                <SelectValue placeholder="All professors" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY}>All professors</SelectItem>
+                {professors.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1">
+            <Label htmlFor="filter-semester">Semester</Label>
+            <Select
+              value={filters.semester || ANY}
+              onValueChange={(value) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  semester: value === ANY ? "" : value,
+                }))
+              }
+            >
+              <SelectTrigger id="filter-semester">
+                <SelectValue placeholder="Any" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY}>Any semester</SelectItem>
+                {SEMESTERS.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1">
+            <Label htmlFor="filter-type">Assignment type</Label>
+            <Select
+              value={filters.assignment_type || ANY}
+              onValueChange={(value) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  assignment_type: value === ANY ? "" : value,
+                }))
+              }
+            >
+              <SelectTrigger id="filter-type">
+                <SelectValue placeholder="Any type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY}>Any type</SelectItem>
+                {ASSIGNMENT_TYPES.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1">
+            <Label htmlFor="filter-variant">Variant</Label>
+            <Select
+              value={filters.document_variant || ANY}
+              onValueChange={(value) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  document_variant: value === ANY ? "" : value,
+                }))
+              }
+            >
+              <SelectTrigger id="filter-variant">
+                <SelectValue placeholder="Any variant" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY}>Any variant</SelectItem>
+                {DOCUMENT_VARIANTS.map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex flex-wrap items-end gap-2 md:col-span-3">
             <Button type="submit">Apply filters</Button>
             <Button type="button" variant="secondary" onClick={clearFilters}>
@@ -950,7 +941,14 @@ export function BackworkPage() {
           <BackworkGlyph className="h-4 w-4 shrink-0 text-muted" />
           <SectionLabel
             id="bw-list-label"
-            count={`${resources.length} result${resources.length === 1 ? "" : "s"}`}
+            count={
+              // No count before the read answers: "0 results" over the
+              // loading rows is a claim about the archive, as `/documents`
+              // already says of its own count.
+              resourcesQuery.data === undefined
+                ? null
+                : `${resources.length} result${resources.length === 1 ? "" : "s"}`
+            }
           >
             Resources
           </SectionLabel>
@@ -994,7 +992,7 @@ export function BackworkPage() {
           ) : resourcesQuery.isLoading ||
             (resourcesQuery.isPending &&
               resourcesQuery.fetchStatus === "paused") ? (
-            <NestedLoading message="Loading backwork..." sole />
+            <BackworkRowsSkeleton />
           ) : resourcesQuery.isError ? (
             <NestedError
               sole

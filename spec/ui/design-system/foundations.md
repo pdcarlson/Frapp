@@ -226,7 +226,27 @@ Canonical map (locked; supersedes panel 4h — see deviation note):
 
 - **4px grid.** Steps: 4 / 8 / 12 / 16 / 24 / 32 / 48.
 - Dominant rhythm is **8 / 16 / 24**: 8 inside a component, 16 between components, 24 between sections.
-- Touch targets MUST be ≥ 44px. Buttons run 46–48px tall. Tab bar items are 56px tall.
+- Touch targets MUST be ≥ 44px. Buttons run 44–48px tall. Tab bar items are 56px tall.
+
+### Control size scale
+
+*(Added 2026-11-05, owner direction: the old system was "flawed" and "all the bubbles just feel way too big".)* Every control, row and chip takes a step from this table, and new work never invents a height off it. It is the rule the sizing, icon-button, chrome and dialog passes all build on, so a component spec names its step rather than restating a number. The shipped surfaces still off the scale are listed in [#3511](https://github.com/pdcarlson/Frapp/issues/3511) until they move.
+
+| Step | Mouse (web, fine pointer) | Touch (web coarse pointer, and mobile) | Takes it |
+|------|------|------|------|
+| Chip | 24 | 24 drawn, 44 hit area through padding or `hitSlop` | badges, status chips, counts. Mobile's filter chips draw 32 |
+| Row | 32 | 44 | menu, select and command rows; a checkbox row inside a form |
+| Small | 36 | 44 | toolbar controls, Inline (`sm`) and icon buttons, tabs, a table header, a dense list row, a sheet's fields and footer buttons |
+| Field | 40 | 44 | text fields, select triggers, Default buttons, the color picker |
+| Primary | (web: Field) | 48 | mobile only: a full-width button that ends a sheet or a flow step (the sheet CTA, the dues Pay button, onboarding's buttons). A web full-width primary is a Default button, 44 on touch |
+
+- **Mouse and touch are one rule, not two designs.** Web reads `pointer-coarse` for the touch column (Tailwind's `pointer-coarse:` variant), so a laptop gets the dense column and a phone or tablet browser the 44 floor. Mobile is touch-only and reads the touch column alone. The web sidebar (34) and app bar (34) are older pointer-only geometry and stay as [components.md](components.md) §7 draws them.
+- **Labels stay 14, values stay 16.** Button, tab and table-header labels are 14px at every height. A menu or select row's label is 14px on a mouse and 16px on touch. A typed value is 16px at every height, because §7's body floor binds on text a member types.
+- **Padding does not split by pointer.** Field padding-x is 12, a Default button's 16, a Small one's 12, on every pointer. Only heights split: on web a `pointer-coarse:` padding class survives a caller's plain `pl-9` or `px-0` (tailwind-merge merges only classes with the same variant), which put search glyphs on top of typed text.
+- **Two lines grow a row, not the scale.** A row whose meta line wraps under its name takes the Row floor as a `min-height` and grows with its content.
+- **The toggle has its own two sizes**: a 36×22 track with an 18px thumb on a mouse, and 50×30 with a 24px thumb on touch ([components.md](components.md) §4).
+
+Tokens: `touch.minimum` (44) is every touch step's floor, `touch.button` (44) the touch Default, and `touch.buttonLarge` (48) the touch Primary.
 
 ### Spacing tokens
 
@@ -242,7 +262,7 @@ The grid as CSS custom properties. Every value is 4 × an integer; that is the w
 | `--space-2xl` | `32px` | major section breaks |
 | `--space-3xl` | `48px` | page-level separation |
 | `--touch-min` | `44px` | the touch floor, honored on web as well as mobile |
-| `--touch-button` | `46px` | standard button height |
+| `--touch-button` | `44px` | standard button height on touch (46 until 2026-11-05) |
 
 ---
 
@@ -268,18 +288,24 @@ A scroll region on a Signet surface draws its own scrollbar. The browser default
 
 | Token | Value | Role |
 |-------|-------|------|
-| `--scrollbar-width` | `8px` | track width, and height for a horizontal bar |
-| `--scrollbar-thumb` | `#DDB844` | the thumb at rest |
-| `--scrollbar-thumb-hover` | `#F0CD5E` | the thumb under the pointer |
-| `--scrollbar-track` | `#1A1A1A` | the track |
+| `--scrollbar-width` | `6px` | gutter width, and height for a horizontal bar |
+| `--scrollbar-thumb` | `rgba(255,255,255,0.12)` | the thumb at rest |
+| `--scrollbar-thumb-hover` | `rgba(255,255,255,0.22)` | the thumb under the pointer |
+| `--scrollbar-track` | `rgba(0,0,0,0)` | the track, which paints nothing |
+
+The thumb is inset 1px inside its gutter and rounded with `--radius-xs` (which clamps to a full round at this size), so the visible bar is 4px wide.
 
 Three rules, each for a reason the token values alone do not carry:
 
-- **The thumb is fixed mark gold and never retints.** It is brand chrome, not an accent role. The chapter accent engine must not reach it, for the same reason it must not reach the mark (`../brand-identity.md` §2) — a tenant accent on the scrollbar is the house-tenant mistake in a different place. The track is the fixed `#1A1A1A` nav field, not a ladder token, so the pair reads the same on every surface.
-- **The track is opaque, and the bar is never hidden.** A scroll region always shows where it is. This reverses the earlier transparent-track rule: a persistent bar is part of how the surface reads.
-- **Styling is global, not opt-in per region.** The web implementation is a rule on `*` (`packages/theme/src/signet.css`), not a class. The previous `.signet-scroll` opt-in was retired by the greenfield shell lane ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)) because the framework board declares the bar at the root and calls it chrome; the class had zero call sites, so nothing regressed. The old objection that a blanket rule can land a low-opacity thumb on an unknown surface no longer applies, because both colors are now opaque.
+- **The bar is neutral and never retints.** A scrollbar is quiet chrome, not an accent role and not brand. The chapter accent engine must not reach it, and it carries no hue of its own. The thumb is a low-alpha white, the same idea as the hairline family (§3), so it reads as a slightly lighter step of whatever surface it sits on.
+- **The track is clear, and the bar is never hidden.** A scroll region always shows where it is, but the bar does not draw a strip of its own between panes.
+- **Styling is global, not opt-in per region.** The web implementation is a rule on `*` (`packages/theme/src/signet.css`), not a class. The previous `.signet-scroll` opt-in was retired by the greenfield shell lane ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)); it had zero call sites. A low-alpha thumb on a clear track would vanish on a light surface, which is acceptable only because every Signet surface is dark; a light surface that scrolls would need its own track.
 
-**Engine split, and why the board's own CSS is not copied verbatim.** The standard properties (`scrollbar-width` / `scrollbar-color`) and the WebKit pseudo-elements are mutually exclusive: since Chromium 121, a non-`auto` value for either standard property makes that element's `::-webkit-scrollbar-*` rules ignored outright. The board declares both together, which in Chrome and Edge silently discards the 8px width, the rounding and the track inset it also specifies. So the standard properties are scoped to `@supports not selector(::-webkit-scrollbar)` — true only in Firefox — and every other engine gets the pseudo-elements. All engines then render the board's intent rather than only the one that reads the shorthand.
+**Why the gold bar was retired (2026-11-05).** From lane 2 until this date the bar was the framework board's option `3a`: an 8px mark-gold thumb (`#DDB844`, hover `#F0CD5E`) on an opaque `#1A1A1A` track, held at gold by the brand lock and drawn as a persistent part of how the surface reads. In use it was the loudest element on the chat screen: two tall gold bars beside the channel list and the timeline pulled the eye away from the content. The owner asked for it to blend in, so the bar went back to a neutral thumb on a clear track, close to the pre-board `.signet-scroll` values (`rgba(255,255,255,0.14)` on `transparent`, 10px) but thinner.
+
+**Contrast exception.** The gold measured 9.13:1 on its track. The neutral thumb composites to about 1.4:1 on the ladder at rest and about 2:1 under the pointer, under the 3:1 non-text floor in [README §6](README.md#6-accessibility-baseline-release-gate). That is a recorded exception, the owner's call on 2026-11-05, and it holds only for the scrollbar: the bar repeats information the content already shows (where you are in a region moves with the content itself), and wheel, trackpad, touch and keyboard scrolling do not depend on finding it. No other control may cite it. The thumb stays visible (alpha above 0) and quiet (alpha at most 0.3, gutter at most 8px); `signet.css.spec.ts` pins both bounds.
+
+**Engine split, and why the board's own CSS is not copied verbatim.** The standard properties (`scrollbar-width` / `scrollbar-color`) and the WebKit pseudo-elements are mutually exclusive: since Chromium 121, a non-`auto` value for either standard property makes that element's `::-webkit-scrollbar-*` rules ignored outright. The board declares both together, which in Chrome and Edge silently discards the width, the rounding and the thumb inset. So the standard properties are scoped to `@supports not selector(::-webkit-scrollbar)` (true only in Firefox) and every other engine gets the pseudo-elements. Firefox has no width finer than `thin`, so only the two colors reach it.
 
 ---
 
@@ -313,7 +339,7 @@ engine never writes. Against the gold accent fill the highlight still measures a
 perceptible, and the text pair under it goes from near-black-on-gold to near-black-on-near-white.
 
 **This is §12's rule again, for a different reason.** The scrollbar is chrome that looks like it
-should carry the chapter and must not, because the brand lock holds it at mark gold. Selection is
+should carry the chapter and must not, because it is meant to blend in. Selection is
 chrome that looks like it should carry the chapter and must not, because the chapter's own colour is
 what it would have to be legible against.
 

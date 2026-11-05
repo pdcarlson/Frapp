@@ -11,8 +11,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * label styles and two heights it had.
  *
  * The sheets' field (`sheetFieldStyles`, which owns components.md § Text
- * input's paint and focus border), 48pt tall, the spec's height, where a
- * sheet's field is 44. The border is what tells a member where they're typing.
+ * input's paint and focus border), at its 44pt height, the touch Field step of
+ * foundations.md §9's control size scale (48 until 2026-11-05). The border is
+ * what tells a member where they're typing.
  *
  * Its focus border is house gold (`gold.askText`) on purpose. Inside a chapter
  * that border follows the chapter's accent, and `sheetFieldStyles`' own note
@@ -65,10 +66,7 @@ export function OnboardingFieldLabel({ children }: { children: string }) {
 function createStyles(tokens: SignetTokens) {
   const field = sheetFieldStyles(tokens, tokens.color.gold.askText);
   return StyleSheet.create({
-    input: {
-      ...field.field,
-      minHeight: tokens.touch.buttonLarge,
-    },
+    input: field.field,
     focused: field.fieldFocused,
     label: {
       ...typeRole(tokens.typography.role.label),

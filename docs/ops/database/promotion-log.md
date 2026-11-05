@@ -31,13 +31,33 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-11-05: Backwork accepts files up to 50 MB (#3499)
 
-### 20261105210000_backwork_bucket_50mb.sql
+### 20261105220000_backwork_bucket_50mb.sql
 
 - **Purpose**: Raises `storage.buckets.file_size_limit` on `backwork` from 26214400 (25 MB) to 52428800 (50 MB), matching `MAX_BACKWORK_UPLOAD_BYTES` in `@repo/validation`. Every other member-upload bucket keeps 25 MB. The rule is in [`spec/behavior/backwork.md`](../../../spec/behavior/backwork.md#storage) § Storage. No object or row is touched.
 - **Checks**: Before `db push`, `select file_size_limit from storage.buckets where id = 'backwork';` gave 26214400 on both `frapp-staging` and `frapp-prod` on 2026-11-05. After it, the same query returns 52428800.
 - **Promoter notes**: Order doesn't matter much. An API that allows 50 MB against an unmigrated bucket refuses a 25 to 50 MB file at the PUT instead of at URL issuance; an older API against the migrated bucket refuses it at issuance. The hosted project's global storage upload limit (Supabase dashboard, Storage settings) must also be at least 50 MB, or it wins over the bucket column. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-backwork-50-mb-limit-20261105210000) § Rollback the backwork 50 MB limit.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-backwork-50-mb-limit-20261105220000) § Rollback the backwork 50 MB limit.
+
+## 2026-11-05: Starting descriptions for the default channels
+
+### 20261105210000_default_channel_descriptions.sql
+
+- **Purpose**: Writes a starting `description` into the four channels every chapter is created with (`#general`, `#announcements`, `#chapter-audit`, `#alumni`), only where the description was never set (null). The channel header shows it beside the name and the empty channel's start repeats it. New chapters get the same lines from `DEFAULT_CHANNELS` (`apps/api/src/domain/constants/permissions.ts`). A description an officer typed is never replaced, a description an officer cleared (stored as `''` by Chat admin, which since this change sends the field only when it was edited) stays clear, and only the seeded name and type pairs are touched.
+- **Checks**: Before `db push`, `select name, type, count(*), count(*) filter (where description is null) from chat_channels where name in ('general','announcements','chapter-audit','alumni') group by 1, 2;` gave 8 channels, all 8 null, on `frapp-prod` and 5 channels, all 5 null, on `frapp-staging` on 2026-11-05 (none were `''`). After it, the same query should give a null count of 0 for the seeded name and type pairs; re-run it before `db push` if time has passed, since a channel an officer saved blank meanwhile is skipped on purpose.
+- **Promoter notes**: Data only, no schema change. It rewrites at most a handful of rows per chapter, so the lock is brief. Any API version works against it: the column has always existed and every client already treats it as optional text. Re-applying is a no-op, because the `where` only matches null descriptions. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-default-channel-descriptions-20261105210000) § Rollback default channel descriptions.
+
+## 2026-11-05: Seeded role colors move onto the role palette (#3485)
+
+### 20261105200000_role_color_palette_defaults.sql
+
+- **Purpose**: Rewrites `roles.color` on seeded system roles a chapter never touched, so they use the role palette the rule in [`spec/behavior/rbac.md`](../../../spec/behavior/rbac.md) describes. President `#FFD700` → `#F2994A`, Treasurer `#10B981` → `#6FD08C`, Alumni `#6B7280` → `#A9B4C2`, and Vice President and Secretary `null` → `#8FA8FF` and `#F47FA4`. A row is rewritten only while its color still equals the old seed (`is not distinct from`). For Vice President and Secretary that seed is `null`, which also matches a color a chapter cleared through the API; the web picker never sent a clear. Member, New Member, custom roles and any color a chapter chose are left alone. No column, index, constraint or policy changes.
+- **Checks**: Before `db push`, `select system_key, color, count(*) from public.roles group by 1, 2 order by 1, 2;` on 2026-11-05 showed two chapters on each of `frapp-staging` and `frapp-prod`, every system role on its seed, and no custom role with a color. After it, the same query shows the five new values with two rows each, and Member and New Member still `null`.
+- **Promoter notes**: Ship it with the API and clients from the same PR, in either order. An older client paints names plain whatever the column holds, and the newer clients paint only palette values, so an unmigrated database shows no color on the old seeds until this runs. The update touches at most five rows per chapter. Re-applying changes nothing, because rewritten rows no longer match the old seeds. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-role-palette-defaults-20261105200000) § Rollback the role palette defaults.
 
 ## 2026-11-04: One chapter_documents row per stored object (#3399)
 

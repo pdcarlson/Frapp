@@ -2,7 +2,12 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
-import { useRoles, useCreateRole } from "./use-roles";
+import {
+  useRoles,
+  useCreateRole,
+  useDeleteRole,
+  useUpdateRole,
+} from "./use-roles";
 import { FrappClientProvider } from "./use-frapp-client";
 
 const CHAPTER_ID = "chapter-abc";
@@ -138,7 +143,7 @@ describe("useCreateRole", () => {
       name: "Secretary",
       permissions: ["members.read"],
       display_order: 1,
-      color: "#000000",
+      color: "#F47FA4" as const,
     };
 
     const promise = result.current.mutateAsync(payload);
@@ -206,5 +211,51 @@ describe("useCreateRole", () => {
     expect(mockPost).toHaveBeenCalledTimes(1);
 
     expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+  });
+});
+
+// #3485: the roster's `role_color` is computed from role colors and order, so
+// a role edit or delete must refresh it or chat keeps painting the old color.
+describe("role edits refresh the roster's role colors", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    vi.spyOn(queryClient, "invalidateQueries");
+  });
+
+  it("invalidates the roster after a role update", async () => {
+    const mockPatch = vi.fn().mockResolvedValue({ data: {}, error: null });
+    const { result } = renderHook(() => useUpdateRole(), {
+      wrapper: createWrapper(queryClient, { PATCH: mockPatch }),
+    });
+
+    await result.current.mutateAsync({
+      id: "role-1",
+      body: { color: "#5CC8F0" },
+    });
+
+    await waitFor(() => {
+      expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+        queryKey: ["members", CHAPTER_ID, "roster"],
+      });
+    });
+  });
+
+  it("invalidates the roster after a role delete", async () => {
+    const mockDelete = vi.fn().mockResolvedValue({ data: {}, error: null });
+    const { result } = renderHook(() => useDeleteRole(), {
+      wrapper: createWrapper(queryClient, { DELETE: mockDelete }),
+    });
+
+    await result.current.mutateAsync("role-1");
+
+    await waitFor(() => {
+      expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+        queryKey: ["members", CHAPTER_ID, "roster"],
+      });
+    });
   });
 });

@@ -820,3 +820,17 @@ export {
   isSidebarSectionKey,
 } from "./chat-sidebar";
 export type { SidebarFixedSectionKey, SidebarSectionKey } from "./chat-sidebar";
+
+export {
+  ROLE_COLOR_HEXES,
+  ROLE_COLOR_PALETTE,
+  roleColor,
+  roleColorOrNull,
+  topRoleColor,
+} from "./role-colors";
+export type {
+  RoleColorHex,
+  RoleColorKey,
+  RoleColorSource,
+  RoleColorSwatch,
+} from "./role-colors";

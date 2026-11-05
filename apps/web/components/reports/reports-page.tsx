@@ -35,7 +35,6 @@ import {
   NestedLoading,
 } from "@/components/shared/nested-states";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
-import { PageHeader } from "@/components/layout/page-header";
 import {
   DocumentsGlyph,
   ReportsGlyph,
@@ -57,6 +56,7 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, downloadCsv, getErrorMessage } from "@/lib/utils";
+import { ReportsFormSkeleton } from "@/components/reports/reports-skeleton";
 
 type ReportKind = "attendance" | "points" | "roster" | "service";
 
@@ -596,12 +596,10 @@ export function ReportsPage() {
   return (
     <>
       {/*
-        Outside the `<Can>` so the permission-pending, denied and offline
-        branches keep the route's heading — the shell no longer supplies one
-        (#2141). The two `<CardTitle>Reports & Export</CardTitle>` copies and
-        the body's `<h2>` were the same title said a second time.
+        No heading of its own: the top bar names the route (`top-bar.tsx`). The
+        two `<CardTitle>Reports & Export</CardTitle>` copies and the body's
+        `<h2>` that used to sit here were the same title said again.
       */}
-      <PageHeader title="Reports" />
       <Can
         permission="reports:export"
         offlineFallback={(retry) => (
@@ -610,14 +608,7 @@ export function ReportsPage() {
             onRetry={retry}
           />
         )}
-        fallback={
-          <p
-            aria-label="Reports permissions check"
-            className="text-sm text-muted-foreground"
-          >
-            Checking your chapter permissions…
-          </p>
-        }
+        fallback={<ReportsFormSkeleton />}
         deniedFallback={
           <p className="text-sm text-muted-foreground">
             Your role can&apos;t export chapter data. Ask your chapter president
@@ -627,7 +618,7 @@ export function ReportsPage() {
       >
         <div className="space-y-6">
           {/*
-            No description paragraph: `PageHeader` already names the route, and
+            No description paragraph: the top bar already names the route, and
             the report picker below says what it generates.
           */}
 

@@ -270,6 +270,7 @@ export class ChapterService {
     const roles = await this.roleRepo.createMany(rolesData);
 
     if (!roles || roles.length === 0) {
+      // caught-failure-exempt: rethrown; AllExceptionsFilter reports the 5xx
       this.logger.error(
         `Failed to create default roles for chapter ${chapter.id}`,
       );
@@ -280,6 +281,7 @@ export class ChapterService {
       (r) => r.system_key === SystemRoleKeys.PRESIDENT,
     );
     if (!presidentRole) {
+      // caught-failure-exempt: rethrown; AllExceptionsFilter reports the 5xx
       this.logger.error(
         `President role missing after default role creation for chapter ${chapter.id}`,
       );
@@ -301,6 +303,7 @@ export class ChapterService {
       (channelDef) => ({
         chapter_id: chapter.id,
         name: channelDef.name,
+        description: channelDef.description,
         type: channelDef.type,
         is_read_only: channelDef.is_read_only,
         required_permissions: channelDef.required_permissions
@@ -312,6 +315,7 @@ export class ChapterService {
     try {
       await this.channelRepo.createMany(defaultChannels);
     } catch (err) {
+      // caught-failure-exempt: rethrown; AllExceptionsFilter reports the 5xx
       logThrowable(
         this.logger,
         'error',

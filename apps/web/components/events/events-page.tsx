@@ -23,11 +23,10 @@ import { anyReadUncached } from "@/components/shared/async-states";
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { SectionLabel } from "@/components/shared/section-label";
-import { PageHeader } from "@/components/layout/page-header";
+import { PageActions } from "@/components/layout/page-actions";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -59,6 +58,7 @@ import { formatRelativeDayTime, parseInstant } from "@repo/formatting";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { cn, getErrorMessage } from "@/lib/utils";
+import { EventsPageSkeleton } from "@/components/events/events-skeleton";
 
 type EventRow = Record<string, unknown>;
 
@@ -306,13 +306,6 @@ export function EventsPage() {
   }
 
   /*
-   * Every path renders the title, not just the happy one.
-   *
-   * The shell used to supply an <h1> from the nav map, so these three early
-   * returns got a heading for free. It does not any more (#2141 moved the title
-   * into the page), and a bare state with no heading is exactly where a member
-   * is least able to tell what screen they are on.
-   *
    * The states are the nested family with `sole`, not the whole-screen ones:
    * those paint `--card`, which on a flush route redraws the card the route
    * deleted (`spec/ui/web-dashboard/README.md` § Page grammar).
@@ -320,7 +313,6 @@ export function EventsPage() {
   if (isOffline && anyReadUncached(eventsQuery)) {
     return (
       <div className="space-y-4">
-        <PageHeader title="Events" />
         <NestedOffline
           sole
           title={stateMicrocopy.events.offlineTitle}
@@ -334,18 +326,12 @@ export function EventsPage() {
   }
 
   if (eventsQuery.isLoading) {
-    return (
-      <div className="space-y-4">
-        <PageHeader title="Events" />
-        <NestedLoading sole message={stateMicrocopy.events.loading} />
-      </div>
-    );
+    return <EventsPageSkeleton />;
   }
 
   if (eventsQuery.isError) {
     return (
       <div className="space-y-4">
-        <PageHeader title="Events" />
         <NestedError
           sole
           title={stateMicrocopy.events.errorTitle}
@@ -382,20 +368,22 @@ export function EventsPage() {
       className="space-y-4"
     >
       {/*
-        One toolbar row: the title, then search, the three filters, the
-        List/Calendar toggle and New event, all at the toolbar height (board
-        `1f` pin 2). The filters used to sit in a second row and the toggle in
-        a third.
+        One toolbar row: search, the three filters, the List/Calendar toggle
+        and New event, all at the toolbar height (board `1f` pin 2). The
+        filters used to sit in a second row and the toggle in a third. The
+        route's title is in the top bar (`top-bar.tsx`), so search and filters
+        hold the leading edge (`sm:mr-auto`) and the toggle and New event sit
+        at the trailing edge, as every route's actions do.
 
-        The controls sit beside `PageHeader` rather than in its `actions`, so
-        a phone can reorder them: there the title row keeps the view toggle
-        and New event, and search and the filters drop to their own rows under
-        it. The filters become one strip that scrolls sideways, bleeding to
-        the screen edges, rather than three stacked rows of selects.
+        `PageActions` renders its children as direct flex items, so a phone can
+        reorder them: there the first line keeps the view toggle and New event,
+        and search and the filters drop to their own rows under it
+        (`order-last w-full`). The filters become one strip that scrolls
+        sideways, bleeding to the screen edges, rather than three stacked rows
+        of selects.
       */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <PageHeader title="Events" className="min-w-[4rem] flex-1" />
-        <div className="order-last flex w-full min-w-0 flex-wrap items-center gap-2 sm:order-none sm:w-auto">
+      <PageActions className="gap-x-3 gap-y-2">
+        <div className="order-last flex w-full min-w-0 flex-wrap items-center gap-2 sm:order-none sm:mr-auto sm:w-auto">
           <div className="relative w-full sm:w-56">
             <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
             <Input
@@ -478,7 +466,7 @@ export function EventsPage() {
           <Plus className="h-4 w-4" />
           New event
         </Button>
-      </div>
+      </PageActions>
 
       {/*
         Under the row it explains. Search and the filters stay live: a lapsed

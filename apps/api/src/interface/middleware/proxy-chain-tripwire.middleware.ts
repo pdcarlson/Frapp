@@ -38,6 +38,7 @@ export function createProxyChainTripwire(trustedHops: number) {
       if (xffCount > 0 && xffCount < trustedHops) {
         reported = true;
         const message = `trust proxy is ${trustedHops} hops, but a request arrived with a ${xffCount}-entry X-Forwarded-For chain. req.ip is client-controlled until the hop count is re-measured (#2972).`;
+        // caught-failure-exempt: reported by reportSwallowed below, once per process
         logger.error(message);
         reportSwallowed(logger, 'the trust proxy check', () => ({
           message: 'trust proxy hop count exceeds the forwarded chain',
