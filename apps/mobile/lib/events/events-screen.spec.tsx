@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { formatEventDateBlock } from "@/lib/events/format";
+import { expectRoundedRipple } from "@/test/pressable-row";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -163,7 +164,16 @@ describe("Event card", () => {
     // The suite's stub is iOS: the card lifts one rung up the surface ladder.
     expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
     expect(held).not.toHaveProperty("opacity");
-    expect(card.props.android_ripple?.color).toBeDefined();
+    // The ripple is rounded by a parent clip with the card's radius
+    // (`PressableRow`); the card's own `overflow` would leave it square.
+    const { clip } = expectRoundedRipple(
+      card,
+      signetDarkTokens.radius.cardLarge,
+    );
+    // The card has no margins, so the clip adds none and the card stays put.
+    expect(Object.keys(clip).filter((key) => key.startsWith("margin"))).toEqual(
+      [],
+    );
   });
 
   it("paints Mandatory as a danger status and points in the accent", () => {
