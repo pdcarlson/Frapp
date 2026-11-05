@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   balanceCents,
   dueChip,
+  dueChipHue,
   formatAmount,
   historyMeta,
   selectInvoiceHistory,
@@ -130,6 +131,19 @@ describe("money", () => {
 
   it("never renders a negative balance", () => {
     expect(formatAmount(-500)).toBe("$0.00");
+  });
+});
+
+describe("dueChipHue", () => {
+  const semantic = { warning: "warning", destructive: "destructive" };
+
+  it("is destructive only once the date has passed", () => {
+    expect(dueChipHue("upcoming", semantic)).toBe("warning");
+    expect(dueChipHue("past-due", semantic)).toBe("destructive");
+  });
+
+  it("stays warning while a payment is pending, even on a past-due bill", () => {
+    expect(dueChipHue("pending", semantic)).toBe("warning");
   });
 });
 

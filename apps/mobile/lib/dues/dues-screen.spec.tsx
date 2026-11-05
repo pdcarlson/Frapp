@@ -17,7 +17,12 @@ import { drawnText, screenText } from "@/test/screen-text";
 const VIEWER = "u-1";
 const PENDING_COPY =
   "Payment received, confirmation pending. This updates as soon as your chapter's records catch up.";
-const PAID_COPY = "Paid. Your chapter has it — thanks.";
+const UNCONFIRMED_COPY =
+  "Your payment went through, but your chapter's records haven't caught up yet. Check back later, or ask your treasurer if this stays open.";
+const paidCopy = (title: string) =>
+  `Paid ${title}. Your chapter has it — thanks.`;
+/** `PENDING_HOLD_MS` in the screen. */
+const PENDING_HOLD_MS = 2 * 60 * 1000;
 
 function invoice(overrides: Record<string, unknown> = {}) {
   return {
@@ -42,6 +47,9 @@ const SOCIAL = invoice({
 
 let invoices: unknown[] = [];
 let invoicesPending = false;
+/** A failed read: TanStack keeps the last data beside `isError`. */
+let invoicesError = false;
+let viewerError = false;
 const refetchInvoices = vi.fn();
 const payInvoice = vi.fn();
 const awaitPaid = vi.fn();
@@ -50,14 +58,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useViewerUserId: () => VIEWER,
   useCurrentUser: () => ({
-    isError: false,
+    isError: viewerError,
     isFetching: false,
     refetch: vi.fn(),
   }),
   useInvoices: () => ({
     data: invoicesPending ? undefined : invoices,
     isPending: invoicesPending,
-    isError: false,
+    isError: invoicesError,
     isFetching: false,
     refetch: refetchInvoices,
   }),
@@ -120,9 +128,30 @@ async function tapPay(tree: ReactTestRenderer) {
 const card = (tree: ReactTestRenderer) =>
   drawnText(tree.root.findByType(BalanceCard));
 
+/** The CTA, whatever it currently reads. */
+const cta = (tree: ReactTestRenderer) =>
+  tree.root
+    .findByType(BalanceCard)
+    .find((node) => node.type === ("Pressable" as never));
+
+/** "The member came back to this screen" (vitest.setup.ts's expo-router). */
+async function refocus() {
+  const expoRouter = (await import("expo-router")) as unknown as {
+    __refocus: () => void;
+  };
+  act(() => expoRouter.__refocus());
+}
+
+const openRow = (tree: ReactTestRenderer, id: string) =>
+  tree.root
+    .findAllByType(OpenInvoiceRow)
+    .find((row) => row.props.invoice.id === id)!;
+
 beforeEach(() => {
   invoices = [FALL];
   invoicesPending = false;
+  invoicesError = false;
+  viewerError = false;
   refetchInvoices.mockReset().mockResolvedValue(undefined);
   payInvoice.mockReset().mockResolvedValue({ client_secret: "pi_secret" });
   awaitPaid.mockReset().mockResolvedValue(false);
@@ -195,12 +224,21 @@ describe("Dues after a captured payment", () => {
     expect(screenText(tree).split(PENDING_COPY).length - 1).toBe(1);
 
     // Coming back to the screen re-reads the list, and still holds the latch.
-    const expoRouter = (await import("expo-router")) as unknown as {
-      __refocus: () => void;
-    };
-    act(() => expoRouter.__refocus());
+    await refocus();
     expect(refetchInvoices).toHaveBeenCalled();
     expect(payButton(tree).props.disabled).toBe(true);
+  });
+
+  it("keeps the pending state when the poll itself fails", async () => {
+    // A failed read says nothing about the payment: re-offering Pay here would
+    // invite a second payment for a bill the member just paid.
+    awaitPaid.mockRejectedValue(new Error("network"));
+    const tree = mount();
+    await tapPay(tree);
+
+    expect(payButton(tree).props.disabled).toBe(true);
+    expect(drawnText(payButton(tree))).toBe("Confirming payment…");
+    expect(card(tree)).toContain(PENDING_COPY);
   });
 
   it("marks the pending bill in the OPEN list too", async () => {
@@ -208,10 +246,33 @@ describe("Dues after a captured payment", () => {
     const tree = mount();
     await tapPay(tree);
 
-    const fall = tree.root
-      .findAllByType(OpenInvoiceRow)
-      .find((row) => row.props.invoice.id === "inv-fall")!;
-    expect(drawnText(fall)).toContain("Pending");
+    expect(drawnText(openRow(tree, "inv-fall"))).toContain("Pending");
+    expect(drawnText(openRow(tree, "inv-social"))).not.toContain("Pending");
+  });
+
+  it("holds Pay for the paid invoice only, so a bill that becomes due first stays payable", async () => {
+    // Fall's webhook is slow, and meanwhile the treasurer bills an earlier
+    // invoice. The card moves to it: it was never paid, so it must not read
+    // Pending or have its Pay held.
+    invoices = [FALL, SOCIAL];
+    const tree = mount();
+    await tapPay(tree);
+
+    const EARLIER = invoice({
+      id: "inv-rush",
+      title: "Rush fee",
+      amount: 2000,
+      due_date: "2099-08-01",
+    });
+    invoices = [FALL, SOCIAL, EARLIER];
+    rerender(tree);
+
+    expect(payButton(tree).props.disabled).toBe(false);
+    expect(card(tree)).not.toContain("Pending");
+    expect(card(tree)).not.toContain(PENDING_COPY);
+    expect(card(tree)).toContain("Pays Rush fee — $20.00 of your balance.");
+    expect(drawnText(openRow(tree, "inv-fall"))).toContain("Pending");
+    expect(drawnText(openRow(tree, "inv-rush"))).not.toContain("Pending");
   });
 
   it("lets go once the list reads PAID, and says paid in the card", async () => {
@@ -223,8 +284,118 @@ describe("Dues after a captured payment", () => {
     rerender(tree);
 
     expect(card(tree)).toContain("You're all paid up");
-    expect(card(tree)).toContain(PAID_COPY);
+    expect(card(tree)).toContain(paidCopy("Fall dues"));
     expect(screenText(tree)).not.toContain(PENDING_COPY);
+  });
+
+  it("leaves the next bill's footnote and hint alone, and drops the paid line on return", async () => {
+    // The paid line used to take the caption slot under the next invoice's
+    // live Pay, hiding the footnote naming it and becoming that button's hint.
+    const RUSH = invoice({
+      id: "inv-rush",
+      title: "Rush fee",
+      amount: 2000,
+      due_date: "2099-11-01",
+    });
+    invoices = [FALL, SOCIAL, RUSH];
+    awaitPaid.mockResolvedValue(true);
+    const tree = mount();
+    await tapPay(tree);
+
+    invoices = [
+      invoice({ status: "PAID", paid_at: "2099-09-01T12:00:00Z" }),
+      SOCIAL,
+      RUSH,
+    ];
+    rerender(tree);
+
+    const footnote = "Pays Social fee — $50.00 of your balance.";
+    expect(card(tree)).toContain(footnote);
+    expect(card(tree)).toContain(paidCopy("Fall dues"));
+    expect(payButton(tree).props.disabled).toBe(false);
+    expect(payButton(tree).props.accessibilityHint).toBe(footnote);
+
+    refetchInvoices.mockClear();
+    await refocus();
+    expect(screenText(tree)).not.toContain(paidCopy("Fall dues"));
+    expect(card(tree)).toContain(footnote);
+
+    // Settled and shown, so later visits stop forcing a re-read.
+    await refocus();
+    expect(refetchInvoices).not.toHaveBeenCalled();
+  });
+
+  it("keeps saying payment received when the list then fails to load", async () => {
+    const tree = mount();
+    await tapPay(tree);
+
+    invoicesError = true;
+    rerender(tree);
+
+    expect(screenText(tree)).toContain("Couldn't load your dues");
+    expect(screenText(tree)).toContain(PENDING_COPY);
+  });
+
+  it("keeps saying payment received while the list loads again", async () => {
+    const tree = mount();
+    await tapPay(tree);
+
+    invoicesPending = true;
+    rerender(tree);
+
+    expect(tree.root.findAllByType(CardListSkeleton)).toHaveLength(1);
+    expect(screenText(tree)).toContain(PENDING_COPY);
+  });
+
+  it("keeps saying payment received when the account then fails to load", async () => {
+    const tree = mount();
+    await tapPay(tree);
+
+    viewerError = true;
+    rerender(tree);
+
+    expect(screenText(tree)).toContain("Couldn't load your account");
+    expect(screenText(tree)).toContain(PENDING_COPY);
+  });
+
+  describe("when the webhook never lands", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("lets Pay come back after the hold, says so plainly, and shows the server's refusal", async () => {
+      // Holding Pay until a force-quit hid a failed reconciliation behind
+      // "Confirming…". The server, not the hold, refuses a second payment.
+      const tree = mount();
+      await tapPay(tree);
+      expect(payButton(tree).props.disabled).toBe(true);
+
+      refetchInvoices.mockClear();
+      act(() => {
+        vi.advanceTimersByTime(PENDING_HOLD_MS - 1000);
+      });
+      expect(payButton(tree).props.disabled).toBe(true);
+
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(refetchInvoices).toHaveBeenCalled();
+      expect(payButton(tree).props.disabled).toBe(false);
+      expect(drawnText(cta(tree))).toBe("Pay now");
+      expect(card(tree)).toContain(UNCONFIRMED_COPY);
+      expect(card(tree)).not.toContain(PENDING_COPY);
+      expect(card(tree)).not.toContain("Pending");
+
+      const refusal =
+        "Payment already completed; confirmation is being processed";
+      payInvoice.mockRejectedValue({ statusCode: 409, message: refusal });
+      await tapPay(tree);
+      expect(card(tree)).toContain(refusal);
+      expect(presentPaymentSheet).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("draws a failed payment inside the card, and leaves Pay live for a retry", async () => {

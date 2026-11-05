@@ -2,7 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import appJson from "../../app.json";
 
@@ -23,6 +23,7 @@ vi.mock("react-native", async () => {
   return { ...reactNativeStub, Linking: { openSettings } };
 });
 
+import { Platform } from "react-native";
 import { LocationPrimerSheet } from "./location-primer-sheet";
 
 /**
@@ -72,25 +73,42 @@ describe("LocationPrimerSheet", () => {
     expect(rendered.some((line) => /\bSignet\b/.test(line))).toBe(false);
   });
 
-  it("names the app, and no one platform, when the OS will not ask again", () => {
-    // The old line said "iOS won't ask again" and spelled out the iOS path,
-    // which an Android member can't follow.
-    const rendered = texts(
-      render(
-        <LocationPrimerSheet
-          canAskAgain={false}
-          onAllow={() => {}}
-          onDismiss={() => {}}
-        />,
-      ),
-    );
-    expect(
-      rendered.some((line) =>
-        line.includes(`Location is turned off for ${APP_NAME}`),
-      ),
-    ).toBe(true);
-    expect(rendered.some((line) => /\b(iOS|Android)\b/.test(line))).toBe(false);
-    expect(rendered.some((line) => line.includes("→"))).toBe(false);
+  describe("when the OS will not ask again", () => {
+    const os = Platform.OS;
+    afterEach(() => {
+      (Platform as { OS: string }).OS = os;
+    });
+
+    const blocked = () =>
+      texts(
+        render(
+          <LocationPrimerSheet
+            canAskAgain={false}
+            onAllow={() => {}}
+            onDismiss={() => {}}
+          />,
+        ),
+      ).join("");
+
+    it("spells out the iOS path on iPhone, naming the app, and no OS", () => {
+      (Platform as { OS: string }).OS = "ios";
+      const copy = blocked();
+      expect(copy).toContain(`Location is turned off for ${APP_NAME}`);
+      expect(copy).toContain(`Settings → Apps → ${APP_NAME} → Location`);
+      expect(copy).not.toContain("Permissions");
+      // The old line said "iOS won't ask again", which reads as nonsense on
+      // the other OS and narrates nothing the member can act on.
+      expect(copy).not.toMatch(/\b(iOS|Android)\b/);
+    });
+
+    it("spells out Android's own path on Android", () => {
+      // The iOS path was all this said, and Android has no such screen.
+      (Platform as { OS: string }).OS = "android";
+      const copy = blocked();
+      expect(copy).toContain(
+        `Settings → Apps → ${APP_NAME} → Permissions → Location`,
+      );
+    });
   });
 
   it("opens Settings from the blocked branch, closing the sheet first", async () => {

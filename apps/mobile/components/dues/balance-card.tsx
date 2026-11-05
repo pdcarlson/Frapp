@@ -3,11 +3,15 @@ import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { StatusChip } from "@/components/status-chip";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { splitAmount, type DueState } from "@/lib/dues/invoices";
+import {
+  dueChipHue,
+  splitAmount,
+  type DueState,
+} from "@/lib/dues/invoices";
 
 /**
- * One line about the member's last payment attempt, drawn in the card's
- * caption slot under the CTA.
+ * One line about the member's last attempt to pay the invoice this card's CTA
+ * settles, drawn in the card's caption slot under the CTA.
  *
  * Here rather than above the card: the screen used to insert these as a bare
  * caption over everything, so the card, the CTA the member had just tapped
@@ -54,8 +58,17 @@ export interface BalanceCardProps {
    * which the server would refuse with a 409 anyway.
    */
   isConfirming?: boolean;
-  /** Takes the caption slot ahead of the blocker and the footnote. */
+  /**
+   * About the invoice the CTA settles, so it takes the caption slot ahead of
+   * the blocker and the footnote, and is the CTA's accessibility hint.
+   */
   status?: BalanceCardStatus | null;
+  /**
+   * A settled payment for an invoice the CTA no longer settles. Drawn as its
+   * own line under the caption and never as the CTA's hint: it says nothing
+   * about the next invoice, and must not hide the footnote naming it.
+   */
+  receipt?: string | null;
   isPaying: boolean;
   onPay: () => void;
 }
@@ -69,6 +82,7 @@ export function BalanceCard({
   footnote,
   isConfirming = false,
   status = null,
+  receipt = null,
   isPaying,
   onPay,
 }: BalanceCardProps) {
@@ -77,10 +91,6 @@ export function BalanceCard({
   const styles = createStyles(tokens);
   const { whole, fraction } = splitAmount(amountCents);
 
-  const chipHue =
-    due?.state === "past-due"
-      ? tokens.color.semantic.destructive
-      : tokens.color.semantic.warning;
   const disabled = isPaying || isConfirming || disabledReason !== null;
   // The last attempt's outcome wins, because it is what the member is waiting
   // to read. Then the blocker over the context note: a member who cannot pay
@@ -98,9 +108,15 @@ export function BalanceCard({
       <View style={styles.metaRow}>
         <Text style={styles.label}>{label}</Text>
         {isConfirming ? (
-          <StatusChip label="Pending" hue={tokens.color.semantic.warning} />
+          <StatusChip
+            label="Pending"
+            hue={dueChipHue("pending", tokens.color.semantic)}
+          />
         ) : due ? (
-          <StatusChip label={due.label} hue={chipHue} />
+          <StatusChip
+            label={due.label}
+            hue={dueChipHue(due.state, tokens.color.semantic)}
+          />
         ) : null}
       </View>
 
@@ -147,6 +163,12 @@ export function BalanceCard({
           accessibilityLiveRegion={status ? "polite" : undefined}
         >
           {caption}
+        </Text>
+      ) : null}
+
+      {receipt ? (
+        <Text style={styles.reason} accessibilityLiveRegion="polite">
+          {receipt}
         </Text>
       ) : null}
     </View>

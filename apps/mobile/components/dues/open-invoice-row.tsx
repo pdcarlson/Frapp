@@ -4,6 +4,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 import { StatusChip } from "@/components/status-chip";
 import {
   dueChip,
+  dueChipHue,
   formatAmount,
   type InvoiceRow as InvoiceRowModel,
 } from "@/lib/dues/invoices";
@@ -36,12 +37,11 @@ export function OpenInvoiceRow({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const due = dueChip(invoice, now);
-  // The balance card's rule, so a row and the card never disagree about the
-  // same invoice: warning while it's due, destructive once the date passes.
-  const hue =
-    !isConfirming && due.state === "past-due"
-      ? tokens.color.semantic.destructive
-      : tokens.color.semantic.warning;
+  // The balance card's own rule, shared rather than restated.
+  const hue = dueChipHue(
+    isConfirming ? "pending" : due.state,
+    tokens.color.semantic,
+  );
 
   return (
     <View style={[styles.row, isLast ? null : styles.rowDivided]}>
@@ -55,8 +55,9 @@ export function OpenInvoiceRow({
 }
 
 // HISTORY's row geometry (`invoice-row.tsx`), restated because that file's
-// styles are private. If the two lists' rows get one shared component, this
-// row moves onto it with HISTORY's.
+// styles are private. It stays a copy for now: `invoice-row.tsx` is moving onto
+// a shared `HistoryRow` in a separate change, and this row follows it there
+// once that lands, rather than both changes editing the same row at once.
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     row: {

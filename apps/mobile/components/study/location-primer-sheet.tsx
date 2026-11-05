@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import { Linking, StyleSheet, Text, View } from "react-native";
+import { Linking, Platform, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -24,8 +24,10 @@ import {
  *
  * It also handles the already-declined case, where nothing will ask again and
  * the only honest next step is Settings, so that branch opens it. Its copy
- * names no path: the way to the switch differs between iOS and Android, and
- * the button makes the path moot.
+ * still spells out the path, for a member who lands somewhere else or comes
+ * back to it later, and spells out the member's own OS's path, since the way
+ * to the switch differs between iOS and Android. Both name the app as Settings
+ * lists it, `expo.name`, which `frapp-naming.test.mjs` pins (ADR-25 step 2).
  */
 export interface LocationPrimerSheetProps {
   /** False once the OS will no longer prompt — the copy and CTA both change. */
@@ -42,6 +44,11 @@ export const LocationPrimerSheet = forwardRef<
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
+  // iOS 18 moved every app's page under Settings → Apps.
+  const settingsPath =
+    Platform.OS === "android"
+      ? "Settings → Apps → Frapp → Permissions → Location"
+      : "Settings → Apps → Frapp → Location";
 
   return (
     <BottomSheetModal
@@ -84,8 +91,8 @@ export const LocationPrimerSheet = forwardRef<
         ) : (
           <>
             <Text style={styles.blocked}>
-              Location is turned off for Frapp. Turn it on in Settings to start
-              a session.
+              Location is turned off for Frapp. Turn it on in {settingsPath},
+              then start your session.
             </Text>
             <SheetPrimaryButton
               label="Open Settings"
@@ -94,7 +101,7 @@ export const LocationPrimerSheet = forwardRef<
                 // Start card, not to a sheet still saying location is off.
                 onDismiss();
                 Linking.openSettings().catch(() => {
-                  // Nothing to do: the sentence above still says where to go.
+                  // Nothing to do: the sentence above says where to go.
                 });
               }}
               accent={accent}

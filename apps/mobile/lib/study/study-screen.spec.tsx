@@ -3,7 +3,7 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AppState } from "react-native";
+import { AppState, Platform } from "react-native";
 import * as expoRouter from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
@@ -17,6 +17,7 @@ import { SkeletonLines } from "@/components/state-block";
 import { StartCard } from "@/components/study/start-card";
 import { SessionCard } from "@/components/study/session-card";
 import { ZonePickerSheet } from "@/components/study/zone-picker-sheet";
+import { readForegroundPermission } from "@/lib/location";
 
 /**
  * s10's refusal wiring (#2297, and the module gate #2393), rendered (#2416).
@@ -87,6 +88,8 @@ let zones: unknown[] = ZONES;
 let isLoading = false;
 /** Only the sessions read in flight: zones can land first. */
 let sessionsLoading = false;
+/** The sessions read failed with nothing cached: not pending, no data. */
+let sessionsFailed = false;
 const NO_SESSIONS: unknown[] = [];
 const LIVE_SESSION = [
   {
@@ -119,9 +122,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     refetch: vi.fn(),
   }),
   useStudySessions: () => ({
-    data: isLoading || sessionsLoading ? undefined : sessions,
+    data: isLoading || sessionsLoading || sessionsFailed ? undefined : sessions,
     isPending: isLoading || sessionsLoading,
-    isError: false,
+    isError: sessionsFailed,
     isFetching: false,
     refetch: vi.fn().mockResolvedValue({ data: sessions }),
   }),
@@ -198,6 +201,7 @@ beforeEach(() => {
   zones = ZONES;
   isLoading = false;
   sessionsLoading = false;
+  sessionsFailed = false;
   chapter = HOURS_ON;
   refetchChapter.mockReset().mockResolvedValue(undefined);
 });
@@ -774,6 +778,22 @@ describe("Study's default zone", () => {
     act(() => tree.unmount());
   });
 
+  it("waits through a failed history read, so the retry's last zone still wins", () => {
+    // A failed read isn't pending either. Choosing then put the first zone in
+    // place, and a valid selection is kept, so the last zone never took over.
+    zones = TWO_ZONES;
+    sessions = [finished("s-1", "zone-1", "2026-09-27T10:00:00Z")];
+    sessionsFailed = true;
+    const tree = render();
+    expect(screenText(tree)).toContain("Couldn't load study hours");
+
+    sessionsFailed = false;
+    rerender(tree);
+
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Library");
+    act(() => tree.unmount());
+  });
+
   it("keeps the member's own pick", () => {
     zones = TWO_ZONES;
     const tree = render();
@@ -805,6 +825,38 @@ describe("Study loading and empty states", () => {
     expect(screenText(tree)).toContain("Ask an officer to add a study zone.");
     expect(screenText(tree)).not.toContain("geofences:manage");
     act(() => tree.unmount());
+  });
+});
+
+describe("Study when location can't be read", () => {
+  const os = Platform.OS;
+  afterEach(() => {
+    (Platform as { OS: string }).OS = os;
+  });
+
+  async function failedLocationLine(platform: string) {
+    (Platform as { OS: string }).OS = platform;
+    vi.mocked(readForegroundPermission).mockRejectedValueOnce(
+      new Error("location unavailable"),
+    );
+    const tree = render();
+    await tapStart(tree);
+    const text = drawnText(tree.root.findByType(StartCard));
+    act(() => tree.unmount());
+    return text;
+  }
+
+  it("spells out the iOS path on iPhone", async () => {
+    const line = await failedLocationLine("ios");
+    expect(line).toContain("Turn it on in Settings → Apps → Frapp → Location.");
+  });
+
+  it("spells out Android's own path on Android", async () => {
+    // The iOS path was all this said, and Android has no such screen.
+    const line = await failedLocationLine("android");
+    expect(line).toContain(
+      "Turn it on in Settings → Apps → Frapp → Permissions → Location.",
+    );
   });
 });
 

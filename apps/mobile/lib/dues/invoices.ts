@@ -189,6 +189,18 @@ export function dueChip(
 }
 
 /**
+ * The due chip's hue. The balance card and the OPEN list both call this, so a
+ * row and the card never draw the same invoice in two hues: warning while it's
+ * due, and while a payment on it is pending; destructive once the date passes.
+ */
+export function dueChipHue(
+  state: DueState | "pending",
+  semantic: { warning: string; destructive: string },
+): string {
+  return state === "past-due" ? semantic.destructive : semantic.warning;
+}
+
+/**
  * The open invoices, earliest due first — s11's OPEN list, and the order
  * {@link selectNextDueInvoice} takes its first row from, so the list's top row
  * is always the one "Pay now" settles.

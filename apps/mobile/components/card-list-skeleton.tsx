@@ -25,7 +25,14 @@ const ROW_TITLE_WIDTHS = ["55%", "40%", "48%", "62%"] as const;
  * section caption, and rows at the list row's height with its dividers.
  *
  * Static and neutral, like every skeleton here until the shimmer lands (the
- * gradient dependency `state-block.tsx` documents).
+ * gradient dependency `state-block.tsx` documents). This is the second mobile
+ * skeleton beside `SkeletonLines`, and components.md §10 names both, so the
+ * shimmer has to land in both.
+ *
+ * TODO-DESIGN: shimmer sweep per components.md §10 (elevated at 25%/75%,
+ * highlight `#332E26` at 50%, 260px background-size, 1.4s linear, phase-shared
+ * across blocks) once a gradient dependency lands, the same as `SkeletonLines`.
+ * Nearest pattern used: static neutral blocks at the specified shapes.
  */
 export function CardListSkeleton({
   rows = 3,
@@ -159,8 +166,9 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.xs,
     },
     block: {
-      // `SkeletonLines`' block, so the two skeletons read as one family:
-      // §10's radius 6 has no token, and `chip` (8) is the nearest.
+      // `SkeletonLines`' block, so the two skeletons read as one family.
+      // TODO-DESIGN: §10 specifies radius 6 for skeleton text lines. It has
+      // no token, and `chip` (8) is the nearest, as in `SkeletonLines`.
       borderRadius: tokens.radius.chip,
       backgroundColor: tokens.color.surface.popover,
     },

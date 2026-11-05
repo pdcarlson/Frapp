@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  AppState,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import type { AppStateStatus } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
@@ -110,12 +117,21 @@ const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
  */
 const MIRROR_RETRY_MS = 15 * 1000;
 
-// Platform-neutral: the path to the switch differs between iOS and Android,
-// and naming one OS's path sends the other's members looking for a screen
-// that doesn't exist. The primer's blocked branch carries an Open Settings
-// button for the case where nothing will ask again.
-const LOCATION_REQUIRED_COPY =
-  "Frapp confirms you're in the study zone, so it needs location while you study. Turn it on for Frapp in your phone's Settings.";
+/**
+ * The line for a member who said no to location. It spells out the path to the
+ * switch for the member's own OS, since this line has no button to get them
+ * there (the primer's blocked branch does), and one OS's path sends the other's
+ * members looking for a screen that doesn't exist. Both paths name the app as
+ * Settings lists it, `expo.name`, which `frapp-naming.test.mjs` pins (ADR-25
+ * step 2). iOS 18 moved every app's page under Settings → Apps.
+ */
+function locationRequiredCopy(): string {
+  const path =
+    Platform.OS === "android"
+      ? "Settings → Apps → Frapp → Permissions → Location"
+      : "Settings → Apps → Frapp → Location";
+  return `Frapp confirms you're in the study zone, so it needs location while you study. Turn it on in ${path}.`;
+}
 
 export default function StudyScreen() {
   const { tokens } = useFrappTheme();
@@ -320,9 +336,13 @@ export default function StudyScreen() {
    *
    * With several zones it waits for the history, or the first zone would win
    * and then never give way: a valid selection is kept, which is also what
-   * keeps a member's own pick.
+   * keeps a member's own pick. "Loaded" means the history has arrived at
+   * least once, not that the read stopped pending: a failed read isn't
+   * pending either, and choosing then would put the first zone in place before
+   * the member's Retry brought the last one. The error state stands in for
+   * the card meanwhile, so the open choice is never seen.
    */
-  const historyLoaded = !sessionsQuery.isPending;
+  const historyLoaded = sessionsQuery.data !== undefined;
   const lastZoneId = history[0]?.geofenceId ?? null;
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- pick a default zone, or drop a selection that no longer exists
@@ -709,7 +729,7 @@ export default function StudyScreen() {
         setCanAskForLocation(permission.canAskAgain);
         primerSheetRef.current?.present();
       } catch {
-        setFailure(LOCATION_REQUIRED_COPY);
+        setFailure(locationRequiredCopy());
       }
     })();
   }, [beginSession, isStarting]);
@@ -721,12 +741,12 @@ export default function StudyScreen() {
       try {
         const permission = await requestForegroundPermission();
         if (!permission.granted) {
-          setFailure(LOCATION_REQUIRED_COPY);
+          setFailure(locationRequiredCopy());
           return;
         }
         await beginSession();
       } catch {
-        setFailure(LOCATION_REQUIRED_COPY);
+        setFailure(locationRequiredCopy());
       }
     })();
   }, [beginSession, isStarting]);
