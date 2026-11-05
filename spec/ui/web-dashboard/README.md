@@ -154,6 +154,7 @@ Per-route decisions that still bind. Each is either the product declining to be 
 
 - **Each page keeps its own search field.** It is a server-side search over that collection; the find bar navigates rather than narrowing a route, so deleting it would move a capability.
 - Backwork's one actionable instruction (unknown departments and professors are created on upload) is field help beside those two fields, not a dialog description.
+- **Folder management is a mode.** The rail is navigation; an officer's Edit reveals each folder's move, rename and delete controls and Done puts them away (2026-11-05). Edit is not a write and is not gated; the controls it reveals are.
 
 ### Directory
 
