@@ -27,7 +27,6 @@ import type { PickedImage } from "@/lib/chat/attachment-upload";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useConnection } from "@/lib/connection/use-connection";
 import { successHaptic } from "@/lib/haptics";
-import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import { formatHours } from "@/lib/more/profile";
 import {
   DEFAULT_DURATION_MINUTES,
@@ -38,15 +37,12 @@ import {
 } from "@/lib/more/service-hours";
 import {
   RECEIPT_REQUIRED_COPY,
+  createRefusalOf,
   pickProofPhoto,
   proofPathRefusedOf,
   receiptRequiredOf,
   uploadProofPhoto,
 } from "@/lib/more/service-proof";
-import {
-  SUBSCRIPTION_REFUSAL_COPY,
-  subscriptionRefusalOf,
-} from "@/lib/subscription-refusal";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -355,17 +351,11 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
           // caused, with Submit already withdrawn.
           if (!isSameVisit(sentFrom)) return;
           // Ordinary failures keep the retry they have always had; a gate
-          // refusal takes it away, because retrying cannot win. Both asked
-          // before `submitFailed`, and never as a bare 403: this route also
-          // 403s for a permission denial, which an officer's role grant
-          // clears on the next try, and for the `chapter.context.*` family,
-          // which clears itself.
-          if (subscriptionRefusalOf(error)) {
-            setRefusal(SUBSCRIPTION_REFUSAL_COPY.serviceHours);
-            return;
-          }
-          if (moduleRefusalOf(error)) {
-            setRefusal(MODULE_REFUSAL_COPY.serviceHours);
+          // refusal takes it away, because retrying cannot win. Asked before
+          // `submitFailed`, in the mint's words (`createRefusalOf`).
+          const gated = createRefusalOf(error);
+          if (gated !== null) {
+            setRefusal(gated);
             return;
           }
           // The chapter requires proof: ask for a photo rather than "try

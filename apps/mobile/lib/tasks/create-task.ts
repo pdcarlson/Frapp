@@ -46,6 +46,13 @@ export interface DuePreset {
   label: string;
   /** `YYYY-MM-DD`, device-local. */
   date: string;
+  /**
+   * How a draft kept past the day it was picked reads this chip. "Today" and
+   * "Tomorrow" are relative: they mean the day the task is filed and the day
+   * after. "Friday" and "Next week" name a date, and the draft keeps that
+   * date ({@link resolveDue}).
+   */
+  relative: boolean;
 }
 
 /**
@@ -62,14 +69,21 @@ export function addDays(now: Date, days: number): Date {
 /**
  * The four due-date choices the sheet offers.
  *
- * "This Friday" is dropped when today *is* Friday or the weekend, because it
- * would either duplicate "Today" or point backwards — the row shows three chips
- * then rather than one that lies.
+ * "Friday" is dropped on Thursday and on Friday itself, where it would
+ * duplicate "Tomorrow" or "Today": the row shows three chips then rather than
+ * two with one date. From Saturday it is the next week's Friday. No two chips
+ * ever share a date (today, +1, Friday at +2 to +6, +7), which
+ * {@link resolveDue} relies on.
  */
 export function duePresets(now: Date): DuePreset[] {
   const presets: DuePreset[] = [
-    { id: "today", label: "Today", date: localIsoDate(now) },
-    { id: "tomorrow", label: "Tomorrow", date: localIsoDate(addDays(now, 1)) },
+    { id: "today", label: "Today", date: localIsoDate(now), relative: true },
+    {
+      id: "tomorrow",
+      label: "Tomorrow",
+      date: localIsoDate(addDays(now, 1)),
+      relative: true,
+    },
   ];
 
   // 5 = Friday. `getDay()` is Sunday-indexed.
@@ -79,6 +93,7 @@ export function duePresets(now: Date): DuePreset[] {
       id: "friday",
       label: "Friday",
       date: localIsoDate(addDays(now, daysToFriday)),
+      relative: false,
     });
   }
 
@@ -86,9 +101,58 @@ export function duePresets(now: Date): DuePreset[] {
     id: "next-week",
     label: "Next week",
     date: localIsoDate(addDays(now, 7)),
+    relative: false,
   });
 
   return presets;
+}
+
+/**
+ * A due chip as a draft holds it: a relative chip by its id, re-read against
+ * the day the task is filed, or the date a dated chip named when it was
+ * picked (see {@link DuePreset.relative}).
+ */
+export type DueChoice =
+  | { kind: "relative"; id: string }
+  | { kind: "date"; date: string };
+
+/** A new draft's due choice: "Today". */
+export const DEFAULT_DUE_CHOICE: DueChoice = { kind: "relative", id: "today" };
+
+/** What a draft holds once the member picks `preset`. */
+export function dueChoiceOf(preset: DuePreset): DueChoice {
+  return preset.relative
+    ? { kind: "relative", id: preset.id }
+    : { kind: "date", date: preset.date };
+}
+
+export interface ResolvedDue {
+  /** `YYYY-MM-DD`, device-local: the date Create sends. */
+  date: string;
+  /** The chip `now`'s presets draw for `date`, or `null` when none does. */
+  chipId: string | null;
+}
+
+/**
+ * A held due choice, read on the day `now` falls on.
+ *
+ * A relative chip is that chip's date today. A held date stays as picked, and
+ * the chip shown selected is whichever of today's resolves to it: a "Friday"
+ * picked on Wednesday is the Tomorrow chip on Thursday, and a "Next week"
+ * kept a day matches no chip at all. A held date that has passed falls back to
+ * Today: a chip never files a task already overdue.
+ */
+export function resolveDue(choice: DueChoice, now: Date): ResolvedDue {
+  const presets = duePresets(now);
+  const today = localIsoDate(now);
+  const held =
+    choice.kind === "relative"
+      ? presets.find((preset) => preset.id === choice.id)?.date
+      : choice.date;
+  // `YYYY-MM-DD` orders as a string.
+  const date = held !== undefined && held >= today ? held : today;
+  const chip = presets.find((preset) => preset.date === date);
+  return { date, chipId: chip?.id ?? null };
 }
 
 /**

@@ -6,7 +6,6 @@ import {
   BottomSheetTextInput,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
-import { localIsoDate } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   memberFallbackLabel,
@@ -30,10 +29,14 @@ import {
 import { CalendarGlyph } from "@/components/tasks/task-glyphs";
 import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
 import {
+  DEFAULT_DUE_CHOICE,
+  dueChoiceOf,
   duePresets,
   formatDueFieldLabel,
   parsePointReward,
+  resolveDue,
   validateNewTask,
+  type DueChoice,
 } from "@/lib/tasks/create-task";
 import { successHaptic } from "@/lib/haptics";
 import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
@@ -71,10 +74,14 @@ import {
  * draft up, and so does a successful create. The same rule s20 and s21 follow
  * (`spec/ui/mobile/screens.md`).
  *
- * The due date is held as the chip it was picked from, not as a date, so a
- * draft kept overnight still means what its chip says: "Today" is the day the
- * sheet is open, not the day it was typed (`at` moves with the host's clock).
- * s20 holds its date as days back for the same reason.
+ * A kept draft reads its due chip against the day it is filed (`at` moves
+ * with the host's clock, which re-reads on tab focus and on a return to the
+ * app). "Today" and "Tomorrow" are relative, so a draft kept overnight with
+ * "Today" files the new day; s20 holds its date as days back for the same
+ * reason. "Friday" and "Next week" name a date, and the draft holds the date
+ * they named when picked: the chip shown selected is whichever resolves to
+ * that date today (on Thursday a kept Friday is the Tomorrow chip), and a held
+ * date that has passed falls back to Today (`resolveDue`).
  *
  * ## A create can outlive its visit
  *
@@ -85,13 +92,13 @@ import {
  *
  * The draft is read-only while the create runs, and Cancel is held: the
  * create can't be called back, so a Cancel then would clear a draft that gets
- * filed anyway. A swipe still closes the sheet and keeps it. A create that
- * lands clears only what it sent, so nothing typed in a visit reopened since
- * goes with it.
+ * filed anyway. A swipe still closes the sheet and keeps it. That lock covers
+ * a visit reopened mid-create too: this component stays mounted on the host
+ * across a close (gorhom unmounts only the modal's content), so the reopened
+ * sheet reads the same pending create and the same draft. A create that lands
+ * clears the draft whichever visit is on screen, since it is still the one
+ * that was sent.
  */
-
-/** The due chip a new draft starts on. */
-const DEFAULT_DUE_ID = "today";
 
 /** A list has no natural height, so the picker snaps rather than sizing to content. */
 const PICKER_SNAP_POINTS = ["70%"];
@@ -144,15 +151,15 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const rosterQuery = useChapterRoster();
     const createTask = useCreateTask();
 
-    // Read once per mount rather than per render, so the presets cannot shift
-    // under the member mid-edit.
+    // Read when the host's clock moves rather than per render, so the presets
+    // cannot shift under the member mid-edit.
     const at = useMemo(() => now ?? new Date(), [now]);
     const presets = useMemo(() => duePresets(at), [at]);
 
     const [title, setTitle] = useState("");
     const [pointsInput, setPointsInput] = useState("");
-    // The chip's id (`DuePreset.id`), resolved against today's presets below.
-    const [dueId, setDueId] = useState(DEFAULT_DUE_ID);
+    // The chip as the draft holds it, resolved against today's below.
+    const [due, setDue] = useState<DueChoice>(DEFAULT_DUE_CHOICE);
     // Defaults to the viewer, so the common case needs no picker interaction.
     const [assigneeId, setAssigneeId] = useState<string | null>(null);
     const [titleFocused, setTitleFocused] = useState(false);
@@ -197,12 +204,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           ? memberFallbackLabel(effectiveAssigneeId)
           : "Member"));
 
-    // A chip today's presets no longer offer (a kept "Friday" once Friday
-    // has come) falls back to Today: on the Friday that is the day it meant,
-    // and over the weekend the Friday it meant has passed.
-    const duePreset =
-      presets.find((preset) => preset.id === dueId) ?? presets[0];
-    const dueDate = duePreset?.date ?? localIsoDate(at);
+    // See the header: a relative chip re-reads today, a held date stays put.
+    const { date: dueDate, chipId: dueChipId } = resolveDue(due, at);
     const pending = createTask.isPending;
 
     const draft = {
@@ -215,17 +218,22 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const pointsInvalid = parsePointReward(pointsInput).kind === "invalid";
     const canSubmit = body !== null && !pending && refusal === null;
 
-    /** Gives the draft up: Cancel. */
-    const reset = useCallback(() => {
+    /** The draft itself: what a create sends. */
+    const clearDraft = useCallback(() => {
       setTitle("");
       setPointsInput("");
-      setDueId(DEFAULT_DUE_ID);
+      setDue(DEFAULT_DUE_CHOICE);
       setAssigneeId(null);
+    }, []);
+
+    /** Gives the draft up, and the visit's state with it: Cancel. */
+    const reset = useCallback(() => {
+      clearDraft();
       setSearch("");
       setSubmitFailed(false);
       setRefusal(null);
       setTitleFocused(false);
-    }, []);
+    }, [clearDraft]);
 
     /**
      * A swipe or scrim close: only what belongs to the visit goes. The draft
@@ -254,7 +262,6 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setSubmitFailed(false);
       setRefusal(null);
       const sentFrom = visit();
-      const sent = { title, pointsInput, dueId, assigneeId };
       createTask.mutate(body, {
         onSuccess: () => {
           const wasSelf = body.assignee_id === viewerUserId;
@@ -262,19 +269,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           // rules), felt once the task exists.
           successHaptic();
           // The draft was saved, so it goes whichever visit is on screen:
-          // keeping it would invite a duplicate. Field by field, and only
-          // where it still holds what was sent: anything else on screen is
-          // the member's next task, not this one.
-          setTitle((current) => (current === sent.title ? "" : current));
-          setPointsInput((current) =>
-            current === sent.pointsInput ? "" : current,
-          );
-          setDueId((current) =>
-            current === sent.dueId ? DEFAULT_DUE_ID : current,
-          );
-          setAssigneeId((current) =>
-            current === sent.assigneeId ? null : current,
-          );
+          // keeping it would invite a duplicate. A visit reopened since is
+          // read-only until now (see the header), so it still holds what
+          // was sent.
+          clearDraft();
           // A sheet closed and reopened since is the member's new visit, and
           // the create doesn't close it under them.
           if (isSameVisit(sentFrom)) dismiss();
@@ -303,10 +301,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       canSubmit,
       createTask,
       viewerUserId,
-      title,
-      pointsInput,
-      dueId,
-      assigneeId,
+      clearDraft,
       dismiss,
       visit,
       isSameVisit,
@@ -392,9 +387,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               value: preset.id,
               label: preset.label,
             }))}
-            selected={duePreset?.id ?? null}
+            selected={dueChipId}
             onSelect={(value) => {
-              if (value !== null && !pending) setDueId(value);
+              const preset = presets.find((each) => each.id === value);
+              if (preset && !pending) setDue(dueChoiceOf(preset));
             }}
             accessibilityLabel="Due date"
           />

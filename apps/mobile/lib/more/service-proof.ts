@@ -10,6 +10,7 @@ import {
   type RequestSignedUpload,
 } from "@/lib/chat/attachment-upload";
 import {
+  gateRefusalOf,
   uploadPickedImageGated,
   type GateCopy,
 } from "@/lib/chat/gated-upload";
@@ -73,7 +74,8 @@ export type ProofUploadResult =
 
 /**
  * The member's sentences for a gate refusal: the mint route sits under the
- * same `@RequireModule('hours')` and subscription gate as the create.
+ * same `@RequireModule('hours')` and subscription gate as the create, so both
+ * halves of one Submit say the same thing ({@link createRefusalOf}).
  */
 const PROOF_GATE_COPY: GateCopy = {
   subscription: SUBSCRIPTION_REFUSAL_COPY.serviceHours,
@@ -93,6 +95,19 @@ export async function uploadProofPhoto(
   return put.status === "uploaded"
     ? { status: "uploaded", storagePath: put.image.storagePath }
     : put;
+}
+
+/**
+ * The member's sentence when a gate refuses the create, or `null` for any
+ * other failure. Through `gateRefusalOf` with the mint's copy, as documents'
+ * confirm is, so a change to how a gate is recognised reaches the photo's
+ * mint and the entry's create on this sheet alike. Never a bare 403: the
+ * create also 403s for a permission denial, which an officer's role grant
+ * clears on the next try, and for the `chapter.context.*` family, which
+ * clears itself.
+ */
+export function createRefusalOf(error: unknown): string | null {
+  return gateRefusalOf(error, PROOF_GATE_COPY);
 }
 
 /**

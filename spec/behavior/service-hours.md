@@ -29,4 +29,4 @@ A dedicated tracker for community service and philanthropy hours, separate from 
 ## Edge Cases
 
 - If an admin accidentally approves an entry, they can change the status back to REJECTED. If points were already awarded, a separate point adjustment is required (the system does not auto-reverse).
-- Service entries cannot be edited after submission. If the member made an error, they delete the entry and resubmit (only possible while status is PENDING). Deleting an entry also deletes its proof object from storage, so abandoned proofs never accumulate in the bucket.
+- Service entries cannot be edited after submission. If the member made an error, they delete the entry and resubmit (only possible while status is PENDING). Deleting an entry also deletes its proof object from storage, so a deleted entry leaves no proof behind. An object uploaded for a create that failed, and then given up, belongs to no entry and stays in the bucket until an orphan sweep exists ([#2197](https://github.com/pdcarlson/Frapp/issues/2197)).

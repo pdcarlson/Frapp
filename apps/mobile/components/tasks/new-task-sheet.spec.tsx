@@ -253,9 +253,15 @@ describe("New task draft across visits", () => {
     let tree!: ReactTestRenderer;
     act(() => {
       tree = create(sheetAt(now), {
+        // The create sheet is the modal with `onDismiss`; the assignee
+        // picker's own modal gets a stand-in of its own, so its Done is
+        // never counted as the sheet closing.
         createNodeMock: (element) =>
           (element.type as unknown) === "BottomSheetModal"
-            ? { dismiss, present: vi.fn() }
+            ? typeof (element.props as { onDismiss?: unknown }).onDismiss ===
+              "function"
+              ? { dismiss, present: vi.fn() }
+              : { dismiss: vi.fn(), present: vi.fn() }
             : null,
       });
     });
@@ -384,6 +390,19 @@ describe("New task draft across visits", () => {
     );
   const sentBody = () =>
     mutate.mock.calls.at(-1)?.[0] as { title: string; due_date: string };
+  /**
+   * Picks a member in the assignee picker. Its list is a string stand-in that
+   * never draws rows (vitest.setup.ts), so the row is built from `renderItem`.
+   */
+  const pickAssignee = (tree: ReactTestRenderer, userId: string) => {
+    const list = tree.root.find(
+      (node) => node.type === ("BottomSheetFlatList" as never),
+    );
+    const row = list.props.renderItem({ item: { userId, name: null } });
+    act(() => row.props.onPress());
+  };
+  const isSelected = (tree: ReactTestRenderer, label: string) =>
+    chip(tree, label).props.accessibilityState.selected as boolean;
 
   it("holds the draft and Cancel still while a create is in flight", () => {
     mutate.mockImplementationOnce(() => {});
@@ -409,27 +428,54 @@ describe("New task draft across visits", () => {
     act(() => tree.unmount());
   });
 
-  it("clears only what it sent when a create lands in a reopened visit", () => {
+  // 2026-09-28 is a Monday.
+  const monday = new Date(2026, 8, 28, 12);
+  const tuesday = new Date(2026, 8, 29, 12);
+
+  it("locks a visit reopened mid-create, and clears it when the create lands", () => {
     let succeed = () => {};
     mutate.mockImplementationOnce((_body, options) => {
       succeed = (options as unknown as { onSuccess: () => void }).onSuccess;
     });
-    const tree = renderWithRef();
+    const tree = renderWithRef(monday);
     typeTitle(tree);
+    act(() => pointsField(tree).props.onChangeText("5"));
+    act(() => chip(tree, "Friday").props.onPress());
+    pickAssignee(tree, "user-2");
+    expect(assigneeRow(tree).props.accessibilityLabel).not.toBe(
+      "Assignee: You",
+    );
     act(() => createButton(tree).props.onPress());
+    createPending = true;
+    act(() => tree.update(sheetAt(monday)));
     act(() => sheetModal(tree).props.onDismiss());
     act(() => sheetModal(tree).props.onAnimate(-1, 0)); // reopened
-    // The member's next task, typed into the reopened sheet.
-    act(() => titleField(tree).props.onChangeText("Book the venue"));
-    act(() => succeed());
 
-    expect(titleValue(tree)).toBe("Book the venue");
+    // The sheet stays mounted across the swipe, so the reopened visit reads
+    // the same pending create: nothing in it can be edited or given up.
+    expect(titleValue(tree)).toBe("Sweep the porch");
+    expect(titleField(tree).props.editable).toBe(false);
+    expect(pointsField(tree).props.editable).toBe(false);
+    expect(assigneeRow(tree).props.disabled).toBe(true);
+    expect(cancelButton(tree).props.disabled).toBe(true);
+    act(() => chip(tree, "Tomorrow").props.onPress());
+    expect(isSelected(tree, "Friday")).toBe(true);
+
+    // TanStack runs the call's `onSuccess` before the render that drops
+    // `isPending`, so the fields are still locked when the clear lands.
+    act(() => succeed());
+    createPending = false;
+    act(() => tree.update(sheetAt(monday)));
+
+    expect(titleValue(tree)).toBe("");
+    expect(pointsField(tree).props.value).toBe("");
+    expect(isSelected(tree, "Today")).toBe(true);
+    expect(assigneeRow(tree).props.accessibilityLabel).toBe("Assignee: You");
+    expect(titleField(tree).props.editable).toBe(true);
+    // A visit reopened since stays open.
+    expect(dismiss).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
-
-  // 2026-09-28 is a Monday.
-  const monday = new Date(2026, 8, 28, 12);
-  const tuesday = new Date(2026, 8, 29, 12);
 
   it("keeps a kept draft's Today meaning today", () => {
     const tree = renderWithRef(monday);
@@ -459,6 +505,55 @@ describe("New task draft across visits", () => {
 
     act(() => createButton(tree).props.onPress());
     expect(sentBody().due_date).toBe("2026-09-30");
+    act(() => tree.unmount());
+  });
+
+  // 2026-09-30 is a Wednesday, and its Friday is 2026-10-02.
+  const wednesday = new Date(2026, 8, 30, 12);
+  const thursday = new Date(2026, 9, 1, 12);
+  const saturday = new Date(2026, 9, 3, 12);
+
+  /** Picks `label` on `pickedOn`, swipes the draft away, reopens on `filedOn`. */
+  function keepChip(label: string, pickedOn: Date, filedOn: Date) {
+    const tree = renderWithRef(pickedOn);
+    typeTitle(tree);
+    act(() => chip(tree, label).props.onPress());
+    act(() => sheetModal(tree).props.onDismiss());
+    act(() => tree.update(sheetAt(filedOn)));
+    act(() => sheetModal(tree).props.onAnimate(-1, 0));
+    return tree;
+  }
+
+  it("files a kept Friday on its Friday, shown as Tomorrow on the Thursday", () => {
+    // Thursday draws no Friday chip: Tomorrow is that day.
+    const tree = keepChip("Friday", wednesday, thursday);
+
+    expect(isSelected(tree, "Tomorrow")).toBe(true);
+    expect(isSelected(tree, "Today")).toBe(false);
+    act(() => createButton(tree).props.onPress());
+    expect(sentBody().due_date).toBe("2026-10-02");
+    act(() => tree.unmount());
+  });
+
+  it("files a kept Friday that has passed as Today", () => {
+    const tree = keepChip("Friday", wednesday, saturday);
+
+    expect(isSelected(tree, "Today")).toBe(true);
+    // Saturday's Friday chip is the next week's, not the one picked.
+    expect(isSelected(tree, "Friday")).toBe(false);
+    act(() => createButton(tree).props.onPress());
+    expect(sentBody().due_date).toBe("2026-10-03");
+    act(() => tree.unmount());
+  });
+
+  it("keeps a kept Next week's date when no chip draws it", () => {
+    const tree = keepChip("Next week", monday, tuesday);
+
+    for (const label of ["Today", "Tomorrow", "Friday", "Next week"]) {
+      expect(isSelected(tree, label)).toBe(false);
+    }
+    act(() => createButton(tree).props.onPress());
+    expect(sentBody().due_date).toBe("2026-10-05");
     act(() => tree.unmount());
   });
 });

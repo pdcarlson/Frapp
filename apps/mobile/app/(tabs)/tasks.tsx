@@ -89,10 +89,12 @@ export default function TasksScreen() {
   const canManageTasks = can("tasks:manage", permissions);
 
   // One clock for the whole render, so the two sections cannot straddle a tick
-  // and disagree about what "today" means — but re-read whenever the screen is
-  // focused. A tab is never unmounted and the JS context survives days of
-  // backgrounding, so a mount-only clock would keep bucketing by the day the app
-  // was opened, and the sheet's "Today" chip would file a task already overdue.
+  // and disagree about what "today" means — but re-read whenever the member
+  // comes back: to the screen (a navigation focus, here) or to the app on this
+  // tab (the AppState listener below, which `useFocusEffect` never sees). A tab
+  // is never unmounted and the JS context survives days of backgrounding, so a
+  // mount-only clock would keep bucketing by the day the app was opened, and
+  // the sheet's "Today" chip would file a task already overdue.
   const [now, setNow] = useState(() => new Date());
   useFocusEffect(
     useCallback(() => {
@@ -143,7 +145,11 @@ export default function TasksScreen() {
   );
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (next) => {
-      if (next === "active") setRefusal(null);
+      if (next !== "active") return;
+      setRefusal(null);
+      // The clock too (see `now` above): a member who leaves the app on this
+      // tab overnight comes back to today's board and today's chips.
+      setNow(new Date());
     });
     return () => subscription.remove();
   }, []);

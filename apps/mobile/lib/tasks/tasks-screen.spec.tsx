@@ -115,8 +115,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 }));
 
 // The sheet has its own rendered spec; here it would only bring its own hooks.
+// It keeps the clock it was handed, which is what its chips read.
+let sheetNow: Date | undefined;
 vi.mock("@/components/tasks/new-task-sheet", () => ({
-  NewTaskSheet: () => null,
+  NewTaskSheet: ({ now }: { now?: Date }) => {
+    sheetNow = now;
+    return null;
+  },
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -294,5 +299,32 @@ describe("Task status toggle haptic", () => {
     expect(mutateAsync).toHaveBeenCalled();
     expect(successHaptic).not.toHaveBeenCalled();
     act(() => tree.unmount());
+  });
+});
+
+/**
+ * The board's clock, which the New task sheet's chips read: re-read when the
+ * member comes back, since a tab is never unmounted.
+ */
+describe("Tasks board clock", () => {
+  it("re-reads its clock when the member comes back to the app on this tab", () => {
+    // A board left open overnight: no navigation focus fires on the return,
+    // and the New task sheet's "Today" must mean the new day.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(2026, 8, 28, 22));
+      const tree = render();
+      expect(sheetNow?.getDate()).toBe(28);
+
+      vi.setSystemTime(new Date(2026, 8, 29, 8));
+      act(() => appStateListener()("background"));
+      expect(sheetNow?.getDate()).toBe(28);
+      act(() => appStateListener()("active"));
+
+      expect(sheetNow?.getDate()).toBe(29);
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
