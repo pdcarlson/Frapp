@@ -502,15 +502,16 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Loading older messages (above the oldest row, #1571) | — | `Loading earlier messages...` (mobile, #2772: `Loading earlier messages…`, its own ellipsis convention) |
 | Older messages failed | — | `Couldn't load earlier messages.` · `Retry` |
 | Older messages may exist, no read running (mobile, above the oldest row, #2772) | — | `Load earlier messages` (a control: a page the block list holds entirely adds nothing to scroll past) |
-| Start of the channel's history reached (mobile, #2772; web's day divider says it) | — | `This is the start of the conversation.` |
+| Start of the channel's history reached | — | The channel start (below), above the oldest message, on both clients. Mobile's bare caption `This is the start of the conversation.` (#2772) remains only for a thread whose row hasn't loaded |
 | Jump looking for its target (newer rows first, then older pages) | — | `Finding that message...` · `Dismiss` |
 | Jump target past the paging bound | — | `That message is further back than the history loaded here. Scrolling up loads more, and it opens once it loads.` · `Dismiss` |
 | Jump target not in the channel's history | — | `That message isn't in this channel anymore.` · `Dismiss` |
 | Jump could not load a page it needed (newer or older) | — | `Couldn't load the messages needed to reach that message.` · `Dismiss` |
 | Jump into a channel whose messages failed to load | — | `Couldn't load this channel's messages to reach that message.` · `Dismiss` |
 | Jump to latest (mobile: a `↓` over the thread once the reader is back in history; `components/chat/jump-to-latest-button.tsx`, `jumpToLatestLabel`) | — | Read `Jump to latest`, or `New messages. Jump to latest` once something new lands out of sight |
-| No channels | `No channels yet` | `New chapters seed #general, #announcements, and #chapter-audit during onboarding. Ask an admin if none appear.` |
-| Empty timeline | `Nothing in this channel yet` | `Be the first to post — everyone in the channel sees it right away.` |
+| No channels | `No channels yet` | `Onboarding seeds them. Ask an admin.` It names no channel: which ones a new chapter gets is [`chat/README.md` § Channels](../../behavior/chat/README.md#channels). |
+| Channel start (both clients, `@repo/hooks/channel-start`; an empty channel draws it just above the composer, and a channel with history draws it above its oldest message) | `Welcome to #<name>`; a DM's is the other member's name | `This is the start of #<name>.`, or `This is the start of the private #<name> channel.` for a private one (a role-gated channel takes the plain line, since who reads it depends on its permissions and the seeded `#alumni` is open to every member), `This is the start of your conversation with <name>.` for a DM and `This is the start of your group conversation.` for a group DM; then the channel's own description, when it has one. Web officers (`channels:manage`) get `Edit channel`, or `Add a description` when it is blank, opening Chat admin on that channel |
+| Channel header (web: `# <name> • <description>` on one line, the description muted and truncated; mobile: the description on a muted line under the name) | — | The channel's own description. The four default channels start with `The whole chapter. Plans, questions, whatever's going on.` (#general), `News from officers. Everyone gets notified.` (#announcements), `Officer changes to dues, roles and settings, posted automatically.` (#chapter-audit) and `Alumni and actives keeping in touch.` (#alumni), from `DEFAULT_CHANNELS` |
 | Error | `Couldn't load channels` / `Couldn't load messages` | `Confirm your chapter access and retry.` |
 | Read-only channel | — | `This channel is read-only for your role.` (mobile still quotes the permission key, [#3422](https://github.com/pdcarlson/Frapp/issues/3422)) |
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
@@ -523,10 +524,10 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Send refused by the outbox, composer changed since (toast, #1728) | `Message not sent` | `It couldn't be queued for delivery and was discarded. Re-enter it to try again.` |
 | Send throttled (429; web toast and the failed row's error, beside its Retry, #3061) | `Message not sent` | `Too many requests in a short time. Wait a minute, then try again.` |
 
-The empty-timeline line used to end "messages render live with Supabase
-Realtime." It named the vendor and the transport to a member who wants to know
-whether it is safe to type, which §1's plain-language rule rules out — the
-promise worth making is that other people will see it.
+An empty channel had a timeline line until 2026-11-05, when the channel start
+replaced it. Before that it once ended "messages render live with Supabase
+Realtime.", which named the vendor and the transport to a member who wants to
+know whether it is safe to type, and §1's plain-language rule rules that out.
 
 The composer's offline line is a **label, not a warning**: the send path queues
 before it touches the network, so the composer stays usable and says what will
