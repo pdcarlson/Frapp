@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 import {
   dashboardFilterSelectClassName,
   dashboardFormSelectClassName,
+  dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
 import {
   PermissionCheckboxGrid,
@@ -31,6 +33,7 @@ import {
   type PrivacyReason,
 } from "./mapping-issues";
 import type { SameAsDiscordReaders } from "./role-matching";
+import { NO_SIDEBAR_GROUPS, type SidebarGroups } from "./sidebar-groups";
 
 type Visibility = NonNullable<ChannelChoice["visibility"]>;
 type ReadersOf = (channel: StagedChannel) => SameAsDiscordReaders | null;
@@ -46,18 +49,33 @@ const ACTIONS: { key: ChannelChoice["action"]; label: string }[] = [
 const NO_CATEGORY = "No category";
 
 interface Group {
+  /** Tells channels in no category apart from a category named like that. */
+  key: string;
+  /** The Discord category; null for channels in none. */
+  category: string | null;
   name: string;
   channels: StagedChannel[];
 }
 
+function sectionKey(category: string | null): string {
+  return category === null ? "none" : `category:${category}`;
+}
+
 /** Discord categories, in the order discovery returned their channels. */
 function groupByCategory(channels: StagedChannel[]): Group[] {
-  const groups = new Map<string, StagedChannel[]>();
+  const groups = new Map<string, Group>();
   for (const channel of channels) {
-    const name = channel.category ?? NO_CATEGORY;
-    groups.set(name, [...(groups.get(name) ?? []), channel]);
+    const key = sectionKey(channel.category);
+    const group = groups.get(key) ?? {
+      key,
+      category: channel.category,
+      name: channel.category ?? NO_CATEGORY,
+      channels: [],
+    };
+    group.channels.push(channel);
+    groups.set(key, group);
   }
-  return [...groups].map(([name, members]) => ({ name, channels: members }));
+  return [...groups.values()];
 }
 
 function rowId(channelId: string): string {
@@ -82,6 +100,9 @@ function rowId(channelId: string): string {
  *
  * A private channel never merges by default: it would take the target's
  * readers, which may be the whole chapter (#2800).
+ *
+ * "Keep Discord's categories" is off until the admin turns it on; then each
+ * category says whether it is kept (`SidebarGroups`).
  */
 export function ChannelMappingStep({
   channels,
@@ -92,6 +113,8 @@ export function ChannelMappingStep({
   readersOf = () => null,
   onRescan,
   rescanning = false,
+  sidebarGroups = NO_SIDEBAR_GROUPS,
+  onSidebarGroups,
 }: {
   channels: StagedChannel[];
   choices: Record<string, ChannelChoice>;
@@ -104,6 +127,9 @@ export function ChannelMappingStep({
   /** Bot path: scan the server again, after the bot has been given access. */
   onRescan?: () => void;
   rescanning?: boolean;
+  /** Which Discord categories become channel groups; no control without it. */
+  sidebarGroups?: SidebarGroups;
+  onSidebarGroups?: (next: SidebarGroups) => void;
 }) {
   const existingChannels = useChannels();
   const catalogQuery = usePermissionsCatalog();
@@ -147,7 +173,7 @@ export function ChannelMappingStep({
     .filter((group) =>
       group.channels.some((channel) => issuesByChannel.has(channel.channelId)),
     )
-    .map((group) => group.name);
+    .map((group) => group.key);
   const [autoOpened, setAutoOpened] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -158,8 +184,8 @@ export function ChannelMappingStep({
   }
   function isOpen(group: Group): boolean {
     return (
-      opened[group.name] ??
-      (autoOpened.has(group.name) || flagged.includes(group.name))
+      opened[group.key] ??
+      (autoOpened.has(group.key) || flagged.includes(group.key))
     );
   }
 
@@ -188,7 +214,7 @@ export function ChannelMappingStep({
   ) {
     update(targets, patch);
     const settled = new Set(
-      targets.map((channel) => channel.category ?? NO_CATEGORY),
+      targets.map((channel) => sectionKey(channel.category)),
     );
     setAutoOpened(
       (previous) => new Set([...previous].filter((name) => !settled.has(name))),
@@ -205,7 +231,7 @@ export function ChannelMappingStep({
     const group = groups.find((candidate) =>
       candidate.channels.some((channel) => channel.channelId === channelId),
     );
-    if (group) setOpened((prev) => ({ ...prev, [group.name]: true }));
+    if (group) setOpened((prev) => ({ ...prev, [group.key]: true }));
     // A click is a discrete event, so React has committed the opened group by
     // the next frame; the row exists to scroll to by then.
     requestAnimationFrame(() => {
@@ -225,8 +251,8 @@ export function ChannelMappingStep({
   );
   const offersDiscord = readable.some((channel) => readersOf(channel));
   const { together } = useMemo(
-    () => newChannelGroups(channels, choices, readersOf),
-    [channels, choices, readersOf],
+    () => newChannelGroups(channels, choices, readersOf, sidebarGroups),
+    [channels, choices, readersOf, sidebarGroups],
   );
 
   if (channels.length === 0) {
@@ -312,16 +338,24 @@ export function ChannelMappingStep({
         />
       </div>
 
+      {onSidebarGroups ? (
+        <KeepCategoriesSwitch
+          groups={sidebarGroups}
+          onChange={onSidebarGroups}
+          knowsOrder={knowsPrivacy}
+        />
+      ) : null}
+
       <NeedsAttention issues={issues} onJump={jump} />
 
       <div className="space-y-3">
         {groups.map((group) => (
           <CategoryGroup
-            key={group.name}
+            key={group.key}
             group={group}
             open={isOpen(group)}
             onToggle={() =>
-              setOpened((prev) => ({ ...prev, [group.name]: !isOpen(group) }))
+              setOpened((prev) => ({ ...prev, [group.key]: !isOpen(group) }))
             }
             choices={choices}
             issuesByChannel={issuesByChannel}
@@ -334,6 +368,20 @@ export function ChannelMappingStep({
             existingNames={existingNames}
             readersOf={readersOf}
             together={together}
+            keepAsGroup={
+              onSidebarGroups && sidebarGroups.keep && group.category !== null
+                ? {
+                    checked: !sidebarGroups.dropped.has(group.category),
+                    onToggle: () => {
+                      const name = group.category as string;
+                      const dropped = new Set(sidebarGroups.dropped);
+                      if (dropped.has(name)) dropped.delete(name);
+                      else dropped.add(name);
+                      onSidebarGroups({ ...sidebarGroups, dropped });
+                    },
+                  }
+                : null
+            }
             {...permissionProps}
           />
         ))}
@@ -346,6 +394,46 @@ export function ChannelMappingStep({
           rescanning={rescanning}
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The one switch for keeping categories. Group names show in every member's
+ * sidebar, so the hint says so before anyone turns it on.
+ */
+function KeepCategoriesSwitch({
+  groups,
+  onChange,
+  knowsOrder,
+}: {
+  groups: SidebarGroups;
+  onChange: (next: SidebarGroups) => void;
+  /** Bot path: the scan read Discord's category order. */
+  knowsOrder: boolean;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-3">
+      <div className="min-w-0 space-y-1">
+        <Label htmlFor="keep-discord-categories" className="font-semibold">
+          Keep Discord&rsquo;s categories
+        </Label>
+        <p
+          id="keep-discord-categories-hint"
+          className="text-sm text-muted-foreground"
+        >
+          Each new channel goes into a sidebar category named after its Discord
+          one{knowsOrder ? ", in Discord's order" : ""}. Where your chapter
+          already has a category by that name, the channel goes there. Merged
+          channels stay where they are. Every member can see category names.
+        </p>
+      </div>
+      <Switch
+        id="keep-discord-categories"
+        checked={groups.keep}
+        onCheckedChange={(keep) => onChange({ ...groups, keep })}
+        aria-describedby="keep-discord-categories-hint"
+      />
     </div>
   );
 }
@@ -425,6 +513,7 @@ function CategoryGroup({
   existingNames,
   readersOf,
   together,
+  keepAsGroup,
   catalog,
   holders,
   catalogLoading,
@@ -445,6 +534,8 @@ function CategoryGroup({
   readersOf: ReadersOf;
   /** Per row, how many rows share its new channel (#2856). */
   together: ReadonlyMap<string, number>;
+  /** Whether this category becomes a group; null when that isn't asked. */
+  keepAsGroup: { checked: boolean; onToggle: () => void } | null;
   catalog: PermissionCatalogEntry[];
   holders: ReadonlyMap<string, readonly string[]> | undefined;
   catalogLoading: boolean;
@@ -507,7 +598,19 @@ function CategoryGroup({
             </span>
           </span>
         </button>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {keepAsGroup ? (
+            <label className="flex min-h-11 cursor-pointer items-center gap-2 px-1 text-sm">
+              <input
+                type="checkbox"
+                className={dashboardTableCheckboxClassName}
+                checked={keepAsGroup.checked}
+                onChange={keepAsGroup.onToggle}
+                aria-label={`Keep ${group.name} as a category`}
+              />
+              Keep category
+            </label>
+          ) : null}
           <Button size="sm" variant="secondary" onClick={() => onBulk(asNew)}>
             All new
           </Button>

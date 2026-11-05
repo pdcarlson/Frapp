@@ -254,6 +254,26 @@ export interface DiscordImportChannel {
    * starting the import refuses a row they no longer match.
    */
   new_channel_same_as_discord: boolean;
+  /**
+   * The Frapp channel group (`chat_channel_categories`) the channel
+   * `create_new` makes goes into, by name: the Discord category it came from
+   * when the admin keeps categories, or null for none. Only a `create_new` row
+   * carries one (DB CHECK); a merge leaves its channel where it is.
+   */
+  new_channel_group: string | null;
+  /**
+   * The Discord category's position in the server, read by the bot scan so the
+   * groups an import makes follow Discord's order. Null on an upload, and for
+   * a channel with no category.
+   */
+  discord_category_position: number | null;
+  /**
+   * The group `start` resolved `new_channel_group` to in this chapter: an
+   * existing group of that name, or one the import created. Null until the
+   * import starts, and again if an officer deletes the group (`on delete set
+   * null`), in which case the channel lands with no group.
+   */
+  new_channel_category_id: string | null;
 }
 
 /** The two `chat_channels.type` values an import may create. */
@@ -306,6 +326,16 @@ export type DiscordImportFileKind = 'export' | 'media';
 export interface DiscordImportCreatedChannel {
   import_id: string;
   channel_id: string;
+  created_at: string;
+}
+
+/**
+ * A channel group `start` created for an import, as `DiscordImportCreatedChannel`
+ * records channels. The purge deletes the ones left holding no channel.
+ */
+export interface DiscordImportCreatedCategory {
+  import_id: string;
+  category_id: string;
   created_at: string;
 }
 
