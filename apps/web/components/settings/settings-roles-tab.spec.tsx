@@ -128,19 +128,27 @@ describe("SettingsRolesTab", () => {
     // default sub-tab, so `?tab=roles` landed on a read-only list of archetype
     // names and the editor was two clicks further in.
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage
+        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
     expect(screen.getByRole("heading", { name: "Roles" })).toBeInTheDocument();
     expect(screen.getByText(/role pack/i)).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /pack/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: /pack/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("draws one row per permission and one column per live role", () => {
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage
+        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -155,11 +163,15 @@ describe("SettingsRolesTab", () => {
       screen.getByRole("columnheader", { name: "New Member, 0 members" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("rowheader", { name: "MEMBERS_VIEW" }),
+      screen.getByRole("rowheader", { name: "See the full directory" }),
     ).toBeInTheDocument();
     // Rows group by permission namespace (`4e` pin 3).
-    expect(screen.getByRole("rowheader", { name: "Members" })).toBeInTheDocument();
-    expect(screen.getByRole("rowheader", { name: "Events" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("rowheader", { name: "Members" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("rowheader", { name: "Events" }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("n/a")).not.toBeInTheDocument();
   });
 
@@ -179,7 +191,10 @@ describe("SettingsRolesTab", () => {
       isSuccess: true,
     });
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage
+        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -204,13 +219,18 @@ describe("SettingsRolesTab", () => {
       isSuccess: false,
     });
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage
+        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
 
-    expect(screen.getByRole("columnheader", { name: "Member" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Member" }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("columnheader", { name: /0 members/ }),
     ).not.toBeInTheDocument();
@@ -221,13 +241,16 @@ describe("SettingsRolesTab", () => {
     // role's existing set plus the one clicked — never the whole catalog.
     const user = userEvent.setup();
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage
+        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
     await user.click(
-      screen.getByRole("button", { name: "EVENTS_CREATE for Member" }),
+      screen.getByRole("button", { name: "Create events for Member" }),
     );
 
     expect(mockUpdateRole).toHaveBeenCalledWith({
@@ -247,17 +270,20 @@ describe("SettingsRolesTab", () => {
      */
     const user = userEvent.setup();
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage
+        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
 
     await user.click(
-      screen.getByRole("button", { name: "EVENTS_CREATE for Member" }),
+      screen.getByRole("button", { name: "Create events for Member" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "MEMBERS_VIEW for Member" }),
+      screen.getByRole("button", { name: "See the full directory for Member" }),
     );
 
     expect(mockUpdateRole).toHaveBeenNthCalledWith(1, {
@@ -291,15 +317,22 @@ describe("SettingsRolesTab", () => {
       refetch: vi.fn(),
     });
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage
+        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
 
-    expect(screen.queryByRole("button", { name: /for President/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /for President/ }),
+    ).not.toBeInTheDocument();
     // And it reads as granted rather than empty.
-    expect(screen.getByText("Granted: MEMBERS_VIEW for President")).toBeInTheDocument();
+    expect(
+      screen.getByText("Granted: See the full directory for President"),
+    ).toBeInTheDocument();
   });
 
   it("never renders the wildcard as a permission row", () => {
@@ -312,7 +345,9 @@ describe("SettingsRolesTab", () => {
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
-    expect(screen.queryByRole("rowheader", { name: "WILDCARD" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("rowheader", { name: "WILDCARD" }),
+    ).not.toBeInTheDocument();
   });
 
   it("leaves the cells read-only for a caller who cannot manage roles", () => {
@@ -328,8 +363,12 @@ describe("SettingsRolesTab", () => {
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
-    expect(screen.queryByRole("button", { name: /for Member/ })).not.toBeInTheDocument();
-    expect(screen.getByText("Granted: MEMBERS_VIEW for Member")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /for Member/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Granted: See the full directory for Member"),
+    ).toBeInTheDocument();
   });
 
   it("hides the delete control for core roles and shows it for non-core", async () => {
@@ -342,7 +381,10 @@ describe("SettingsRolesTab", () => {
       isError: false,
     });
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage
+        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -359,7 +401,10 @@ describe("SettingsRolesTab", () => {
     const user = userEvent.setup();
     mockCreate.mockResolvedValue({});
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage
+        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -380,7 +425,10 @@ describe("SettingsRolesTab", () => {
   describe("the new role's rank (#3050)", () => {
     const renderTab = () =>
       render(
-        <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+        <SettingsRolesTab
+          archetypeKey="ifc"
+          canManage
+          catalog={CATALOG}
           defaultInviteRoleId={null}
           onSaveDefaultInviteRole={mockSaveDefaultRole}
         />,
@@ -440,9 +488,7 @@ describe("SettingsRolesTab", () => {
       />,
     );
     expect(screen.getByLabelText("Key")).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: /create role/i }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /create role/i })).toBeDisabled();
   });
 
   it("never offers the wildcard as a capability checkbox", async () => {
@@ -456,7 +502,10 @@ describe("SettingsRolesTab", () => {
       isError: false,
     });
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={catalogWithWildcard}
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage
+        catalog={catalogWithWildcard}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -485,7 +534,10 @@ describe("SettingsRolesTab", () => {
       isError: false,
     });
     render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage
+        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
@@ -511,16 +563,21 @@ describe("the capability matrix's marks, at the call site", () => {
    * status one slice back: a value-level guard is blind to the call site.
    */
   it("uses the token pair the measurements clear, not the one that reads right", () => {
-    render(<SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+    render(
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage
+        catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />);
+      />,
+    );
 
     // The cells that carry the mark: one granted, one not, both on a role
     // whose cells are editable so the tone lives on the button.
     const marks = [
-      screen.getByRole("button", { name: "MEMBERS_VIEW for Member" }),
-      screen.getByRole("button", { name: "EVENTS_CREATE for Member" }),
+      screen.getByRole("button", { name: "See the full directory for Member" }),
+      screen.getByRole("button", { name: "Create events for Member" }),
     ];
     for (const mark of marks) {
       const { className } = mark;
