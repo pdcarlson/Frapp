@@ -175,31 +175,43 @@ export async function proxy(request: NextRequest) {
   return responseHolder.current;
 }
 
+/**
+ * Which requests run the proxy at all.
+ *
+ * On Vercel the proxy is its own function invocation, billed as Fluid Active
+ * CPU on top of the page render it guards. The dashboard layout is dynamic (it
+ * reads cookies), so every visible nav `<Link>` prefetches with a server
+ * request, and about twenty of them fire on each dashboard page load. Running
+ * the session check on those doubled the function count for nothing:
+ *
+ * - A prefetch only warms the router cache. Gating it decides nothing, because
+ *   the real navigation is a separate, non-prefetch request, and the proxy
+ *   still runs on that one.
+ * - The dashboard renders no member data on the server. Data comes from the
+ *   API with the member's own token, so an unsigned prefetch gets an empty
+ *   shell and no more.
+ *
+ * Both hold only while nothing in the app does a *full* prefetch
+ * (`prefetch={true}` on a `<Link>`, or `router.prefetch` with the full kind).
+ * A full prefetch is reused for the navigation with no second request, so that
+ * navigation would skip this gate. Nothing does one today.
+ *
+ * Next reads this object statically at build time, so it must stay a literal:
+ * a `.map()` over `PROTECTED_ROUTE_PREFIXES` would be silently ignored. That
+ * is why the prefixes are written out again in the regex below. The paths are
+ * the ones the previous plain-string matcher listed, unchanged:
+ * `/`, `/sign-in`, `/sign-up`, `/join`, `/no-access` exactly, and each
+ * dashboard prefix with anything under it.
+ */
 export const config = {
   matcher: [
-    "/",
-    "/sign-in",
-    "/sign-up",
-    "/join",
-    "/dashboard/:path*",
-    "/members/:path*",
-    "/alumni/:path*",
-    "/roles/:path*",
-    "/events/:path*",
-    "/tasks/:path*",
-    "/service/:path*",
-    "/documents/:path*",
-    "/backwork/:path*",
-    "/discord-import/:path*",
-    "/geofences/:path*",
-    "/study/:path*",
-    "/polls/:path*",
-    "/chat/:path*",
-    "/points/:path*",
-    "/billing/:path*",
-    "/reports/:path*",
-    "/profile/:path*",
-    "/settings/:path*",
-    "/no-access",
+    {
+      source:
+        "/((?:sign-in|sign-up|join|no-access)|(?:dashboard|members|alumni|roles|events|tasks|service|documents|backwork|discord-import|geofences|study|polls|chat|points|billing|reports|profile|settings)(?:/.*)?)?",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
   ],
 };

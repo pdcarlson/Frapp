@@ -34,8 +34,59 @@ describe("apps/web/proxy.ts", () => {
     const mod = await import("../proxy");
     expect(typeof mod.proxy).toBe("function");
     expect(mod.config).toMatchObject({
-      matcher: expect.arrayContaining(["/", "/sign-in", "/sign-up"]),
+      matcher: [expect.objectContaining({ source: expect.any(String) })],
     });
+  });
+
+  test("matcher gates the same paths as before and skips prefetches", async () => {
+    // Compiled by Next's own build-time matcher code, so this checks what a
+    // deployment actually runs, not a hand-copied regex. The paths are the
+    // ones the old plain-string matcher covered.
+    const { config } = await import("../proxy");
+    // Internal Next module: it exports this at runtime, but its type
+    // declarations leave it out.
+    const { getMiddlewareMatchers } = (await import(
+      "next/dist/build/analysis/get-page-static-info.js"
+    )) as unknown as {
+      getMiddlewareMatchers: (
+        matcher: unknown,
+        nextConfig: { basePath: string; i18n: undefined },
+      ) => { regexp: string; missing?: unknown[] }[];
+    };
+    const compiledMatchers = getMiddlewareMatchers(config.matcher, {
+      basePath: "",
+      i18n: undefined,
+    });
+    expect(compiledMatchers).toHaveLength(1);
+    const compiled = compiledMatchers[0]!;
+    const matches = (path: string) => new RegExp(compiled.regexp).test(path);
+
+    for (const path of [
+      "/",
+      "/sign-in",
+      "/sign-up",
+      "/join",
+      "/no-access",
+      "/chat",
+      "/chat/general",
+      "/settings/branding",
+      "/discord-import",
+    ]) {
+      expect(matches(path), path).toBe(true);
+    }
+    for (const path of [
+      "/robots.txt",
+      "/auth/callback",
+      "/chat-admin",
+      "/join/x",
+      "/_next/static/chunk.js",
+    ]) {
+      expect(matches(path), path).toBe(false);
+    }
+    expect(compiled.missing).toEqual([
+      { type: "header", key: "next-router-prefetch" },
+      { type: "header", key: "purpose", value: "prefetch" },
+    ]);
   });
 
   test("proxy() returns a passthrough NextResponse when env is missing", async () => {
