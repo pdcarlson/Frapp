@@ -58,16 +58,21 @@
  *
  * Both surfaces now draw from here — mobile's s16 grid and web's Profile
  * Notifications card — which is what #564 closed. Anything that renders these
- * switches maps this array; nothing hand-writes a second list of keys.
+ * switches maps this array; nothing hand-writes a second list of keys. Web
+ * draws each as a switch with its label and `description`; mobile s16 draws
+ * the label only (`apps/mobile/app/(tabs)/preferences.tsx` says why).
  */
 
-/** One member-facing category, as drawn: a switch with a label and a hint. */
+/** One member-facing category: a switch's key, label and hint. */
 export interface NotificationCategory {
   /** Written verbatim to `notification_preferences.category`. */
   key: string;
   /** Switch label. Sentence case, per `spec/ui/design-system/writing.md`. */
   label: string;
-  /** One line under the label naming what actually arrives. */
+  /**
+   * One line naming what actually arrives, drawn under the label on web's
+   * Profile card. Mobile s16 leaves it off.
+   */
   description: string;
   /**
    * What to show before the member's rows load. Always `true` today — see the
