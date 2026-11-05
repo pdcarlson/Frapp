@@ -170,11 +170,6 @@ export const MemberDetailSheet = forwardRef<
     openUserIdRef.current = userId;
   }, [userId]);
 
-  function dismiss() {
-    if (typeof ref === "function" || !ref?.current) return;
-    ref.current.dismiss();
-  }
-
   async function startDm(memberUserId: string, name: string) {
     if (dmInFlightRef.current.has(memberUserId)) return;
     dmInFlightRef.current.add(memberUserId);
@@ -185,7 +180,7 @@ export const MemberDetailSheet = forwardRef<
       );
       if (openUserIdRef.current !== memberUserId) return;
       if (!channelId) throw new Error("No channel id returned");
-      dismiss();
+      closeSheet();
       router.push({ pathname: "/chat-thread", params: { channelId } });
     } catch {
       if (openUserIdRef.current !== memberUserId) return;

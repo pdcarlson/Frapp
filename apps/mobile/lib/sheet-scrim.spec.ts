@@ -17,7 +17,9 @@ import { describe, expect, it } from "vitest";
  * `<SheetBackToClose …/>`, so Android's back button closes the sheet rather
  * than the screen under it. gorhom handles no back press, and a picker or menu
  * with no Cancel (components.md § Chrome weight) would otherwise have no
- * button-press way out at all.
+ * button-press way out at all. And the same close is VoiceOver's escape:
+ * `onAccessibilityEscape={close}` inside the sheet, or on a body component the
+ * sheet hands `close` to, since gorhom wires that gesture to nothing either.
  */
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -67,7 +69,12 @@ function openingTags(source: string): { index: number; tag: string }[] {
  * Each `<BottomSheetModal …>` opening tag in the app, by file and line, with
  * the source that follows it.
  */
-function sheetTags(): { at: string; tag: string; after: string }[] {
+function sheetTags(): {
+  at: string;
+  tag: string;
+  after: string;
+  source: string;
+}[] {
   return ["app", "components"].flatMap((dir) =>
     sources(join(ROOT, dir)).flatMap((file) => {
       const source = readFileSync(file, "utf8");
@@ -75,6 +82,7 @@ function sheetTags(): { at: string; tag: string; after: string }[] {
         at: `${relative(ROOT, file)}:${source.slice(0, index).split("\n").length}`,
         tag,
         after: source.slice(index + tag.length),
+        source,
       }));
     }),
   );
@@ -140,4 +148,48 @@ describe("every bottom sheet closes on Android back", () => {
       expect(after.trimStart()).toMatch(/^<SheetBackToClose\s/);
     },
   );
+});
+
+/**
+ * Whether the sheet whose content is `after` wires VoiceOver's escape to the
+ * same close its `SheetBackToClose` uses: on a view inside it, or on the body
+ * component it passes that close to (the accent sheet's `onDone`).
+ */
+function escapesTo(after: string, source: string): boolean {
+  const close = /^<SheetBackToClose\s+onClose=\{([\w.]+)\}/.exec(
+    after.trimStart(),
+  )?.[1];
+  if (!close) return false;
+  const end = after.indexOf("</BottomSheetModal>");
+  const body = end === -1 ? after : after.slice(0, end);
+  const escape = (name: string) => `onAccessibilityEscape={${name}}`;
+  if (body.includes(escape(close))) return true;
+  const passed = [...body.matchAll(/(\w+)=\{([\w.]+)\}/g)]
+    .filter(([, prop, value]) => value === close && prop !== "onClose")
+    .map(([, prop]) => prop!);
+  return passed.some((prop) => source.includes(escape(prop)));
+}
+
+describe("every bottom sheet closes on VoiceOver's escape", () => {
+  const tags = sheetTags();
+
+  it.each(tags.map(({ at, after, source }) => [at, after, source]))(
+    "%s passes its close as onAccessibilityEscape",
+    (_at, after, source) => {
+      expect(escapesTo(after, source)).toBe(true);
+    },
+  );
+
+  it("fails a sheet that wires back but not escape", () => {
+    const after =
+      "\n  <SheetBackToClose onClose={closeSheet} />\n  <BottomSheetView>\n  </BottomSheetView>\n</BottomSheetModal>";
+    expect(escapesTo(after, after)).toBe(false);
+  });
+
+  it("follows a close handed to a body component", () => {
+    const after =
+      "\n  <SheetBackToClose onClose={closeSheet} />\n  <Body onDone={closeSheet} />\n</BottomSheetModal>";
+    const source = `${after}\nfunction Body({ onDone }) { return <View onAccessibilityEscape={onDone} />; }`;
+    expect(escapesTo(after, source)).toBe(true);
+  });
 });

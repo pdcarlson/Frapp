@@ -97,6 +97,7 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
 }));
 
 import { ListRow } from "@/components/list-section";
+import { SheetHeader } from "@/components/sheet-scaffold";
 import { MemberDetailSheet } from "./member-detail-sheet";
 
 const dismiss = vi.fn();
@@ -169,6 +170,22 @@ describe("MemberDetailSheet Message action (#2773)", () => {
         node.props.label.startsWith("Block "),
     );
     expect(block.props.action).toBe(true);
+    act(() => tree.unmount());
+  });
+
+  it("draws Unblock with no chevron, and no title row or Done over the name", () => {
+    state.blocked = new Set([ADA]);
+    const tree = render(ADA);
+    const unblock = tree.root.find(
+      (node) =>
+        typeof node.type === "function" &&
+        typeof node.props.label === "string" &&
+        node.props.label.startsWith("Unblock "),
+    );
+    expect(unblock.props.action).toBe(true);
+    // The member's name heads the sheet (components.md § Chrome weight).
+    expect(tree.root.findAllByType(SheetHeader)).toHaveLength(0);
+    expect(JSON.stringify(tree.toJSON())).not.toContain('"Done"');
     act(() => tree.unmount());
   });
 

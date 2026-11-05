@@ -5,7 +5,12 @@ import { act } from "react";
 import { BackHandler } from "react-native";
 import { describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { SheetBackToClose, SheetHeader, useSheetClose } from "./sheet-scaffold";
+import {
+  SheetBackToClose,
+  SheetHeader,
+  SheetScrim,
+  useSheetClose,
+} from "./sheet-scaffold";
 
 /**
  * Which sheets carry a Cancel: `spec/ui/design-system/components.md`
@@ -60,6 +65,21 @@ describe("a sheet's way out with no Cancel", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     // `true` keeps the navigator under the sheet from popping its screen.
     expect(handled).toBe(true);
+  });
+
+  it("names the scrim for what a tap on it does", () => {
+    const tree = render(
+      <SheetScrim
+        animatedIndex={{ value: 0 } as never}
+        animatedPosition={{ value: 0 } as never}
+        style={{}}
+      />,
+    );
+    const backdrop = tree.root.find(
+      (node) => node.props.accessibilityLabel !== undefined,
+    );
+    expect(backdrop.props.accessibilityLabel).toBe("Close");
+    expect(backdrop.props.accessibilityHint).toBe("Closes the sheet.");
   });
 
   it("closes the sheet it names, for VoiceOver's escape", () => {

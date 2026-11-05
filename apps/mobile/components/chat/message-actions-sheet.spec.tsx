@@ -5,6 +5,7 @@ import { act } from "react";
 import { AccessibilityInfo, Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { SheetHeader } from "@/components/sheet-scaffold";
 
 // The report settles in a microtask after the press, so its state update lands
 // inside an async `act`; React only accepts that when told this is a test env.
@@ -554,6 +555,20 @@ describe("MessageActionsSheet — report", () => {
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
       REPORT_SENT_TITLE,
     );
+  });
+
+  it("titles the sent sheet with no header Done beside its primary Done", async () => {
+    // components.md § Chrome weight: never a header Done and a primary Done.
+    report.mutateAsync.mockResolvedValue(filed());
+    const tree = render(target);
+    pressByLabel(tree, "Spam");
+    act(() => sendButton(tree).props.onPress());
+    await flush();
+
+    const headers = tree.root.findAllByType(SheetHeader);
+    const sent = headers.find((h) => h.props.title === REPORT_SENT_TITLE);
+    expect(sent).toBeDefined();
+    expect(sent!.props.onCancel).toBeUndefined();
   });
 
   it("says it was already reported, rather than 'Report sent', when the API hands back the open report", async () => {

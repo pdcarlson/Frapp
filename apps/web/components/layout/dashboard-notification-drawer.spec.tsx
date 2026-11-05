@@ -36,12 +36,14 @@ vi.mock("next/link", () => ({
 const {
   notifications,
   queryFailed,
+  queryFetching,
   mockInvalidateReports,
   mockMarkRead,
   mockRefetch,
 } = vi.hoisted(() => ({
   notifications: { value: [] as unknown[] },
   queryFailed: { value: false },
+  queryFetching: { value: false },
   mockInvalidateReports: vi.fn(),
   mockMarkRead: vi.fn(),
   mockRefetch: vi.fn(),
@@ -55,7 +57,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       data: queryFailed.value ? undefined : notifications.value,
       isPending: false,
       isError: queryFailed.value,
-      isFetching: false,
+      isFetching: queryFetching.value,
       refetch: mockRefetch,
     }),
     useMarkNotificationRead: () => ({
@@ -111,6 +113,7 @@ beforeEach(() => {
   mockMarkRead.mockResolvedValue({});
   notifications.value = [EVENT];
   queryFailed.value = false;
+  queryFetching.value = false;
 });
 
 describe("DashboardNotificationDrawer — report queue freshness", () => {
@@ -199,6 +202,28 @@ describe("DashboardNotificationDrawer — chrome (components.md § Chrome weight
       screen.getByRole("link", { name: /^Message Reported / }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^(New|Read)$/)).toBeNull();
+    const dots = document.querySelectorAll("[data-unread-dot]");
+    expect(dots).toHaveLength(1);
+    expect(dots[0]).toHaveClass("bg-foreground");
+    expect(
+      screen.getByRole("link", { name: /^Unread:\s*Notice / }),
+    ).toContainElement(dots[0] as HTMLElement);
+  });
+
+  it("shows a long title and body whole, since nothing else on web does", () => {
+    notifications.value = [
+      {
+        ...EVENT,
+        body: "A body long enough to run past two lines of the drawer, which used to clip it with no way to read the rest anywhere else on web.",
+      },
+    ];
+    renderDrawer();
+    const row = screen.getByRole("link", { name: /Notice/ });
+    for (const clip of ["truncate", "line-clamp-2"]) {
+      expect(row.querySelector(`.${clip}`)).toBeNull();
+    }
+    // Drawn inside the row: the scroll area's overflow clips anything outside.
+    expect(row).toHaveClass("focus-visible:ring-inset");
   });
 
   it("lists rows flat, with no card around each", () => {
@@ -224,5 +249,14 @@ describe("DashboardNotificationDrawer — chrome (components.md § Chrome weight
     expect(screen.getByText(/Couldn.t load notifications/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(mockRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables Try again with a spinner while the retry runs", () => {
+    queryFailed.value = true;
+    queryFetching.value = true;
+    renderDrawer();
+    const retry = screen.getByRole("button", { name: "Try again" });
+    expect(retry).toBeDisabled();
+    expect(retry.querySelector(".animate-spin")).not.toBeNull();
   });
 });

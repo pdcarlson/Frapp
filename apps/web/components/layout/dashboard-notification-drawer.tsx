@@ -198,8 +198,14 @@ export function DashboardNotificationDrawer({
               <Button
                 variant="secondary"
                 size="sm"
+                // A failed query stays in its error state while the retry
+                // runs, so the button is the only thing that can say so.
+                disabled={notificationsQuery.isFetching}
                 onClick={() => void notificationsQuery.refetch()}
               >
+                {notificationsQuery.isFetching ? (
+                  <Loader2 className="animate-spin" aria-hidden="true" />
+                ) : null}
                 Try again
               </Button>
             </div>
@@ -213,7 +219,11 @@ export function DashboardNotificationDrawer({
             // Unread is a dot and a bolder title, neutral like the chat list's
             // unread (foundations.md §5), not a gold card and a badge. Every row is transparent on the sheet's `--popover`, so
             // one hover serves both states: `--card-hover`, the neutral lift
-            // above the ladder (`elevation-contrast.spec.ts`).
+            // above the ladder (`elevation-contrast.spec.ts`). The title and
+            // body wrap rather than clip: nothing else on web shows a
+            // notification's text, and most deep links open a list page. The
+            // focus ring is drawn inset, because the list fills the scroll
+            // area's width and its overflow would clip a ring drawn outside.
             <ul className="-mx-3 divide-y divide-border">
               {notifications.map((notification) => {
                 const isRead = Boolean(notification.read_at);
@@ -231,10 +241,12 @@ export function DashboardNotificationDrawer({
                       className={cn(
                         "grid grid-cols-[8px_minmax(0,1fr)] gap-x-3 rounded-md border border-transparent px-3 py-3 transition hover:bg-card-hover",
                         FOCUS_RING,
+                        "focus-visible:ring-inset",
                       )}
                     >
                       <span
                         aria-hidden="true"
+                        data-unread-dot={isRead ? undefined : ""}
                         className={cn(
                           "mt-2 size-2 rounded-full",
                           isRead ? "bg-transparent" : "bg-foreground",
@@ -243,7 +255,7 @@ export function DashboardNotificationDrawer({
                       <span className="flex min-w-0 items-baseline justify-between gap-3">
                         <span
                           className={cn(
-                            "truncate text-sm",
+                            "min-w-0 break-words text-sm",
                             isRead
                               ? "font-medium text-muted-foreground"
                               : "font-semibold text-foreground",
@@ -259,7 +271,7 @@ export function DashboardNotificationDrawer({
                         </span>
                       </span>{" "}
                       {notification.body ? (
-                        <span className="col-start-2 mt-0.5 line-clamp-2 text-sm text-muted-foreground">
+                        <span className="col-start-2 mt-0.5 break-words text-sm text-muted-foreground">
                           {notification.body}
                         </span>
                       ) : null}

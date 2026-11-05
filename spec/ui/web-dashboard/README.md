@@ -226,7 +226,7 @@ Owner decision, 2026-11-05: the chrome rule in [`components.md` § Chrome weight
 - **The notification drawer departs from `1g`.** The board draws a gold count badge in the header, a worded "Mark all read", unread rows on the card step and red or gold dots. The drawer draws a bare "Notifications" title, Mark all read as an icon button beside the close, and a flat list divided by hairlines with a `--foreground` dot and a bolder title for unread. There is no count, no description and no header Refresh; the realtime ping refetches, and a failed load carries its own Try again ([`dashboard-notification-drawer.tsx`](../../../apps/web/components/layout/dashboard-notification-drawer.tsx)).
 - **Ask's "not yet" is a popover**, not the dialog it was. A modal that dims the dashboard to say a feature isn't ready is heavier than the news.
 - **The event detail sheet's actions are icons in its header**, beside the close: Add to calendar, Edit and Delete, each with its name as a tooltip. They were three full-width worded buttons at the top of the body.
-- **No dialog or sheet title carries a glyph.** The create task, new event, adjust points, log service hours, invite and member sheets each drew one before the title.
+- **No decorative glyph before a dialog or sheet title.** The create task, new event, adjust points, log service hours, invite and member sheets each drew one before the title, repeating the button just pressed. The onboarding tutorial's per-slide mark names the slide rather than the button, so it stays ([`iconography.md`](../design-system/iconography.md)).
 
 ## Gating & routing semantics
 

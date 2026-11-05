@@ -164,12 +164,13 @@ describe("rendering", () => {
     };
 
     const tree = render();
-    const image = tree.root.findAllByType(
-      "Image" as unknown as React.ElementType,
-    )[0]!;
-    const style = JSON.stringify(image.props.style);
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button",
+    );
 
-    expect(style).toContain('"aspectRatio":2');
+    expect(JSON.stringify(row.props.style)).toContain('"aspectRatio":2');
   });
 
   it("caps a tall preview so it cannot push the thread off screen", () => {
@@ -188,8 +189,15 @@ describe("rendering", () => {
     const image = tree.root.findAllByType(
       "Image" as unknown as React.ElementType,
     )[0]!;
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button",
+    );
 
-    expect(JSON.stringify(image.props.style)).toContain('"maxHeight":240');
+    expect(JSON.stringify(image.props.style)).toContain('"maxHeight":256');
+    // The row narrows to the width at which the photo reaches the cap.
+    expect(JSON.stringify(row.props.style)).toContain('"maxWidth":51.2');
   });
 
   it("draws a photo bare and a file in its frame", () => {
@@ -221,33 +229,41 @@ describe("rendering", () => {
     expect(JSON.stringify(file!.props.style)).toContain('"borderWidth":1');
   });
 
-  it("draws a portrait photo at the cap and its own width, hugged by its row", () => {
-    hookState.result = {
-      isPending: false,
-      isError: false,
-      data: [
-        attachment({ content_type: "image/png", width: 400, height: 2000 }),
-      ],
-    };
+  // Any shape the column's width would push past the cap: a portrait photo,
+  // and on a ~314pt column a square one too. A full-width box would leave
+  // `contain` empty sides with the rounded corners on them.
+  it.each([
+    ["portrait", 400, 2000, 0.2, 51.2],
+    ["square", 1080, 1080, 1, 256],
+    ["4:3", 1600, 1200, 4 / 3, (256 * 4) / 3],
+  ])(
+    "hugs a %s photo with its row, at its own shape under the cap",
+    (_shape, width, height, aspect, maxWidth) => {
+      hookState.result = {
+        isPending: false,
+        isError: false,
+        data: [attachment({ content_type: "image/png", width, height })],
+      };
 
-    const tree = render();
-    const image = tree.root.findAllByType(
-      "Image" as unknown as React.ElementType,
-    )[0]!;
-    const style = JSON.stringify(image.props.style);
-    expect(style).toContain('"height":240');
-    expect(style).toContain('"aspectRatio":0.2');
-    // A full-width box would letterbox the photo between empty sides.
-    expect(style).not.toContain('"width":"100%"');
-    const row = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityRole === "button",
-    );
-    expect(JSON.stringify(row.props.style)).toContain(
-      '"alignSelf":"flex-start"',
-    );
-  });
+      const tree = render();
+      const row = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityRole === "button",
+      );
+      const rowStyle = JSON.stringify(row.props.style);
+      expect(rowStyle).toContain('"alignSelf":"flex-start"');
+      expect(rowStyle).toContain('"width":"100%"');
+      expect(rowStyle).toContain(`"maxWidth":${maxWidth}`);
+      expect(rowStyle).toContain(`"aspectRatio":${aspect}`);
+      const image = tree.root.findAllByType(
+        "Image" as unknown as React.ElementType,
+      )[0]!;
+      const imageStyle = JSON.stringify(image.props.style);
+      expect(imageStyle).toContain('"height":"100%"');
+      expect(imageStyle).not.toContain("aspectRatio");
+    },
+  );
 
   it("falls back to a fixed height when the dimensions are null", () => {
     // `chat_message_attachments` allows both to be null, so an aspect ratio
@@ -283,7 +299,7 @@ describe("the states that must stay visible", () => {
   });
 });
 
-// A one-line caption that a photo up to 240pt tall then replaced pushed the
+// A one-line caption that a photo up to 256pt tall then replaced pushed the
 // thread with every photo that landed (components.md §10).
 describe("the loading tiles", () => {
   const tiles = (tree: ReactTestRenderer) =>

@@ -77,9 +77,8 @@ export function SheetBackToClose({ onClose }: { onClose: () => void }) {
  * Every `BottomSheetModal` passes a scrim, and `lib/sheet-scrim.spec.ts`
  * fails the build on one that doesn't: the sheets that predated this one shipped
  * without it, and the screen behind them read through at full brightness.
- * s17 (`components/ask/ask-sheet.tsx`) drew this first and still renders its
- * own identical backdrop; folding it onto this is left to the next change that
- * rewrites that file, rather than churning it here.
+ * s17 (`components/ask/ask-sheet.tsx`) drew this first, at the drawn
+ * `rgba(0,0,0,.55)`, and now passes this one too.
  */
 export function SheetScrim(props: BottomSheetBackdropProps) {
   return (
