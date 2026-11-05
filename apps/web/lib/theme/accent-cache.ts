@@ -96,8 +96,10 @@
  *
  * That this list *is* the bridge's output is the whole of the no-retint
  * guarantee on this path. `--gold-house`, `--gold-ask-*` and `--scrollbar-*`
- * are absent here for the same reason they are absent from the bridge
- * (`spec/ui/brand-identity.md` §2; `settings-accent.spec.tsx`), so a cached
+ * are absent here for the same reasons they are absent from the bridge (the
+ * gold families by the brand lock, `spec/ui/brand-identity.md` §2; the
+ * scrollbar because it is neutral chrome, `foundations.md` §12; both guarded
+ * in `settings-accent.spec.tsx`), so a cached
  * paint cannot retint the mark, the Ask pill or the scrollbars even in
  * principle — it has no value for them to write. `accent-cache.spec.ts`
  * asserts both halves against the real engine rather than trusting this
