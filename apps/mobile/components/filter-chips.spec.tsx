@@ -84,7 +84,7 @@ describe("FilterChips", () => {
     expect(flatten(tablist.props.style).flexWrap).toBe("wrap");
   });
 
-  // The board's chips are about 34pt; the touch target is still 44, through
+  // The chips draw 32pt (s13 draws about 34); the touch target is still 44, through
   // `hitSlop`, and the row's own bounds include the slop so Android delivers
   // the touch.
   it("draws compact chips with a 44pt touch target", () => {
@@ -113,7 +113,7 @@ describe("FilterChips", () => {
   });
 
   // Nothing caps the system text size, and the label role sets no line
-  // height, so at a large size the label outgrows 34pt. The 34 is a floor:
+  // height, so at a large size the label outgrows 32pt. The 32 is a floor:
   // nothing fixes the chip's height or clips the label inside it, and the
   // ripple is rounded by `PressableRow`'s parent clip instead.
   it("lets a chip grow with a large-font label, its ripple still rounded", () => {

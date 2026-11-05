@@ -50,6 +50,7 @@ export * from "./channel-sidebar";
 // the arrangement through `useSidebarPreferences`.
 export {
   useSidebarPreferences,
+  useSidebarPreferencesRefetch,
   useSetSidebarFilter,
   useSetSidebarSectionCollapsed,
   useSetChannelPinned,
