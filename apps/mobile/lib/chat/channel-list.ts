@@ -13,6 +13,7 @@
  */
 
 import { directChannelDisplayName, type DisplayNameMap } from "@repo/hooks";
+import { channelDescription } from "@repo/hooks/channel-start";
 import { isDirectChannel as isDirectChannelType } from "@repo/validation";
 
 /** Minimal channel shape; the SDK response type is unusable. */
@@ -45,6 +46,12 @@ export interface ChannelSummary {
    * `groupChannelsByCategory` sends that row to the default group.
    */
   category_id: string | null;
+  /**
+   * The channel's description (`chat_channels.description`), trimmed. Absent
+   * when the row has none or it is blank, so the header and the channel start
+   * draw no line for it.
+   */
+  description?: string;
 }
 
 /**
@@ -82,6 +89,10 @@ export function selectChannels(data: unknown): ChannelSummary[] {
         hidden: row.hidden === true,
         category_id:
           typeof row.category_id === "string" ? row.category_id : null,
+        description:
+          typeof row.description === "string"
+            ? (channelDescription(row.description) ?? undefined)
+            : undefined,
       },
     ];
   });
@@ -219,11 +230,30 @@ export function threadHeaderTitle(input: {
   /** The single-channel read is fetching right now. */
   isFetching: boolean;
 }): string {
+  const found = threadChannel(input);
+  if (!found) return input.isFetching ? "" : THREAD_HEADER_FALLBACK;
+  return isDirectChannel(found.channel) ? found.name : `#${found.name}`;
+}
+
+/**
+ * The open thread's channel row and its display name (no `#`), resolved the
+ * way {@link threadHeaderTitle} resolves them: the channel's own read first,
+ * then the cached list. `null` when neither has the row.
+ */
+export function threadChannel(input: {
+  row: unknown;
+  list: unknown;
+  channelId: string | null;
+  viewerId: string | null;
+  names: DisplayNameMap;
+}): { channel: ChannelSummary; name: string } | null {
   const { channelId } = input;
   const channel =
     selectChannels([input.row]).find((row) => row.id === channelId) ??
     selectChannels(input.list).find((row) => row.id === channelId);
-  if (!channel) return input.isFetching ? "" : THREAD_HEADER_FALLBACK;
-  const name = displayChannelName(channel, input.viewerId, input.names);
-  return isDirectChannel(channel) ? name : `#${name}`;
+  if (!channel) return null;
+  return {
+    channel,
+    name: displayChannelName(channel, input.viewerId, input.names),
+  };
 }

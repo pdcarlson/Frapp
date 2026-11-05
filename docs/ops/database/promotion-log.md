@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-05: Starting descriptions for the default channels
+
+### 20261105200000_default_channel_descriptions.sql
+
+- **Purpose**: Writes a starting `description` into the four channels every chapter is created with (`#general`, `#announcements`, `#chapter-audit`, `#alumni`), only where the description is blank. The channel header shows it beside the name and the empty channel's start repeats it. New chapters get the same lines from `DEFAULT_CHANNELS` (`apps/api/src/domain/constants/permissions.ts`). A description an officer typed is never replaced, and only the seeded name and type pairs are touched.
+- **Checks**: Before `db push`, `select name, type, count(*), count(*) filter (where coalesce(btrim(description), '') = '') from chat_channels where name in ('general','announcements','chapter-audit','alumni') group by 1, 2;` gave 8 channels, all 8 blank, on `frapp-prod` and 5 channels, all 5 blank, on `frapp-staging` on 2026-11-05. After it, the same query's blank count is 0 for those rows.
+- **Promoter notes**: Data only, no schema change. It rewrites at most a handful of rows per chapter, so the lock is brief. Any API version works against it: the column has always existed and every client already treats it as optional text. Re-applying is a no-op, because the `where` only matches blank descriptions. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-default-channel-descriptions-20261105200000) § Rollback default channel descriptions.
+
 ## 2026-11-04: One chapter_documents row per stored object (#3399)
 
 ### 20261104210000_chapter_documents_storage_path_key.sql

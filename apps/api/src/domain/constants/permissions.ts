@@ -203,16 +203,24 @@ export const DEFAULT_SYSTEM_ROLES = [
  * `#alumni` requires `members:view` (held by every seeded role, so active
  * members and alumni both keep the read access `spec/behavior/alumni.md`
  * specifies) plus `alumni:post`, which is what marks it alumni-writable.
+ *
+ * `description` is the line the channel header shows beside the name and the
+ * channel start repeats ("Welcome to #general"). Officers edit it in Chat
+ * admin. Migration `20261105200000_default_channel_descriptions.sql` writes the
+ * same four lines into existing chapters where the field is still blank, so a
+ * change here should change there too.
  */
 export const DEFAULT_CHANNELS = [
   {
     name: 'general',
+    description: "The whole chapter. Plans, questions, whatever's going on.",
     type: 'PUBLIC',
     is_read_only: false,
     required_permissions: null,
   },
   {
     name: 'announcements',
+    description: 'News from officers. Everyone gets notified.',
     type: 'PUBLIC',
     is_read_only: true,
     required_permissions: null,
@@ -221,12 +229,15 @@ export const DEFAULT_CHANNELS = [
   // onboarding welcome message post system_audit messages here / to #general.
   {
     name: 'chapter-audit',
+    description:
+      'Officer changes to dues, roles and settings, posted automatically.',
     type: 'PUBLIC',
     is_read_only: true,
     required_permissions: null,
   },
   {
     name: 'alumni',
+    description: 'Alumni and actives keeping in touch.',
     type: 'ROLE_GATED',
     is_read_only: false,
     required_permissions: [

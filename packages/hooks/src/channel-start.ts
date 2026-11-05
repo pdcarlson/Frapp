@@ -1,0 +1,77 @@
+/**
+ * The start of a channel's history, in one wording for both clients.
+ *
+ * An empty channel used to swap its timeline for a "Nothing in this channel
+ * yet" card. It now draws what a channel looks like at the top of its
+ * history: its name, what it is for, and who it is with. The same block sits
+ * above the oldest message once people have posted, so scrolling to the
+ * start of a channel always ends on it. Rostered in
+ * `spec/ui/design-system/writing.md` § Chat (dashboard), Channel start.
+ *
+ * `description` is the channel's own line (`chat_channels.description`),
+ * written by officers in Chat admin; the four default channels start with one
+ * (`DEFAULT_CHANNELS` in the API). A channel without one shows only the start
+ * line, rather than a sentence we make up about it.
+ */
+
+export type ChannelStartType =
+  "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
+
+export interface ChannelStartInput {
+  type: ChannelStartType;
+  /** The channel's name without `#`, or a DM's display name. */
+  name: string;
+  description?: string | null;
+}
+
+export interface ChannelStartCopy {
+  title: string;
+  /** "This is the start of …": where the reader is. */
+  startLine: string;
+  /** The channel's own description, trimmed, or null when it has none. */
+  description: string | null;
+}
+
+/** The trimmed description, or null for a blank one. */
+export function channelDescription(
+  description: string | null | undefined,
+): string | null {
+  const trimmed = description?.trim() ?? "";
+  return trimmed === "" ? null : trimmed;
+}
+
+export function channelStartCopy(input: ChannelStartInput): ChannelStartCopy {
+  const description = channelDescription(input.description);
+  switch (input.type) {
+    case "DM":
+      return {
+        title: input.name,
+        startLine: `This is the start of your conversation with ${input.name}.`,
+        description: null,
+      };
+    case "GROUP_DM":
+      return {
+        title: input.name,
+        startLine: "This is the start of your group conversation.",
+        description: null,
+      };
+    case "PRIVATE":
+    case "ROLE_GATED":
+      return {
+        title: `Welcome to #${input.name}`,
+        startLine: `This is the start of the private #${input.name} channel.`,
+        description,
+      };
+    default:
+      return {
+        title: `Welcome to #${input.name}`,
+        startLine: `This is the start of #${input.name}.`,
+        description,
+      };
+  }
+}
+
+/** The officer's shortcut from the channel start into Chat admin. */
+export const EDIT_CHANNEL_LABEL = "Edit channel";
+/** The same shortcut when the channel has no description yet. */
+export const ADD_CHANNEL_DESCRIPTION_LABEL = "Add a description";

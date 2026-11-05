@@ -613,12 +613,12 @@ describe("MessageTimeline — the viewer's block list (#2313)", () => {
     renderWithList(
       [message({ id: "m1", sender_id: BOB, content: "from the echo" })],
       blockState("unavailable"),
+      { channelStart: <p>Channel start</p> },
     );
 
     expect(screen.queryByText("from the echo")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("Nothing in this channel yet"),
-    ).not.toBeInTheDocument();
+    // A held row is not an empty channel, so the start does not stand in.
+    expect(screen.queryByText("Channel start")).not.toBeInTheDocument();
   });
 
   it("still shows the viewer's own message and a server-cleared row while the list is unavailable", () => {
@@ -1505,5 +1505,14 @@ describe("the image viewer", () => {
     );
 
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("MessageTimeline channel start", () => {
+  it("stands the channel start in for an empty channel, not an empty-state card", () => {
+    renderTimeline([], { channelStart: <p>Welcome to #general</p> });
+
+    expect(screen.getByText("Welcome to #general")).toBeInTheDocument();
+    expect(screen.queryByText(/nothing in this channel/i)).toBeNull();
   });
 });

@@ -1,12 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AuditGlyph,
-  DirectMessageGlyph,
-  LockGlyph,
-  MuteGlyph,
-} from "./chat-glyphs";
+import { MuteGlyph } from "./chat-glyphs";
+import { channelDescription } from "@repo/hooks/channel-start";
+import { ChannelMark, ChannelStart } from "./channel-start";
 import { EmptyState, ErrorState } from "@/components/shared/async-states";
 import {
   canHideConversation,
@@ -164,37 +161,6 @@ const UNREACHABLE_COPY: Record<UnreachableReason, string> = {
   error: "Couldn't load the messages needed to reach that message.",
   unloaded: "Couldn't load this channel's messages to reach that message.",
 };
-
-/**
- * Leading mark for the channel header.
- *
- * A plain channel takes a **text `#`**, not a glyph: `canvas-screens.dc.html`
- * s04/s05 draw the sigil as type (17px / 700), and the reference wins over a
- * tidier all-icons row. Everything the reference does not draw — audit, direct,
- * private — takes its duotone intent glyph at the 20px list-row size
- * (`iconography.md` §2).
- */
-function ChannelHeaderMark({
-  channel,
-  className,
-}: {
-  channel: ChatChannel | null;
-  className?: string;
-}) {
-  if (channel?.name === "chapter-audit")
-    return <AuditGlyph className={className} />;
-  if (channel?.type === "DM" || channel?.type === "GROUP_DM")
-    return <DirectMessageGlyph className={className} />;
-  if (channel?.type === "PRIVATE" || channel?.type === "ROLE_GATED")
-    return <LockGlyph className={className} />;
-  return (
-    <span aria-hidden="true" className="font-bold text-muted-foreground">
-      #
-    </span>
-  );
-}
-
-
 
 /**
  * The chat surface: channels column, then thread and composer.
@@ -534,6 +500,9 @@ export function ChatShell({
 
   // DM channels are stored as `dm-<uuidA>-<uuidB>`; the header, the composer
   // placeholder and the sidebar must all show the resolved title instead.
+  const activeChannelDescription = channelDescription(
+    activeChannel?.description,
+  );
   const activeChannelName = useMemo(() => {
     if (!activeChannel) return "";
     return directChannelDisplayName(
@@ -719,6 +688,20 @@ export function ChatShell({
   const canManageChannel = can(
     "channels:manage",
     permissionsPayload?.permissions,
+  );
+
+  // Memoised because the timeline hands it to the virtualizer's header
+  // context, and a new element every render would re-render that row.
+  const channelStartNode = useMemo(
+    () =>
+      activeChannel ? (
+        <ChannelStart
+          channel={activeChannel}
+          displayName={activeChannelName}
+          canEdit={canManageChannel}
+        />
+      ) : undefined,
+    [activeChannel, activeChannelName, canManageChannel],
   );
 
   // Bookmarks (#462). One chapter-wide query backs both the panel and every
@@ -1639,7 +1622,7 @@ export function ChatShell({
             <h1 className="flex min-w-0 items-center gap-2 text-label font-bold text-foreground">
               {activeChannel ? (
                 <>
-                  <ChannelHeaderMark
+                  <ChannelMark
                     channel={activeChannel}
                     className="h-4 w-4 shrink-0 text-muted-foreground"
                   />
@@ -1672,10 +1655,23 @@ export function ChatShell({
                 "Pick a channel"
               )}
             </h1>
-            {activeChannel?.description ? (
-              <p className="truncate text-caption text-muted-foreground">
-                {activeChannel.description}
-              </p>
+            {/*
+              "# name • description", the description muted and cut off on
+              one line (owner's reference, 2026-11-05). The dot is decoration:
+              the name is the heading and the description its own paragraph.
+            */}
+            {activeChannelDescription ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="shrink-0 text-caption text-muted-foreground"
+                >
+                  •
+                </span>
+                <p className="min-w-0 truncate text-caption text-muted-foreground">
+                  {activeChannelDescription}
+                </p>
+              </>
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -1986,6 +1982,7 @@ export function ChatShell({
             // notice the target stays pending (so a late arrival still lands),
             // but holding follow through that would stop new messages
             // scrolling into view until the member dismissed it.
+            channelStart={channelStartNode}
             holdFollow={
               pendingMessageId !== null &&
               (pendingJumpChannelId === null ||

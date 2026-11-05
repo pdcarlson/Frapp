@@ -153,7 +153,16 @@ function useToggleSet(
   );
 }
 
-export function ChatAdminPage() {
+/**
+ * `initialChannelId` is `?channel=<id>`: the channel start's Edit channel
+ * shortcut (`components/chat/channel-start.tsx`) opens this page with that
+ * channel selected and its description field focused.
+ */
+export function ChatAdminPage({
+  initialChannelId = null,
+}: {
+  initialChannelId?: string | null;
+} = {}) {
   return (
     <>
       {/*
@@ -187,14 +196,18 @@ export function ChatAdminPage() {
         */}
         <div className="space-y-6">
           <ChatReportsCard />
-          <ChatAdminBody />
+          <ChatAdminBody initialChannelId={initialChannelId} />
         </div>
       </Can>
     </>
   );
 }
 
-function ChatAdminBody() {
+function ChatAdminBody({
+  initialChannelId,
+}: {
+  initialChannelId: string | null;
+}) {
   const { isOffline } = useNetwork();
   const { toast } = useToast();
   const { confirm, confirmDialog } = useConfirmDialog();
@@ -324,6 +337,23 @@ function ChatAdminBody() {
   const [permissionsDraft, setPermissionsDraft] = useState<Set<string>>(
     new Set(),
   );
+
+  // `?channel=` from the channel start. Applied once, during render rather
+  // than in an effect, so the editor's first paint already shows the channel.
+  // The description field takes focus as the editor mounts (`autoFocus`), so
+  // the officer lands where the channel start sent them.
+  const [initialApplied, setInitialApplied] = useState(false);
+  const [focusDescription, setFocusDescription] = useState(false);
+  if (!initialApplied && initialChannelId) {
+    const initial = channels.find((c) => c.id === initialChannelId);
+    if (initial) {
+      setInitialApplied(true);
+      setFocusDescription(true);
+      selectChannel(initial);
+    } else if (channelsQuery.isSuccess) {
+      setInitialApplied(true);
+    }
+  }
 
   function selectChannel(channel: AdminChannel) {
     setSelectedChannelId(channel.id);
@@ -867,6 +897,7 @@ function ChatAdminBody() {
                   <div className="grid gap-1">
                     <Label htmlFor="ca-description">Description</Label>
                     <Textarea
+                      autoFocus={focusDescription}
                       id="ca-description"
                       value={descriptionDraft}
                       onChange={(event) =>

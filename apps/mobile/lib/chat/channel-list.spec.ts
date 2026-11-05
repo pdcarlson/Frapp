@@ -9,6 +9,7 @@ import {
   selectPostCapability,
   type ChannelPostCapability,
   THREAD_HEADER_FALLBACK,
+  threadChannel,
   threadHeaderTitle,
 } from "./channel-list";
 
@@ -487,5 +488,43 @@ describe("threadHeaderTitle (#2775)", () => {
     expect(title({ row: { id: "c9", name: "dues", type: "PUBLIC" } })).toBe(
       THREAD_HEADER_FALLBACK,
     );
+  });
+});
+
+describe("channel descriptions", () => {
+  it("keeps a trimmed description and drops a blank or missing one", () => {
+    const rows = selectChannels([
+      { id: "a", name: "general", type: "PUBLIC", description: "  Hi.  " },
+      { id: "b", name: "x", type: "PUBLIC", description: "   " },
+      { id: "c", name: "y", type: "PUBLIC", description: 4 },
+      { id: "d", name: "z", type: "PUBLIC" },
+    ]);
+    expect(rows.map((row) => row.description)).toEqual([
+      "Hi.",
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it("resolves the open thread's row and its name without the sigil", () => {
+    const found = threadChannel({
+      row: { id: "a", name: "general", type: "PUBLIC", description: "Hi." },
+      list: undefined,
+      channelId: "a",
+      viewerId: "me",
+      names: {},
+    });
+    expect(found?.name).toBe("general");
+    expect(found?.channel.description).toBe("Hi.");
+    expect(
+      threadChannel({
+        row: undefined,
+        list: undefined,
+        channelId: "a",
+        viewerId: "me",
+        names: {},
+      }),
+    ).toBeNull();
   });
 });

@@ -434,3 +434,26 @@ describe("ChatAdminPage — a channel's pins", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("ChatAdminPage — opened from a channel start", () => {
+  it("selects ?channel= and puts the cursor in its description", () => {
+    render(<ChatAdminPage initialChannelId="ch-2" />);
+
+    expect(screen.getByRole("button", { name: /^#exec/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(document.activeElement).toBe(
+      document.getElementById("ca-description"),
+    );
+  });
+
+  it("selects nothing for a channel id it doesn't know", () => {
+    render(<ChatAdminPage initialChannelId="nope" />);
+
+    expect(screen.getByRole("button", { name: /^#exec/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+});
