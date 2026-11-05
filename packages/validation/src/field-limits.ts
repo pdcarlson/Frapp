@@ -94,6 +94,13 @@ export const YEAR_MAX = 9_999;
 export const GRADUATION_YEAR_MIN = 1900;
 export const GRADUATION_YEAR_MAX = 2100;
 
+/**
+ * A chapter document's title (`chapter_documents.title`), set by whoever
+ * uploads it on web or mobile s21 (#3399). The API refuses a longer one, and
+ * the phone's field stops at it.
+ */
+export const DOCUMENT_TITLE_MAX_LENGTH = 255;
+
 /** Options on one poll, and the fewest a poll may have. */
 export const POLL_OPTIONS_MAX = 10;
 export const POLL_OPTIONS_MIN = 2;

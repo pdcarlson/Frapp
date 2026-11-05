@@ -11,8 +11,10 @@ import {
   SheetGrabber,
   SheetHeader,
   SheetPrimaryButton,
+  sheetFieldStyles,
   SheetScrim,
   useSheetBackgroundStyle,
+  useSheetVisit,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -53,7 +55,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * differs from the web form's `seededFrom` merge, #3392).
  *
  * Dismissing, saving or cancelling drops the edits, except that a sheet closed
- * mid-save keeps them until the save settles. Before it settles,
+ * mid-save keeps them until the save settles, and a save closes only the visit
+ * it was sent from (`useSheetVisit` in `sheet-scaffold.tsx`). Before it settles,
  * `useUpdateUser` writes the row the server saved over the cached profile when
  * it is the same account's (a loaded s15 always has it cached), so a save
  * closes onto the saved values rather than flashing the old ones.
@@ -77,7 +80,7 @@ export const EditProfileSheet = forwardRef<
 >(function EditProfileSheet({ profile }, ref) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
-  const styles = createStyles(tokens);
+  const styles = createStyles(tokens, accent);
   const backgroundStyle = useSheetBackgroundStyle();
   const updateUser = useUpdateUser();
 
@@ -116,31 +119,15 @@ export const EditProfileSheet = forwardRef<
     setFocused(null);
   }, []);
 
-  // Whether the sheet is mounted, from the start of `present()`'s slide up to
-  // `onDismiss`. A save can settle after the sheet has closed, and gorhom's
-  // `dismiss()` on a dismissed modal leaves it stuck mid-dismiss, so the next
-  // `present()` draws nothing (5.2.x `handlePortalRender`). It turns true on
-  // `onAnimate`, which fires as the sheet starts to move, so a Cancel during
-  // the slide up still closes it, and false only on `onDismiss`: a close
-  // animation can be caught and snapped back without another `onAnimate`, and
-  // `dismiss()` on a sheet still closing is safe.
-  const presented = useRef(false);
-  // Counts the sheet's closes, so a save that settles knows whether the sheet
-  // it was sent from is still the one on screen.
-  const closes = useRef(0);
-
-  const dismiss = useCallback(() => {
-    if (!presented.current) return;
-    if (typeof ref === "function" || !ref?.current) return;
-    ref.current.dismiss();
-  }, [ref]);
+  // A save can settle after the sheet has closed: see `useSheetVisit`.
+  const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
+    useSheetVisit(ref);
 
   // However the sheet closes mid-save (Cancel, a swipe, the scrim), the edits
   // stay until the save settles: the PATCH is already sent, and a failure has
   // to reopen on what was typed.
   const closed = () => {
-    presented.current = false;
-    closes.current += 1;
+    markClosed();
     if (updateUser.isPending) setFocused(null);
     else reset();
   };
@@ -160,7 +147,7 @@ export const EditProfileSheet = forwardRef<
     if (!result.ok || !canSave || sending.current) return;
     sending.current = true;
     setSubmitFailed(false);
-    const sentFrom = closes.current;
+    const sentFrom = visit();
     updateUser.mutate(result.patch, {
       // `useUpdateUser` has already written the row the server saved over
       // this account's cached profile, so dropping the edits here shows it,
@@ -170,7 +157,7 @@ export const EditProfileSheet = forwardRef<
       // the save doesn't close it under them.
       onSuccess: () => {
         reset();
-        if (closes.current === sentFrom) dismiss();
+        if (isSameVisit(sentFrom)) dismiss();
       },
       // The draft stays, so nothing typed is lost to a dropped connection.
       onError: () => setSubmitFailed(true),
@@ -236,9 +223,7 @@ export const EditProfileSheet = forwardRef<
       backgroundStyle={backgroundStyle}
       backdropComponent={SheetScrim}
       handleComponent={SheetGrabber}
-      onAnimate={(_from, to) => {
-        if (to >= 0) presented.current = true;
-      }}
+      onAnimate={onAnimate}
       onDismiss={closed}
     >
       <BottomSheetScrollView
@@ -289,7 +274,8 @@ export const EditProfileSheet = forwardRef<
   );
 });
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, accent: string) {
+  const fieldStyles = sheetFieldStyles(tokens, accent);
   return StyleSheet.create({
     body: {
       paddingHorizontal: tokens.spacing.lg,
@@ -303,18 +289,7 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.mutedForeground,
     },
-    // `new-task-sheet.tsx`'s field, so the two sheets' inputs read as one.
-    field: {
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
+    field: fieldStyles.field,
     fieldMultiline: {
       minHeight:
         (tokens.typography.role.body.lineHeight ??
@@ -322,9 +297,7 @@ function createStyles(tokens: SignetTokens) {
           BIO_LINES +
         tokens.spacing.sm * 2,
     },
-    fieldFocused: {
-      borderColor: tokens.color.gold.house,
-    },
+    fieldFocused: fieldStyles.fieldFocused,
     fieldInvalid: {
       borderColor: tokens.color.semantic.destructive,
     },

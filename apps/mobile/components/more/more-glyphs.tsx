@@ -27,7 +27,7 @@ import { tint } from "@/lib/theme";
 
 export const MORE_GLYPH_SIZE = 20;
 
-const STROKE_WIDTH = 1.6;
+export const STROKE_WIDTH = 1.6;
 
 /** iconography.md §1: the emphasis fill is the stroke hue at 16–18%. */
 const EMPHASIS_FILL_ALPHA = 0.16;
@@ -43,6 +43,11 @@ export type MoreGlyphProps = {
   color: string;
   /** `true` draws §1's neutral fill rather than the stroke hue's tint. */
   neutral?: boolean;
+  /**
+   * Another §2 size, for a glyph drawn outside the hub. Only
+   * `DocumentsGlyph` takes one today: s21's file card draws it at 24.
+   */
+  size?: number;
 };
 
 function paint({ color, neutral = false }: MoreGlyphProps) {
@@ -64,11 +69,17 @@ function paint({ color, neutral = false }: MoreGlyphProps) {
   };
 }
 
-function Frame({ children }: { children: ReactNode }) {
+function Frame({
+  children,
+  size = MORE_GLYPH_SIZE,
+}: {
+  children: ReactNode;
+  size?: number;
+}) {
   return (
     <Svg
-      width={MORE_GLYPH_SIZE}
-      height={MORE_GLYPH_SIZE}
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       // Decorative: the row's label names the destination.
       accessibilityElementsHidden
@@ -114,7 +125,7 @@ export function DuesGlyph(props: MoreGlyphProps) {
 export function DocumentsGlyph(props: MoreGlyphProps) {
   const { body, detail } = paint(props);
   return (
-    <Frame>
+    <Frame size={props.size}>
       <Path
         d="M6 3.5h8l4 4V20a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 015 20V5A1.5 1.5 0 016.5 3.5z"
         {...body}

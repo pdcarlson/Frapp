@@ -22,6 +22,7 @@ import {
   SheetGrabber,
   SheetHeader,
   SheetPrimaryButton,
+  sheetFieldStyles,
   useSheetBackgroundStyle,
 } from "@/components/sheet-scaffold";
 import { CalendarGlyph } from "@/components/tasks/task-glyphs";
@@ -430,6 +431,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
 );
 
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
+  const fieldStyles = sheetFieldStyles(tokens, brand.accent);
   return StyleSheet.create({
     body: {
       paddingHorizontal: tokens.spacing.lg,
@@ -445,22 +447,12 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       borderColor: tint(brand.accent, tokens.focus.ringOpacity),
     },
     field: {
+      ...fieldStyles.field,
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
     },
-    fieldFocused: {
-      borderColor: brand.accent,
-    },
+    fieldFocused: fieldStyles.fieldFocused,
     splitRow: {
       flexDirection: "row",
       gap: tokens.spacing.sm,

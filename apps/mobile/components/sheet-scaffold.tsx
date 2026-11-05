@@ -1,7 +1,9 @@
+import { useCallback, useRef, type ForwardedRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
+  type BottomSheetModal,
 } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -131,6 +133,87 @@ export function SheetPrimaryButton({
       <Text style={[styles.primaryLabel, { color: onAccent }]}>{label}</Text>
     </Pressable>
   );
+}
+
+/**
+ * Which visit of a sheet is on screen, for a sheet whose write can settle
+ * after it closed. s15's edit sheet and s21's upload sheet use it; s19's
+ * new-task sheet and s20's log sheet still dismiss unguarded (#3405).
+ *
+ * Wire `onAnimate` and call `markClosed` first thing in the modal's
+ * `onDismiss`. Then:
+ *
+ * - `dismiss()` closes the sheet only while it is presented. gorhom 5.2's
+ *   `dismiss()` on a dismissed modal leaves it stuck mid-dismiss, so the next
+ *   `present()` draws nothing (`handlePortalRender`). "Presented" turns true
+ *   on `onAnimate` towards an open position, which fires as the sheet starts
+ *   to move, so a Cancel during the slide up still closes it, and false only
+ *   on `onDismiss`: a close animation can be caught and snapped back without
+ *   another `onAnimate`, and `dismiss()` on a sheet still closing is safe.
+ * - `visit()` names the visit a write was sent from, and `isSameVisit(token)`
+ *   tells a write that settles whether the member is still in that visit. A
+ *   sheet closed and reopened since is the member's new visit, and the write
+ *   doesn't close it under them.
+ * - `isOpen()` tells a write that settles whether any visit is on screen, for
+ *   a message that matters only to a member who is looking.
+ */
+export function useSheetVisit(ref: ForwardedRef<BottomSheetModal>) {
+  const presented = useRef(false);
+  const closes = useRef(0);
+
+  const onAnimate = useCallback((_from: number, to: number) => {
+    if (to >= 0) presented.current = true;
+  }, []);
+
+  const markClosed = useCallback(() => {
+    presented.current = false;
+    closes.current += 1;
+  }, []);
+
+  const dismiss = useCallback(() => {
+    if (!presented.current) return;
+    if (typeof ref === "function" || !ref?.current) return;
+    ref.current.dismiss();
+  }, [ref]);
+
+  const isOpen = useCallback(() => presented.current, []);
+  const visit = useCallback(() => closes.current, []);
+  const isSameVisit = useCallback(
+    (token: number) => closes.current === token,
+    [],
+  );
+
+  return { onAnimate, markClosed, dismiss, isOpen, visit, isSameVisit };
+}
+
+/**
+ * The text field a sheet form draws (s15's profile edit, s19's new task,
+ * s21's upload), as plain style objects for the caller's own
+ * `StyleSheet.create`, so a sheet can add its own layout to `field`. Focus
+ * swaps the border to the chapter accent, as every focusable control does
+ * (`spec/ui/design-system/components.md` § States). Shared because those
+ * sheets had grown three copies, and the focus border had already drifted to
+ * house gold in two of them. s20's log sheet (`app/(tabs)/service-hours.tsx`)
+ * still carries its own copy, with no focus border, along with the rest of
+ * its chrome (#1060).
+ */
+export function sheetFieldStyles(tokens: SignetTokens, accent: string) {
+  return {
+    field: {
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.surface1,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+    },
+    fieldFocused: {
+      borderColor: accent,
+    },
+  };
 }
 
 /** Shared background for `BottomSheetModal`'s `backgroundStyle`. */

@@ -132,7 +132,9 @@ export const IOS_PURPOSE_STRINGS = new Map([
     },
   ],
   [
-    // Chat photos, the s15 profile photo and the chapter logo pick through this call.
+    // Chat photos, the s15 profile photo, the chapter logo and s21's document
+    // photo (#3399) all pick through this call. The text doesn't name the
+    // document photo yet: the native build #3401 widens it.
     "NSPhotoLibraryUsageDescription",
     {
       text: "Frapp uses your photo library so you can set your profile photo, add your chapter's logo, and send photos in chapter chat.",

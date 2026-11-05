@@ -1,17 +1,27 @@
-import { useDeferredValue, useMemo, useState } from "react";
-import { StyleSheet, Text } from "react-native";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
+import { Pressable, StyleSheet, Text } from "react-native";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import * as WebBrowser from "expo-web-browser";
 import {
+  useActiveChapterId,
   useDocumentDownloadUrl,
   useDocumentFolders,
   useDocuments,
+  usePermissionList,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
+import { UploadGlyph } from "@/components/documents/document-glyphs";
+import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
 import { FilterChips, SearchField } from "@/components/filter-chips";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
-import { EmptyState, ErrorState, SkeletonLines } from "@/components/state-block";
+import {
+  EmptyState,
+  ErrorState,
+  SkeletonLines,
+} from "@/components/state-block";
 import {
   selectDocumentFolders,
   selectDocumentRows,
@@ -40,15 +50,19 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * document pinned, and promoting "the two newest" into that slot would dress an
  * arbitrary choice up as a chapter decision. Filed.
  *
- * ## No upload affordance
+ * ## Upload, for whoever may
  *
- * Canvas draws an upload glyph in the header, opening the s21 sheet. The glyph
- * is still omitted rather than rendered dead, but **the dependency blocker is
- * gone**: #2464 added `expo-image-picker` for chat photo upload, so this is now
- * ordinary screen work rather than an integrator PR against the frozen
- * `package.json`. `lib/chat/attachment-upload.ts` is the working reference for
- * the pick → inspect → mint → PUT sequence. A non-image document type would
- * still need `expo-document-picker`, which remains undeclared. Filed.
+ * Canvas draws an upload glyph at the far end of the `‹ More` row, opening the
+ * s21 sheet (`components/documents/upload-document-sheet.tsx`, #3399). It is
+ * drawn only for a viewer who holds `chapter_docs:upload`, the permission both
+ * upload routes carry, as web's `<Can permission="chapter_docs:upload">` does:
+ * by default that is the President alone (`DEFAULT_SYSTEM_ROLES`), so most
+ * members never see a control the server would refuse them. `can` reads the
+ * owner's `*` the way the server's guard does. While the permission read is
+ * loading the glyph is absent, which fails closed.
+ *
+ * Photos only: a PDF needs `expo-document-picker`, a native module that waits
+ * for a store build.
  *
  * ## Opening a document
  *
@@ -72,6 +86,10 @@ export default function DocumentsScreen() {
   const [search, setSearch] = useState("");
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [openFailed, setOpenFailed] = useState(false);
+  const [uploadedTitle, setUploadedTitle] = useState<string | null>(null);
+  const uploadSheetRef = useRef<BottomSheetModal>(null);
+  const canUpload = can("chapter_docs:upload", usePermissionList());
+  const chapterId = useActiveChapterId();
 
   // Deferred, like s13's: `search` is in the query key, so feeding raw
   // keystrokes would mint a cache entry and fire a request per character, and
@@ -134,7 +152,7 @@ export default function DocumentsScreen() {
           body={
             deferredSearch
               ? `No document title matches “${deferredSearch}”.`
-              : "Documents uploaded on the web dashboard show up here."
+              : "Documents the chapter uploads show up here."
           }
         />
       );
@@ -156,7 +174,27 @@ export default function DocumentsScreen() {
   }
 
   return (
-    <ScreenShell back={BACK_TO_MORE} title="Documents">
+    <ScreenShell
+      back={BACK_TO_MORE}
+      backAction={
+        canUpload ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Upload document"
+            accessibilityHint="Opens a sheet to upload a photo to the library."
+            hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
+            onPress={() => {
+              setUploadedTitle(null);
+              uploadSheetRef.current?.present();
+            }}
+            style={({ pressed }) => (pressed ? styles.pressed : null)}
+          >
+            <UploadGlyph color={tokens.color.gold.askText} />
+          </Pressable>
+        ) : undefined
+      }
+      title="Documents"
+    >
       <SearchField
         value={search}
         onChangeText={setSearch}
@@ -179,6 +217,12 @@ export default function DocumentsScreen() {
         />
       ) : null}
 
+      {uploadedTitle ? (
+        <Text accessibilityRole="alert" style={styles.uploadedNote}>
+          {`“${uploadedTitle}” is in the library.`}
+        </Text>
+      ) : null}
+
       {openFailed ? (
         <Text style={styles.errorNote}>
           That document couldn&apos;t be opened. Try again in a moment.
@@ -187,12 +231,32 @@ export default function DocumentsScreen() {
 
       <SectionHeader>Recent</SectionHeader>
       {renderList()}
+
+      {canUpload ? (
+        <UploadDocumentSheet
+          // A new sheet per chapter: a retry the sheet holds after a failed
+          // confirm names a path minted under the chapter it was sent from.
+          key={chapterId ?? "no-chapter"}
+          ref={uploadSheetRef}
+          folders={folders}
+          initialFolder={folder}
+          onUploaded={setUploadedTitle}
+        />
+      ) : null}
     </ScreenShell>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    pressed: {
+      opacity: 0.6,
+    },
+    uploadedNote: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      paddingHorizontal: tokens.spacing.xs,
+    },
     errorNote: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,

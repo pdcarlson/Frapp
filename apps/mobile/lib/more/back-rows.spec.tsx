@@ -35,9 +35,12 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   return Object.fromEntries(
     Object.entries(real).map(([name, value]) => [
       name,
-      /^use[A-Z]/.test(name) && typeof value === "function"
-        ? () => loading
-        : value,
+      // `usePermissionList` returns the list itself, `[]` while loading.
+      name === "usePermissionList"
+        ? () => []
+        : /^use[A-Z]/.test(name) && typeof value === "function"
+          ? () => loading
+          : value,
     ]),
   );
 });
