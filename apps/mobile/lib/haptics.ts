@@ -17,3 +17,18 @@ export function successHaptic(): void {
     // The native module is missing; there is nothing to feel.
   }
 }
+
+/**
+ * One light tick, for a choice made: adding or taking back a reaction
+ * (`spec/ui/mobile/README.md` § Native-feel rules). Fired once per tap, by the
+ * handler that sends the request, never from a render or a rollback.
+ *
+ * Best effort and silent, as `successHaptic` is.
+ */
+export function selectionHaptic(): void {
+  try {
+    void Haptics.selectionAsync().catch(() => undefined);
+  } catch {
+    // The native module is missing; there is nothing to feel.
+  }
+}
