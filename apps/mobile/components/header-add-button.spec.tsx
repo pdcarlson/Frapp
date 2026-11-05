@@ -7,12 +7,17 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { HeaderAddButton } from "./header-add-button";
 
 /**
- * #34. The "+" tile s08 draws for New task, shared with Service hours' Log
- * service hours so the two creation actions look and press the same.
+ * The "+" tile s08 draws for New task, shared with Service hours' Log service
+ * hours so the two creation actions look and press the same (finding 34 of
+ * the 2026-11 polish audit).
  */
 
 vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({ accent: "#7C5CFF" }),
+  useChapterBranding: () => ({
+    accent: "#B9A4FF",
+    accentPrimary: "#7C5CFF",
+    accentOnPrimary: "#FFFFFF",
+  }),
 }));
 
 function render(onPress = vi.fn()): ReactTestRenderer {
@@ -32,7 +37,7 @@ const tile = (tree: ReactTestRenderer) =>
 
 const flat = (style: unknown) => Object.assign({}, ...[style].flat(Infinity));
 
-describe("HeaderAddButton (#34)", () => {
+describe("HeaderAddButton", () => {
   it("names its action for a screen reader and runs it", () => {
     const onPress = vi.fn();
     const tree = render(onPress);
@@ -43,7 +48,7 @@ describe("HeaderAddButton (#34)", () => {
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("fills with the chapter accent and dims while pressed", () => {
+  it("fills with the solid accent and dims while pressed", () => {
     const tree = render();
     const style = tile(tree).props.style;
 
@@ -52,5 +57,15 @@ describe("HeaderAddButton (#34)", () => {
     );
     expect(flat(style({ pressed: false })).opacity).toBeUndefined();
     expect(flat(style({ pressed: true })).opacity).toBe(0.85);
+  });
+
+  it("inks the glyph with the accent's contrast-checked pair", () => {
+    // Not the accent text step under house-gold ink, which nobody measured
+    // against an arbitrary chapter accent.
+    const tree = render();
+    const glyph = tree.root.find(
+      (node) => (node.type as unknown) === "Text" && node.props.children === "+",
+    );
+    expect(flat(glyph.props.style).color).toBe("#FFFFFF");
   });
 });

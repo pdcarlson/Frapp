@@ -109,6 +109,11 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
 
+const successHaptic = vi.fn();
+vi.mock("@/lib/haptics", () => ({
+  successHaptic: () => successHaptic(),
+}));
+
 import ServiceHoursScreen from "@/app/(tabs)/service-hours";
 
 /** Stands in for gorhom's modal instance, so a spec can see `dismiss()`. */
@@ -185,6 +190,7 @@ beforeEach(() => {
   mutate.mockReset();
   mutate.mockImplementation(failNow);
   dismiss.mockReset();
+  successHaptic.mockReset();
   isPending = false;
   entries = [];
   writeBlockedReason = null;
@@ -201,6 +207,7 @@ describe("Service hours on a subscription refusal (#2410)", () => {
     expect(mutate).toHaveBeenCalledTimes(1);
     expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.serviceHours);
     expect(screenText(tree)).not.toContain(TRY_AGAIN);
+    expect(successHaptic).not.toHaveBeenCalled();
     // The server's own words are a purchase instruction, which the store
     // declaration forbids inside the app.
     expect(screenText(tree)).not.toContain(REFUSED.message);
@@ -367,9 +374,10 @@ describe("Service hours back row (#3022)", () => {
 });
 
 /**
- * #26: s20 on the shared sheet chrome, with the board's stepper. The duration
- * is never typed, so Android's full keyboard never opens for it, and the date
- * can be a recent day rather than always today.
+ * s20 on the shared sheet chrome, with the board's stepper (finding 26 of the
+ * 2026-11 polish audit). The duration is never typed, so Android's full
+ * keyboard never opens for it, and the date can be a recent day rather than
+ * always today.
  */
 describe("Log service hours sheet", () => {
   const sent = () =>
@@ -446,6 +454,8 @@ describe("Log service hours sheet", () => {
       (node) => node.props.accessibilityLabel === "Service description",
     );
     expect(field.props.value).toBe("");
+    // The confirming action's haptic (`spec/ui/mobile/README.md`).
+    expect(successHaptic).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 
@@ -478,6 +488,143 @@ describe("Log service hours sheet", () => {
     act(() => tree.unmount());
   });
 
+  const descriptionField = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        (node.type as unknown) === "BottomSheetTextInput" &&
+        node.props.accessibilityLabel === "Service description",
+    );
+
+  const cancelButton = (tree: ReactTestRenderer) => pressable(tree, "Cancel");
+
+  it("keeps the entry through a swipe or scrim close", () => {
+    const tree = render();
+    fill(tree);
+    act(() => stepButton(tree, "Half an hour more").props.onPress());
+    act(() => pressable(tree, "Yesterday").props.onPress());
+
+    act(() => modal(tree).props.onDismiss());
+    act(() => modal(tree).props.onAnimate(-1, 0)); // reopened
+
+    expect(descriptionField(tree).props.value).toBe("Food bank");
+    act(() => submitButton(tree).props.onPress());
+    expect(sent()).toEqual(
+      expect.objectContaining({
+        duration_minutes: 90,
+        date: serviceDatePresets(new Date())[1]?.date,
+      }),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("gives the entry up on Cancel", () => {
+    const tree = render();
+    fill(tree);
+    act(() => stepButton(tree, "Half an hour more").props.onPress());
+    act(() => pressable(tree, "Yesterday").props.onPress());
+
+    act(() => cancelButton(tree).props.onPress());
+
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(descriptionField(tree).props.value).toBe("");
+    fill(tree);
+    act(() => submitButton(tree).props.onPress());
+    expect(sent()).toEqual(
+      expect.objectContaining({
+        duration_minutes: 60,
+        date: serviceDatePresets(new Date())[0]?.date,
+      }),
+    );
+    act(() => tree.unmount());
+  });
+
+  it.each([
+    ["a subscription refusal", REFUSED, SUBSCRIPTION_REFUSAL_COPY.serviceHours],
+    ["a module-off refusal", MODULE_OFF, MODULE_REFUSAL_COPY.serviceHours],
+    ["an ordinary failure", FAILED, TRY_AGAIN],
+  ])(
+    "doesn't carry %s that lands after the sheet closed into the next visit",
+    (_label, error, copy) => {
+      let settle = () => {};
+      mutate.mockImplementation((_body, options) => {
+        settle = () => options.onError(error);
+      });
+      const tree = render();
+      submitEntry(tree);
+      act(() => modal(tree).props.onDismiss());
+      act(() => modal(tree).props.onAnimate(-1, 0)); // reopened
+      act(() => settle());
+
+      expect(screenText(tree)).not.toContain(copy);
+      expect(submitButton(tree).props.disabled).toBe(false);
+      act(() => tree.unmount());
+    },
+  );
+
+  it("reads one hour as singular to a screen reader", () => {
+    const tree = render();
+    const value = () =>
+      tree.root.find(
+        (node) =>
+          node.props.accessibilityRole === "adjustable" &&
+          node.props.accessibilityLabel === "Hours",
+      ).props.accessibilityValue.text;
+    expect(value()).toBe("1 hour");
+    act(() => stepButton(tree, "Half an hour more").props.onPress());
+    expect(value()).toBe("1.5 hours");
+    act(() => stepButton(tree, "Half an hour less").props.onPress());
+    act(() => stepButton(tree, "Half an hour less").props.onPress());
+    expect(value()).toBe("0.5 hours");
+    act(() => tree.unmount());
+  });
+
+  // The draft is read-only while the save runs, which is what lets a success
+  // clear it without clearing anything the member typed after sending.
+  it("holds the draft still while a save is in flight", () => {
+    const tree = render();
+    fill(tree);
+    isPending = true;
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <ServiceHoursScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+
+    expect(descriptionField(tree).props.editable).toBe(false);
+    expect(stepButton(tree, "Half an hour more").props.disabled).toBe(true);
+    expect(stepButton(tree, "Half an hour less").props.disabled).toBe(true);
+    const adjustable = tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "adjustable" &&
+        node.props.accessibilityLabel === "Hours",
+    );
+    act(() =>
+      adjustable.props.onAccessibilityAction({
+        nativeEvent: { actionName: "increment" },
+      }),
+    );
+    act(() => pressable(tree, "Yesterday").props.onPress());
+
+    isPending = false;
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <ServiceHoursScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+    act(() => submitButton(tree).props.onPress());
+    expect(sent()).toEqual(
+      expect.objectContaining({
+        duration_minutes: 60,
+        date: serviceDatePresets(new Date())[0]?.date,
+      }),
+    );
+    act(() => tree.unmount());
+  });
+
   it("sends one entry however often Submit is pressed mid-save", () => {
     mutate.mockImplementation(() => {});
     const tree = render();
@@ -491,7 +638,10 @@ describe("Log service hours sheet", () => {
   });
 });
 
-/** #33: drawn like Dues and Study, with no narrating meta. */
+/**
+ * Drawn like Dues and Study, with no narrating meta (finding 33 of the 2026-11
+ * polish audit).
+ */
 describe("Service hours summary and history", () => {
   const entry = (overrides: Record<string, unknown>) => ({
     id: "e-1",

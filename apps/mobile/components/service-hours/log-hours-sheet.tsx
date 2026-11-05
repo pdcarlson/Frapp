@@ -7,6 +7,7 @@ import {
 } from "@gorhom/bottom-sheet";
 import { useCreateServiceEntry } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { SERVICE_DESCRIPTION_MAX_LENGTH } from "@repo/validation";
 import { FilterChips } from "@/components/filter-chips";
 import {
   SheetGrabber,
@@ -19,6 +20,7 @@ import {
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useConnection } from "@/lib/connection/use-connection";
+import { successHaptic } from "@/lib/haptics";
 import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import { formatHours } from "@/lib/more/profile";
 import {
@@ -33,9 +35,6 @@ import {
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-
-/** `CreateServiceEntryDto.description`'s `@MaxLength`. */
-const DESCRIPTION_MAX_LENGTH = 2000;
 
 /**
  * s20 — the "Log service hours" sheet (`canvas-screens.dc.html`, `id="s20"`),
@@ -63,13 +62,20 @@ const DESCRIPTION_MAX_LENGTH = 2000;
  *   notification") is omitted: it narrates, and neither half is something this
  *   app can promise.
  *
+ * ## The entry outlives a close, not a Cancel
+ *
+ * A swipe or a tap on the scrim closes the sheet and keeps the entry for the
+ * next visit; Cancel gives it up, and so does a save. The rule s19 and s21
+ * follow (`spec/ui/mobile/screens.md`).
+ *
  * ## A write can outlive its visit
  *
  * The close after a save goes through `useSheetVisit`: a member who swipes the
  * sheet away mid-save would otherwise have `dismiss()` called on a closed
- * modal, which leaves the next `present()` drawing nothing. The draft is
- * read-only while the save runs, so clearing it on success clears only what
- * was sent.
+ * modal, which leaves the next `present()` drawing nothing. A save's outcome
+ * is told only to the visit it was sent from, so a refusal that lands after
+ * the close is not latched into the next visit. The draft is read-only while
+ * the save runs, so clearing it on success clears only what was sent.
  */
 export interface LogHoursSheetProps {
   /** The host's clock, re-read each time it opens the sheet. */
@@ -118,7 +124,8 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
      * Either way the sheet explains the state and withdraws Submit. The copy is
      * the latch, so the two can't disagree. `submitFailed` keeps its exact old
      * meaning: a save that might succeed. Both clear when the sheet closes,
-     * because reopening is the member's deliberate second try.
+     * because reopening is the member's deliberate second try, and a result
+     * that lands after the close is dropped rather than latched.
      */
     const [refusal, setRefusal] = useState<string | null>(null);
     // Set the moment Submit sends, before `isPending` reaches a render: two
@@ -132,11 +139,25 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
       !pending &&
       refusal === null;
 
+    /** Gives the entry up: Cancel, and a save that filed it. */
+    const clearEntry = () => {
+      setDescription("");
+      setMinutes(DEFAULT_DURATION_MINUTES);
+      setDaysAgo(0);
+      setSubmitFailed(false);
+    };
+
+    /** A swipe or scrim close: the entry stays for the next visit. */
     const closed = () => {
       markClosed();
       setDescriptionFocused(false);
       setSubmitFailed(false);
       setRefusal(null);
+    };
+
+    const cancel = () => {
+      clearEntry();
+      dismiss();
     };
 
     const submit = () => {
@@ -154,16 +175,20 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
         {
           onSuccess: () => {
             sending.current = false;
-            setDescription("");
-            setMinutes(DEFAULT_DURATION_MINUTES);
-            setDaysAgo(0);
-            setSubmitFailed(false);
+            // The confirming action (`spec/ui/mobile/README.md` § Native-feel
+            // rules), felt once the entry is filed.
+            successHaptic();
+            clearEntry();
             // A sheet closed and reopened since is the member's new visit,
             // and the save doesn't close it under them.
             if (isSameVisit(sentFrom)) dismiss();
           },
           onError: (error) => {
             sending.current = false;
+            // A visit that has ended doesn't latch its outcome into the next
+            // one: the member would reopen to a refusal nothing on screen
+            // caused, with Submit already withdrawn.
+            if (!isSameVisit(sentFrom)) return;
             // Ordinary failures keep the retry they have always had; a gate
             // refusal takes it away, because retrying cannot win. Both asked
             // before `submitFailed`, and never as a bare 403: this route also
@@ -202,7 +227,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
         onDismiss={closed}
       >
         <BottomSheetView style={styles.body}>
-          <SheetHeader title="Log service hours" onCancel={dismiss} />
+          <SheetHeader title="Log service hours" onCancel={cancel} />
 
           {/* One adjustable control to a screen reader, which swipes it up
               and down; the two buttons stay for touch. */}
@@ -218,7 +243,9 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
               accessible
               accessibilityRole="adjustable"
               accessibilityLabel="Hours"
-              accessibilityValue={{ text: `${hours} hours` }}
+              accessibilityValue={{
+                text: `${hours} ${minutes === 60 ? "hour" : "hours"}`,
+              }}
               accessibilityActions={[
                 { name: "increment" },
                 { name: "decrement" },
@@ -260,7 +287,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
               placeholder="What did you do?"
               placeholderTextColor={tokens.color.text.muted}
               accessibilityLabel="Service description"
-              maxLength={DESCRIPTION_MAX_LENGTH}
+              maxLength={SERVICE_DESCRIPTION_MAX_LENGTH}
               style={[
                 styles.field,
                 descriptionFocused ? styles.fieldFocused : null,

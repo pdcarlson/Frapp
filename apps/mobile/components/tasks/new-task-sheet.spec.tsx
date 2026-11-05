@@ -4,7 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { screenText } from "@/test/screen-text";
+import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
@@ -79,6 +79,11 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
 
+const successHaptic = vi.fn();
+vi.mock("@/lib/haptics", () => ({
+  successHaptic: () => successHaptic(),
+}));
+
 import { NewTaskSheet } from "./new-task-sheet";
 
 function render(): ReactTestRenderer {
@@ -110,6 +115,7 @@ function submitTask(tree: ReactTestRenderer) {
 
 beforeEach(() => {
   mutate.mockClear();
+  successHaptic.mockReset();
 });
 
 describe("New task on a subscription refusal (#2297)", () => {
@@ -122,6 +128,7 @@ describe("New task on a subscription refusal (#2297)", () => {
     expect(mutate).toHaveBeenCalledTimes(1);
     expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.task);
     expect(screenText(tree)).not.toContain(TRY_AGAIN);
+    expect(successHaptic).not.toHaveBeenCalled();
     expect(createButton(tree).props.disabled).toBe(true);
     // A screen reader lands on the disabled button, so the reason rides on it.
     expect(createButton(tree).props.accessibilityHint).toBe(
@@ -221,3 +228,142 @@ describe("New task after a gate refusal", () => {
     },
   );
 });
+
+/**
+ * The draft and the close: a swipe or a scrim tap keeps the draft for the next
+ * visit, Cancel gives it up (the rule s20 and s21 follow), and a create that
+ * settles after the sheet closed neither dismisses a closed modal (which
+ * wedges its next `present()`, #3405) nor closes a visit reopened since.
+ */
+describe("New task draft across visits", () => {
+  /** Stands in for gorhom's modal instance, so a spec can see `dismiss()`. */
+  const dismiss = vi.fn();
+
+  function renderWithRef(): ReactTestRenderer {
+    const ref = React.createRef<never>();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet ref={ref} now={new Date("2026-09-27T12:00:00Z")} />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            (element.type as unknown) === "BottomSheetModal"
+              ? { dismiss, present: vi.fn() }
+              : null,
+        },
+      );
+    });
+    // What gorhom reports as `present()` starts bringing the sheet up.
+    act(() => sheetModal(tree).props.onAnimate(-1, 0));
+    return tree;
+  }
+
+  const titleValue = (tree: ReactTestRenderer) =>
+    tree.root.find((node) => node.props.accessibilityLabel === "Task title")
+      .props.value;
+
+  const typeTitle = (tree: ReactTestRenderer) =>
+    act(() =>
+      tree.root
+        .find((node) => node.props.accessibilityLabel === "Task title")
+        .props.onChangeText("Sweep the porch"),
+    );
+
+  beforeEach(() => {
+    dismiss.mockReset();
+  });
+
+  it("keeps the draft through a swipe or scrim close", () => {
+    const tree = renderWithRef();
+    typeTitle(tree);
+
+    act(() => sheetModal(tree).props.onDismiss());
+
+    expect(titleValue(tree)).toBe("Sweep the porch");
+    act(() => tree.unmount());
+  });
+
+  it("gives the draft up on Cancel", () => {
+    const tree = renderWithRef();
+    typeTitle(tree);
+
+    act(() => pressCancel(tree));
+
+    expect(titleValue(tree)).toBe("");
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("closes and clears the draft when the task saves", () => {
+    mutate.mockImplementationOnce((_body, options) =>
+      (options as unknown as { onSuccess: () => void }).onSuccess(),
+    );
+    const tree = renderWithRef();
+    submitTask(tree);
+
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(titleValue(tree)).toBe("");
+    // The confirming action's haptic (`spec/ui/mobile/README.md`).
+    expect(successHaptic).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("doesn't dismiss again when a create lands after the sheet closed", () => {
+    let succeed = () => {};
+    mutate.mockImplementationOnce((_body, options) => {
+      succeed = (options as unknown as { onSuccess: () => void }).onSuccess;
+    });
+    const tree = renderWithRef();
+    submitTask(tree);
+    act(() => sheetModal(tree).props.onDismiss());
+    act(() => succeed());
+
+    expect(dismiss).not.toHaveBeenCalled();
+    // The task was created, so its draft goes with it rather than inviting
+    // a duplicate.
+    expect(titleValue(tree)).toBe("");
+    act(() => tree.unmount());
+  });
+
+  it("leaves a sheet reopened mid-create open when the create lands", () => {
+    let succeed = () => {};
+    mutate.mockImplementationOnce((_body, options) => {
+      succeed = (options as unknown as { onSuccess: () => void }).onSuccess;
+    });
+    const tree = renderWithRef();
+    submitTask(tree);
+    act(() => sheetModal(tree).props.onDismiss());
+    act(() => sheetModal(tree).props.onAnimate(-1, 0)); // reopened
+    act(() => succeed());
+
+    expect(dismiss).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("doesn't latch a refusal that lands after the sheet closed", () => {
+    let refuse = () => {};
+    mutate.mockImplementationOnce((_body, options) => {
+      refuse = () => options.onError(REFUSED);
+    });
+    const tree = renderWithRef();
+    submitTask(tree);
+    act(() => sheetModal(tree).props.onDismiss());
+    act(() => sheetModal(tree).props.onAnimate(-1, 0)); // reopened
+    act(() => refuse());
+
+    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.task);
+    expect(createButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+});
+
+/** The header's Cancel, which `SheetHeader` draws as a bare pressable. */
+function pressCancel(tree: ReactTestRenderer) {
+  const cancel = tree.root.find(
+    (node) =>
+      node.type === ("Pressable" as never) && drawnText(node) === "Cancel",
+  );
+  cancel.props.onPress();
+}

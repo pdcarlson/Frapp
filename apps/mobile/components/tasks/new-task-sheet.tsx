@@ -25,6 +25,7 @@ import {
   SheetScrim,
   sheetFieldStyles,
   useSheetBackgroundStyle,
+  useSheetVisit,
 } from "@/components/sheet-scaffold";
 import { CalendarGlyph } from "@/components/tasks/task-glyphs";
 import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
@@ -34,6 +35,7 @@ import {
   parsePointReward,
   validateNewTask,
 } from "@/lib/tasks/create-task";
+import { successHaptic } from "@/lib/haptics";
 import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import {
   SUBSCRIPTION_REFUSAL_COPY,
@@ -60,6 +62,21 @@ import {
  * `box-shadow`, and drop shadows are banned outright by the De-Google
  * guardrails. Rendered instead as a wrapping view carrying `focus.ringWidth` /
  * `focus.ringOpacity`, from `sheetFieldStyles` so s20 draws the same ring.
+ *
+ * ## The draft outlives a close, not a Cancel
+ *
+ * A swipe or a tap on the scrim closes the sheet and keeps the draft for the
+ * next visit: tapping the dimmed screen to put the keyboard away is a common
+ * habit, and it must not cost the member what they typed. Cancel gives the
+ * draft up, and so does a successful create. The same rule s20 and s21 follow
+ * (`spec/ui/mobile/screens.md`).
+ *
+ * ## A create can outlive its visit
+ *
+ * The close after a create goes through `useSheetVisit`: a member who swipes
+ * the sheet away mid-create would otherwise have `dismiss()` called on a
+ * closed modal, which leaves the next `present()` drawing nothing (#3405), and
+ * a sheet reopened since would be closed under them.
  */
 
 /** A list has no natural height, so the picker snaps rather than sizing to content. */
@@ -106,6 +123,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
     const pickerRef = useRef<BottomSheetModal>(null);
+    const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
+      useSheetVisit(ref);
 
     const viewerUserId = useViewerUserId();
     const rosterQuery = useChapterRoster();
@@ -174,6 +193,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const canSubmit =
       body !== null && !createTask.isPending && refusal === null;
 
+    /** Gives the draft up: Cancel, and a create that saved it. */
     const reset = useCallback(() => {
       setTitle("");
       setPointsInput("");
@@ -185,10 +205,19 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setTitleFocused(false);
     }, [at]);
 
-    const dismiss = useCallback(() => {
-      if (typeof ref === "function" || !ref?.current) return;
-      ref.current.dismiss();
-    }, [ref]);
+    /**
+     * A swipe or scrim close: only what belongs to the visit goes. The draft
+     * stays for the next one, and so does nothing that would contradict it:
+     * the error latches clear because reopening is the member's deliberate
+     * second try (an officer may have sorted the gate out since).
+     */
+    const closed = useCallback(() => {
+      markClosed();
+      setTitleFocused(false);
+      setSearch("");
+      setSubmitFailed(false);
+      setRefusal(null);
+    }, [markClosed]);
 
     const cancel = useCallback(() => {
       reset();
@@ -202,14 +231,25 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       if (!body || !canSubmit) return;
       setSubmitFailed(false);
       setRefusal(null);
+      const sentFrom = visit();
       createTask.mutate(body, {
         onSuccess: () => {
           const wasSelf = body.assignee_id === viewerUserId;
+          // The confirming action (`spec/ui/mobile/README.md` § Native-feel
+          // rules), felt once the task exists.
+          successHaptic();
+          // The draft was saved, so it goes whichever visit is on screen:
+          // keeping it would invite a duplicate.
           reset();
-          dismiss();
+          // A sheet closed and reopened since is the member's new visit, and
+          // the create doesn't close it under them.
+          if (isSameVisit(sentFrom)) dismiss();
           onCreated?.(assigneeName, wasSelf);
         },
         onError: (error) => {
+          // A visit that has ended doesn't latch its outcome into the next
+          // one, which would greet the member with a stale error.
+          if (!isSameVisit(sentFrom)) return;
           // Ordinary failures keep the retry they have always had; only a gate
           // refusal takes it away, because only it cannot win. Never a bare
           // 403: this route also 403s for permission denials.
@@ -231,6 +271,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       viewerUserId,
       reset,
       dismiss,
+      visit,
+      isSameVisit,
       onCreated,
       assigneeName,
     ]);
@@ -252,7 +294,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
-        onDismiss={reset}
+        onAnimate={onAnimate}
+        onDismiss={closed}
       >
         <BottomSheetView style={styles.body}>
           <SheetHeader title="New task" onCancel={cancel} />

@@ -123,6 +123,11 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
 
+const successHaptic = vi.fn();
+vi.mock("@/lib/haptics", () => ({
+  successHaptic: () => successHaptic(),
+}));
+
 import TasksScreen from "@/app/(tabs)/tasks";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
@@ -161,6 +166,7 @@ async function tapRow(tree: ReactTestRenderer) {
 
 beforeEach(() => {
   mutateAsync.mockClear();
+  successHaptic.mockReset();
 });
 
 describe("Task status toggle on a gate refusal (#2710)", () => {
@@ -230,5 +236,49 @@ describe("Task status toggle on a gate refusal (#2710)", () => {
     expect(screenText(tree)).not.toContain(MODULE_REFUSAL_COPY.taskStatus);
     expect(row(tree).props.onToggle).toBeDefined();
     act(() => tree.unmount());
+  });
+});
+
+/**
+ * Marking a task done is a confirming action (`spec/ui/mobile/README.md`
+ * § Native-feel rules), felt at the tap because the toggle is optimistic.
+ */
+describe("Task status toggle haptic", () => {
+  it("taps once when a member marks a task done", async () => {
+    failure = FAILED;
+    mutateAsync.mockImplementation(async () => undefined as never);
+    const tree = render();
+    await tapRow(tree);
+
+    expect(mutateAsync).toHaveBeenCalledTimes(2);
+    expect(successHaptic).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+    mutateAsync.mockImplementation(async () => {
+      throw failure;
+    });
+  });
+
+  it("taps at the tap, before the writes land", async () => {
+    let release = () => {};
+    mutateAsync.mockImplementation(
+      () =>
+        new Promise<never>((resolve) => {
+          release = () => resolve(undefined as never);
+        }),
+    );
+    const tree = render();
+    act(() => {
+      (row(tree).props.onToggle as () => void)();
+    });
+
+    expect(successHaptic).toHaveBeenCalledTimes(1);
+    // Both rungs of the TODO ladder.
+    await act(async () => release());
+    await act(async () => release());
+    expect(successHaptic).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+    mutateAsync.mockImplementation(async () => {
+      throw failure;
+    });
   });
 });

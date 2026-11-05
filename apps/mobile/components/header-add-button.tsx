@@ -12,6 +12,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * word with no pressed state, which read as a link rather than the screen's
  * main action, beside Tasks' tile. `label` is what a screen reader says, since
  * the glyph alone says nothing.
+ *
+ * A solid accent fill, so it paints `useChapterBranding()`'s solid pair:
+ * `accentPrimary` under `accentOnPrimary`, the ink the accent engine
+ * contrast-corrects for exactly that fill (`accent-engine.md` §8). Both fall
+ * back to the drawn house gold and its ink together.
  */
 export function HeaderAddButton({
   label,
@@ -21,7 +26,7 @@ export function HeaderAddButton({
   onPress: () => void;
 }) {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
+  const { accentPrimary, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
 
   return (
@@ -32,11 +37,11 @@ export function HeaderAddButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.tile,
-        { backgroundColor: accent },
+        { backgroundColor: accentPrimary },
         pressed ? styles.tilePressed : null,
       ]}
     >
-      <Text style={styles.glyph}>+</Text>
+      <Text style={[styles.glyph, { color: accentOnPrimary }]}>+</Text>
     </Pressable>
   );
 }
@@ -57,11 +62,6 @@ function createStyles(tokens: SignetTokens) {
     },
     glyph: {
       ...typeRole(tokens.typography.role.title),
-      // Drawn on house gold. The chapter accent is free to differ, and a dark
-      // ink on an arbitrary accent is the contrast hazard every accent-filled
-      // CTA here carries (`SheetPrimaryButton`, #1060's note on an on-accent
-      // token) — matched rather than diverged from.
-      color: tokens.color.gold.onHouse,
     },
   });
 }

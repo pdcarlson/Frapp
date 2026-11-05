@@ -27,11 +27,11 @@ export function HistoryRow({ title, meta, trailing, isLast }: HistoryRowProps) {
   return (
     <View style={[styles.row, isLast ? null : styles.rowDivided]}>
       <View style={styles.text}>
-        {/* Two lines at most: a service description can run to 2,000
-            characters, and the row is a summary, not the record. */}
-        <Text style={styles.title} numberOfLines={2}>
-          {title}
-        </Text>
+        {/* Wraps in full, never clamped: the row isn't pressable, so it is
+            the only place a member can read a rejected entry's whole
+            description (up to 2,000 characters), an invoice title or a zone
+            name. */}
+        <Text style={styles.title}>{title}</Text>
         {meta ? <Text style={styles.meta}>{meta}</Text> : null}
       </View>
       {trailing}

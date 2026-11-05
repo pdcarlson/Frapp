@@ -48,8 +48,12 @@ export interface DuePreset {
   date: string;
 }
 
-/** `now` plus `days`, as a local date. Month and year rollover is `Date`'s job. */
-function addDays(now: Date, days: number): Date {
+/**
+ * `now` plus `days` (negative for days before), as a local date. Counted in
+ * calendar days rather than by adding 24 hours, so a daylight-saving change
+ * can't skip or repeat a day. Month and year rollover is `Date`'s job.
+ */
+export function addDays(now: Date, days: number): Date {
   const next = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   next.setDate(next.getDate() + days);
   return next;

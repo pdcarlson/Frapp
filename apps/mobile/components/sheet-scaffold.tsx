@@ -139,9 +139,9 @@ export function SheetPrimaryButton({
 }
 
 /**
- * Which visit of a sheet is on screen, for a sheet whose write can settle
- * after it closed. s15's edit sheet, s20's log sheet and s21's upload sheet
- * use it; s19's new-task sheet still dismisses unguarded (#3405).
+ * Which visit of a sheet is on screen. Any sheet whose save can settle after
+ * the member closed it uses it; search for the hook to find them. Sheets that
+ * still dismiss unguarded after a write are tracked in #3405.
  *
  * Wire `onAnimate` and call `markClosed` first thing in the modal's
  * `onDismiss`. Then:

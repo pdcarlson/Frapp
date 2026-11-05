@@ -13,6 +13,7 @@ import {
 } from "@repo/formatting";
 import { metaLine, num, records, str } from "./narrow";
 import { formatHours } from "./profile";
+import { addDays } from "@/lib/tasks/create-task";
 
 export type ServiceEntryStatus = "PENDING" | "APPROVED" | "REJECTED";
 
@@ -135,14 +136,12 @@ const DATE_PRESET_COUNT = 4;
  *
  * Backwards only, the mirror of s19's due presets, because a shift is logged
  * after it happens. Short weekday names keep all four chips on one row at
- * phone width, where "Wednesday" would wrap it. Counted in calendar days
- * rather than by subtracting 24 hours, so a daylight-saving change can't skip
- * or repeat a day.
+ * phone width, where "Wednesday" would wrap it. Counted in calendar days by
+ * s19's `addDays`, so a daylight-saving change can't skip or repeat a day.
  */
 export function serviceDatePresets(now: Date): ServiceDatePreset[] {
   return Array.from({ length: DATE_PRESET_COUNT }, (_, daysAgo) => {
-    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    day.setDate(day.getDate() - daysAgo);
+    const day = addDays(now, -daysAgo);
     const label =
       daysAgo === 0
         ? "Today"

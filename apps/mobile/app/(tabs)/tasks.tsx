@@ -30,6 +30,7 @@ import { selectTaskRows, type TaskRowModel } from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
 import { nextTapSequence } from "@/lib/tasks/transitions";
 import { taskStatusGateRefusal } from "@/lib/tasks/status-refusal";
+import { successHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -165,6 +166,10 @@ export default function TasksScreen() {
 
       inFlight.current.add(row.id);
       setPendingId(row.id);
+      // The confirming tap (`spec/ui/mobile/README.md` § Native-feel rules),
+      // felt as the row is marked done, because the write is optimistic. Only
+      // a tap that completes the task: no other rung earns it.
+      if (sequence[sequence.length - 1] === "COMPLETED") successHaptic();
       try {
         for (const status of sequence) {
           await updateStatus.mutateAsync({ id: row.id, body: { status } });
