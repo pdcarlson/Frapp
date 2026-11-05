@@ -10,19 +10,18 @@ fields or submission).
 
 **Screenshots: produced by a script, uploaded by the owner.** App Store Connect does not
 accept a submission without them ([#2454](https://github.com/pdcarlson/Frapp/issues/2454)).
-The owner approved renders of the real app on Expo web as the set (2026-09-22), so they
-no longer wait on a device build or on `preview` (#2415):
-`node scripts/demo/capture-mobile.mjs --app-store` signs in to the local demo chapter and
-writes seven 1320 × 2868 PNGs (the 6.9" iPhone size) to `screenshots/app-store/`, with
-no Ask screen, because this binary has none (#2259), and no Dues screen, because a
-populated ledger shows the Stripe footer § Review notes keeps from App Review. The
-procedure, and where the size comes from, are in
-[`mobile.md` § 6.4](../../../docs/ops/deployment/mobile.md#64-app-store-screenshots).
+The owner approved renders of the real app on Expo web as the screens (2026-09-22), so they
+no longer wait on a device build or on `preview` (#2415), and picked a framed design for both
+stores (2026-11-05): `node scripts/demo/capture-mobile.mjs --store` signs in to the local demo
+chapter, captures seven screens once, and frames them with a caption in the feature graphic's
+charcoal and gold, into `screenshots/app-store/` (1320 × 2868, the 6.9" iPhone size) and
+`screenshots/google-play/` (1242 × 2208). No Ask screen, because this binary has none (#2259),
+and no Dues screen, because a populated ledger shows the Stripe footer § Review notes keeps from
+App Review. The procedure, the captions, and where the sizes come from are in
+[`mobile.md` § 6.4](../../../docs/ops/deployment/mobile.md#64-store-screenshots).
 They are generated rather than committed (`screenshots/` is gitignored). Whether they
-have been uploaded is recorded on #2454, not here: until that issue closes, assume not.
-Google Play can't take that size, so `--google-play` writes the same seven screens at
-1242 × 2208 to `screenshots/google-play/`
-([`mobile.md` § 6.5](../../../docs/ops/deployment/mobile.md#65-google-play-screenshots)).
+have been uploaded is recorded on #2454 (App Store) and #2720 (Play), not here: until those
+issues close, assume not.
 
 **Graphics: rendered by a script, committed, uploaded by the owner.** Google Play's listing
 needs a 512 × 512 icon and a 1024 × 500 feature graphic, and Play Console won't publish the
@@ -255,7 +254,7 @@ the work; the detail lives there, not here.
 
 | # | Risk | Kind |
 | --- | --- | --- |
-| [#2454](https://github.com/pdcarlson/Frapp/issues/2454) | **No screenshots uploaded.** Filed 2026-09-21 because the gate's only tracker was #2196 §4, and #2196 was closed as completed with every box unticked. Since 2026-09-22 the set comes from `capture-mobile.mjs --app-store` (see the note at the top of this file); what remains is the owner's upload and confirming the accepted size in the console | hard gate |
+| [#2454](https://github.com/pdcarlson/Frapp/issues/2454) | **No screenshots uploaded.** Filed 2026-09-21 because the gate's only tracker was #2196 §4, and #2196 was closed as completed with every box unticked. Since 2026-11-05 both stores' framed sets come from `capture-mobile.mjs --store` (see the note at the top of this file); what remains is the owner's upload and confirming the accepted size in the console | hard gate |
 | [#2415](https://github.com/pdcarlson/Frapp/issues/2415) | EAS `preview` holds only `SENTRY_AUTH_TOKEN`. It no longer owns the screenshot route (#2454 shoots from Expo web), but a `preview` build still cannot sign in. Its other half, no Stripe key in `production`, stopped gating submission on 2026-09-21: this listing no longer claims card payments, so that key is a product decision rather than a blocker. Neither half now gates submission, which ships the `production` build | no longer a gate (2026-09-22) |
 | [#2195](https://github.com/pdcarlson/Frapp/issues/2195) | Apple Developer trader status (EU DSA) — **probably already done, and only needs confirming.** #2195 was filed 2026-09-13 off a banner reading "Developers must provide their trader status to submit new apps", which gates submission itself rather than only EU availability. The dialog it sends you to *is* the trader-status dialog, and § As submitted records answering it the next day, 2026-09-14, on the "I don't plan to distribute in the EU" limb. So the action has very likely been taken and the issue is stale. Confirm the banner is gone from the Apps page and close #2195; do not re-answer the dialog, because re-picking is how you end up declaring trader and publishing a home address on an EU listing | confirm, then close |
 | [#2308](https://github.com/pdcarlson/Frapp/issues/2308) / [#2309](https://github.com/pdcarlson/Frapp/issues/2309) | The App Review login exists in `frapp-prod` (created 2026-09-17 and marked for the seed on 2026-09-24, #2309), but its chapter is seeded only on the day of submission, because the check-in event goes stale 43 to 67 hours after a seed (#2478 § D). Until that seed runs, the reviewer signs in to no chapter. The seed is ready: `scripts/demo/seed-demo.mjs --reviewer` targets a hosted project, and its `auth` → `sql` → `storage` → `verify` path passed end to end on staging on 2026-09-23 at `69e0021` (output in [#2537](https://github.com/pdcarlson/Frapp/pull/2537); staging was cleaned afterwards). Changes made after that run, which reached `main` in the follow-up PR that links back to #2537 rather than in #2537 itself, were verified against the local stack, unit tests and the `pglite-migrations` check only: `sql` (a guard that runs between its deletes, and a refusal to adopt a login that other rows reference), `storage` (`--remove` clears the chapter's folder in every bucket, and refuses while the chapter exists) and `verify` (a stricter staleness check). Applying it to production is the owner's step, [`demo-data.md` § Production (App Review)](../../../docs/guides/demo-data.md#production-app-review) | hard gate |
