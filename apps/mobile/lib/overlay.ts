@@ -11,7 +11,7 @@ import { AccessibilityInfo, BackHandler } from "react-native";
  * it holds back and announces with effects of its own.
  */
 
-type FocusTarget = Parameters<
+export type FocusTarget = Parameters<
   typeof AccessibilityInfo.sendAccessibilityEvent
 >[0];
 

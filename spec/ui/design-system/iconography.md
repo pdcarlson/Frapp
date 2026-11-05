@@ -233,6 +233,21 @@ it.
 
 The poll card has no glyph: its eyebrow is muted text on both surfaces.
 
+### 6.1.4 Mobile image viewer controls (stroke recipe, shipped)
+
+The chat image viewer's controls (`apps/mobile/components/chat/image-viewer.tsx`)
+are icons with no words, drawn at 24px in white at 80% on the viewer's black
+backdrop, never the accent (2026-11-05). They are control furniture, so they
+draw the §1 recipe's detail strokes only, with no silhouette fill. Web's
+viewer draws the same intents in Lucide (`Download`, `X`, `ChevronLeft`,
+`ChevronRight`), as §6.2.2's furniture rule says.
+
+| Semantic intent | Glyph | Lives in |
+|---|---|---|
+| Close the viewer | `CloseGlyph` (an ×) | `components/chat/viewer-glyphs.tsx` |
+| Share the image | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark | `components/chat/viewer-glyphs.tsx` |
+| Previous / next image | `ChevronGlyph` | `components/chat/viewer-glyphs.tsx` |
+
 ### 6.2 Web Dashboard shell (Signet duotone)
 
 Since the #920 shell slice the dashboard's shell chrome draws Signet glyphs,
