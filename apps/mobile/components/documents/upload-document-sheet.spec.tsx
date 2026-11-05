@@ -9,6 +9,7 @@ import { DocumentsGlyph } from "@/components/more/more-glyphs";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 import { DOCUMENT_TITLE_MAX_LENGTH } from "@repo/validation";
+import { signetDarkTokens } from "@repo/theme/signet";
 
 /**
  * #3399. s21, rendered: nothing is sent until Upload, Upload sends the title
@@ -209,8 +210,12 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(text).toContain("IMG_2041.jpg");
     expect(text).toContain("218 KB · from Photos");
     expect(text).toContain("Change");
-    // The card's glyph and Change are the chapter accent, not house gold.
-    expect(tree.root.findByType(DocumentsGlyph).props.color).toBe(ACCENT);
+    // The card's glyph labels the field, so it is neutral (foundations.md §6,
+    // "Where the accent goes", 2026-11-05); Change is a worded control and
+    // keeps the chapter accent, not house gold.
+    expect(tree.root.findByType(DocumentsGlyph).props.color).toBe(
+      signetDarkTokens.color.text.mutedForeground,
+    );
     const change = tree.root.find(
       (node) =>
         (node.type as unknown) === "Text" && node.props.children === "Change",

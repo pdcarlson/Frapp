@@ -1,7 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 import { formatTimer } from "@repo/formatting";
 import { CardMessages } from "@/components/card-messages";
 
@@ -63,8 +62,7 @@ export function SessionCard({
   onEnd,
 }: SessionCardProps) {
   const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
 
   const statusColor = isPaused
     ? tokens.color.semantic.warning
@@ -139,7 +137,7 @@ export function SessionCard({
   );
 }
 
-function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     card: {
       borderRadius: tokens.radius.cardLarge,
@@ -159,7 +157,9 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       // Fixed-width digits, so the seconds column does not shuffle every tick.
       fontVariant: ["tabular-nums"],
       letterSpacing: -1,
-      color: brand.accent,
+      // A timer is a number, so the foreground text, never the chapter accent
+      // (foundations.md §6, "Where the accent goes", 2026-11-05).
+      color: tokens.color.text.foreground,
       marginTop: tokens.spacing.sm,
     },
     statusRow: {

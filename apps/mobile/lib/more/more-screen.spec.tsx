@@ -285,20 +285,50 @@ describe("More hub anatomy (#1048)", () => {
     ]);
   });
 
-  it("draws a leading glyph on every row in the rest hue, never the accent", () => {
-    // iconography.md §1: the accent is the active state, and a hub row is
-    // never active, so every row takes the hue the web sidebar's glyphs rest in.
+  // foundations.md §6 "Where the accent goes" (2026-11-05): an icon that
+  // labels a row is neutral, so member and Admin rows draw the same muted hue.
+  it("draws a neutral leading glyph on every row, never the chapter accent", () => {
     permissions = ["events:update"];
     const rows = render().root.findAllByType(ListRow);
+    expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       const glyph = row.props.leading as React.ReactElement<{
         color: string;
       }>;
       expect(glyph, row.props.label).toBeTruthy();
       expect(glyph.props.color, row.props.label).toBe(
-        signetDarkTokens.color.text.mutedForeground,
+        signetDarkTokens.color.text.muted,
       );
     }
+  });
+
+  // The same rule for people: the viewer's initials avatar is a raised
+  // neutral fill with foreground initials, never an accent tint.
+  it("draws the profile card's initials avatar neutral, never the chapter accent", () => {
+    const card = render().root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityHint === "Opens your profile.",
+    );
+    const initials = card.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "PC",
+    );
+    const flatten = (style: unknown) =>
+      Object.assign({}, ...[style].flat(Infinity)) as Record<string, unknown>;
+    expect(flatten(initials.props.style).color).toBe(
+      signetDarkTokens.color.text.foreground,
+    );
+    const avatar = flatten(initials.parent!.props.style);
+    expect(avatar.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(avatar.borderColor).toBe(signetDarkTokens.color.border.hairline);
+    const styles = JSON.stringify(
+      card
+        .findAll((node) => typeof node.type === "string")
+        .map((node) => node.props.style ?? null),
+    );
+    expect(styles).not.toContain("#7FB2FF");
+    expect(styles).not.toContain("#2D7BFF");
   });
 
   it("has no Notifications row: the inbox is the bell on Chat home (#3362)", () => {

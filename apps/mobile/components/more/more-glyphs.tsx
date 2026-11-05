@@ -13,9 +13,9 @@ import { tint } from "@/lib/theme";
  * the web sidebar (`spec/ui/design-system/iconography.md` §6.2). They render at
  * 20px, §2's size for a list row's leading icon.
  *
- * Color is a prop, never baked. Every hub row passes `text.mutedForeground`,
- * the rest hue the web sidebar's glyphs take (iconography.md §1: the accent is
- * the active state, and a hub row is never active).
+ * Color is a prop, never baked. Every hub row paints its glyph in
+ * `text.muted`: a row's icon is neutral, never the chapter accent
+ * (foundations.md §6, "Where the accent goes", 2026-11-05).
  *
  * `paint`, `Frame` and `STROKE_WIDTH` are the older stroke recipe (a 1.6px
  * stroke on a 24px grid, silhouette at 16% of the hue or 6% white when
@@ -37,7 +37,7 @@ const EMPHASIS_FILL_ALPHA = 0.16;
 const NEUTRAL_FILL = "rgba(255,255,255,0.06)";
 
 export type MoreGlyphProps = {
-  /** The stroke hue: `text.mutedForeground` on every hub row (iconography §1). */
+  /** The stroke hue, a neutral text step (`text.muted` or `text.foreground`). */
   color: string;
   /** `true` draws §1's neutral fill rather than the stroke hue's tint. */
   neutral?: boolean;
@@ -114,8 +114,7 @@ export function NotificationsGlyph(props: MoreGlyphProps) {
  * A hub row's glyph. These draw the shared nav set (`@repo/theme/nav-glyphs`),
  * the same shapes as the web sidebar, so Study hours or Settings looks the same
  * in the More hub as in the web nav. The silhouette is always the glyph's own
- * hue at 20%; a row's hue comes from `color` alone (`text.mutedForeground` on
- * every hub row).
+ * hue at 20%; its hue is `color` alone, `text.muted` on every hub row.
  */
 export type HubGlyphProps = {
   color: string;

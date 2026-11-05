@@ -3,7 +3,7 @@ import { Image, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { onlineManager } from "@tanstack/react-query";
 import { SignetTokens } from "@repo/theme/signet";
-import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { PressableRow } from "@/components/list-section";
 
 const AVATAR_SIZE = 48;
@@ -17,6 +17,10 @@ const AVATAR_SIZE = 48;
  * permissions only, #1048), so the line is the balance alone rather than a
  * chip that would have to invent one.
  *
+ * The initials avatar is neutral (a raised fill, a hairline, foreground
+ * initials): a person's avatar never takes the chapter accent, the viewer's
+ * own included (foundations.md §6, "Where the accent goes", 2026-11-05).
+ *
  * It navigates with `router.push` in `onPress`, never `<Link asChild>`: on
  * native, Link's slot merges the child's props with an object spread, which
  * turns a function-form `style` into `{}` and drops every card style.
@@ -27,7 +31,6 @@ export function ProfileCard({
   photoUrl,
   fetchedAt = 0,
   pointsLabel,
-  accent,
 }: {
   displayName: string | null;
   initials: string;
@@ -36,8 +39,6 @@ export function ProfileCard({
   fetchedAt?: number;
   /** "1,240 pts", or `null` while the balance is unknown. */
   pointsLabel: string | null;
-  /** The chapter accent, which tints the initials avatar. */
-  accent: string;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -83,16 +84,8 @@ export function ProfileCard({
           importantForAccessibility="no-hide-descendants"
         />
       ) : (
-        <View
-          style={[
-            styles.avatar,
-            {
-              backgroundColor: tint(accent, 0.13),
-              borderColor: tint(accent, 0.3),
-            },
-          ]}
-        >
-          <Text style={[styles.initials, { color: accent }]}>{initials}</Text>
+        <View style={[styles.avatar, styles.avatarInitials]}>
+          <Text style={styles.initials}>{initials}</Text>
         </View>
       )}
       <View style={styles.text}>
@@ -131,8 +124,12 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
       overflow: "hidden",
     },
+    avatarInitials: {
+      backgroundColor: tokens.color.surface.popover,
+    },
     initials: {
       ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
     text: {
       flex: 1,

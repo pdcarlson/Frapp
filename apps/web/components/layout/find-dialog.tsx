@@ -58,8 +58,10 @@ import {
  * can read, chat included. Ask (the ✦ pill) answers a question from the
  * chapter's official sources only (`spec/behavior/ai.md`) and paints in house
  * gold. This dialog never uses the `gold-ask-*` tokens and never mentions Ask
- * until Ask can answer on web. (Its highlight is the chapter accent, which is
- * gold only on a chapter that has not picked one.)
+ * until Ask can answer on web. Per foundations §6 the highlighted result is
+ * a neutral `--card-hover` fill, like every menu highlight; only the active
+ * filter chip takes the chapter accent, because it is a filter the member
+ * switched on.
  *
  * Focus never leaves the input while arrowing: the list is an
  * `aria-activedescendant` listbox, as the field's dropdown was.
@@ -141,7 +143,8 @@ export function FindDialog({
             const input = inputRef.current;
             input?.focus();
             if (selectOnOpen) input?.select();
-            else input?.setSelectionRange(input.value.length, input.value.length);
+            else
+              input?.setSelectionRange(input.value.length, input.value.length);
           }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
@@ -149,7 +152,9 @@ export function FindDialog({
           }}
           className="fixed left-1/2 top-[12vh] z-50 flex max-h-[76vh] w-[min(640px,calc(100vw-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-[0.98] motion-reduce:animate-none"
         >
-          <DialogPrimitive.Title className="sr-only">Find</DialogPrimitive.Title>
+          <DialogPrimitive.Title className="sr-only">
+            Find
+          </DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
             Search channels, members, messages, events and backwork. Use the
             arrow keys to move through results and Enter to open one.
@@ -229,7 +234,9 @@ function FindPanel({
     if (!canBrowseBackwork) hidden.add("Backwork");
     return hidden;
   }, [isModuleEnabled, canBrowseBackwork]);
-  const departments = useDepartments({ enabled: !hiddenGroups.has("Backwork") });
+  const departments = useDepartments({
+    enabled: !hiddenGroups.has("Backwork"),
+  });
   const chips: FindFilter[] = [
     "All",
     ...FIND_GROUPS.filter((g) => !hiddenGroups.has(g)),
@@ -464,7 +471,7 @@ function FindPanel({
             className={cn(
               "h-7 rounded-full border px-3 text-caption transition",
               effectiveFilter === chip
-                ? "border-transparent bg-card text-foreground"
+                ? "border-transparent bg-accent-subtle text-accent-text"
                 : "border-border text-muted-foreground hover:text-foreground",
               FOCUS_RING,
             )}
@@ -550,14 +557,14 @@ function FindPanel({
                   // and hints are one line because they `truncate`.
                   "flex min-h-8 w-full items-center gap-3 rounded-[10px] px-2.5 py-1.5 text-left text-sm transition pointer-coarse:min-h-11 pointer-coarse:text-base",
                   active
-                    ? "bg-accent-subtle text-accent-text"
-                    : "text-foreground hover:bg-card",
+                    ? "bg-card-hover text-foreground"
+                    : "text-foreground hover:bg-card-hover",
                 )}
               >
                 <Icon
                   className={cn(
                     "h-4 w-4 shrink-0",
-                    active ? "text-accent-text" : "text-muted-foreground",
+                    active ? "text-foreground" : "text-muted-foreground",
                   )}
                   aria-hidden="true"
                 />

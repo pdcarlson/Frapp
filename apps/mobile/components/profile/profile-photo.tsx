@@ -47,6 +47,10 @@ export const NO_CHAPTER_PHOTO_NOTE =
  * and the name, which split the identity block the board draws as one, and
  * Remove deleted the photo on the spot.
  *
+ * The avatar itself is neutral (a hairline ring, a raised fill, foreground
+ * initials): a person's avatar never takes the chapter accent, the viewer's
+ * own included (foundations.md §6, "Where the accent goes", 2026-11-05).
+ *
  * Removing confirms, in a native alert with a destructive button, because the
  * photo can't be brought back (`spec/ui/mobile/README.md` § Native-feel
  * rules). The screen has no toast, so a refusal or a failure is a line under
@@ -79,7 +83,6 @@ export function ProfilePhoto({
 }) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
-  const { accent } = brand;
   const styles = createStyles(tokens, brand);
   const feedback = usePressFeedback();
   const chapterId = useActiveChapterId();
@@ -216,7 +219,7 @@ export function ProfilePhoto({
           pressed && Platform.OS !== "android" ? styles.pressed : null,
         ]}
       >
-        <View style={[styles.avatar, { borderColor: accent }]}>
+        <View style={styles.avatar}>
           {showPhoto ? (
             <Image
               source={{ uri: photoUrl }}
@@ -226,7 +229,7 @@ export function ProfilePhoto({
               onError={() => setFailed({ url: photoUrl, at: fetchedAt })}
             />
           ) : (
-            <Text style={[styles.initials, { color: accent }]}>{initials}</Text>
+            <Text style={styles.initials}>{initials}</Text>
           )}
           {busy ? (
             <View style={styles.busy}>
@@ -283,7 +286,8 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       height: AVATAR_SIZE,
       borderRadius: avatarRadius(AVATAR_SIZE),
       borderWidth: 1,
-      backgroundColor: brand.accentSubtle,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.popover,
       alignItems: "center",
       justifyContent: "center",
       overflow: "hidden",
@@ -294,6 +298,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     initials: {
       ...typeRole(tokens.typography.role.headline),
+      color: tokens.color.text.foreground,
     },
     busy: {
       position: "absolute",

@@ -315,19 +315,22 @@ describe("attachment rendering is gated on the message", () => {
   });
 });
 
-// components.md §11 (#2873): the viewer's own name takes the chapter accent,
-// via the mocked `useChapterBranding()`, which is how a member spots their run.
-describe("the viewer's own name takes the chapter accent", () => {
-  it("colours 'You' with the accent text, and paints no accent fill", () => {
+// foundations.md §6 "Where the accent goes" (2026-11-05): names are neutral,
+// the viewer's own included. With no role colour "You" reads in the foreground
+// text, and the row draws no colour from the mocked `useChapterBranding()`.
+describe("the viewer's own name is neutral", () => {
+  it("colours 'You' with the foreground text, and paints no accent", () => {
     const tree = renderItem(message({ sender_id: VIEWER, content: "hello" }));
     const you = tree.root.find(
       (node) =>
         (node.type as unknown) === "Text" && node.props.children === "You",
     );
-    expect(JSON.stringify(you.props.style)).toContain('"color":"#C49A3A"');
-    // The self bubble's fill and its on-primary text are gone.
+    expect(JSON.stringify(you.props.style)).toContain(
+      `"color":"${signetDarkTokens.color.text.foreground}"`,
+    );
+    // Neither the accent text nor the old self bubble's fill is drawn.
     const flat = JSON.stringify(tree.toJSON());
-    expect(flat).not.toContain('"backgroundColor":"#C49A3A"');
+    expect(flat).not.toContain("#C49A3A");
     expect(flat).not.toContain("#2B2009");
   });
 
@@ -343,7 +346,8 @@ describe("the viewer's own name takes the chapter accent", () => {
   });
 });
 
-// #3485: everyone else's name wears their top role's palette color.
+// #3485: an author's name wears their top role's palette color, the
+// viewer's own "You" included (foundations.md §6, 2026-11-05).
 describe("an author's name takes their role color", () => {
   const roleColorFor = (id: string) => (id === OTHER ? "#6FD08C" : "#F2994A");
 
@@ -362,14 +366,20 @@ describe("an author's name takes their role color", () => {
     expect(JSON.stringify(name.props.style)).toContain('"color":"#6FD08C"');
   });
 
-  it("keeps the viewer's own name in the chapter accent", () => {
-    const flat = JSON.stringify(
-      renderItem(message({ sender_id: VIEWER, content: "hi" }), undefined, {
+  it("paints the viewer's own name in their role color too, never the accent", () => {
+    const tree = renderItem(
+      message({ sender_id: VIEWER, content: "hi" }),
+      undefined,
+      {
         roleColorFor,
-      }).toJSON(),
+      },
     );
-    expect(flat).toContain("#C49A3A");
-    expect(flat).not.toContain("#F2994A");
+    const you = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "You",
+    );
+    expect(JSON.stringify(you.props.style)).toContain('"color":"#F2994A"');
+    expect(JSON.stringify(tree.toJSON())).not.toContain("#C49A3A");
   });
 });
 
@@ -621,14 +631,18 @@ describe("compact layout (#2873)", () => {
     expect(onJumpToParent).toHaveBeenCalledTimes(1);
   });
 
-  it("trails Pinned after the text, in the accent", () => {
+  it("trails Pinned after the text, muted, never in the accent", () => {
     const tree = renderItem(message({ is_pinned: true }));
     const pinned = tree.root.find(
       (node) =>
         (node.type as unknown) === "Text" &&
         node.props.children === " · Pinned",
     );
-    expect(JSON.stringify(pinned.props.style)).toContain('"color":"#C49A3A"');
+    const style = JSON.stringify(pinned.props.style);
+    expect(style).toContain(
+      `"color":"${signetDarkTokens.color.text.mutedForeground}"`,
+    );
+    expect(style).not.toContain("#C49A3A");
   });
 
   it("marks a photo-only message on a line of its own, with no stray separator", () => {

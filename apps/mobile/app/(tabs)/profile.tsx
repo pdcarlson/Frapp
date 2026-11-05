@@ -156,7 +156,9 @@ export default function ProfileScreen() {
 
       <View style={styles.statRow}>
         <View style={styles.statCard}>
-          <Text style={[styles.statValue, { color: accent }]}>
+          {/* Both stats in the foreground text: a number is never the chapter
+              accent (foundations.md §6, "Where the accent goes"). */}
+          <Text style={styles.statValue}>
             {pointsBalance === null ? "—" : pointsBalance.toLocaleString()}
           </Text>
           <Text style={styles.statLabel}>points</Text>

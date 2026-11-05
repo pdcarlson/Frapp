@@ -894,7 +894,7 @@ function ChannelRow({
                   FOCUS_RING,
                   active
                     ? "border-accent-border bg-accent-subtle-hover text-accent-text"
-                    : "border-border text-muted-foreground hover:bg-accent-subtle",
+                    : "border-border text-muted-foreground hover:bg-card-hover",
                 )}
               >
                 {option.label}

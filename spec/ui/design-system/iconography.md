@@ -181,8 +181,9 @@ Points no longer exist as screens; Profile moved into the More hub.
 
 Chat home's UP NEXT rows (s04, `apps/mobile/components/chat/up-next-strip.tsx`)
 draw the same file's `EventsGlyph` and `TasksGlyph` at 20px (§2's list-row
-size): the event row's focused, in the chapter accent, and the task row's
-unfocused, in `text.muted`, so the two rows read apart. The s05 chat cards reuse
+size), both unfocused in `text.muted`, since a row's label icon is neutral
+([foundations.md](foundations.md) §6, 2026-11-05). Until then the event row's
+was focused and in the chapter accent. The s05 chat cards reuse
 them too (§6.1.3).
 
 ### 6.1.1 Mobile in-screen icons (Ionicons, interim)
@@ -195,10 +196,9 @@ cluster replaces its own as it rebuilds; there is no separate icon migration.
 The More hub's leading row glyphs (s09, #1048) live in
 `apps/mobile/components/more/more-glyphs.tsx` at 20px (§2's list-row size)
 and draw the shared nav set (§1.1), so one intent draws one shape on both
-surfaces. Every row's glyph is `text.mutedForeground`, the rest hue the web
-sidebar's glyphs take (§1: the accent marks the active item, and a hub row is
-never active). Changed 2026-11-05; member rows were painted in the chapter
-accent and Admin rows in `text.muted`.
+surfaces. Every row, Member and Admin alike, is painted in `text.muted`
+([foundations.md](foundations.md) §6; the Member rows took the chapter accent
+until 2026-11-05).
 
 | Semantic intent | Glyph (nav set key, Phosphor name) | Web counterpart |
 |---|---|---|
@@ -224,8 +224,9 @@ The eyebrow glyph over each s05 chat card, drawn at 16px by `CardEyebrow`
 card and the tab it belongs to share a silhouette. The event, task, points and
 hours glyphs are nav-set shapes (§1.1, through `TabGlyph`); the rest keep the
 §1 stroke recipe. Each is the web glyph for the same intent (§6.2.2). Painted
-in the accent, except the audit card's, which is drawn neutral, as web draws
-it.
+neutral, with the eyebrow's muted label, on every card and on both surfaces
+([foundations.md](foundations.md) §6; they took the accent until 2026-11-05,
+except the audit card's).
 
 | Semantic intent | Glyph | Lives in |
 |---|---|---|

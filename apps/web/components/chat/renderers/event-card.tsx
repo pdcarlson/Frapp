@@ -100,9 +100,7 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   // Hooks must run before any early return; `useAttendance` no-ops on an empty
   // id, so a viewer without attendance access never fires the (403-ing) request.
   const eventId = payload?.event_id ?? "";
-  const { data: attendance } = useAttendance(
-    canViewAttendance ? eventId : "",
-  );
+  const { data: attendance } = useAttendance(canViewAttendance ? eventId : "");
   const now = useNow();
 
   if (!payload) {
@@ -151,7 +149,12 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   return (
     <Card className={cn(MESSAGE_CARD)}>
       <div className="flex items-center justify-between gap-2">
-        <div className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}>
+        <div
+          className={cn(
+            EYEBROW,
+            "flex items-center gap-1.5 text-muted-foreground",
+          )}
+        >
           <EventsGlyph className="h-4 w-4" /> Event
         </div>
         {payload.is_mandatory ? (

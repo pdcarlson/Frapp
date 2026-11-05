@@ -93,13 +93,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 export default function MoreScreen() {
   const router = useRouter();
   const { tokens } = useFrappTheme();
-  const { accent, chapterName } = useChapterBranding();
+  const { chapterName } = useChapterBranding();
   const styles = createStyles(tokens);
-  // Hub row glyphs take the rest hue, as the web sidebar's do: the accent is
-  // the active state (iconography.md §1), and seven accent glyphs down one
-  // column were the loudest thing on the screen. Admin rows used `text.muted`
-  // and member rows the accent until 2026-11-05; both now read alike.
-  const rowGlyph = tokens.color.text.mutedForeground;
+  // Every row's leading glyph is neutral, member and Admin rows alike: an icon
+  // that labels a row never takes the chapter accent (foundations.md §6,
+  // "Where the accent goes", 2026-11-05).
+  const glyphColor = tokens.color.text.muted;
 
   // Both reads are shared with s15 (Profile), so opening More warms them.
   const userQuery = useCurrentUser();
@@ -174,26 +173,25 @@ export default function MoreScreen() {
         photoUrl={profile?.photoUrl ?? null}
         fetchedAt={userQuery.dataUpdatedAt}
         pointsLabel={formatPointsLabel(pointsBalance)}
-        accent={accent}
       />
 
       <ListSection>
         <ListRow
           label="Study hours"
-          leading={<StudyGlyph color={rowGlyph} />}
+          leading={<StudyGlyph color={glyphColor} />}
           value={studyThisWeek}
           accessibilityHint="Opens study hours and session tracking."
           onPress={() => router.push("/study")}
         />
         <ListRow
           label="Service hours"
-          leading={<ServiceGlyph color={rowGlyph} />}
+          leading={<ServiceGlyph color={glyphColor} />}
           accessibilityHint="Opens your logged service hours."
           onPress={() => router.push("/service-hours")}
         />
         <ListRow
           label="Dues"
-          leading={<DuesGlyph color={rowGlyph} />}
+          leading={<DuesGlyph color={glyphColor} />}
           accessibilityHint="Opens your dues and payment history."
           accessibilityValue={duesDue?.label}
           trailing={
@@ -215,13 +213,13 @@ export default function MoreScreen() {
         />
         <ListRow
           label="Documents"
-          leading={<DocumentsGlyph color={rowGlyph} />}
+          leading={<DocumentsGlyph color={glyphColor} />}
           accessibilityHint="Opens the chapter's documents."
           onPress={() => router.push("/documents")}
         />
         <ListRow
           label="Directory"
-          leading={<DirectoryGlyph color={rowGlyph} />}
+          leading={<DirectoryGlyph color={glyphColor} />}
           accessibilityHint="Opens the member directory."
           onPress={() => router.push("/directory")}
         />
@@ -230,21 +228,21 @@ export default function MoreScreen() {
       <ListSection>
         <ListRow
           label="Settings"
-          leading={<SettingsGlyph color={rowGlyph} />}
+          leading={<SettingsGlyph color={glyphColor} />}
           accessibilityHint="Opens notifications, quiet hours and your account."
           onPress={() => router.push("/preferences")}
         />
         {hasNoChapters ? (
           <ListRow
             label="Create a chapter"
-            leading={<ChapterGlyph color={rowGlyph} />}
+            leading={<ChapterGlyph color={glyphColor} />}
             accessibilityHint="Opens the chapter setup wizard."
             onPress={() => router.push("/(auth)/create-chapter")}
           />
         ) : (
           <ListRow
             label="Switch chapter"
-            leading={<ChapterGlyph color={rowGlyph} />}
+            leading={<ChapterGlyph color={glyphColor} />}
             value={chapterName}
             accessibilityHint="Opens the list of chapters you belong to."
             onPress={() =>
@@ -267,9 +265,7 @@ export default function MoreScreen() {
           <ListSection>
             <ListRow
               label="Host check-in"
-              leading={
-                <HostCheckInGlyph color={rowGlyph} />
-              }
+              leading={<HostCheckInGlyph color={glyphColor} />}
               accessibilityValue={
                 nextEvent ? nextEvent.name : "No upcoming event"
               }

@@ -1,7 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
-import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { AccentChip } from "@/components/status-chip";
@@ -18,9 +17,12 @@ import type { TaskRowModel } from "@/lib/tasks/board";
  *
  * A flush row on the screen background, split from the one above by a
  * hairline, with a leading checkbox, a title, a due/done subtitle, and an
- * optional trailing points chip. The finished row is drawn at `opacity:.62` with a
- * line-through title and a box filled with the chapter accent (Canvas draws
- * it gold, the house accent).
+ * optional trailing points chip.
+ * The finished row is drawn at `opacity:.62` with a line-through title and a
+ * box in the raised neutral fill with a muted check. Canvas draws that box
+ * gold; foundations.md §6 ("Where the accent goes", 2026-11-05) overrides it:
+ * finished work is the quietest thing on a list, so a done state takes a muted
+ * fill or check, never the accent.
  *
  * ## The checkbox is a three-state control, not a two-state one
  *
@@ -30,9 +32,10 @@ import type { TaskRowModel } from "@/lib/tasks/board";
  * them the row sits at `IN_PROGRESS`, and reusing the empty box there would make
  * the member's first tap look like it did nothing.
  *
- * TODO-DESIGN: the started state is drawn nowhere. Nearest pattern used — the
- * accent hairline outline the drawn empty box already implies, with no fill, so
- * it reads as "between" the two states Canvas does draw.
+ * TODO-DESIGN: the started state is drawn nowhere. Nearest pattern used — a
+ * firmer neutral outline (`text.mutedForeground`) than the empty box's faint
+ * one, with no fill, so it reads as "between" the empty and done boxes while
+ * staying off the accent (foundations.md §6).
  */
 
 export interface TaskRowProps {
@@ -58,8 +61,7 @@ export function TaskRow({
   isFirst = false,
 }: TaskRowProps) {
   const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
   const chip = formatPointsChip(row.pointReward, row.pointsAwarded);
   const started = row.storedStatus === "IN_PROGRESS";
 
@@ -85,7 +87,9 @@ export function TaskRow({
               : null,
         ]}
       >
-        {row.isDone ? <CheckGlyph color={tokens.color.gold.onHouse} /> : null}
+        {row.isDone ? (
+          <CheckGlyph color={tokens.color.text.mutedForeground} />
+        ) : null}
       </View>
 
       <View style={styles.body}>
@@ -166,7 +170,7 @@ export function TaskRow({
   );
 }
 
-function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     row: {
       flexDirection: "row",
@@ -206,11 +210,11 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       justifyContent: "center",
     },
     checkboxStarted: {
-      borderColor: brand.accent,
+      borderColor: tokens.color.text.mutedForeground,
     },
     checkboxDone: {
-      borderColor: brand.accent,
-      backgroundColor: brand.accent,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.popover,
     },
     body: {
       flex: 1,

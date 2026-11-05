@@ -266,3 +266,51 @@ describe("TaskRow — the points chip", () => {
     expect(styleOfText(tree, "+15").color).toBe("#CB9FFF");
   });
 });
+
+// foundations.md §6 "Where the accent goes" (2026-11-05): finished work is the
+// quietest thing on a list, so a done box is a muted neutral fill and check,
+// and a started box a neutral outline, never the chapter accent.
+describe("TaskRow — the checkbox stays off the accent", () => {
+  function box(tree: ReactTestRenderer): Record<string, unknown> {
+    const node = tree.root.find(
+      (candidate) =>
+        (candidate.type as unknown) === "View" &&
+        flatten(candidate.props.style).width === signetDarkTokens.spacing.xl &&
+        flatten(candidate.props.style).borderRadius ===
+          signetDarkTokens.radius.chip,
+    );
+    return flatten(node.props.style);
+  }
+
+  it("fills a done box with the raised neutral and a muted check", () => {
+    const tree = render(
+      <TaskRow
+        row={row({ storedStatus: "COMPLETED", isDone: true, pointReward: null })}
+        now={NOW}
+      />,
+    );
+    const style = box(tree);
+    expect(style.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(style.borderColor).toBe(signetDarkTokens.color.border.input);
+    const flat = JSON.stringify(tree.toJSON());
+    expect(flat).toContain(signetDarkTokens.color.text.mutedForeground);
+    expect(flat).not.toContain("#CB9FFF");
+    expect(flat).not.toContain(signetDarkTokens.color.gold.onHouse);
+  });
+
+  it("outlines a started box in a neutral, with no fill", () => {
+    const tree = render(
+      <TaskRow
+        row={row({ storedStatus: "IN_PROGRESS", pointReward: null })}
+        now={NOW}
+        onToggle={() => {}}
+      />,
+    );
+    const style = box(tree);
+    expect(style.borderColor).toBe(
+      signetDarkTokens.color.text.mutedForeground,
+    );
+    expect(style.backgroundColor).toBeUndefined();
+    expect(JSON.stringify(tree.toJSON())).not.toContain("#CB9FFF");
+  });
+});
