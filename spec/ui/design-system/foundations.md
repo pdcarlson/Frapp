@@ -322,3 +322,18 @@ selection, so this is an extension beyond what the board draws rather than a tra
 [`../web-dashboard/tokens.md`](../web-dashboard/tokens.md) records that as the lane note.
 `::-moz-selection` is deliberately not duplicated: Firefox has supported unprefixed `::selection`
 since 62, and an invalid prefixed selector in the same rule list would drop the rule in every engine.
+
+---
+
+## 14. Native controls
+
+A Signet web surface declares `color-scheme: dark` on `:root` (`packages/theme/src/signet.css`), so
+the controls the browser draws itself render on the dark ladder: checkboxes and radios, the calendar
+and clock glyphs in date and time fields, native `<select>` popups, file inputs, number spinners and
+autofill. Until 2026-11-05 nothing declared it, and every one of them kept light-scheme chrome: a
+white box per row on each list with a checkbox column (`/events`, `/points`, `/members`, `/billing`)
+and a black calendar glyph that vanished into every date field.
+
+It is `dark` alone, never `light dark`: Signet has one appearance (§1), so handing the choice back to
+the operating system would draw light controls on a dark page for anyone whose OS is in light mode.
+`signet.css.spec.ts` pins the single declaration.

@@ -103,6 +103,18 @@ describe("signet.css is dark-only and side-token-free", () => {
     expect(css).not.toMatch(/^\s*\.dark\s*\{/m);
   });
 
+  it("tells the browser the page is dark, and only dark", () => {
+    // Native checkboxes, date pickers and <select> popups follow
+    // `color-scheme`, not our tokens. Without it they drew light chrome: a
+    // white box per row in every list with a checkbox column. `light dark`
+    // would hand the choice back to the OS, which a one-appearance system
+    // can't honour.
+    const declarations = [...css.matchAll(/color-scheme:\s*([^;]+);/g)].map(
+      (m) => m[1]!.trim(),
+    );
+    expect(declarations).toEqual(["dark"]);
+  });
+
   it("declares none of the ShadCN aliases deleted in #3036", () => {
     // `--secondary` and `--accent` held `--card`'s and `--popover`'s values,
     // and `hover:bg-accent` painted a control in its container's own colour
