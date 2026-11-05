@@ -436,6 +436,31 @@ describe("FindBar", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it("draws result rows on the Row step: 32 on a mouse, 44 on touch", async () => {
+    // foundations.md §9 (#3515). The row is hand-rolled, so the primitives'
+    // touch-floor spec does not cover it.
+    channelsQuery.current = { data: [{ id: "c1", name: "announcements" }] };
+    searchQuery.current = searchState({ data: searchPayload() });
+
+    const user = userEvent.setup();
+    render(<FindBar />);
+    await openAndType(user, "announce");
+
+    for (const option of screen.getAllByRole("option")) {
+      const classes = option.className.split(/\s+/);
+      expect(classes).toEqual(
+        expect.arrayContaining([
+          "min-h-8",
+          "text-sm",
+          "pointer-coarse:min-h-11",
+          "pointer-coarse:text-base",
+        ]),
+      );
+      // Only heights split by pointer; padding never does (§9).
+      expect(classes.filter((c) => /^pointer-coarse:p[xytrbl]?-/.test(c))).toEqual([]);
+    }
+  });
+
   it("lists nothing under the minimum query length", async () => {
     channelsQuery.current = { data: [{ id: "c1", name: "announcements" }] };
     const user = userEvent.setup();
