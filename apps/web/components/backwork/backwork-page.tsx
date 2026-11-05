@@ -1,136 +1,286 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
-import { Download, FolderUp, Loader2, Upload } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Download,
+  FolderUp,
+  Filter,
+  Loader2,
+  Merge,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  X,
+} from "lucide-react";
 import {
   selectDownloadUrl,
-  useBackworkResource,
   useBackworkResources,
-  useConfirmBackworkUpload,
+  useDeleteBackworkResource,
   useDepartments,
+  useFetchBackworkResource,
+  useMyPermissions,
   useProfessors,
-  useRequestBackworkUploadUrl,
-  putSignedUpload,
 } from "@repo/hooks";
+import { can } from "@repo/validation";
+import { formatDay } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-import { SectionLabel } from "@/components/shared/section-label";
-import {
-  UPLOAD_FIELD_CLASS,
-  UPLOAD_SHEET_BUTTON_CLASS,
-  UploadField,
-  UploadFileField,
-  UploadSheetBody,
-  UploadSheetContent,
-  UploadSheetFooter,
-  UploadSheetTitle,
-} from "@/components/shared/upload-sheet";
-import { Badge } from "@/components/ui/badge";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/shared/async-states";
-import { denseListClassName } from "@/components/shared/table-controls";
 import {
   NestedEmpty,
   NestedError,
   NestedOffline,
 } from "@/components/shared/nested-states";
-import { BackworkGlyph } from "@/components/documents/resources-glyphs";
-import { BackworkTaxonomyDrawer } from "@/components/backwork/backwork-taxonomy-drawer";
+import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Can } from "@/components/shared/can";
-import { PageActions } from "@/components/layout/page-actions";
 import {
   SubscriptionNotice,
-  useGatedDialog,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { BackworkTaxonomyDrawer } from "@/components/backwork/backwork-taxonomy-drawer";
+import { useBackworkTaxonomyActions } from "@/components/backwork/backwork-taxonomy-actions";
+import { BackworkUploadSheet } from "@/components/backwork/backwork-upload-sheet";
+import { BackworkRowsSkeleton } from "@/components/backwork/backwork-skeleton";
+import {
+  CopyLabel,
+  Highlighted,
+  TypeTag,
+} from "@/components/backwork/backwork-row-parts";
+import {
+  BACKWORK_LIST_CAP,
+  NO_FILTERS,
+  OPTION_FOR,
+  filterOptions,
+  liveFilters,
+  hasActiveFilters,
+  queryLibrary,
+  toLibraryRows,
+  type BackworkDepartment,
+  type BackworkProfessor,
+  type BackworkResource,
+  type FilterOption,
+  type LibraryFilters,
+  type LibraryRow,
+} from "@/components/backwork/backwork-library";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
+import { Input } from "@/components/ui/input";
+import { SearchGlyph } from "@/components/documents/resources-glyphs";
 import {
-  asArray,
-  getErrorMessage,
-  guardIntDraft,
-  parseGuardedInt,
-} from "@/lib/utils";
-import {
-  ASSIGNMENT_TYPES,
-  DOCUMENT_VARIANTS,
-  MAX_BACKWORK_UPLOAD_BYTES,
-  MAX_BACKWORK_UPLOAD_LABEL,
-  SEMESTERS,
-  acceptAttribute,
-  inspectUploadFile,
-  readSignedUpload,
-} from "@repo/validation";
-import { BackworkRowsSkeleton } from "@/components/backwork/backwork-skeleton";
+  compactControlClassName,
+  dashboardToolbarSearchClassName,
+  dashboardToolbarSearchGlyphClassName,
+  denseListClassName,
+} from "@/components/shared/table-controls";
+import { asArray, cn, getErrorMessage } from "@/lib/utils";
 
-type Department = { id: string; code: string; name: string | null };
-type Professor = { id: string; name: string };
-type Resource = {
-  id: string;
-  title: string | null;
-  department_id: string | null;
-  course_number: string | null;
-  professor_id: string | null;
-  year: number | null;
-  semester: string | null;
-  assignment_type: string | null;
-  assignment_number: number | null;
-  document_variant: string | null;
-  tags: string[] | null;
-  is_redacted: boolean;
-  created_at: string;
-};
+/**
+ * `/backwork`, rebuilt 2026-11-05 around the files instead of a filter form
+ * (proposal: https://claude.ai/artifact/9v4Gv9Mr7UJcbVLNLfDFrX).
+ *
+ * - **One toolbar row.** Live search plus five filter chips that apply the
+ *   moment one is picked; the six full-width selects and the Apply/Clear pair
+ *   they needed are gone.
+ * - **Search forgives typos** and covers every field a row shows, tags
+ *   included, which the old box's placeholder promised and the server never
+ *   did (#585). It runs on the client over the library the list endpoint
+ *   returns; see `backwork-library.ts` for why, and for its row cap.
+ * - **Rows you can tell apart**: a colored type tag, course code, professor,
+ *   term, an icon per copy type, the date added, and an icon-only Download.
+ * - **Rare tools behind a menu.** Each row's actions open on right-click and
+ *   on its ⋯ button (`RowMenu`), where officers also rename or merge that
+ *   row's professor or department and delete the file. The full clean-up
+ *   drawer moved from a header button into the page's ⋯ menu.
+ */
+
+type ChipKey = keyof LibraryFilters;
+
+const CHIPS: { key: ChipKey; label: string; anyLabel: string }[] = [
+  { key: "course", label: "Course", anyLabel: "Any course" },
+  { key: "professorId", label: "Professor", anyLabel: "Any professor" },
+  { key: "term", label: "Term", anyLabel: "Any term" },
+  { key: "type", label: "Type", anyLabel: "Any type" },
+  { key: "variant", label: "Copy", anyLabel: "Any copy" },
+];
 
 /*
-  Each string names the verdict, because it no longer has a toast title to do
-  that for it. These were toast bodies under "File too large" / "File type not
-  allowed"; they are now the whole inline error, and a standalone "Backwork
-  accepts files up to 25MB." states a rule without saying the member's file
-  broke it. Same change on `/documents`.
-*/
-function uploadRejectionDescription(reason: "type" | "size"): string {
-  if (reason === "size") {
-    return `That file is too large. Backwork accepts files up to ${MAX_BACKWORK_UPLOAD_LABEL}.`;
-  }
-  return "That file type is not allowed. Backwork accepts PDF, Office, text/CSV, and common images (no SVG).";
+ * Columns at md and up. Below md a row stacks: title and course, then one
+ * wrapping line of tag, professor, term, copy and date, with the actions on
+ * the right. The meta wrapper is `md:contents`, so at md its children become
+ * grid cells and `md:order-*` puts the type tag in the first column.
+ */
+const ROW_GRID =
+  "md:grid-cols-[112px_minmax(0,1fr)_140px_104px_128px_64px_76px]";
+
+function FilterChip({
+  label,
+  anyLabel,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  anyLabel: string;
+  options: FilterOption[];
+  value: string | null;
+  onChange: (value: string | null) => void;
+}) {
+  const selected = options.find((option) => option.value === value);
+  const active = value !== null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant={active ? "tinted" : "secondary"}
+          size="toolbar"
+          className="gap-1 rounded-full font-semibold"
+          aria-label={active ? `${label}: ${selected?.label ?? value}` : label}
+          disabled={options.length === 0 && !active}
+        >
+          <span className="max-w-[160px] truncate">
+            {active ? (selected?.label.split(" · ")[0] ?? value) : label}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="max-h-80 min-w-[200px]">
+        <DropdownMenuItem onSelect={() => onChange(null)}>
+          <Check
+            className={cn("h-4 w-4", active && "invisible")}
+            aria-hidden="true"
+          />
+          {anyLabel}
+        </DropdownMenuItem>
+        {options.map((option) => (
+          <DropdownMenuItem
+            key={option.value}
+            onSelect={() => onChange(option.value)}
+          >
+            <Check
+              className={cn("h-4 w-4", option.value !== value && "invisible")}
+              aria-hidden="true"
+            />
+            {option.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
-// Sentinel used by Radix Select, which rejects empty-string values. Maps to
-// "no filter" / "no selection" in local state before we hit the API.
-const ANY = "__any__";
-
-/** The API's `@Min` on a Backwork resource's `year` (`backwork.dto.ts`). */
-const BACKWORK_YEAR_MIN = 1900;
-
-/** SHA-256 hex digest for the browser — matches the server's file_hash format. */
-async function sha256Hex(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest("SHA-256", buffer);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+/**
+ * A search for the joined course form ("cogs2120") hits that one word, which
+ * the course column spells as two; light both up.
+ */
+function courseHits(row: LibraryRow, hits: readonly string[]): readonly string[] {
+  const code = row.department?.code.toLowerCase();
+  const number = row.resource.course_number?.toLowerCase();
+  if (!code || !number || !hits.includes(`${code}${number}`)) return hits;
+  return [...hits, code, number];
 }
 
-function InlineDownloadCell({ id }: { id: string }) {
+export function BackworkPage() {
   const { toast } = useToast();
-  const query = useBackworkResource(id);
-  const [isFetching, setIsFetching] = useState(false);
+  // `POST /v1/backwork/upload-url` and `POST /v1/backwork` carry no `@FreeTier`,
+  // so the upload flow is paid-ops and its trigger has to mirror the
+  // subscription gate (#841). Browsing, searching, and the signed download
+  // link are reads — `enforceSubscription` returns early for GET, so they
+  // stay live.
+  const gate = useSubscriptionGate();
+  // Read after an await (the delete confirm), when the render's `gate` may be
+  // stale: the chapter can lapse while the dialog is open.
+  const gateRef = useRef(gate);
+  useEffect(() => {
+    gateRef.current = gate;
+  });
+  const { isOffline } = useNetwork();
+  const activeChapterId = useChapterStore((s) => s.activeChapterId);
 
-  async function handle() {
-    setIsFetching(true);
+  const [query, setQuery] = useState("");
+  // Typing stays responsive on a big library: the ranking re-runs at a lower
+  // priority than the keystroke that asked for it.
+  const deferredQuery = useDeferredValue(query);
+  const [filters, setFilters] = useState<LibraryFilters>(NO_FILTERS);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  // A set, not one slot: two downloads in flight must not clear each other's
+  // spinner.
+  const [downloading, setDownloading] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+
+  // Unfiltered on purpose: the library comes back in one unpaginated response
+  // and every filter and search below runs on it in memory. Past
+  // `BACKWORK_LIST_CAP` rows the response is truncated, which the page says
+  // (#3525).
+  const resourcesQuery = useBackworkResources();
+  const departmentsQuery = useDepartments();
+  const professorsQuery = useProfessors();
+  const fetchResource = useFetchBackworkResource();
+  const deleteResource = useDeleteBackworkResource();
+  const { data: permissionsPayload } = useMyPermissions();
+  const isAdmin = can("backwork:admin", permissionsPayload?.permissions);
+  const taxonomy = useBackworkTaxonomyActions(gate);
+  const { confirm, confirmDialog } = useConfirmDialog();
+
+  const rows = useMemo(
+    () =>
+      toLibraryRows(
+        asArray<BackworkResource>(resourcesQuery.data),
+        asArray<BackworkDepartment>(departmentsQuery.data),
+        asArray<BackworkProfessor>(professorsQuery.data),
+      ),
+    [resourcesQuery.data, departmentsQuery.data, professorsQuery.data],
+  );
+  const options = useMemo(() => filterOptions(rows), [rows]);
+  // A filter whose value no row has any more (a merge from a row menu deleted
+  // the professor it named) drops out instead of emptying the list.
+  const applied = useMemo(
+    () => liveFilters(filters, options),
+    [filters, options],
+  );
+  const results = useMemo(
+    () => queryLibrary(rows, deferredQuery, applied),
+    [rows, deferredQuery, applied],
+  );
+  // Write the pruned value back, so the dropped filter stays dropped instead
+  // of returning on its own when a file with that value comes back later.
+  // Set during render (React's "adjusting state when a prop changes"), so the
+  // stale value never paints.
+  if (applied !== filters && rows.length > 0) setFilters(applied);
+  const narrowed = deferredQuery.trim() !== "" || hasActiveFilters(applied);
+  const truncated = rows.length >= BACKWORK_LIST_CAP;
+
+  function setFilter(key: ChipKey, value: string | null) {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function clearAll() {
+    setFilters(NO_FILTERS);
+    setQuery("");
+  }
+
+  async function download(row: LibraryRow) {
+    const id = row.resource.id;
+    setDownloading((prev) => new Set(prev).add(id));
     try {
-      const fresh = await query.refetch();
-      const url = selectDownloadUrl(fresh.data);
+      const url = selectDownloadUrl(await fetchResource(row.resource.id));
       if (!url) throw new Error("No download URL returned.");
       window.open(url, "_blank", "noopener");
     } catch (error) {
@@ -143,265 +293,165 @@ function InlineDownloadCell({ id }: { id: string }) {
         variant: "destructive",
       });
     } finally {
-      setIsFetching(false);
+      setDownloading((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   }
 
-  /*
-    A trailing text action rather than the filled Secondary it was, matching
-    `/documents`: the board puts a 13px/600 text action at a row's trailing
-    edge, and a 44px Secondary set the height of every row in a list this lane
-    pulled down to 40. `pointer-coarse` restores the 44px target on touch.
-  */
-  return (
-    <Button
-      variant="ghost"
-      onClick={handle}
-      disabled={isFetching}
-      className="h-8 gap-1.5 px-2 text-caption font-semibold pointer-coarse:h-11"
-    >
-      {isFetching ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <Download className="h-4 w-4" />
-      )}
-      Download
-    </Button>
-  );
-}
-
-export function BackworkPage() {
-  const { toast } = useToast();
-  // `POST /v1/backwork/upload-url` and `POST /v1/backwork` carry no `@FreeTier`,
-  // so the upload flow is paid-ops and its trigger has to mirror the
-  // subscription gate (#841). Browsing, filtering, and the signed download link
-  // are reads — `enforceSubscription` returns early for GET, so they stay live.
-  const gate = useSubscriptionGate();
-  const { isOffline } = useNetwork();
-  const [filters, setFilters] = useState<{
-    search: string;
-    department_id: string;
-    professor_id: string;
-    semester: string;
-    assignment_type: string;
-    document_variant: string;
-  }>({
-    search: "",
-    department_id: "",
-    professor_id: "",
-    semester: "",
-    assignment_type: "",
-    document_variant: "",
-  });
-  const [appliedFilters, setAppliedFilters] = useState(filters);
-  const uploadDialog = useGatedDialog(gate);
-  const [uploadDraft, setUploadDraft] = useState<{
-    title: string;
-    department_code: string;
-    course_number: string;
-    professor_name: string;
-    year: string;
-    semester: string;
-    assignment_type: string;
-    assignment_number: string;
-    document_variant: string;
-    tags: string;
-    file: File | null;
-  }>({
-    title: "",
-    department_code: "",
-    course_number: "",
-    professor_name: "",
-    year: "",
-    semester: "",
-    assignment_type: "",
-    assignment_number: "",
-    document_variant: "",
-    tags: "",
-    file: null,
-  });
-  const [uploading, setUploading] = useState(false);
-  /*
-    The upload sheet's one inline error. Held here rather than inside
-    `UploadFileField` because `handleUpload` is what discovers it: the file is
-    inspected on submit against `@repo/validation`'s shared allowlist, and the
-    field cannot know the verdict before then.
-  */
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const activeChapterId = useChapterStore((s) => s.activeChapterId);
-
-  const resourcesQuery = useBackworkResources({
-    search: appliedFilters.search || undefined,
-    department_id: appliedFilters.department_id || undefined,
-    professor_id: appliedFilters.professor_id || undefined,
-    semester: appliedFilters.semester || undefined,
-    assignment_type: appliedFilters.assignment_type || undefined,
-    document_variant: appliedFilters.document_variant || undefined,
-  });
-  const departmentsQuery = useDepartments();
-  const professorsQuery = useProfessors();
-  const requestUpload = useRequestBackworkUploadUrl();
-  const confirmUpload = useConfirmBackworkUpload();
-
-  const resources = useMemo(
-    () => asArray<Resource>(resourcesQuery.data),
-    [resourcesQuery.data],
-  );
-  const departments = useMemo(
-    () => asArray<Department>(departmentsQuery.data),
-    [departmentsQuery.data],
-  );
-  const professors = useMemo(
-    () => asArray<Professor>(professorsQuery.data),
-    [professorsQuery.data],
-  );
-  const departmentById = useMemo(() => {
-    const map = new Map<string, Department>();
-    for (const d of departments) map.set(d.id, d);
-    return map;
-  }, [departments]);
-  const professorById = useMemo(() => {
-    const map = new Map<string, Professor>();
-    for (const p of professors) map.set(p.id, p);
-    return map;
-  }, [professors]);
-
-  function applyFilters(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setAppliedFilters({ ...filters });
-  }
-
-  function clearFilters() {
-    const empty = {
-      search: "",
-      department_id: "",
-      professor_id: "",
-      semester: "",
-      assignment_type: "",
-      document_variant: "",
-    };
-    setFilters(empty);
-    setAppliedFilters(empty);
-  }
-
-  async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    /*
-      Inline on the field, not a toast (board `1j`: "errors inline on touched
-      fields"). A toast is right for something that happened elsewhere — the
-      network, the storage bucket, which is what the failures further down are —
-      and wrong for "this control's value is wrong", which the member has to
-      read and then act on inside a form the toast is timing out on top of.
-    */
-    const file = uploadDraft.file;
-    if (!file) {
-      setUploadError("Choose a file to upload.");
-      return;
-    }
-    const inspected = inspectUploadFile(
-      "document",
-      file,
-      MAX_BACKWORK_UPLOAD_BYTES,
-    );
-    if (!inspected.ok) {
-      setUploadError(uploadRejectionDescription(inspected.reason));
-      return;
-    }
-    setUploadError(null);
-    const contentType = inspected.contentType;
-    // The floors the API checks on confirm, checked here before the file
-    // reaches storage, so a refusal can't leave an orphaned object. This is a
-    // toast, not the inline error the comment above prescribes, because a
-    // browser never gets here: the inputs' own min stops its submit first,
-    // and the metadata fields carry no error slot (`UploadField`). It covers
-    // a programmatic submit.
-    const year = parseGuardedInt(uploadDraft.year, BACKWORK_YEAR_MIN);
-    const assignmentNumber = parseGuardedInt(uploadDraft.assignment_number, 1);
-    if (
-      (uploadDraft.year !== "" && year === undefined) ||
-      (uploadDraft.assignment_number !== "" && assignmentNumber === undefined)
-    ) {
+  async function removeFile(row: LibraryRow) {
+    const ok = await confirm({
+      title: `Delete "${row.title}"?`,
+      description:
+        "The file is removed from the library for everyone in the chapter. This cannot be undone.",
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    if (!gateRef.current.allowed) {
       toast({
-        title: "Check the year and assignment number",
-        description: `The year starts at ${BACKWORK_YEAR_MIN}, and assignment numbers start at 1.`,
+        title: "Couldn't delete the file",
+        description: gateRef.current.isOffline
+          ? "You're offline. Reconnect, then try again."
+          : "This chapter can't make changes right now. The notice above says why.",
         variant: "destructive",
       });
       return;
     }
-
-    setUploading(true);
     try {
-      const hash = await sha256Hex(file);
-      const signed = await requestUpload.mutateAsync({
-        filename: file.name,
-        content_type: contentType,
-      });
-      const { signedUrl, storagePath } = readSignedUpload(signed);
-
-      await putSignedUpload({
-        signedUrl,
-        body: file,
-        contentType,
-        upsert: true,
-        describeRejection: (status) => `Storage rejected upload (${status}).`,
-      });
-
-      await confirmUpload.mutateAsync({
-        storage_path: storagePath,
-        file_hash: hash,
-        title: uploadDraft.title.trim() || file.name,
-        department_code: uploadDraft.department_code.trim() || undefined,
-        course_number: uploadDraft.course_number.trim() || undefined,
-        professor_name: uploadDraft.professor_name.trim() || undefined,
-        year,
-        semester: uploadDraft.semester
-          ? (uploadDraft.semester as (typeof SEMESTERS)[number])
-          : undefined,
-        assignment_type: uploadDraft.assignment_type
-          ? (uploadDraft.assignment_type as (typeof ASSIGNMENT_TYPES)[number])
-          : undefined,
-        assignment_number: assignmentNumber,
-        document_variant: uploadDraft.document_variant
-          ? (uploadDraft.document_variant as (typeof DOCUMENT_VARIANTS)[number])
-          : undefined,
-        tags: uploadDraft.tags
-          ? uploadDraft.tags
-              .split(",")
-              .map((t) => t.trim())
-              .filter(Boolean)
-          : undefined,
-        is_redacted: false,
-      });
-      toast({
-        title: "Upload complete",
-        description: `${file.name} is now in the backwork library.`,
-      });
-      uploadDialog.setOpen(false);
-      setUploadDraft({
-        title: "",
-        department_code: "",
-        course_number: "",
-        professor_name: "",
-        year: "",
-        semester: "",
-        assignment_type: "",
-        assignment_number: "",
-        document_variant: "",
-        tags: "",
-        file: null,
-      });
+      await deleteResource.mutateAsync(row.resource.id);
+      toast({ title: `Deleted "${row.title}"` });
     } catch (error) {
       toast({
-        title: "Couldn't upload backwork",
-        description: getErrorMessage(
-          error,
-          "Retry the upload. Duplicate files are rejected server-side.",
-        ),
+        title: "Couldn't delete the file",
+        description: getErrorMessage(error, "Retry in a moment."),
         variant: "destructive",
       });
-    } finally {
-      setUploading(false);
     }
+  }
+
+  function rowEntries(row: LibraryRow): RowMenuEntry[] {
+    const { course, professor, department } = row;
+    // Rename, merge and delete are paid-ops writes like upload, so they go
+    // dark with it on a lapsed chapter; the notice under the toolbar says why.
+    const writeBlocked = !gate.allowed;
+    const describedBy = gate.controlProps()["aria-describedby"];
+    const entries: RowMenuEntry[] = [
+      {
+        type: "item",
+        key: "download",
+        label: "Download",
+        icon: Download,
+        disabled: downloading.has(row.resource.id),
+        onSelect: () => void download(row),
+      },
+    ];
+    if (course) {
+      entries.push({
+        type: "item",
+        key: "only-course",
+        label: `Show only ${course}`,
+        icon: Filter,
+        onSelect: () => setFilter("course", course),
+      });
+    }
+    if (professor) {
+      entries.push({
+        type: "item",
+        key: "only-professor",
+        label: `Show only ${professor.name}`,
+        icon: Filter,
+        onSelect: () => setFilter("professorId", professor.id),
+      });
+    }
+    if (!isAdmin) return entries;
+
+    const officer: RowMenuEntry[] = [];
+    if (professor) {
+      officer.push(
+        {
+          type: "item",
+          key: "rename-professor",
+          disabled: writeBlocked,
+          describedBy,
+          label: `Rename ${professor.name}…`,
+          icon: Pencil,
+          onSelect: () =>
+            taxonomy.requestRename({
+              entity: "professor",
+              id: professor.id,
+              label: professor.name,
+              current: professor.name,
+            }),
+        },
+        {
+          type: "item",
+          key: "merge-professor",
+          disabled: writeBlocked,
+          describedBy,
+          label: `Merge ${professor.name} into…`,
+          icon: Merge,
+          onSelect: () =>
+            taxonomy.requestMerge({
+              entity: "professor",
+              id: professor.id,
+              label: professor.name,
+            }),
+        },
+      );
+    }
+    if (department) {
+      officer.push(
+        {
+          type: "item",
+          key: "rename-department",
+          disabled: writeBlocked,
+          describedBy,
+          label: `Name the ${department.code} department…`,
+          icon: Pencil,
+          onSelect: () =>
+            taxonomy.requestRename({
+              entity: "department",
+              id: department.id,
+              label: department.code,
+              current: department.name ?? "",
+            }),
+        },
+        {
+          type: "item",
+          key: "merge-department",
+          disabled: writeBlocked,
+          describedBy,
+          label: `Merge ${department.code} into…`,
+          icon: Merge,
+          onSelect: () =>
+            taxonomy.requestMerge({
+              entity: "department",
+              id: department.id,
+              label: department.code,
+            }),
+        },
+      );
+    }
+    if (officer.length) {
+      entries.push({ type: "separator", key: "officer-sep" }, ...officer);
+    }
+    entries.push(
+      { type: "separator", key: "delete-sep" },
+      {
+        type: "item",
+        key: "delete",
+        label: "Delete file…",
+        icon: Trash2,
+        destructive: true,
+        disabled: writeBlocked,
+        describedBy,
+        onSelect: () => void removeFile(row),
+      },
+    );
+    return entries;
   }
 
   // `useBackworkResources` is `enabled: !!chapterId`, and a disabled TanStack
@@ -420,650 +470,344 @@ export function BackworkPage() {
     );
   }
 
+  const count = results.length;
+  // No count before the read answers: "0 files" over the loading rows is a
+  // claim about the archive.
+  const countLabel =
+    resourcesQuery.data === undefined
+      ? null
+      : narrowed
+        ? `${count} of ${rows.length} file${rows.length === 1 ? "" : "s"}`
+        : `${count} file${count === 1 ? "" : "s"}`;
+
   return (
-    <div className="space-y-6">
-      <PageActions>
-        <Can permission="backwork:admin">
-          <BackworkTaxonomyDrawer />
-        </Can>
-        <Can permission="backwork:upload">
-          <Button asChild size="toolbar" variant="secondary" className="gap-2">
-            <Link href="/backwork/upload">
-              <FolderUp className="h-4 w-4" /> Bulk upload
-            </Link>
-          </Button>
-        </Can>
-        <Can permission="backwork:upload">
-          {/*
-              Cleared on OPEN, not on close. Cancel calls
-              `uploadDialog.setOpen(false)` and `useGatedDialog`'s revoke
-              effect calls its own `setOpenState(false)`; both only change the
-              controlled prop, and Radix's `useControllableState` fires
-              `onOpenChange` for its own setter alone — so clearing on close
-              missed two of the three ways this sheet shuts, and a spent
-              rejection survived a Cancel into the next open. Every open is a
-              `DialogTrigger` press (nothing calls `setOpen(true)`), which
-              does reach the handler. Same reasoning as `/documents`, written
-              out there.
-
-              The draft survives on purpose: a half-typed course number is
-              worth keeping, a spent error is not.
-            */}
-          <Dialog
-            {...uploadDialog.dialogProps}
-            onOpenChange={(next) => {
-              if (next) setUploadError(null);
-              uploadDialog.dialogProps.onOpenChange(next);
+    <div className="space-y-3">
+      <section
+        aria-label="Search and filter backwork"
+        className="flex flex-wrap items-center gap-2"
+      >
+        {/* The shared toolbar search recipe, as on `/documents`. */}
+        <div className="relative min-w-[220px] flex-[1_1_280px]">
+          <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
+          <Input
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && query) {
+                event.preventDefault();
+                setQuery("");
+              }
             }}
-          >
-            <DialogTrigger asChild>
-              <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
-                <Upload className="h-4 w-4" /> Upload
-              </Button>
-            </DialogTrigger>
-            <UploadSheetContent {...uploadDialog.contentProps}>
-              <UploadSheetTitle>Upload backwork</UploadSheetTitle>
-              <UploadSheetBody
-                id="backwork-upload-form"
-                onSubmit={handleUpload}
-              >
-                <UploadFileField
-                  id="bw-file"
-                  label="File"
-                  hint={`Up to ${MAX_BACKWORK_UPLOAD_LABEL}. PDFs, Office files, text, CSV, and common images. No SVGs or executables.`}
-                  accept={acceptAttribute("document")}
-                  file={uploadDraft.file}
-                  error={uploadError}
-                  disabled={uploading}
-                  onSelect={(file) => {
-                    setUploadError(null);
-                    setUploadDraft((prev) => ({ ...prev, file }));
-                  }}
-                />
-                {/*
-                    The dialog's instructional paragraph is deleted with the
-                    rest of the page's narration, and the one fact in it that
-                    a member could act on is now field help where it applies:
-                    "unknown departments or professors are auto-created" sits
-                    under those two fields, not over the whole form. "Every
-                    metadata field except the file itself is optional" is what
-                    the field labels already say by not being marked required.
-                  */}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <UploadField id="bw-title" label="Title">
-                    <Input
-                      id="bw-title"
-                      className={UPLOAD_FIELD_CLASS}
-                      value={uploadDraft.title}
-                      onChange={(event) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          title: event.target.value,
-                        }))
-                      }
-                      placeholder="CS 3320 Midterm"
-                    />
-                  </UploadField>
-                  <UploadField id="bw-department" label="Department code">
-                    <Input
-                      id="bw-department"
-                      aria-describedby="bw-taxonomy-note"
-                      className={UPLOAD_FIELD_CLASS}
-                      value={uploadDraft.department_code}
-                      onChange={(event) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          department_code: event.target.value,
-                        }))
-                      }
-                      placeholder="CS, MATH, ECON"
-                    />
-                  </UploadField>
-                  <UploadField id="bw-course" label="Course number">
-                    <Input
-                      id="bw-course"
-                      className={UPLOAD_FIELD_CLASS}
-                      value={uploadDraft.course_number}
-                      onChange={(event) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          course_number: event.target.value,
-                        }))
-                      }
-                      placeholder="3320"
-                    />
-                  </UploadField>
-                  <UploadField id="bw-professor" label="Professor">
-                    <Input
-                      id="bw-professor"
-                      aria-describedby="bw-taxonomy-note"
-                      className={UPLOAD_FIELD_CLASS}
-                      value={uploadDraft.professor_name}
-                      onChange={(event) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          professor_name: event.target.value,
-                        }))
-                      }
-                      placeholder="Dr. Lastname"
-                    />
-                  </UploadField>
-                  <UploadField id="bw-year" label="Year">
-                    <Input
-                      id="bw-year"
-                      type="number"
-                      min={2000}
-                      max={2100}
-                      className={UPLOAD_FIELD_CLASS}
-                      value={uploadDraft.year}
-                      onChange={(event) => {
-                        // Its floor waits for submit: a guard at 1900
-                        // would refuse the "2" of "2026".
-                        const next = guardIntDraft(event.target.value);
-                        if (next === undefined) return;
-                        setUploadDraft((prev) => ({ ...prev, year: next }));
-                      }}
-                    />
-                  </UploadField>
-                  <UploadField id="bw-semester" label="Semester">
-                    <Select
-                      value={uploadDraft.semester}
-                      onValueChange={(value) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          semester: value,
-                        }))
-                      }
-                    >
-                      {/*
-                          "Pick one" is the board's own unset-value copy
-                          (`1j`). It replaces a bare em dash, which the
-                          greenfield brand lock bans in product copy and which
-                          a screen reader announced as nothing at all.
-                        */}
-                      <SelectTrigger
-                        id="bw-semester"
-                        className={UPLOAD_FIELD_CLASS}
-                      >
-                        <SelectValue placeholder="Pick one" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {SEMESTERS.map((s) => (
-                          <SelectItem key={s} value={s}>
-                            {s}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </UploadField>
-                  <UploadField id="bw-assignment-type" label="Assignment type">
-                    <Select
-                      value={uploadDraft.assignment_type}
-                      onValueChange={(value) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          assignment_type: value,
-                        }))
-                      }
-                    >
-                      <SelectTrigger
-                        id="bw-assignment-type"
-                        className={UPLOAD_FIELD_CLASS}
-                      >
-                        <SelectValue placeholder="Pick one" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ASSIGNMENT_TYPES.map((t) => (
-                          <SelectItem key={t} value={t}>
-                            {t}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </UploadField>
-                  <UploadField
-                    id="bw-assignment-number"
-                    label="Assignment number"
-                  >
-                    <Input
-                      id="bw-assignment-number"
-                      type="number"
-                      min={1}
-                      className={UPLOAD_FIELD_CLASS}
-                      value={uploadDraft.assignment_number}
-                      onChange={(event) => {
-                        // Its floor of 1 waits for submit, so deleting
-                        // the 1 of "10" isn't refused mid-edit.
-                        const next = guardIntDraft(event.target.value);
-                        if (next === undefined) return;
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          assignment_number: next,
-                        }));
-                      }}
-                    />
-                  </UploadField>
-                  <UploadField id="bw-variant" label="Document variant">
-                    <Select
-                      value={uploadDraft.document_variant}
-                      onValueChange={(value) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          document_variant: value,
-                        }))
-                      }
-                    >
-                      <SelectTrigger
-                        id="bw-variant"
-                        className={UPLOAD_FIELD_CLASS}
-                      >
-                        <SelectValue placeholder="Pick one" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {DOCUMENT_VARIANTS.map((v) => (
-                          <SelectItem key={v} value={v}>
-                            {v}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </UploadField>
-                </div>
-                {/*
-                    Carries an id and is referenced by the two fields it is
-                    about. Field help that is only positioned near a control
-                    reaches sighted users and nobody else — and this sentence
-                    is the one fact rescued from the deleted dialog
-                    description, where Radix had wired it to the dialog for
-                    free.
-                  */}
-                <p id="bw-taxonomy-note" className="text-caption text-muted">
-                  A department code or professor the chapter has not used before
-                  is created for this chapter on upload.
-                </p>
-                <UploadField id="bw-tags" label="Tags (comma-separated)">
-                  <Input
-                    id="bw-tags"
-                    className={UPLOAD_FIELD_CLASS}
-                    value={uploadDraft.tags}
-                    onChange={(event) =>
-                      setUploadDraft((prev) => ({
-                        ...prev,
-                        tags: event.target.value,
-                      }))
-                    }
-                    placeholder="curved, rubric-provided"
-                  />
-                </UploadField>
-              </UploadSheetBody>
-              <UploadSheetFooter>
-                {/*
-                  Cancel is not gated: it closes the dialog rather than writing,
-                  and a revoked subscription must still leave a way out.
-                */}
-                <Button
-                  variant="secondary"
-                  className={UPLOAD_SHEET_BUTTON_CLASS}
-                  onClick={() => uploadDialog.setOpen(false)}
-                  disabled={uploading}
-                >
-                  Cancel
-                </Button>
-                {/*
-                    Enabled with no file chosen, per the board. The gate still
-                    disables it — that is a verdict about the chapter, not
-                    about this form.
-                  */}
-                <Button
-                  form="backwork-upload-form"
-                  type="submit"
-                  className={UPLOAD_SHEET_BUTTON_CLASS}
-                  {...gate.controlProps(uploading)}
-                >
-                  {uploading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  Upload
-                </Button>
-              </UploadSheetFooter>
-            </UploadSheetContent>
-          </Dialog>
-        </Can>
-      </PageActions>
-      {/*
-        The page-narration paragraph that sat here is deleted, not restyled.
-        The framework board lists "page-narration paragraphs" under Removed
-        outright, and `1f` pin 2 gives a route's main pane one toolbar row with
-        "no wrapper card, no description paragraph". The same paragraph on the
-        no-chapter path above went with it.
+            aria-label="Search backwork"
+            placeholder="Search titles, courses, professors, tags"
+            autoComplete="off"
+            spellCheck={false}
+            className={cn(dashboardToolbarSearchClassName, query && "pr-10")}
+          />
+          {query ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
+              aria-label="Clear search"
+              title="Clear search"
+              onClick={() => setQuery("")}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          ) : null}
+        </div>
 
-        Nothing in it was load-bearing. "Academic library for the chapter"
-        described a library the member is looking at, "browse and download with
-        a signed URL" narrated the implementation of a Download button, and the
-        SHA-256 duplicate rule is a server behaviour a member meets as a clear
-        rejection when it fires — which is where it belongs, rather than as a
-        standing warning to everyone who never uploads a duplicate.
-      */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {CHIPS.map((chip) => (
+            <FilterChip
+              key={chip.key}
+              label={chip.label}
+              anyLabel={chip.anyLabel}
+              options={options[OPTION_FOR[chip.key]]}
+              value={applied[chip.key]}
+              onChange={(value) => setFilter(chip.key, value)}
+            />
+          ))}
+          {narrowed ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="toolbar"
+              onClick={clearAll}
+            >
+              Clear
+            </Button>
+          ) : null}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <span
+            className="whitespace-nowrap text-caption tabular-nums text-muted-foreground"
+            aria-live="polite"
+          >
+            {countLabel}
+          </span>
+          <Can permission="backwork:admin">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="toolbar"
+                  className="w-9 px-0 pointer-coarse:w-11"
+                  aria-label="More backwork options"
+                  title="More"
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[260px]">
+                <DropdownMenuItem
+                  disabled={!gate.allowed}
+                  aria-describedby={gate.controlProps()["aria-describedby"]}
+                  onSelect={() => setCleanupOpen(true)}
+                >
+                  <Pencil aria-hidden="true" />
+                  Clean up professors and departments
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {/* Portaled, so it can live beside the menu that opens it. */}
+            <BackworkTaxonomyDrawer
+              open={cleanupOpen}
+              onOpenChange={setCleanupOpen}
+              gate={gate}
+            />
+          </Can>
+          <Can permission="backwork:upload">
+            <Button asChild size="toolbar" variant="secondary" className="gap-2">
+              <Link href="/backwork/upload">
+                <FolderUp className="h-4 w-4" aria-hidden="true" /> Bulk upload
+              </Link>
+            </Button>
+          </Can>
+          <Can permission="backwork:upload">
+            <BackworkUploadSheet gate={gate}>
+              <Button
+                type="button"
+                size="toolbar"
+                className="gap-2"
+                {...gate.controlProps()}
+              >
+                Upload
+              </Button>
+            </BackworkUploadSheet>
+          </Can>
+        </div>
+      </section>
 
       {/*
         Disable, don't hide (§5 rule 4): the library stays browsable and
-        downloadable on a lapsed chapter, so only the upload flow goes dark and
-        it explains itself here. Scoped to the same permission as the controls
-        it describes — a member who never sees an Upload button has nothing to
-        restore, and the sentence would just be noise on their screen.
+        downloadable on a lapsed chapter, so only its writes go dark, and they
+        explain themselves here. Silent offline on purpose: this explains a
+        disabled control and has nothing of its own to retry
+        (`can-fallback.spec.tsx`). Officers see it too: their row-menu rename,
+        merge and delete are paid-ops writes that go dark with upload.
       */}
-      {/*
-        Silent on purpose, and the only three gates that are. This wraps a
-        `SubscriptionNotice` — an explanation of why *another* control is
-        disabled — not an affordance. There is nothing here for a member to act
-        on, so a second notice saying we cannot check their access states a
-        problem about a sentence rather than about anything they can do, and
-        stacks a duplicate of the chip the gated control already shows. §5 rule
-        4's "disable, don't hide" is about controls; supplementary copy has
-        nothing to disable. `can-fallback.spec.tsx` derives this rather than
-        listing it: a lone `SubscriptionNotice` child both may and must be
-        `null` here.
-      */}
-      <Can permission="backwork:upload" offlineFallback={null}>
-        <SubscriptionNotice gate={gate} feature="uploading backwork" />
+      <Can
+        anyOf={["backwork:upload", "backwork:admin"]}
+        offlineFallback={null}
+      >
+        <SubscriptionNotice gate={gate} feature="uploading or changing backwork" />
       </Can>
 
-      {/*
-        A filter row, not a filter card. The board draws one toolbar row under
-        the title with no wrapper (`1f` pin 2), and the deletion list `1t` names
-        the Events "filter card" specifically as gone — this is the same card on
-        the next route over. Its title said "Filters" above a row of controls
-        labelled Search, Department and Professor, and its description said the
-        fields were optional, which none of them are marked as requiring.
+      {truncated ? (
+        <p className="text-caption text-muted-foreground" role="status">
+          Showing the newest {BACKWORK_LIST_CAP.toLocaleString("en-US")} files.
+          Search and filters look only at these for now.
+        </p>
+      ) : null}
 
-        The `<h2>` survives the card as the section label §2 draws above a
-        group, `sr-only` because the controls below are individually labelled
-        and a visible "FILTERS" eyebrow over a row of obvious filters is the
-        narration this lane is removing. It stays in the accessibility tree so
-        the region is still named for anyone navigating by landmark.
-      */}
-      <section aria-labelledby="bw-filters-label">
-        <h2 id="bw-filters-label" className="sr-only">
-          Filters
-        </h2>
-        <form onSubmit={applyFilters} className="grid gap-3 md:grid-cols-3">
-          <div className="grid gap-1 md:col-span-2">
-            <Label htmlFor="bw-search">Search</Label>
-            <Input
-              id="bw-search"
-              value={filters.search}
-              onChange={(event) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  search: event.target.value,
-                }))
-              }
-              placeholder="Title, tag, or course text"
-            />
-          </div>
-          <div className="grid gap-1">
-            <Label htmlFor="filter-department">Department</Label>
-            <Select
-              value={filters.department_id || ANY}
-              onValueChange={(value) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  department_id: value === ANY ? "" : value,
-                }))
-              }
-            >
-              <SelectTrigger id="filter-department">
-                <SelectValue placeholder="All departments" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ANY}>All departments</SelectItem>
-                {departments.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.code}
-                    {d.name ? ` · ${d.name}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-1">
-            <Label htmlFor="filter-professor">Professor</Label>
-            <Select
-              value={filters.professor_id || ANY}
-              onValueChange={(value) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  professor_id: value === ANY ? "" : value,
-                }))
-              }
-            >
-              <SelectTrigger id="filter-professor">
-                <SelectValue placeholder="All professors" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ANY}>All professors</SelectItem>
-                {professors.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-1">
-            <Label htmlFor="filter-semester">Semester</Label>
-            <Select
-              value={filters.semester || ANY}
-              onValueChange={(value) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  semester: value === ANY ? "" : value,
-                }))
-              }
-            >
-              <SelectTrigger id="filter-semester">
-                <SelectValue placeholder="Any" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ANY}>Any semester</SelectItem>
-                {SEMESTERS.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-1">
-            <Label htmlFor="filter-type">Assignment type</Label>
-            <Select
-              value={filters.assignment_type || ANY}
-              onValueChange={(value) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  assignment_type: value === ANY ? "" : value,
-                }))
-              }
-            >
-              <SelectTrigger id="filter-type">
-                <SelectValue placeholder="Any type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ANY}>Any type</SelectItem>
-                {ASSIGNMENT_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-1">
-            <Label htmlFor="filter-variant">Variant</Label>
-            <Select
-              value={filters.document_variant || ANY}
-              onValueChange={(value) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  document_variant: value === ANY ? "" : value,
-                }))
-              }
-            >
-              <SelectTrigger id="filter-variant">
-                <SelectValue placeholder="Any variant" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ANY}>Any variant</SelectItem>
-                {DOCUMENT_VARIANTS.map((v) => (
-                  <SelectItem key={v} value={v}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-wrap items-end gap-2 md:col-span-3">
-            <Button type="submit">Apply filters</Button>
-            <Button type="button" variant="secondary" onClick={clearFilters}>
-              Clear
-            </Button>
-          </div>
-        </form>
-      </section>
-
-      <section aria-labelledby="bw-list-label">
+      <section aria-label="Backwork files">
         {/*
-          One toolbar row: the list's name and its count, on the page surface.
-          The glyph stays — it is the route's own mark and the only thing on
-          this row that is not a word.
+          The offline branch comes first, because a paused query is
+          `isPending` and would otherwise spin behind an offline member
+          indefinitely (README §4 item 4), but only when there is nothing
+          loaded: §10 keeps stale content in place on a refetch. `isPending &&
+          paused` is README §4's "offline, no cached data"; a paused
+          background refetch keeps its rows (#872 / #873).
         */}
-        <div className="flex items-center gap-2">
-          <BackworkGlyph className="h-4 w-4 shrink-0 text-muted" />
-          <SectionLabel
-            id="bw-list-label"
-            count={
-              // No count before the read answers: "0 results" over the
-              // loading rows is a claim about the archive, as `/documents`
-              // already says of its own count.
-              resourcesQuery.data === undefined
-                ? null
-                : `${resources.length} result${resources.length === 1 ? "" : "s"}`
-            }
-          >
-            Resources
-          </SectionLabel>
-        </div>
-        <div className="pt-2">
-          {/*
-            Same trap as `/polls` (#872 / #873): `useBackworkResources` is
-            `enabled: !!chapterId`, and a disabled query stays `isPending`
-            with `fetchStatus: "idle"`. `isLoading` is a fetch in flight;
-            `paused` is offline with no data — not an empty library.
-
-            The nested variants, not the whole-screen ones: these render
-            still right now that the card is gone: they paint no fill of their
-            own, and the page is `--background`, so the whole-screen variants
-            would put a `--card` block where nothing else on the page has one
-            and rebuild the card this lane deleted (§10 is about the 1.00:1
-            composite these were first chosen for). And the
-            offline branch comes first, because a paused query is `isPending`
-            and would otherwise spin behind an offline member indefinitely
-            (README §4 item 4) — but only when there is nothing loaded. README
-            §4 scopes it to "offline, **no cached data**" and §10 keeps stale
-            content in place on a refetch, so an archive already in hand stays
-            readable and the shell's `OfflineBanner` carries the connection
-            state, as it does on every route.
-
-            The `paused` branch needs the same qualifier: `isLoading` implies
-            no data, but `paused` alone does not — TanStack pauses a background
-            refetch while keeping the cached rows, so an unqualified check
-            replaced a readable archive with a spinner on the same blip.
-            `isPending && paused` is README §4's "offline, no cached data".
-          */}
-          {isOffline && resources.length === 0 ? (
-            <NestedOffline
-              sole
-              title="Backwork unavailable offline"
-              description="Reconnect to browse the coursework archive and download a resource."
-              onRetry={() => {
-                void resourcesQuery.refetch();
-              }}
-            />
-          ) : resourcesQuery.isLoading ||
-            (resourcesQuery.isPending &&
-              resourcesQuery.fetchStatus === "paused") ? (
-            <BackworkRowsSkeleton />
-          ) : resourcesQuery.isError ? (
-            <NestedError
-              sole
-              title="Couldn't load backwork"
-              description="Confirm your chapter access and retry."
-              onRetry={() => void resourcesQuery.refetch()}
-            />
-          ) : resources.length === 0 ? (
-            <NestedEmpty
-              sole
-              title="No backwork matches this view"
-              description="Loosen the filters, or upload the first resource to build the library."
-            />
-          ) : (
-            // The board's list grammar (`4d`), now written once in
-            // `table-controls.ts` rather than here and on `/documents`.
+        {isOffline && rows.length === 0 ? (
+          <NestedOffline
+            sole
+            title="Backwork unavailable offline"
+            description="Reconnect to browse the coursework archive and download a resource."
+            onRetry={() => {
+              void resourcesQuery.refetch();
+            }}
+          />
+        ) : resourcesQuery.isLoading ||
+          (resourcesQuery.isPending &&
+            resourcesQuery.fetchStatus === "paused") ||
+          // Rows join departments and professors on the client; without them
+          // a course reads as a bare number and search misses "cogs".
+          (rows.length > 0 && (departmentsQuery.isLoading || professorsQuery.isLoading)) ? (
+          <BackworkRowsSkeleton />
+        ) : resourcesQuery.isError ||
+          departmentsQuery.isError ||
+          professorsQuery.isError ? (
+          <NestedError
+            sole
+            title="Couldn't load backwork"
+            description="Confirm your chapter access and retry."
+            onRetry={() => {
+              void resourcesQuery.refetch();
+              void departmentsQuery.refetch();
+              void professorsQuery.refetch();
+            }}
+          />
+        ) : rows.length === 0 ? (
+          <NestedEmpty
+            sole
+            title="No backwork yet"
+            description="Upload the first exam, homework or study guide to start the library."
+          />
+        ) : count === 0 ? (
+          <NestedEmpty
+            sole
+            title="No files match"
+            description="Try fewer words, or clear a filter."
+            actionLabel="Clear search and filters"
+            onAction={clearAll}
+          />
+        ) : (
+          <>
+            <div
+              aria-hidden="true"
+              className={cn(
+                "hidden gap-3 px-2 pb-1.5 text-caption font-semibold uppercase tracking-[0.06em] text-muted md:grid",
+                ROW_GRID,
+              )}
+            >
+              <span>Type</span>
+              <span>Title and course</span>
+              <span>Professor</span>
+              <span>Term</span>
+              <span>Copy</span>
+              <span>Added</span>
+              <span />
+            </div>
             <ul className={denseListClassName}>
-              {resources.map((row) => {
-                const department = row.department_id
-                  ? departmentById.get(row.department_id)
-                  : null;
-                const professor = row.professor_id
-                  ? professorById.get(row.professor_id)
-                  : null;
-                return (
-                  /*
-                    Two lines and 8px of padding, down from three and 12. The
-                    tags used to take a third line of `Badge`s under the meta;
-                    they now sit inline at the end of the meta line, which is
-                    where a comma-separated list of short strings reads fine and
-                    costs the row ~24px less. `Redacted` stays a `Badge`,
-                    because it is a status rather than a label — §5's Semantic
-                    kind, and the one thing on the row a member must not miss.
-                  */
-                  <li
-                    key={row.id}
-                    className="flex min-h-11 flex-col gap-1 py-2 md:flex-row md:items-center md:gap-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">
-                        {row.title ??
-                          `${row.assignment_type ?? "Resource"} · ${row.course_number ?? ""}`}
-                      </p>
-                      <p className="truncate text-caption text-muted">
-                        {[
-                          department?.code,
-                          row.course_number,
-                          professor?.name,
-                          row.semester,
-                          row.year,
-                          row.assignment_type,
-                          row.document_variant,
-                          ...(row.tags ?? []),
-                        ]
-                          .filter(Boolean)
-                          .join(" · ") || "No metadata"}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2 md:ml-auto">
-                      {row.is_redacted ? (
-                        <Badge variant="outline">Redacted</Badge>
-                      ) : null}
-                      <InlineDownloadCell id={row.id} />
-                    </div>
-                  </li>
-                );
-              })}
+              {/* eslint-disable-next-line react-hooks/refs -- `rowEntries` closes over `removeFile`, which reads `gateRef` after its confirm resolves, not during render */}
+              {results.map(({ item: row, hits }) => (
+                <RowMenu
+                  key={row.resource.id}
+                  entries={rowEntries(row)}
+                  label={`More for ${row.title}`}
+                >
+                  {(menuButton) => (
+                    <li
+                      className={cn(
+                        "group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-2 py-2 hover:bg-card data-[state=open]:bg-card",
+                        "md:min-h-12",
+                        ROW_GRID,
+                      )}
+                    >
+                      <div className="min-w-0 md:order-2">
+                        <p className="truncate text-sm font-semibold">
+                          <Highlighted text={row.title} hits={hits} />
+                        </p>
+                        <p className="truncate text-caption text-muted-foreground">
+                          {row.course ? (
+                            <Highlighted
+                              text={row.course}
+                              hits={courseHits(row, hits)}
+                              className="font-mono text-caption tracking-[0.02em] text-foreground"
+                            />
+                          ) : null}
+                          {row.department?.name ? (
+                            <>
+                              {row.course ? " · " : null}
+                              <Highlighted
+                                text={row.department.name}
+                                hits={hits}
+                              />
+                            </>
+                          ) : null}
+                          {row.resource.tags?.length ? (
+                            <>
+                              {row.course || row.department?.name
+                                ? " · "
+                                : null}
+                              <Highlighted
+                                text={row.resource.tags.join(", ")}
+                                hits={hits}
+                              />
+                            </>
+                          ) : null}
+                        </p>
+                      </div>
+                      <div className="col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted-foreground md:contents">
+                        <span className="md:order-1 md:min-w-0">
+                          <TypeTag type={row.resource.assignment_type} />
+                        </span>
+                        {row.professor ? (
+                          <span className="truncate md:order-3 md:text-sm">
+                            <Highlighted
+                              text={row.professor.name}
+                              hits={hits}
+                            />
+                          </span>
+                        ) : (
+                          <span className="hidden md:order-3 md:block" />
+                        )}
+                        <span className="whitespace-nowrap tabular-nums text-foreground md:order-4 md:text-sm">
+                          {row.term ? (
+                            <Highlighted text={row.term} hits={hits} />
+                          ) : null}
+                        </span>
+                        <span className="md:order-5">
+                          <CopyLabel
+                            variant={row.resource.document_variant}
+                            redacted={row.resource.is_redacted}
+                          />
+                        </span>
+                        <span className="whitespace-nowrap tabular-nums md:order-6">
+                          <span className="md:hidden">Added </span>
+                          {formatDay(row.resource.created_at) ?? ""}
+                        </span>
+                      </div>
+                      <div className="col-start-2 row-span-2 row-start-1 flex items-center justify-end gap-0.5 md:order-7 md:col-start-auto md:row-span-1 md:row-start-auto">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className={compactControlClassName}
+                          aria-label={`Download ${row.title}`}
+                          title="Download"
+                          disabled={downloading.has(row.resource.id)}
+                          onClick={() => void download(row)}
+                        >
+                          {downloading.has(row.resource.id) ? (
+                            <Loader2
+                              className="h-4 w-4 animate-spin"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <Download className="h-4 w-4" aria-hidden="true" />
+                          )}
+                        </Button>
+                        {menuButton}
+                      </div>
+                    </li>
+                  )}
+                </RowMenu>
+              ))}
             </ul>
-          )}
-        </div>
+          </>
+        )}
       </section>
+
+      {taxonomy.dialogs}
+      {confirmDialog}
     </div>
   );
 }

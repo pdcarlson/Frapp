@@ -519,12 +519,13 @@ button, and the PDF a report exports to.
 |---|---|
 | A document row on `/documents`, the "No folder" filter, and the PDF a report exports to | `DocumentsGlyph` (re-export) |
 | A folder, and the folder filter that names one | `FolderGlyph` |
-| A backwork resource, and the archive that holds them | `BackworkGlyph` (re-export) |
 | A poll, and the control that casts a vote on one | `PollsGlyph` (re-export) |
 | A report, and the control that generates one | `ReportsGlyph` (re-export) |
-| Search, in the `/documents` toolbar | `SearchGlyph` (re-export) |
+| Search, in the `/documents` and `/backwork` toolbars | `SearchGlyph` (re-export) |
 
-Five of the six are re-exports from
+**Backwork's copy markers are Lucide, on purpose (2026-11-05).** A backwork row marks which copy a file is with one icon per copy type, from one set and in the row's muted text tone (Paul: "with the copy, keep the icons consistent"): `FileCheck` a student copy, `File` a blank copy, `KeyRound` an answer key, and `Lock` beside any of them for a redacted file (`apps/web/components/backwork/backwork-row-parts.tsx`). They are small inline markers beside a text label, not domain glyphs that stand for a screen, so they stay in the control-furniture set rather than the duotone family; a later pass that draws them in the Signet set changes this paragraph and that file together.
+
+Four of the five are re-exports from
 [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
 which is §1 rule 1's rule and the two preceding families' practice. Only
 `FolderGlyph` is not a re-export, because no nav intent covers a folder (the

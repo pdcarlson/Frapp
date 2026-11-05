@@ -18,7 +18,12 @@ const {
   mockCurrentChapter,
   mockRequestUpload,
   mockConfirmUpload,
-  mockResourceRefetch,
+  mockFetchResource,
+  mockUpdateProfessor,
+  mockMergeDepartments,
+  mockDeleteResource,
+  mockPermissions,
+  taxonomyData,
   mockChapterId,
   mockToast,
   mockOffline,
@@ -29,7 +34,17 @@ const {
   mockConfirmUpload: vi.fn().mockResolvedValue({}),
   mockChapterId: { value: "chap-1" as string | null },
   mockToast: vi.fn(),
-  mockResourceRefetch: vi.fn(),
+  mockFetchResource: vi.fn(),
+  mockUpdateProfessor: vi.fn().mockResolvedValue({}),
+  mockMergeDepartments: vi.fn().mockResolvedValue({ reassigned: 1 }),
+  mockDeleteResource: vi.fn().mockResolvedValue({}),
+  mockPermissions: { value: ["backwork:upload", "backwork:admin"] as string[] },
+  taxonomyData: {
+    departments: [] as unknown[],
+    professors: [] as unknown[],
+    loading: false,
+    failed: false,
+  },
   mockOffline: { value: false },
   resourcesQuery: {
     data: [] as unknown[],
@@ -64,9 +79,23 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
   useBackworkResources: () => resourcesQuery,
-  useBackworkResource: () => ({ refetch: mockResourceRefetch }),
-  useDepartments: () => ({ data: [] }),
-  useProfessors: () => ({ data: [] }),
+  useFetchBackworkResource: () => mockFetchResource,
+  useDeleteBackworkResource: () => ({ mutateAsync: mockDeleteResource }),
+  useMyPermissions: () => ({
+    data: { permissions: mockPermissions.value },
+  }),
+  useDepartments: () => ({
+    data: taxonomyData.departments,
+    isLoading: taxonomyData.loading,
+    isError: taxonomyData.failed,
+    refetch: vi.fn(),
+  }),
+  useProfessors: () => ({
+    data: taxonomyData.professors,
+    isLoading: taxonomyData.loading,
+    isError: false,
+    refetch: vi.fn(),
+  }),
   useRequestBackworkUploadUrl: () => ({
     mutateAsync: mockRequestUpload,
     isPending: false,
@@ -76,13 +105,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
   }),
   // `<Can>` is mocked below to always render its children, so
-  // `BackworkTaxonomyDrawer` (gated on `backwork:admin`) mounts in every test
-  // in this file, not just ones that exercise it — these six need a stub the
-  // same as every other hook this component tree reaches.
+  // `BackworkTaxonomyDrawer` (gated on `backwork:admin`) and the row menus'
+  // rename and merge dialogs mount in every test in this file — these six
+  // need a stub the same as every other hook this component tree reaches.
   useUpdateDepartment: () => ({ mutateAsync: vi.fn() }),
   useDeleteDepartment: () => ({ mutateAsync: vi.fn() }),
-  useMergeDepartments: () => ({ mutateAsync: vi.fn() }),
-  useUpdateProfessor: () => ({ mutateAsync: vi.fn() }),
+  useMergeDepartments: () => ({ mutateAsync: mockMergeDepartments }),
+  useUpdateProfessor: () => ({ mutateAsync: mockUpdateProfessor }),
   useDeleteProfessor: () => ({ mutateAsync: vi.fn() }),
   useMergeProfessors: () => ({ mutateAsync: vi.fn() }),
 }));
@@ -93,8 +122,25 @@ vi.mock("@/lib/stores/chapter-store", () => ({
   ) => selector({ activeChapterId: mockChapterId.value }),
 }));
 
+// Honours backwork `permission` / `anyOf` against `mockPermissions`, with no
+// loading or offline branch: the real gate's states are `can-fallback.spec.tsx`'s
+// job. Any other permission (the notice's `billing:manage` link) passes.
 vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Can: ({
+    children,
+    permission,
+    anyOf,
+  }: {
+    children: React.ReactNode;
+    permission?: string;
+    anyOf?: readonly string[];
+  }) => {
+    const wanted = permission ? [permission] : (anyOf ?? []);
+    const allowed = wanted.some(
+      (p) => !p.startsWith("backwork:") || mockPermissions.value.includes(p),
+    );
+    return allowed ? <>{children}</> : null;
+  },
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -250,7 +296,7 @@ describe("BackworkPage disabled-query handling", () => {
 
     expect(screen.getByText("Loading backwork")).toBeInTheDocument();
     expect(
-      screen.queryByText("No backwork matches this view"),
+      screen.queryByText("No backwork yet"),
     ).not.toBeInTheDocument();
   });
 });
@@ -475,14 +521,17 @@ describe("BackworkPage subscription gating", () => {
     // The real payload: `BackworkService.findById` returns `{ ...resource, downloadUrl }`.
     // A bare `{ downloadUrl }` fixture would pass even if the selector picked
     // some other string field off the row, so spread a realistic resource.
-    mockResourceRefetch.mockResolvedValue({
-      data: { ...RESOURCE, downloadUrl: "https://signed/exam.pdf" },
+    mockFetchResource.mockResolvedValue({
+      ...RESOURCE,
+      downloadUrl: "https://signed/exam.pdf",
     });
     chapter.active();
     render(<BackworkPage />);
 
     try {
-      await user.click(screen.getByRole("button", { name: /download/i }));
+      await user.click(
+        screen.getByRole("button", { name: /^download cs 3320 midterm$/i }),
+      );
 
       await waitFor(() =>
         expect(open).toHaveBeenCalledWith(
@@ -502,12 +551,11 @@ describe("BackworkPage subscription gating", () => {
     chapter.incomplete();
     render(<BackworkPage />);
 
+    expect(screen.getByRole("button", { name: /^course$/i })).toBeEnabled();
     expect(
-      screen.getByRole("button", { name: /apply filters/i }),
+      screen.getByRole("button", { name: /^download cs 3320 midterm$/i }),
     ).toBeEnabled();
-    expect(screen.getByRole("button", { name: /^clear$/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /download/i })).toBeEnabled();
-    expect(screen.getByLabelText(/^search$/i)).toBeEnabled();
+    expect(screen.getByLabelText(/^search backwork$/i)).toBeEnabled();
   });
 
   it("holds the gate shut while the chapter is still loading", () => {
@@ -789,5 +837,493 @@ describe("BackworkPage year and assignment-number guard (#2206)", () => {
     const body = mockConfirmUpload.mock.calls[0]![0];
     expect(body.year).toBe(2026);
     expect(body.assignment_number).toBeUndefined();
+  });
+});
+
+describe("BackworkPage library (2026-11-05 redesign)", () => {
+  const LIBRARY = [
+    {
+      ...RESOURCE,
+      id: "bw-cogs",
+      title: "Cog Sci Homework 2",
+      department_id: "dept-cogs",
+      course_number: "2120",
+      professor_id: "prof-bram",
+      year: 2026,
+      semester: "Fall",
+      assignment_type: "Homework",
+      document_variant: "Student Copy",
+      is_redacted: true,
+      tags: ["curved"],
+      created_at: "2026-11-03T15:00:00Z",
+    },
+    {
+      ...RESOURCE,
+      id: "bw-csci",
+      title: "Data Structures Exam 1",
+      department_id: "dept-csci",
+      course_number: "1200",
+      professor_id: "prof-thompson",
+      year: 2025,
+      semester: "Spring",
+      assignment_type: "Exam",
+      document_variant: "Answer Key",
+      created_at: "2026-10-30T15:00:00Z",
+    },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedResourcesQuery();
+    resourcesQuery.data = LIBRARY;
+    taxonomyData.departments = [
+      { id: "dept-cogs", code: "COGS", name: "Cognitive Science" },
+      { id: "dept-csci", code: "CSCI", name: null },
+    ];
+    taxonomyData.professors = [
+      { id: "prof-bram", name: "Bram" },
+      { id: "prof-thompson", name: "Thompson" },
+    ];
+    mockPermissions.value = ["backwork:upload", "backwork:admin"];
+    chapter.active();
+  });
+
+  afterEach(() => {
+    taxonomyData.departments = [];
+    taxonomyData.professors = [];
+    taxonomyData.loading = false;
+    taxonomyData.failed = false;
+    mockOffline.value = false;
+  });
+
+  const titles = () =>
+    screen
+      .getAllByRole("listitem")
+      .map((li) => li.querySelector("p")?.textContent);
+
+  it("lists newest term first, with course, professor, term and copy on each row", () => {
+    render(<BackworkPage />);
+
+    expect(titles()).toEqual(["Cog Sci Homework 2", "Data Structures Exam 1"]);
+    const first = screen.getAllByRole("listitem")[0]!;
+    expect(within(first).getByText("COGS 2120")).toBeInTheDocument();
+    expect(within(first).getByText("Bram")).toBeInTheDocument();
+    expect(within(first).getByText("Fall 2026")).toBeInTheDocument();
+    expect(within(first).getByText("Student copy")).toBeInTheDocument();
+    expect(within(first).getByRole("img", { name: "Redacted" })).toBeInTheDocument();
+    expect(within(first).getByText("Homework")).toBeInTheDocument();
+  });
+
+  it("does not ask for any download link until Download is pressed", () => {
+    // The old list mounted a detail query per row, so every page load minted a
+    // signed URL for every file in the library.
+    render(<BackworkPage />);
+    expect(mockFetchResource).not.toHaveBeenCalled();
+  });
+
+  it("searches as you type, forgiving a typo", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+
+    await user.type(screen.getByLabelText(/^search backwork$/i), "cog sci homwork 2");
+
+    await waitFor(() => expect(titles()).toEqual(["Cog Sci Homework 2"]));
+    expect(screen.getByText("1 of 2 files")).toBeInTheDocument();
+  });
+
+  it("searches tags and professors, which the old box never did", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    const search = screen.getByLabelText(/^search backwork$/i);
+
+    await user.type(search, "curved");
+    await waitFor(() => expect(titles()).toEqual(["Cog Sci Homework 2"]));
+
+    await user.clear(search);
+    await user.type(search, "thompsn");
+    await waitFor(() => expect(titles()).toEqual(["Data Structures Exam 1"]));
+  });
+
+  it("applies a filter chip the moment it is picked, and clears it", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+
+    await user.click(screen.getByRole("button", { name: /^professor$/i }));
+    await user.click(await screen.findByRole("menuitem", { name: "Thompson" }));
+
+    await waitFor(() => expect(titles()).toEqual(["Data Structures Exam 1"]));
+    expect(
+      screen.getByRole("button", { name: /^professor: thompson$/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^clear$/i }));
+    await waitFor(() => expect(titles()).toHaveLength(2));
+  });
+
+  it("offers a way out when nothing matches", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+
+    await user.type(screen.getByLabelText(/^search backwork$/i), "organic chemistry");
+    expect(await screen.findByText("No files match")).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: /clear search and filters/i }),
+    );
+    await waitFor(() => expect(titles()).toHaveLength(2));
+  });
+
+  it("opens the same actions on right-click as on the row's More button", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    const row = screen.getAllByRole("listitem")[0]!;
+
+    fireEvent.contextMenu(row);
+    const fromRightClick = (await screen.findAllByRole("menuitem")).map(
+      (item) => item.textContent,
+    );
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+
+    await user.click(
+      within(row).getByRole("button", { name: /^more for cog sci homework 2$/i }),
+    );
+    const fromButton = (await screen.findAllByRole("menuitem")).map(
+      (item) => item.textContent,
+    );
+
+    expect(fromButton).toEqual(fromRightClick);
+    expect(fromRightClick).toEqual([
+      "Download",
+      "Show only COGS 2120",
+      "Show only Bram",
+      "Rename Bram…",
+      "Merge Bram into…",
+      "Name the COGS department…",
+      "Merge COGS into…",
+      "Delete file…",
+    ]);
+  });
+
+  it("keeps officer tools out of a member's menu", async () => {
+    mockPermissions.value = ["backwork:upload"];
+    render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    const items = (await screen.findAllByRole("menuitem")).map(
+      (item) => item.textContent,
+    );
+    expect(items).toEqual(["Download", "Show only COGS 2120", "Show only Bram"]);
+  });
+
+  it("leaves the browser's own menu on selected text", async () => {
+    render(<BackworkPage />);
+    const row = screen.getAllByRole("listitem")[0]!;
+    const title = within(row).getByText("Cog Sci Homework 2", { selector: "span" });
+    const range = document.createRange();
+    range.selectNodeContents(title);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+
+    try {
+      fireEvent.pointerDown(title, { button: 2 });
+      fireEvent.contextMenu(title);
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    } finally {
+      window.getSelection()!.removeAllRanges();
+    }
+  });
+
+  it("filters to a row's course from its menu", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[1]!);
+    await user.click(await screen.findByRole("menuitem", { name: "Show only CSCI 1200" }));
+
+    await waitFor(() => expect(titles()).toEqual(["Data Structures Exam 1"]));
+  });
+
+  it("deletes a file only after the officer confirms", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    await user.click(await screen.findByRole("menuitem", { name: "Delete file…" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(mockDeleteResource).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+
+    await waitFor(() => expect(mockDeleteResource).toHaveBeenCalledWith("bw-cogs"));
+  });
+
+  it("keeps the file when the officer cancels the delete", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    await user.click(await screen.findByRole("menuitem", { name: "Delete file…" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^cancel$/i }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mockDeleteResource).not.toHaveBeenCalled();
+  });
+
+  it("disables an officer's row writes on a lapsed chapter, but not download or filters", async () => {
+    chapter.pastDue();
+    render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    const item = async (name: string) => screen.findByRole("menuitem", { name });
+    for (const name of [
+      "Rename Bram…",
+      "Merge Bram into…",
+      "Name the COGS department…",
+      "Merge COGS into…",
+      "Delete file…",
+    ]) {
+      expect(await item(name)).toHaveAttribute("aria-disabled", "true");
+    }
+    for (const name of ["Download", "Show only COGS 2120", "Show only Bram"]) {
+      expect(await item(name)).not.toHaveAttribute("aria-disabled");
+    }
+  });
+
+  it("highlights what the search matched, in the title, course and term", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+
+    await user.type(screen.getByLabelText("Search backwork"), "homewrk cogs fall");
+    await waitFor(() => expect(titles()).toEqual(["Cog Sci Homework 2"]));
+    const marks = Array.from(document.querySelectorAll("mark")).map((m) => m.textContent);
+    expect(marks).toEqual(expect.arrayContaining(["Homework", "COGS", "Fall"]));
+  });
+
+  it("drops a filter once no file has its value, instead of emptying the list", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    await user.click(await screen.findByRole("menuitem", { name: "Show only Bram" }));
+    await waitFor(() => expect(titles()).toEqual(["Cog Sci Homework 2"]));
+
+    // A merge moved Bram's files to Thompson and deleted Bram.
+    resourcesQuery.data = LIBRARY.map((r) => ({ ...r, professor_id: "prof-thompson" }));
+    taxonomyData.professors = [{ id: "prof-thompson", name: "Thompson" }];
+    rerender(<BackworkPage />);
+
+    await waitFor(() => expect(titles()).toHaveLength(2));
+    expect(screen.getByRole("button", { name: /^professor$/i })).toBeInTheDocument();
+  });
+
+  it("ties a disabled row write to the notice, and gates the clean-up entry", async () => {
+    const user = userEvent.setup();
+    chapter.pastDue();
+    render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    const rename = await screen.findByRole("menuitem", { name: "Rename Bram…" });
+    const noticeId = rename.getAttribute("aria-describedby");
+    expect(noticeId).toBeTruthy();
+    expect(document.getElementById(noticeId!)).toHaveTextContent(/past due/i);
+    await user.keyboard("{Escape}");
+
+    await user.click(screen.getByRole("button", { name: /^more backwork options$/i }));
+    expect(
+      await screen.findByRole("menuitem", { name: /clean up professors and departments/i }),
+    ).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("shows the lapsed-chapter notice to an officer who cannot upload", () => {
+    mockPermissions.value = ["backwork:admin"];
+    chapter.pastDue();
+    render(<BackworkPage />);
+    expect(screen.getByText(/past due/i)).toBeInTheDocument();
+  });
+
+  it("does not delete when the chapter lapses while the confirm is open", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    await user.click(await screen.findByRole("menuitem", { name: "Delete file…" }));
+    const dialog = await screen.findByRole("dialog");
+    chapter.pastDue();
+    rerender(<BackworkPage />);
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+
+    await waitFor(() => expect(mockToast).toHaveBeenCalled());
+    expect(mockDeleteResource).not.toHaveBeenCalled();
+  });
+
+  it("keeps a dropped filter dropped when a file with its value comes back", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    await user.click(await screen.findByRole("menuitem", { name: "Show only Bram" }));
+    resourcesQuery.data = LIBRARY.map((r) => ({ ...r, professor_id: "prof-thompson" }));
+    rerender(<BackworkPage />);
+    await waitFor(() => expect(titles()).toHaveLength(2));
+
+    resourcesQuery.data = LIBRARY;
+    rerender(<BackworkPage />);
+    await waitFor(() => expect(titles()).toHaveLength(2));
+  });
+
+  it("highlights the course when the search typed it joined", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    await user.type(screen.getByLabelText("Search backwork"), "cogs2120");
+    await waitFor(() => expect(titles()).toEqual(["Cog Sci Homework 2"]));
+    const marks = Array.from(document.querySelectorAll("mark")).map((m) => m.textContent);
+    expect(marks).toEqual(expect.arrayContaining(["COGS", "2120"]));
+  });
+
+  it("waits for the departments and professors its rows join on", () => {
+    taxonomyData.loading = true;
+    render(<BackworkPage />);
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading backwork");
+  });
+
+  it("shows the error state when the department read fails", () => {
+    taxonomyData.failed = true;
+    render(<BackworkPage />);
+    expect(screen.getByText("Couldn't load backwork")).toBeInTheDocument();
+  });
+
+  it("disables the menu's Download while that file's link is on its way", async () => {
+    const user = userEvent.setup();
+    mockFetchResource.mockImplementation(() => new Promise(() => undefined));
+    render(<BackworkPage />);
+    await user.click(screen.getByRole("button", { name: "Download Cog Sci Homework 2" }));
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    expect(await screen.findByRole("menuitem", { name: "Download" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
+  it("says offline, not the subscription, when a confirmed delete can't send", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<BackworkPage />);
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    await user.click(await screen.findByRole("menuitem", { name: "Delete file…" }));
+    const dialog = await screen.findByRole("dialog");
+    mockOffline.value = true;
+    rerender(<BackworkPage />);
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ description: expect.stringMatching(/offline/i) }),
+      ),
+    );
+    expect(mockDeleteResource).not.toHaveBeenCalled();
+  });
+
+  it("says when the list hit the server's row cap", () => {
+    resourcesQuery.data = Array.from({ length: 1000 }, (_, i) => ({
+      ...RESOURCE,
+      id: `bw-${i}`,
+    }));
+    render(<BackworkPage />);
+    expect(screen.getByText(/showing the newest 1,000 files/i)).toBeInTheDocument();
+  });
+
+  it("keeps each download's spinner until that download finishes", async () => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    const pending = new Map<string, (value: unknown) => void>();
+    mockFetchResource.mockImplementation(
+      (id: string) => new Promise((resolve) => pending.set(id, resolve)),
+    );
+    try {
+      render(<BackworkPage />);
+      const cogs = screen.getByRole("button", { name: "Download Cog Sci Homework 2" });
+      const csci = screen.getByRole("button", { name: "Download Data Structures Exam 1" });
+      await user.click(cogs);
+      await user.click(csci);
+      expect(cogs).toBeDisabled();
+      expect(csci).toBeDisabled();
+
+      pending.get("bw-cogs")!({ downloadUrl: "https://signed/a.pdf" });
+      await waitFor(() => expect(cogs).toBeEnabled());
+      expect(csci).toBeDisabled();
+    } finally {
+      open.mockRestore();
+    }
+  });
+
+  it("opens the clean-up drawer from the page's More menu", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+
+    await user.click(screen.getByRole("button", { name: /^more backwork options$/i }));
+    await user.click(
+      await screen.findByRole("menuitem", {
+        name: /clean up professors and departments/i,
+      }),
+    );
+
+    expect(
+      await screen.findByText(/manage departments & professors/i),
+    ).toBeInTheDocument();
+  });
+
+  it("renames a row's professor from its menu", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    await user.click(await screen.findByRole("menuitem", { name: "Rename Bram…" }));
+
+    const field = await screen.findByLabelText(/^name$/i);
+    expect(field).toHaveValue("Bram");
+    await user.clear(field);
+    await user.type(field, "Dr. Bram");
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+    await waitFor(() =>
+      expect(mockUpdateProfessor).toHaveBeenCalledWith({
+        id: "prof-bram",
+        body: { name: "Dr. Bram" },
+      }),
+    );
+  });
+
+  it("keeps an open rename's Save shut once the chapter lapses", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<BackworkPage />);
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    await user.click(await screen.findByRole("menuitem", { name: "Rename Bram…" }));
+    const field = await screen.findByLabelText(/^name$/i);
+    await user.type(field, "x");
+    chapter.pastDue();
+    rerender(<BackworkPage />);
+    expect(screen.getByRole("button", { name: /^save$/i })).toBeDisabled();
+    fireEvent.submit(field.closest("form")!);
+    expect(mockUpdateProfessor).not.toHaveBeenCalled();
+  });
+
+  it("merges the row's department into the one picked, source first", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    await user.click(await screen.findByRole("menuitem", { name: "Merge COGS into…" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("combobox", { name: "Merge into" }));
+    await user.click(await screen.findByRole("option", { name: "CSCI" }));
+    await user.click(within(dialog).getByRole("button", { name: /^merge$/i }));
+    await waitFor(() =>
+      expect(mockMergeDepartments).toHaveBeenCalledWith({
+        id: "dept-cogs",
+        targetId: "dept-csci",
+      }),
+    );
   });
 });

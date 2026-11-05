@@ -64,7 +64,7 @@ The outbox carries `chapterId` and drafts do not, which is not an oversight eith
 | Chat messages | `Infinity` | _(default)_ | Realtime, not polling, keeps this cache fresh, so it opts out of staleness entirely — owned by [`web-dashboard/README.md` § Surviving data contracts](../web-dashboard/README.md#surviving-data-contracts). `use-chat-channel.ts` sets only `staleTime`, on web and mobile alike, so `gcTime` falls through to each app's own default: **10 minutes on web** (`query-provider.tsx`) and **TanStack's 5-minute default on mobile**, whose `query-client.ts` sets no `gcTime`. Recorded as-is rather than as an intent nothing implements |
 | Chat channels | 60s | 10min | Channel list changes rarely |
 | Notifications | 10s | 5min | Time-sensitive, refresh often |
-| Backwork | 60s | 10min | Content changes infrequently |
+| Backwork | 60s | 10min | Content changes infrequently. The single-resource read behind Download (`useFetchBackworkResource`) is `staleTime: 0`, since its signed URL expires |
 | Settings | 5min | 30min | Very rarely changes |
 | Invoices | 30s | 5min | Status transitions are time-sensitive |
 | Service entries | 30s | 5min | Approval queue is time-sensitive |

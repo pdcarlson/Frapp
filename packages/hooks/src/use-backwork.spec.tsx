@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFrappClient } from "@repo/api-sdk";
 import {
   useBackworkResources,
-  useBackworkResource,
+  useFetchBackworkResource,
+  useDeleteBackworkResource,
   useDepartments,
   useProfessors,
   useRequestBackworkUploadUrl,
@@ -25,12 +26,11 @@ const BACKWORK_DEPARTMENTS_KEY = ["backwork", "departments"];
 //
 // The invalidation assertions below stay chapter-less because that is what the
 // hooks currently pass — the bare `["backwork"]` prefix, which still matches
-// `["backwork", chapterId, filters]`. That is a description of today's code,
-// not an endorsement: `useBackworkResource`, `useDepartments` and
+// `["backwork", chapterId, "list"]`. That is a description of today's code,
+// not an endorsement: `useFetchBackworkResource`, `useDepartments` and
 // `useProfessors` omit chapterId from their keys entirely, which #784 tracks
 // (that issue is scoped to keys and their paired invalidations, not to
-// `enabled` gates — of the three, only `useBackworkResource` gates at all, and
-// on its id rather than the chapter). If those keys gain a chapter, the
+// `enabled` gates — none of the three gates on the chapter). If those keys gain a chapter, the
 // matching invalidations have to gain one too or they stop prefix-matching.
 const CHAPTER_ID = "chapter-abc";
 
@@ -74,29 +74,7 @@ const CHAPTER_ID = "chapter-abc";
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(mockGet).toHaveBeenCalledWith("/v1/backwork", {
-        params: { query: undefined },
-      });
-      expect(result.current.data).toEqual(mockData);
-    });
-
-    it("fetches backwork resources with filters", async () => {
-      const mockData = [{ id: "1", title: "Test" }];
-      const mockGet = vi.fn().mockResolvedValue({ data: mockData, error: null });
-      const mockClient = { GET: mockGet };
-      const filters = { department_id: "dep1", search: "midterm" };
-
-      const { result } = renderHook(() => useBackworkResources(filters), {
-        wrapper: createWrapper(mockClient),
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(mockGet).toHaveBeenCalledWith("/v1/backwork", {
-        params: { query: filters },
-      });
+      expect(mockGet).toHaveBeenCalledWith("/v1/backwork");
       expect(result.current.data).toEqual(mockData);
     });
 
@@ -117,55 +95,86 @@ const CHAPTER_ID = "chapter-abc";
     });
   });
 
-  describe("useBackworkResource", () => {
-    it("fetches a specific backwork resource by id", async () => {
-      const mockData = { id: "res1", title: "Test Resource" };
-      const mockGet = vi.fn().mockResolvedValue({ data: mockData, error: null });
-      const mockClient = { GET: mockGet };
-
-      const { result } = renderHook(() => useBackworkResource("res1"), {
-        wrapper: createWrapper(mockClient),
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(mockGet).toHaveBeenCalledWith("/v1/backwork/{id}", {
-        params: { path: { id: "res1" } },
-      });
-      expect(result.current.data).toEqual(mockData);
-    });
-
-    it("does not fetch if id is empty", async () => {
+  describe("useFetchBackworkResource", () => {
+    it("fetches nothing until called", async () => {
       const mockGet = vi.fn();
-      const mockClient = { GET: mockGet };
-
-      renderHook(() => useBackworkResource(""), {
-        wrapper: createWrapper(mockClient),
+      renderHook(() => useFetchBackworkResource(), {
+        wrapper: createWrapper({ GET: mockGet }),
       });
-
       await act(async () => {
         await Promise.resolve();
       });
-
       expect(mockGet).not.toHaveBeenCalled();
     });
 
-    it("surfaces an error when fetch fails", async () => {
+    it("fails a press at once instead of retrying, whatever the client defaults", async () => {
+      // The app's QueryClient retries 3 times; a Download press must not
+      // wait out that ladder on a 404.
+      const retrying = new QueryClient({ defaultOptions: { queries: { retry: 3 } } });
+      const mockGet = vi.fn().mockResolvedValue({ data: null, error: new Error("Not found") });
+      const { result } = renderHook(() => useFetchBackworkResource(), {
+        wrapper: ({ children }: { children: React.ReactNode }) => (
+          <FrappClientProvider
+            client={{ GET: mockGet } as unknown as ReturnType<typeof createFrappClient>}
+            chapterId={CHAPTER_ID}
+          >
+            <QueryClientProvider client={retrying}>{children}</QueryClientProvider>
+          </FrappClientProvider>
+        ),
+      });
+      await expect(result.current("gone")).rejects.toThrow("Not found");
+      expect(mockGet).toHaveBeenCalledTimes(1);
+    });
+
+    it("fetches the resource fresh on every call, so a signed link is never reused", async () => {
+      const mockGet = vi
+        .fn()
+        .mockResolvedValueOnce({ data: { id: "res1", downloadUrl: "a" }, error: null })
+        .mockResolvedValueOnce({ data: { id: "res1", downloadUrl: "b" }, error: null });
+      const { result } = renderHook(() => useFetchBackworkResource(), {
+        wrapper: createWrapper({ GET: mockGet }),
+      });
+
+      await expect(result.current("res1")).resolves.toEqual({
+        id: "res1",
+        downloadUrl: "a",
+      });
+      await expect(result.current("res1")).resolves.toEqual({
+        id: "res1",
+        downloadUrl: "b",
+      });
+      expect(mockGet).toHaveBeenCalledTimes(2);
+      expect(mockGet).toHaveBeenCalledWith("/v1/backwork/{id}", {
+        params: { path: { id: "res1" } },
+      });
+    });
+
+    it("rejects when the API answers with an error", async () => {
       const mockError = new Error("Fetch failed");
       const mockGet = vi.fn().mockResolvedValue({ data: null, error: mockError });
-      const mockClient = { GET: mockGet };
+      const { result } = renderHook(() => useFetchBackworkResource(), {
+        wrapper: createWrapper({ GET: mockGet }),
+      });
+      await expect(result.current("res1")).rejects.toBe(mockError);
+    });
+  });
 
-      const { result } = renderHook(() => useBackworkResource("res1"), {
-        wrapper: createWrapper(mockClient),
+  describe("useDeleteBackworkResource", () => {
+    it("deletes by id and refreshes the library", async () => {
+      const mockDelete = vi.fn().mockResolvedValue({ data: { success: true }, error: null });
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      const { result } = renderHook(() => useDeleteBackworkResource(), {
+        wrapper: createWrapper({ DELETE: mockDelete }),
       });
 
-      await waitFor(() => {
-        expect(result.current.isError).toBe(true);
+      await act(async () => {
+        await result.current.mutateAsync("res1");
       });
 
-      expect(result.current.error).toBe(mockError);
+      expect(mockDelete).toHaveBeenCalledWith("/v1/backwork/{id}", {
+        params: { path: { id: "res1" } },
+      });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: BACKWORK_KEY });
     });
   });
 
