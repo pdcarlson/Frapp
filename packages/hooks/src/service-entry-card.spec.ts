@@ -34,6 +34,7 @@ describe("canReadCardServiceEntry", () => {
         isOwner: true,
         canApprove: false,
         canViewMembers: true,
+        permissionsKnown: true,
       }),
     ).toBe(true);
     expect(
@@ -41,6 +42,7 @@ describe("canReadCardServiceEntry", () => {
         isOwner: false,
         canApprove: true,
         canViewMembers: true,
+        permissionsKnown: true,
       }),
     ).toBe(true);
   });
@@ -51,8 +53,17 @@ describe("canReadCardServiceEntry", () => {
         isOwner: false,
         canApprove: false,
         canViewMembers: true,
+        permissionsKnown: true,
       }),
     ).toBe(false);
+  });
+
+  it("lets only the member who logged it ask while permissions are unknown", () => {
+    // Loading, or the permissions read failed: their own badge doesn't wait
+    // on it, and nobody else's card sends a read likely to be refused.
+    const unknown = { canApprove: false, canViewMembers: false, permissionsKnown: false };
+    expect(canReadCardServiceEntry({ ...unknown, isOwner: true })).toBe(true);
+    expect(canReadCardServiceEntry({ ...unknown, isOwner: false })).toBe(false);
   });
 
   it("asks nothing without members:view, which the route requires first", () => {
@@ -61,6 +72,7 @@ describe("canReadCardServiceEntry", () => {
         isOwner: true,
         canApprove: true,
         canViewMembers: false,
+        permissionsKnown: true,
       }),
     ).toBe(false);
   });

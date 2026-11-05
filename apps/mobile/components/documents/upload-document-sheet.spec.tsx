@@ -5,6 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PickedImage } from "@/lib/chat/attachment-upload";
 import type { DocumentUploadResult } from "@/lib/more/document-upload";
+import { DocumentsGlyph } from "@/components/more/more-glyphs";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 import { DOCUMENT_TITLE_MAX_LENGTH } from "@repo/validation";
@@ -208,6 +209,15 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(text).toContain("IMG_2041.jpg");
     expect(text).toContain("218 KB · from Photos");
     expect(text).toContain("Change");
+    // The card's glyph and Change are the chapter accent, not house gold.
+    expect(tree.root.findByType(DocumentsGlyph).props.color).toBe(ACCENT);
+    const change = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "Change",
+    );
+    expect([change.props.style].flat()).toContainEqual(
+      expect.objectContaining({ color: ACCENT }),
+    );
     expect(titleInput(tree).props.placeholder).toBe("IMG_2041.jpg");
     expect(uploadButton(tree).props.disabled).toBe(false);
     expect(uploadDocumentPhoto).not.toHaveBeenCalled();

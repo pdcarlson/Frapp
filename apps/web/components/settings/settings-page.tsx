@@ -20,7 +20,7 @@ import {
   type SemesterArchive,
 } from "@repo/hooks";
 import { type PatchChapterConfig } from "@repo/validation";
-import { titleCase, vocab } from "@/lib/vocabulary";
+import { memberViewVocabulary, titleCase, vocab } from "@repo/org-archetypes";
 import { Card, CardDescription, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
@@ -293,7 +293,17 @@ function SettingsPageContent() {
   // defaults are sentence-case prose ("New member") rather than the title
   // case the seeded role is actually displayed with elsewhere (e.g. the
   // Discord-import role mapping step).
-  const pledgeTerm = titleCase(vocab("pledge", { vocabulary }));
+  // `memberViewVocabulary` lays the archetype's words under the chapter's: a
+  // reader the config read refuses gets the member view's stored column as
+  // it is, which can be `{}` (a chapter created without onboarding's seed) or
+  // hold a cleared `""`, and either alone would name an NPHC chapter's
+  // aspirants "New Member".
+  const pledgeTerm = titleCase(
+    vocab(
+      "pledge",
+      memberViewVocabulary({ org_archetype: archetypeKey, vocabulary }),
+    ),
+  );
   const brandingRaw = config?.branding ?? {};
   const branding: Branding = {
     greek_letters:
@@ -615,6 +625,7 @@ function SettingsPageContent() {
               draft={accentDraft}
               canEditProfile={canEditProfile}
               updateChapter={updateChapter}
+              orgName={chapter?.name}
             />
           </TabsContent>
 

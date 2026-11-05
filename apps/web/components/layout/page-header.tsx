@@ -61,8 +61,14 @@ export function PageHeader({ title, actions, className }: PageHeaderProps) {
       <h1 className="min-w-0 flex-1 truncate text-label font-bold text-foreground">
         {title}
       </h1>
+      {/*
+        `max-w-full` is what lets a wide actions group wrap inside itself. At
+        `shrink-0` alone its width is its one-line content, so on a phone a
+        segmented control plus a button ran past the screen edge rather than
+        wrapping (Points at 390px, 2026-11-05).
+      */}
       {actions ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
           {actions}
         </div>
       ) : null}

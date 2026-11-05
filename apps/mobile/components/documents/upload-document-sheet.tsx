@@ -292,7 +292,7 @@ export const UploadDocumentSheet = forwardRef<
             pressed ? styles.pressed : null,
           ]}
         >
-          <DocumentsGlyph color={tokens.color.gold.askText} size={24} />
+          <DocumentsGlyph color={accent} size={24} />
           <View style={styles.fileText}>
             <Text style={styles.fileName} numberOfLines={1}>
               {picked ? picked.filename : "Choose a photo"}
@@ -416,7 +416,7 @@ function createStyles(tokens: SignetTokens, accent: string) {
     },
     change: {
       ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.askText,
+      color: accent,
     },
     fieldGroup: {
       gap: tokens.spacing.xs,

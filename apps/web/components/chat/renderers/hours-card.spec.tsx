@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 
 const state = vi.hoisted(() => ({
-  permissions: [] as string[],
+  /** `undefined`: the permissions read hasn't answered (loading, or failed). */
+  permissions: [] as string[] | undefined,
   live: undefined as unknown,
   entryIds: [] as string[],
 }));
@@ -15,7 +16,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     state.entryIds.push(id);
     return { data: id ? state.live : undefined };
   },
-  useMyPermissions: () => ({ data: { permissions: state.permissions } }),
+  useMyPermissions: () => ({
+    data: state.permissions ? { permissions: state.permissions } : undefined,
+  }),
 }));
 
 import { HoursCard } from "./hours-card";
@@ -119,6 +122,16 @@ describe("HoursCard", () => {
     render(<HoursCard message={makeMessage()} viewerId={OWNER} />);
     expect(state.entryIds.every((id) => id === "")).toBe(true);
     expect(screen.queryByText("Approved")).not.toBeInTheDocument();
+  });
+
+  it("lets only the member who logged it ask while the permissions read hasn't answered", () => {
+    state.permissions = undefined;
+    state.live = { id: "se-1", status: "APPROVED" };
+    render(<HoursCard message={makeMessage()} viewerId={OWNER} />);
+    expect(screen.getByText("Approved")).toBeInTheDocument();
+    state.entryIds = [];
+    render(<HoursCard message={makeMessage()} viewerId={OFFICER} />);
+    expect(state.entryIds.every((id) => id === "")).toBe(true);
   });
 
   it("draws no empty quotes for a blank description", () => {

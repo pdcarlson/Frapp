@@ -11,6 +11,7 @@
  * detail selector, and a route file importing another route file would drag a
  * whole screen component into the scanner's bundle.
  */
+import type { DeviceInstant } from "@repo/hooks";
 import { isCurrentOrUpcoming, sortEventsByStart } from "./format";
 
 export interface EventRow {
@@ -107,22 +108,55 @@ export function selectEventRows(data: unknown, now: Date): EventRow[] {
 export interface MintedCheckInToken {
   qrPayload: string;
   manualCode: string;
-  expiresAt: string;
+  /**
+   * When this device asked for the code, on both of its clocks
+   * (`useMintCheckInToken`'s `requestedAt`): never later than the mint.
+   */
+  requestedAt: DeviceInstant;
+  /**
+   * What the server said was left of the code's window when it minted it.
+   * Counted down from `requestedAt` on this device (`elapsedSince`), it ends
+   * at or before the real rotation, and it is never compared with the
+   * server's clock (its `expiresAt`), which a phone's can be well off.
+   */
+  rotatesInMs: number;
 }
 
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
 /**
- * The s22 mint response. Narrowed for the same `never`-inference reason as the
- * event payloads above — and with a second motive: a partially-formed response
+ * The s22 mint result (`useMintCheckInToken`: the response and when it was
+ * asked for). Narrowed for the same `never`-inference reason as the event
+ * payloads above — and with a second motive: a partially-formed response
  * must not render a QR of `undefined`, which encodes cleanly and scans to
- * nothing. All three fields or nothing.
+ * nothing. Every field or nothing.
  */
 export function selectMintedToken(data: unknown): MintedCheckInToken | null {
-  if (!isRecord(data)) return null;
-  const qrPayload = str(data, "qrPayload");
-  const manualCode = str(data, "manualCode");
-  const expiresAt = str(data, "expiresAt");
-  if (!qrPayload || !manualCode || !expiresAt) return null;
-  return { qrPayload, manualCode, expiresAt };
+  if (!isRecord(data) || !isRecord(data.response)) return null;
+  const { response, requestedAt } = data;
+  const qrPayload = str(response, "qrPayload");
+  const manualCode = str(response, "manualCode");
+  const rotatesInMs = response.rotatesInMs;
+  if (
+    !qrPayload ||
+    !manualCode ||
+    !isFiniteNumber(rotatesInMs) ||
+    !isRecord(requestedAt) ||
+    !isFiniteNumber(requestedAt.monotonic) ||
+    !isFiniteNumber(requestedAt.wall)
+  ) {
+    return null;
+  }
+  return {
+    qrPayload,
+    manualCode,
+    requestedAt: {
+      monotonic: requestedAt.monotonic,
+      wall: requestedAt.wall,
+    },
+    rotatesInMs,
+  };
 }
 
 export function selectEventDetail(data: unknown): EventDetail | null {
