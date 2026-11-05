@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatBareDate,
+  formatBareDateMedium,
   parseBareDateLocalMidnight,
   parseBareDateLocalNoon,
   parseInstantOrBareLocalNoon,
@@ -80,6 +81,13 @@ describe("parseBareDateLocalNoon", () => {
           expect(formatBareDate(value), `${value} in ${zone}`).toBe(
             new Date(year, month, day).toLocaleDateString(),
           );
+          expect(formatBareDateMedium(value), `${value} in ${zone}`).toBe(
+            new Date(year, month, day).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            }),
+          );
         }
       });
     }
@@ -131,5 +139,23 @@ describe("parseInstantOrBareLocalNoon", () => {
 
   it("returns null for garbage", () => {
     expect(parseInstantOrBareLocalNoon("later")).toBeNull();
+  });
+});
+
+describe("formatBareDateMedium", () => {
+  it("spells the month short and keeps the year", () => {
+    expect(formatBareDateMedium("2026-11-04")).toBe(
+      new Date(2026, 10, 4).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+    );
+  });
+
+  it("reads like formatBareDate for a missing or unparseable value", () => {
+    expect(formatBareDateMedium(null)).toBe("—");
+    expect(formatBareDateMedium("")).toBe("—");
+    expect(formatBareDateMedium("later")).toBe("—");
   });
 });
