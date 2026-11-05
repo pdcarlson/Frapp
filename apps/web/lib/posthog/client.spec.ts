@@ -3,6 +3,7 @@ import {
   applyAnalyticsIdentity,
   applyAnalyticsOptOut,
   bindPostHogAdapterForTests,
+  createRouteViewRecorder,
 } from "@repo/observability/identified-posthog";
 import { initWebPostHog } from "./client";
 
@@ -10,6 +11,7 @@ const posthogInit = vi.hoisted(() => vi.fn());
 const reloadFeatureFlags = vi.hoisted(() => vi.fn());
 const setConfig = vi.hoisted(() => vi.fn());
 const optInCapturing = vi.hoisted(() => vi.fn());
+const posthogCapture = vi.hoisted(() => vi.fn());
 // Replay is off in every environment today, so the real options can't tell a
 // restored setting from a latched one. Tests that need replay on set this.
 const replayOn = vi.hoisted(() => ({ value: false }));
@@ -36,7 +38,7 @@ vi.mock("posthog-js", () => ({
     opt_in_capturing: optInCapturing,
     set_config: setConfig,
     stopSessionRecording: vi.fn(),
-    capture: vi.fn(),
+    capture: posthogCapture,
     get_session_id: () => "",
     get_distinct_id: () => "",
     sessionRecordingStarted: () => false,
@@ -52,6 +54,7 @@ afterEach(() => {
   reloadFeatureFlags.mockClear();
   setConfig.mockClear();
   optInCapturing.mockClear();
+  posthogCapture.mockClear();
   replayOn.value = false;
 });
 
@@ -103,5 +106,21 @@ describe("initWebPostHog", () => {
     expect(setConfig.mock.invocationCallOrder[0]).toBeLessThan(
       optInCapturing.mock.invocationCallOrder[0] ?? 0,
     );
+  });
+
+  // #3382: a route view is a `$pageview` whose URL properties are the
+  // template, so posthog-js never fills them from `window.location`.
+  it("sends a route view as a $pageview with the template as its URL", () => {
+    vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "phc_test_write_only");
+    initWebPostHog();
+    const record = createRouteViewRecorder();
+    record("/events/3f2a9c1e-4b5d-4e6f-8a7b-9c0d1e2f3a4b?id=x");
+    expect(posthogCapture).toHaveBeenCalledWith("$pageview", {
+      $pathname: "/events/[id]",
+      $current_url: "/events/[id]",
+    });
+    applyAnalyticsOptOut(true);
+    record("/chat");
+    expect(posthogCapture).toHaveBeenCalledTimes(1);
   });
 });

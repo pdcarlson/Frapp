@@ -7,6 +7,7 @@ import {
   applyObservabilityIdentity,
   namedAnalyticsEventBody,
   bindPostHogAdapterForTests,
+  createRouteViewRecorder,
   captureSentryErrorCorrelated,
   createMemoryPostHogAdapter,
   getPostHogReplayId,
@@ -346,6 +347,103 @@ describe("sentry-error-correlated marker", () => {
         (c) => c.type === "capture" && c.event.includes("exception"),
       ),
     ).toBe(false);
+  });
+});
+
+describe("route views", () => {
+  it("sends the route as a template", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    createRouteViewRecorder()(`/events/${UUID}?tab=rsvp`);
+    expect(memory.calls).toEqual([
+      { type: "routeView", path: "/events/[id]" },
+    ]);
+  });
+
+  it("sends nothing while the chapter is opted out, and again once it opts in", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const record = createRouteViewRecorder();
+    applyAnalyticsOptOut(true);
+    record("/chat");
+    expect(memory.calls.some((c) => c.type === "routeView")).toBe(false);
+
+    applyAnalyticsOptOut(false);
+    record("/chat");
+    expect(memory.calls.filter((c) => c.type === "routeView")).toEqual([
+      { type: "routeView", path: "/chat" },
+    ]);
+  });
+
+  it("sends nothing for a value that is not a path", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    createRouteViewRecorder()("mailto:a@b.c");
+    expect(memory.calls).toEqual([]);
+  });
+});
+
+describe("createRouteViewRecorder", () => {
+  const views = (memory: ReturnType<typeof createMemoryPostHogAdapter>) =>
+    memory.calls.flatMap((c) => (c.type === "routeView" ? [c.path] : []));
+
+  it("records each visit once, however often it is called", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const record = createRouteViewRecorder();
+    record("/chat");
+    record("/chat");
+    record("/events");
+    record("/chat");
+    expect(views(memory)).toEqual(["/chat", "/events", "/chat"]);
+  });
+
+  it("records the current route once capture turns on, not a route left while opted out", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const record = createRouteViewRecorder();
+    applyAnalyticsOptOut(true);
+    record("/chat");
+    record("/events");
+    applyAnalyticsOptOut(false);
+    record("/events");
+    expect(views(memory)).toEqual(["/events"]);
+  });
+
+  // A chapter switch reloads the chapter read: the gate goes true and back
+  // while the member stays on the same route.
+  it("records nothing more when the gate flips on a route already recorded", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const record = createRouteViewRecorder();
+    record("/chapter-picker");
+    applyAnalyticsOptOut(true);
+    record("/chapter-picker");
+    applyAnalyticsOptOut(false);
+    record("/chapter-picker");
+    expect(views(memory)).toEqual(["/chapter-picker"]);
+  });
+
+  // A notification for another thread pushes the same screen with new
+  // params: a new visit, still sent as the bare template.
+  it("starts a new visit when the visit key changes on the same path", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const record = createRouteViewRecorder();
+    record("/chat-thread", '/chat-thread {"channelId":"a"}');
+    record("/chat-thread", '/chat-thread {"channelId":"a"}');
+    record("/chat-thread", '/chat-thread {"channelId":"b"}');
+    expect(views(memory)).toEqual(["/chat-thread", "/chat-thread"]);
+  });
+
+  it("ignores a missing pathname", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const record = createRouteViewRecorder();
+    record(null);
+    record(undefined);
+    record("");
+    expect(views(memory)).toEqual([]);
   });
 });
 

@@ -71,7 +71,7 @@ export {
   DEFAULT_POSTHOG_LOGS_SAMPLE_RATE,
 } from "./policy";
 
-export { pathOnlyAnalyticsPath } from "./analytics-path";
+export { analyticsRouteTemplate, pathOnlyAnalyticsPath } from "./analytics-path";
 
 export {
   FIRST_PARTY_API_ORIGINS,

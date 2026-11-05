@@ -92,6 +92,42 @@ describe("sanitizeAnonymousPostHogProperties", () => {
   });
 });
 
+// #3382: what the SDKs add from the real location (posthog-js's
+// `$prev_pageview_pathname` from `window.location.pathname`, RN's
+// `$screen_name` and `Application Opened.url`) leaves as a template too.
+describe("route templates on SDK-added paths", () => {
+  it("templates every path-shaped property, not just the one sent", () => {
+    const out = sanitizeIdentifiedPostHogCapture({
+      event: "$pageview",
+      properties: {
+        $pathname: "/chat",
+        $current_url: "/chat",
+        $prev_pageview_pathname: `/events/${UUID}`,
+        $session_entry_pathname: `/members/jane.doe@school.edu`,
+        $referrer: `https://app.frapp.live/events/${UUID}?tab=rsvp`,
+        url: `frapp://join/${UUID}?token=invite-token-secret`,
+        $set: { $initial_current_url: `https://app.frapp.live/events/${UUID}` },
+      },
+    });
+    expect(out?.properties).toEqual({
+      $pathname: "/chat",
+      $current_url: "/chat",
+      $prev_pageview_pathname: "/events/[id]",
+      $session_entry_pathname: "/members/[id]",
+      $referrer: "/events/[id]",
+      url: "/[id]",
+      $set: { $initial_current_url: "/events/[id]" },
+    });
+    expect(JSON.stringify(out)).not.toContain(UUID);
+  });
+
+  it("templates landing's anonymous properties the same way", () => {
+    expect(
+      sanitizeAnonymousPostHogProperties({ $referrer: `/events/${UUID}` }),
+    ).toEqual({ $referrer: "/events/[id]" });
+  });
+});
+
 describe("POSTHOG_PROPERTY_DENYLIST", () => {
   it("matches landing's IP and email roster", () => {
     expect(POSTHOG_PROPERTY_DENYLIST).toEqual(["$ip", "ip", "email", "$email"]);
