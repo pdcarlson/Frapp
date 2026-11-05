@@ -550,6 +550,7 @@ export function MessageItem({
     <MessageRenderer
       message={message}
       viewerId={viewerId}
+      nameFor={nameFor}
       isConfirmed={isConfirmed}
       onAct={onAct ?? (() => {})}
       trailing={trailingOnOwnLine ? undefined : trailing}

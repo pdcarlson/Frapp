@@ -1,6 +1,13 @@
 import { useMemo, type ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { readEventPayload, readTaskPayload } from "@repo/chat-core/cards";
+import {
+  readAnnouncementBody,
+  readEventPayload,
+  readHoursPayload,
+  readPointsPayload,
+  readSystemAuditPayload,
+  readTaskPayload,
+} from "@repo/chat-core/cards";
 import {
   hiddenQuoteText,
   tombstoneCanUnblock,
@@ -14,12 +21,16 @@ import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { canOpenMessageActions } from "@/lib/chat/blocks";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { AnnouncementCard } from "./announcement-card";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
 import type { ChatCardFrameProps } from "./chat-card";
 import { EventCard } from "./event-card";
+import { HoursCard } from "./hours-card";
 import { MessageItem, MessageRowFrame, OwnLineMarkers } from "./message-item";
+import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
 import { ReplyQuote } from "./reply-quote";
+import { SystemAuditCard } from "./system-audit-card";
 import { TaskCard } from "./task-card";
 
 /**
@@ -151,9 +162,8 @@ function ThreadMessageRowBody({
 
   // A card is not a message body, so it goes into the row frame directly:
   // the same quote, avatar and author line as any other row, with the card
-  // where the text would be. Web draws every card kind this way; mobile has
-  // renderers for `poll`, `event` and `task` (`cardFor`), and draws every
-  // other kind as text.
+  // where the text would be. Web draws every card kind this way; `cardFor`
+  // says which kinds mobile draws as a card, and every other kind is text.
   // A deleted card keeps its kind and payload server-side, so it would still
   // draw a live card with live buttons; like web, a deleted message of any
   // kind is the placeholder instead (MessageItem: no actions, no reactions).
@@ -171,7 +181,7 @@ function ThreadMessageRowBody({
           onOpenActions: openActions,
           onJumpToParent: message.reply_to_id ? onJumpToParent : undefined,
         },
-        onVote,
+        { onVote, nameFor },
       );
   if (card) {
     const quote =
@@ -222,24 +232,52 @@ function ThreadMessageRowBody({
 /**
  * The card a message draws, or `null` to draw it as text.
  *
- * An event or task whose payload doesn't read is text, its `content` string,
- * as web's renderers fall back: the server writes that string for exactly
- * this. A poll keeps its own malformed state, which names the poll.
+ * A card whose payload doesn't read is text, its `content` string, as web's
+ * renderers fall back: the server writes that string for exactly this. That
+ * includes the server's own `system_audit` notices, which carry no payload
+ * and whose `content` is the whole notice ("This poll has closed."). A poll
+ * keeps its own malformed state, which names the poll.
+ *
+ * Not yet cards on mobile: `rush` (#3383), `dues`, which web draws as a
+ * "coming soon" card, and `loading`, web's placeholder for a slash command
+ * in flight, which mobile never sends.
  */
 function cardFor(
   frame: ChatCardFrameProps,
-  onVote: ThreadMessageRowProps["onVote"],
+  row: {
+    onVote: ThreadMessageRowProps["onVote"];
+    nameFor: ThreadMessageRowProps["nameFor"];
+  },
 ): ReactNode | null {
-  switch (frame.message.kind) {
+  const { message } = frame;
+  switch (message.kind) {
     case "poll":
-      return <PollCard {...frame} onVote={onVote} />;
+      return <PollCard {...frame} onVote={row.onVote} />;
     case "event": {
-      const payload = readEventPayload(frame.message);
+      const payload = readEventPayload(message);
       return payload ? <EventCard {...frame} payload={payload} /> : null;
     }
     case "task": {
-      const payload = readTaskPayload(frame.message);
+      const payload = readTaskPayload(message);
       return payload ? <TaskCard {...frame} payload={payload} /> : null;
+    }
+    case "points": {
+      const payload = readPointsPayload(message);
+      return payload ? <PointsCard {...frame} payload={payload} /> : null;
+    }
+    case "hours": {
+      const payload = readHoursPayload(message);
+      return payload ? <HoursCard {...frame} payload={payload} /> : null;
+    }
+    case "announcement": {
+      const body = readAnnouncementBody(message);
+      return body ? <AnnouncementCard {...frame} body={body} /> : null;
+    }
+    case "system_audit": {
+      const payload = readSystemAuditPayload(message);
+      return payload ? (
+        <SystemAuditCard {...frame} payload={payload} nameFor={row.nameFor} />
+      ) : null;
     }
     default:
       return null;
