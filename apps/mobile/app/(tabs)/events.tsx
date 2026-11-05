@@ -16,7 +16,6 @@ import { AccentChip, StatusChip } from "@/components/status-chip";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
 import { isAskAvailable } from "@/lib/ask/flag";
-import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   formatEventDateBlock,
   resolveCheckInWindow,
@@ -133,6 +132,10 @@ export default function EventsScreen() {
  * the largest, heaviest text on the card, and the place sits under it at
  * caption size. The card used to stack an accent time caption, a 14pt name and
  * a 16pt location, so the location was the biggest text on every card.
+ *
+ * The date block's label is neutral: "Today" in the foreground text so the
+ * day's event stands out, any other day muted. A date is a label, never the
+ * chapter accent (foundations.md §6, "Where the accent goes", 2026-11-05).
  */
 function EventRowCard({
   event,
@@ -144,8 +147,7 @@ function EventRowCard({
   onPress: () => void;
 }) {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
-  const styles = createStyles(tokens, accent);
+  const styles = createStyles(tokens);
   const window = resolveCheckInWindow(event.start_time, event.end_time, now);
   const date = formatEventDateBlock(event.start_time, now);
   const meta = [date?.clock, event.location].filter(Boolean).join(" · ");
@@ -164,7 +166,14 @@ function EventRowCard({
     >
       {date ? (
         <View style={styles.dateBlock}>
-          <Text style={styles.dateLabel}>{date.label}</Text>
+          <Text
+            style={[
+              styles.dateLabel,
+              date.label === "Today" ? styles.dateLabelToday : null,
+            ]}
+          >
+            {date.label}
+          </Text>
           <Text style={styles.dateDay}>{date.day}</Text>
         </View>
       ) : null}
@@ -196,7 +205,7 @@ function EventRowCard({
   );
 }
 
-function createStyles(tokens: SignetTokens, accent: string) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     card: {
       flexDirection: "row",
@@ -220,9 +229,12 @@ function createStyles(tokens: SignetTokens, accent: string) {
         ...tokens.typography.role.caption,
         weight: tokens.typography.weight.bold,
       }),
-      color: accent,
+      color: tokens.color.text.mutedForeground,
       letterSpacing: 0.6,
       textTransform: "uppercase",
+    },
+    dateLabelToday: {
+      color: tokens.color.text.foreground,
     },
     dateDay: {
       ...typeRole(tokens.typography.role.headline),

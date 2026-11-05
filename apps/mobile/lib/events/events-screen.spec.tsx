@@ -132,13 +132,21 @@ describe("Event card", () => {
     expect(place.color).toBe(signetDarkTokens.color.text.mutedForeground);
   });
 
-  it("draws the date block in the chapter accent over the day", () => {
+  // foundations.md §6 "Where the accent goes" (2026-11-05): a date label is a
+  // label, so it is neutral: "Today" in the foreground, any other day muted.
+  it("draws the date block's label neutral over the day, never the accent", () => {
     const tree = render();
     // Mounted a minute before the event, which is the same local day in most
     // zones but the day before in some (UTC+6 puts the start at midnight), so
     // the label comes from the formatter, which format.spec.ts pins.
     const block = formatEventDateBlock(START.toISOString(), MOUNTED_AT);
-    expect(styleOf(tree, block!.label).color).toBe(ACCENT);
+    const color = styleOf(tree, block!.label).color;
+    expect(color).toBe(
+      block!.label === "Today"
+        ? signetDarkTokens.color.text.foreground
+        : signetDarkTokens.color.text.mutedForeground,
+    );
+    expect(color).not.toBe(ACCENT);
     expect(screenText(tree)).toContain(String(START.getDate()));
   });
 

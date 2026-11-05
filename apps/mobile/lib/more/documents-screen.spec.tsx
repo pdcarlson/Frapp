@@ -46,6 +46,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import DocumentsScreen from "@/app/(tabs)/documents";
 import { UploadGlyph } from "@/components/documents/document-glyphs";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FilterChips } from "@/components/filter-chips";
 import { ListRow } from "@/components/list-section";
 import { DocumentsGlyph } from "@/components/more/more-glyphs";
@@ -120,7 +121,11 @@ describe("Documents upload (#3399)", () => {
           node.props.accessibilityLabel === "Back to More",
       ).parent!;
       expect(backRow.findAll((node) => node === upload)).toHaveLength(1);
-      expect(upload!.findByType(UploadGlyph).props.color).toBe("#7A3FC2");
+      // An icon-only control is neutral, never the chapter accent
+      // (foundations.md §6, "Where the accent goes", 2026-11-05).
+      expect(upload!.findByType(UploadGlyph).props.color).toBe(
+        signetDarkTokens.color.text.mutedForeground,
+      );
 
       act(() => {
         upload!.props.onPress();
