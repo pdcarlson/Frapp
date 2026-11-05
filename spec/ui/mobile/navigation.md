@@ -272,6 +272,17 @@ key at all**. Each of those three is load-bearing:
   in `IOS_PURPOSE_STRINGS` with the call that requests it, so declining it fails CI.
   *(Moved 2026-09-30, #2343, from `app.config.spec.ts`'s `REQUESTED_AT_RUNTIME` list.)*
 
+*Corrected 2026-11-05:* "decline what nothing requests" is half the rule on iOS. App
+Store Connect scans the binary for APIs that need a purpose string and rejects the
+upload when the key is missing (ITMS-90683), whether or not the app ever asks.
+`expo-location` links `CMMotionActivityManager` for its motion permission requester,
+so its `motionUsagePermission: false` got iOS 0.9.1 (8) rejected. The option now carries
+a string that says Frapp never asks, and `IOS_PURPOSE_STRINGS` pins it as a linked-only
+entry: `requestedBy: null` and a `linkedBy` naming the library file and symbol, so the
+gate fails if the key is declined again and asks for its removal once the library stops
+linking the API. A key may be declined only when nothing requests it **and** no linked
+library references the API.
+
 The pairing is also pinned from the other side: `app.config.spec.ts` asserts a media
 picker is depended on **only while a non-spec source file imports one**, which is the
 check that would have caught #1045 shipping the dependency a month ahead of any

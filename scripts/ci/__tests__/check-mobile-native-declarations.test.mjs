@@ -19,6 +19,7 @@ import {
   androidPermissionProblems,
   backgroundModeProblems,
   declaredCategories,
+  linkedApiProblems,
   linkedIosPods,
   main,
   purposeStringProblems,
@@ -207,6 +208,39 @@ test("a /* or // inside a string, a line comment, or JSX text can't swallow a li
 test("a deleted requester file fails", () => {
   const problems = requesterProblems((file) => (file.endsWith("location.ts") ? null : "useCameraPermissions( requestMediaLibraryPermissionsAsync("));
   assert.ok(problems.some((p) => p === "NSLocationWhenInUseUsageDescription: its requester apps/mobile/lib/location.ts no longer exists"), problems.join("\n"));
+});
+
+// ── the roster's linked-only keys ────────────────────────────────────────────
+
+test("a declined linked-only purpose string fails, because App Store Connect rejects the upload", () => {
+  // What `"motionUsagePermission": false` shipped in iOS 0.9.1 (8), rejected 2026-11-05 (ITMS-90683).
+  const plist = rosterInfoPlist();
+  delete plist.NSMotionUsageDescription;
+  assert.deepEqual(purposeStringProblems(plist), [
+    "iOS ships no NSMotionUsageDescription, but expo-location links CMMotionActivityManager: App Store Connect rejects the binary without it (ITMS-90683), even though the app never asks. Set the plugin option to the roster text instead of `false`",
+  ]);
+});
+
+test("a linked-only key has no requester to check", () => {
+  const live = "useCameraPermissions( requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync(";
+  assert.deepEqual(requesterProblems(() => live), []);
+});
+
+test("a linked-only key passes while its library still uses the symbol", () => {
+  const read = (pkg, file) =>
+    pkg === "expo-location" && file === "ios/Requesters/MotionActivityPermissionRequester.swift"
+      ? "import CoreMotion\nprivate var manager: CMMotionActivityManager?"
+      : null;
+  assert.deepEqual(linkedApiProblems(read), []);
+});
+
+test("a linked-only key fails once its library stops using the symbol, or the file is gone", () => {
+  assert.deepEqual(linkedApiProblems(() => "// used CMMotionActivityManager before v58\nclass Gone {}"), [
+    "NSMotionUsageDescription: expo-location/ios/Requesters/MotionActivityPermissionRequester.swift no longer uses CMMotionActivityManager. If no linked library references it now, drop the key and decline the plugin option with `false`; if it moved, update linkedBy",
+  ]);
+  const missing = linkedApiProblems(() => null);
+  assert.equal(missing.length, 1);
+  assert.match(missing[0], /^NSMotionUsageDescription: expo-location\/ios\/Requesters\/MotionActivityPermissionRequester\.swift no longer exists/);
 });
 
 // ── 2 and 3. Android permissions ─────────────────────────────────────────────
@@ -589,6 +623,7 @@ function fixture({
   aggregation = AGGREGATION_RB,
   reactNativePath = true,
   podfileProperties,
+  motionRequester = "private var manager: CMMotionActivityManager?",
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "native-declarations-"));
   const put = (rel, text) => {
@@ -598,6 +633,10 @@ function fixture({
   put("apps/mobile/app/(tabs)/check-in.tsx", checkIn);
   put("apps/mobile/lib/location.ts", "requestForegroundPermissionsAsync();");
   put("apps/mobile/lib/chat/attachment-upload.ts", "requestMediaLibraryPermissionsAsync();");
+  put("node_modules/expo-location/package.json", '{"name":"expo-location"}');
+  if (motionRequester !== null) {
+    put("node_modules/expo-location/ios/Requesters/MotionActivityPermissionRequester.swift", motionRequester);
+  }
   const podDirs = {};
   for (const name of MANIFESTLESS_REQUIRED_REASON_USERS.keys()) {
     podDirs[name] = join(root, "node_modules", name, "ios");
@@ -651,6 +690,17 @@ test("main reports each check's failure together", () => {
     assert.match(text, /NSMicrophoneUsageDescription/);
     assert.match(text, /removes android\.permission\.CAMERA/);
     assert.match(text, /ActiveKeyboards API/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("main reads a linked-only key's library from where apps/mobile resolves it", () => {
+  const f = fixture({ motionRequester: "class MotionActivityPermissionRequester {}" });
+  try {
+    assert.deepEqual(main(f.root, f.run).violations, [
+      "NSMotionUsageDescription: expo-location/ios/Requesters/MotionActivityPermissionRequester.swift no longer uses CMMotionActivityManager. If no linked library references it now, drop the key and decline the plugin option with `false`; if it moved, update linkedBy",
+    ]);
   } finally {
     f.cleanup();
   }

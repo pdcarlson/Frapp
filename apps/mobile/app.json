@@ -103,7 +103,7 @@
           "isAndroidBackgroundLocationEnabled": false,
           "locationAlwaysAndWhenInUsePermission": false,
           "locationAlwaysPermission": false,
-          "motionUsagePermission": false
+          "motionUsagePermission": "Frapp never asks for motion data. iOS requires this note because a location library Frapp uses can read it."
         }
       ],
       [

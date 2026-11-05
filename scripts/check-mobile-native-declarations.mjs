@@ -39,9 +39,11 @@
 //
 // 1. iOS. The shipped `*UsageDescription*` keys are exactly
 //    IOS_PURPOSE_STRINGS, each with its exact text, and each entry's
-//    `requestedBy` call is still in the app's source (comments don't count).
-//    A key for a feature the app doesn't have fails, however it got into
-//    Info.plist. `UIBackgroundModes` is exactly IOS_BACKGROUND_MODES.
+//    `requestedBy` call is still in the app's source (comments don't count),
+//    or, for a key the app never requests, its `linkedBy` symbol is still in
+//    the linked library's native source. A key for a feature the app doesn't
+//    have fails, however it got into Info.plist. `UIBackgroundModes` is
+//    exactly IOS_BACKGROUND_MODES.
 // 2. Android declarations. The app manifest declares exactly
 //    ANDROID_RUNTIME_PERMISSIONS plus ANDROID_TEMPLATE_PERMISSIONS, and marks
 //    none of the runtime ones `tools:node="remove"`.
@@ -104,6 +106,14 @@ const MOBILE_DIR = "apps/mobile";
  * with no such call is a Guideline 5.1.1(i) rejection, and a call with no
  * purpose string crashes on iOS.
  *
+ * The exception is a key the app never requests but a linked library's native
+ * code references. App Store Connect scans the binary for those APIs and
+ * rejects the upload without the key (ITMS-90683), whether or not anything
+ * calls them. Such an entry has `requestedBy: null` and a `linkedBy` naming
+ * the package file and symbol that make Apple require it, so the entry goes
+ * away when the library stops linking the API. Declining one with `false`
+ * is what got iOS 0.9.1 (8) rejected on 2026-11-05.
+ *
  * Two plugin options that write no string here are load-bearing, and the
  * checks below catch either one changing:
  *   - expo-camera's and expo-image-picker's `microphonePermission: false`.
@@ -141,6 +151,21 @@ export const IOS_PURPOSE_STRINGS = new Map([
       requestedBy: {
         file: "apps/mobile/lib/chat/attachment-upload.ts",
         call: "requestMediaLibraryPermissionsAsync(",
+      },
+    },
+  ],
+  [
+    // Never requested: nothing in the app asks for motion activity. expo-location
+    // links CMMotionActivityManager for its motion permission requester, and
+    // App Store Connect rejected build 8 without this key (ITMS-90683).
+    "NSMotionUsageDescription",
+    {
+      text: "Frapp never asks for motion data. iOS requires this note because a location library Frapp uses can read it.",
+      requestedBy: null,
+      linkedBy: {
+        packageName: "expo-location",
+        file: "ios/Requesters/MotionActivityPermissionRequester.swift",
+        symbol: "CMMotionActivityManager",
       },
     },
   ],
@@ -247,7 +272,7 @@ export function purposeStringProblems(infoPlist, roster = IOS_PURPOSE_STRINGS) {
     const expected = roster.get(key);
     if (!expected) {
       problems.push(
-        `iOS ships ${key} = ${JSON.stringify(infoPlist[key])}, which is not in IOS_PURPOSE_STRINGS: a purpose string for a feature the app doesn't have is a Guideline 5.1.1(i) rejection. If a plugin default wrote it, decline the option with \`false\`; if the feature is real, add the key to the roster`,
+        `iOS ships ${key} = ${JSON.stringify(infoPlist[key])}, which is not in IOS_PURPOSE_STRINGS: a purpose string for a feature the app doesn't have is a Guideline 5.1.1(i) rejection. If a plugin default wrote it and no linked library references the API, decline the option with \`false\`; if the feature is real, add the key to the roster with its requestedBy; if a linked library references the API, App Store Connect requires the key (ITMS-90683), so add it with requestedBy: null and its linkedBy`,
       );
     } else if (infoPlist[key] !== expected.text) {
       problems.push(
@@ -255,10 +280,16 @@ export function purposeStringProblems(infoPlist, roster = IOS_PURPOSE_STRINGS) {
       );
     }
   }
-  for (const key of roster.keys()) {
-    if (!shipped.includes(key)) {
+  for (const [key, entry] of roster) {
+    if (shipped.includes(key)) continue;
+    if (entry.requestedBy) {
       problems.push(
-        `iOS ships no ${key}, but ${roster.get(key).requestedBy.file} requests the permission: iOS terminates an app that asks without a purpose string`,
+        `iOS ships no ${key}, but ${entry.requestedBy.file} requests the permission: iOS terminates an app that asks without a purpose string`,
+      );
+    } else {
+      const { packageName, symbol } = entry.linkedBy;
+      problems.push(
+        `iOS ships no ${key}, but ${packageName} links ${symbol}: App Store Connect rejects the binary without it (ITMS-90683), even though the app never asks. Set the plugin option to the roster text instead of \`false\``,
       );
     }
   }
@@ -331,6 +362,8 @@ export function requesterProblems(readSource, rosters = [IOS_PURPOSE_STRINGS, AN
   const problems = [];
   for (const roster of rosters) {
     for (const [key, entry] of roster) {
+      // A linked-only purpose string has no requester; linkedApiProblems checks it.
+      if (entry.requestedBy === null) continue;
       const { file, call } = entry.requestedBy ?? entry;
       const source = readSource(file);
       if (source === null) {
@@ -340,6 +373,26 @@ export function requesterProblems(readSource, rosters = [IOS_PURPOSE_STRINGS, AN
           `${key}: ${file} no longer calls ${call.replace(/\($/, "")}. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy`,
         );
       }
+    }
+  }
+  return problems;
+}
+
+/**
+ * Problems with the roster's `linkedBy` entries, given a reader from a package
+ * name and a file inside it to its text (null when either is missing). A key
+ * whose library no longer links the API is a purpose string for nothing.
+ */
+export function linkedApiProblems(readPackageFile, roster = IOS_PURPOSE_STRINGS) {
+  const problems = [];
+  for (const [key, entry] of roster) {
+    if (!entry.linkedBy) continue;
+    const { packageName, file, symbol } = entry.linkedBy;
+    const source = readPackageFile(packageName, file);
+    if (source === null) {
+      problems.push(`${key}: ${packageName}/${file} no longer exists, so nothing shows the library still links ${symbol}. Find where it moved and update linkedBy, or drop the key if the library no longer links it`);
+    } else if (!withoutComments(source).includes(symbol)) {
+      problems.push(`${key}: ${packageName}/${file} no longer uses ${symbol}. If no linked library references it now, drop the key and decline the plugin option with \`false\`; if it moved, update linkedBy`);
     }
   }
   return problems;
@@ -668,6 +721,17 @@ export function main(root = process.cwd(), run = expoCli(root)) {
     const path = join(root, file);
     return existsSync(path) ? readFileSync(path, "utf8") : null;
   };
+  const mobileRequire = createRequire(join(root, MOBILE_DIR, "package.json"));
+  const readPackageFile = (packageName, file) => {
+    let dir;
+    try {
+      dir = dirname(mobileRequire.resolve(`${packageName}/package.json`));
+    } catch {
+      return null;
+    }
+    const path = join(dir, file);
+    return existsSync(path) ? readFileSync(path, "utf8") : null;
+  };
   const scanned = pods.map((pod) => ({
     packageName: pod.packageName,
     ...scanPod(pod.dir),
@@ -686,6 +750,7 @@ export function main(root = process.cwd(), run = expoCli(root)) {
       ...purposeStringProblems(modResults.ios.infoPlist),
       ...backgroundModeProblems(modResults.ios.infoPlist),
       ...requesterProblems(readSource),
+      ...linkedApiProblems(readPackageFile),
       ...androidPermissionProblems(modResults.android.manifest),
       ...requiredReasonProblems(scanned, declared, { reactNativeCore }),
       ...swiftPackageProblems(scanned, modResults.ios.podfileProperties),
