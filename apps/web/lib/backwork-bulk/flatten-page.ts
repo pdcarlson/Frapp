@@ -27,6 +27,12 @@ export type BaseViewport = {
  * one flat colour isn't visible there, whether an earlier tool drew a black
  * rectangle over it, it is white on white, or a stuck-on image covers it.
  * Boxing what you see then covers everything that reaches the upload.
+ *
+ * A pdf.js text item is often a whole run ("Student: Jane Doe"), and a bar
+ * may hide only part of it, so an upright item is checked one character cell
+ * at a time and kept only if every non-blank cell shows ink. A cell that
+ * misses its glyph only costs that run its searchability, never its privacy.
+ * Rotated items are checked as one area.
  */
 export type IsVisible = (rect: Box) => boolean;
 
@@ -46,7 +52,24 @@ export async function pageTextLayer(
     base.rotation,
   );
   const outside = textOutsideBoxes(placed, boxes);
-  return isVisible ? outside.filter((item) => isVisible(item.rect)) : outside;
+  return isVisible
+    ? outside.filter((item) => inkCells(item).every(isVisible))
+    : outside;
+}
+
+/** The areas whose ink decides whether a text item is visible. */
+export function inkCells(item: PlacedText): Box[] {
+  const chars = Array.from(item.str);
+  if (!item.upright || chars.length <= 1) return [inkSampleRect(item.rect)];
+  const cell = item.rect.width / chars.length;
+  const cells: Box[] = [];
+  chars.forEach((char, index) => {
+    if (char.trim() === "") return;
+    cells.push(
+      inkSampleRect({ ...item.rect, x: item.rect.x + index * cell, width: cell }),
+    );
+  });
+  return cells.length > 0 ? cells : [inkSampleRect(item.rect)];
 }
 
 /**
@@ -83,6 +106,47 @@ export function burnBoxes(
       Math.ceil(box.height * scale) + 1,
     );
   }
+}
+
+/** The rendered page canvas, as much of it as the redaction step touches. */
+export type RenderedPage = {
+  width: number;
+  height: number;
+  ctx: {
+    fillStyle: unknown;
+    fillRect: (x: number, y: number, w: number, h: number) => void;
+    getImageData: (x: number, y: number, w: number, h: number) => { data: ArrayLike<number> };
+  };
+};
+
+/**
+ * Redacts one page that `flattenPdf` has rendered at `scale`: reads the text
+ * layer off the pixels as they are, then burns the boxes in. The order
+ * matters. Read after the burn, every boxed word would look hidden anyway,
+ * and a box missing from the text filter would go unnoticed.
+ */
+export async function redactRenderedPage(
+  page: TextPage,
+  base: BaseViewport,
+  boxes: readonly Box[],
+  scale: number,
+  canvas: RenderedPage,
+  keepText = true,
+): Promise<PlacedText[]> {
+  const text = keepText
+    ? await pageTextLayer(page, base, boxes, (rect) => {
+        // Only the part of the area that is on the page: text placed off
+        // the page has nothing visible there, so it is dropped.
+        const left = Math.max(0, Math.floor(rect.x * scale));
+        const top = Math.max(0, Math.floor(rect.y * scale));
+        const right = Math.min(canvas.width, Math.ceil((rect.x + rect.width) * scale));
+        const bottom = Math.min(canvas.height, Math.ceil((rect.y + rect.height) * scale));
+        if (right <= left || bottom <= top) return false;
+        return hasInk(canvas.ctx.getImageData(left, top, right - left, bottom - top).data);
+      })
+    : [];
+  burnBoxes(canvas.ctx, boxes, scale);
+  return text;
 }
 
 /** Share of a region's pixels that must stand apart from its usual colour. */

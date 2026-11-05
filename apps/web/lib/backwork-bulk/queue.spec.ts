@@ -200,4 +200,35 @@ describe("BulkUploadQueue", () => {
     expect(h.status("a.pdf")).toBe("preparing");
     expect(h.prepares.get("a.pdf")).not.toBe(first);
   });
+
+  it("counts submitted items still waiting their turn as pending uploads", async () => {
+    const h = harness({ maxFinishing: 1 });
+    h.queue.add(["a.pdf", "b.pdf"].map(pdf));
+    h.prepares.get("a.pdf")!.resolve("A");
+    h.prepares.get("b.pdf")!.resolve("B");
+    await flush();
+    h.queue.submit(h.idOf("a.pdf"), { title: "A" });
+    h.queue.submit(h.idOf("b.pdf"), { title: "B" });
+    expect(h.status("b.pdf")).toBe("waiting");
+    expect(h.queue.pendingUploads()).toBe(2);
+  });
+
+  it("knows which items are still in the batch, and tells prepare which one it is", async () => {
+    const ids: string[] = [];
+    const queue = new BulkUploadQueue<string, { title: string }>({
+      prepare: async (_file, id) => {
+        ids.push(id);
+        return id;
+      },
+      finish: async () => undefined,
+      release: () => undefined,
+    });
+    queue.add([pdf("a.pdf")]);
+    const id = queue.getSnapshot().items[0]!.id;
+    expect(ids).toEqual([id]);
+    expect(queue.has(id)).toBe(true);
+    queue.remove(id);
+    expect(queue.has(id)).toBe(false);
+    expect(queue.has("nope")).toBe(false);
+  });
 });

@@ -98,7 +98,7 @@ describe("assembleFlatPdf", () => {
     expect(meta.info).not.toHaveProperty("Title");
     });
 
-  it("is deterministic, so the library's duplicate check still works", async () => {
+  it("assembles the same page images to the same bytes", async () => {
     const source = await examPdf();
     const text = await survivingText(source, NAME_BOX);
     const a = await assembleFlatPdf([{ ...PAGE, jpeg: JPEG, text }]);

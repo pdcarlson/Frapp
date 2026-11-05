@@ -102,4 +102,21 @@ describe("collect-files", () => {
     expect(result.files.map((f) => f.name)).toEqual(["Exam 1.pdf"]);
     expect(result.unreadable).toBe(1);
   });
+
+  it("counts a folder the browser won't list and keeps the rest of the drop", async () => {
+    const locked = {
+      isFile: false,
+      isDirectory: true,
+      name: "Locked",
+      createReader: () => ({
+        readEntries: (_ok: unknown, fail: (err: unknown) => void) => fail(new Error("NotReadableError")),
+      }),
+    };
+    const result = await collectFromDrop([
+      dropItem(locked),
+      dropItem(fileEntry(file("Exam 1.pdf"))),
+    ]);
+    expect(result.files.map((f) => f.name)).toEqual(["Exam 1.pdf"]);
+    expect(result.unreadable).toBe(1);
+  });
 });

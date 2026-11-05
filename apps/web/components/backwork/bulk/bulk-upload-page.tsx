@@ -9,7 +9,6 @@ import {
   useSyncExternalStore,
 } from "react";
 import Link from "next/link";
-import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -21,7 +20,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  putSignedUpload,
   useConfirmBackworkUpload,
   useRequestBackworkUploadUrl,
 } from "@repo/hooks";
@@ -33,7 +31,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/layout/page-header";
-import { EmptyState } from "@/components/shared/async-states";
+import { EmptyState, PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
   SubscriptionNotice,
@@ -41,19 +39,15 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useToast } from "@/lib/hooks/use-toast";
-import { cn, getErrorMessage } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import {
   collectFromDrop,
   collectFromList,
   type CollectedFiles,
 } from "@/lib/backwork-bulk/collect-files";
 import type { BoxesByPage } from "@/lib/backwork-bulk/geometry";
-import {
-  BulkUploadQueue,
-  type ItemStatus,
-  type QueueItem,
-} from "@/lib/backwork-bulk/queue";
 import type { PagePreview } from "@/lib/backwork-bulk/pdf";
+import type { ItemStatus, QueueItem } from "@/lib/backwork-bulk/queue";
 import { PdfRedactor } from "./pdf-redactor";
 import { BulkFieldsForm } from "./bulk-fields";
 import {
@@ -61,8 +55,8 @@ import {
   nextDocumentFields,
   type BulkFields,
 } from "@/lib/backwork-bulk/fields";
-import { finishUpload, mustFlatten, sha256Hex } from "@/lib/backwork-bulk/finish";
-import { takeStagedBulkUpload } from "@/lib/backwork-bulk/handoff";
+import { mustFlatten } from "@/lib/backwork-bulk/finish";
+import { getBulkSession, type Prepared, type Submission } from "./bulk-session";
 
 /**
  * Backwork bulk upload (#3499): drop PDFs or folders, redact and describe each
@@ -75,28 +69,6 @@ import { takeStagedBulkUpload } from "@/lib/backwork-bulk/handoff";
  * original bytes leave the browser only for a Blank Copy or Answer Key with no
  * boxes, which is the same file the single upload sheet already sends.
  */
-type Prepared = {
-  bytes: Uint8Array;
-  hash: string;
-  doc: PDFDocumentProxy;
-  pageCount: number;
-  previews: Map<number, Promise<PagePreview>>;
-};
-
-type Submission = {
-  fields: BulkFields;
-  boxes: BoxesByPage;
-  flatten: boolean;
-};
-
-function releasePrepared(prepared: Prepared) {
-  for (const preview of prepared.previews.values()) {
-    preview.then((p) => URL.revokeObjectURL(p.url)).catch(() => undefined);
-  }
-  // pdf.js 6 tears a document down through its loading task.
-  void prepared.doc.loadingTask.destroy();
-}
-
 export function BulkUploadPage() {
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   if (!activeChapterId) {
@@ -113,6 +85,12 @@ export function BulkUploadPage() {
   return (
     <Can
       permission="backwork:upload"
+      offlineFallback={(retry) => (
+        <PermissionsOfflineSurface
+          description="Reconnect to check whether you can upload backwork."
+          onRetry={retry}
+        />
+      )}
       deniedFallback={
         <div className="space-y-6">
           <PageHeader title="Bulk upload" />
@@ -133,120 +111,28 @@ function BulkUploadWorkspace({ chapterId }: { chapterId: string }) {
   const gate = useSubscriptionGate();
   const requestUpload = useRequestBackworkUploadUrl();
   const confirmUpload = useConfirmBackworkUpload();
-  // The queue outlives renders; the mutations it calls are read through a ref
-  // so it always uses the current hook instances.
-  const mutations = useRef({ requestUpload, confirmUpload });
+  // The batch belongs to the chapter, not to this mount (`bulk-session.ts`):
+  // leaving and coming back shows the same list.
+  const [session] = useState(() => getBulkSession(chapterId));
+  const queue = session.queue;
   useEffect(() => {
-    mutations.current = { requestUpload, confirmUpload };
+    session.bind({ requestUpload, confirmUpload });
   });
-  const queueRef = useRef<BulkUploadQueue<Prepared, Submission> | null>(null);
-  // Original hash -> the item that holds it, for the in-batch duplicate check.
-  const seenHashes = useRef(new Map<string, string>());
-  // False once the page is gone: a failure then can't show on its row, so it
-  // becomes a toast instead.
-  const onScreen = useRef(true);
-
-  const [queue] = useState(
-    // eslint-disable-next-line react-hooks/refs -- the queue reads both refs when a file is prepared or uploaded, never during render
-    () =>
-      new BulkUploadQueue<Prepared, Submission>({
-        prepare: async (file, id) => {
-          const { loadPdf, renderPagePreview } = await import(
-            "@/lib/backwork-bulk/pdf"
-          );
-          const bytes = new Uint8Array(await file.arrayBuffer());
-          const hash = await sha256Hex(bytes);
-          // A duplicate only while the other copy is still in the batch: a
-          // removed item, or this item on a retry, doesn't count.
-          const owner = seenHashes.current.get(hash);
-          if (owner && owner !== id && queueRef.current?.has(owner)) {
-            throw new Error("This file is already in this batch.");
-          }
-          seenHashes.current.set(hash, id);
-          let doc: PDFDocumentProxy;
-          try {
-            doc = await loadPdf(bytes);
-          } catch {
-            throw new Error("This PDF couldn't be opened. It may be damaged or password-protected.");
-          }
-          const previews = new Map<number, Promise<PagePreview>>();
-          const first = renderPagePreview(doc, 1);
-          previews.set(1, first);
-          try {
-            await first;
-          } catch (error) {
-            void doc.loadingTask.destroy();
-            throw error;
-          }
-          return { bytes, hash, doc, pageCount: doc.numPages, previews };
-        },
-        finish: async (job) => {
-          try {
-            const { flattenPdf } = await import("@/lib/backwork-bulk/pdf");
-            await finishUpload(job, {
-              // Uploads keep finishing after the page unmounts, and a chapter
-              // switch remounts it. The API client sends whichever chapter is
-              // active now, so stop rather than file this one elsewhere.
-              assertChapter: () => {
-                if (useChapterStore.getState().activeChapterId !== chapterId) {
-                  throw new Error("You switched chapters. Switch back and retry this one.");
-                }
-              },
-              flatten: flattenPdf,
-            requestUpload: (body) => mutations.current.requestUpload.mutateAsync(body),
-            put: ({ signedUrl, body }) =>
-              putSignedUpload({
-                signedUrl,
-                body,
-                contentType: "application/pdf",
-                upsert: true,
-                describeRejection: (status) => `Storage rejected the upload (${status}).`,
-              }),
-              confirm: (body) => mutations.current.confirmUpload.mutateAsync(body),
-            });
-          } catch (error) {
-            if (!onScreen.current) {
-              toast({
-                variant: "destructive",
-                title: `${job.submission.fields.title.trim() || "A backwork file"} didn't upload`,
-                description: "Open Bulk upload to retry it.",
-              });
-            }
-            throw error;
-          }
-        },
-        release: releasePrepared,
-        describeError: (error, stage) => {
-          const status =
-            error && typeof error === "object" && "statusCode" in error
-              ? (error as { statusCode?: number }).statusCode
-              : undefined;
-          if (status === 409) return "Already in the library.";
-          return getErrorMessage(
-            error,
-            stage === "prepare" ? "This PDF couldn't be loaded." : "The upload failed. Retry it.",
-          );
-        },
-      }),
-  );
   useEffect(() => {
-    queueRef.current = queue;
-    onScreen.current = true;
+    session.setOnScreen(true);
     queue.open();
-    const handedOver = takeStagedBulkUpload();
-    if (handedOver.length > 0) queue.add(handedOver);
     return () => {
-      onScreen.current = false;
+      session.setOnScreen(false);
       const pendingCount = queue.pendingUploads();
       if (pendingCount > 0) {
         toast({
           title: `Finishing ${pendingCount} ${pendingCount === 1 ? "upload" : "uploads"}`,
-          description: "They keep uploading in the background. Come back to Bulk upload to check on them.",
+          description: "They keep uploading while this tab is open. Come back to Bulk upload to check on them.",
         });
       }
       queue.close();
     };
-  }, [queue, toast]);
+  }, [session, queue, toast]);
 
   const snapshot = useSyncExternalStore(queue.subscribe, queue.getSnapshot, queue.getSnapshot);
   const current = snapshot.items.find((it) => it.id === snapshot.currentId) ?? null;
@@ -264,12 +150,6 @@ function BulkUploadWorkspace({ chapterId }: { chapterId: string }) {
   const pending = snapshot.items.some((it) =>
     (["queued", "preparing", "ready", "waiting", "finishing"] as ItemStatus[]).includes(it.status),
   );
-  useEffect(() => {
-    if (!pending) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [pending]);
 
   const addCollected = useCallback(
     ({ files, skipped, unreadable = 0 }: CollectedFiles) => {

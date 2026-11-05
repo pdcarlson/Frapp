@@ -169,6 +169,39 @@ describe("finishUpload", () => {
     expect(deps.confirm).toHaveBeenCalled();
   });
 
+  it("only waits out a 429, and fails anything else at once", async () => {
+    const { deps } = harness();
+    const conflict = Object.assign(new Error("Conflict"), { statusCode: 409 });
+    deps.requestUpload = vi.fn().mockRejectedValue(conflict);
+    deps.sleep = vi.fn(async () => undefined);
+    await expect(run({ document_variant: "Blank Copy" }, {}, deps)).rejects.toBe(conflict);
+    expect(deps.sleep).not.toHaveBeenCalled();
+    expect(deps.requestUpload).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up after three waits on the rate limit", async () => {
+    const { deps, put } = harness();
+    const limited = Object.assign(new Error("Too many requests"), { statusCode: 429 });
+    deps.requestUpload = vi.fn().mockRejectedValue(limited);
+    deps.sleep = vi.fn(async () => undefined);
+    await expect(run({ document_variant: "Blank Copy" }, {}, deps)).rejects.toBe(limited);
+    expect(deps.sleep).toHaveBeenCalledTimes(3);
+    expect(deps.requestUpload).toHaveBeenCalledTimes(4);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("asks for no upload slot once the chapter has changed", async () => {
+    const { deps, put } = harness();
+    deps.assertChapter = () => {
+      throw new Error("You switched chapters.");
+    };
+    await expect(run({ document_variant: "Blank Copy" }, {}, deps)).rejects.toThrow(
+      /switched chapters/,
+    );
+    expect(deps.requestUpload).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
+
   it("stops before filing anything once the chapter has changed", async () => {
     const { deps, put } = harness();
     let active = "c1";
@@ -183,5 +216,13 @@ describe("finishUpload", () => {
       /switched chapters/,
     );
     expect(deps.confirm).not.toHaveBeenCalled();
+  });
+});
+
+describe("flattenedFileName", () => {
+  it("keeps only safe characters and trims the edges", () => {
+    expect(flattenedFileName("Café / Exam #2: Final?")).toBe("Cafe-Exam-2-Final.pdf");
+    expect(flattenedFileName("..-Midterm-..")).toBe("Midterm.pdf");
+    expect(flattenedFileName("x".repeat(120))).toBe(`${"x".repeat(80)}.pdf`);
   });
 });

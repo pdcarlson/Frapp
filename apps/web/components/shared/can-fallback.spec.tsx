@@ -392,6 +392,7 @@ const SURFACE_GATES: readonly { file: string; match: string }[] = [
   { file: "components/chat-admin/chat-admin-page.tsx", match: 'permission="channels:manage"' },
   { file: "components/chat-admin/chat-reports-card.tsx", match: "allOf={CHAT_REPORT_QUEUE_PERMISSIONS}" },
   { file: "components/discord-import/discord-import-page.tsx", match: 'permission="channels:manage"' },
+  { file: "components/backwork/bulk/bulk-upload-page.tsx", match: 'permission="backwork:upload"' },
 ];
 
 /**
@@ -402,6 +403,7 @@ const SURFACE_GATES: readonly { file: string; match: string }[] = [
  */
 const CONSUMERS: readonly string[] = [
   "components/backwork/backwork-page.tsx",
+  "components/backwork/bulk/bulk-upload-page.tsx",
   "components/billing/invoice-list.tsx",
   "components/billing/plan-panel.tsx",
   "components/chat-admin/chat-admin-page.tsx",

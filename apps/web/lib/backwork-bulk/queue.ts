@@ -74,7 +74,6 @@ export class BulkUploadQueue<P, S> {
   private items: QueueItem<P, S>[] = [];
   private snapshot: QueueSnapshot<P, S> = { items: [], currentId: null };
   private listeners = new Set<() => void>();
-  private destroyed = false;
   private closed = false;
   private pumping = false;
   private repump = false;
@@ -147,7 +146,6 @@ export class BulkUploadQueue<P, S> {
    * load again on `open()`), but lets submitted items finish.
    */
   close(): void {
-    if (this.destroyed) return;
     this.closed = true;
     for (const item of this.reviewLine()) {
       if (item.status === "ready" && item.prepared) {
@@ -158,7 +156,6 @@ export class BulkUploadQueue<P, S> {
   }
 
   open(): void {
-    if (this.destroyed) return;
     this.closed = false;
     this.changed();
   }
@@ -175,21 +172,11 @@ export class BulkUploadQueue<P, S> {
     ).length;
   }
 
-  destroy(): void {
-    this.destroyed = true;
-    for (const item of this.items) {
-      if (item.prepared) this.options.release?.(item.prepared);
-    }
-    this.items = [];
-    this.listeners.clear();
-  }
-
   private find(id: string): QueueItem<P, S> | undefined {
     return this.items.find((it) => it.id === id);
   }
 
   private patch(id: string, update: Partial<QueueItem<P, S>>): void {
-    if (this.destroyed) return;
     let found = false;
     this.items = this.items.map((it) => {
       if (it.id !== id) return it;
@@ -214,7 +201,6 @@ export class BulkUploadQueue<P, S> {
   }
 
   private publish(): void {
-    if (this.destroyed) return;
     const line = this.reviewLine();
     this.snapshot = { items: this.items, currentId: line[0]?.id ?? null };
     for (const listener of this.listeners) listener();
@@ -226,7 +212,6 @@ export class BulkUploadQueue<P, S> {
    * always happen in queue order and each item is started once.
    */
   private pump(): void {
-    if (this.destroyed) return;
     if (this.pumping) {
       this.repump = true;
       return;
@@ -274,7 +259,7 @@ export class BulkUploadQueue<P, S> {
   private runPrepare(item: QueueItem<P, S>): void {
     settle(() => this.options.prepare(item.file, item.id)).then(
       (prepared) => {
-        if (!this.find(item.id) || this.destroyed) {
+        if (!this.find(item.id)) {
           this.options.release?.(prepared);
           return;
         }

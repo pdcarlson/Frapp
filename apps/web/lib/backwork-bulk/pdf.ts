@@ -1,7 +1,7 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { assembleFlatPdf, type FlatPage } from "./assemble";
 import type { BoxesByPage } from "./geometry";
-import { burnBoxes, hasInk, inkSampleRect, pageTextLayer } from "./flatten-page";
+import { redactRenderedPage } from "./flatten-page";
 
 /**
  * Browser-only pdf.js glue for backwork bulk upload (#3499): loading, page
@@ -132,20 +132,14 @@ export async function flattenPdf(
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) throw new Error("This browser can't draw the redacted page.");
 
-    // Text first, read off the page as rendered and before the boxes go on.
-    const text: FlatPage["text"] = keepText
-      ? await pageTextLayer(page, base, pageBoxes, (textRect) => {
-          const rect = inkSampleRect(textRect);
-          const x = Math.max(0, Math.floor(rect.x * scale));
-          const y = Math.max(0, Math.floor(rect.y * scale));
-          const width = Math.min(canvas.width - x, Math.ceil(rect.width * scale));
-          const height = Math.min(canvas.height - y, Math.ceil(rect.height * scale));
-          if (width <= 0 || height <= 0) return false;
-          return hasInk(ctx.getImageData(x, y, width, height).data);
-        })
-      : [];
-
-    burnBoxes(ctx, pageBoxes, scale);
+    const text = await redactRenderedPage(
+      page,
+      base,
+      pageBoxes,
+      scale,
+      { width: canvas.width, height: canvas.height, ctx },
+      keepText,
+    );
     const jpeg = new Uint8Array(
       await (await canvasBlob(canvas, "image/jpeg", quality)).arrayBuffer(),
     );

@@ -21,9 +21,10 @@ export type FlatPage = {
  * in. No source objects, fonts, annotations, form fields, attachments,
  * incremental-save history, or Info metadata are copied, because none of it
  * is read. `updateMetadata: false` keeps pdf-lib from writing a producer or
- * timestamps, which also makes the output deterministic: the same file with
- * the same boxes produces the same bytes, so the library's `file_hash`
- * duplicate check still catches a re-upload.
+ * timestamps, so assembly adds nothing that varies: the same page images
+ * always assemble to the same bytes. The images themselves come from the
+ * browser's renderer and JPEG encoder, so whether a re-upload is caught as a
+ * duplicate is spec'd in `spec/behavior/backwork.md` § Duplicate Prevention.
  */
 export async function assembleFlatPdf(
   pages: readonly FlatPage[],
