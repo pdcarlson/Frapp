@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   actionStatus,
   canReadCardTask,
+  isTaskStatus,
   readLiveTask,
   taskCardControls,
   taskCardStatusLabel,
@@ -50,6 +51,17 @@ describe("actionStatus", () => {
     expect(
       actionStatus({ status: "COMPLETED", stored_status: "COMPLETED" }),
     ).toBe("COMPLETED");
+  });
+});
+
+describe("isTaskStatus", () => {
+  it("knows the four statuses and nothing else, inherited keys included", () => {
+    for (const status of ["TODO", "IN_PROGRESS", "COMPLETED", "OVERDUE"]) {
+      expect(isTaskStatus(status)).toBe(true);
+    }
+    for (const other of ["ARCHIVED", "todo", "", "toString", "constructor", null, 3]) {
+      expect(isTaskStatus(other)).toBe(false);
+    }
   });
 });
 

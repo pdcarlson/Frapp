@@ -2,11 +2,13 @@
 import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
+import { AppState } from "react-native";
+import * as expoRouter from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { TaskPayload } from "@repo/chat-core/cards";
 import { FrappThemeProvider } from "@/lib/theme";
-import { screenText } from "@/test/screen-text";
+import { drawnText, screenText } from "@/test/screen-text";
 import { moduleDisabledMessage } from "@repo/validation";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
@@ -66,6 +68,16 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import { TaskCard } from "./task-card";
+import { CardMeta } from "./chat-card";
+
+/** Every mounted focus effect, run again: the member came back to the thread. */
+const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
+
+/** The listener the card registered last with the mocked `AppState`. */
+function appStateListener(): (state: string) => void {
+  const calls = vi.mocked(AppState.addEventListener).mock.calls;
+  return calls[calls.length - 1]![1] as (state: string) => void;
+}
 
 const PAYLOAD: TaskPayload = {
   task_id: "task-1",
@@ -186,6 +198,15 @@ describe("TaskCard — the snapshot", () => {
     expect(text).toContain("Fix the laundry room door");
     expect(text).toContain("Alice → Bob");
     expect(text).toContain("+15 pts");
+  });
+
+  it("draws who assigned whom on a line apart from the due date and reward", () => {
+    // Run together, a phone wraps the line and the wrapped half starts with a
+    // stray separator. `screenText` joins every node, so read each line.
+    const lines = render(ASSIGNEE)
+      .root.findAllByType(CardMeta)
+      .map((line) => drawnText(line));
+    expect(lines).toEqual(["Alice → Bob", "Due tomorrow·+15 pts"]);
   });
 
   it("counts down to the due date while the task is open", () => {
@@ -311,6 +332,31 @@ describe("TaskCard — actions", () => {
     await press(tree, "Start");
     expect(screenText(tree)).toContain(MODULE_REFUSAL_COPY.taskStatus);
     expect(button(tree, "Start").props.disabled).toBe(true);
+  });
+
+  it("puts the controls back when the member returns to the thread or the app", async () => {
+    // An officer may have fixed billing meanwhile, and a withdrawn card has
+    // nothing to press to find out: the board's lifetime (`writing.md`).
+    const refused = {
+      statusCode: 403,
+      error: "Forbidden",
+      message:
+        "Chapter subscription is not active; complete checkout to use this feature.",
+    };
+    updateStatus.mockRejectedValue(refused);
+    const tree = render(ASSIGNEE);
+    await press(tree, "Start");
+    expect(button(tree, "Start").props.disabled).toBe(true);
+    act(() => refocus());
+    expect(button(tree, "Start").props.disabled).toBe(false);
+    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
+
+    await press(tree, "Start");
+    expect(button(tree, "Start").props.disabled).toBe(true);
+    act(() => appStateListener()("background"));
+    expect(button(tree, "Start").props.disabled).toBe(true);
+    act(() => appStateListener()("active"));
+    expect(button(tree, "Start").props.disabled).toBe(false);
   });
 
   it("sends one write for two taps in the same frame", async () => {

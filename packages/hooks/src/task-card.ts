@@ -44,15 +44,19 @@ export interface LiveTask {
   points_awarded: boolean;
 }
 
-const TASK_STATUSES: ReadonlySet<string> = new Set<TaskStatus>([
-  "TODO",
-  "IN_PROGRESS",
-  "COMPLETED",
-  "OVERDUE",
-]);
-
-function isTaskStatus(value: unknown): value is TaskStatus {
-  return typeof value === "string" && TASK_STATUSES.has(value);
+/**
+ * Whether a value off the wire is a status the clients know.
+ *
+ * Read against `TASK_STATUS_LABELS`, whose `Record<TaskStatus, …>` type makes
+ * the compiler list every member, so a status added to the union can't be left
+ * out of the guard. Shared so the s08 board (`apps/mobile/lib/tasks/
+ * transitions.ts`) and both chat cards reject the same unknown values.
+ */
+export function isTaskStatus(value: unknown): value is TaskStatus {
+  return (
+    typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(TASK_STATUS_LABELS, value)
+  );
 }
 
 /**

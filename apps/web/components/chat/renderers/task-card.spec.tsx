@@ -352,13 +352,17 @@ describe("TaskCard", () => {
     // An assignee's task is read whatever their permissions, so when the check
     // can't run (offline, nothing cached) the gate must get the chance to say
     // so with its offline chip, rather than the card dropping Reject unseen
-    // (design-system README §4, §5 rule 4). Denied here: nothing is drawn, and
-    // the empty action row hides itself.
+    // (design-system README §4, §5 rule 4). Denied here: the row is left
+    // empty, and `empty:hidden` keeps it from adding its margin. jsdom applies
+    // no Tailwind, so the spec pins the class and the emptiness, not the CSS.
+    // The chapter has lapsed so that the notice, which belongs to controls the
+    // viewer holds, would show up here if it ever stopped being guarded.
+    chapter.incomplete();
     gateMounts.length = 0;
     mockUseTask.mockReturnValue(
       liveTask({ status: "COMPLETED", stored_status: "COMPLETED" }),
     );
-    render(
+    const { container } = render(
       <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
     );
 
@@ -367,6 +371,9 @@ describe("TaskCard", () => {
       screen.queryByRole("button", { name: /reject/i }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    const row = container.querySelector('[class~="empty:hidden"]');
+    expect(row).not.toBeNull();
+    expect(row).toBeEmptyDOMElement();
   });
 
   it("disables actions while the chat row is unconfirmed", () => {

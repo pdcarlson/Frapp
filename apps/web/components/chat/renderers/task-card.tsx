@@ -130,10 +130,12 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   );
   // Confirm, Confirmed and Reject are worked out as if `tasks:manage` were
   // held, and `<Can>` decides: it tells a check that couldn't run from a
-  // denial (design-system README §4, §5 rule 4), so an officer offline with
-  // nothing cached gets the offline chip and Retry where the control would
-  // be, rather than no control and no reason. Reachable for an assignee, whose
-  // task is read either way.
+  // denial (design-system README §4, §5 rule 4), and for the check that
+  // couldn't run it draws the offline chip and Retry. That only reaches a
+  // viewer whose task is read without the permission, which is the assignee
+  // (their own Reject). Any other officer whose permissions couldn't be read
+  // never reads the task, so their card offers nothing, the way every card
+  // does before its live task arrives.
   const managerControls = taskCardControls({
     live,
     isAssignee,

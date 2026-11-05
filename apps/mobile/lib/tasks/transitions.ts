@@ -24,7 +24,7 @@
  * read here stays correct through an optimistic write.
  */
 
-import { actionStatus, type TaskStatus } from "@repo/hooks";
+import { actionStatus, isTaskStatus, type TaskStatus } from "@repo/hooks";
 
 /**
  * The full write sequence one tap should send, keyed by the stored status.
@@ -85,13 +85,4 @@ export function nextTapSequence(
   if (status === undefined) return [];
   const rung = actionStatus({ status, stored_status: stored });
   return rung === undefined || rung === "OVERDUE" ? [] : LADDER[rung];
-}
-
-function isTaskStatus(value: string | null): value is TaskStatus {
-  return (
-    value === "TODO" ||
-    value === "IN_PROGRESS" ||
-    value === "COMPLETED" ||
-    value === "OVERDUE"
-  );
 }

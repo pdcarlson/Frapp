@@ -1,4 +1,6 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
+import { useFocusEffect } from "expo-router";
 import type { TaskPayload } from "@repo/chat-core/cards";
 import { serverMessageOf } from "@repo/api-sdk";
 import {
@@ -57,9 +59,11 @@ import {
  * Mobile has no toast, so a refusal is a line on the card. A gate refusal is
  * in the board's own words (`taskStatusGateRefusal`) and withdraws the
  * controls, as the board's does (`writing.md`): pressing again would only
- * fetch the same refusal. Any other refusal relays the server's message and
- * leaves them to retry. None of these writes has an outbox, so they are
- * disabled while a write would be lost (`useConnection().writeBlockedReason`).
+ * fetch the same refusal. Like the board's, it lasts until the member comes
+ * back to the thread or to the app. Any other refusal relays the server's
+ * message and leaves them to retry. None of these writes has an outbox, so
+ * they are disabled while a write would be lost
+ * (`useConnection().writeBlockedReason`).
  */
 export function TaskCard({
   payload,
@@ -97,6 +101,26 @@ export function TaskCard({
     /** A gate's: the controls stay withdrawn rather than invite a retry. */
     gate: boolean;
   } | null>(null);
+  // Cleared when the member comes back, as the board's is: an officer may have
+  // sorted the gate out since, and nothing on a withdrawn card can be pressed
+  // to find out. Back to the thread is a navigation focus; back to the app
+  // with the thread still open is an AppState change, which focus never sees.
+  // The listener is held only while there is a refusal to clear, so a thread
+  // of task cards doesn't register one per card.
+  useFocusEffect(
+    useCallback(() => {
+      setRefusal(null);
+      return undefined;
+    }, []),
+  );
+  const hasRefusal = refusal !== null;
+  useEffect(() => {
+    if (!hasRefusal) return undefined;
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "active") setRefusal(null);
+    });
+    return () => subscription.remove();
+  }, [hasRefusal]);
   const pending =
     updateStatus.isPending || confirmTask.isPending || rejectTask.isPending;
   // The hooks' `isPending` reaches React a tick after the press, so two taps

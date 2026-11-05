@@ -7,7 +7,7 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import type { EventPayload } from "@repo/chat-core/cards";
 import { moduleDisabledMessage } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
-import { screenText } from "@/test/screen-text";
+import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { formatEventWindow } from "@/lib/events/format";
@@ -85,6 +85,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import { EventCard } from "./event-card";
+import { CardMeta } from "./chat-card";
 
 /** Inside the window: it started at 23:00 and ends at 00:00. */
 const PAYLOAD: EventPayload = {
@@ -217,6 +218,20 @@ describe("EventCard — the snapshot", () => {
       formatEventWindow(PAYLOAD.start_time, PAYLOAD.end_time, state.now),
     );
     expect(text).not.toContain("New event:");
+  });
+
+  it("draws the time, the place and the rest as lines of their own", () => {
+    // One `CardMeta` per line: run together, a phone wraps them and the
+    // wrapped line starts with a stray separator. `screenText` joins every
+    // node, so the lines are read one `CardMeta` at a time.
+    const lines = render()
+      .root.findAllByType(CardMeta)
+      .map((line) => drawnText(line));
+    expect(lines).toEqual([
+      formatEventWindow(PAYLOAD.start_time, PAYLOAD.end_time, state.now),
+      "Great Hall",
+      "+10 pts",
+    ]);
   });
 
   it("leaves out what the payload doesn't carry", () => {
