@@ -217,7 +217,7 @@ const skeletons = (tree: ReactTestRenderer) =>
   tree.root.findAll((node) => node.props.accessibilityRole === "progressbar");
 
 /**
- * #18, #19 and #23 of the 2026-11 polish audit: the chips, the check-in card,
+ * The owner's 2026-11-04 Android test feedback: the chips, the check-in card,
  * the narrating lines and the shared state family.
  */
 describe("Event details layout", () => {

@@ -178,9 +178,9 @@ describe("Event card", () => {
 });
 
 /**
- * #23 of the 2026-11 polish audit: s06 carried its own spinner-in-a-card
- * state blocks, and with no active chapter `useEvents` never runs, so the
- * spinner never stopped.
+ * From the owner's 2026-11-04 Android test feedback: s06 carried its own
+ * spinner-in-a-card state blocks, and with no active chapter `useEvents`
+ * never runs, so the spinner never stopped.
  */
 describe("Events list states", () => {
   it("asks for a chapter instead of loading forever without one", () => {
