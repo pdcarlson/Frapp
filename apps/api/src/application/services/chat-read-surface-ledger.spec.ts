@@ -574,7 +574,7 @@ const BUCKET_WRITERS = new Set([
   '20260808204500_declare_dashboard_created_buckets.sql',
   '20260823124000_chat_archive_bucket.sql',
   // Only `file_size_limit` on the `backwork` bucket (#3499); never `chat`.
-  '20261105220000_backwork_bucket_50mb.sql',
+  '20261105230000_backwork_bucket_50mb.sql',
 ]);
 
 // ── Readers ──────────────────────────────────────────────────────────────

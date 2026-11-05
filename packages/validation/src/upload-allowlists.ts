@@ -93,7 +93,7 @@ export const MAX_UPLOAD_LABEL = "25 MB";
  * `MAX_UPLOAD_BYTES` for the same reason `archive` is: raising the shared cap
  * would raise it on every member upload. The `backwork` bucket's
  * `file_size_limit` mirrors it
- * (`supabase/migrations/20261105220000_backwork_bucket_50mb.sql`).
+ * (`supabase/migrations/20261105230000_backwork_bucket_50mb.sql`).
  */
 export const MAX_BACKWORK_UPLOAD_BYTES = 50 * 1024 * 1024;
 export const MAX_BACKWORK_UPLOAD_LABEL = "50 MB";

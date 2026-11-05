@@ -31,13 +31,29 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-11-05: Backwork accepts files up to 50 MB (#3499)
 
-### 20261105220000_backwork_bucket_50mb.sql
+### 20261105230000_backwork_bucket_50mb.sql
 
 - **Purpose**: Raises `storage.buckets.file_size_limit` on `backwork` from 26214400 (25 MB) to 52428800 (50 MB), matching `MAX_BACKWORK_UPLOAD_BYTES` in `@repo/validation`. Every other member-upload bucket keeps 25 MB. The rule is in [`spec/behavior/backwork.md`](../../../spec/behavior/backwork.md#storage) § Storage. No object or row is touched.
 - **Checks**: Before `db push`, `select file_size_limit from storage.buckets where id = 'backwork';` gave 26214400 on both `frapp-staging` and `frapp-prod` on 2026-11-05. After it, the same query returns 52428800.
 - **Promoter notes**: Order doesn't matter much. An API that allows 50 MB against an unmigrated bucket refuses a 25 to 50 MB file at the PUT instead of at URL issuance; an older API against the migrated bucket refuses it at issuance. The hosted project's global storage upload limit (Supabase dashboard, Storage settings) must also be at least 50 MB, or it wins over the bucket column. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-backwork-50-mb-limit-20261105220000) § Rollback the backwork 50 MB limit.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-backwork-50-mb-limit-20261105230000) § Rollback the backwork 50 MB limit.
+
+## 2026-11-05: A Discord import can keep the server's categories as channel groups
+
+### 20261105220000_discord_import_channel_groups.sql
+
+- **Purpose**: Lets a Discord import put the channels it creates into channel groups (`chat_channel_categories`) named after the server's categories, when the admin chooses it on the mapping step. The behaviour is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+  - Three nullable columns on `discord_import_channels`: `new_channel_group` (the group name the admin chose), `discord_category_position` (the category's place in Discord, read by the bot scan) and `new_channel_category_id` (the group `start` resolved the name to; `on delete set null`). Two checks: only a `create_new` row may carry a group, and a group name is 1 to 100 characters once trimmed.
+  - `discord_import_created_categories` (RLS on, no policies) records each group an import created, as `discord_import_created_channels` does for channels.
+  - `delete_empty_discord_import_categories` and its check `discord_import_category_holds_anything`, the purge's group step. Service role only.
+  - Two partial indexes: `discord_import_channels (new_channel_category_id)` and `chat_channels (category_id)`.
+
+  No row is rewritten: every existing mapping row gets nulls, which is the behaviour it had.
+- **Checks**: After `db push`, `select count(*) from public.discord_import_created_categories;` returns 0, and `select has_function_privilege('authenticated', 'public.delete_empty_discord_import_categories(uuid, uuid)', 'execute');` returns `false`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API ignores the new columns and table. The newer API against an unmigrated database fails to scan a server, save a channel mapping and start an import, because it writes the new columns, and fails every import deletion, old imports included, because the purge calls the new function. Adding nullable columns and empty indexes is quick; `chat_channels` holds one row per channel. Re-applying is idempotent (`if not exists`, `create or replace`, constraints dropped and re-added). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-discord-import-channel-groups-20261105220000) § Rollback Discord import channel groups.
 
 ## 2026-11-05: Starting descriptions for the default channels
 

@@ -33,6 +33,7 @@ export function ReviewStep({
   messagesSince = "",
   onMessagesSinceChange,
   messagesSinceProblem = null,
+  sidebarGroups = [],
 }: {
   staged: StagedExport;
   source: ImportSource;
@@ -48,6 +49,8 @@ export function ReviewStep({
   onMessagesSinceChange?: (value: string) => void;
   /** Why the chosen date can't be used, or null. */
   messagesSinceProblem?: string | null;
+  /** The channel groups the import puts new channels into, if any. */
+  sidebarGroups?: string[];
 }) {
   const importing = staged.channels.filter(
     (channel) => channelChoices[channel.channelId]?.action !== "skip",
@@ -168,6 +171,17 @@ export function ReviewStep({
           })}
         </ul>
       </div>
+
+      {sidebarGroups.length > 0 ? (
+        <div className="rounded-lg border border-border p-3">
+          <p>
+            <span className="font-semibold">Categories:</span>{" "}
+            {sidebarGroups.join(", ")}. Where your chapter already has a
+            category by that name, the channels go there. Deleting the import
+            removes the categories it made once they&rsquo;re empty.
+          </p>
+        </div>
+      ) : null}
 
       {created.length > 0 || readers.length > 0 ? (
         <div className="space-y-1 rounded-lg border border-border p-3">
