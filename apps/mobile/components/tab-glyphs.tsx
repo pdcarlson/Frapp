@@ -60,7 +60,11 @@ export type TabGlyphProps = {
   focused: boolean;
   /** Resolved chapter accent (a normalized hex from `useChapterBranding`). */
   accent: string;
-  /** `tokens.color.text.muted` — the muted text role the neutral state uses. */
+  /**
+   * The neutral state's stroke: `tokens.color.text.muted` in the tab bar, and
+   * `text.mutedForeground` on a chat card's muted eyebrow, so the glyph
+   * matches the label beside it.
+   */
   muted: string;
   /**
    * Drawn size in points; the 24-unit grid scales with it. The tab bar uses

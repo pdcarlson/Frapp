@@ -1,6 +1,9 @@
 import { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import type { SystemAuditPayload } from "@repo/chat-core/cards";
+import {
+  auditChangeSummary,
+  type SystemAuditPayload,
+} from "@repo/chat-core/cards";
 import { actorLabel, type NameResolver } from "@repo/hooks";
 import type { SignetTokens } from "@repo/theme/signet";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
@@ -34,7 +37,6 @@ export function SystemAuditCard({
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const actor = actorLabel(payload.actor_user_id, nameFor);
-  const fields = Object.keys(payload.diff);
   return (
     <ChatCardShell
       {...frame}
@@ -50,11 +52,7 @@ export function SystemAuditCard({
             <Text style={styles.action}>{payload.action}</Text>
             {actor ? <Text style={styles.actor}>{`by ${actor}`}</Text> : null}
           </View>
-          <Text style={styles.diff}>
-            {fields.length > 0
-              ? `Changed: ${fields.join(", ")}`
-              : "No field changes recorded"}
-          </Text>
+          <Text style={styles.diff}>{auditChangeSummary(payload)}</Text>
         </>
       }
     />

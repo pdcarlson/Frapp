@@ -1,6 +1,6 @@
 import type { SignetTokens } from "@repo/theme/signet";
 import type { HoursPayload } from "@repo/chat-core/cards";
-import { formatMinutesExact } from "@repo/formatting";
+import { formatBareDateMedium, formatMinutesExact } from "@repo/formatting";
 import {
   canReadCardServiceEntry,
   readLiveServiceEntry,
@@ -11,7 +11,6 @@ import {
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { StatusChip } from "@/components/status-chip";
-import { formatServiceDate } from "@/lib/more/service-hours";
 import { useFrappTheme } from "@/lib/theme";
 import { ServiceHoursGlyph } from "./card-glyphs";
 import {
@@ -34,10 +33,10 @@ import {
  * a snapshot whose status is `PENDING` forever, so the card reads the entry
  * back (`useServiceEntry`) and draws "Pending review", "Approved" or
  * "Rejected" from that, the rules in `@repo/hooks`'s `service-entry-card.ts`
- * that web's card applies too. Only the member who logged it and a
- * `service:approve` holder may read an entry; anyone else would get a 403, so
- * their card asks nothing and shows no badge, as it does before the read
- * lands.
+ * that web's card applies too. Only a `members:view` holder who logged it or
+ * holds `service:approve` may read an entry; anyone else would get a 403, so
+ * their card asks nothing and shows no badge, as it does before the read lands
+ * and after a 403 or 404.
  */
 export function HoursCard({
   payload,
@@ -46,9 +45,13 @@ export function HoursCard({
   const { tokens } = useFrappTheme();
   // `!!viewerId`: a missing viewer must never match a missing member id.
   const isOwner = !!frame.viewerId && frame.viewerId === payload.user_id;
-  const canApprove = can("service:approve", usePermissionList());
+  const permissions = usePermissionList();
+  const canApprove = can("service:approve", permissions);
+  const canViewMembers = can("members:view", permissions);
   const entryQuery = useServiceEntry(
-    canReadCardServiceEntry({ isOwner, canApprove }) ? payload.entry_id : "",
+    canReadCardServiceEntry({ isOwner, canApprove, canViewMembers })
+      ? payload.entry_id
+      : "",
   );
   const live = readLiveServiceEntry(entryQuery.data);
 
@@ -75,7 +78,7 @@ export function HoursCard({
               { text: "logged", tone: "muted" },
               { text: formatMinutesExact(payload.duration_minutes) },
               { text: "on", tone: "muted" },
-              { text: formatServiceDate(payload.date) },
+              { text: formatBareDateMedium(payload.date) },
             ]}
           />
           {payload.description.trim() ? (

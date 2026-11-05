@@ -29,18 +29,40 @@ describe("readLiveServiceEntry", () => {
 
 describe("canReadCardServiceEntry", () => {
   it("lets the member who logged it and a service:approve holder read it", () => {
-    expect(canReadCardServiceEntry({ isOwner: true, canApprove: false })).toBe(
-      true,
-    );
-    expect(canReadCardServiceEntry({ isOwner: false, canApprove: true })).toBe(
-      true,
-    );
+    expect(
+      canReadCardServiceEntry({
+        isOwner: true,
+        canApprove: false,
+        canViewMembers: true,
+      }),
+    ).toBe(true);
+    expect(
+      canReadCardServiceEntry({
+        isOwner: false,
+        canApprove: true,
+        canViewMembers: true,
+      }),
+    ).toBe(true);
   });
 
   it("asks nothing for anyone else, who would get a 403", () => {
-    expect(canReadCardServiceEntry({ isOwner: false, canApprove: false })).toBe(
-      false,
-    );
+    expect(
+      canReadCardServiceEntry({
+        isOwner: false,
+        canApprove: false,
+        canViewMembers: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("asks nothing without members:view, which the route requires first", () => {
+    expect(
+      canReadCardServiceEntry({
+        isOwner: true,
+        canApprove: true,
+        canViewMembers: false,
+      }),
+    ).toBe(false);
   });
 });
 

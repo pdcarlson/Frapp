@@ -272,20 +272,19 @@ export function resolveAuthorName(
  * The name a card gives the member behind a change it records, such as the
  * actor on a `#chapter-audit` row, or `null` for a row with no actor.
  *
- * The author chain for an id alone: the system actor is
+ * {@link resolveAuthorLabel} for an id alone, so an actor reads as the same
+ * member does above their own messages: the system actor is
  * {@link SYSTEM_AUTHOR_LABEL}, a member their roster name or, when the roster
- * can't name them, {@link memberFallbackLabel}, so the card never draws a
- * bare id prefix.
+ * can't name them, {@link memberFallbackLabel}, never a bare id prefix. No
+ * viewer is passed, so an officer's own change reads under their name, as it
+ * does for everyone else reading the record.
  */
 export function actorLabel(
   userId: string | null | undefined,
   nameFor: NameResolver,
 ): string | null {
   if (!userId) return null;
-  return (
-    resolveAuthorName({ sender_id: userId }, nameFor) ??
-    memberFallbackLabel(userId)
-  );
+  return resolveAuthorLabel({ sender_id: userId }, nameFor, null);
 }
 
 /** Resolves a `users.id` to the member's signed photo URL, or `null`. */

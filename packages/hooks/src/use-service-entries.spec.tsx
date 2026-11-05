@@ -53,6 +53,48 @@ describe("useServiceEntry", () => {
     expect(GET).not.toHaveBeenCalled();
   });
 
+  it.each([403, 404])(
+    "replaces a badge read earlier with null when a refetch answers %i",
+    async (statusCode) => {
+      // A deleted entry (404) or a lost permission (403) must clear the badge:
+      // a thrown refetch would keep the "Approved" read before it.
+      let answer: { data: unknown; error: unknown } = {
+        data: { id: "entry-1", status: "APPROVED" },
+        error: null,
+      };
+      const GET = vi.fn(async () => answer);
+      const { result } = renderHook(() => useServiceEntry("entry-1"), {
+        wrapper: createWrapper(queryClient, { GET }),
+      });
+      await waitFor(() =>
+        expect(result.current.data).toEqual({
+          id: "entry-1",
+          status: "APPROVED",
+        }),
+      );
+
+      answer = { data: undefined, error: { statusCode, message: "No" } };
+      await act(async () => {
+        await result.current.refetch();
+      });
+
+      await waitFor(() => expect(result.current.data).toBeNull());
+      expect(result.current.isError).toBe(false);
+    },
+  );
+
+  it("still throws on any other failure, so it is retried and reported", async () => {
+    const GET = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { statusCode: 500, message: "Internal server error" },
+    });
+    const { result } = renderHook(() => useServiceEntry("entry-1"), {
+      wrapper: createWrapper(queryClient, { GET }),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.data).toBeUndefined();
+  });
+
   it("refreshes when an officer reviews the entry from any screen", async () => {
     let status = "PENDING";
     const GET = vi.fn(async () => ({

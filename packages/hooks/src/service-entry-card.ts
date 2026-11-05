@@ -51,13 +51,16 @@ export function readLiveServiceEntry(data: unknown): LiveServiceEntry | null {
 
 /**
  * Whether the viewer may read the card's entry. `GET /v1/service-entries/{id}`
- * answers only the member who logged it and a `service:approve` holder, so a
- * card shouldn't ask for anyone else: for them it is a guaranteed 403, and the
- * card shows no badge.
+ * needs `members:view`, and then answers only the member who logged it and a
+ * `service:approve` holder, so a card shouldn't ask for anyone else: for them
+ * it is a guaranteed 403, and the card shows no badge. (The route also needs
+ * the Hours module; a card doesn't wait on that read, and a 403 from it reads
+ * as no badge, see `useServiceEntry`.)
  */
 export function canReadCardServiceEntry(input: {
   isOwner: boolean;
   canApprove: boolean;
+  canViewMembers: boolean;
 }): boolean {
-  return input.isOwner || input.canApprove;
+  return input.canViewMembers && (input.isOwner || input.canApprove);
 }

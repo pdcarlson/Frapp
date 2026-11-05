@@ -5,7 +5,10 @@ import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { readSystemAuditPayload } from "@repo/chat-core/cards";
+import {
+  auditChangeSummary,
+  readSystemAuditPayload,
+} from "@repo/chat-core/cards";
 import { actorLabel, type NameResolver } from "@repo/hooks";
 
 interface SystemAuditCardProps {
@@ -38,7 +41,6 @@ export function SystemAuditCard({ message, nameFor }: SystemAuditCardProps) {
     );
   }
   const actor = actorLabel(payload.actor_user_id, nameFor);
-  const fields = Object.keys(payload.diff);
   return (
     <Card className={cn(MESSAGE_CARD)}>
       <div className={cn(EYEBROW, "flex items-center gap-1.5 text-muted-foreground")}>
@@ -51,9 +53,7 @@ export function SystemAuditCard({ message, nameFor }: SystemAuditCardProps) {
         {actor ? <span className="text-muted-foreground">by {actor}</span> : null}
       </div>
       <div className="mt-2 font-mono text-caption text-muted-foreground">
-        {fields.length > 0
-          ? `Changed: ${fields.join(", ")}`
-          : "No field changes recorded"}
+        {auditChangeSummary(payload)}
       </div>
     </Card>
   );

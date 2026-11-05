@@ -54,6 +54,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import { signetDarkTokens } from "@repo/theme/signet";
 import { AnnouncementCard } from "./announcement-card";
+import { AuditGlyph, PointsGlyph } from "./card-glyphs";
 import { HoursCard } from "./hours-card";
 import { PointsCard } from "./points-card";
 import { SystemAuditCard } from "./system-audit-card";
@@ -130,7 +131,8 @@ function flatStyle(style: unknown): Record<string, unknown> {
 }
 
 beforeEach(() => {
-  state.permissions = [];
+  // Every member role carries members:view, which the entry route requires.
+  state.permissions = ["members:view"];
   state.live = undefined;
   state.entryIds = [];
 });
@@ -168,6 +170,15 @@ describe("PointsCard", () => {
     );
   });
 
+  it("draws its glyph in the chapter accent", () => {
+    const tree = mount(
+      <PointsCard {...frame("points", GRANT)} payload={GRANT} />,
+    );
+    const glyph = tree.root.findByType(PointsGlyph);
+    expect(glyph.props.focused).toBe(true);
+    expect(glyph.props.accent).toBe("#C49A3A");
+  });
+
   it("draws no empty quotes for a blank reason", () => {
     const bare = { ...GRANT, reason: "  " };
     const tree = mount(<PointsCard {...frame("points", bare)} payload={bare} />);
@@ -191,7 +202,7 @@ describe("HoursCard", () => {
 
   it("says who logged how long, on which day, and what for", () => {
     const text = allText(render(OWNER));
-    expect(text).toContain("Casey Lin logged 1h 30m on Nov 4");
+    expect(text).toContain("Casey Lin logged 1h 30m on Nov 4, 2026");
     expect(text).toContain("“Food bank shift”");
   });
 
@@ -210,8 +221,24 @@ describe("HoursCard", () => {
     );
   });
 
+  it("draws a rejection in the destructive hue", () => {
+    state.live = { id: "entry-1", status: "REJECTED" };
+    const tree = render(OWNER);
+    expect(flatStyle(textNode(tree, "Rejected").props.style).color).toBe(
+      tokens.color.semantic.destructive,
+    );
+  });
+
+  it("draws no empty quotes for a blank description", () => {
+    const bare = { ...HOURS, description: "  " };
+    const tree = mount(
+      <HoursCard {...frame("hours", bare)} payload={bare} />,
+    );
+    expect(allText(tree)).not.toContain("“");
+  });
+
   it("reads it for a service:approve holder too", () => {
-    state.permissions = ["service:approve"];
+    state.permissions = ["members:view", "service:approve"];
     state.live = { id: "entry-1", status: "PENDING" };
     const tree = render(OFFICER);
     expect(state.entryIds).toEqual(["entry-1"]);
@@ -225,6 +252,14 @@ describe("HoursCard", () => {
     const text = allText(render(OFFICER));
     expect(state.entryIds.every((id) => id === "")).toBe(true);
     expect(text).not.toContain("Rejected");
+  });
+
+  it("asks nothing without members:view, which the route requires first", () => {
+    state.permissions = ["service:approve"];
+    state.live = { id: "entry-1", status: "APPROVED" };
+    const text = allText(render(OWNER));
+    expect(state.entryIds.every((id) => id === "")).toBe(true);
+    expect(text).not.toContain("Approved");
   });
 
   it("never reads an empty viewer as the owner of an entry with no member id", () => {
@@ -311,10 +346,13 @@ describe("SystemAuditCard", () => {
     expect(text).toContain("No field changes recorded");
   });
 
-  it("keeps the eyebrow off the chapter accent", () => {
+  it("keeps the eyebrow off the chapter accent, glyph and label alike", () => {
     const tree = render(AUDIT);
     expect(flatStyle(textNode(tree, "Audit").props.style).color).toBe(
       tokens.color.text.mutedForeground,
     );
+    const glyph = tree.root.findByType(AuditGlyph);
+    expect(glyph.props.focused).toBe(false);
+    expect(glyph.props.muted).toBe(tokens.color.text.mutedForeground);
   });
 });

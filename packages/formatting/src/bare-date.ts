@@ -10,7 +10,8 @@
  * `date` column takes {@link formatBareDate}, never any of the three.
  *
  * Two *parsers* stay distinct on purpose — and {@link formatBareDate} at the
- * foot of this file is the cluster's formatter over them:
+ * foot of this file (with its short-month twin {@link formatBareDateMedium})
+ * is the cluster's formatter over them:
  * - {@link parseBareDateLocalNoon} — `T12:00:00` (no Z). Local noon, which is
  *   the submitted calendar day in every zone, UTC−12 to UTC+14. Mobile
  *   service hours, invoices, task due dates, and {@link formatBareDate}.
@@ -76,7 +77,30 @@ export function parseInstantOrBareLocalNoon(value: string): Date | null {
 export function formatBareDate(
   value: string | null | undefined,
 ): string {
+  return formatParsed(value, undefined);
+}
+
+/**
+ * {@link formatBareDate} with the month spelled short: `"Nov 4, 2026"` in an
+ * English locale. For a date that stands in a sentence rather than a column,
+ * such as a chat hours card's "logged 2h on Nov 4, 2026", where web's and
+ * mobile's cards must read the same.
+ */
+export function formatBareDateMedium(
+  value: string | null | undefined,
+): string {
+  return formatParsed(value, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatParsed(
+  value: string | null | undefined,
+  options: Intl.DateTimeFormatOptions | undefined,
+): string {
   if (!value) return "—";
   const parsed = parseInstantOrBareLocalNoon(value);
-  return parsed ? parsed.toLocaleDateString() : "—";
+  return parsed ? parsed.toLocaleDateString(undefined, options) : "—";
 }

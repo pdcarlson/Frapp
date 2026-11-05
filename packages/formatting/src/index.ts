@@ -9,6 +9,7 @@ export { formatPaddedStopwatch, formatTimer } from "./stopwatch";
 export { parseInstant } from "./instant";
 export {
   formatBareDate,
+  formatBareDateMedium,
   parseBareDateLocalMidnight,
   parseBareDateLocalNoon,
   parseInstantOrBareLocalNoon,

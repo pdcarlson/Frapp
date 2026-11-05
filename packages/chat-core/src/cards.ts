@@ -223,6 +223,17 @@ export function readSystemAuditPayload(
 }
 
 /**
+ * An audit card's last line: the fields the change touched, or that it
+ * touched none. One copy so web's and mobile's cards say the same.
+ */
+export function auditChangeSummary(payload: SystemAuditPayload): string {
+  const fields = Object.keys(payload.diff);
+  return fields.length > 0
+    ? `Changed: ${fields.join(", ")}`
+    : "No field changes recorded";
+}
+
+/**
  * The text of a `kind:"announcement"` card, or `null` when there is none.
  *
  * `content` first, not `payload.body`. `/announce` writes the same words to

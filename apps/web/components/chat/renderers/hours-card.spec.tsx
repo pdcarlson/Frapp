@@ -51,7 +51,8 @@ function makeMessage(
 }
 
 beforeEach(() => {
-  state.permissions = [];
+  // Every member role carries members:view, which the entry route requires.
+  state.permissions = ["members:view"];
   state.live = undefined;
   state.entryIds = [];
 });
@@ -63,9 +64,16 @@ describe("HoursCard", () => {
     expect(screen.getByText("Service hours")).toBeInTheDocument();
     expect(screen.getByText("Alice")).toBeInTheDocument();
     expect(screen.getByText("1h")).toBeInTheDocument();
-    // The stored day in the viewer's locale, never the raw column.
+    // The stored day in the viewer's locale, never the raw column, spelled
+    // as mobile's card spells it.
     expect(
-      screen.getByText(new Date(2026, 1, 26, 12).toLocaleDateString()),
+      screen.getByText(
+        new Date(2026, 1, 26, 12).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }),
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByText("2026-02-26")).not.toBeInTheDocument();
     expect(screen.getByText(/Community cleanup/)).toBeInTheDocument();
@@ -83,8 +91,16 @@ describe("HoursCard", () => {
     expect(screen.getByText("Approved")).toBeInTheDocument();
   });
 
+  it("draws a rejection in the destructive badge", () => {
+    state.live = { id: "se-1", status: "REJECTED" };
+    render(<HoursCard message={makeMessage()} viewerId={OWNER} />);
+    expect(screen.getByText("Rejected").className).toContain(
+      "text-destructive-text",
+    );
+  });
+
   it("reads it for a service:approve holder too", () => {
-    state.permissions = ["service:approve"];
+    state.permissions = ["members:view", "service:approve"];
     state.live = { id: "se-1", status: "PENDING" };
     render(<HoursCard message={makeMessage()} viewerId={OFFICER} />);
     expect(screen.getByText("Pending review")).toBeInTheDocument();
@@ -95,6 +111,21 @@ describe("HoursCard", () => {
     render(<HoursCard message={makeMessage()} viewerId={OFFICER} />);
     expect(state.entryIds.every((id) => id === "")).toBe(true);
     expect(screen.queryByText("Rejected")).not.toBeInTheDocument();
+  });
+
+  it("asks nothing without members:view, which the route requires first", () => {
+    state.permissions = ["service:approve"];
+    state.live = { id: "se-1", status: "APPROVED" };
+    render(<HoursCard message={makeMessage()} viewerId={OWNER} />);
+    expect(state.entryIds.every((id) => id === "")).toBe(true);
+    expect(screen.queryByText("Approved")).not.toBeInTheDocument();
+  });
+
+  it("draws no empty quotes for a blank description", () => {
+    render(
+      <HoursCard message={makeMessage({ description: "  " })} viewerId={OWNER} />,
+    );
+    expect(screen.queryByText(/\u201c/)).not.toBeInTheDocument();
   });
 
   it("falls back to content when the payload is missing", () => {

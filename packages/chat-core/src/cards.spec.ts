@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  auditChangeSummary,
   pointsChange,
   readAnnouncementBody,
   readEventPayload,
@@ -304,5 +305,23 @@ describe("readAnnouncementBody", () => {
   it("returns null with neither", () => {
     expect(readAnnouncementBody(message("", { body: "" }))).toBe(null);
     expect(readAnnouncementBody(message("", null))).toBe(null);
+  });
+});
+
+describe("auditChangeSummary", () => {
+  const audit = (diff: Record<string, unknown>) => ({
+    action: "role_updated",
+    actor_user_id: null,
+    diff,
+  });
+
+  it("lists the fields the change touched, in the diff's order", () => {
+    expect(auditChangeSummary(audit({ permissions: {}, name: {} }))).toBe(
+      "Changed: permissions, name",
+    );
+  });
+
+  it("says when the change touched no field", () => {
+    expect(auditChangeSummary(audit({}))).toBe("No field changes recorded");
   });
 });

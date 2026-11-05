@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { serviceStatusKind } from "@/components/service/service-status";
 import { cn } from "@/lib/utils";
-import { formatBareDate, formatMinutesExact } from "@repo/formatting";
+import { formatBareDateMedium, formatMinutesExact } from "@repo/formatting";
 import {
   canReadCardServiceEntry,
   readLiveServiceEntry,
@@ -33,11 +33,11 @@ interface HoursCardProps {
  * status is the creation-time `PENDING` forever, so a badge drawn from it
  * called approved hours "Pending review" for good. The card reads the entry
  * back instead (`useServiceEntry`), by the rules in `@repo/hooks`'s
- * `service-entry-card.ts` that mobile's card applies too: only the member who
- * logged it and a `service:approve` holder can read an entry, so nobody else
- * asks (for them it is a guaranteed 403), and their card, like every card
- * before its read lands, shows no badge. The hue is the service page's own
- * mapping (`serviceStatusKind`).
+ * `service-entry-card.ts` that mobile's card applies too: only a `members:view`
+ * holder who logged it or holds `service:approve` can read an entry, so nobody
+ * else asks (for them it is a guaranteed 403), and their card, like every card
+ * before its read lands or after a 403 or 404, shows no badge. The hue is the
+ * service page's own mapping (`serviceStatusKind`).
  */
 export function HoursCard({ message, viewerId }: HoursCardProps) {
   const payload = readHoursPayload(message);
@@ -45,11 +45,13 @@ export function HoursCard({ message, viewerId }: HoursCardProps) {
   // `!!viewerId`, for the reason `task-card` gives: a missing viewer must
   // never match a missing member id.
   const isOwner = !!viewerId && !!payload && viewerId === payload.user_id;
-  const canApprove = can("service:approve", permissionsPayload?.permissions);
+  const permissions = permissionsPayload?.permissions;
+  const canApprove = can("service:approve", permissions);
+  const canViewMembers = can("members:view", permissions);
   // A hook, so it runs before the malformed-payload return; an empty id holds
   // the request.
   const { data: liveRaw } = useServiceEntry(
-    payload && canReadCardServiceEntry({ isOwner, canApprove })
+    payload && canReadCardServiceEntry({ isOwner, canApprove, canViewMembers })
       ? payload.entry_id
       : "",
   );
@@ -85,7 +87,9 @@ export function HoursCard({ message, viewerId }: HoursCardProps) {
           {formatMinutesExact(payload.duration_minutes)}
         </span>
         <span className="text-muted-foreground">on</span>
-        <span className="font-semibold">{formatBareDate(payload.date)}</span>
+        <span className="font-semibold">
+          {formatBareDateMedium(payload.date)}
+        </span>
       </div>
       {payload.description.trim() ? (
         <div className="mt-2 whitespace-pre-wrap break-words text-base text-muted-foreground">
