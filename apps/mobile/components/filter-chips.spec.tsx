@@ -6,6 +6,7 @@ import { Text } from "react-native";
 import { describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectRoundedRipple } from "@/test/pressable-row";
 
 // A purple chapter's solid pair, deliberately not house gold, so a chip that
 // slips back to `gold.*` or to the text-step accent fails an assertion.
@@ -94,9 +95,12 @@ describe("FilterChips", () => {
     for (const chip of chips(tree)) {
       const style = flatten(chip.props.style({ pressed: false }));
       const slop = chip.props.hitSlop as { top: number; bottom: number };
-      expect(style.height).toBeLessThan(minimum);
-      expect(Number(style.height) + slop.top + slop.bottom).toBe(minimum);
+      expect(style.minHeight).toBeLessThan(minimum);
+      expect(Number(style.minHeight) + slop.top + slop.bottom).toBe(minimum);
       expect(style.minWidth).toBe(minimum);
+      // The clip that rounds the ripple carries the slop too, or Android
+      // would drop a touch in it before it reached the chip.
+      expect(chip.parent!.props.hitSlop).toEqual(slop);
     }
     const scroller = tree.root.find(
       (node) => (node.type as unknown) === "ScrollView",
@@ -106,6 +110,25 @@ describe("FilterChips", () => {
       slop,
     );
     expect(flatten(scroller.props.style).marginVertical).toBe(-slop);
+  });
+
+  // Nothing caps the system text size, and the label role sets no line
+  // height, so at a large size the label outgrows 34pt. The 34 is a floor:
+  // nothing fixes the chip's height or clips the label inside it, and the
+  // ripple is rounded by `PressableRow`'s parent clip instead.
+  it("lets a chip grow with a large-font label, its ripple still rounded", () => {
+    const tree = render(
+      <FilterChips chips={FOLDERS} selected="Minutes" onSelect={vi.fn()} />,
+    );
+    for (const chip of chips(tree)) {
+      const style = flatten(chip.props.style({ pressed: false }));
+      expect(style).not.toHaveProperty("height");
+      expect(style).not.toHaveProperty("maxHeight");
+      expect(style.overflow).toBeUndefined();
+      const label = chip.find((node) => (node.type as unknown) === "Text");
+      expect(label.props.numberOfLines).toBeUndefined();
+      expectRoundedRipple(chip, signetDarkTokens.radius.chipLarge);
+    }
   });
 
   it("paints the selected chip in the chapter's solid accent and the rest in the list tone", () => {

@@ -135,18 +135,6 @@ export function usePressFeedback({
 }
 
 /**
- * A rounded row that answers a press: a `Pressable` carrying
- * {@link usePressFeedback}'s ripple and lift, inside a clip `View` that rounds
- * the ripple (see that hook for why the row cannot round it itself).
- *
- * `style` is the row's resting style, written as it would be on a bare
- * `Pressable`. The clip takes the row's outer margins, so a row that bleeds
- * into the screen gutter still sits where it did, and copies its corner radius;
- * the row keeps the radius too, for its own border and iOS lift. Any other
- * outer layout (`flex`, `alignSelf`, a position) would also belong on the clip,
- * and no row passes one yet. Everything else goes to the `Pressable` as given.
- */
-/**
  * The gutter bleed a list row on the screen background takes: it pads itself
  * by `sm` and pulls that `sm` back out into the screen gutter, so its content
  * stays on the gutter line while its press feedback (ripple or lift) clears
@@ -177,23 +165,44 @@ export type PressableRowProps = Omit<
   style?: StyleProp<ViewStyle>;
   /** The row is itself a card: see {@link usePressFeedback}'s `onCard`. */
   onCard?: boolean;
+  /**
+   * `false` keeps the iOS lift off, for a control whose fill is its state (an
+   * on chip): the lift would paint over it. The Android ripple still answers.
+   */
+  lifts?: boolean;
   children?: ReactNode;
 };
 
+/**
+ * A rounded row that answers a press: a `Pressable` carrying
+ * {@link usePressFeedback}'s ripple and lift, inside a clip `View` that rounds
+ * the ripple (see that hook for why the row cannot round it itself).
+ *
+ * `style` is the row's resting style, written as it would be on a bare
+ * `Pressable`. The clip takes the row's outer margins, so a row that bleeds
+ * into the screen gutter still sits where it did, and copies its corner radius;
+ * the row keeps the radius too, for its own border and iOS lift. Any other
+ * outer layout (`flex`, `alignSelf`, a position) would also belong on the clip,
+ * and no row passes one yet. Everything else goes to the `Pressable` as given.
+ */
 export function PressableRow({
   style,
   onCard = false,
+  lifts = true,
   children,
   ...pressable
 }: PressableRowProps) {
   const feedback = usePressFeedback({ onCard });
   const { clip, row } = splitRowStyle(style);
   return (
-    <View style={clip}>
+    // The clip takes the row's `hitSlop` too: Android hands a touch to a
+    // child only inside its `overflow: "hidden"` parent's bounds, and the
+    // slop is what extends those bounds.
+    <View style={clip} hitSlop={pressable.hitSlop}>
       <Pressable
         {...pressable}
         android_ripple={pressable.disabled ? undefined : feedback.ripple}
-        style={({ pressed }) => [row, feedback.lift(pressed)]}
+        style={({ pressed }) => [row, lifts ? feedback.lift(pressed) : null]}
       >
         {children}
       </Pressable>

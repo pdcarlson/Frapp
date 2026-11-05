@@ -192,7 +192,7 @@ export default function ServiceHoursScreen() {
     // error case is already handled above. The entries query is disabled until
     // the id lands, so `isPending` alone would not cover it.
     if (viewerUserId === null || entriesQuery.isPending)
-      return <SkeletonLines lines={3} />;
+      return <SkeletonLines lines={3} tone="list" />;
     if (entriesQuery.isError) {
       return (
         <ErrorState

@@ -153,7 +153,8 @@ export default function DocumentsScreen() {
   }
 
   function renderList() {
-    if (documentsQuery.isPending) return <SkeletonLines lines={4} />;
+    if (documentsQuery.isPending)
+      return <SkeletonLines lines={4} tone="list" />;
     if (documentsQuery.isError) {
       return (
         <ErrorState

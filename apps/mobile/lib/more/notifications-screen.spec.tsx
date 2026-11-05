@@ -52,6 +52,9 @@ const NOTIFICATIONS = [
   },
 ];
 
+/** What the inbox query returns; a spec sets `data` for an inbox of its own. */
+const inbox = vi.hoisted(() => ({ data: null as unknown[] | null }));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => "chapter-1",
@@ -59,13 +62,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
     isError: false,
     isFetching: false,
-    data: NOTIFICATIONS,
+    data: inbox.data ?? NOTIFICATIONS,
     refetch: vi.fn(),
   }),
   useMarkNotificationRead: () => ({ mutateAsync: vi.fn() }),
 }));
 
 import { signetDarkTokens } from "@repo/theme/signet";
+import { NotificationsGlyph } from "@/components/more/more-glyphs";
+import { EmptyState } from "@/components/state-block";
 import NotificationsScreen, {
   NotificationListRow,
 } from "@/app/(tabs)/notifications";
@@ -132,6 +137,36 @@ describe("Notifications back row (#3022)", () => {
 
   it("draws ‹ Chat, the screen the bell opens it from", () => {
     expectBackRow(render(), "Chat", "/");
+  });
+});
+
+/**
+ * s14's empty inbox: the bell the inbox opens from, drawn in the accent, and
+ * the title alone. A line saying chapter activity shows up here would only
+ * restate what the screen is for (writing.md §4, as amended 2026-11-05).
+ */
+describe("Notifications empty inbox", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    inbox.data = null;
+  });
+
+  it("draws the bell and a title, with no line under it", () => {
+    inbox.data = [];
+    const tree = render();
+    const empty = tree.root.findByType(EmptyState);
+
+    expect(empty.props.glyph).toBe(NotificationsGlyph);
+    expect(empty.props.title).toBe("You're all caught up");
+    expect(empty.props.body).toBeUndefined();
+    expect(empty.findAllByType(NotificationsGlyph)).toHaveLength(1);
+    expect(
+      empty
+        .findAll((node) => (node.type as unknown as string) === "Text")
+        .map((node) => node.props.children),
+    ).toEqual(["You're all caught up"]);
   });
 });
 

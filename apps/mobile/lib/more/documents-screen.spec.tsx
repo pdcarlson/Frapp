@@ -328,6 +328,54 @@ describe("Documents states and rows", () => {
     expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
   });
 
+  // The same race, settled by a failure: the first row's signed URL is
+  // refused after the member has tapped another row. That row is the one the
+  // member is waiting on, so the older failure says nothing, and the newer
+  // row still opens.
+  it("keeps an older tap's failure off the screen once another row is tapped", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+    ];
+    const settle: Record<
+      string,
+      { resolve: (value: unknown) => void; reject: (error: Error) => void }
+    > = {};
+    download.mockImplementation(
+      (id: string) =>
+        new Promise((resolve, reject) => {
+          settle[id] = { resolve, reject };
+        }),
+    );
+    const openBrowser = vi.mocked(WebBrowser.openBrowserAsync);
+    openBrowser.mockClear();
+    openBrowser.mockResolvedValue({
+      type: "dismiss",
+    } as WebBrowser.WebBrowserResult);
+    const tree = render();
+    const rows = () => tree.root.findAllByType(ListRow);
+
+    await act(async () => {
+      rows()[0]!.props.onPress();
+    });
+    await act(async () => {
+      rows()[1]!.props.onPress();
+    });
+
+    await act(async () => {
+      settle.d1!.reject(new Error("signed URL refused"));
+    });
+    expect(screenText(tree)).not.toContain("couldn't be opened");
+    expect(rows().map((row) => row.props.busy)).toEqual([false, true]);
+
+    await act(async () => {
+      settle.d2!.resolve({ downloadUrl: "https://signed/minutes" });
+    });
+    expect(openBrowser).toHaveBeenCalledWith("https://signed/minutes");
+    expect(screenText(tree)).not.toContain("couldn't be opened");
+    expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
+  });
+
   // Once a document's browser is on its way up, a tap that reaches another
   // row does nothing. iOS refuses a second presentation, and that refusal
   // would show "couldn't be opened" over the document that did open.

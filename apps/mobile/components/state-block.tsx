@@ -1,5 +1,6 @@
 import {
   type ComponentType,
+  createContext,
   ReactNode,
   useCallback,
   useContext,
@@ -18,6 +19,7 @@ import {
 import Animated, {
   cancelAnimation,
   Easing,
+  type SharedValue,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -70,33 +72,39 @@ type StateBlockProps = {
  * Loading.
  *
  * §10 asks for a content-shaped shimmer — "no spinner-in-a-box". This is
- * content-shaped, and each block pulses its opacity ({@link SkeletonBlock}),
- * but it is **not** the shimmer. The specified sweep is a 90° linear gradient,
- * and there is no gradient primitive in this app: `expo-linear-gradient` is not
- * a dependency and `package.json` is frozen, so adding one is an integrator PR
- * rather than part of a screen slice. A pulse needs nothing but Reanimated,
- * which is already here, and it is enough to read as loading rather than as a
- * grey card that looks the same on every screen.
+ * content-shaped, and its blocks pulse their opacity together
+ * ({@link SkeletonPulse}), but it is **not** the shimmer. The specified sweep
+ * is a 90° linear gradient, and there is no gradient primitive in this app:
+ * `expo-linear-gradient` is not a dependency and `package.json` is frozen, so
+ * adding one is an integrator PR rather than part of a screen slice. A pulse
+ * needs nothing but Reanimated, which is already here, and it is enough to
+ * read as loading rather than as a grey card that looks the same on every
+ * screen.
  *
  * TODO-DESIGN: shimmer sweep per components.md §10 (elevated at 25%/75%,
  * highlight `#332E26` at 50%, 260px background-size, 1.4s linear, phase-shared
  * across blocks) once a gradient dependency lands. Nearest pattern used: the
- * neutral blocks at the specified shapes, pulsing between full and half
- * opacity, still under reduced motion, and paused while their screen is out
- * of view.
+ * neutral blocks at the specified shapes, pulsing together between full and
+ * half opacity ({@link SkeletonPulse}), still under reduced motion, and paused
+ * while their screen is out of view.
  *
- * The card is `surface1`, not the empty and error cards' `card`: a skeleton
- * stands in for a list, and the grouped lists it becomes (`ListSection`) are
- * `surface1`, so a screen no longer changes tone when its rows land.
+ * The card takes the tone of what it turns into, so a screen doesn't change
+ * tone when its content lands: `card` (the default, as the empty and error
+ * cards) where the skeleton stands in for cards (task rows, event cards, the
+ * Ask answer), `list` (`surface1`) where it stands in for a grouped list
+ * (`ListSection`).
  */
 export function SkeletonLines({
   lines = 3,
   showTile = false,
+  tone = "card",
 }: {
   /** Text rows to draw. Widths cycle through the ~45–70% range §10 specifies. */
   lines?: number;
   /** Draw a leading control-sized block, for a list whose rows carry an avatar. */
   showTile?: boolean;
+  /** The tone of what the skeleton turns into: `card` cards, or a `list` (`ListSection`). */
+  tone?: "card" | "list";
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -112,25 +120,27 @@ export function SkeletonLines({
       accessible
       accessibilityRole="progressbar"
       accessibilityLabel="Loading"
-      style={[styles.card, styles.skeletonCard]}
+      style={[styles.card, tone === "list" ? styles.listCard : null]}
     >
       {/* Left-aligned inside the centred card, as the rows they stand for. */}
-      <View style={styles.skeletonStack}>
-        {showTile ? (
-          <SkeletonBlock
-            width={tokens.touch.minimum}
-            height={tokens.touch.minimum}
-            radius={tokens.radius.control}
-          />
-        ) : null}
-        {Array.from({ length: lines }, (_, index) => (
-          <SkeletonBlock
-            key={index}
-            width={widths[index % widths.length]}
-            height={tokens.spacing.md}
-          />
-        ))}
-      </View>
+      <SkeletonPulse>
+        <View style={styles.skeletonStack}>
+          {showTile ? (
+            <SkeletonBlock
+              width={tokens.touch.minimum}
+              height={tokens.touch.minimum}
+              radius={tokens.radius.control}
+            />
+          ) : null}
+          {Array.from({ length: lines }, (_, index) => (
+            <SkeletonBlock
+              key={index}
+              width={widths[index % widths.length]}
+              height={tokens.spacing.md}
+            />
+          ))}
+        </View>
+      </SkeletonPulse>
     </View>
   );
 }
@@ -140,14 +150,15 @@ const PULSE_FLOOR = 0.5;
 const PULSE_HALF_MS = 600;
 
 /**
- * One skeleton block, unframed. {@link SkeletonLines} draws its tile and lines
- * with it, and a list whose loading shape is its own rows (Chat home's
- * `ChannelListSkeleton`) places them directly, so the pulse lives here once
- * for both, and so will the shimmer when it lands.
+ * The pulse a skeleton's blocks share. Everything inside it that draws a
+ * {@link SkeletonBlock} reads one opacity, so a skeleton of twenty blocks
+ * makes one reduced-motion subscription, one pair of focus and blur
+ * listeners and one animation, and its blocks are in step by construction.
+ * {@link SkeletonLines} wraps its blocks in one, and a list whose loading
+ * shape is its own rows (Chat home's `ChannelListSkeleton`) wraps them itself.
  *
- * Each block runs its own pulse on the UI thread. Blocks that mount together
- * start together, which keeps a skeleton's blocks in step without a shared
- * clock. The block holds still at full opacity, as it drew before the pulse:
+ * The pulse runs on the UI thread. It holds still at full opacity, as the
+ * blocks drew before there was a pulse:
  *
  * - under the system's reduced-motion setting, followed live
  *   ({@link useReduceMotion}), so turning it on mid-session stops a pulse
@@ -155,20 +166,9 @@ const PULSE_HALF_MS = 600;
  * - while its screen is out of view ({@link useScreenInView}). Tab screens stay
  *   mounted after the member leaves them, and a query paused offline keeps
  *   its skeleton up for as long as the device is offline, so without this a
- *   blurred tab's blocks animated on the UI thread with nobody watching.
+ *   blurred tab's skeleton animated on the UI thread with nobody watching.
  */
-export function SkeletonBlock({
-  width,
-  height,
-  radius,
-}: {
-  width: DimensionValue;
-  height: number;
-  /** Defaults to a text line's radius; a control-sized block passes `radius.control`. */
-  radius?: number;
-}) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+export function SkeletonPulse({ children }: { children: ReactNode }) {
   const reduceMotion = useReduceMotion();
   const inView = useScreenInView();
   const still = reduceMotion || !inView;
@@ -192,6 +192,53 @@ export function SkeletonBlock({
     return () => cancelAnimation(opacity);
   }, [still, opacity]);
 
+  return (
+    <SkeletonPulseContext.Provider value={opacity}>
+      {children}
+    </SkeletonPulseContext.Provider>
+  );
+}
+
+/** The opacity of the {@link SkeletonPulse} a block sits in, if any. */
+const SkeletonPulseContext = createContext<SharedValue<number> | null>(null);
+
+type SkeletonBlockProps = {
+  width: DimensionValue;
+  height: number;
+  /** Defaults to a text line's radius; a control-sized block passes `radius.control`. */
+  radius?: number;
+};
+
+/**
+ * One skeleton block, unframed. {@link SkeletonLines} draws its tile and lines
+ * with it, and a list whose loading shape is its own rows places them
+ * directly, so the block's look lives here once for both, and so will the
+ * shimmer when it lands.
+ *
+ * It takes its opacity from the {@link SkeletonPulse} around it. A block
+ * placed with none brings its own, so it still pulses, at the cost of its own
+ * subscriptions.
+ */
+export function SkeletonBlock(props: SkeletonBlockProps) {
+  const pulse = useContext(SkeletonPulseContext);
+  if (pulse === null) {
+    return (
+      <SkeletonPulse>
+        <SkeletonBlock {...props} />
+      </SkeletonPulse>
+    );
+  }
+  return <PulsedBlock {...props} opacity={pulse} />;
+}
+
+function PulsedBlock({
+  width,
+  height,
+  radius,
+  opacity,
+}: SkeletonBlockProps & { opacity: SharedValue<number> }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
   const pulse = useAnimatedStyle(() => ({ opacity: opacity.get() }));
 
   return (
@@ -210,7 +257,7 @@ export function SkeletonBlock({
  * The system's reduced-motion setting, as it is now. Reanimated's
  * `useReducedMotion` is the setting the app launched with and never changes,
  * so it only seeds the first frame here, before the system answers;
- * `AccessibilityInfo` reports the setting when the block mounts, and its
+ * `AccessibilityInfo` reports the setting when the pulse mounts, and its
  * `reduceMotionChanged` every change after.
  */
 function useReduceMotion(): boolean {
@@ -242,8 +289,8 @@ function useReduceMotion(): boolean {
 }
 
 /**
- * Whether the screen this block is on is the one in view: `false` from its
- * navigator's `blur` until its `focus`. A block with no screen around it (in a
+ * Whether the screen this skeleton is on is the one in view: `false` from its
+ * navigator's `blur` until its `focus`. A skeleton with no screen around it (in a
  * sheet, which renders above the navigators, or a component outside them)
  * has no blur to wait for and counts as in view.
  */
@@ -456,8 +503,9 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.sm,
       alignItems: "center",
     },
-    // The tone of the `ListSection` a skeleton turns into (`SkeletonLines`).
-    skeletonCard: {
+    // A skeleton that turns into a `ListSection` takes its tone
+    // (`SkeletonLines`'s `tone="list"`).
+    listCard: {
       backgroundColor: tokens.color.surface.surface1,
     },
     errorCard: {

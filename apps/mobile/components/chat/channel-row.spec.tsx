@@ -2,6 +2,8 @@
 import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
+import { AccessibilityInfo } from "react-native";
+import { withRepeat } from "react-native-reanimated";
 import { describe, expect, it, vi } from "vitest";
 
 // These screens paint with the chapter accent (`useChapterBranding`), which
@@ -24,6 +26,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectRoundedRipple } from "@/test/pressable-row";
+import { SkeletonBlock } from "@/components/state-block";
 import {
   accessibilityLabelFor,
   badgeLabel,
@@ -401,5 +404,28 @@ describe("ChannelListSkeleton", () => {
         (node) => (node.type as unknown as string) === "ActivityIndicator",
       ),
     ).toHaveLength(0);
+  });
+
+  // Eleven blocks for five rows, and one pulse for all of them: one Reduce
+  // Motion subscription and one animation, not one per block.
+  it("pulses every block from one shared pulse", () => {
+    const listeners = vi.mocked(AccessibilityInfo.addEventListener);
+    listeners.mockClear();
+    vi.mocked(withRepeat).mockClear();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ChannelListSkeleton rows={5} />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(tree.root.findAllByType(SkeletonBlock)).toHaveLength(11);
+    expect(
+      listeners.mock.calls.filter(
+        ([event]) => (event as string) === "reduceMotionChanged",
+      ),
+    ).toHaveLength(1);
+    expect(vi.mocked(withRepeat)).toHaveBeenCalledTimes(1);
   });
 });

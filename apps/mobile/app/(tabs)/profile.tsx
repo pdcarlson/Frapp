@@ -92,7 +92,7 @@ export default function ProfileScreen() {
   if (userQuery.isPending) {
     return (
       <ScreenShell back={BACK_TO_MORE} title="Profile">
-        <SkeletonLines lines={4} showTile />
+        <SkeletonLines lines={4} showTile tone="list" />
       </ScreenShell>
     );
   }

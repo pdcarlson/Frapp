@@ -346,11 +346,15 @@ describe("SkeletonLines", () => {
     expect(style.alignSelf).toBe("stretch");
   });
 
-  // A skeleton stands in for a list, and the grouped lists it becomes are
-  // `surface1`: on `card` the screen changed tone when its rows landed.
-  it("sits on the list tone, while the empty and error cards keep §10's card", () => {
+  // A skeleton takes the tone of what replaces it, so the screen doesn't
+  // change tone when its content lands: the cards most skeletons stand in for
+  // by default, and a grouped list's `surface1` when the caller says so.
+  it("sits on the tone of what it turns into", () => {
     const { surface1, card } = signetDarkTokens.color.surface;
-    expect(cardStyle(render(<SkeletonLines />)).backgroundColor).toBe(surface1);
+    expect(cardStyle(render(<SkeletonLines />)).backgroundColor).toBe(card);
+    expect(
+      cardStyle(render(<SkeletonLines tone="list" />)).backgroundColor,
+    ).toBe(surface1);
     expect(cardStyle(render(<EmptyState title="None" />)).backgroundColor).toBe(
       card,
     );
@@ -541,6 +545,42 @@ describe("SkeletonBlock's pulse", () => {
       answer(false);
     });
     expect(blockStyle(tree).opacity).toBe(1);
+  });
+
+  // A skeleton is many blocks. They share one pulse, so the work it costs is
+  // one Reduce Motion subscription, one pair of focus and blur listeners and
+  // one animation however many blocks it draws, and every block reads it.
+  it("drives every block of a skeleton from one pulse", () => {
+    const { navigation, handlers, emit } = screenNavigation();
+    const listeners = vi.mocked(AccessibilityInfo.addEventListener);
+    listeners.mockClear();
+    vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockClear();
+    vi.mocked(withRepeat).mockClear();
+    const tree = render(
+      <NavigationContext.Provider value={navigation as never}>
+        <SkeletonLines lines={4} showTile />
+      </NavigationContext.Provider>,
+    );
+    const opacities = () =>
+      tree.root
+        .findAllByType("Animated.View" as unknown as React.ComponentType)
+        .map((node) => flatten(node.props.style).opacity);
+
+    expect(opacities()).toEqual([0.5, 0.5, 0.5, 0.5, 0.5]);
+    expect(
+      listeners.mock.calls.filter(
+        ([event]) => (event as string) === "reduceMotionChanged",
+      ),
+    ).toHaveLength(1);
+    expect(
+      vi.mocked(AccessibilityInfo.isReduceMotionEnabled),
+    ).toHaveBeenCalledTimes(1);
+    expect(handlers.focus!.size).toBe(1);
+    expect(handlers.blur!.size).toBe(1);
+    expect(vi.mocked(withRepeat)).toHaveBeenCalledTimes(1);
+
+    act(() => emit("blur"));
+    expect(opacities()).toEqual([1, 1, 1, 1, 1]);
   });
 });
 

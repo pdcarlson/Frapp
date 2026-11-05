@@ -208,7 +208,9 @@ export const MemberDetailSheet = forwardRef<
       >
         <SheetHeader title="Member" onCancel={dismiss} cancelLabel="Done" />
 
-        {memberQuery.isPending ? <SkeletonLines lines={4} showTile /> : null}
+        {memberQuery.isPending ? (
+          <SkeletonLines lines={4} showTile tone="list" />
+        ) : null}
 
         {/* A cached member still renders through a background-refetch
             failure (TanStack keeps `data` on an errored refetch) — the error

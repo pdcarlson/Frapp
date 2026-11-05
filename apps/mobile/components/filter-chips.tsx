@@ -2,7 +2,6 @@ import { ReactNode } from "react";
 import {
   type AccessibilityRole,
   type AccessibilityState,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,7 +9,7 @@ import {
   View,
 } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
-import { usePressFeedback } from "@/components/list-section";
+import { PressableRow } from "@/components/list-section";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -35,14 +34,16 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * ## Compact, with a 44pt touch target
  *
  * The board draws these chips about 34pt tall (s13), not the 44pt they used to
- * be. The visual height is that, and `hitSlop` carries the touch target the
- * rest of the way to `touch.minimum`, as Ask's answer card and the sheet
- * header's Cancel do. The rows and scrollers pad themselves by the slop and
- * pull it back with a negative margin, because Android drops a touch outside
- * its parent's bounds whatever a child's `hitSlop` says.
+ * be. That is the chip's floor (a large system text size grows it), and
+ * `hitSlop` carries the touch target the rest of the way to `touch.minimum`,
+ * as Ask's answer card and the sheet header's Cancel do. The rows and
+ * scrollers pad themselves by the slop and pull it back with a negative
+ * margin, because Android drops a touch outside a clipping parent's bounds,
+ * a scroller's among them, whatever a child's `hitSlop` says (the clip that
+ * rounds each chip's ripple takes the slop too, in `PressableRow`).
  */
 
-/** The board's chip height (s13). No token carries it; the floor is `hitSlop`'s. */
+/** The board's chip height (s13), as a floor. No token carries it; the 44pt floor is `hitSlop`'s. */
 const CHIP_HEIGHT = 34;
 
 export interface FilterChip {
@@ -60,7 +61,7 @@ export interface FilterChip {
  * On: the chapter's solid accent with its own label colour, as components.md
  * §3 paints a control that stays on. Off: `surface1` with a hairline, the
  * tone of the lists below. Pressing an off chip ripples on Android and lifts
- * a step on iOS (`usePressFeedback`). An on chip ripples on Android and holds
+ * a step on iOS (`usePressFeedback`, through `PressableRow`). An on chip ripples on Android and holds
  * still on iOS: its fill is the state, and the lift would paint over it.
  */
 export function Chip({
@@ -83,28 +84,29 @@ export function Chip({
   const { tokens } = useFrappTheme();
   const { accentPrimary, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
-  const feedback = usePressFeedback();
   const slop = (tokens.touch.minimum - CHIP_HEIGHT) / 2;
 
   return (
-    <Pressable
+    // A rounded control, so it goes through `PressableRow`: the chip can't
+    // round its own ripple, and a clip on the chip itself would also have to
+    // fix its height.
+    <PressableRow
       accessibilityRole={accessibilityRole}
       accessibilityState={accessibilityState}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       hitSlop={{ top: slop, bottom: slop }}
       onPress={onPress}
-      android_ripple={feedback.ripple}
-      style={({ pressed }) => [
+      lifts={!on}
+      style={[
         styles.chip,
         on ? { backgroundColor: accentPrimary } : styles.chipIdle,
-        on ? null : feedback.lift(pressed),
       ]}
     >
       <Text style={[styles.chipText, on ? { color: accentOnPrimary } : null]}>
         {label}
       </Text>
-    </Pressable>
+    </PressableRow>
   );
 }
 
@@ -311,15 +313,15 @@ function createStyles(tokens: SignetTokens) {
     wrapTabs: {
       width: "100%",
     },
+    // A floor, not a fixed height: at a large system text size the label
+    // outgrows 34pt and the chip grows with it rather than cutting it off.
     chip: {
-      height: CHIP_HEIGHT,
+      minHeight: CHIP_HEIGHT,
       minWidth: tokens.touch.minimum,
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: tokens.spacing.md,
       borderRadius: tokens.radius.chipLarge,
-      // Bounds the Android ripple to the rounded chip.
-      overflow: "hidden",
     },
     chipIdle: {
       backgroundColor: tokens.color.surface.surface1,
