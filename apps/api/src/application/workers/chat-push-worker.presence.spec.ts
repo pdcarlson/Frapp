@@ -11,6 +11,7 @@ import {
   ChatPushWorkerService,
   fanOutStartTime,
   MAX_PRESENCE_CHANNELS,
+  PRESENCE_JOIN_GRACE_MS,
 } from './chat-push-worker.service';
 import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
 import { CHAT_PUSH_DISPATCH_REPOSITORY } from '#domain/repositories/chat-push-dispatch.repository.interface';
@@ -243,61 +244,164 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
       );
     });
 
-    it.each(['CHANNEL_ERROR', 'TIMED_OUT'])(
-      'logs and reports a %s join, and keeps the channel for realtime-js to retry',
-      async (status) => {
+    describe('a failed join', () => {
+      // setImmediate stays real: `flush` and the worker's awaits use it.
+      beforeEach(() => {
+        jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+      });
+      afterEach(() => jest.useRealTimers());
+
+      const passGrace = () => jest.advanceTimersByTime(PRESENCE_JOIN_GRACE_MS);
+
+      it.each(['CHANNEL_ERROR', 'TIMED_OUT'])(
+        'logs a %s join at once, reports it once still unjoined after the grace period, and keeps the channel for realtime-js to retry',
+        async (status) => {
+          await receive('ch-a');
+
+          realtime.opened[0].status(status, new Error('too many channels'));
+
+          expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining(`presence join ${status} for ch-a`),
+          );
+          jest.advanceTimersByTime(PRESENCE_JOIN_GRACE_MS - 1);
+          expect(Sentry.captureMessage).not.toHaveBeenCalled();
+
+          jest.advanceTimersByTime(1);
+          expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
+          expect(Sentry.captureMessage).toHaveBeenCalledWith(
+            'chat-push presence join failed',
+            expect.objectContaining({
+              level: 'warning',
+              tags: expect.objectContaining({ realtime_status: status }),
+              // One issue per status, not one for every refused join.
+              fingerprint: ['chat-push-presence-join', status],
+            }),
+          );
+          expect(realtime.opened[0].unsubscribe).not.toHaveBeenCalled();
+          await receive('ch-a');
+          expect(realtime.channel).toHaveBeenCalledTimes(1);
+        },
+      );
+
+      // Production's FRAPP-API-9: `socket closed: 1006` every few hours,
+      // and realtime-js rejoining every channel seconds later.
+      it('reports nothing when the channel rejoins within the grace period', async () => {
+        await receive('ch-a');
+        await receive('ch-b');
+
+        realtime.opened[0].status(
+          'CHANNEL_ERROR',
+          new Error('socket closed: 1006'),
+        );
+        realtime.opened[1].status(
+          'CHANNEL_ERROR',
+          new Error('socket closed: 1006'),
+        );
+        jest.advanceTimersByTime(5_000);
+        realtime.opened[0].status('SUBSCRIBED');
+        realtime.opened[1].status('SUBSCRIBED');
+        passGrace();
+
+        expect(Sentry.captureMessage).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledTimes(2);
+      });
+
+      it('reports the latest failing status', async () => {
         await receive('ch-a');
 
-        realtime.opened[0].status(status, new Error('too many channels'));
+        realtime.opened[0].status('CHANNEL_ERROR');
+        realtime.opened[0].status('TIMED_OUT');
+        passGrace();
 
-        expect(warn).toHaveBeenCalledWith(
-          expect.stringContaining(`presence join ${status} for ch-a`),
-        );
+        expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
         expect(Sentry.captureMessage).toHaveBeenCalledWith(
           'chat-push presence join failed',
           expect.objectContaining({
-            level: 'warning',
-            tags: expect.objectContaining({ realtime_status: status }),
-            // One issue per status, not one for every refused join.
-            fingerprint: ['chat-push-presence-join', status],
+            fingerprint: ['chat-push-presence-join', 'TIMED_OUT'],
           }),
+        );
+      });
+
+      it('starts a new grace period for a join that fails again after landing', async () => {
+        await receive('ch-a');
+
+        realtime.opened[0].status('CHANNEL_ERROR');
+        realtime.opened[0].status('SUBSCRIBED');
+        jest.advanceTimersByTime(PRESENCE_JOIN_GRACE_MS - 1_000);
+        realtime.opened[0].status('CHANNEL_ERROR');
+        jest.advanceTimersByTime(1_000);
+        expect(Sentry.captureMessage).not.toHaveBeenCalled();
+
+        jest.advanceTimersByTime(PRESENCE_JOIN_GRACE_MS);
+        expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
+      });
+
+      it('reports nothing for a channel the server closed during the grace period', async () => {
+        await receive('ch-a');
+
+        realtime.opened[0].status('CHANNEL_ERROR');
+        realtime.opened[0].status('CLOSED');
+        await flush();
+        passGrace();
+
+        expect(Sentry.captureMessage).not.toHaveBeenCalled();
+      });
+
+      it('reports nothing for a channel evicted during the grace period', async () => {
+        await receive('ch-0');
+        realtime.opened[0].status('CHANNEL_ERROR');
+        for (let i = 1; i <= MAX_PRESENCE_CHANNELS; i += 1) {
+          await receive(`ch-${i}`);
+        }
+        await flush();
+        passGrace();
+
+        expect(realtime.opened[0].unsubscribe).toHaveBeenCalled();
+        expect(Sentry.captureMessage).not.toHaveBeenCalled();
+      });
+
+      it('reports nothing once the worker has shut down', async () => {
+        await receive('ch-a');
+
+        realtime.opened[0].status('CHANNEL_ERROR');
+        await worker.onApplicationShutdown();
+        expect(jest.getTimerCount()).toBe(0);
+        passGrace();
+
+        expect(Sentry.captureMessage).not.toHaveBeenCalled();
+      });
+
+      it('logs, and keeps the channel, when Sentry itself throws', async () => {
+        // The report runs inside a timer callback, so a Sentry fault that
+        // escaped it would be an uncaught exception instead of a log line.
+        jest.mocked(Sentry.captureMessage).mockImplementationOnce(() => {
+          throw new Error('sentry unreachable');
+        });
+        await receive('ch-a');
+
+        realtime.opened[0].status('CHANNEL_ERROR', new Error('too many'));
+        expect(() => passGrace()).not.toThrow();
+
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('sentry unreachable'),
         );
         expect(realtime.opened[0].unsubscribe).not.toHaveBeenCalled();
         await receive('ch-a');
         expect(realtime.channel).toHaveBeenCalledTimes(1);
-      },
-    );
-
-    it('logs, and keeps the channel, when Sentry itself throws', async () => {
-      // The report runs inside realtime-js's status callback, so a Sentry
-      // fault that escaped it would surface there instead of being logged.
-      jest.mocked(Sentry.captureMessage).mockImplementationOnce(() => {
-        throw new Error('sentry unreachable');
       });
-      await receive('ch-a');
 
-      expect(() =>
-        realtime.opened[0].status('CHANNEL_ERROR', new Error('too many')),
-      ).not.toThrow();
+      // An outage fails every open channel at once.
+      it('reports to Sentry once per window, however many channels stay unjoined', async () => {
+        await receive('ch-a');
+        await receive('ch-b');
 
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('sentry unreachable'),
-      );
-      expect(realtime.opened[0].unsubscribe).not.toHaveBeenCalled();
-      await receive('ch-a');
-      expect(realtime.channel).toHaveBeenCalledTimes(1);
-    });
+        realtime.opened[0].status('CHANNEL_ERROR');
+        realtime.opened[1].status('CHANNEL_ERROR');
+        passGrace();
 
-    // A dropped socket fails every open channel at once.
-    it('reports to Sentry once per window, however many channels fail', async () => {
-      await receive('ch-a');
-      await receive('ch-b');
-
-      realtime.opened[0].status('CHANNEL_ERROR');
-      realtime.opened[1].status('CHANNEL_ERROR');
-
-      expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
-      expect(warn).toHaveBeenCalledTimes(2);
+        expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalledTimes(2);
+      });
     });
 
     it('drops a channel the server closed, so its next message reopens it', async () => {

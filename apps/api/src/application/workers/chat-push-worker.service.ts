@@ -107,6 +107,15 @@ const FANOUT_START_MAX_AGE_MS = 10 * 60 * 1000;
 const PRESENCE_REPORT_INTERVAL_MS = 10 * 60 * 1000;
 
 /**
+ * How long a presence channel may stay unjoined after a `CHANNEL_ERROR` or
+ * `TIMED_OUT` before Sentry hears of it (#3473). realtime-js reconnects a
+ * dropped socket and rejoins its channels within seconds (its backoff tops out
+ * at 10 s), so a channel still unjoined after this is a refusal or an outage,
+ * not a blip.
+ */
+export const PRESENCE_JOIN_GRACE_MS = 60 * 1000;
+
+/**
  * Where a fan-out span starts: the message's insert, unless that is unreadable,
  * in the future (a clock ahead of this one) or older than
  * {@link FANOUT_START_MAX_AGE_MS}, in which case it starts now.
@@ -174,6 +183,14 @@ export class ChatPushWorkerService
    */
   private readonly releasingPresence = new Set<string>();
   private lastPresenceReportAt = Number.NEGATIVE_INFINITY;
+  /**
+   * Presence channels whose join failed and hasn't landed since, each with its
+   * grace timer and latest failing status ({@link PRESENCE_JOIN_GRACE_MS}).
+   */
+  private readonly unjoinedPresence = new Map<
+    RealtimeChannel,
+    { timer: ReturnType<typeof setTimeout>; status: string }
+  >();
   private readonly bundler = new BurstBundler();
 
   constructor(
@@ -237,6 +254,8 @@ export class ChatPushWorkerService
   async onApplicationShutdown(): Promise<void> {
     await this.messages?.stop();
     this.messages = null;
+    for (const { timer } of this.unjoinedPresence.values()) clearTimeout(timer);
+    this.unjoinedPresence.clear();
     // Let go of every presence channel before removing any, so each leave's
     // `CLOSED` echo reads as this worker's own (see `onPresenceStatus`), not a
     // server close to log and release a second time.
@@ -688,12 +707,17 @@ export class ChatPushWorkerService
    *
    * `CHANNEL_ERROR` and `TIMED_OUT` are the join being refused or never
    * answered: a channel over Supabase's per-client limit is refused that way,
-   * and so is every channel while the socket is down. Both are logged and
-   * reported, and the channel is kept: `realtime-js` retries the join itself
-   * and the roster reads empty until it lands, which costs extra pushes, never
-   * a missed one. `CLOSED` on a channel this worker still holds is the server
-   * ending it, which nothing retries, so it is dropped and the channel's next
-   * message reopens it.
+   * and so is every channel while the socket is down. Both are logged, and the
+   * channel is kept: `realtime-js` retries the join itself and the roster reads
+   * empty until it lands, which costs extra pushes, never a missed one. Sentry
+   * hears of it only if the channel is still unjoined after
+   * {@link PRESENCE_JOIN_GRACE_MS} (#3473): the socket drops and comes back
+   * every few hours in production (`socket closed: 1006`), and each drop was
+   * an alert about realtime-js doing its job.
+   *
+   * `CLOSED` on a channel this worker still holds is the server ending it,
+   * which nothing retries, so it is dropped and the channel's next message
+   * reopens it.
    *
    * A status from a channel this worker already let go of (evicted, dropped,
    * shut down) is its own teardown echoing back, and is ignored.
@@ -704,7 +728,10 @@ export class ChatPushWorkerService
     status: string,
     err?: Error,
   ): void {
-    if (status === 'SUBSCRIBED') return;
+    if (status === 'SUBSCRIBED') {
+      this.clearUnjoined(ch);
+      return;
+    }
     if (this.presenceChannels.get(channelId) !== ch) return;
     if (status === 'CLOSED') {
       this.logger.warn(
@@ -716,12 +743,41 @@ export class ChatPushWorkerService
     this.logger.warn(
       `chat-push: presence join ${status} for ${channelId} (${this.presenceChannels.size} open); pushes there ignore who is reading until it joins${err ? `: ${err.message}` : ''}`,
     );
-    this.reportPresenceRefusal(status);
+    this.awaitRejoin(ch, status);
   }
 
   /**
-   * Sentry hears about a refused or timed-out join at most once per
-   * {@link PRESENCE_REPORT_INTERVAL_MS}: a dropped socket fails every open
+   * Start a failed join's grace period, or note its newer status if one is
+   * running. When it ends with the channel still held and unjoined, Sentry
+   * hears of it.
+   */
+  private awaitRejoin(ch: RealtimeChannel, status: string): void {
+    const pending = this.unjoinedPresence.get(ch);
+    if (pending) {
+      pending.status = status;
+      return;
+    }
+    // Dropping the channel (eviction, a server close, shutdown) clears this
+    // timer, so when it fires the worker still holds the channel.
+    const timer = setTimeout(() => {
+      const latest = this.unjoinedPresence.get(ch)?.status ?? status;
+      this.unjoinedPresence.delete(ch);
+      this.reportPresenceRefusal(latest);
+    }, PRESENCE_JOIN_GRACE_MS);
+    timer.unref?.();
+    this.unjoinedPresence.set(ch, { timer, status });
+  }
+
+  private clearUnjoined(ch: RealtimeChannel): void {
+    const pending = this.unjoinedPresence.get(ch);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.unjoinedPresence.delete(ch);
+  }
+
+  /**
+   * Sentry hears about a join still failing after its grace period at most
+   * once per {@link PRESENCE_REPORT_INTERVAL_MS}: an outage fails every open
    * channel at once, and one event says as much as eighty.
    */
   private reportPresenceRefusal(status: string): void {
@@ -745,6 +801,7 @@ export class ChatPushWorkerService
    * lands.
    */
   private dropPresenceChannel(channelId: string, ch: RealtimeChannel): void {
+    this.clearUnjoined(ch);
     if (this.presenceChannels.get(channelId) === ch) {
       this.presenceChannels.delete(channelId);
     }
