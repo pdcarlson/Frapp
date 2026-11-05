@@ -21,6 +21,18 @@ const TAB_BAR_HEIGHT = 62;
 const TAB_BAR_PADDING = 6;
 
 /**
+ * Options for a screen that takes the whole window: a conversation (s05) and
+ * the two check-in screens (s18 scanner, s22 host QR), which the board draws
+ * with no tab bar. The thread's composer is then the last thing on screen, as
+ * in every messaging app, rather than floating above four tabs that do nothing
+ * mid-conversation, and an officer projecting the QR has no tabs under it to
+ * tap away mid-hosting. Each draws its own way out (s05's `‹`, the ✕ on s18
+ * and s22) and takes the bottom safe-area inset itself, and Android's back
+ * button still leads out (`spec/ui/mobile/navigation.md` § Tab bar).
+ */
+const FULL_WINDOW = { tabBarStyle: { display: "none" as const } };
+
+/**
  * The locked 4-tab IA (spec/ui/mobile/navigation.md §"Tab bar — 4 tabs, locked").
  *
  * There is no Home tab — chat is home. Every route outside these four is
@@ -125,7 +137,10 @@ export default function TabLayout() {
       />
 
       {/* ── Live routes, reached by navigation ───────────────────────────── */}
-      <Tabs.Screen name="chat-thread" options={{ title: "Thread", href: null }} />
+      <Tabs.Screen
+        name="chat-thread"
+        options={{ title: "Thread", href: null, ...FULL_WINDOW }}
+      />
       <Tabs.Screen
         name="event-details"
         options={{ title: "Event details", href: null }}
@@ -161,11 +176,11 @@ export default function TabLayout() {
       <Tabs.Screen name="ask" options={{ title: "Ask", href: null }} />
       <Tabs.Screen
         name="check-in"
-        options={{ title: "Check in", href: null }}
+        options={{ title: "Check in", href: null, ...FULL_WINDOW }}
       />
       <Tabs.Screen
         name="host-check-in"
-        options={{ title: "Host check-in", href: null }}
+        options={{ title: "Host check-in", href: null, ...FULL_WINDOW }}
       />
     </Tabs>
   );

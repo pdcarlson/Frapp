@@ -152,3 +152,43 @@ describe("tab bar inset (#3344)", () => {
     expect(style.paddingBottom).toBe(6);
   });
 });
+
+/**
+ * A conversation and the two check-in screens take the whole window, as the
+ * board draws s05, s18 and s22: the thread's composer sits on the bottom
+ * inset, and the scanner and host QR have no tabs under them. Every other
+ * route keeps the bar.
+ */
+describe("full-window screens", () => {
+  const FULL_WINDOW = ["chat-thread", "check-in", "host-check-in"];
+
+  function optionsByName(): Map<string, Record<string, unknown>> {
+    const tree = render();
+    return new Map(
+      hosts(tree.root, "Tabs.Screen").map((screen) => [
+        screen.props.name as string,
+        resolved(screen.props.options, screen.props.name),
+      ]),
+    );
+  }
+
+  it("hides the tab bar on the thread, the scanner and the host QR", () => {
+    const options = optionsByName();
+
+    for (const name of FULL_WINDOW) {
+      expect(options.get(name)?.tabBarStyle, name).toEqual({
+        display: "none",
+      });
+    }
+  });
+
+  it("keeps it on every other route", () => {
+    const options = optionsByName();
+
+    expect(options.size).toBeGreaterThan(FULL_WINDOW.length + 4);
+    for (const [name, screen] of options) {
+      if (FULL_WINDOW.includes(name)) continue;
+      expect(screen, name).not.toHaveProperty("tabBarStyle");
+    }
+  });
+});
