@@ -872,7 +872,7 @@ export default function StudyScreen() {
           <EmptyState
             glyph="◷"
             title="No study zones yet"
-            body="Ask an officer to add a study zone."
+            body="Ask an officer who manages study zones to add one."
           />
         </>
       );

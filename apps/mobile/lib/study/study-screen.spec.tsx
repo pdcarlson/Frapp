@@ -822,7 +822,7 @@ describe("Study loading and empty states", () => {
     const tree = render();
 
     expect(screenText(tree)).toContain("No study zones yet");
-    expect(screenText(tree)).toContain("Ask an officer to add a study zone.");
+    expect(screenText(tree)).toContain("Ask an officer who manages study zones to add one.");
     expect(screenText(tree)).not.toContain("geofences:manage");
     act(() => tree.unmount());
   });
