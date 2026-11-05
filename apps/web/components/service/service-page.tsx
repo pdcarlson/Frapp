@@ -708,8 +708,15 @@ export function ServiceHoursPage() {
                           window. Unlike the task board it says why in both
                           cases — a silently withheld control is #1346.
                         */}
+                      {/*
+                          Secondary, not primary: every row in the queue
+                          carries one, and a column of filled buttons is
+                          louder than the entries it acts on (Billing's Mark
+                          paid reads the same way). Reject is quiet beside it.
+                        */}
                       <Button
                         size="toolbar"
+                        variant="secondary"
                         onClick={() => void approve(entry)}
                         {...gate.controlProps(
                           reviewEntry.isPending || cannotApprove,
@@ -728,7 +735,7 @@ export function ServiceHoursPage() {
                         */}
                       <Button
                         size="toolbar"
-                        variant="secondary"
+                        variant="quiet"
                         onClick={() => void reject(entry)}
                         {...gate.controlProps(reviewEntry.isPending)}
                       >
