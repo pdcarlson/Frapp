@@ -240,8 +240,8 @@ describe("s13's frame (#2485)", () => {
     );
 
     expect(title.children).toBe("Directory");
-    // The same headline as every ScreenShell title, which s13's own header
-    // copies because its body is a FlatList.
+    // The same headline as every ScreenShell title: s13's own header spreads
+    // the shell's screenTitleStyle because its body is a FlatList.
     expect(title.style).toEqual(
       expect.objectContaining({
         ...typeRole(getSignetTokens().typography.role.headline),

@@ -50,6 +50,20 @@ type ScreenShellProps = {
 };
 
 /**
+ * A page title: the headline role (24/700) at the board's -0.3 tracking, one
+ * level above the card titles under it (spec/ui/mobile/patterns.md § Screen
+ * headers). ScreenShell draws it; a screen that draws its own header, as s13
+ * Directory does for its FlatList, spreads this rather than copying the values.
+ */
+export function screenTitleStyle(tokens: SignetTokens) {
+  return {
+    color: tokens.color.text.foreground,
+    ...typeRole(tokens.typography.role.headline),
+    letterSpacing: -0.3,
+  };
+}
+
+/**
  * The screen frame most tab screens share: an optional back row, its title
  * row, an optional subtitle and the scrolling body. s05, s13, s18 and s22 draw their own. The
  * title is the only heading the shell draws; a screen may add its own below
@@ -157,9 +171,7 @@ function createStyles(tokens: SignetTokens) {
     },
     title: {
       flex: 1,
-      color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.headline),
-      letterSpacing: -0.3,
+      ...screenTitleStyle(tokens),
     },
     headerAction: {
       flexShrink: 0,
