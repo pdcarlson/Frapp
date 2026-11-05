@@ -45,6 +45,7 @@ import { jumpToLatestLabel } from "@/components/chat/jump-to-latest-button";
 import { reactionActionType } from "@repo/chat-core/types";
 import type { UseChatChannelResult } from "@/lib/chat/use-chat-channel";
 import { FrappThemeProvider } from "@/lib/theme";
+import { flatStyle } from "@/test/flat-style";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -262,7 +263,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
           isFetching: false,
         }
       : // No row and no cached list: a blank title while it is read, then the
-        // `Thread` fallback (`threadHeaderTitle`).
+        // `Thread` fallback (`threadTitleFor`).
         { data: undefined, isFetching: channelRow === "reading" },
   useCurrentUser: () => viewerQuery,
   useMemberDisplayNames: () => ROSTER,
@@ -1572,7 +1573,25 @@ describe("chat thread channel start", () => {
       channelName: "general",
       description: "The whole chapter.",
     });
-    expect(start.parent?.type).toBe("ScrollView");
+    const slot = start.parent!;
+    expect(slot.type).toBe("ScrollView");
+    // `flexGrow`, not `flex`: a content container held to the viewport's
+    // height can't scroll a start taller than it.
+    expect(flatStyle(slot.props.contentContainerStyle)).toMatchObject({
+      flexGrow: 1,
+      justifyContent: "flex-end",
+    });
+    expect(flatStyle(slot.props.contentContainerStyle).flex).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("draws nothing in an empty channel while its row is still being read", () => {
+    channelRow = "reading";
+    channel = channelState({ messages: [], hasOlder: false });
+    const tree = render();
+
+    expect(tree.root.findAllByType(ChannelStart)).toHaveLength(0);
+    expect(screenText(tree)).not.toContain(HISTORY_START_COPY);
     act(() => tree.unmount());
   });
 

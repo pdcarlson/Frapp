@@ -10,7 +10,7 @@ import {
   type ChannelPostCapability,
   THREAD_HEADER_FALLBACK,
   threadChannel,
-  threadHeaderTitle,
+  threadTitleFor,
 } from "./channel-list";
 
 /**
@@ -435,20 +435,26 @@ describe("listedChannels", () => {
   });
 });
 
-describe("threadHeaderTitle (#2775)", () => {
+describe("thread header title (#2775)", () => {
   const VIEWER = "11111111-1111-4111-8111-111111111111";
   const CASEY = "33333333-3333-4333-8333-333333333333";
   const names = { [CASEY]: "Casey" };
-  const title = (overrides: Partial<Parameters<typeof threadHeaderTitle>[0]>) =>
-    threadHeaderTitle({
-      row: undefined,
-      list: undefined,
-      channelId: "c1",
-      viewerId: VIEWER,
-      names,
-      isFetching: false,
-      ...overrides,
-    });
+  // The screen's own composition: resolve the row, then title it.
+  const title = ({
+    isFetching = false,
+    ...overrides
+  }: Partial<Parameters<typeof threadChannel>[0]> & { isFetching?: boolean }) =>
+    threadTitleFor(
+      threadChannel({
+        row: undefined,
+        list: undefined,
+        channelId: "c1",
+        viewerId: VIEWER,
+        names,
+        ...overrides,
+      }),
+      isFetching,
+    );
 
   it("prefixes a channel with #", () => {
     expect(title({ row: { id: "c1", name: "general", type: "PUBLIC" } })).toBe(

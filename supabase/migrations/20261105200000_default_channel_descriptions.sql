@@ -9,8 +9,9 @@
 -- created before that.
 --
 -- Only a description that was never set (null) is written. Chat admin saves a
--- cleared description as '', so an officer's text, and an officer's choice to
--- leave it blank, are both kept. On 2026-11-05 every one of these rows on
+-- cleared description as '' (and, from this change on, sends the description
+-- only when an officer changed it), so an officer's text, and an officer's
+-- choice to leave it blank, are both kept. On 2026-11-05 every one of these rows on
 -- frapp-prod and frapp-staging was null. Only the four
 -- seeded names are touched, and only for the channel types they are seeded
 -- with, so a DM or a private channel that happens to share a name is left

@@ -1526,6 +1526,16 @@ describe("MessageTimeline channel start", () => {
     expect(screen.queryByText(/nothing in this channel/i)).toBeNull();
   });
 
+  it("lets a channel start taller than the window scroll rather than clip", () => {
+    renderTimeline([], { channelStart: <p>Welcome to #general</p> });
+
+    // jsdom has no layout, so the contract is the boxes: a scrolling outer
+    // box, and a column at least its height that sits the start at the bottom.
+    const column = screen.getByText("Welcome to #general").parentElement!;
+    expect(column).toHaveClass("min-h-full", "justify-end");
+    expect(column.parentElement).toHaveClass("h-full", "overflow-y-auto");
+  });
+
   it("draws the channel start above the oldest message once no older page is left", () => {
     renderTimeline(rows(3), {
       hasOlder: false,

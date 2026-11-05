@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { cardFilledContainers } from "@/tests/card-surfaces";
@@ -14,8 +20,9 @@ import { networkMock } from "@/tests/network";
  * `can-fallback.spec.tsx` pins.
  */
 
-const { mockOffline, reads } = vi.hoisted(() => ({
+const { mockOffline, reads, updateChannel } = vi.hoisted(() => ({
   mockOffline: { value: false },
+  updateChannel: { mutateAsync: (() => Promise.resolve()) as (...args: unknown[]) => Promise<unknown> },
   reads: {
     channels: {} as Record<string, unknown>,
     categories: {} as Record<string, unknown>,
@@ -36,7 +43,10 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useRoles: () => ({ data: [] }),
     useMemberDisplayNames: () => ({ nameFor: () => null }),
     useCreateChannel: mutation,
-    useUpdateChannel: mutation,
+    useUpdateChannel: () => ({
+      mutateAsync: (...args: unknown[]) => updateChannel.mutateAsync(...args),
+      isPending: false,
+    }),
     useDeleteChannel: mutation,
     useCreateCategory: mutation,
     useUpdateCategory: mutation,
@@ -433,6 +443,39 @@ describe("ChatAdminPage — a channel's pins", () => {
     expect(
       screen.getByRole("heading", { level: 4, name: "Pinned messages (0)" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ChatAdminPage — saving a channel", () => {
+  it("leaves a never-set description alone when another field is saved", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).not.toHaveProperty("description");
+  });
+
+  it("sends the description once the officer has typed one", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.change(document.getElementById("ca-description")!, {
+      target: { value: "  The whole chapter.  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).toMatchObject({ description: "The whole chapter." });
   });
 });
 

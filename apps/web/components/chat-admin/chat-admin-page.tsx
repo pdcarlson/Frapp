@@ -387,12 +387,19 @@ function ChatAdminBody({
       });
       return;
     }
+    // The description goes out only when the officer changed it. Sending the
+    // blank draft on every save turned a never-set description (null) into
+    // `''`, which reads the same on screen but is what a deliberate clear
+    // looks like to the default-description backfill (20261105200000).
+    const description = descriptionDraft.trim();
+    const descriptionChanged =
+      description !== (selectedChannel.description ?? "").trim();
     try {
       await updateChannel.mutateAsync({
         id: selectedChannel.id,
         body: {
           name,
-          description: descriptionDraft.trim(),
+          ...(descriptionChanged ? { description } : {}),
           // `null` clears the category; `NO_CATEGORY` selected means "make this
           // uncategorized," which is a real write, not "leave it alone."
           category_id: categoryDraft === NO_CATEGORY ? null : categoryDraft,

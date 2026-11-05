@@ -218,24 +218,9 @@ export const THREAD_HEADER_FALLBACK = "Thread";
  * offline cold start or a failed read may have no row at all: the header then
  * says `Thread`, as it did before it named anything. While a read is in flight
  * it stays empty, rather than flashing `Thread` for a moment.
- */
-export function threadHeaderTitle(input: {
-  /** The single-channel read's data. */
-  row: unknown;
-  /** The cached channel list, if any. */
-  list: unknown;
-  channelId: string | null;
-  viewerId: string | null;
-  names: DisplayNameMap;
-  /** The single-channel read is fetching right now. */
-  isFetching: boolean;
-}): string {
-  return threadTitleFor(threadChannel(input), input.isFetching);
-}
-
-/**
- * {@link threadHeaderTitle} for a row already resolved with
- * {@link threadChannel}, so a screen that needs the row too resolves it once.
+ *
+ * Takes the row {@link threadChannel} resolved, so a screen that needs the
+ * row too resolves it once.
  */
 export function threadTitleFor(
   found: { channel: ChannelSummary; name: string } | null,
@@ -246,8 +231,8 @@ export function threadTitleFor(
 }
 
 /**
- * The open thread's channel row and its display name (no `#`), resolved the
- * way {@link threadHeaderTitle} resolves them: the channel's own read first,
+ * The open thread's channel row and its display name (no `#`), resolved for
+ * {@link threadTitleFor}: the channel's own read first,
  * then the cached list. `null` when neither has the row.
  */
 export function threadChannel(input: {
