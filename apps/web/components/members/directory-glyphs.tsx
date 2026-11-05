@@ -23,7 +23,7 @@
  * greenfield lane replaced four sortable table headers with one sort select and
  * deleted the table/card view toggle outright.
  *
- * The three silhouettes the Directory shares with the shell's nav intents are
+ * The two silhouettes the Directory shares with the shell's nav intents are
  * re-exported rather than redrawn — a second copy of the same path data is the
  * drift §1 rule 1 bans.
  */
@@ -32,11 +32,7 @@ import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
 
-export {
-  DirectoryGlyph,
-  RolesGlyph,
-  SearchGlyph,
-} from "@/components/layout/nav-glyphs";
+export { RolesGlyph, SearchGlyph } from "@/components/layout/nav-glyphs";
 
 export type DirectoryGlyphProps = DuotoneGlyphProps;
 

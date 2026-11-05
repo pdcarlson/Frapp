@@ -143,7 +143,7 @@ The tables below are the canonical strings for high-frequency state messages, so
 
 - Do not rewrite equivalent state text ad hoc per screen unless the workflow intent is materially different.
 - On the web dashboard, the shared subset is implemented in `apps/web/lib/state-microcopy.ts`; the remaining strings live inline at their surface component and MUST match these tables.
-- **Loading rows on web are announcements, not captions** (2026-11-05). Dashboard loading states are skeletons shaped like their page, and a skeleton shows no text; its string is the screen-reader status line, written without the trailing `...` (`Loading chapter tasks`). The rows below keep their visible-caption form for mobile and for the few web panels still on the generic loading state ([`components.md`](components.md) §10).
+- **Loading rows on web are announcements, not captions** (2026-11-05). Dashboard loading states are skeletons shaped like their page, and a skeleton shows no text; its string is the screen-reader status line, written without the trailing `...` (`Loading chapter tasks`). The rows below keep their visible-caption form for mobile and for the few web regions inside a loaded page still on the generic loading state ([`components.md`](components.md) §10).
 - The chat catch-up pulse deliberately does **not** use these states: a section that fails to read is omitted, never rendered as a zero or a generic error row. See [catch-up.md](../../behavior/chat/catch-up.md).
 
 ### Connection banner (global)

@@ -11,7 +11,6 @@ import {
   Trash2,
 } from "lucide-react";
 import {
-  EventsGlyph,
   RolesGlyph,
   StudyZonesGlyph,
 } from "@/components/events/chapter-ops-glyphs";
@@ -19,13 +18,13 @@ import { useCreateEvent, useRoles, useUpdateEvent } from "@repo/hooks";
 import { RECURRENCE_RULES, RECURRENCE_RULE_LABELS } from "@repo/validation";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { Sheet } from "@/components/ui/sheet";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  PanelBody,
+  PanelContent,
+  PanelFooter,
+  PanelHeader,
+} from "@/components/shared/panel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -164,7 +163,7 @@ type EventEditorDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /**
-   * Forwarded to the underlying `DialogContent`. `useGatedDialog` splits its
+   * Forwarded to the underlying `PanelContent`. `useGatedDialog` splits its
    * contract across `dialogProps` and `contentProps`; `events-page.tsx` owns
    * `open` while this component owns the content, so without this the revoke
    * path falls back to Radix's default and refocuses a "New event" trigger that
@@ -493,329 +492,339 @@ export function EventEditorDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={onOpenChange}>
       {/*
+        A panel, not a dialog (`components.md` § Surface size): this form runs
+        to a role list and a polygon of any length, so it scrolled inside a
+        672px dialog capped at 90vh. It opens at the event panel's own width,
+        so Edit event reads as that panel turning into its editor.
+
         No description: the one this had restated the form's own fields.
         `aria-describedby={undefined}` tells Radix the omission is deliberate.
       */}
-      <DialogContent
-        className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+      <PanelContent
         onCloseAutoFocus={onCloseAutoFocus}
         aria-describedby={undefined}
       >
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <EventsGlyph className="h-4 w-4" />
-            {mode === "create" ? "Create event" : "Edit event"}
-          </DialogTitle>
-        </DialogHeader>
+        <PanelHeader>
+          {mode === "create" ? "Create event" : "Edit event"}
+        </PanelHeader>
 
-        {usingPreviewData ? (
-          <div className="flex items-start gap-3 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>
-              Preview mode is active. Sign in to create and edit live events.
+        <PanelBody>
+          {usingPreviewData ? (
+            <div className="flex items-start gap-3 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                Preview mode is active. Sign in to create and edit live events.
+              </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
 
-        {/*
+          {/*
           §5 rule 1 wants the gate on the trigger, but "New event" / "Edit"
           live in the parents that own `open` (events-page, event-detail-sheet),
           so the earliest point this component controls is the top of the form.
           The notice therefore states the blocker before anything is typed,
           rather than leaving the save button disabled with no reason.
         */}
-        <SubscriptionNotice gate={gate} feature="managing events" />
+          <SubscriptionNotice gate={gate} feature="managing events" />
 
-        <div className="grid gap-3">
-          <div className="grid gap-1">
-            <Label htmlFor="event-name">Event name</Label>
-            <Input
-              id="event-name"
-              value={name}
-              onChange={(eventValue) => setName(eventValue.target.value)}
-              placeholder="Chapter meeting"
-            />
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3">
             <div className="grid gap-1">
-              <Label htmlFor="event-start">Start</Label>
+              <Label htmlFor="event-name">Event name</Label>
               <Input
-                id="event-start"
-                type="datetime-local"
-                value={startAt}
-                onChange={(eventValue) => setStartAt(eventValue.target.value)}
+                id="event-name"
+                value={name}
+                onChange={(eventValue) => setName(eventValue.target.value)}
+                placeholder="Chapter meeting"
               />
             </div>
-            <div className="grid gap-1">
-              <Label htmlFor="event-end">End</Label>
-              <Input
-                id="event-end"
-                type="datetime-local"
-                value={endAt}
-                onChange={(eventValue) => setEndAt(eventValue.target.value)}
-              />
-            </div>
-          </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-1">
-              <Label htmlFor="event-location">Location</Label>
-              <Input
-                id="event-location"
-                value={location}
-                onChange={(eventValue) => setLocation(eventValue.target.value)}
-                placeholder="Chapter house"
-              />
-            </div>
-            <div className="grid gap-1">
-              <Label htmlFor="event-point-value">Point value</Label>
-              <Input
-                id="event-point-value"
-                type="number"
-                min={0}
-                value={pointValue}
-                onChange={handlePointValueChange}
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-1">
-              <Label htmlFor="event-attendance-policy">Attendance policy</Label>
-              <select
-                id="event-attendance-policy"
-                value={isMandatory ? "mandatory" : "optional"}
-                onChange={(eventValue) =>
-                  setIsMandatory(eventValue.target.value === "mandatory")
-                }
-                className={dashboardFormSelectClassName}
-              >
-                <option value="mandatory">Mandatory</option>
-                <option value="optional">Optional</option>
-              </select>
-            </div>
-
-            <div className="grid gap-1">
-              <Label htmlFor="event-recurrence">Recurrence</Label>
-              <select
-                id="event-recurrence"
-                value={recurrenceRule}
-                onChange={(eventValue) =>
-                  setRecurrenceRule(eventValue.target.value)
-                }
-                className={dashboardFormSelectClassName}
-              >
-                <option value="NONE">One-time</option>
-                {RECURRENCE_RULES.map((rule) => (
-                  <option key={rule} value={rule}>
-                    {RECURRENCE_RULE_LABELS[rule]}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center gap-2">
-              <RolesGlyph className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Required roles</span>
-            </div>
-            <p className="text-caption text-muted-foreground">
-              Leave all unchecked to require every member. Select roles to limit
-              attendance and auto-absent to members holding any selected role.
-            </p>
-            {rolesQuery.isError ? (
-              <div className="rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
-                Couldn&apos;t load chapter roles, so the list below may be
-                incomplete.
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-1">
+                <Label htmlFor="event-start">Start</Label>
+                <Input
+                  id="event-start"
+                  type="datetime-local"
+                  value={startAt}
+                  onChange={(eventValue) => setStartAt(eventValue.target.value)}
+                />
               </div>
-            ) : null}
-            {displayedRoles.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border p-3 text-caption text-muted-foreground">
-                {rolesQuery.isLoading
-                  ? "Loading roles…"
-                  : rolesQuery.isError
-                    ? "Role targeting is unavailable right now."
-                    : "No roles are available for this chapter yet."}
+              <div className="grid gap-1">
+                <Label htmlFor="event-end">End</Label>
+                <Input
+                  id="event-end"
+                  type="datetime-local"
+                  value={endAt}
+                  onChange={(eventValue) => setEndAt(eventValue.target.value)}
+                />
               </div>
-            ) : (
-              <div className="space-y-0.5">
-                {displayedRoles.map((role) => (
-                  <label
-                    key={role.id}
-                    className="flex min-h-8 cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1 text-sm transition hover:bg-card-hover pointer-coarse:min-h-11 pointer-coarse:text-base"
-                  >
-                    <span className="font-semibold">{role.name}</span>
-                    <input
-                      type="checkbox"
-                      className={dashboardTableCheckboxClassName}
-                      checked={requiredRoleIds.includes(role.id)}
-                      disabled={usingPreviewData}
-                      onChange={(eventValue) =>
-                        handleRequiredRoleChange(
-                          role.id,
-                          eventValue.target.checked,
-                        )
-                      }
-                    />
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center gap-2">
-              <StudyZonesGlyph className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Check-in zone</span>
             </div>
-            <p className="text-caption text-muted-foreground">
-              Optional. Members must be inside it to check in. At least 3
-              points; don&apos;t repeat the first.
-            </p>
 
-            <div className="grid gap-1">
-              <Label htmlFor="event-zone-name">Zone name</Label>
-              <Input
-                id="event-zone-name"
-                value={checkInZoneName}
-                maxLength={120}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-1">
+                <Label htmlFor="event-location">Location</Label>
+                <Input
+                  id="event-location"
+                  value={location}
+                  onChange={(eventValue) =>
+                    setLocation(eventValue.target.value)
+                  }
+                  placeholder="Chapter house"
+                />
+              </div>
+              <div className="grid gap-1">
+                <Label htmlFor="event-point-value">Point value</Label>
+                <Input
+                  id="event-point-value"
+                  type="number"
+                  min={0}
+                  value={pointValue}
+                  onChange={handlePointValueChange}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-1">
+                <Label htmlFor="event-attendance-policy">
+                  Attendance policy
+                </Label>
+                <select
+                  id="event-attendance-policy"
+                  value={isMandatory ? "mandatory" : "optional"}
+                  onChange={(eventValue) =>
+                    setIsMandatory(eventValue.target.value === "mandatory")
+                  }
+                  className={dashboardFormSelectClassName}
+                >
+                  <option value="mandatory">Mandatory</option>
+                  <option value="optional">Optional</option>
+                </select>
+              </div>
+
+              <div className="grid gap-1">
+                <Label htmlFor="event-recurrence">Recurrence</Label>
+                <select
+                  id="event-recurrence"
+                  value={recurrenceRule}
+                  onChange={(eventValue) =>
+                    setRecurrenceRule(eventValue.target.value)
+                  }
+                  className={dashboardFormSelectClassName}
+                >
+                  <option value="NONE">One-time</option>
+                  {RECURRENCE_RULES.map((rule) => (
+                    <option key={rule} value={rule}>
+                      {RECURRENCE_RULE_LABELS[rule]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2">
+                <RolesGlyph className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">Required roles</span>
+              </div>
+              <p className="text-caption text-muted-foreground">
+                Leave all unchecked to require every member. Select roles to
+                limit attendance and auto-absent to members holding any selected
+                role.
+              </p>
+              {rolesQuery.isError ? (
+                <div className="rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
+                  Couldn&apos;t load chapter roles, so the list below may be
+                  incomplete.
+                </div>
+              ) : null}
+              {displayedRoles.length === 0 ? (
+                <div className="rounded-md border border-dashed border-border p-3 text-caption text-muted-foreground">
+                  {rolesQuery.isLoading
+                    ? "Loading roles…"
+                    : rolesQuery.isError
+                      ? "Role targeting is unavailable right now."
+                      : "No roles are available for this chapter yet."}
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {displayedRoles.map((role) => (
+                    <label
+                      key={role.id}
+                      className="flex min-h-8 cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1 text-sm transition hover:bg-card-hover pointer-coarse:min-h-11 pointer-coarse:text-base"
+                    >
+                      <span className="font-semibold">{role.name}</span>
+                      <input
+                        type="checkbox"
+                        className={dashboardTableCheckboxClassName}
+                        checked={requiredRoleIds.includes(role.id)}
+                        disabled={usingPreviewData}
+                        onChange={(eventValue) =>
+                          handleRequiredRoleChange(
+                            role.id,
+                            eventValue.target.checked,
+                          )
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2">
+                <StudyZonesGlyph className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">Check-in zone</span>
+              </div>
+              <p className="text-caption text-muted-foreground">
+                Optional. Members must be inside it to check in. At least 3
+                points; don&apos;t repeat the first.
+              </p>
+
+              <div className="grid gap-1">
+                <Label htmlFor="event-zone-name">Zone name</Label>
+                <Input
+                  id="event-zone-name"
+                  value={checkInZoneName}
+                  maxLength={120}
+                  disabled={usingPreviewData}
+                  onChange={(eventValue) =>
+                    setCheckInZoneName(eventValue.target.value)
+                  }
+                  placeholder="Great Hall"
+                />
+              </div>
+
+              {checkInZone.length === 0 ? (
+                <div className="rounded-md border border-dashed border-border p-3 text-caption text-muted-foreground">
+                  No check-in zone. Members can check in from anywhere.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {checkInZone.map((vertex, index) => (
+                    <div
+                      key={vertex.id}
+                      className="flex flex-wrap items-end gap-2 rounded-md border border-border p-3"
+                    >
+                      <div className="grid min-w-[9rem] flex-1 gap-1">
+                        <Label htmlFor={`${vertex.id}-lat`}>
+                          Point {index + 1} latitude
+                        </Label>
+                        <Input
+                          id={`${vertex.id}-lat`}
+                          value={vertex.lat}
+                          inputMode="decimal"
+                          disabled={usingPreviewData}
+                          onChange={(eventValue) =>
+                            handleVertexChange(
+                              vertex.id,
+                              "lat",
+                              eventValue.target.value,
+                            )
+                          }
+                          placeholder="42.7298"
+                        />
+                      </div>
+                      <div className="grid min-w-[9rem] flex-1 gap-1">
+                        <Label htmlFor={`${vertex.id}-lng`}>
+                          Point {index + 1} longitude
+                        </Label>
+                        <Input
+                          id={`${vertex.id}-lng`}
+                          value={vertex.lng}
+                          inputMode="decimal"
+                          disabled={usingPreviewData}
+                          onChange={(eventValue) =>
+                            handleVertexChange(
+                              vertex.id,
+                              "lng",
+                              eventValue.target.value,
+                            )
+                          }
+                          placeholder="-73.6789"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Move point ${index + 1} up`}
+                          disabled={usingPreviewData || index === 0}
+                          onClick={() => handleMoveVertex(index, -1)}
+                        >
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Move point ${index + 1} down`}
+                          disabled={
+                            usingPreviewData || index === checkInZone.length - 1
+                          }
+                          onClick={() => handleMoveVertex(index, 1)}
+                        >
+                          <ArrowDown className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Remove point ${index + 1}`}
+                          disabled={usingPreviewData}
+                          onClick={() => handleRemoveVertex(vertex.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <Button
+                type="button"
+                variant="secondary"
                 disabled={usingPreviewData}
+                onClick={handleAddVertex}
+              >
+                <Plus className="h-4 w-4" />
+                Add point
+              </Button>
+            </div>
+
+            <div className="grid gap-1">
+              <Label htmlFor="event-description">Description</Label>
+              <Textarea
+                id="event-description"
+                value={description}
                 onChange={(eventValue) =>
-                  setCheckInZoneName(eventValue.target.value)
+                  setDescription(eventValue.target.value)
                 }
-                placeholder="Great Hall"
+                rows={3}
+                className="min-h-[96px]"
+                placeholder="Discuss chapter priorities and attendance expectations."
               />
             </div>
 
-            {checkInZone.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border p-3 text-caption text-muted-foreground">
-                No check-in zone. Members can check in from anywhere.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {checkInZone.map((vertex, index) => (
-                  <div
-                    key={vertex.id}
-                    className="flex flex-wrap items-end gap-2 rounded-md border border-border p-3"
-                  >
-                    <div className="grid min-w-[9rem] flex-1 gap-1">
-                      <Label htmlFor={`${vertex.id}-lat`}>
-                        Point {index + 1} latitude
-                      </Label>
-                      <Input
-                        id={`${vertex.id}-lat`}
-                        value={vertex.lat}
-                        inputMode="decimal"
-                        disabled={usingPreviewData}
-                        onChange={(eventValue) =>
-                          handleVertexChange(
-                            vertex.id,
-                            "lat",
-                            eventValue.target.value,
-                          )
-                        }
-                        placeholder="42.7298"
-                      />
-                    </div>
-                    <div className="grid min-w-[9rem] flex-1 gap-1">
-                      <Label htmlFor={`${vertex.id}-lng`}>
-                        Point {index + 1} longitude
-                      </Label>
-                      <Input
-                        id={`${vertex.id}-lng`}
-                        value={vertex.lng}
-                        inputMode="decimal"
-                        disabled={usingPreviewData}
-                        onChange={(eventValue) =>
-                          handleVertexChange(
-                            vertex.id,
-                            "lng",
-                            eventValue.target.value,
-                          )
-                        }
-                        placeholder="-73.6789"
-                      />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Move point ${index + 1} up`}
-                        disabled={usingPreviewData || index === 0}
-                        onClick={() => handleMoveVertex(index, -1)}
-                      >
-                        <ArrowUp className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Move point ${index + 1} down`}
-                        disabled={
-                          usingPreviewData || index === checkInZone.length - 1
-                        }
-                        onClick={() => handleMoveVertex(index, 1)}
-                      >
-                        <ArrowDown className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Remove point ${index + 1}`}
-                        disabled={usingPreviewData}
-                        onClick={() => handleRemoveVertex(vertex.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={usingPreviewData}
-              onClick={handleAddVertex}
-            >
-              <Plus className="h-4 w-4" />
-              Add point
-            </Button>
+            <div className="grid gap-1">
+              <Label htmlFor="event-meeting-minutes">Meeting minutes</Label>
+              <Textarea
+                id="event-meeting-minutes"
+                value={notes}
+                onChange={(eventValue) => setNotes(eventValue.target.value)}
+                rows={2}
+                placeholder="Optional meeting minutes, visible to members with access to this event."
+              />
+            </div>
           </div>
+        </PanelBody>
 
-          <div className="grid gap-1">
-            <Label htmlFor="event-description">Description</Label>
-            <Textarea
-              id="event-description"
-              value={description}
-              onChange={(eventValue) => setDescription(eventValue.target.value)}
-              rows={3}
-              className="min-h-[96px]"
-              placeholder="Discuss chapter priorities and attendance expectations."
-            />
-          </div>
-
-          <div className="grid gap-1">
-            <Label htmlFor="event-meeting-minutes">Meeting minutes</Label>
-            <Textarea
-              id="event-meeting-minutes"
-              value={notes}
-              onChange={(eventValue) => setNotes(eventValue.target.value)}
-              rows={2}
-              placeholder="Optional meeting minutes, visible to members with access to this event."
-            />
-          </div>
-        </div>
-
-        <DialogFooter>
-          {/* Cancel only closes the dialog — gating the way out of a surface the
+        <PanelFooter>
+          {/* Cancel only closes the panel — gating the way out of a surface the
               gate just blocked would be a trap. */}
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             Cancel
@@ -831,8 +840,8 @@ export function EventEditorDialog({
             )}
             {submitLabel}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </PanelFooter>
+      </PanelContent>
+    </Sheet>
   );
 }
