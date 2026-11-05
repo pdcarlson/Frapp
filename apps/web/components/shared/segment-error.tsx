@@ -2,6 +2,7 @@
 
 import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
+import { createReportOnce } from "@repo/observability";
 import { ErrorState } from "@/components/shared/async-states";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { isChunkLoadError } from "@/lib/chunk-load-error";
@@ -79,11 +80,17 @@ import { isChunkLoadError } from "@/lib/chunk-load-error";
  * single mount, and this fallback remounts often: React tears the subtree down
  * and rebuilds it on every boundary reset, so each press of Retry re-reported
  * the identical error, and the gate's copy re-reported on every dashboard
- * navigation, unbounded in session length. The `WeakSet` makes one error one
- * event however many times it is re-thrown, and being weak it holds nothing
- * alive.
+ * navigation, unbounded in session length. `createReportOnce` (in
+ * `@repo/observability`, shared with mobile's route boundaries) makes one error
+ * one event however many times it is re-thrown.
  */
-const REPORTED = new WeakSet<object>();
+const reportSegmentError = createReportOnce<{ isChunkError: boolean }>(
+  (error, { isChunkError }) => {
+    Sentry.captureException(error, {
+      tags: { chunk_load_error: isChunkError },
+    });
+  },
+);
 /**
  * The one spelling of the title, written once.
  *
@@ -180,17 +187,8 @@ export function SegmentError({
   const { description, actionLabel, isChunkError, shouldReload } = copy;
 
   useEffect(() => {
-    // Keyed on the error rather than the mount — see the docstring. A
-    // non-object (a thrown string, which a boundary can be handed) cannot go in
-    // a WeakSet, so it is reported unconditionally; those are rare enough that
-    // the duplicate is cheaper than the bookkeeping to dedupe them.
-    if (typeof error === "object" && error !== null) {
-      if (REPORTED.has(error)) return;
-      REPORTED.add(error);
-    }
-    Sentry.captureException(error, {
-      tags: { chunk_load_error: isChunkError },
-    });
+    // Keyed on the error rather than the mount — see the docstring.
+    reportSegmentError(error, { isChunkError });
   }, [error, isChunkError]);
 
   return (
