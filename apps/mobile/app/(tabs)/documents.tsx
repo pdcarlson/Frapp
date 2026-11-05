@@ -29,6 +29,7 @@ import {
   selectDocumentRows,
   selectDownloadUrl,
 } from "@/lib/more/documents";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -82,6 +83,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  */
 export default function DocumentsScreen() {
   const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
 
   const [folder, setFolder] = useState<string | null>(null);
@@ -215,7 +217,7 @@ export default function DocumentsScreen() {
             }}
             style={({ pressed }) => (pressed ? styles.pressed : null)}
           >
-            <UploadGlyph color={tokens.color.gold.askText} />
+            <UploadGlyph color={accent} />
           </Pressable>
         ) : undefined
       }

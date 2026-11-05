@@ -165,6 +165,11 @@ describe("Profile Edit (#3387)", () => {
         node.props.accessibilityLabel === "Back to More",
     ).parent!;
     expect(backRow.findAll((node) => node === edit)).toHaveLength(1);
+    // The back row's own colour, the chapter accent (the mock's), not gold.
+    const label = edit!.findByType("Text" as unknown as React.ElementType);
+    expect([label.props.style].flat()).toContainEqual(
+      expect.objectContaining({ color: "#DDB844" }),
+    );
 
     act(() => {
       edit!.props.onPress();

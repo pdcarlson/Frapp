@@ -1,4 +1,5 @@
 import type { BadgeKind } from "@/components/ui/badge";
+import { formatDay, formatDayTime } from "@repo/formatting";
 
 /**
  * Poll open/closed state → the §5 badge kind that states it, and the label.
@@ -41,4 +42,60 @@ export function pollStatusKind(isOpen: boolean): BadgeKind {
 
 export function pollStatusLabel(isOpen: boolean): string {
   return isOpen ? "Open" : "Closed";
+}
+
+/**
+ * A poll tile's one meta line: channel, choice mode, and the deadline, as
+ * "#general · Single choice · Closes Sun, Nov 8 · 4:30 AM" or
+ * "#general · Multi-choice · Closed Nov 8".
+ *
+ * No "Created" clause: when a poll was posted is the chat's business, and on
+ * this list it pushed the one date a voter needs (when it closes) to the end
+ * of a two-timestamp line. An absent fact drops out rather than printing a
+ * placeholder (`spec/ui/web-dashboard/README.md` § Page grammar), so a poll in
+ * a channel this member cannot see has no channel clause, and an open poll with
+ * no deadline has no deadline clause.
+ *
+ * A manually closed poll (#379) shows its own `closed_at`, not `expires_at`:
+ * a poll closed early can have a still-future (or absent) `expires_at`, and
+ * showing that date next to "Closed" would tell a member the poll closed on a
+ * day that hasn't happened yet. A closed poll takes the day alone; an open one
+ * keeps the time, because "closes at 4:30" is what a voter acts on.
+ */
+export function pollMetaLine(
+  {
+    channelName,
+    isMultiChoice,
+    isExpired,
+    expiresAt,
+    closedAt,
+  }: {
+    channelName: string | null;
+    isMultiChoice: boolean;
+    isExpired: boolean;
+    expiresAt?: string | null;
+    closedAt?: string | null;
+  },
+  now: Date = new Date(),
+): string {
+  let deadline: string | null = null;
+  if (closedAt) {
+    const day = formatDay(closedAt, now);
+    deadline = day ? `Closed ${day}` : null;
+  } else if (expiresAt) {
+    if (isExpired) {
+      const day = formatDay(expiresAt, now);
+      deadline = day ? `Closed ${day}` : null;
+    } else {
+      const at = formatDayTime(expiresAt, now);
+      deadline = at ? `Closes ${at}` : null;
+    }
+  }
+  return [
+    channelName ? `#${channelName}` : null,
+    isMultiChoice ? "Multi-choice" : "Single choice",
+    deadline,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }

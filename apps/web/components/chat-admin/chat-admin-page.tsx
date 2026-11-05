@@ -30,7 +30,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardDescription, CardHeader } from "@/components/ui/card";
 import { EYEBROW } from "@/components/ui/typography";
 import { SectionLabel } from "@/components/shared/section-label";
 import {
@@ -160,22 +159,17 @@ export function ChatAdminPage() {
       {/*
         Outside the `<Can>` so the permission-denied and offline branches keep
         the route's heading — the shell no longer supplies one (#2141). The
-        denied card's own `<CardTitle>Chat Admin</CardTitle>`, and the body's
-        `<h2>`, were that same title said twice.
+        denied line sits under it bare, like every other denied page: the card
+        it used to sit in framed one sentence.
       */}
-      <PageHeader title="Chat Admin" />
+      <PageHeader title="Chat admin" />
       <Can
         permission="channels:manage"
         deniedFallback={
-          <Card>
-            <CardHeader>
-              <CardDescription>
-                Managing channels and categories needs the{" "}
-                <code>channels:manage</code> permission. Ask your chapter
-                president to grant access.
-              </CardDescription>
-            </CardHeader>
-          </Card>
+          <p className="text-sm text-muted-foreground">
+            Your role can&apos;t manage channels. Ask your chapter president for
+            access.
+          </p>
         }
         offlineFallback={(retry) => (
           <PermissionsOfflineSurface
@@ -805,7 +799,7 @@ function ChatAdminBody() {
                     ) : null}
                   </button>
                   <Button
-                    variant="ghost"
+                    variant="quiet"
                     size="icon"
                     className={compactControlClassName}
                     aria-label={`Delete #${channel.name}`}
@@ -1020,7 +1014,7 @@ function ChatAdminBody() {
                               </p>
                             </div>
                             <Button
-                              variant="ghost"
+                              variant="quiet"
                               size="icon"
                               className={compactControlClassName}
                               aria-label="Unpin message"
@@ -1129,7 +1123,7 @@ function ChatAdminBody() {
                       </span>
                       <div className="flex shrink-0 gap-1">
                         <Button
-                          variant="ghost"
+                          variant="quiet"
                           size="icon"
                           className={compactControlClassName}
                           aria-label={`Rename ${category.name}`}
@@ -1138,7 +1132,7 @@ function ChatAdminBody() {
                           <Pencil className="h-4 w-4" />
                         </Button>
                         <Button
-                          variant="ghost"
+                          variant="quiet"
                           size="icon"
                           className={compactControlClassName}
                           aria-label={`Delete ${category.name}`}

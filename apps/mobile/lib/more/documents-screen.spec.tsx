@@ -39,11 +39,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useConfirmDocumentUpload: () => ({ mutateAsync: vi.fn() }),
 }));
 
+// A purple stand-in, so a glyph painted house gold (`gold.askText`) fails.
 vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({ accent: "#F4CB63" }),
+  useChapterBranding: () => ({ accent: "#7A3FC2" }),
 }));
 
 import DocumentsScreen from "@/app/(tabs)/documents";
+import { UploadGlyph } from "@/components/documents/document-glyphs";
 import { FilterChips } from "@/components/filter-chips";
 import { ListRow } from "@/components/list-section";
 import { DocumentsGlyph } from "@/components/more/more-glyphs";
@@ -118,6 +120,7 @@ describe("Documents upload (#3399)", () => {
           node.props.accessibilityLabel === "Back to More",
       ).parent!;
       expect(backRow.findAll((node) => node === upload)).toHaveLength(1);
+      expect(upload!.findByType(UploadGlyph).props.color).toBe("#7A3FC2");
 
       act(() => {
         upload!.props.onPress();

@@ -56,3 +56,34 @@ export function studySessionStatusKind(status: StudySessionStatus): BadgeKind {
       return "outline";
   }
 }
+
+/**
+ * Study-session state → the words a member reads on its badge.
+ *
+ * None of these five tokens is among the states `writing.md` §5 names, so by
+ * §5's own rule the vocabulary maps to plain language once, here, instead of
+ * printing `PAUSED_EXPIRED` with its underscore. `LOCATION_INVALID` is the
+ * session the server closed because a check put the member outside the zone,
+ * and "Outside zone" is what that means to the member.
+ *
+ * The fallback sentence-cases an unknown token rather than echoing it raw, so
+ * a status added server-side reads as words, not as an enum.
+ */
+export function studySessionStatusLabel(status: StudySessionStatus): string {
+  switch (status) {
+    case "ACTIVE":
+      return "Active";
+    case "COMPLETED":
+      return "Completed";
+    case "EXPIRED":
+      return "Expired";
+    case "PAUSED_EXPIRED":
+      return "Expired while paused";
+    case "LOCATION_INVALID":
+      return "Outside zone";
+    default: {
+      const words = String(status).toLowerCase().replace(/_/g, " ");
+      return words.charAt(0).toUpperCase() + words.slice(1);
+    }
+  }
+}

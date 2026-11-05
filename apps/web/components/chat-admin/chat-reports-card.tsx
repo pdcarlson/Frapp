@@ -16,7 +16,7 @@ import {
 import type { ChatReport, ChatReportStatus } from "@repo/hooks";
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import { isViewableImage } from "@repo/chat-core/attachments";
-import { formatBytes, formatLocaleDateTime } from "@repo/formatting";
+import { formatBytes, formatTimestampFull } from "@repo/formatting";
 import { CHAT_REPORT_QUEUE_PERMISSIONS } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Badge } from "@/components/ui/badge";
@@ -490,7 +490,7 @@ function ReportRow({
         <time
           className="ml-auto text-xs text-muted-foreground"
           dateTime={report.created_at}
-          title={formatLocaleDateTime(report.created_at)}
+          title={formatTimestampFull(report.created_at) ?? undefined}
         >
           Reported {age}
         </time>
@@ -530,7 +530,7 @@ function ReportRow({
             : ""}{" "}
           <time
             dateTime={report.resolved_at}
-            title={formatLocaleDateTime(report.resolved_at)}
+            title={formatTimestampFull(report.resolved_at) ?? undefined}
           >
             {reportAge(report.resolved_at, now)}
           </time>

@@ -74,6 +74,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMemberSearch: (q: string) => (q ? read(state.search) : read(undefined)),
 }));
 
+// The back row paints the chapter accent; its value is back-row.spec.tsx's.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({ accent: "#CB9FFF" }),
+}));
+
 // Stubbed so the header needs none of the chapter-branding hooks they call.
 // The spec reads their props off the header element the screen builds.
 vi.mock("@/components/filter-chips", () => ({

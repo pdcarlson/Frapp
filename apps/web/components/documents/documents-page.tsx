@@ -188,10 +188,7 @@ export function DocumentsPage() {
     } catch (error) {
       toast({
         title: "Couldn't delete document",
-        description: getErrorMessage(
-          error,
-          "Requires chapter_docs:manage. Retry or confirm your permissions.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     } finally {
@@ -252,7 +249,7 @@ export function DocumentsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Chapter Documents"
+        title="Documents"
         actions={
           <Can permission="chapter_docs:upload">
             <UploadDocumentDialog gate={gate} upload={upload} />
@@ -313,7 +310,7 @@ export function DocumentsPage() {
         200px rather than the old 240: the rail holds folder names and a four
         control management row, and the width it was giving up was the list's.
       */}
-      <div className="grid gap-x-6 gap-y-4 md:grid-cols-[200px_minmax(0,1fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-4 md:grid-cols-[200px_minmax(0,1fr)]">
         <FolderRail
           railFolders={railFolders}
           activeFolder={activeFolder}

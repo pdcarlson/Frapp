@@ -27,9 +27,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
-import { formatLocaleDateTime as formatDate } from "@repo/formatting";
-import { getErrorMessage, guardIntDraft, parseGuardedInt } from "@/lib/utils";
+import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
+import { formatDayTime } from "@repo/formatting";
+import {
+  getErrorMessage,
+  guardIntDraft,
+  labelled,
+  parseGuardedInt,
+} from "@/lib/utils";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { buildJoinUrl } from "@/lib/invite-link";
 
@@ -83,13 +88,15 @@ function normalizeInvites(input: unknown): InviteRow[] {
 }
 
 function buildInviteShareMessage(invite: InviteRow, origin: string): string {
-  const expirationText = formatDate(invite.expires_at);
+  const expirationText = formatDayTime(invite.expires_at);
   return [
     "Frapp member invite",
     `Role: ${invite.role}`,
     buildJoinUrl(origin, invite.token),
-    `Expires: ${expirationText}`,
-  ].join("\n");
+    expirationText ? `Expires: ${expirationText}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 type InviteMemberDialogProps = {
@@ -420,7 +427,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                 setHasPickedRole(true);
                 setRoleName(event.target.value);
               }}
-              className={dashboardFilterSelectClassName}
+              className={dashboardFormSelectClassName}
             >
               {roleOptions.map((role) => (
                 <option key={role.id} value={role.name}>
@@ -471,7 +478,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                       {invite.token}
                     </p>
                     <p className="text-caption text-muted-foreground">
-                      {invite.role} • expires {formatDate(invite.expires_at)}
+                      {[
+                        invite.role,
+                        labelled("Expires", formatDayTime(invite.expires_at)),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
                   </div>
                   <Button
@@ -510,9 +522,11 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                   <p className="font-mono text-caption">{invite.token}</p>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{invite.role}</Badge>
-                    <span className="text-caption text-muted-foreground">
-                      Expires {formatDate(invite.expires_at)}
-                    </span>
+                    {formatDayTime(invite.expires_at) ? (
+                      <span className="text-caption text-muted-foreground">
+                        Expires {formatDayTime(invite.expires_at)}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
