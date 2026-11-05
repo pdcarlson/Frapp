@@ -64,7 +64,8 @@ import {
 import {
   ASSIGNMENT_TYPES,
   DOCUMENT_VARIANTS,
-  MAX_UPLOAD_LABEL,
+  MAX_BACKWORK_UPLOAD_BYTES,
+  MAX_BACKWORK_UPLOAD_LABEL,
   SEMESTERS,
   acceptAttribute,
   inspectUploadFile,
@@ -98,7 +99,7 @@ type Resource = {
 */
 function uploadRejectionDescription(reason: "type" | "size"): string {
   if (reason === "size") {
-    return `That file is too large. Backwork accepts files up to ${MAX_UPLOAD_LABEL}.`;
+    return `That file is too large. Backwork accepts files up to ${MAX_BACKWORK_UPLOAD_LABEL}.`;
   }
   return "That file type is not allowed. Backwork accepts PDF, Office, text/CSV, and common images (no SVG).";
 }
@@ -296,7 +297,11 @@ export function BackworkPage() {
       setUploadError("Choose a file to upload.");
       return;
     }
-    const inspected = inspectUploadFile("document", file);
+    const inspected = inspectUploadFile(
+      "document",
+      file,
+      MAX_BACKWORK_UPLOAD_BYTES,
+    );
     if (!inspected.ok) {
       setUploadError(uploadRejectionDescription(inspected.reason));
       return;
@@ -461,7 +466,7 @@ export function BackworkPage() {
                     <UploadFileField
                       id="bw-file"
                       label="File"
-                      hint={`Up to ${MAX_UPLOAD_LABEL}. PDFs, Office files, text, CSV, and common images. No SVGs or executables.`}
+                      hint={`Up to ${MAX_BACKWORK_UPLOAD_LABEL}. PDFs, Office files, text, CSV, and common images. No SVGs or executables.`}
                       accept={acceptAttribute("document")}
                       file={uploadDraft.file}
                       error={uploadError}

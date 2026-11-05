@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-05: Backwork accepts files up to 50 MB (#3499)
+
+### 20261105210000_backwork_bucket_50mb.sql
+
+- **Purpose**: Raises `storage.buckets.file_size_limit` on `backwork` from 26214400 (25 MB) to 52428800 (50 MB), matching `MAX_BACKWORK_UPLOAD_BYTES` in `@repo/validation`. Every other member-upload bucket keeps 25 MB. The rule is in [`spec/behavior/backwork.md`](../../../spec/behavior/backwork.md#storage) § Storage. No object or row is touched.
+- **Checks**: Before `db push`, `select file_size_limit from storage.buckets where id = 'backwork';` gave 26214400 on both `frapp-staging` and `frapp-prod` on 2026-11-05. After it, the same query returns 52428800.
+- **Promoter notes**: Order doesn't matter much. An API that allows 50 MB against an unmigrated bucket refuses a 25 to 50 MB file at the PUT instead of at URL issuance; an older API against the migrated bucket refuses it at issuance. The hosted project's global storage upload limit (Supabase dashboard, Storage settings) must also be at least 50 MB, or it wins over the bucket column. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-backwork-50-mb-limit-20261105210000) § Rollback the backwork 50 MB limit.
+
 ## 2026-11-04: One chapter_documents row per stored object (#3399)
 
 ### 20261104210000_chapter_documents_storage_path_key.sql

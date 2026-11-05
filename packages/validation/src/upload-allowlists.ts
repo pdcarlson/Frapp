@@ -84,6 +84,18 @@ export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 export const MAX_UPLOAD_LABEL = "25 MB";
 
 /**
+ * Backwork's own ceiling, the one member-upload surface above
+ * `MAX_UPLOAD_BYTES`. Scanned exams run large, and the owner asked for 50 MB
+ * per file (#3487). It is a separate constant rather than a raise of
+ * `MAX_UPLOAD_BYTES` for the same reason `archive` is: raising the shared cap
+ * would raise it on every member upload. The `backwork` bucket's
+ * `file_size_limit` mirrors it
+ * (`supabase/migrations/20261105210000_backwork_bucket_50mb.sql`).
+ */
+export const MAX_BACKWORK_UPLOAD_BYTES = 50 * 1024 * 1024;
+export const MAX_BACKWORK_UPLOAD_LABEL = "50 MB";
+
+/**
  * The `archive` kind is NOT a member-upload surface.
  *
  * It exists for one flow: a chapter admin uploading a DiscordChatExporter
@@ -293,11 +305,16 @@ export function isAllowedUploadMime(
   return KINDS[kind].mimes.has(contentType);
 }
 
-export function isWithinUploadSizeLimit(byteLength: number): boolean {
+/**
+ * `maxBytes` defaults to the shared member-upload cap. Backwork passes
+ * `MAX_BACKWORK_UPLOAD_BYTES`; nothing else should pass a value.
+ */
+export function isWithinUploadSizeLimit(
+  byteLength: number,
+  maxBytes: number = MAX_UPLOAD_BYTES,
+): boolean {
   return (
-    Number.isFinite(byteLength) &&
-    byteLength >= 0 &&
-    byteLength <= MAX_UPLOAD_BYTES
+    Number.isFinite(byteLength) && byteLength >= 0 && byteLength <= maxBytes
   );
 }
 
@@ -330,12 +347,13 @@ export type InspectedUpload =
 export function inspectUploadFile(
   kind: UploadKind,
   file: { name: string; type: string; size: number },
+  maxBytes: number = MAX_UPLOAD_BYTES,
 ): InspectedUpload {
   const contentType = mimeForUploadFile(kind, file);
   if (!contentType || !isAllowedUploadExtension(kind, file.name)) {
     return { ok: false, reason: "type" };
   }
-  if (!isWithinUploadSizeLimit(file.size)) {
+  if (!isWithinUploadSizeLimit(file.size, maxBytes)) {
     return { ok: false, reason: "size" };
   }
   return { ok: true, contentType };

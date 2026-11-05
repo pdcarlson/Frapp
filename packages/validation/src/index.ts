@@ -738,10 +738,12 @@ export type {
   ChapterTextMarkSource,
 } from "./chapter-mark";
 
-// ── Upload MIME / extension allowlists + 25 MB size cap ─────────────────────
+// ── Upload MIME / extension allowlists + size caps (25 MB; backwork 50 MB) ──
 export {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_LABEL,
+  MAX_BACKWORK_UPLOAD_BYTES,
+  MAX_BACKWORK_UPLOAD_LABEL,
   DOCUMENT_UPLOAD_SURFACES,
   contentTypeByExtension,
   acceptAttribute,

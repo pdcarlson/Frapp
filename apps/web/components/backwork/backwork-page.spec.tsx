@@ -440,11 +440,14 @@ describe("BackworkPage subscription gating", () => {
 
     const dialog = within(screen.getByRole("dialog"));
     const oversized = new File(["x"], "huge.pdf", { type: "application/pdf" });
-    Object.defineProperty(oversized, "size", { value: 40 * 1024 * 1024 });
+    // Backwork's own ceiling is 50 MB (#3487), so 40 MB no longer trips it.
+    Object.defineProperty(oversized, "size", { value: 60 * 1024 * 1024 });
     await user.upload(dialog.getByLabelText(/^file$/i), oversized);
     await user.click(dialog.getByRole("button", { name: /^upload$/i }));
 
-    expect(await dialog.findByRole("alert")).toHaveTextContent(/too large/i);
+    expect(await dialog.findByRole("alert")).toHaveTextContent(
+      /too large.*50 MB/i,
+    );
     expect(mockRequestUpload).not.toHaveBeenCalled();
   });
 
