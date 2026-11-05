@@ -21,6 +21,13 @@ const TAB_BAR_HEIGHT = 62;
 const TAB_BAR_PADDING = 6;
 
 /**
+ * Options for a screen that takes the whole window, with no tab bar: the chat
+ * thread (s05) and the two check-in screens (s18, s22).
+ * `spec/ui/mobile/navigation.md` § Tab bar owns which screens and why.
+ */
+const FULL_WINDOW = { tabBarStyle: { display: "none" as const } };
+
+/**
  * The locked 4-tab IA (spec/ui/mobile/navigation.md §"Tab bar — 4 tabs, locked").
  *
  * There is no Home tab — chat is home. Every route outside these four is
@@ -72,6 +79,12 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      // Android's back button returns to the screen the member came from,
+      // not to Chat home. Every pushed screen here is a hidden tab, and the
+      // tab router's default ("firstRoute") sent each one straight to Chat:
+      // back from an event opened on Events landed on Chat, not Events.
+      // `spec/ui/mobile/navigation.md` § Back rows.
+      backBehavior="history"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: accent,
@@ -125,7 +138,10 @@ export default function TabLayout() {
       />
 
       {/* ── Live routes, reached by navigation ───────────────────────────── */}
-      <Tabs.Screen name="chat-thread" options={{ title: "Thread", href: null }} />
+      <Tabs.Screen
+        name="chat-thread"
+        options={{ title: "Thread", href: null, ...FULL_WINDOW }}
+      />
       <Tabs.Screen
         name="event-details"
         options={{ title: "Event details", href: null }}
@@ -161,11 +177,11 @@ export default function TabLayout() {
       <Tabs.Screen name="ask" options={{ title: "Ask", href: null }} />
       <Tabs.Screen
         name="check-in"
-        options={{ title: "Check in", href: null }}
+        options={{ title: "Check in", href: null, ...FULL_WINDOW }}
       />
       <Tabs.Screen
         name="host-check-in"
-        options={{ title: "Host check-in", href: null }}
+        options={{ title: "Host check-in", href: null, ...FULL_WINDOW }}
       />
     </Tabs>
   );
