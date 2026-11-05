@@ -48,7 +48,10 @@ export interface BalanceCardProps {
   payLabel: string | null;
   /** Present when payment is blocked — the control disables and says why. */
   disabledReason: string | null;
-  /** Context shown under an *enabled* CTA, e.g. which invoice it pays. */
+  /**
+   * Context shown under an *enabled* CTA, e.g. which invoice it pays. Under a
+   * neutral `status` it isn't drawn, but it is still a live CTA's hint.
+   */
   footnote: string | null;
   /**
    * The card's invoice has a captured payment the invoice list doesn't read as
@@ -64,16 +67,20 @@ export interface BalanceCardProps {
   isConfirming?: boolean;
   /**
    * About the invoice the CTA settles, so it takes the caption slot ahead of
-   * the blocker and the footnote, and is the CTA's accessibility hint.
+   * the blocker and the footnote. A failure is the CTA's accessibility hint;
+   * a neutral line (a payment already made, awaiting confirmation) is the
+   * hint only while the CTA is disabled or has no footnote, because a live
+   * CTA's hint says what a tap pays.
    */
   status?: BalanceCardStatus | null;
   /**
-   * A captured payment for an invoice the CTA no longer settles: the "Paid …"
-   * line, or the pending line when the invoice left OPEN some other way. Drawn
-   * as its own line under the caption and never as the CTA's hint: it says
-   * nothing about the next invoice, and must not hide the footnote naming it.
+   * Captured payments for invoices the CTA no longer settles, one line each:
+   * the "Paid …" line once the invoice reads PAID, or the line saying it was
+   * voided or is gone. Each is drawn as its own line under the caption and
+   * never as the CTA's hint: it says nothing about the next invoice, and must
+   * not hide the footnote naming it.
    */
-  receipt?: string | null;
+  receipts?: readonly string[];
   isPaying: boolean;
   onPay: () => void;
 }
@@ -88,7 +95,7 @@ export function BalanceCard({
   isPending = false,
   isConfirming = false,
   status = null,
-  receipt = null,
+  receipts = [],
   isPaying,
   onPay,
 }: BalanceCardProps) {
@@ -103,6 +110,11 @@ export function BalanceCard({
   // does not need to be told which invoice they cannot pay.
   const caption = status?.text ?? disabledReason ?? footnote;
   const captionIsFailure = status?.tone === "destructive";
+  // A neutral status is about a payment already made, not about what a tap
+  // does, so a live CTA keeps the footnote naming the invoice it pays as its
+  // hint. With several invoices open, the card's label says only how many.
+  const hint =
+    status?.tone === "neutral" && !disabled && footnote ? footnote : caption;
   const buttonLabel = isPaying
     ? "Opening…"
     : isConfirming
@@ -142,7 +154,7 @@ export function BalanceCard({
           // §5 rule 4: disable and name the reason, never hide a recoverable
           // block — and the reason is wired to the control for a screen reader
           // rather than only sitting near it.
-          accessibilityHint={caption ?? undefined}
+          accessibilityHint={hint ?? undefined}
           disabled={disabled}
           onPress={onPay}
           style={({ pressed }) => [
@@ -172,11 +184,16 @@ export function BalanceCard({
         </Text>
       ) : null}
 
-      {receipt ? (
-        <Text style={styles.reason} accessibilityLiveRegion="polite">
+      {receipts.map((receipt, index) => (
+        <Text
+          // Two invoices can share a title, so the position keeps keys apart.
+          key={`${index}:${receipt}`}
+          style={styles.reason}
+          accessibilityLiveRegion="polite"
+        >
           {receipt}
         </Text>
-      ) : null}
+      ))}
     </View>
   );
 }

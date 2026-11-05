@@ -21,6 +21,9 @@ import { drawnText, screenText } from "@/test/screen-text";
 const VIEWER = "u-1";
 const PENDING_COPY =
   "Payment received, confirmation pending. This updates as soon as your chapter's records catch up.";
+/** The pending line on a card counting two or more open invoices. */
+const pendingCopyFor = (title: string) =>
+  `Payment received for ${title}, confirmation pending. This updates as soon as your chapter's records catch up.`;
 const paidCopy = (title: string) =>
   `Paid ${title}. Your chapter has it — thanks.`;
 const voidedCopy = (title: string) =>
@@ -373,7 +376,7 @@ describe("Dues after a captured payment", () => {
     expect(paidFor(0)).toBe("inv-fall");
 
     expect(card(tree)).toContain("2 invoices open");
-    expect(card(tree)).toContain(PENDING_COPY);
+    expect(card(tree)).toContain(pendingCopyFor("Fall dues"));
     expect(card(tree)).not.toContain("Pays Social fee");
     // The rows: the confirming one as Pending, the other with its amount and
     // due chip, and no line of its own under either.
@@ -406,7 +409,7 @@ describe("Dues after a captured payment", () => {
     invoices = [FALL, RUSH];
     rerender(tree);
 
-    expect(card(tree)).toContain(PENDING_COPY);
+    expect(card(tree)).toContain(pendingCopyFor("Fall dues"));
     expect(card(tree)).not.toContain("Pays Rush fee");
     // What the card is about, though the pending line covers its footnote.
     expect(tree.root.findByType(BalanceCard).props.footnote).toBe(
@@ -447,6 +450,113 @@ describe("Dues after a captured payment", () => {
     expect(cta(tree).props.disabled).toBe(true);
 
     await act(async () => socialIntent.resolve({ client_secret: "pi_social" }));
+  });
+
+  it("says which invoice a live Pay pays when the hold outlasts the poll with two open", async () => {
+    // "2 invoices open" names neither, and the pending line takes the
+    // footnote's slot, so the line names the held invoice and the CTA's hint
+    // says what a tap pays: Fall again, not the $50 Social fee.
+    invoices = [FALL, SOCIAL];
+    const poll = deferred<boolean>();
+    awaitPaid.mockReturnValueOnce(poll.promise);
+    const tree = mount();
+    await tapPay(tree);
+    // While the poll runs the CTA is off, and its hint is why.
+    expect(payButton(tree).props.disabled).toBe(true);
+    expect(payButton(tree).props.accessibilityHint).toBe(
+      pendingCopyFor("Fall dues"),
+    );
+
+    await act(async () => poll.resolve(false));
+    expect(card(tree)).toContain("2 invoices open");
+    expect(payButton(tree).props.disabled).toBe(false);
+    expect(card(tree)).toContain(pendingCopyFor("Fall dues"));
+    expect(screenText(tree)).not.toContain(PENDING_COPY);
+    expect(payButton(tree).props.accessibilityHint).toBe(
+      "Pays Fall dues — $425.00 of your balance.",
+    );
+  });
+
+  it("keeps Pay confirming when an earlier attempt's poll ends during a later one's", async () => {
+    // Fall's poll is still running when the treasurer voids Fall, which frees
+    // Pay for Social. Social's sheet completes and its poll starts; Fall's
+    // poll ending then must not switch Pay back on under Social's.
+    invoices = [FALL, SOCIAL];
+    const fallPoll = deferred<boolean>();
+    const socialPoll = deferred<boolean>();
+    awaitPaid
+      .mockReturnValueOnce(fallPoll.promise)
+      .mockReturnValueOnce(socialPoll.promise);
+    const tree = mount();
+    await tapPay(tree);
+    invoices = [{ ...FALL, status: "VOID" }, SOCIAL];
+    rerender(tree);
+    await tapPay(tree);
+    expect(paidFor(1)).toBe("inv-social");
+    expect(drawnText(cta(tree))).toBe("Confirming payment…");
+
+    await act(async () => fallPoll.resolve(false));
+    expect(drawnText(cta(tree))).toBe("Confirming payment…");
+    expect(cta(tree).props.disabled).toBe(true);
+
+    await act(async () => socialPoll.resolve(false));
+    expect(drawnText(cta(tree))).toBe("Pay now");
+  });
+
+  it("keeps the voided line for the rest of the visit when the member then pays the next invoice", async () => {
+    // One slot for the captured payment used to be overwritten by Social's,
+    // taking Fall's cancelled line with it mid-visit.
+    invoices = [FALL, SOCIAL];
+    const tree = mount();
+    await tapPay(tree);
+    invoices = [{ ...FALL, status: "VOID" }, SOCIAL];
+    rerender(tree);
+    expect(card(tree)).toContain(voidedCopy("Fall dues"));
+
+    await tapPay(tree);
+    expect(paidFor(1)).toBe("inv-social");
+    expect(card(tree)).toContain(voidedCopy("Fall dues"));
+    expect(card(tree)).toContain("Pending");
+    expect(card(tree)).toContain(PENDING_COPY);
+
+    invoices = [{ ...FALL, status: "VOID" }, paid(SOCIAL)];
+    rerender(tree);
+    expect(card(tree)).toContain(voidedCopy("Fall dues"));
+    expect(card(tree)).toContain(paidCopy("Social fee"));
+
+    // Both are done with on the next visit.
+    await refocus();
+    expect(screenText(tree)).not.toContain(voidedCopy("Fall dues"));
+    expect(screenText(tree)).not.toContain(paidCopy("Social fee"));
+  });
+
+  it("shows the Paid line in the next visit when the list read PAID while the member was away", async () => {
+    // The screen stays mounted, so the poll's own re-read as it ends can
+    // read PAID with another screen over this one. That line was never seen,
+    // so the return draws it, and the visit after that drops it.
+    const tree = mount();
+    await tapPay(tree);
+    act(() => blur());
+    invoices = [paid(FALL)];
+    rerender(tree);
+
+    await refocus();
+    expect(card(tree)).toContain(paidCopy("Fall dues"));
+    await refocus();
+    expect(screenText(tree)).not.toContain(paidCopy("Fall dues"));
+  });
+
+  it("shows the Paid line when the app comes back if the list read PAID while it was away", async () => {
+    const tree = mount();
+    await tapPay(tree);
+    appGoes("background");
+    invoices = [paid(FALL)];
+    rerender(tree);
+
+    appGoes("active");
+    expect(card(tree)).toContain(paidCopy("Fall dues"));
+    appGoes("background", "active");
+    expect(screenText(tree)).not.toContain(paidCopy("Fall dues"));
   });
 
   it("leaves the next bill's footnote and hint alone, and drops the paid line on return", async () => {
@@ -735,6 +845,48 @@ describe("Dues after a captured payment", () => {
       rerender(tree);
       act(() => vi.advanceTimersByTime(10_000));
       expect(refetchInvoices).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("switches Pay back on after the poll's budget when a poll read never answers", async () => {
+    // Android times no request out (#3433), so the poll can hang for good.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      awaitPaid.mockReturnValue(new Promise<boolean>(() => {}));
+      const tree = mount();
+      await tapPay(tree);
+      expect(drawnText(cta(tree))).toBe("Confirming payment…");
+
+      act(() => vi.advanceTimersByTime(23_999));
+      expect(cta(tree).props.disabled).toBe(true);
+      act(() => vi.advanceTimersByTime(1));
+      expect(drawnText(cta(tree))).toBe("Pay now");
+      expect(cta(tree).props.disabled).toBe(false);
+      // Still held: only the list ends that.
+      expect(card(tree)).toContain("Pending");
+      expect(card(tree)).toContain(PENDING_COPY);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ends a confirming window that ran out while the member was away on the next visit", async () => {
+    // A timer can come late after a spell in the background; the return
+    // doesn't wait for it.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      awaitPaid.mockReturnValue(new Promise<boolean>(() => {}));
+      const tree = mount();
+      await tapPay(tree);
+      appGoes("background");
+      vi.setSystemTime(Date.now() + 25_000);
+      expect(drawnText(cta(tree))).toBe("Confirming payment…");
+
+      appGoes("active");
+      expect(drawnText(cta(tree))).toBe("Pay now");
+      expect(cta(tree).props.disabled).toBe(false);
     } finally {
       vi.useRealTimers();
     }
