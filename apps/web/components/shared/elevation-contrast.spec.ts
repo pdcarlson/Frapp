@@ -192,9 +192,9 @@ describe("the notification drawer's rows hover off the sheet (#1208)", () => {
     );
   });
 
-  it("would have left a row on the sheet's own luminance with §2's tint", () => {
-    // §2's accent tint is the remedy for a row that is transparent over a
-    // menu, and it separates by hue alone. On the sheet it lands within
+  it("would have left a row on the sheet's own luminance with the accent tint", () => {
+    // The accent tint separates by hue alone (§2 retired it for menu and table
+    // rows on 2026-11-05 for that reason). On the sheet it lands within
     // 1.03:1 of `--popover` for several seeds (`#1F4E79` measured 1.000:1),
     // which is why the drawer's rows take the neutral lift instead.
     const worst = Math.min(

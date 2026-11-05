@@ -56,9 +56,11 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * gesture and cannot fill the screen. s05 opts out for the same class of reason
  * (`spec/ui/mobile/patterns.md`).
  *
- * The layout is the board's: a square viewport with accent corner brackets,
- * centred, with "Enter code manually" and the torch along the bottom. The
- * typed code goes in a sheet (`components/check-in/manual-code-sheet.tsx`),
+ * The layout is the board's: a square viewport with corner brackets, centred,
+ * in the foreground text rather than the board's accent (a decorative frame is
+ * neutral: foundations.md §6, "Where the accent goes", 2026-11-05), with
+ * "Enter code manually" and the torch along the bottom. The typed code goes in
+ * a sheet (`components/check-in/manual-code-sheet.tsx`),
  * which rises with the keyboard; it used to be a card at the foot of this
  * screen that the keyboard covered.
  *
@@ -132,7 +134,7 @@ function failureStatus(error: unknown): Status {
     : failure;
 }
 
-/** The drawn corner bracket: 36pt arms, a 3pt accent stroke. */
+/** The drawn corner bracket: 36pt arms, a 3pt stroke in the foreground text. */
 const BRACKET_SIZE = 36;
 const BRACKET_STROKE = 3;
 /** Where the viewport sits inside the brackets, as drawn (`inset: 22px`). */
@@ -773,7 +775,10 @@ export default function CheckInScreen() {
 }
 
 function createStyles(tokens: SignetTokens, accent: string) {
-  const bracketEdge = { borderColor: accent, width: BRACKET_SIZE } as const;
+  const bracketEdge = {
+    borderColor: tokens.color.text.foreground,
+    width: BRACKET_SIZE,
+  } as const;
   return StyleSheet.create({
     safeArea: {
       flex: 1,
@@ -986,8 +991,9 @@ function createStyles(tokens: SignetTokens, accent: string) {
       ...typeRole(tokens.typography.role.headline),
       textAlign: "center",
     },
+    // Points earned are a number: the foreground text, never the accent.
     successPoints: {
-      color: accent,
+      color: tokens.color.text.foreground,
       ...typeRole(tokens.typography.role.title),
     },
     successEvent: {

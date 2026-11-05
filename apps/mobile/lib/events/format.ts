@@ -81,6 +81,8 @@ export interface EventDateBlock {
   day: string;
   /** The start clock the row's meta line leads with, "6:00 PM". */
   clock: string;
+  /** Whether the event starts today, which the row draws in the foreground. */
+  isToday: boolean;
 }
 
 /**
@@ -116,7 +118,12 @@ export function formatEventDateBlock(
   } else {
     label = start.toLocaleDateString(undefined, { month: "short" });
   }
-  return { label, day: String(start.getDate()), clock: clock(start) };
+  return {
+    label,
+    day: String(start.getDate()),
+    clock: clock(start),
+    isToday: days === 0,
+  };
 }
 
 export type CheckInWindowState =
@@ -148,7 +155,9 @@ export function resolveCheckInWindow(
     return { state: "unknown", closesAt: null, opensAt: null };
   }
 
-  const closesAt = new Date(end.getTime() + CHECK_IN_GRACE_MINUTES * MS_PER_MINUTE);
+  const closesAt = new Date(
+    end.getTime() + CHECK_IN_GRACE_MINUTES * MS_PER_MINUTE,
+  );
   if (now < start) return { state: "upcoming", closesAt, opensAt: start };
   if (now > closesAt) return { state: "closed", closesAt, opensAt: start };
   return { state: "open", closesAt, opensAt: start };

@@ -500,7 +500,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
             locked={pending}
             onChoose={() => void choosePhoto()}
             onRemove={removePhoto}
-            accent={accent}
+            glyphColor={tokens.color.text.mutedForeground}
             styles={styles}
           />
           {proofError ? (
@@ -552,6 +552,10 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
 /**
  * The board's "Add photo proof" row, and the attached photo in its place: a
  * thumbnail, its size (or "Uploading…" while the PUT runs) and a remove ×.
+ *
+ * The empty row's camera and label are neutral: a field's icon and label never
+ * take the chapter accent (foundations.md §6, "Where the accent goes",
+ * 2026-11-05). The dashed border already says it can be tapped.
  */
 function ProofRow({
   proof,
@@ -561,7 +565,7 @@ function ProofRow({
   locked,
   onChoose,
   onRemove,
-  accent,
+  glyphColor,
   styles,
 }: {
   proof: PickedImage | null;
@@ -572,7 +576,8 @@ function ProofRow({
   locked: boolean;
   onChoose: () => void;
   onRemove: () => void;
-  accent: string;
+  /** The camera's hue: `text.mutedForeground`, as a field icon is. */
+  glyphColor: string;
   styles: ReturnType<typeof createStyles>;
 }) {
   const { tokens } = useFrappTheme();
@@ -592,7 +597,7 @@ function ProofRow({
           pressed ? styles.proofRowPressed : null,
         ]}
       >
-        <CameraGlyph color={accent} />
+        <CameraGlyph color={glyphColor} />
         <Text style={styles.proofAdd}>Add photo proof</Text>
         <Text style={styles.proofNeed}>{picking ? "Opening…" : need}</Text>
       </Pressable>
@@ -690,9 +695,12 @@ function createStyles(tokens: SignetTokens, accent: string) {
     stepButtonPressed: {
       opacity: 0.85,
     },
+    // The stepper's − and + are icon-only controls, so neutral, never the
+    // chapter accent (foundations.md §6). Foreground rather than the muted
+    // step, so an enabled step stays clearly apart from a disabled one.
     stepGlyph: {
       ...typeRole(tokens.typography.role.title),
-      color: accent,
+      color: tokens.color.text.foreground,
     },
     stepGlyphDisabled: {
       color: tokens.color.text.muted,
@@ -744,7 +752,7 @@ function createStyles(tokens: SignetTokens, accent: string) {
     },
     proofAdd: {
       ...typeRole(tokens.typography.role.label),
-      color: accent,
+      color: tokens.color.text.foreground,
       flex: 1,
     },
     proofNeed: {

@@ -1,6 +1,12 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn, initials } from "@/lib/utils";
@@ -156,14 +162,12 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
              * moves selection without the pointer moving, so a row left under a
              * stationary cursor keeps `:hover` while another row is selected,
              * and any fill here paints a second row that looks chosen. The
-             * ladder offers nothing anyway — this list is seated on `--popover`,
-             * the top of it, and the step below measures 1.1046:1, under the
-             * fixture's `INDISTINGUISHABLE` and pinned as such by
-             * `shared/elevation-contrast.spec.ts`.
+             * selected row takes `--card-hover`, the step above the ladder this
+             * list is seated on (`--popover`), as every menu does.
              */
             className={cn(
               "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-caption",
-              index === clampedIndex && "bg-accent-subtle text-accent-text",
+              index === clampedIndex && "bg-card-hover text-foreground",
             )}
             onMouseEnter={() => setSelectedIndex(index)}
             onClick={() => selectItem(index)}

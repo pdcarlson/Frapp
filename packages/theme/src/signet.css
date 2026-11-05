@@ -148,8 +148,8 @@
      * own colour (#1208, #1220). Nothing painted them by the time they
      * were deleted. A rest fill names its ladder step (`bg-card`,
      * `bg-popover`). A hover takes a state above what it sits on
-     * (`--card-hover` below, or `--accent-subtle` for a row in a menu or
-     * table), never the surface it already sits on.
+     * (`--card-hover` below, which a row in a menu, table or list takes
+     * too), never the surface it already sits on.
      * `apps/web/components/shared/elevation-call-sites.spec.ts` keeps the
      * old names out, because with the variables gone `hover:bg-accent`
      * compiles to nothing (#1145).

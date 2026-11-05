@@ -16,7 +16,6 @@ import { emojiFromActionType } from "@repo/chat-core/types";
 import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
 import {
   EDITED_MARKER,
-  isOwnMessage,
   showsEditedMarker,
 } from "@repo/chat-core/message-actions";
 import { formatTimeOfDay } from "@repo/formatting";
@@ -59,9 +58,11 @@ import { ReplyQuote } from "./reply-quote";
  * draws a 32pt avatar and an author line (name, then the time of day); a
  * follow-on row draws only its body. The runs are decided once, for web and
  * mobile alike, by `@repo/chat-core/grouping`; the thread passes the answer in
- * as `startsRun`. The viewer's own name reads "You" in the chapter's accent
- * text, which replaced the self bubble's accent fill as the way a member spots
- * their own run. (The Pinned marker takes the accent too, on anyone's row.)
+ * as `startsRun`. The viewer's own name reads "You", which replaced the self
+ * bubble's accent fill as the way a member spots their own run, and is colored
+ * like anyone else's: their role color, or the foreground text. Neither it nor
+ * the Pinned marker takes the chapter accent: names and labels are neutral
+ * (foundations.md §6, "Where the accent goes").
  *
  * A phone has no hover, so a follow-on row shows no time. Long-press opens the
  * actions sheet, whose header says who sent it and when, and a screen reader
@@ -294,15 +295,12 @@ export function MessageRowFrame({
   const headerA11y = messageActionsA11yProps(onOpenActions, {
     onJumpToParent: quote ? onJumpToParent : undefined,
   });
-  // `isOwnMessage` checks the sender before comparing: an imported archive row
-  // has no `sender_id`, and `null === null` would otherwise make it "mine".
-  const isMine = isOwnMessage(message, viewerId);
-  // The viewer's own name keeps the chapter accent (`SelfName`); everyone
-  // else's takes their role color, a contrast-checked palette value.
-  const roleColor =
-    !isMine && message.sender_id
-      ? (roleColorFor?.(message.sender_id) ?? null)
-      : null;
+  // Every name, the viewer's own "You" included, takes the author's role
+  // color (a contrast-checked palette value) or else the foreground text, and
+  // never the chapter accent (foundations.md §6, "Where the accent goes").
+  const roleColor = message.sender_id
+    ? (roleColorFor?.(message.sender_id) ?? null)
+    : null;
 
   return (
     <Pressable
@@ -374,20 +372,14 @@ export function MessageRowFrame({
               accessible={"accessibilityActions" in headerA11y}
               {...headerA11y}
             >
-              {isMine ? (
-                <SelfName label={authorLabel} style={styles.name} />
-              ) : (
-                <Text
-                  style={
-                    roleColor
-                      ? [styles.name, { color: roleColor }]
-                      : styles.name
-                  }
-                  numberOfLines={1}
-                >
-                  {authorLabel}
-                </Text>
-              )}
+              <Text
+                style={
+                  roleColor ? [styles.name, { color: roleColor }] : styles.name
+                }
+                numberOfLines={1}
+              >
+                {authorLabel}
+              </Text>
               <Text style={styles.time}>{time}</Text>
             </View>
           ) : null}
@@ -399,37 +391,9 @@ export function MessageRowFrame({
 }
 
 /**
- * The viewer's own name in the chapter's accent text (`--signet-accent-text`,
- * step 11, the engine's text role). Split out so `useChapterBranding()` is only
- * called where the accent is drawn: the hook reaches for `FrappClientProvider`
- * (#1007), which a row by anyone else needs only when it is pinned
- * (`PinnedMarker`).
- *
- * Keep the hook in here, never behind `isMine` in `MessageRowFrame`: an
- * imported row's `sender_id` changes when its author links or unlinks their
- * Discord account (#2878), so the same row can flip between mine and not. As
- * its own component it just mounts or unmounts; a hook behind the branch in
- * the parent would change that component's hook order and crash it.
- */
-function SelfName({
-  label,
-  style,
-}: {
-  label: string;
-  style: ReturnType<typeof createStyles>["name"];
-}) {
-  const { accent } = useChapterBranding();
-  return (
-    <Text style={[style, { color: accent }]} numberOfLines={1}>
-      {label}
-    </Text>
-  );
-}
-
-/**
- * `· Pinned` in the chapter's accent text, like web's marker. A component of its
- * own for the reason `SelfName` is: only a pinned row pulls in the branding
- * hook.
+ * `· Pinned` in the muted trailing text, like `(edited)` beside it. A marker
+ * is metadata, so it never takes the chapter accent (foundations.md §6,
+ * "Where the accent goes").
  */
 export function PinnedMarker({
   style,
@@ -439,12 +403,7 @@ export function PinnedMarker({
   /** Whether it follows text on its line, and so needs the " · " before it. */
   lead?: boolean;
 }) {
-  const { accent } = useChapterBranding();
-  return (
-    <Text style={[style, { color: accent }]}>
-      {lead ? " · Pinned" : "Pinned"}
-    </Text>
-  );
+  return <Text style={style}>{lead ? " · Pinned" : "Pinned"}</Text>;
 }
 
 /**
@@ -693,10 +652,9 @@ function DeliveryLine({
 }
 
 /**
- * Text in the chapter's accent (step 11). Its own component for the reason
- * `SelfName` gives: only a row that draws the accent calls
- * `useChapterBranding()`, so a row that never fails never reaches for the
- * client provider.
+ * Text in the chapter's accent (step 11). Its own component so that only a
+ * row that draws the accent calls `useChapterBranding()`: the hook reaches for
+ * `FrappClientProvider` (#1007), so a row that never fails never needs it.
  */
 function AccentText({
   style,
@@ -725,7 +683,7 @@ type ReactionChipStyles = Pick<
  * the chip it just toggled and hears its new state. That means every chip
  * calls `useChapterBranding()`, which only a row with reactions renders; a
  * row without any (most of them) still never reaches for the client
- * provider (see `SelfName`).
+ * provider (see `AccentText`).
  */
 function ReactionChip({
   group,

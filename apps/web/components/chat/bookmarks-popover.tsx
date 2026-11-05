@@ -174,7 +174,7 @@ export function BookmarksPanel({
                     }
                     className={cn(
                       "block w-full py-3 pl-3 pr-11 text-left text-caption transition-colors",
-                      "hover:bg-accent-subtle hover:text-accent-text",
+                      "hover:bg-card-hover hover:text-foreground",
                       FOCUS_RING,
                     )}
                   >

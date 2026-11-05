@@ -35,7 +35,7 @@ export function JoinedChannelsCard({
     <View style={styles.card}>
       {channels.isPending ? (
         <View style={styles.row}>
-          <ActivityIndicator color={tokens.color.gold.house} />
+          <ActivityIndicator color={tokens.color.text.muted} />
           <Text style={styles.hint}>Loading your channels…</Text>
         </View>
       ) : channels.isError ? (

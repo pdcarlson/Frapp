@@ -296,7 +296,7 @@ export const UploadDocumentSheet = forwardRef<
             pressed ? styles.pressed : null,
           ]}
         >
-          <DocumentsGlyph color={accent} size={24} />
+          <DocumentsGlyph color={tokens.color.text.mutedForeground} size={24} />
           <View style={styles.fileText}>
             <Text style={styles.fileName} numberOfLines={1}>
               {picked ? picked.filename : "Choose a photo"}
