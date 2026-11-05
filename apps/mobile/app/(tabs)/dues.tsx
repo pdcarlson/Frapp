@@ -57,48 +57,53 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the invoice and then the list, and the invoice flips only when the list says
  * so. If the poll runs out, the screen says pending rather than guessing.
  *
- * ## A captured payment holds its own invoice, for a while
+ * ## A captured payment holds its invoice until the list agrees
  *
- * Each captured payment holds **that invoice**, and nothing else: its OPEN row
- * reads Pending, and Pay settles the earliest-due open invoice that isn't held,
- * so the others really are payable. With nothing else open, the card shows the
- * held invoice as "Confirming payment…", Pay off. A hold ends when the list
- * reads its invoice as no longer OPEN, or {@link PENDING_HOLD_MS} after
- * capture, whichever is first. The poll's PAID alone ends nothing: it only
- * makes the list re-read, and until that read lands the card and the row still
- * say pending, so the two never disagree. The "Paid …" line waits for the list
- * too.
+ * Pay settles one invoice, because a PaymentIntent is per invoice: the
+ * earliest-due open one ({@link selectNextDueInvoice}), unless a payment is
+ * confirming, in which case it is that invoice. A completed sheet holds the
+ * invoice it paid: the chip reads Pending, the CTA is disabled as "Confirming
+ * payment…", and the card says "Payment received, confirmation pending"
+ * (`billing.md` § Member payment flow, `screens.md` s11). The hold ends only
+ * when the invoice list reads that invoice as no longer OPEN, and the "Paid …"
+ * line waits for the same read. The poll's PAID ends nothing on its own: it
+ * makes the list re-read (`useAwaitInvoicePaid`'s onSettled), so the card
+ * never says Paid beside a Pending chip.
  *
- * The bound exists because a webhook that hasn't landed in two minutes is
- * failing or retrying for hours, and holding Pay off would hide that behind
- * "Confirming…" until a force-quit. Past it, the invoice says the payment went
- * through and the chapter's records haven't caught up, on the card when the
- * card's CTA pays it and on its OPEN row when the rows are listed, and Pay
- * comes back for it. The hold is a courtesy, not the guard. What a tap then
- * meets is `createPaymentIntent`'s answer for the invoice's stored intent
+ * Other open invoices wait meanwhile, which is usually seconds, until the
+ * webhook lands. The card stays on the confirming invoice, and the OPEN list
+ * shows the rest with their own amounts and due chips.
+ *
+ * ## Why the hold has no time bound
+ *
+ * It lives in this screen's state, and leaving the screen ends it, so a stuck
+ * webhook can't hold Pay off beyond the visit. Dues is a hidden tab route
+ * (`href: null` in `app/(tabs)/_layout.tsx`), and the tab navigator keeps a
+ * visited route mounted, so it is the focus effect below that drops the hold
+ * when the member comes back. A chapter switch remounts the screen
+ * ({@link DuesScreen}) and drops it too. If the webhook is stuck and the
+ * member comes back, Pay targets that invoice again, and a tap meets
+ * `createPaymentIntent`'s answer for the invoice's stored intent
  * (`financial-invoice.service.ts`, `billing.md` § Member payment flow):
  *
- * - `succeeded`, which is where a card payment ends up: a 409, "Payment already
- *   completed; confirmation is being processed", shown as the server words it.
- * - `processing`: the server hands the same intent back, client secret and no
- *   status, so this screen can't tell, and the sheet opens on it. The pinned
- *   Stripe SDKs load such an intent (stripe-ios 26.11.0 and stripe-android
- *   23.19.0 turn away only succeeded, canceled and requires_capture ones).
- *   Stripe confirms only an intent still waiting on a payment method,
- *   confirmation or action, so by its intent lifecycle the attempt fails
- *   inside the sheet and charges nothing; no device run has shown the sheet's
- *   exact words. Stripe uses processing for bank debits rather than cards, and
- *   this sheet doesn't offer delayed methods (`allowsDelayedPaymentMethods` is
- *   left at its default, off), so it means a payment started somewhere else.
- * - Failed since, back to `requires_payment_method`: the sheet takes a new
- *   payment on the same intent, which is what the member needs.
+ * - `succeeded`: a 409, "Payment already completed; confirmation is being
+ *   processed". `payIntentErrorCopy` passes a 409's message through as the
+ *   server wrote it, and the card shows it as that attempt's failure.
+ * - `processing`: the server reuses the intent and answers 200 with its client
+ *   secret and no status, so this screen can't tell and opens the sheet. The
+ *   pinned Stripe SDKs load a processing intent: stripe-ios 26.11.0's
+ *   `PaymentSheetLoader` and stripe-android 23.19.0's `StripeIntentValidator`
+ *   turn away only succeeded, canceled and requires_capture ones. The rest of
+ *   this bullet is derived and hasn't been seen on a device. Stripe confirms
+ *   only an intent still waiting on a payment method, confirmation or action,
+ *   so the sheet shouldn't charge a processing one again, and what it says then
+ *   is Stripe's wording. A card payment can pass through processing too, so a
+ *   tap that lands while one is moving through it would meet this case.
+ * - `requires_payment_method`, a payment that failed since: the sheet takes a
+ *   new payment on the same intent.
  *
- * Either way the server never mints a second intent while the first is
- * succeeded or processing, so no tap pays an invoice twice.
- *
- * Everything here is one chapter's: {@link DuesScreen} remounts the screen when
- * the active chapter changes, so no capture, hold timer or failure line
- * outlives its chapter.
+ * The server never mints a second intent while the stored one is succeeded or
+ * processing.
  *
  * ## Copy discipline
  *
@@ -114,54 +119,16 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the screen that ungates them. The reads are reads, and §5 never gates those.
  * Nothing about the chapter's plan disables the CTA: only whether this build
  * can open a payment sheet at all, a payment sheet already opening, and the
- * bounded hold above.
+ * hold above.
  */
 
 /** `billing.md`'s own phrase for the window between capture and settlement. */
 const PENDING_COPY =
   "Payment received, confirmation pending. This updates as soon as your chapter's records catch up.";
 
-/**
- * The hold ran out with the invoice still OPEN: the webhook hasn't landed. The
- * row's line, under the invoice's own title.
- */
-const UNCONFIRMED_ROW_COPY =
-  "Your payment went through, but your chapter's records haven't caught up yet.";
-
-/**
- * The same, as a line of its own. It names the invoice, because on the card it
- * takes the place of the footnote that would have.
- */
-const unconfirmedCopy = (title: string) =>
-  `Your payment for ${title} went through, but your chapter's records haven't caught up yet. Check back later, or ask your treasurer if this stays open.`;
-
 /** Names the invoice, because it sits beside the next invoice's CTA. */
 const paidCopy = (title: string) =>
   `Paid ${title}. Your chapter has it — thanks.`;
-
-/**
- * How long a captured payment holds Pay off for its invoice. The poll covers
- * the first ~24s; the rest covers a slow webhook and a refocus or two. See the
- * docblock for why it ends at all.
- */
-const PENDING_HOLD_MS = 2 * 60 * 1000;
-
-/** A payment the sheet captured on one invoice. At most one per invoice. */
-interface CapturedPayment {
-  invoiceId: string;
-  title: string;
-  capturedAt: number;
-  /** {@link PENDING_HOLD_MS} has passed. */
-  holdEnded: boolean;
-}
-
-/**
- * Where a captured payment stands, read off the list. `held`: still OPEN (or
- * the list hasn't loaded) inside the hold. `unconfirmed`: still OPEN past it.
- * `settled`: the list reads PAID. A capture whose invoice is neither (voided,
- * or gone from the list) has nothing to say.
- */
-type PaymentStanding = "held" | "unconfirmed" | "settled";
 
 /** A Pay attempt's failure, on the invoice the attempt was for. */
 interface PayFailure {
@@ -171,9 +138,9 @@ interface PayFailure {
 
 /**
  * One screen per chapter. The tab stays mounted through a chapter switch, so
- * keying it is what keeps chapter A's captured payment, hold timer and failure
- * line off chapter B's dues, and an attempt still running for A writes into a
- * screen that is gone.
+ * keying it is what keeps chapter A's captured payment and failure line off
+ * chapter B's dues, and an attempt still running for A writes into a screen
+ * that is gone.
  */
 export default function DuesScreen() {
   const chapterId = useActiveChapterId();
@@ -205,7 +172,11 @@ function ChapterDues() {
   // webhook lands later here than it does in a browser tab.
   const awaitPaid = useAwaitInvoicePaid({ attempts: 12, intervalMs: 2000 });
 
-  const [captures, setCaptures] = useState<CapturedPayment[]>([]);
+  /**
+   * The invoice a completed sheet paid on this visit. While the list reads it
+   * OPEN it is held; once the list reads it PAID it is the "Paid …" line.
+   */
+  const [capturedId, setCapturedId] = useState<string | null>(null);
   const [failure, setFailure] = useState<PayFailure | null>(null);
   /**
    * The Pay attempt that has the CTA reading "Opening…", by its token. Only
@@ -226,88 +197,44 @@ function ChapterDues() {
   );
   const open = useMemo(() => selectOpenInvoicesByDueDate(rows), [rows]);
 
-  // Derived from the list rather than cleared by an effect, so a hold lets go
-  // the moment the list does. A list that hasn't loaded, or whose rows are
-  // withheld until the viewer is known, can't say the invoice left OPEN, so it
-  // counts as still open.
+  // Read off the list on every render rather than cleared by an effect, so the
+  // hold lets go in the render the list does. A list that hasn't loaded, or
+  // whose rows are withheld until the viewer is known, can't say the invoice
+  // left OPEN, so it counts as still open.
   const listLoaded = invoicesQuery.data !== undefined && viewerUserId !== null;
-  const standings = useMemo(() => {
-    const byInvoice = new Map<string, PaymentStanding>();
-    for (const capture of captures) {
-      const status = rows.find((row) => row.id === capture.invoiceId)?.status;
-      if (!listLoaded || status === "OPEN") {
-        byInvoice.set(
-          capture.invoiceId,
-          capture.holdEnded ? "unconfirmed" : "held",
-        );
-      } else if (status === "PAID") {
-        byInvoice.set(capture.invoiceId, "settled");
-      }
-    }
-    return byInvoice;
-  }, [captures, rows, listLoaded]);
-  const standingOf = (invoiceId: string) => standings.get(invoiceId) ?? null;
+  const capturedRow =
+    capturedId === null
+      ? null
+      : (rows.find((row) => row.id === capturedId) ?? null);
+  const isHolding =
+    capturedId !== null && (!listLoaded || capturedRow?.status === "OPEN");
+  const settledRow =
+    listLoaded && capturedRow?.status === "PAID" ? capturedRow : null;
 
   // One clock per focus. A tab is never unmounted, so a mount-only value would
   // still be yesterday's when the member reopens the app — and "Past due" is
   // exactly the label that must not be a day stale.
   const [now, setNow] = useState(() => new Date());
-  const standingsRef = useRef(standings);
+  const isHoldingRef = useRef(isHolding);
   useEffect(() => {
-    standingsRef.current = standings;
-  }, [standings]);
+    isHoldingRef.current = isHolding;
+  }, [isHolding]);
   useFocusEffect(
     useCallback(() => {
       setNow(new Date());
-      // Coming back is a fresh look: last visit's failure is about an attempt
-      // the member has moved on from, and a settled "Paid …" line isn't news.
+      // Coming back is a fresh look. It ends the hold, which is what "leaving
+      // the screen ends it" in the docblock rests on, since the tab stays
+      // mounted. Last visit's failure is about an attempt the member has moved
+      // on from, and a settled "Paid …" line isn't news.
       setFailure(null);
-      const unsettled = new Set(
-        [...standingsRef.current]
-          .filter(([, standing]) => standing !== "settled")
-          .map(([invoiceId]) => invoiceId),
-      );
-      setCaptures((current) =>
-        current.every((capture) => unsettled.has(capture.invoiceId))
-          ? current
-          : current.filter((capture) => unsettled.has(capture.invoiceId)),
-      );
-      // A webhook that landed while the member was elsewhere is what lets a
-      // pending payment settle, and the list's 30s staleTime would otherwise
-      // skip the read.
-      if (unsettled.size > 0) void refetchInvoicesRef.current();
+      setCapturedId(null);
+      // A webhook that landed while the member was elsewhere settles the
+      // invoice they come back to, and the list's 30s staleTime would
+      // otherwise skip the read.
+      if (isHoldingRef.current) void refetchInvoicesRef.current();
       return undefined;
     }, []),
   );
-
-  // The holds' bound, one timer for the next to run out. One last read when it
-  // does, so the invoice states what the server says now rather than what it
-  // said at the end of the poll. Only a capture still held needs it: one the
-  // list already settled has nothing left to time.
-  const nextHoldEnd = useMemo(() => {
-    const ends = captures
-      .filter((capture) => standings.get(capture.invoiceId) === "held")
-      .map((capture) => capture.capturedAt + PENDING_HOLD_MS);
-    return ends.length > 0 ? Math.min(...ends) : null;
-  }, [captures, standings]);
-  useEffect(() => {
-    if (nextHoldEnd === null) return undefined;
-    const timer = setTimeout(
-      () => {
-        setCaptures((current) =>
-          current.map((capture) =>
-            !capture.holdEnded &&
-            capture.capturedAt + PENDING_HOLD_MS <= nextHoldEnd
-              ? { ...capture, holdEnded: true }
-              : capture,
-          ),
-        );
-        void refetchInvoicesRef.current();
-      },
-      Math.max(0, nextHoldEnd - Date.now()),
-    );
-    return () => clearTimeout(timer);
-  }, [nextHoldEnd]);
 
   // Memoized rather than re-derived inside `renderBody`, which re-runs on every
   // attempt and capture change. `balanceCents` stays the single definition of
@@ -316,25 +243,17 @@ function ChapterDues() {
   const balance = useMemo(() => balanceCents(rows), [rows]);
   const history = useMemo(() => selectInvoiceHistory(rows), [rows]);
 
-  // What Pay settles: the earliest-due open invoice whose payment isn't still
-  // held, by the same rule the More hub's chip uses.
+  // What Pay settles: the confirming invoice while there is one, otherwise the
+  // earliest-due open invoice, by the same rule the More hub's chip uses. The
+  // two still name the same invoice during a hold, since the confirming one
+  // was the earliest open when the member tapped Pay, except if an earlier-due
+  // invoice is issued during the hold: the chip names that one, and the card
+  // stays on the confirming one.
+  const confirming = isHolding ? capturedRow : null;
   const target = useMemo(
-    () =>
-      selectNextDueInvoice(
-        rows.filter((row) => standings.get(row.id) !== "held"),
-      ),
-    [rows, standings],
+    () => confirming ?? selectNextDueInvoice(rows),
+    [confirming, rows],
   );
-  // Every open invoice held: the card shows the first, confirming.
-  const confirming = target === null ? (open[0] ?? null) : null;
-  const cardInvoice = target ?? confirming;
-
-  // A failure belongs to the invoice it came from. It is dropped in the render
-  // that moves Pay off that invoice, during render rather than in an effect so
-  // no frame draws it as another invoice's caption or hint, and it doesn't
-  // come back if Pay later returns to its invoice.
-  const targetId = target?.id ?? null;
-  if (failure !== null && failure.invoiceId !== targetId) setFailure(null);
 
   const canPay = isStripeAvailable();
   const blockedReason = canPay ? null : stripeUnavailableReason();
@@ -373,19 +292,10 @@ function ChapterDues() {
         return;
       }
 
-      // Past this point the card has been charged. A new capture replaces any
-      // earlier one on this invoice, and its hold starts now.
-      setCaptures((current) => [
-        ...current.filter((capture) => capture.invoiceId !== paying.id),
-        {
-          invoiceId: paying.id,
-          title: paying.title,
-          capturedAt: Date.now(),
-          holdEnded: false,
-        },
-      ]);
+      // Past this point the card has been charged, and the hold starts.
+      setCapturedId(paying.id);
       // The sheet is closed; from here the hold, not "Opening…", is what the
-      // CTA says when it is this invoice's.
+      // CTA says.
       stopOpening();
       // Everything that follows is *reading* the outcome, so it gets its own
       // try/catch — mapping a failed poll through `payIntentErrorCopy` would
@@ -405,62 +315,30 @@ function ChapterDues() {
     }
   }, [awaitPaid, chapterName, payInvoice, target]);
 
-  /** What a captured payment says when it has a line of its own. */
-  const capturedLine = (capture: CapturedPayment): string | null => {
-    switch (standingOf(capture.invoiceId)) {
-      case "held":
-        return PENDING_COPY;
-      case "unconfirmed":
-        return unconfirmedCopy(capture.title);
-      case "settled":
-        return paidCopy(
-          rows.find((row) => row.id === capture.invoiceId)?.title ??
-            capture.title,
-        );
-      default:
-        return null;
-    }
-  };
-
-  // The card's caption, about the invoice its CTA settles: a failure on it,
-  // then where its payment stands.
-  const cardFailure = failure?.text ?? null;
-  const cardStanding = cardInvoice ? standingOf(cardInvoice.id) : null;
+  // A failure is drawn on the card only while the card is about the invoice it
+  // came from. Worked out here rather than cleared when the card moves, so no
+  // render can draw it as another invoice's caption or hint.
+  const cardFailure =
+    failure !== null && failure.invoiceId === target?.id ? failure.text : null;
   const cardStatus: BalanceCardStatus | null = cardFailure
     ? { text: cardFailure, tone: "destructive" }
-    : cardInvoice && cardStanding === "held"
+    : confirming
       ? { text: PENDING_COPY, tone: "neutral" }
-      : cardInvoice && cardStanding === "unconfirmed"
-        ? { text: unconfirmedCopy(cardInvoice.title), tone: "neutral" }
-        : null;
-  // The latest payment the list has settled. That invoice left OPEN, so it is
-  // never the one the CTA settles, and the line is drawn as its own.
-  const latestSettled =
-    [...captures]
-      .reverse()
-      .find((capture) => standingOf(capture.invoiceId) === "settled") ?? null;
-  const receipt = latestSettled ? capturedLine(latestSettled) : null;
+      : null;
+  // The settled payment's line. Its invoice left OPEN, so the card is about
+  // another invoice or none, and the line is drawn as its own.
+  const receipt = settledRow ? paidCopy(settledRow.title) : null;
 
-  // Every branch with no card still says where each payment stands: a
-  // background refetch that fails right after a payment must not swallow
-  // "payment received".
-  const standaloneLines = [
-    ...new Set(
-      captures
-        .map(capturedLine)
-        .filter((line): line is string => line !== null),
-    ),
-  ];
-  const standalone =
-    standaloneLines.length > 0 ? (
-      <>
-        {standaloneLines.map((line) => (
-          <Text key={line} style={styles.notice}>
-            {line}
-          </Text>
-        ))}
-      </>
-    ) : null;
+  // The branches with no card still say where the payment stands and why the
+  // last attempt failed: a read that fails right after a payment must not
+  // swallow "payment received", or the reason a payment didn't go through.
+  const capturedLine = isHolding ? PENDING_COPY : receipt;
+  const standalone = (
+    <>
+      {capturedLine ? <Text style={styles.notice}>{capturedLine}</Text> : null}
+      {failure ? <Text style={styles.failure}>{failure.text}</Text> : null}
+    </>
+  );
 
   function renderBody() {
     if (viewerQuery.isError) {
@@ -517,7 +395,7 @@ function ChapterDues() {
       open.length === 0
         ? "You're all paid up"
         : open.length === 1
-          ? (cardInvoice?.title ?? "Chapter dues")
+          ? (target?.title ?? "Chapter dues")
           : `${open.length} invoices open`;
 
     return (
@@ -526,7 +404,7 @@ function ChapterDues() {
           label={label}
           amountCents={balance}
           due={target ? dueChip(target, now) : null}
-          payLabel={cardInvoice ? "Pay now" : null}
+          payLabel={target ? "Pay now" : null}
           disabledReason={target ? blockedReason : null}
           footnote={
             target && open.length > 1
@@ -552,12 +430,7 @@ function ChapterDues() {
                   key={invoice.id}
                   invoice={invoice}
                   now={now}
-                  isConfirming={standingOf(invoice.id) === "held"}
-                  note={
-                    standingOf(invoice.id) === "unconfirmed"
-                      ? UNCONFIRMED_ROW_COPY
-                      : null
-                  }
+                  isConfirming={invoice.id === confirming?.id}
                   isLast={index === all.length - 1}
                 />
               ))}
@@ -605,6 +478,10 @@ function createStyles(tokens: SignetTokens) {
     notice: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    failure: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
     },
     footer: {
       ...typeRole(tokens.typography.role.caption),

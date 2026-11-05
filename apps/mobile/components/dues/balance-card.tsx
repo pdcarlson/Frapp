@@ -51,11 +51,10 @@ export interface BalanceCardProps {
   /** Context shown under an *enabled* CTA, e.g. which invoice it pays. */
   footnote: string | null;
   /**
-   * The card's invoice has a captured payment the server hasn't written PAID
-   * yet (`spec/behavior/billing.md`: the webhook is the source of truth), and
-   * no other invoice is open to pay instead. The CTA stays disabled as
-   * "Confirming payment…" and the chip reads Pending, so the obvious second
-   * tap waits out the screen's hold.
+   * The card's invoice has a captured payment the invoice list doesn't read as
+   * settled yet (`spec/behavior/billing.md`: the webhook is the source of
+   * truth). The CTA stays disabled as "Confirming payment…" and the chip reads
+   * Pending until it does; the screen keeps the card on this invoice meanwhile.
    */
   isConfirming?: boolean;
   /**

@@ -24,15 +24,10 @@ export interface OpenInvoiceRowProps {
   invoice: InvoiceRowModel;
   now: Date;
   /**
-   * This invoice's payment was captured and is still inside the screen's hold:
-   * the chip reads Pending.
+   * This invoice has a captured payment the invoice list doesn't read as
+   * settled yet, so the screen holds it: the chip reads Pending.
    */
   isConfirming: boolean;
-  /**
-   * A line under the amount about this invoice's payment, such as one that
-   * went through before the chapter's records caught up.
-   */
-  note?: string | null;
   isLast: boolean;
 }
 
@@ -40,7 +35,6 @@ export function OpenInvoiceRow({
   invoice,
   now,
   isConfirming,
-  note = null,
   isLast,
 }: OpenInvoiceRowProps) {
   const { tokens } = useFrappTheme();
@@ -57,7 +51,6 @@ export function OpenInvoiceRow({
       <View style={styles.text}>
         <Text style={styles.title}>{invoice.title}</Text>
         <Text style={styles.meta}>{formatAmount(invoice.amountCents)}</Text>
-        {note ? <Text style={styles.note}>{note}</Text> : null}
       </View>
       <StatusChip label={isConfirming ? "Pending" : due.label} hue={hue} />
     </View>
@@ -91,11 +84,6 @@ function createStyles(tokens: SignetTokens) {
     meta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
-      marginTop: 2,
-    },
-    note: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
       marginTop: 2,
     },
   });

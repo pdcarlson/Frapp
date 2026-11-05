@@ -4,7 +4,8 @@ import { Platform } from "react-native";
  * The path to Frapp's location switch in the member's own Settings app. The
  * two lines that send a member there both take it from here: the Start card's
  * failure line, which has no button and so is the whole way forward, and the
- * primer's blocked branch (`spec/ui/design-system/writing.md` § Study hours).
+ * primer's blocked branch (`spec/ui/design-system/writing.md`
+ * § Study session (mobile, s10)).
  *
  * The path depends on the OS, and on iOS on the version, because the wrong one
  * sends the member looking for a row that isn't there:

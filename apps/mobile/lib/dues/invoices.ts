@@ -203,7 +203,8 @@ export function dueChipHue(
 /**
  * The open invoices, earliest due first — s11's OPEN list, and the order
  * {@link selectNextDueInvoice} takes its first row from, so "Pay now" settles
- * the list's top row unless a payment on it is still confirming.
+ * the list's top row. The one exception is an earlier-due invoice issued while
+ * a payment is confirming: the card stays on the confirming invoice.
  */
 export function selectOpenInvoicesByDueDate(rows: InvoiceRow[]): InvoiceRow[] {
   return [...selectOpenInvoices(rows)].sort((a, b) =>
@@ -214,8 +215,9 @@ export function selectOpenInvoicesByDueDate(rows: InvoiceRow[]): InvoiceRow[] {
 /**
  * The invoice a "Pay now" tap settles: a PaymentIntent is per invoice, so only
  * one can be paid at a time, and the earliest due date is the one that turns
- * overdue next. The Dues card passes the rows less any whose captured payment
- * is still held, so Pay moves on to the next one meanwhile.
+ * overdue next. While a payment is confirming, the Dues card stays on that
+ * invoice instead (`app/(tabs)/dues.tsx`), which is the one this named when
+ * the member tapped Pay.
  *
  * Exported rather than inlined because two surfaces need the same rule — the
  * Dues card and the More hub's trailing chip — and two copies of a tie-break
