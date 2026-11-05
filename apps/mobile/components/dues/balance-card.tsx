@@ -199,9 +199,6 @@ export function BalanceCard({
   );
 }
 
-/** The pay button's height, which its skeleton draws at too. */
-const PAY_BUTTON_HEIGHT = 50;
-
 /**
  * The balance card before the invoices load, on the card's own styles: the
  * label line, the amount at the display size, and the pay button.
@@ -220,7 +217,7 @@ export function BalanceCardSkeleton() {
       <SkeletonText role={display} width="40%" style={styles.skeletonAmount} />
       <SkeletonBlock
         width="100%"
-        height={PAY_BUTTON_HEIGHT}
+        height={tokens.touch.buttonLarge}
         radius={tokens.radius.control}
         style={styles.skeletonButton}
       />
@@ -264,11 +261,10 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
     },
     payButton: {
-      // 50px as drawn, following `components/sheet-scaffold.tsx` — the
-      // reference wins over components.md §9's 46–48px band per
-      // `spec/ui/README.md`'s precedence rule, and diverging from the sheet CTA
-      // would put two different primary heights in one app.
-      height: PAY_BUTTON_HEIGHT,
+      // The Primary step (foundations.md §9), the same as the sheet CTA in
+      // `components/sheet-scaffold.tsx`: two primary heights in one app would
+      // read as two kinds of button.
+      height: tokens.touch.buttonLarge,
       borderRadius: tokens.radius.control,
       alignItems: "center",
       justifyContent: "center",

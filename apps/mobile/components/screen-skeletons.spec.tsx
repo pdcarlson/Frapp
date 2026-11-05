@@ -306,7 +306,7 @@ describe("Screen skeletons sit on their screen's frames", () => {
           style.padding === tokens.spacing.lg,
       ),
     ).toHaveLength(1);
-    expect(views(tree).filter((style) => style.height === 50)).toHaveLength(1);
+    expect(views(tree).filter((style) => style.height === tokens.touch.buttonLarge)).toHaveLength(1);
   });
 
   it("Notifications: rows on the row's frame, with 20pt title and body lines", () => {
@@ -487,7 +487,7 @@ describe("CardListSkeleton", () => {
         )!.props.height;
 
     expect(button(<StartCardSkeleton />)).toBe(tokens.touch.buttonLarge);
-    expect(button(<BalanceCardSkeleton />)).toBe(50);
+    expect(button(<BalanceCardSkeleton />)).toBe(tokens.touch.buttonLarge);
   });
 });
 

@@ -12,7 +12,11 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * well-formed either way — but two chapters' libraries must not share a cache
  * entry, which is what `["documents", folder]` alone did.
  */
-export function useDocuments(options?: { folder?: string; search?: string }) {
+export function useDocuments(options?: {
+  folder?: string;
+  search?: string;
+  enabled?: boolean;
+}) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const folder = options?.folder;
@@ -27,6 +31,7 @@ export function useDocuments(options?: { folder?: string; search?: string }) {
       return data;
     },
     staleTime: 60_000,
+    enabled: options?.enabled ?? true,
   });
 }
 

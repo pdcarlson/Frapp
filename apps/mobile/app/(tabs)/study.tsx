@@ -15,6 +15,7 @@ import {
 import { isModuleEnabled } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { useRefetchAll } from "@/components/pull-to-refresh";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
 import { EmptyState, ErrorState } from "@/components/state-block";
@@ -147,6 +148,9 @@ export default function StudyScreen() {
   );
   const zonesQuery = useGeofences();
   const sessionsQuery = useStudySessions();
+  // A refetched page adopts a session and never clears one (below), so a
+  // pull cannot end a live session.
+  const refresh = useRefetchAll([chapterQuery, zonesQuery, sessionsQuery]);
 
   const startSession = useStartStudySession();
   const heartbeat = useStudyHeartbeat();
@@ -973,7 +977,7 @@ export default function StudyScreen() {
   }
 
   return (
-    <ScreenShell back={BACK_TO_MORE} title="Study hours">
+    <ScreenShell back={BACK_TO_MORE} title="Study hours" refresh={refresh}>
       {renderBody()}
 
       <ZonePickerSheet

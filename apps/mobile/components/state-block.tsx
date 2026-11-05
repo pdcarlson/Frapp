@@ -51,18 +51,14 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * draw their own copies; moving them over is a mechanical change with its own
  * review surface, tracked in #1050.
  *
- * ## Why there is no pull-to-refresh anywhere here
+ * ## Why `ErrorState` keeps a retry control beside pull-to-refresh
  *
- * `ErrorState` takes an explicit `onRetry` because `ScreenShell` owns the
- * `ScrollView` and is frozen under #937's hotspot protocol, so no screen can
- * attach a `RefreshControl`.
- *
- * The second half of that reasoning — "and nothing wires `onlineManager`" — was
- * true until C8 (#998), which binds both `onlineManager` and `focusManager` in
- * `lib/connection/query-connectivity.ts`, so `refetchOnReconnect` now fires and
- * a connectivity blip recovers on its own. The retry control stays regardless:
- * it is still the only recovery from a *server* error, which no amount of
- * connectivity signalling fixes.
+ * Lists refresh on a pull (`ScreenShell`'s `refresh`, #3385), and since C8
+ * (#998) `lib/connection/query-connectivity.ts` binds `onlineManager` and
+ * `focusManager`, so a connectivity blip recovers on its own. `ErrorState`
+ * still takes an explicit `onRetry`: a pull is a gesture nothing on screen
+ * announces, and the retry control is the visible, accessible way out of a
+ * *server* error, which no connectivity signalling fixes.
  */
 
 type StateBlockProps = {

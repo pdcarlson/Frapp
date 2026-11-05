@@ -112,6 +112,10 @@ Use only these icon sizes in product UI:
 - Icon strokes MUST have sufficient contrast against their background surface.
 - Icon-only controls follow the 44px minimum touch target
   ([foundations](foundations.md)).
+- Which buttons draw their icon alone, and where the word goes instead, is
+  [components.md § Icon-only actions](components.md#icon-only-actions). Build
+  them with `IconButton` (`apps/web/components/ui/icon-button.tsx`,
+  `apps/mobile/components/icon-button.tsx`), which requires the label.
 
 ---
 
@@ -244,9 +248,25 @@ viewer draws the same intents in Lucide (`Download`, `X`, `ChevronLeft`,
 
 | Semantic intent | Glyph | Lives in |
 |---|---|---|
-| Close the viewer | `CloseGlyph` (an ×) | `components/chat/viewer-glyphs.tsx` |
+| Close the viewer | `CloseGlyph` (an ×), at 24 | `components/control-glyphs.tsx` (§6.1.5) |
 | Share the image | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark | `components/chat/viewer-glyphs.tsx` |
 | Previous / next image | `ChevronGlyph` | `components/chat/viewer-glyphs.tsx` |
+
+### 6.1.5 Mobile control glyphs (stroke recipe, shipped)
+
+The verbs an icon-only control draws ([components.md § Icon-only
+actions](components.md#icon-only-actions)) live in one file,
+`apps/mobile/components/control-glyphs.tsx`, so every dismiss on mobile is the
+same ×. Detail strokes only, no silhouette fill, at 20px (§2's icon-button
+size) unless a caller passes another size. Color comes from the surface: the
+banner's semantic hue on the network banner, `text.muted` on a row or chip,
+the chapter accent in a back-row slot (2026-11-05).
+
+| Semantic intent | Glyph | Drawn by | Web counterpart |
+|---|---|---|---|
+| Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply and attachment chips (16px), the image viewer (24px), the service-hours proof row | Lucide `X` |
+| Edit | `PencilGlyph` | Profile's back row | Lucide `Pencil` |
+| Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | Lucide `CheckCheck` |
 
 ### 6.2 Web Dashboard shell (Signet duotone)
 
@@ -474,7 +494,7 @@ points — and the events table drew its role-targeting and recurrence markers a
 12px, under §2's 14–16 badge-companion floor.
 
 - **Control furniture**, unchanged from §6.2.2's rule: `Loader2`,
-  `AlertCircle`, `AlertTriangle`, `Trash2`, `Plus` and `Save`. This family has
+  `AlertCircle`, `AlertTriangle`, `Trash2`, `Pencil`, `Plus` and `Save`. This family has
   more of the second kind than any other — every pair naming a *control's own
   action* rather than a domain object stays Lucide: `Play`/`Pause`/`Square` on
   the study timer, `Eye`/`EyeOff` on its tracking state, `Power`/`PowerOff` on

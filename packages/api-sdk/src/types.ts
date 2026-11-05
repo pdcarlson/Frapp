@@ -3715,10 +3715,10 @@ export interface components {
         };
         DismissOpsNudgeDto: {
             /**
-             * @description Module whose ops-setup nudge to dismiss for the caller in the active chapter. Validated against the shared catalog rather than accepted as free text: `members.dismissed_ops_nudges` is an unconstrained `text[]`, so an unchecked value would persist forever and suppress nothing.
+             * @description Module whose ops-setup nudge to dismiss for the caller in the active chapter, or `setup-checklist` for the officer setup checklist on chat home. Validated against the shared catalog rather than accepted as free text: `members.dismissed_ops_nudges` is an unconstrained `text[]`, so an unchecked value would persist forever and suppress nothing.
              * @enum {string}
              */
-            module_key: "dues" | "events" | "tasks" | "points";
+            module_key: "dues" | "events" | "tasks" | "points" | "setup-checklist";
         };
         CreateInviteDto: {
             /** @description Role name to assign. Omit to use the chapter's configured default invite role. */

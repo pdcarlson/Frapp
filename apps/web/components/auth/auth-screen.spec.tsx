@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { replace, refresh, searchParams, signInWithOAuth } = vi.hoisted(() => ({
@@ -18,9 +18,10 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
-import SignInPage from "@/app/sign-in/page";
-import SignUpPage from "@/app/sign-up/page";
-import NoAccessPage from "@/app/no-access/page";
+import SignInPage from "@/app/(auth)/sign-in/page";
+import SignUpPage from "@/app/(auth)/sign-up/page";
+import NoAccessPage from "@/app/(auth)/no-access/page";
+import { AuthFrame } from "@/components/auth/auth-frame";
 
 /**
  * The three pre-auth screens this can render without a session or a chapter.
@@ -48,22 +49,30 @@ describe("every pre-auth screen has exactly one typographic anchor", () => {
 });
 
 describe("the mark", () => {
-  it("is drawn in house gold on the entry screen, never the accent slot", () => {
+  it("is drawn once, by the frame, in house gold rather than the accent slot", () => {
     // `brand-identity.md` §2: "The mark and logo MUST NOT take the chapter
     // accent — ever." On these routes `--primary` happens to hold the baked
     // default seed, because `useChapterTheme()` mounts inside `DashboardShell`
     // and pre-auth renders outside it — so the two look identical today and
     // would diverge the moment anything mounted the bridge higher.
-    const { container } = render(<SignInPage />);
-    const mark = container.querySelector(".signet-mark");
-    expect(mark).not.toBeNull();
-    expect(mark!.getAttribute("data-field")).toBe("#1A1A1A");
-    expect(mark!.getAttribute("data-gold")).toBe("#DDB844");
-    expect(mark!.querySelector("img")?.getAttribute("src")).toContain(
+    //
+    // Since 2026-11-05 the lockup belongs to the signed-out frame, not to a
+    // screen, so it heads sign-in and sign-up alike.
+    const { container } = render(
+      <AuthFrame>
+        <SignUpPage />
+      </AuthFrame>,
+    );
+    const marks = container.querySelectorAll(".signet-mark");
+    expect(marks).toHaveLength(1);
+    const mark = marks[0]!;
+    expect(mark.getAttribute("data-field")).toBe("#1A1A1A");
+    expect(mark.getAttribute("data-gold")).toBe("#DDB844");
+    expect(mark.querySelector("img")?.getAttribute("src")).toContain(
       "signet-emblem-B.png",
     );
-    expect(mark!.getAttribute("aria-hidden")).toBe("true");
-    expect(mark!.className).not.toMatch(/\bbg-primary\b/);
+    expect(mark.getAttribute("aria-hidden")).toBe("true");
+    expect(mark.className).not.toMatch(/\bbg-primary\b/);
   });
 
   it("leaves the primary button on the accent slot, which is the right call", () => {
@@ -76,10 +85,45 @@ describe("the mark", () => {
     expect(container.querySelector("button.bg-primary")).not.toBeNull();
   });
 
-  it("is omitted on a screen reached from the entry screen", () => {
-    // s02 draws no mark. It belongs to the screen a member arrives on.
-    const { container } = render(<SignUpPage />);
+  it("is not drawn again by a screen inside the frame", () => {
+    const { container } = render(<SignInPage />);
     expect(container.querySelector(".signet-mark")).toBeNull();
+  });
+});
+
+describe("sign-in and sign-up are one page with different fields", () => {
+  it("keeps the frame's one <main> and the form's one <h1> on both", () => {
+    for (const Page of [SignInPage, SignUpPage]) {
+      const { container, unmount } = render(
+        <AuthFrame>
+          <Page />
+        </AuthFrame>,
+      );
+      expect(container.querySelectorAll("main")).toHaveLength(1);
+      expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+      unmount();
+    }
+  });
+
+  it("offers the invite route from sign-in, where `/` now sends a visitor", () => {
+    render(<SignInPage />);
+    expect(
+      screen.getByRole("link", { name: "Join your chapter" }).getAttribute("href"),
+    ).toBe("/join");
+  });
+
+  it("draws no back link on sign-up; the mode toggle is the way across", () => {
+    render(<SignUpPage />);
+    expect(screen.queryByRole("link", { name: "Back" })).toBeNull();
+    const toggle = screen.getByRole("navigation", {
+      name: "Sign in or create an account",
+    });
+    expect(
+      within(toggle).getByRole("link", { name: "Create account" }).getAttribute("aria-current"),
+    ).toBe("page");
+    expect(within(toggle).getByRole("link", { name: "Sign in" })).not.toHaveAttribute(
+      "aria-current",
+    );
   });
 });
 
@@ -91,20 +135,40 @@ describe("the redirect chain survives the rebuild", () => {
     // `/chat` instead of the deep link they opened.
     searchParams.value = new URLSearchParams("redirectTo=%2Fevents");
     render(<SignInPage />);
+    const toggle = screen.getByRole("navigation", {
+      name: "Sign in or create an account",
+    });
     expect(
-      screen.getByRole("link", { name: "Create an account" }).getAttribute("href"),
+      within(toggle).getByRole("link", { name: "Create account" }).getAttribute("href"),
     ).toBe("/sign-up?redirectTo=%2Fevents");
+    expect(
+      within(toggle).getByRole("link", { name: "Sign in" }).getAttribute("aria-current"),
+    ).toBe("page");
     searchParams.value = new URLSearchParams();
   });
 
-  it("offers Apple, Google, and magic-link as equal secondary methods", () => {
+  it("keeps the password primary, the providers equal, and the magic link a text link", () => {
     render(<SignInPage />);
     const apple = screen.getByRole("button", { name: "Continue with Apple" });
     const google = screen.getByRole("button", { name: "Continue with Google" });
-    const magic = screen.getByRole("button", { name: "Email me a magic link" });
-    expect(apple.className).toMatch(/\bw-full\b/);
-    expect(google.className).toMatch(/\bw-full\b/);
-    expect(magic.className).toMatch(/\bw-full\b/);
+    const magic = screen.getByRole("button", { name: "Email me a magic link instead" });
+    expect(apple.className).toBe(google.className);
+    // A text link, not a third full-width button (Paul, 2026-11-05).
+    expect(magic.className).not.toMatch(/\bw-full\b/);
+    expect(magic.className).toMatch(/\btext-accent-text\b/);
+    expect(magic.className).not.toMatch(/\bborder-input\b/);
+    // The labels sit inside the fields and still name them.
+    expect(screen.getByLabelText("Email")).toHaveAttribute("type", "email");
+    expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
+  });
+
+  it("puts Continue before the magic link in tab order", () => {
+    render(<SignInPage />);
+    const submit = screen.getByRole("button", { name: "Continue" });
+    const magic = screen.getByRole("button", { name: "Email me a magic link instead" });
+    expect(
+      submit.compareDocumentPosition(magic) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("kicks off Apple OAuth toward the callback with redirectTo intact", async () => {

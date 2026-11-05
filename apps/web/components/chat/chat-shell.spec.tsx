@@ -4,6 +4,7 @@ import {
   screen,
   fireEvent,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useEffect } from "react";
@@ -204,6 +205,12 @@ const slashGateReads = {
   The viewer's block list (#2313). Ready and naming nobody by default, so the
   shell's other cases see every row; the block cases below set it.
 */
+const setupChecklistState = vi.hoisted(() => ({
+  value: null as null | {
+    doneCount: number;
+    lines: { key: string; label: string; done: boolean }[];
+  },
+}));
 const blockListState = vi.hoisted(() => ({
   value: {
     ids: new Set<string>() as ReadonlySet<string>,
@@ -301,6 +308,12 @@ vi.mock("@repo/hooks", async () => ({
   // its own behaviour is pinned.
   useAccessibleChapters: () => ({ data: [] }),
   useDismissOpsNudge: () => ({ mutate: vi.fn() }),
+  // Read by the setup checklist at the top of the rail. Inert here for the
+  // same reason as the nudge: `setup-checklist.spec.tsx` pins its behaviour.
+  useChapterSetupChecklist: () => ({
+    checklist: setupChecklistState.value,
+    hide: vi.fn(),
+  }),
   directChannelDisplayName: () => "",
   // The channel header now carries `ChatSearchPopover`, which reads these.
   // Idle by default: these cases are about the shell, and a search that never
@@ -733,9 +746,18 @@ vi.mock("./message-timeline", async () => {
       onEdit?: (messageId: string, content: string) => Promise<void>;
       canManageChannel?: boolean;
       holdFollow?: boolean;
+      channelStart?: React.ReactNode;
     }
   >(function MessageTimeline(
-    { messages, onDelete, onReply, onEdit, canManageChannel, holdFollow },
+    {
+      messages,
+      onDelete,
+      onReply,
+      onEdit,
+      canManageChannel,
+      holdFollow,
+      channelStart,
+    },
     ref,
   ) {
     // Models the REAL contract: the timeline can only scroll to a message it
@@ -754,6 +776,11 @@ vi.mock("./message-timeline", async () => {
       <div data-testid="message-timeline">
         <span data-testid="can-manage-channel">{String(canManageChannel)}</span>
         <span data-testid="hold-follow">{String(!!holdFollow)}</span>
+        {/* Hidden, so its region doesn't count as a shell column; its
+            queries pass `hidden: true`. */}
+        <div data-testid="channel-start" hidden>
+          {channelStart}
+        </div>
         {/* Whether the shell offered a Reply handler at all — the read-only
             rule (#489 AC 4) is expressed by withholding the prop, so it is
             invisible without this echo. */}
@@ -1528,7 +1555,10 @@ describe("ChatShell deep-link targets", () => {
     fireEvent.click(screen.getByTestId("search-jump"));
     expect(await screen.findByText(NOT_IN_CHANNEL)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    // An × alone (components.md § Icon-only actions), not a worded button.
+    const dismiss = screen.getByRole("button", { name: "Dismiss" });
+    expect(dismiss.textContent).toBe("");
+    fireEvent.click(dismiss);
     expect(screen.queryByText(NOT_IN_CHANNEL)).toBeNull();
 
     // A new message lands. Dismiss abandons the target, so this must not
@@ -1845,6 +1875,64 @@ describe("ChatShell accessibility landmarks (#396)", () => {
  * call the handler back) — this is the one place that logic can be tested
  * without a real Virtuoso/DOM-heavy `MessageTimeline`.
  */
+/**
+ * The channel's description in the header, and the channel start the shell
+ * hands the timeline: an officer's shortcut into Chat admin, a member's none.
+ */
+describe("ChatShell channel description and start", () => {
+  const described = () => {
+    channelsQueryState.value = {
+      data: CHANNELS.map((c) =>
+        c.id === "chan-general"
+          ? { ...c, description: "The whole chapter." }
+          : c,
+      ),
+    };
+  };
+
+  it("shows the description in the header and hands the timeline the channel start", async () => {
+    described();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    const lines = await screen.findAllByText("The whole chapter.");
+    const header = lines
+      .map((line) => line.closest("header"))
+      .find((found) => found !== null)!;
+    expect(header).toBeTruthy();
+    // The channel name is the thread's own h2, so the start's h3 sits under it.
+    expect(
+      within(header).getByRole("heading", { level: 2 }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("channel-start")).getByRole("heading", {
+        level: 3,
+        hidden: true,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers an officer Edit channel and a member nothing", async () => {
+    described();
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["channels:manage"] },
+    });
+    const { unmount } = render(<ChatShell initialChannelId="chan-general" />);
+    const start = await screen.findByTestId("channel-start");
+    expect(
+      within(start).getByRole("link", { name: "Edit channel", hidden: true }),
+    ).toHaveAttribute("href", "/chat-admin?channel=chan-general");
+    unmount();
+
+    mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(
+      within(await screen.findByTestId("channel-start")).queryByRole("link", {
+        hidden: true,
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("ChatShell delete-message wiring", () => {
   it("derives canManageChannel from the channels:manage permission", async () => {
     mockUseMyPermissions.mockReturnValue({
@@ -2784,6 +2872,40 @@ describe("ChatShell narrow viewports (#2142)", () => {
 describe("ChatShell channel-list states (#2142)", () => {
   afterEach(() => {
     channelsQueryState.value = {};
+    setupChecklistState.value = null;
+  });
+
+  it("puts the setup checklist above the channels once they load", () => {
+    setupChecklistState.value = {
+      doneCount: 0,
+      lines: [{ key: "event", label: "Schedule the first event", done: false }],
+    };
+    render(<ChatShell />);
+
+    const channels = screen.getByRole("region", { name: "Channels" });
+    const setup = within(channels).getByRole("region", {
+      name: "Set up your chapter",
+    });
+    const firstChannel = within(channels).getAllByRole("button", {
+      name: /general/,
+    })[0]!;
+    expect(
+      setup.compareDocumentPosition(firstChannel) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("doesn't draw the setup checklist over the loading skeleton", () => {
+    setupChecklistState.value = {
+      doneCount: 0,
+      lines: [{ key: "event", label: "Schedule the first event", done: false }],
+    };
+    channelsQueryState.value = { isPending: true, data: undefined };
+    render(<ChatShell />);
+
+    expect(
+      screen.queryByRole("region", { name: "Set up your chapter" }),
+    ).not.toBeInTheDocument();
   });
 
   it("announces the cold load, which the skeleton alone cannot", () => {

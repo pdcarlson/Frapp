@@ -38,9 +38,9 @@ import { cn } from "@/lib/utils";
  *
  * What this shell deliberately no longer does:
  *
- * - **No ⌘K palette and no keydown listener for it.** The find field in the top
- *   bar is the replacement, on Cmd/Ctrl+F, and it is visible rather than
- *   summoned. The `cmdk` dependency stays: `components/ui/command.tsx` still
+ * - **No ⌘K palette and no keydown listener for it.** Find in the top bar is
+ *   the replacement: a visible field that opens a centered dialog, as does
+ *   Cmd/Ctrl+F, both owned by `find-bar.tsx`. The `cmdk` dependency stays: `components/ui/command.tsx` still
  *   serves the chat slash palette and the chapter wizard.
  * - **The page title is the top bar's**, derived from the route by
  *   `page-title.ts` (2026-11-05). It reads the nav rows' own labels rather

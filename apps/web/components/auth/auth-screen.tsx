@@ -1,15 +1,18 @@
 /**
- * The shared pre-auth column — `/`, `/sign-in`, `/sign-up`, `/join`,
+ * The form column of the signed-out frame — `/sign-in`, `/sign-up`, `/join`,
  * `/no-access`.
  *
- * Transcribed from `canvas-screens.dc.html` s01 (sign-in) and s02 (join): a
- * single centred column on `--background`, not the card grid these four routes
- * shipped before the #920 Profile & pre-auth slice. s01 draws **no cards** —
- * the fields and the primary sit directly on the app floor, and the only
- * bordered object on the screen is s02's hint card.
+ * `AuthFrame` (`auth-frame.tsx`, mounted by `app/(auth)/layout.tsx`) owns the
+ * page: the `<main>`, the lockup and the live product panel. This component is
+ * what changes between routes: an optional `toggle` above the title (sign-in
+ * and sign-up pass `AuthModeToggle`), the screen's one `<h1>`, an optional
+ * subtitle (`/join` and `/no-access` keep theirs), the form, and a footer
+ * pinned to the bottom of the column. It renders a fragment into
+ * the frame's flex column, so the body takes `my-auto` and centres in the
+ * space the footer leaves.
  *
- * It exists because the four routes inlined the same hero-plus-cards layout
- * four times, which is how they drifted into four different voices ("Frapp
+ * It exists because the routes inlined the same hero-plus-cards layout four
+ * times, which is how they drifted into four different voices ("Frapp
  * staging", "Frapp admin access", "Frapp account setup", "Chapter invite") and
  * four different heading sizes. `design-system/README.md` §3 puts composites in
  * `components/*` and keeps route files thin.
@@ -21,18 +24,15 @@
  * default variant is the same gold s01 draws — but the *mark* paints locked
  * emblem B (`#1A1A1A` / `#DDB844`) rather than `--primary`, per `signet-mark.tsx`.
  *
- * Type roles, mapped from the drawings onto `foundations.md` §7's ladder rather
- * than transcribed as pixel values (§7 locks the scale and calls an off-scale
- * size a defect):
+ * Type roles sit on `foundations.md` §7's ladder (§7 locks the scale and calls
+ * an off-scale size a defect):
  *
- * - s01 wordmark 30/700 → `display` (32/700)
- * - s02 title 26/700 → `headline` (24/700), the screen's only anchor (§8
- *   item 3).
- * - s01/s02 body 15.5–16 → `body` (16) in `--muted-foreground`
- * - s01 footer 14.5 → `label` (14)
- * - s02's "‹ Back" 15 → `label` (14), the nearest step. It is the one size the
- *   first cut of this file transcribed literally, which left an arbitrary
- *   `text-[15px]` in a docstring that claims to map every size onto the ladder.
+ * - every screen title → `headline` (24/700), the screen's only anchor (§8
+ *   item 3). Until 2026-11-05 the entry screen's title was the `display` step
+ *   because it was the wordmark itself; the wordmark now lives in the frame's
+ *   lockup, so every route's title is a plain screen title.
+ * - body → `body` (16) in `--muted-foreground`
+ * - footer → `label` (14)
  *
  * Captions the boards draw in `#78716A` take `--muted-foreground`, not
  * `--muted`: `components.md` §1 records that `--muted` "is not usable as text
@@ -41,72 +41,46 @@
  * `components/profile/profile-contrast.spec.ts`.
  */
 
-import Link from "next/link";
-import { SignetMark } from "@/components/auth/signet-mark";
-import { cn } from "@/lib/utils";
-
 export function AuthScreen({
-  mark = false,
-  back,
   title,
   subtitle,
+  toggle,
   children,
   footer,
 }: {
-  /** s01 draws the mark; s02 does not. The entry screen carries it, not every screen. */
-  mark?: boolean;
-  /** s02's "‹ Back". Omitted where there is nowhere to go back to. */
-  back?: { href: string; label: string };
   title: string;
-  subtitle: string;
+  /** Left out on sign-in and sign-up, where the toggle above says the same. */
+  subtitle?: string;
+  /** The sign-in / sign-up switch, above the title. */
+  toggle?: React.ReactNode;
   children: React.ReactNode;
   footer?: React.ReactNode;
 }) {
+  // Spacing is tight on purpose: sign-in and sign-up have to fit a 1280×650
+  // window without scrolling (Paul, 2026-11-05; `tests/visual/pre-auth-fit.spec.ts`),
+  // so every gap is the smallest step that still separates its groups.
   return (
-    <main className="min-h-screen bg-background px-6 pb-10 pt-14">
-      {/*
-        `max-w-[400px]` is s01's 402pt artboard less its 24pt gutters, rounded
-        onto the 4px grid (§8). The column is the page's whole width budget, so
-        the 375px floor is held by construction rather than by a media query —
-        `tests/visual/pre-auth-floor.spec.ts` measures it.
-      */}
-      <div className="mx-auto flex min-h-[calc(100vh-6rem)] w-full max-w-[400px] flex-col">
-        {back ? (
-          <Link
-            href={back.href}
-            className="mb-6 -ml-1 inline-flex w-fit items-center gap-1 rounded-md px-1 text-sm font-semibold text-accent-text hover:underline"
-          >
-            <span aria-hidden="true">&lsaquo;</span>
-            {back.label}
-          </Link>
-        ) : null}
-
-        {mark ? <SignetMark className="mb-6" /> : null}
-
-        <h1
-          className={cn(
-            "font-bold tracking-tight text-foreground",
-            // s01's wordmark is the display step; s02's screen title is the
-            // headline step. The mark's presence is what distinguishes an
-            // entry screen from a step within the flow.
-            mark ? "text-display leading-tight" : "text-headline",
-          )}
-        >
+    <>
+      <div className="my-auto w-full py-4">
+        {toggle ? <div className="mb-6">{toggle}</div> : null}
+        <h1 className="text-headline font-bold tracking-tight text-foreground">
           {title}
         </h1>
-        <p className="mt-1.5 text-base leading-relaxed text-muted-foreground">
-          {subtitle}
-        </p>
-
-        <div className="mt-8">{children}</div>
-
-        {footer ? (
-          <div className="mt-auto pt-10 text-center text-sm text-muted-foreground">
-            {footer}
-          </div>
+        {subtitle ? (
+          <p className="mt-1.5 text-base leading-relaxed text-muted-foreground">
+            {subtitle}
+          </p>
         ) : null}
+
+        <div className={subtitle ? "mt-8" : "mt-5"}>{children}</div>
       </div>
-    </main>
+
+      {footer ? (
+        <div className="space-y-2 text-center text-sm text-muted-foreground">
+          {footer}
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -119,7 +93,7 @@ export function AuthScreen({
  */
 export function AuthDivider({ label }: { label: string }) {
   return (
-    <div className="my-6 flex items-center gap-3">
+    <div className="my-5 flex items-center gap-3">
       <span aria-hidden="true" className="h-px flex-1 bg-border" />
       <span className="text-caption text-muted-foreground">{label}</span>
       <span aria-hidden="true" className="h-px flex-1 bg-border" />

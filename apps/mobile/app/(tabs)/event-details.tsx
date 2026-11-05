@@ -294,7 +294,7 @@ function CheckInCard({
       {zone ? <Text style={styles.zoneText}>{zone}</Text> : null}
 
       {isOpen ? (
-        // The app's one primary button (`sheet-scaffold.tsx`): 50pt, the
+        // The app's one primary button (`sheet-scaffold.tsx`): 48pt, the
         // control radius, the chapter accent under `gold.onHouse` ink, as the
         // dues Pay button and every sheet's CTA draw it.
         <SheetPrimaryButton
@@ -435,9 +435,10 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
     },
     secondaryButton: {
-      // The primary button's geometry (`SheetPrimaryButton`: 50pt, control
-      // radius), outlined as the board draws its secondary buttons.
-      height: 50,
+      // The primary button's geometry (`SheetPrimaryButton`: the 48pt Primary
+      // step, control radius), outlined as the board draws its secondary
+      // buttons.
+      height: tokens.touch.buttonLarge,
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.input,

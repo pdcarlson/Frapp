@@ -784,8 +784,10 @@ After any rollback event:
   column, row, policy, or function is touched, so nothing that predates the migration
   can be lost and rolling back cannot corrupt anything. What it removes is the memory of
   which suggestions an officer has already closed: every eligible chapter's officers see
-  the Dues nudge again. Annoying, not damaging, and no data outside this column depends
-  on it.
+  the Dues nudge again, and the "Set up your chapter" list returns for every officer who
+  hid it (its hide is the `setup-checklist` entry in the same column), with the hide
+  failing until the column is back. Annoying, not damaging, and no data outside this
+  column depends on it.
 * **Data caveat**: the column is the *only* record of a dismissal — there is no second
   copy and no way to recompute it, because "this officer chose to close this card" is
   not derivable from any other state. Dropping it is therefore lossy in a way the
@@ -796,8 +798,8 @@ After any rollback event:
   FROM members WHERE dismissed_ops_nudges <> '{}';` — that predicate keeps the snapshot
   to the rows that actually carry a choice. Restore with an `UPDATE ... FROM` on `id`.
   The loss is one UI preference per officer, so prefer simply not rolling this back:
-  hiding the card is a web-side change (stop rendering `OpsSetupNudge`) that needs no
-  migration at all.
+  hiding the cards is a web-side change (stop rendering `OpsSetupNudge` and
+  `SetupChecklistSection`) that needs no migration at all.
 
 ## Rollback the chat-archive upload quota
 
@@ -2778,6 +2780,26 @@ A CHECK on `chat_channels`, `chat_channels_dm_two_members`, and a partial unique
 ```sql
 drop index if exists public.chat_channels_dm_pair_key;
 alter table public.chat_channels drop constraint if exists chat_channels_dm_two_members;
+```
+
+## Rollback default channel descriptions (20261105210000)
+
+* **Migration**: `20261105210000_default_channel_descriptions.sql`
+
+A data-only `update` that wrote a starting `description` into the four default channels where it was null (never set). No schema changed.
+
+**There is usually nothing to roll back.** Officers can change or clear any description in Chat admin, and the clients treat a blank one as absent. Keep the migration file in the tree whatever else is reverted ([§ 3) Undo one migration](#3-undo-one-migration)). To clear the starting lines anyway, do it in a later forward migration, and match the exact text on the same name and type pairs the migration touched, so an officer's own edit survives:
+
+```sql
+update chat_channels set description = null
+where (name = 'general' and type = 'PUBLIC'
+       and description = 'The whole chapter. Plans, questions, whatever''s going on.')
+   or (name = 'announcements' and type = 'PUBLIC'
+       and description = 'News from officers. Everyone gets notified.')
+   or (name = 'chapter-audit' and type = 'PUBLIC'
+       and description = 'Officer changes to dues, roles and settings, posted automatically.')
+   or (name = 'alumni' and type = 'ROLE_GATED'
+       and description = 'Alumni and actives keeping in touch.');
 ```
 
 ## Rollback the role palette defaults (20261105200000)

@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
@@ -10,6 +10,8 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { PencilGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { EditProfileSheet } from "@/components/profile/edit-profile-sheet";
 import {
@@ -71,7 +73,7 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 export default function ProfileScreen() {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
-  const styles = createStyles(tokens, accent);
+  const styles = createStyles(tokens);
   const { email: sessionEmail } = useAuthSession();
   const chapterId = useActiveChapterId();
 
@@ -131,16 +133,16 @@ export default function ProfileScreen() {
     <ScreenShell
       back={BACK_TO_MORE}
       backAction={
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Edit profile"
-          accessibilityHint="Opens a sheet to edit your name and details."
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        // A pencil, not the board's "Edit" word: the same back-row slot
+        // Documents fills with its upload glyph (components.md § Icon-only
+        // actions).
+        <IconButton
+          label="Edit profile"
+          hint="Opens a sheet to edit your name and details."
           onPress={() => editSheetRef.current?.present()}
-          style={({ pressed }) => (pressed ? styles.pressed : null)}
         >
-          <Text style={styles.edit}>Edit</Text>
-        </Pressable>
+          <PencilGlyph color={accent} />
+        </IconButton>
       }
       title="Profile"
     >
@@ -244,8 +246,7 @@ const DETAIL_ROWS = 4;
  */
 export function ProfileSkeleton() {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
-  const styles = createStyles(tokens, accent);
+  const styles = createStyles(tokens);
   const { caption, headline } = tokens.typography.role;
 
   return (
@@ -279,7 +280,7 @@ export function ProfileSkeleton() {
   );
 }
 
-function createStyles(tokens: SignetTokens, accent: string) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     // `ScreenShell`'s gap, which spaces the loaded screen's blocks.
     skeletonStack: {
@@ -336,15 +337,6 @@ function createStyles(tokens: SignetTokens, accent: string) {
     bioText: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
-    },
-    // The board's Edit: 13.5px semibold in the back row's color, the chapter
-    // accent. The label role (14 semibold) is the nearest step on the scale.
-    edit: {
-      ...typeRole(tokens.typography.role.label),
-      color: accent,
-    },
-    pressed: {
-      opacity: 0.6,
     },
   });
 }

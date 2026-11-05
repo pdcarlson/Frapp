@@ -1,12 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AuditGlyph,
-  DirectMessageGlyph,
-  LockGlyph,
-  MuteGlyph,
-} from "./chat-glyphs";
+import { MuteGlyph } from "./chat-glyphs";
+import { channelDescription } from "@repo/hooks/channel-start";
+import { ChannelMark, ChannelStart } from "./channel-start";
 import { EmptyState, ErrorState } from "@/components/shared/async-states";
 import {
   canHideConversation,
@@ -44,8 +41,9 @@ import {
   useSidebarPreferences,
 } from "@repo/hooks";
 import { can, isAnnouncementChannel } from "@repo/validation";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
@@ -93,6 +91,7 @@ import {
 } from "@repo/chat-core/message-actions";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
+import { SetupChecklistSection } from "./setup-checklist";
 import { ChannelMenu } from "./channel-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
@@ -160,35 +159,6 @@ const UNREACHABLE_COPY: Record<UnreachableReason, string> = {
   error: "Couldn't load the messages needed to reach that message.",
   unloaded: "Couldn't load this channel's messages to reach that message.",
 };
-
-/**
- * Leading mark for the channel header.
- *
- * A plain channel takes a **text `#`**, not a glyph: `canvas-screens.dc.html`
- * s04/s05 draw the sigil as type (17px / 700), and the reference wins over a
- * tidier all-icons row. Everything the reference does not draw — audit, direct,
- * private — takes its duotone intent glyph at the 20px list-row size
- * (`iconography.md` §2).
- */
-function ChannelHeaderMark({
-  channel,
-  className,
-}: {
-  channel: ChatChannel | null;
-  className?: string;
-}) {
-  if (channel?.name === "chapter-audit")
-    return <AuditGlyph className={className} />;
-  if (channel?.type === "DM" || channel?.type === "GROUP_DM")
-    return <DirectMessageGlyph className={className} />;
-  if (channel?.type === "PRIVATE" || channel?.type === "ROLE_GATED")
-    return <LockGlyph className={className} />;
-  return (
-    <span aria-hidden="true" className="font-bold text-muted-foreground">
-      #
-    </span>
-  );
-}
 
 /**
  * The chat surface: channels column, then thread and composer.
@@ -531,6 +501,9 @@ export function ChatShell({
 
   // DM channels are stored as `dm-<uuidA>-<uuidB>`; the header, the composer
   // placeholder and the sidebar must all show the resolved title instead.
+  const activeChannelDescription = channelDescription(
+    activeChannel?.description,
+  );
   const activeChannelName = useMemo(() => {
     if (!activeChannel) return "";
     return directChannelDisplayName(
@@ -716,6 +689,20 @@ export function ChatShell({
   const canManageChannel = can(
     "channels:manage",
     permissionsPayload?.permissions,
+  );
+
+  // Memoised because the timeline hands it to the virtualizer's header
+  // context, and a new element every render would re-render that row.
+  const channelStartNode = useMemo(
+    () =>
+      activeChannel ? (
+        <ChannelStart
+          channel={activeChannel}
+          displayName={activeChannelName}
+          canEdit={canManageChannel}
+        />
+      ) : undefined,
+    [activeChannel, activeChannelName, canManageChannel],
   );
 
   // Bookmarks (#462). One chapter-wide query backs both the panel and every
@@ -1546,6 +1533,11 @@ export function ChatShell({
             `hasHydrated` for, reached from the other side.
           */}
           {channelsPaneState === "loading" ? <ChannelListSkeleton /> : null}
+          {/*
+            The officer setup checklist, above the channels where Discord puts
+            its server guide. Renders `null` for anyone with nothing to set up.
+          */}
+          {channelsPaneState === "ready" ? <SetupChecklistSection /> : null}
           {channelsPaneState === "ready" ? (
             <ChannelList
               viewerId={userId}
@@ -1632,7 +1624,7 @@ export function ChatShell({
             <h2 className="flex min-w-0 items-center gap-2 text-label font-bold text-foreground">
               {activeChannel ? (
                 <>
-                  <ChannelHeaderMark
+                  <ChannelMark
                     channel={activeChannel}
                     className="h-4 w-4 shrink-0 text-muted-foreground"
                   />
@@ -1665,10 +1657,23 @@ export function ChatShell({
                 "Pick a channel"
               )}
             </h2>
-            {activeChannel?.description ? (
-              <p className="truncate text-caption text-muted-foreground">
-                {activeChannel.description}
-              </p>
+            {/*
+              "# name • description", the description muted and cut off on
+              one line (owner's reference, 2026-11-05). The dot is decoration:
+              the name is the heading and the description its own paragraph.
+            */}
+            {activeChannelDescription ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="shrink-0 text-caption text-muted-foreground"
+                >
+                  •
+                </span>
+                <p className="min-w-0 truncate text-caption text-muted-foreground">
+                  {activeChannelDescription}
+                </p>
+              </>
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -1772,10 +1777,8 @@ export function ChatShell({
                       ? UNREACHABLE_COPY[unreachableTarget.reason]
                       : "Finding that message..."}
                 </p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="h-8"
+                <IconButton
+                  label="Dismiss"
                   onClick={() => {
                     // Abandons the target, not just the notice. Clearing only
                     // the message would leave it pending, so the effect would
@@ -1787,8 +1790,8 @@ export function ChatShell({
                     setPendingJumpChannelId(null);
                   }}
                 >
-                  Dismiss
-                </Button>
+                  <X />
+                </IconButton>
               </div>
             ) : null}
           </div>
@@ -1976,6 +1979,7 @@ export function ChatShell({
                 isLoadingOlder={channel.isLoadingOlder}
                 olderError={channel.olderError}
                 onLoadOlder={loadOlderHistory}
+                channelStart={channelStartNode}
                 // Only while the jump is still working. Once it has settled on a
                 // notice the target stays pending (so a late arrival still lands),
                 // but holding follow through that would stop new messages

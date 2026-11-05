@@ -13,6 +13,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
@@ -286,6 +287,9 @@ function ChapterDues() {
   const invoicesQuery = useInvoices(viewerUserId ?? undefined, {
     enabled: !!viewerUserId,
   });
+  // The invoice read stays off until the id is known, and the pull skips it
+  // while it is: unscoped, it would ask for the whole ledger.
+  const refresh = useRefetchAll([viewerQuery, invoicesQuery]);
   const payInvoice = usePayInvoice();
   // Wider than the web default of 8 × 1500ms: a phone returning from the Stripe
   // sheet re-renders and re-authenticates on a mobile network, so the same
@@ -768,7 +772,7 @@ function ChapterDues() {
   }
 
   return (
-    <ScreenShell back={BACK_TO_MORE} title="Dues">
+    <ScreenShell back={BACK_TO_MORE} title="Dues" refresh={refresh}>
       {renderBody()}
     </ScreenShell>
   );
