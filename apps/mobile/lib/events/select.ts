@@ -12,6 +12,7 @@
  * whole screen component into the scanner's bundle.
  */
 import type { DeviceInstant } from "@repo/hooks";
+import { dayDelta, parseInstant } from "@repo/formatting";
 import { isCurrentOrUpcoming, sortEventsByStart } from "./format";
 
 export interface EventRow {
@@ -174,4 +175,26 @@ export function selectEventDetail(data: unknown): EventDetail | null {
     recurrence_rule: str(data, "recurrence_rule"),
     parent_event_id: str(data, "parent_event_id"),
   };
+}
+
+/**
+ * Splits s06's rows after the lead card into "This week" and "Later".
+ *
+ * The same calendar-day rule as the row's own date block
+ * (`formatEventDateBlock`: weekday under seven days, month after) and as the
+ * Tasks board's `THIS_WEEK_DAYS`, so a row that reads "WED" never lands under
+ * Later and a row that reads "NOV" never lands under This week. An unparseable
+ * `start_time` goes to Later rather than throwing.
+ */
+export function groupByWeek(
+  events: EventRow[],
+  now: Date,
+): { thisWeek: EventRow[]; later: EventRow[] } {
+  const thisWeek: EventRow[] = [];
+  const later: EventRow[] = [];
+  for (const event of events) {
+    const start = parseInstant(event.start_time);
+    (start && dayDelta(now, start) < 7 ? thisWeek : later).push(event);
+  }
+  return { thisWeek, later };
 }

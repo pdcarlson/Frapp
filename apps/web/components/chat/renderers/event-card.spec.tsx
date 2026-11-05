@@ -90,6 +90,15 @@ describe("EventCard", () => {
     expect(screen.getByText(/\+15 pts/)).toBeInTheDocument();
   });
 
+  it("draws Mandatory as the danger badge, never the accent", () => {
+    render(
+      <EventCard message={makeMessage({ is_mandatory: true })} isConfirmed />,
+    );
+    const badge = screen.getByText("Mandatory");
+    expect(badge.className).toContain("text-destructive-text");
+    expect(badge.className).not.toContain("text-accent-text");
+  });
+
   it("falls back to the content string on a malformed payload", () => {
     const message = makeMessage();
     (message as { payload: unknown }).payload = { nonsense: true };
