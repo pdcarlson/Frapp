@@ -112,6 +112,8 @@ export function SheetHeader({
   );
 }
 
+const TALL_SHEET_SNAP_POINTS = ["100%"];
+
 /**
  * The tall sheet: a sheet for content that should be big
  * (`spec/ui/design-system/components.md` § Surface size). A whole record (a
@@ -120,22 +122,26 @@ export function SheetHeader({
  * cuts the content off and scrolls it in a window. The owner called those
  * cramped (2026-11-05); web puts the same content in a full-height panel.
  *
- * Pass `snapPoints={TALL_SHEET_SNAP_POINTS}` and
- * `topInset={useTallSheetTopInset()}` with `enableDynamicSizing={false}`. At
- * full height there is no scrim left to tap, so the header carries
- * {@link SheetCloseButton}; the grabber still drags it away.
+ * Spread {@link useTallSheetProps} onto the `BottomSheetModal`, then pin the
+ * header: `stickyHeaderIndices={[0]}` on the scroller, with the header painted
+ * `surface.popover` so rows don't show through it. At full height there is no
+ * scrim left to tap, so the header carries {@link SheetCloseButton}; the
+ * grabber still drags it away.
  */
-export const TALL_SHEET_SNAP_POINTS = ["100%"];
-
-/**
- * How far a tall sheet stops below the top of the screen: the status bar plus
- * a sliver, so the screen behind still shows above the sheet's rounded corners
- * and the sheet reads as something to swipe away, not a new page.
- */
-export function useTallSheetTopInset() {
+export function useTallSheetProps() {
   const { tokens } = useFrappTheme();
-  return useSafeAreaInsets().top + tokens.spacing.sm;
+  return {
+    snapPoints: TALL_SHEET_SNAP_POINTS,
+    // Snap points alone don't turn dynamic sizing off in @gorhom v5: it
+    // defaults on and adds a content-height detent below 100%, so a short
+    // body would open the sheet short.
+    enableDynamicSizing: false,
+    // The status bar plus a sliver, so the screen behind still shows above
+    // the rounded corners and the sheet reads as something to swipe away.
+    topInset: useSafeAreaInsets().top + tokens.spacing.sm,
+  } as const;
 }
+
 
 /**
  * The close control a tall sheet's header carries: the app-wide `CloseGlyph`

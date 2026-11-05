@@ -16,7 +16,9 @@ const {
   mockCreateInvite,
   mockRefetchRoles,
   mockRefetchInvites,
+  activeChapterId,
 } = vi.hoisted(() => ({
+  activeChapterId: { current: "chapter-1" as string | null },
   mockRefetchRoles: vi.fn(),
   mockRefetchInvites: vi.fn(),
   mockCurrentChapter: vi.fn(),
@@ -36,6 +38,7 @@ const INVITE = {
 };
 
 vi.mock("@repo/hooks", () => ({
+  useActiveChapterId: () => activeChapterId.current,
   // `refetch`: opening the panel re-reads invites and roles.
   useRoles: () => ({ refetch: mockRefetchRoles, ...mockRoles() }),
   useOrgConfig: () => mockOrgConfig(),
@@ -364,6 +367,17 @@ describe("InviteMemberDialog live data", () => {
     await openDialog();
     expect(mockRefetchInvites).toHaveBeenCalledTimes(1);
     expect(mockRefetchRoles).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads nothing before a chapter is active, since refetch skips the hooks' guard", async () => {
+    activeChapterId.current = null;
+    try {
+      await openDialog();
+      expect(mockRefetchInvites).not.toHaveBeenCalled();
+      expect(mockRefetchRoles).not.toHaveBeenCalled();
+    } finally {
+      activeChapterId.current = "chapter-1";
+    }
   });
 
   it("offers Try again beside a failed read, and it re-reads both lists", async () => {

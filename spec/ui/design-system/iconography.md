@@ -395,7 +395,7 @@ glyphs: the nav set (§1.1) for the re-exports and `InviteGlyph`, the §1 stroke
 recipe for the points glyphs and search. The glyphs live in
 [`apps/web/components/members/directory-glyphs.tsx`](../../../apps/web/components/members/directory-glyphs.tsx)
 and [`apps/web/components/points/points-glyphs.tsx`](../../../apps/web/components/points/points-glyphs.tsx),
-both re-exporting the shell's silhouettes rather than redrawing them. Rendered at 20px in card and dialog titles (never a panel or sheet title, [`components.md` § Surface size](components.md#surface-size)), 16px in table cells, and 14–16px as a badge companion (§2).
+both re-exporting the shell's silhouettes rather than redrawing them. Rendered at 20px in card titles (never the title of a dialog, panel or sheet, [`components.md` § Surface size](components.md#surface-size); four dialogs still carry one until #3519), 16px in table cells, and 14–16px as a badge companion (§2).
 Inside a `Button` they render at 16 whatever the call site asks for, because
 `buttonVariants` pins `[&_svg]:size-4` — which is also what keeps the required
 375px floor gate unaffected by a glyph swap.
@@ -476,8 +476,8 @@ a running session's zone and a zone row alike.
 | The attendance roster | `DirectoryGlyph` (re-export) |
 | An event's point value | `PointsGlyph` (re-export) |
 | Search, in the events toolbar | `SearchGlyph` (re-export) |
-| A task, and the dialog that creates one | `TasksGlyph` (re-export) |
-| A service entry, and the dialog that logs one | `ServiceGlyph` (re-export) |
+| A task (the create dialog's title glyph goes in #3519) | `TasksGlyph` (re-export) |
+| A service entry (the log dialog's title glyph goes in #3519) | `ServiceGlyph` (re-export) |
 
 Eight of the nine are re-exports from
 [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),

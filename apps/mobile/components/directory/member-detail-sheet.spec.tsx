@@ -163,6 +163,8 @@ describe("MemberDetailSheet as a tall sheet", () => {
     const modal = tree.root.findByType("BottomSheetModal" as never);
     expect(modal.props.snapPoints).toEqual(["100%"]);
     expect(modal.props.enableDynamicSizing).toBe(false);
+    // Stops under the status bar, so the X is never in the unsafe area.
+    expect(modal.props.topInset).toBeGreaterThan(0);
     // The header (and its X) stays put while the profile scrolls under it.
     const scroll = tree.root.findByType("BottomSheetScrollView" as never);
     expect(scroll.props.stickyHeaderIndices).toEqual([0]);

@@ -198,6 +198,7 @@ describe("New task assignee picker", () => {
     // Without this, @gorhom adds a content-height detent and the sheet opens
     // short again.
     expect(picker.props.enableDynamicSizing).toBe(false);
+    expect(picker.props.topInset).toBeGreaterThan(0);
     const list = picker.find(
       (node) => node.props.stickyHeaderIndices !== undefined,
     );

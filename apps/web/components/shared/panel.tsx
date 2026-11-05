@@ -28,8 +28,9 @@ import { cn } from "@/lib/utils";
  * 56px title row at 18/700 with `pr-14` clearing the close button, a body at
  * the 20px inset, a right-aligned footer at the same inset. A panel is that
  * sheet at full height, so it uses the same rhythm rather than inventing a
- * second one. The close button `SheetContent` draws is a 24px box at `top-4`,
- * so its centre lands on the centre of the 56px row.
+ * second one. The close button `SheetContent` draws is a 26px box (a 16px
+ * glyph, `p-1` and a 1px border) at `top-4`, so its centre sits at 29px, a
+ * pixel under the 56px row's centre.
  *
  * **Not for the per-page settings drawer** (`page-settings-drawer.tsx`), which
  * is `4c`'s 400px tool drawer that sits beside the page while you change it.

@@ -23,11 +23,10 @@ import {
   SheetPrimaryButton,
   SheetScrim,
   sheetFieldStyles,
-  TALL_SHEET_SNAP_POINTS,
   TallSheetHeader,
   useSheetBackgroundStyle,
   useSheetVisit,
-  useTallSheetTopInset,
+  useTallSheetProps,
 } from "@/components/sheet-scaffold";
 import { CalendarGlyph } from "@/components/tasks/task-glyphs";
 import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
@@ -147,7 +146,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const { accent } = brand;
     const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
-    const pickerTopInset = useTallSheetTopInset();
+    const pickerSheet = useTallSheetProps();
     const pickerRef = useRef<BottomSheetModal>(null);
     const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
       useSheetVisit(ref);
@@ -471,12 +470,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           keystroke. */}
       <BottomSheetModal
         ref={pickerRef}
-        enableDynamicSizing={false}
         // A tall sheet (`components.md` § Surface size): the whole roster,
         // and a search the keyboard would otherwise squeeze into a sliver of
         // the old 70% box.
-        snapPoints={TALL_SHEET_SNAP_POINTS}
-        topInset={pickerTopInset}
+        {...pickerSheet}
         keyboardBehavior="interactive"
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}

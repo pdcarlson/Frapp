@@ -7,6 +7,7 @@ import {
   useCreateInvite,
   useInvites,
   useOrgConfig,
+  useActiveChapterId,
   useRevokeInvite,
   useRoles,
 } from "@repo/hooks";
@@ -135,6 +136,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const [inviteCountDraft, setInviteCountDraft] = useState("1");
   const inviteCount = invitesToGenerate(inviteCountDraft);
   const [generatedInvites, setGeneratedInvites] = useState<InviteRow[]>([]);
+  const activeChapterId = useActiveChapterId();
   const rolesQuery = useRoles();
   const orgConfigQuery = useOrgConfig();
   const invitesQuery = useInvites();
@@ -281,6 +283,9 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
    * officer revoked would otherwise still show here.
    */
   function refetchLiveData() {
+    // `refetch()` skips the hooks' `enabled: !!chapterId`, so with no chapter
+    // yet it would send both reads unscoped and show a load error.
+    if (!activeChapterId) return;
     void invitesQuery.refetch();
     void rolesQuery.refetch();
   }

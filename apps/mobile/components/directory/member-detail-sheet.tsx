@@ -26,10 +26,9 @@ import { ErrorState, SkeletonLines } from "@/components/state-block";
 import {
   SheetGrabber,
   SheetScrim,
-  TALL_SHEET_SNAP_POINTS,
   TallSheetHeader,
   useSheetBackgroundStyle,
-  useTallSheetTopInset,
+  useTallSheetProps,
 } from "@/components/sheet-scaffold";
 import {
   resolveCustomRoleNames,
@@ -70,7 +69,7 @@ import {
  *
  * ## A tall sheet
  *
- * It opens at full height (`TALL_SHEET_SNAP_POINTS`,
+ * It opens at full height (`useTallSheetProps`,
  * `spec/ui/design-system/components.md` § Surface size): it holds a whole
  * profile, and the 65% box it used to open in cut the bio and Block off below
  * the fold. No "Member" title and no "Done": the member's name heads the
@@ -104,7 +103,7 @@ export const MemberDetailSheet = forwardRef<
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
-  const topInset = useTallSheetTopInset();
+  const tallSheet = useTallSheetProps();
 
   // `useMember` is already `enabled: !!id`, so this stays idle until a row is
   // actually tapped rather than firing for every mounted-but-closed sheet.
@@ -211,9 +210,7 @@ export const MemberDetailSheet = forwardRef<
   return (
     <BottomSheetModal
       ref={ref}
-      enableDynamicSizing={false}
-      snapPoints={TALL_SHEET_SNAP_POINTS}
-      topInset={topInset}
+      {...tallSheet}
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
