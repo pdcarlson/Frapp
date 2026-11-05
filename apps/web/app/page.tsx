@@ -1,58 +1,66 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AuthScreen } from "@/components/auth/auth-screen";
-import { Button } from "@/components/ui/button";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
- * The signed-out entry point.
+ * The signed-out entry point, which is now only a gate.
  *
- * A redirect gate first and a screen second: with a session it never renders at
- * all (`spec/ui/web-dashboard/README.md` §Gating & routing semantics — `/`
- * redirects to `/chat`), so its whole surface is the pre-auth column s01 draws.
+ * With a session it redirects to `/chat` (`spec/ui/web-dashboard/README.md`
+ * §Gating & routing semantics); without one it redirects to `/sign-in`.
  *
- * The #920 Profile & pre-auth slice deleted what stood here: a "Frapp staging"
- * eyebrow over "Run live chapter admin workflows on the web", three feature
- * cards describing the API's scoping model, and a five-step "What this
- * milestone unlocks" walkthrough. It also deleted two `border-border/70` washes
- * — §3 rule 4 bans one-offing a token value at the call site, and `--border` is
- * already `rgba(255,255,255,.08)`, so `/70` was diluting a hairline to 0.056.
+ * Until 2026-11-05 it was a screen of its own: mark, wordmark, tagline and two
+ * buttons, "Sign in" and "Create an account", each leading to a second page.
+ * That was the mobile entry screen's shape, where the form sits behind a tap;
+ * on the web it cost every returning member a click before the form. The
+ * sign-in form carries both of its other exits in its footer ("Create an
+ * account", "Join your chapter").
+ *
+ * It redirects rather than rendering the form itself because it cannot join
+ * the `(auth)` group that keeps the signed-out frame mounted across routes:
+ * `app/(dashboard)/page.tsx` is that group's index and would resolve to the
+ * same `/`. Rendering the frame here instead would remount it, and restart its
+ * product panel, on the hop to `/sign-up`.
+ *
+ * The #920 Profile & pre-auth slice deleted what stood here before that: a
+ * "Frapp staging" eyebrow over "Run live chapter admin workflows on the web",
+ * three feature cards describing the API's scoping model, and a five-step
+ * "What this milestone unlocks" walkthrough.
  */
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const query = toQuery(await searchParams);
+  // GoTrue sends a link to the Site URL, which is `/`, whenever its redirect
+  // target is not on the allow list (`docs/ops/deployment/supabase.md`). The
+  // page this replaced mounted a browser client that could still pick such a
+  // link up, so hand its `code` or `token_hash` to the route that exchanges
+  // one rather than dropping it on the hop to `/sign-in`.
+  if (AUTH_LINK_PARAMS.some((name) => query.has(name))) {
+    redirect(`/auth/callback?${query}`);
+  }
+
   const supabase = await createSupabaseServerClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
 
-  if (session) {
-    redirect("/chat");
-  }
+  if (session) redirect("/chat");
+  // Kept, so a `/?redirectTo=…` still reaches the form that reads it.
+  redirect(query.size > 0 ? `/sign-in?${query}` : "/sign-in");
+}
 
-  return (
-    <AuthScreen
-      mark
-      title="Frapp"
-      subtitle="Ask your chapter anything."
-      footer={
-        <>
-          Have an invite?{" "}
-          <Link
-            href="/join"
-            className="font-semibold text-accent-text hover:underline"
-          >
-            Join your chapter
-          </Link>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-3">
-        <Button asChild className="w-full">
-          <Link href="/sign-in">Sign in</Link>
-        </Button>
-        <Button asChild variant="secondary" className="w-full">
-          <Link href="/sign-up">Create an account</Link>
-        </Button>
-      </div>
-    </AuthScreen>
-  );
+/** What `app/auth/callback/route.ts` reads to finish or report a sign-in link. */
+const AUTH_LINK_PARAMS = ["code", "token_hash", "error_code", "error"] as const;
+
+function toQuery(
+  params: Record<string, string | string[] | undefined>,
+): URLSearchParams {
+  const query = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (item !== undefined) query.append(name, item);
+    }
+  }
+  return query;
 }

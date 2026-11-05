@@ -51,7 +51,8 @@ function formatDate(value: string): string {
   return instant.toLocaleDateString();
 }
 
-const STATUS_BADGE: Record<TaskStatus, "default" | "outline" | "destructive"> =
+/** Exported for the sign-in showcase, which draws this badge without a live task. */
+export const STATUS_BADGE: Record<TaskStatus, "default" | "outline" | "destructive"> =
   {
     TODO: "outline",
     IN_PROGRESS: "default",

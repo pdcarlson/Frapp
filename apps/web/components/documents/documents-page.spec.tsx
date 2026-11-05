@@ -572,7 +572,7 @@ describe("DocumentsPage state ordering", () => {
       screen.getByText(/documents unavailable offline/i),
     ).toBeInTheDocument();
     expect(
-      screen.queryByText("Loading chapter documents..."),
+      screen.queryByText("Loading chapter documents"),
     ).not.toBeInTheDocument();
   });
 
@@ -587,7 +587,7 @@ describe("DocumentsPage state ordering", () => {
     render(<DocumentsPage />);
 
     const live = screen.getByRole("status");
-    expect(live).toHaveTextContent("Loading chapter documents...");
+    expect(live).toHaveTextContent("Loading chapter documents");
     expect(live).toHaveAttribute("aria-live", "polite");
   });
 
@@ -614,9 +614,7 @@ describe("DocumentsPage state ordering", () => {
     render(<DocumentsPage />);
 
     expect(uploadTrigger()).toBeInTheDocument();
-    expect(
-      screen.getByText("Loading chapter documents..."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Loading chapter documents")).toBeInTheDocument();
   });
 });
 
