@@ -28,9 +28,12 @@
 // them in (`DynamicProjectConfigContextField`, `ServerSideEnvironmentVariablesContextField`): with
 // the profile set and those values absent, the production Supabase fence would stop every run.
 // A name both set must agree (a build takes eas.json's value, an update's export takes EAS's), so
-// every evaluation sees what the bundle gets, and the bundle what its binary has. The guard that
-// runs is the checked-out release's own copy, so a release older than it is refused. `--branch`, `--auto`, `--skip-bundler` and `--input-dir` are refused: each
-// publishes somewhere other than the named channel, or a bundle this guard never shaped.
+// every evaluation sees what the bundle gets, and the bundle what its binary has. `--branch`,
+// `--auto`, `--skip-bundler` and `--input-dir` are refused: each publishes somewhere other than the
+// named channel, or a bundle this guard never shaped.
+//
+// The guard that runs is the checked-out release's own copy, so a production publish is refused
+// while the release production serves predates it (v0.8.1 has none).
 //
 // For the production channel it also requires a clean tree at exactly the commit production
 // serves (the latest `v*` tag, `scripts/ci/lib/release-tag.mjs`, the same rule store builds
