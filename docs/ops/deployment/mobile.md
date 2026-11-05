@@ -173,27 +173,28 @@ configuration, **not** on the profile name, so a `development` profile given an 
 > the *same* Supabase project — whichever was set last. `eas secret:*` is also deprecated in favour of
 > `eas env:*`, which is where the per-environment split lives.
 
-### 6.4 App Store screenshots
+### 6.4 Store screenshots
 
 App Store Connect will not take a submission without at least one iPhone screenshot set
-([#2454](https://github.com/pdcarlson/Frapp/issues/2454)). The owner approved **renders of the app
-on Expo web** as that set (2026-09-22): the real screens and components (react-native-web) against
-the local demo chapter, with no EAS build, device or `preview` environment involved. What differs
-from a device capture is chrome, not content: there is no iOS status bar, and native-only surfaces
-(sheets, the system keyboard) are web-rendered, which is why the set below has neither.
+([#2454](https://github.com/pdcarlson/Frapp/issues/2454)), and Play Console needs 2 to 8 phone
+screenshots. The owner approved **renders of the app on Expo web** as the screens (2026-09-22): the
+real screens and components (react-native-web) against the local demo chapter, with no EAS build,
+device or `preview` environment involved. What differs from a device capture is chrome, not
+content: there is no OS status bar (the frame draws one), and native-only surfaces (sheets, the
+system keyboard) are web-rendered, which is why the set below has neither.
 
-**Size: 1320 × 2868 pixels, portrait** — a 440 × 956 point viewport at 3x. Apple's
-[screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications)
-(read 2026-09-22) list it among the accepted 6.9" iPhone sizes, alongside 1290 × 2796 and
-1260 × 2736, and require a 6.5" set only when no 6.9" set is provided; smaller iPhone sizes are
-scaled from the larger set. `app.json` sets `ios.supportsTablet: false`, so no iPad set applies.
-**Not yet confirmed in the console:** #2454 asks for the sizes App Store Connect states at upload to
-be recorded here, so replace this paragraph's source with the console's wording once uploaded.
+**Framed, one design for both stores** (owner's pick, 2026-11-05). Each screen is captured once and
+[`scripts/demo/store-frames.mjs`](../../../scripts/demo/store-frames.mjs) puts it in a frame: a
+caption, the screen in a phone, and at most one card lifted out of the screen, in the charcoal, gold
+and Figtree of the Play feature graphic. The frames, captions and lifted cards are `STORE_FRAMES`
+there; change a caption in that file, not in an image editor. The frame is what changes shape
+between stores, so both sets carry the same screens and captions.
 
 The set is seven screens, chosen to match what the listing's Description claims
-([`apps/mobile/store/README.md`](../../../apps/mobile/store/README.md) § Description): Chat
-home, a chat thread, Events, Host check-in (the rotating QR), Tasks (assigned tasks, points and
-house rank), Study hours and the Directory. The list is `STORE_SCREENS` in
+([`apps/mobile/store/README.md`](../../../apps/mobile/store/README.md) § Description), in this
+order: Chat home, Events, Host check-in (the rotating QR), a chat thread, Tasks (points and house
+rank), Study hours and the Directory. The first three carry the daily loop, because most visitors
+judge a listing by them. The list is `STORE_SCREENS` in
 [`scripts/demo/capture-mobile.mjs`](../../../scripts/demo/capture-mobile.mjs). **No Ask shot:**
 the store binary has no Ask ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)), and
 Guideline 2.3.3 wants the screenshots to show the app as it ships. **No Dues shot:** a populated
@@ -202,60 +203,72 @@ is seeded empty so App Review never sees that footer or a Pay control (the store
 reviewer's chapter). The listing's text still names dues and payment history; the shots keep out the
 in-app payment copy.
 
+**App Store size: 1320 × 2868 pixels, portrait**, a 440 × 956 point viewport at 3x, which is also
+the viewport every screen is captured at. Apple's
+[screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications)
+(read 2026-09-22) list it among the accepted 6.9" iPhone sizes, alongside 1290 × 2796 and
+1260 × 2736, and require a 6.5" set only when no 6.9" set is provided; smaller iPhone sizes are
+scaled from the larger set. `app.json` sets `ios.supportsTablet: false`, so no iPad set applies.
+**Not yet confirmed in the console:** #2454 asks for the sizes App Store Connect states at upload to
+be recorded here, so replace this paragraph's source with the console's wording once uploaded.
+Google Play's size is § 6.5.
+
 **Procedure**, on a machine or cloud sandbox with the local stack running (API on `:3001`, local
 Supabase):
 
 1. Write `apps/mobile/.env.local` per
    [`docs/guides/demo-data.md` § Mobile setup](../../guides/demo-data.md#mobile-setup), **without**
-   `EXPO_PUBLIC_ASK_ENABLED`. With it set the app draws the ✦ Ask pill, and the preset stops
+   `EXPO_PUBLIC_ASK_ENABLED`. With it set the app draws the ✦ Ask pill, and the run stops
    rather than write a set containing it. The same section's `EVENT_CHECK_IN_TOKEN_SECRET` must be
    in `apps/api/.env.local` before the API starts (the cloud sandbox's bring-up does not write
    it): without it the Host check-in screen shows "Code unavailable" instead of a QR, and that
    shot times out.
-2. Re-seed, so every unread badge and the demo data are fresh (opening a channel marks it read):
-   `bash scripts/demo/setup-demo.sh`
+2. After 13:00 UTC, re-seed, so every unread badge and the demo data are fresh (opening a channel
+   marks it read): `bash scripts/demo/setup-demo.sh`, then shoot the same UTC day. Chat and study
+   times are minutes before the seed ran and render in UTC, so a seed in the small hours stamps the
+   thread "3:00 AM". The run warns when it starts before 13:00 UTC, but it can't see when the seed
+   ran, so seeding late is on you.
 3. From `apps/mobile`, start Expo web on the port the API's CORS list allows, clearing Metro's
    cache so no earlier flag value is inlined: `npx expo start --web --port 3002 --clear`. Wait for
    `http://localhost:3002` to answer 200.
-4. From the repo root: `node scripts/demo/capture-mobile.mjs --app-store`
-   (sandbox Chromium: prefix `CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome`).
-   It signs in as the demo president — Host check-in needs an officer — and writes
-   `screenshots/app-store/01-chat-home.png` … `07-directory.png`.
+4. From the repo root: `node scripts/demo/capture-mobile.mjs --store`
+   (sandbox Chromium: prefix `CHROMIUM_PATH=/opt/pw-browsers/chromium-1243/chrome-linux64/chrome`).
+   It signs in as the demo president — Host check-in needs an officer — captures the seven screens
+   to `screenshots/store-raw/`, and frames them into `screenshots/app-store/` and
+   `screenshots/google-play/`, `01-chat-home.png` … `07-directory.png` in each.
 
-It prints each file's measured size, and exits non-zero if a screen lands on a route other than the
-one requested (a lost session redirects to sign-in), if a screen's data never arrives, or if a file
-is not 1320 × 2868, and then deletes `screenshots/app-store/` so there is no set with a gap to upload;
-re-run it. If any Ask surface is on screen it stops at once, with the same deletion.
+It prints each folder it wrote, and exits non-zero if a screen lands on a route other than the one
+requested (a lost session redirects to sign-in), if a screen's data never arrives, or if a file is
+the wrong size or (for Play) not an opaque 8-bit RGB PNG, and then deletes all three folders so
+there is no set with a gap to upload; re-run it. If any Ask surface is on screen it stops at once,
+with the same deletion. A caption that says "Signet", or common wording that ranks the app or
+cites an award, price or promotion (which Play forbids), refuses the run before anything is
+captured, as does a frame list in `store-frames.mjs` that no longer matches the screens. The copy
+check is a word list, so read the captions before uploading.
 
-**Upload is the owner's step:** App Store Connect → the app → the version → iPhone 6.9" Display →
-drag in the files in order, for the English (U.S.) localization. `screenshots/` is gitignored and
-the PNGs are not committed; regenerate them with the procedure above rather than keeping copies.
+**Upload is the owner's step**, files in filename order, for the English (U.S.) localization:
+App Store Connect → the app → the version → iPhone 6.9" Display → drag in `app-store/`; Play Console
+→ the app → Main store listing → Phone screenshots → `google-play/` (needs the developer account,
+#2556). `screenshots/` is gitignored and the PNGs are not committed; regenerate them with the
+procedure above rather than keeping copies.
 
 ### 6.5 Google Play screenshots
 
-Play can't reuse the App Store set: 1320 × 2868 is about 2.17:1, and Play caps a screenshot's long
-side at twice its short side ([#2557](https://github.com/pdcarlson/Frapp/issues/2557)). The Play set
-is the same seven screens, rendered the same way, at Play's shape.
+Play can't take the App Store size: 1320 × 2868 is about 2.17:1, and Play caps a screenshot's long
+side at twice its short side ([#2557](https://github.com/pdcarlson/Frapp/issues/2557)). So the Play
+frame is its own shape around the same capture (§ 6.4).
 
-**Size: 1242 × 2208 pixels, portrait (9:16)**, a 414 × 736 point viewport at 3x. Play Console Help
+**Size: 1242 × 2208 pixels, portrait (9:16)**, a 414 × 736 point frame at 3x. Play Console Help
 ("Add preview assets to showcase your app") takes JPEG or 24-bit PNG with no alpha, 320 to 3840 px
 per side, the long side at most twice the short one, and 2 to 8 phone screenshots. For promotion it
-prefers 9:16 with at least 1080 px on each side, which this size also meets. **Not read from the
-page itself:** support.google.com is blocked from the cloud sandbox, so these rules come from search
-snippets of that page (2026-09-27). Replace this paragraph's source with the console's wording once
-the set is uploaded ([#2720](https://github.com/pdcarlson/Frapp/issues/2720)). The limits are held
-in [`scripts/demo/store-screenshots.mjs`](../../../scripts/demo/store-screenshots.mjs) and
-tested against the preset, so change them there too.
-
-**Procedure:** § 6.4's steps 1 to 3 unchanged, then from the repo root
-`node scripts/demo/capture-mobile.mjs --google-play` (same `CHROMIUM_PATH` prefix in the sandbox). It
-writes `screenshots/google-play/01-chat-home.png` … `07-directory.png`, with the same Ask refusal and
-landed-route checks as the App Store run. It also fails if a file isn't 1242 × 2208 or isn't an
-opaque 8-bit RGB PNG (colour type 2, no `tRNS` chunk), because Play rejects a PNG with alpha. Any
-failure deletes `screenshots/google-play/`, so a failed run leaves nothing to upload.
-
-**Upload is the owner's step:** Play Console → the app → Main store listing → Phone screenshots →
-the files in order, for the default language. The upload needs the developer account (#2556).
+prefers 9:16 with at least 1080 px on each side, which this size also meets. Screenshots may not
+carry text that ranks the app in the store, cites awards, or quotes a price or promotion (a member's
+rank inside the app is a feature, not a store ranking), and a set with text is per language. **Not read
+from the page itself:** support.google.com is blocked from the cloud sandbox, so these rules come
+from search snippets of that page (2026-09-27, 2026-11-05). Replace this paragraph's source with the
+console's wording once the set is uploaded ([#2720](https://github.com/pdcarlson/Frapp/issues/2720)).
+The limits are held in [`scripts/demo/store-screenshots.mjs`](../../../scripts/demo/store-screenshots.mjs)
+and tested against the preset, so change them there too.
 
 ### 6.6 Store submission
 

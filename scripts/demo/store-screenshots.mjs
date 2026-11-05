@@ -4,8 +4,8 @@
  * launches a browser the moment it is imported, so that
  * `scripts/ci/__tests__/store-screenshots.test.mjs` can hold the presets to
  * each store's rules. Procedure and provenance:
- * `docs/ops/deployment/mobile.md` § 6.4 (App Store) and § 6.5
- * (Google Play).
+ * `docs/ops/deployment/mobile.md` § 6.4 (both stores' sets) and § 6.5
+ * (Google Play's rules).
  */
 import { pngHeader } from "../lib/brand-pixels.mjs";
 
@@ -14,6 +14,7 @@ export const STORE_SCALE = 3;
 
 /**
  * The App Store's 6.9" iPhone size: 440x956 points at 3x is 1320x2868 pixels.
+ * Also the viewport every store screen is captured at, for both stores.
  * Apple's screenshot specifications (developer.apple.com → App Store Connect
  * help → Reference → Screenshot specifications, read 2026-09-22) list 1320x2868
  * portrait among the 6.9" sizes, ask for a 6.5" set only when no 6.9" set is
@@ -47,7 +48,9 @@ export const PLAY_SCREENSHOT_LIMITS = {
 
 /**
  * Google Play's phone screenshots: 414x736 points at 3x is 1242x2208 pixels,
- * 9:16, inside `PLAY_SCREENSHOT_LIMITS`. 9:16 is also the shape Play prefers
+ * 9:16, inside `PLAY_SCREENSHOT_LIMITS`. The viewport is the frame's size in
+ * `store-frames.mjs`, not a capture size: the app is captured once at the App
+ * Store viewport and framed for both stores. 9:16 is also the shape Play prefers
  * for promotion, and 414 is a Pixel-class width. Play rejects a PNG with
  * alpha, so this preset also requires an opaque 8-bit RGB file
  * (`opaqueRgb`), which is what Playwright writes today; the check turns a
