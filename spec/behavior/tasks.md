@@ -90,4 +90,8 @@ rich renderer + server-originated card).
   board, and any later surface get one behaviour rather than a copy each.
 
 Status changes are not broadcast on the chat channel, so a non-acting viewer sees a card's status
-update on their next task-query refetch rather than instantly.
+update on their next task-query refetch rather than instantly. Only the assignee and a
+`tasks:manage` holder can read a task (`GET /v1/tasks/:id` refuses anyone else, as the list returns a
+member only their own), so any other member's card shows the creation-time snapshot with no status
+badge and no controls, and never asks for the task. Web and mobile apply the same card rules from
+`packages/hooks/src/task-card.ts`.

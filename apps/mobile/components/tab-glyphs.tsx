@@ -62,6 +62,13 @@ export type TabGlyphProps = {
   accent: string;
   /** `tokens.color.text.muted` — the muted text role the neutral state uses. */
   muted: string;
+  /**
+   * Drawn size in points; the 24-unit grid scales with it. The tab bar uses
+   * the default {@link TAB_GLYPH_SIZE}. A chat card's eyebrow draws the same
+   * glyph at 16, as web's card eyebrow does, so the card and the tab it
+   * belongs to share one silhouette.
+   */
+  size?: number;
 };
 
 /**
@@ -77,9 +84,15 @@ function glyphPaint({ focused, accent, muted }: TabGlyphProps) {
   };
 }
 
-function GlyphFrame({ children }: { children: React.ReactNode }) {
+function GlyphFrame({
+  size = TAB_GLYPH_SIZE,
+  children,
+}: {
+  size?: number;
+  children: React.ReactNode;
+}) {
   return (
-    <Svg width={TAB_GLYPH_SIZE} height={TAB_GLYPH_SIZE} viewBox="0 0 24 24">
+    <Svg width={size} height={size} viewBox="0 0 24 24">
       {children}
     </Svg>
   );
@@ -89,7 +102,7 @@ function GlyphFrame({ children }: { children: React.ReactNode }) {
 export function ChatGlyph(props: TabGlyphProps) {
   const { stroke, fill } = glyphPaint(props);
   return (
-    <GlyphFrame>
+    <GlyphFrame size={props.size}>
       <Path
         d="M4 6.5A3.5 3.5 0 017.5 3h9A3.5 3.5 0 0120 6.5v6a3.5 3.5 0 01-3.5 3.5H10l-4.5 4v-4A3.5 3.5 0 014 12.5z"
         fill={fill}
@@ -105,7 +118,7 @@ export function ChatGlyph(props: TabGlyphProps) {
 export function EventsGlyph(props: TabGlyphProps) {
   const { stroke, fill } = glyphPaint(props);
   return (
-    <GlyphFrame>
+    <GlyphFrame size={props.size}>
       <Rect
         x={4}
         y={5}
@@ -131,7 +144,7 @@ export function EventsGlyph(props: TabGlyphProps) {
 export function TasksGlyph(props: TabGlyphProps) {
   const { stroke, fill } = glyphPaint(props);
   return (
-    <GlyphFrame>
+    <GlyphFrame size={props.size}>
       <Circle
         cx={12}
         cy={12}
@@ -169,7 +182,7 @@ const MORE_SQUARES = [
 export function MoreGlyph(props: TabGlyphProps) {
   const { stroke, fill } = glyphPaint(props);
   return (
-    <GlyphFrame>
+    <GlyphFrame size={props.size}>
       {MORE_SQUARES.map((square) => (
         <Rect
           key={`${square.x}-${square.y}`}

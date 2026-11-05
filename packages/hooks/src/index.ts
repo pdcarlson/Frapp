@@ -8,6 +8,7 @@ export * from "./use-members";
 export * from "./use-events";
 export * from "./use-activity-feed";
 export * from "./use-attendance";
+export * from "./task-card";
 export * from "./use-points";
 export * from "./use-chat";
 export * from "./hide-conversation";

@@ -377,7 +377,7 @@ every one of them, and both are the point rather than style:
 | Surface | Description |
 |---|---|
 | New task (s19) | `Your chapter's subscription isn't active, so new tasks can't be saved. An officer can sort this out for the chapter.` |
-| Task status toggle (s08) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board; the toggles stay withdrawn until the member comes back to the screen or to the app ([#2710](https://github.com/pdcarlson/Frapp/issues/2710)). |
+| Task status (s08 toggle, chat task card) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board, and on a mobile chat task card for Start, Mark complete, Confirm and Reject (one copy for both, `taskStatusGateRefusal` in `apps/mobile/lib/tasks/status-refusal.ts`). On either, the controls stay withdrawn until the member comes back to the screen or to the app ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.` |
 | Log service hours (s20) | `Your chapter's subscription isn't active, so service hours can't be logged. An officer can sort this out for the chapter.` |
 | Upload document (s21) | `Your chapter's subscription isn't active, so documents can't be uploaded. An officer can sort this out for the chapter.` |
@@ -403,7 +403,7 @@ the state with `pollsGateOf` in `@repo/chat-core/polls`.
 | Surface | Description |
 |---|---|
 | New task (s19) | `Tasks are turned off for your chapter right now, so new tasks can't be saved. An officer can turn tasks back on.` |
-| Task status toggle (s08) | `Tasks are turned off for your chapter right now, so task updates can't be saved. An officer can turn tasks back on.` Shown on the board, like the subscription row for the same toggle ([#2710](https://github.com/pdcarlson/Frapp/issues/2710)). |
+| Task status (s08 toggle, chat task card) | `Tasks are turned off for your chapter right now, so task updates can't be saved. An officer can turn tasks back on.` Shown on the board and on a mobile chat task card, and withdrawn for as long, like the subscription row for the same writes ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` |
 | Log service hours (s20) | `Service hours are turned off for your chapter right now, so new hours can't be logged. An officer can turn service hours back on.` |
 | Upload document (s21) | `Documents are turned off for your chapter right now, so new documents can't be uploaded. An officer can turn documents back on.` |

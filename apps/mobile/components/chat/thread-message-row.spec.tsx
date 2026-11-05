@@ -40,6 +40,16 @@ vi.mock("@repo/hooks", async () => {
       fetchStatus: "idle",
       refetch: vi.fn(),
     }),
+    // The event and task cards' reads and writes (#3185); their own specs
+    // cover what each one does. Here they only have to draw.
+    usePermissionList: () => [],
+    useTask: () => ({ data: undefined }),
+    useEvent: () => ({ data: undefined, isError: false }),
+    useAttendance: () => ({ data: undefined }),
+    useCheckIn: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useUpdateTaskStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useRejectTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   };
 });
 
@@ -829,6 +839,78 @@ describe("ThreadMessageRow — runs and day dividers (#2873)", () => {
     expect(out).not.toContain("Casino");
     expect(out).not.toContain("🔥");
     expect(out).not.toContain("👍 +");
+  });
+
+  it("draws an event card and a task card in the row frame (#3185)", () => {
+    const event = visible(
+      message({
+        sender_id: FRIEND,
+        kind: "event",
+        content: "New event: Chapter meeting",
+        payload: {
+          event_id: "evt-1",
+          name: "Chapter meeting",
+          start_time: "2026-11-05T23:00:00.000Z",
+          end_time: "2026-11-06T00:00:00.000Z",
+          location: "Great Hall",
+          point_value: 10,
+          is_mandatory: false,
+        },
+      }),
+    );
+    const eventText = allDrawnText(renderRow(event));
+    expect(eventText).toContain("Casey");
+    expect(eventText).toContain("Great Hall");
+    expect(eventText).not.toContain("New event: Chapter meeting");
+
+    const task = visible(
+      message({
+        sender_id: FRIEND,
+        kind: "task",
+        content: 'Assigned "Fix the door" to Bob',
+        payload: {
+          task_id: "task-1",
+          title: "Fix the door",
+          assigner_name: "Alice",
+          assignee_name: "Bob",
+          assignee_user_id: VIEWER,
+          due_date: "2026-11-07",
+        },
+      }),
+    );
+    const taskText = allDrawnText(renderRow(task));
+    expect(taskText).toContain("Casey");
+    expect(taskText).toContain("Alice → Bob");
+    expect(taskText).not.toContain('Assigned "Fix the door"');
+  });
+
+  it("draws an event or task whose payload doesn't read as its text", () => {
+    for (const kind of ["event", "task"] as const) {
+      const malformed = visible(
+        message({ kind, content: "Something happened", payload: { id: 3 } }),
+      );
+      expect(allDrawnText(renderRow(malformed))).toContain("Something happened");
+    }
+  });
+
+  it("draws a deleted event or task as the placeholder, with no actions", () => {
+    const deletedEvent = visible(
+      message({
+        kind: "event",
+        is_deleted: true,
+        content: "",
+        payload: {
+          event_id: "evt-1",
+          name: "Chapter meeting",
+          start_time: "2026-11-05T23:00:00.000Z",
+          end_time: "2026-11-06T00:00:00.000Z",
+        },
+      }),
+    );
+    const out = flat(renderRow(deletedEvent));
+    expect(out).toContain("[message deleted]");
+    expect(out).not.toContain("Chapter meeting");
+    expect(out).not.toContain("Check in");
   });
 
   it("offers a poll reply's jump to a screen reader, as a text reply does", () => {

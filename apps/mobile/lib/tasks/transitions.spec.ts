@@ -40,8 +40,17 @@ describe("nextTapSequence", () => {
     expect(nextTapSequence("IN_PROGRESS", "OVERDUE")).toEqual(["COMPLETED"]);
   });
 
+  it("walks a stored OVERDUE as TODO, as every task surface does", () => {
+    // The server accepts OVERDUE → IN_PROGRESS; `actionStatus` in @repo/hooks
+    // maps it, and the chat task cards offer Start on the same row.
+    expect(nextTapSequence("OVERDUE", "OVERDUE")).toEqual([
+      "IN_PROGRESS",
+      "COMPLETED",
+    ]);
+  });
+
   it("falls back to the display status when it is itself a stored value", () => {
-    // The chat `kind:"task"` card ships a bare `status`.
+    // A pre-#1051 API ships a bare `status`.
     expect(nextTapSequence(null, "TODO")).toEqual(["IN_PROGRESS", "COMPLETED"]);
   });
 
@@ -52,6 +61,8 @@ describe("nextTapSequence", () => {
 
   it("never throws on an unrecognised status", () => {
     expect(nextTapSequence("ARCHIVED", null)).toEqual([]);
+    // An unknown stored value is not read as missing.
+    expect(nextTapSequence("ARCHIVED", "TODO")).toEqual([]);
     expect(nextTapSequence(null, null)).toEqual([]);
     expect(nextTapSequence("", "")).toEqual([]);
   });

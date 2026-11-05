@@ -71,7 +71,9 @@ const TASKS = [
   },
 ];
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  // `actionStatus` stays real; only the data hooks are stubbed.
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
   useTasks: () => ({
     data: tasksRef.current,

@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { readEventPayload, readTaskPayload } from "@repo/chat-core/cards";
 import {
   hiddenQuoteText,
   tombstoneCanUnblock,
@@ -14,25 +15,28 @@ import { SignetTokens } from "@repo/theme/signet";
 import { canOpenMessageActions } from "@/lib/chat/blocks";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
+import type { ChatCardFrameProps } from "./chat-card";
+import { EventCard } from "./event-card";
 import { MessageItem, MessageRowFrame, OwnLineMarkers } from "./message-item";
 import { PollCard } from "./poll-card";
 import { ReplyQuote } from "./reply-quote";
+import { TaskCard } from "./task-card";
 
 /**
  * One s05 row, after the block list has been applied (`applyBlockList` in
  * `@repo/chat-core/blocks`). Held rows never reach here.
  *
  * Split out of `app/(tabs)/chat-thread.tsx` so the choice between tombstone,
- * poll card and message is testable: everything under `app/` ships as a route
+ * card and message is testable: everything under `app/` ships as a route
  * module, so a spec cannot sit beside the screen (`routes.spec.ts` fails on
  * one), and the list's `FlatList` stand-in never calls `renderItem` in tests.
  *
  * **Everything the block list hides is decided here**, so a message or card
  * never has to know about it:
  *
- * - **The tombstone comes first**, before the `kind === "poll"` branch: a
- *   blocked member's poll is their authored text like any other message, and a
- *   votable card would put it on screen.
+ * - **The tombstone comes first**, before any card: a blocked member's poll is
+ *   their authored text like any other message, and a votable card would put
+ *   it on screen.
  * - **Reactions** go through `visibleReactions` on every message, the viewer's
  *   own included: a reaction is its author's own text, and the server's mask
  *   (#2494) does not reach reaction rows cached before a block.
@@ -147,12 +151,29 @@ function ThreadMessageRowBody({
 
   // A card is not a message body, so it goes into the row frame directly:
   // the same quote, avatar and author line as any other row, with the card
-  // where the text would be. Web draws every card kind this way; mobile has a
-  // renderer for `poll` only, and draws every other kind as text.
-  // A deleted poll keeps its kind and payload server-side, so it would still
-  // draw a live, votable card; like web, a deleted message of any kind is the
-  // placeholder instead (MessageItem: no votes, no reactions).
-  if (message.kind === "poll" && !message.is_deleted) {
+  // where the text would be. Web draws every card kind this way; mobile has
+  // renderers for `poll`, `event` and `task` (`cardFor`), and draws every
+  // other kind as text.
+  // A deleted card keeps its kind and payload server-side, so it would still
+  // draw a live card with live buttons; like web, a deleted message of any
+  // kind is the placeholder instead (MessageItem: no actions, no reactions).
+  const card = message.is_deleted
+    ? null
+    : cardFor(
+        {
+          message,
+          viewerId,
+          isConfirmed: message._status === "confirmed",
+          onRetry,
+          onDiscard,
+          onReact,
+          onUnreact,
+          onOpenActions: openActions,
+          onJumpToParent: message.reply_to_id ? onJumpToParent : undefined,
+        },
+        onVote,
+      );
+  if (card) {
     const quote =
       message.reply_to_id ? (
         <ReplyQuote
@@ -174,18 +195,7 @@ function ThreadMessageRowBody({
         quote={quote}
         onOpenActions={openActions}
       >
-        <PollCard
-          message={message}
-          viewerId={viewerId}
-          isConfirmed={message._status === "confirmed"}
-          onVote={onVote}
-          onRetry={onRetry}
-          onDiscard={onDiscard}
-          onReact={onReact}
-          onUnreact={onUnreact}
-          onOpenActions={openActions}
-          onJumpToParent={quote ? onJumpToParent : undefined}
-        />
+        {card}
         <OwnLineMarkers message={message} />
       </MessageRowFrame>
     );
@@ -207,6 +217,33 @@ function ThreadMessageRowBody({
       onJumpToParent={onJumpToParent}
     />
   );
+}
+
+/**
+ * The card a message draws, or `null` to draw it as text.
+ *
+ * An event or task whose payload doesn't read is text, its `content` string,
+ * as web's renderers fall back: the server writes that string for exactly
+ * this. A poll keeps its own malformed state, which names the poll.
+ */
+function cardFor(
+  frame: ChatCardFrameProps,
+  onVote: ThreadMessageRowProps["onVote"],
+): ReactNode | null {
+  switch (frame.message.kind) {
+    case "poll":
+      return <PollCard {...frame} onVote={onVote} />;
+    case "event": {
+      const payload = readEventPayload(frame.message);
+      return payload ? <EventCard {...frame} payload={payload} /> : null;
+    }
+    case "task": {
+      const payload = readTaskPayload(frame.message);
+      return payload ? <TaskCard {...frame} payload={payload} /> : null;
+    }
+    default:
+      return null;
+  }
 }
 
 /**

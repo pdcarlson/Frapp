@@ -230,9 +230,9 @@ export function groupReactions(
 /**
  * The frame every s05 row shares: the reply quote above, the 32pt gutter with
  * the avatar on a run's first row, and the author line. `MessageItem` fills it
- * with a message body; the thread fills it with a `PollCard` for a poll, so a
- * card carries the same author line as any other row (a card always starts a
- * run).
+ * with a message body; the thread fills it with a card (`cardFor` in
+ * `thread-message-row.tsx`), so a card carries the same author line as any
+ * other row (a card always starts a run).
  *
  * Its root is the long-press target, so a press anywhere on the row — gutter,
  * author line, photo — opens the actions. It is `accessible={false}` for the

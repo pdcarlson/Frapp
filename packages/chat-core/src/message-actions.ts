@@ -23,9 +23,9 @@ import type { ChatMessage } from "./types";
  * (`apps/web/components/chat/renderers/index.tsx`) is a second statement of it,
  * and `registry.spec.tsx` there fails if the two disagree, which is what keeps
  * a kind from being a card on screen and editable here. Mobile draws
- * only `poll` as a card today and every other kind as text, but a card's
- * body lives in `payload`, so its `content` is not the member's words to edit
- * whichever way a client happens to draw it.
+ * `poll`, `event` and `task` as cards today and every other kind as text, but
+ * a card's body lives in `payload`, so its `content` is not the member's words
+ * to edit whichever way a client happens to draw it.
  */
 export const CARD_KINDS: ReadonlySet<string> = new Set([
   "poll",

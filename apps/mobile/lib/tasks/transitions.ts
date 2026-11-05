@@ -24,7 +24,7 @@
  * read here stays correct through an optimistic write.
  */
 
-import type { TaskStatus } from "@repo/hooks";
+import { actionStatus, isTaskStatus, type TaskStatus } from "@repo/hooks";
 
 /**
  * The full write sequence one tap should send, keyed by the stored status.
@@ -34,10 +34,11 @@ import type { TaskStatus } from "@repo/hooks";
  * "done". This is the ladder that reaches the drawn outcome through transitions
  * the server will actually take.
  *
- * `OVERDUE` is deliberately absent: it is never persisted
- * (`toDisplayStatus` synthesizes it and `task.entity.ts` never stores it), so
- * the API's own `OVERDUE` row is unreachable and reproducing it here would
- * imply a state this module can observe.
+ * `OVERDUE` has no rung of its own. The API derives it on read and never
+ * writes it, but the column allows it and older rows carry it, and a stored
+ * `OVERDUE` takes the `TODO` ladder: the server accepts `OVERDUE →
+ * IN_PROGRESS`, the move Start makes. `actionStatus` in `@repo/hooks` maps it,
+ * the rule every task surface keys its actions off (`spec/behavior/tasks.md`).
  */
 const LADDER: Record<"TODO" | "IN_PROGRESS" | "COMPLETED", TaskStatus[]> = {
   TODO: ["IN_PROGRESS", "COMPLETED"],
@@ -65,19 +66,23 @@ export function isOpenTask(storedStatus: string | null): boolean {
  * handler should no-op. A `Pressable` that silently swallows taps reads as
  * broken; the caller drops `onPress` entirely and marks the control disabled.
  *
- * `displayStatus` is only consulted in the degraded branch. A payload carrying
- * no `stored_status` (the chat `kind:"task"` card ships bare `status`) is
- * recoverable when the display value is itself a stored one, and unrecoverable
- * when it is `OVERDUE` — there, offering either transition is a coin flip that
- * 400s half the time, so the row goes inert instead.
+ * Which rung is `actionStatus`'s answer, so the board and both chat task cards
+ * offer the same move on the same row. `displayStatus` is only consulted in
+ * the degraded branch: a row with no `stored_status` (a pre-#1051 API) is
+ * recoverable when the display value is itself a stored one, and
+ * unrecoverable when it is `OVERDUE`. There, offering either transition is a
+ * coin flip that 400s half the time, so the row goes inert instead.
  */
 export function nextTapSequence(
   storedStatus: string | null,
   displayStatus: string | null,
 ): TaskStatus[] {
-  const stored = storedStatus ?? displayStatus;
-  if (stored === "TODO" || stored === "IN_PROGRESS" || stored === "COMPLETED") {
-    return LADDER[stored];
-  }
-  return [];
+  // A stored value this module doesn't know is not the degraded branch:
+  // guessing from the display could offer a write the server refuses.
+  if (storedStatus !== null && !isTaskStatus(storedStatus)) return [];
+  const stored = storedStatus ?? undefined;
+  const status = isTaskStatus(displayStatus) ? displayStatus : stored;
+  if (status === undefined) return [];
+  const rung = actionStatus({ status, stored_status: stored });
+  return rung === undefined || rung === "OVERDUE" ? [] : LADDER[rung];
 }
