@@ -173,7 +173,9 @@ function createStyles(tokens: SignetTokens) {
       borderBottomColor: tint(tokens.color.semantic.warning, 0.3),
     },
     offlineText: {
-      color: tokens.color.semantic.destructive,
+      // Danger as text on its own tint takes the AA lift (foundations §5), as
+      // web's offline banner does.
+      color: tokens.color.semantic.destructiveText,
     },
     degradedText: {
       color: tokens.color.semantic.warning,

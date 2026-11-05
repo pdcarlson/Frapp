@@ -65,8 +65,9 @@ export function ProfileCard({
 
   return (
     <PressableRow
-      // The card is `surface1`, like the ListSections under it, so its iOS
-      // lift is the default one step, to `card`.
+      // The card is `card`, like the ListSections under it, so its iOS
+      // lift is to `popover`.
+      onCard
       accessibilityRole="button"
       accessibilityLabel={name}
       accessibilityValue={pointsLabel ? { text: pointsLabel } : undefined}
@@ -105,12 +106,13 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       gap: tokens.spacing.md,
       padding: tokens.spacing.lg,
-      borderRadius: tokens.radius.cardLarge,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
       // The More list's tone, so the card and the rows under it read as one
-      // surface (s09). It was the warmer `card`, a step browner than them.
-      backgroundColor: tokens.color.surface.surface1,
+      // surface (s09). Both moved from `surface1` to `card` on 2026-11-05,
+      // the step web's grouped lists use.
+      backgroundColor: tokens.color.surface.card,
     },
     avatar: {
       width: AVATAR_SIZE,

@@ -82,3 +82,25 @@ describe("chip type (components.md §5: 12.5px / 600)", () => {
     }
   });
 });
+
+describe("StatusChip text tone (components.md §5)", () => {
+  it("lifts danger text to the AA tone and keeps the solid hue in the tint", () => {
+    const { chip, label } = parts(
+      render(
+        <StatusChip label="Mandatory" hue={tokens.color.semantic.destructive} />,
+      ),
+    );
+    expect(label.color).toBe(tokens.color.semantic.destructiveText);
+    expect(chip.backgroundColor).toBe("rgba(248,81,73,0.13)");
+  });
+
+  it("draws success and warning in the hue itself", () => {
+    for (const hue of [
+      tokens.color.semantic.success,
+      tokens.color.semantic.warning,
+    ]) {
+      const { label } = parts(render(<StatusChip label="Paid" hue={hue} />));
+      expect(label.color).toBe(hue);
+    }
+  });
+});

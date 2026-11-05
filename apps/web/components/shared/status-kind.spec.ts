@@ -74,6 +74,15 @@ const BOOLEAN_MAPPERS: Record<string, (value: boolean) => string> = {
   poll: pollStatusKind,
 };
 
+describe("a cancelled invoice is not a failure", () => {
+  // VOID is a cancelled invoice, not a failed payment: quiet Hairline, as
+  // DRAFT is, and as mobile draws it.
+  it("draws VOID and DRAFT as Hairline, not danger", () => {
+    expect(invoiceStatusKind("VOID")).toBe("outline");
+    expect(invoiceStatusKind("DRAFT")).toBe("outline");
+  });
+});
+
 describe("status colour is never the chapter accent", () => {
   it("would have caught PRESENT, APPROVED, COMPLETED and Active painted in it", () => {
     for (const [family, { fn, inputs }] of Object.entries(MAPPERS)) {
