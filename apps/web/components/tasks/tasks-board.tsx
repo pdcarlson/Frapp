@@ -270,13 +270,13 @@ export function TasksBoard() {
         body: { comment: result.comment || undefined },
       });
       toast({
-        title: "Task reverted to IN_PROGRESS",
-        description: "The assignee was notified to continue working.",
+        title: "Task moved back to In progress",
+        description: "The assignee was told to keep working on it.",
       });
     } catch (error) {
       toast({
         title: "Couldn't reject task",
-        description: getErrorMessage(error, "Retry or check your permissions."),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -299,7 +299,7 @@ export function TasksBoard() {
     } catch (error) {
       toast({
         title: "Couldn't delete task",
-        description: getErrorMessage(error, "Retry or check your permissions."),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }

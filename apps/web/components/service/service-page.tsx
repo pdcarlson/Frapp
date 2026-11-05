@@ -353,7 +353,7 @@ export function ServiceHoursPage() {
     } catch (error) {
       toast({
         title: "Couldn't reject entry",
-        description: getErrorMessage(error, "Retry or check your permissions."),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }

@@ -184,7 +184,7 @@ Flushed together on 2026-11-05; the board draws none of them, so the grammar abo
 - **Study: the running timer is the route's one framed block**, a hairline frame on `--surface-1` at radius 14 (the plan panel's recipe), because it is the focal element. Starting a session and the history are flush.
 - **Polls: each poll is a radius-14 hairline tile**, not a flush row, because it carries option buttons and vote controls. Study zones are a flush list with quiet row actions, and New study zone sits in `PageHeader` beside the settings gear.
 - **Denied copy names the role, never the permission key**: "Your role can't see every poll.", not `polls:view_all`.
-- **Dates in the house shapes**: `@repo/formatting`'s display helpers ("Fri, Nov 6 · 5:00 – 7:00 PM", "Due tomorrow", "Overdue by 2 days"), never a numeric date with seconds. Mobile's event and task rows still format with their own copies, which lack "Yesterday" and the out-of-year year, until they read these (FOLLOWUP_MOBILE_DATES).
+- **Dates in the house shapes**: `@repo/formatting`'s display helpers ("Fri, Nov 6 · 5:00 – 7:00 PM", "Due tomorrow", "Overdue by 2 days"), never a numeric date with seconds. Mobile's event and task rows still format with their own copies, which lack "Yesterday" and the out-of-year year, until they read these ([#3420](https://github.com/pdcarlson/Frapp/issues/3420)).
 
 ### Profile
 

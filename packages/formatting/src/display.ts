@@ -130,7 +130,7 @@ export function formatDayRange(start: unknown, end: unknown): string | null {
  * `"Nov 6 · 5:00 PM"`, and `"Yesterday · 5:00 PM"` for the day before. Mobile's
  * event row (`formatEventRowTime`) has its own copy that lacks the yesterday
  * case and the out-of-year year, so the two differ there until mobile reads
- * this one (FOLLOWUP_MOBILE_DATES).
+ * this one (#3420).
  */
 export function formatRelativeDayTime(
   value: unknown,
@@ -152,7 +152,7 @@ export function formatRelativeDayTime(
  * within the week, `"Due Nov 6"` beyond it, and `"Overdue by 2 days"` once it
  * has passed. Mobile's task subtitle (`formatDueSubtitle`) is a separate copy
  * that leaves the year off a date outside the current one, until mobile reads
- * this one (FOLLOWUP_MOBILE_DATES).
+ * this one (#3420).
  */
 export function formatDueLabel(
   value: unknown,
