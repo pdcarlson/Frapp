@@ -2784,18 +2784,20 @@ alter table public.chat_channels drop constraint if exists chat_channels_dm_two_
 
 * **Migration**: `20261105200000_default_channel_descriptions.sql`
 
-A data-only `update` that wrote a starting `description` into the four default channels where it was blank. No schema changed.
+A data-only `update` that wrote a starting `description` into the four default channels where it was null (never set). No schema changed.
 
-**There is usually nothing to roll back.** Officers can change or clear any description in Chat admin, and the clients treat a blank one as absent. Keep the migration file in the tree whatever else is reverted ([§ 3) Undo one migration](#3-undo-one-migration)). To clear the starting lines anyway, do it in a later forward migration, and match the exact text so an officer's own edit survives:
+**There is usually nothing to roll back.** Officers can change or clear any description in Chat admin, and the clients treat a blank one as absent. Keep the migration file in the tree whatever else is reverted ([§ 3) Undo one migration](#3-undo-one-migration)). To clear the starting lines anyway, do it in a later forward migration, and match the exact text on the same name and type pairs the migration touched, so an officer's own edit survives:
 
 ```sql
 update chat_channels set description = null
-where description in (
-  'The whole chapter. Plans, questions, whatever''s going on.',
-  'News from officers. Everyone gets notified.',
-  'Officer changes to dues, roles and settings, posted automatically.',
-  'Alumni and actives keeping in touch.'
-);
+where (name = 'general' and type = 'PUBLIC'
+       and description = 'The whole chapter. Plans, questions, whatever''s going on.')
+   or (name = 'announcements' and type = 'PUBLIC'
+       and description = 'News from officers. Everyone gets notified.')
+   or (name = 'chapter-audit' and type = 'PUBLIC'
+       and description = 'Officer changes to dues, roles and settings, posted automatically.')
+   or (name = 'alumni' and type = 'ROLE_GATED'
+       and description = 'Alumni and actives keeping in touch.');
 ```
 
 ## Rollback one document row per object (20261104210000)

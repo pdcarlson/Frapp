@@ -92,6 +92,7 @@ function settled(data: unknown) {
     data,
     isPending: false,
     isLoading: false,
+    isSuccess: true,
     isError: false,
     fetchStatus: "idle",
     refetch: vi.fn(),
@@ -444,6 +445,46 @@ describe("ChatAdminPage — opened from a channel start", () => {
       "true",
     );
     expect(document.activeElement).toBe(
+      document.getElementById("ca-description"),
+    );
+  });
+
+  it("waits for the channel list when the page is opened cold", () => {
+    reads.channels = {
+      data: undefined,
+      isPending: true,
+      isLoading: true,
+      isSuccess: false,
+      isError: false,
+      fetchStatus: "fetching",
+      refetch: vi.fn(),
+    };
+    const { rerender } = render(<ChatAdminPage initialChannelId="ch-2" />);
+
+    reads.channels = settled(CHANNELS);
+    rerender(<ChatAdminPage initialChannelId="ch-2" />);
+
+    expect(screen.getByRole("button", { name: /^#exec/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(document.activeElement).toBe(
+      document.getElementById("ca-description"),
+    );
+  });
+
+  it("doesn't take the cursor back to the description on a later pick", () => {
+    const { rerender } = render(<ChatAdminPage initialChannelId="ch-2" />);
+
+    // The opened channel goes away (deleted), so the editor unmounts; the
+    // next pick mounts it afresh.
+    reads.channels = settled(CHANNELS.filter((c) => c.id !== "ch-2"));
+    rerender(<ChatAdminPage initialChannelId="ch-2" />);
+    const general = screen.getByRole("button", { name: /^#general/ });
+    general.focus();
+    fireEvent.click(general);
+
+    expect(document.activeElement).not.toBe(
       document.getElementById("ca-description"),
     );
   });

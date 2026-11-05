@@ -4,11 +4,13 @@ import {
   type ChannelStartType,
 } from "@repo/hooks/channel-start";
 import { SignetTokens } from "@repo/theme/signet";
+import { isDirectChannel } from "@repo/validation";
 import { AuditGlyph } from "@/components/chat/card-glyphs";
 import {
   type ChapterBranding,
   useChapterBranding,
 } from "@/lib/chapter-branding";
+import { initialsFor } from "@/lib/chat/display-name";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 const KNOWN_TYPES: readonly ChannelStartType[] = [
@@ -26,16 +28,17 @@ function startType(type: string): ChannelStartType {
 }
 
 /**
- * The start of a channel's history in the s05 thread (`writing.md` § Chat,
- * Channel start), the same words web draws from `@repo/hooks/channel-start`.
+ * The start of a channel's history in the s05 thread (`writing.md` § Chat
+ * (dashboard), Channel start), the same words web draws from `@repo/hooks/channel-start`.
  *
  * Not an empty state. An empty channel draws it at the bottom, where its first
  * message will land, and a channel with history draws it above the oldest
  * message once nothing earlier is left to load (`ThreadHistoryEdge`).
  *
- * The mark follows the channel list (`channel-row.tsx`): a `#` for a channel,
- * the audit shield for `#chapter-audit`, and the other member's initial for a
- * direct message. Mobile has no Chat admin, so there is no Edit channel here.
+ * The mark is a `#` for a channel and the audit shield for `#chapter-audit`.
+ * A direct message takes the same initials its channel-list row draws
+ * (`initialsFor`, `channel-row.tsx`), so one conversation has one mark.
+ * Mobile has no Chat admin, so there is no Edit channel here.
  */
 export function ChannelStart({
   type,
@@ -56,7 +59,7 @@ export function ChannelStart({
   const styles = createStyles(tokens, brand);
   const kind = startType(type);
   const copy = channelStartCopy({ type: kind, name: displayName, description });
-  const isDirect = kind === "DM" || kind === "GROUP_DM";
+  const isDirect = isDirectChannel({ type: kind });
 
   return (
     <View style={styles.block} accessibilityRole="summary">
@@ -74,7 +77,7 @@ export function ChannelStart({
           />
         ) : (
           <Text style={styles.mark}>
-            {isDirect ? displayName.trim().charAt(0).toUpperCase() || "#" : "#"}
+            {isDirect ? initialsFor(displayName) : "#"}
           </Text>
         )}
       </View>

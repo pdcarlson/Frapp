@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -77,7 +78,7 @@ import {
   isDirectChannel,
   THREAD_HEADER_FALLBACK,
   threadChannel,
-  threadHeaderTitle,
+  threadTitleFor,
 } from "@/lib/chat/channel-list";
 import { ChannelStart } from "@/components/chat/channel-start";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
@@ -223,27 +224,11 @@ export default function ChatThreadScreen() {
   // The cached list is read, not subscribed to: the fallback must not start
   // a list fetch of its own from inside a thread.
   const queryClient = useQueryClient();
-  const headerTitle = useMemo(
-    () =>
-      threadHeaderTitle({
-        row: channelQuery.data,
-        list: queryClient.getQueryData(CHANNEL_LIST_KEY),
-        channelId,
-        viewerId,
-        names: roster.byId,
-        isFetching: channelQuery.isFetching,
-      }),
-    [
-      channelQuery.data,
-      channelQuery.isFetching,
-      queryClient,
-      channelId,
-      viewerId,
-      roster.byId,
-    ],
-  );
-  // The open channel's row, for its description in the header and for the
-  // channel start (`components/chat/channel-start.tsx`).
+  // The open channel's row: the header title, its description, and the
+  // channel start (`components/chat/channel-start.tsx`) all read it.
+  // `isFetching` is a dependency although the resolver doesn't take it: the
+  // list cache is read, not subscribed to, so a read settling is the cue to
+  // look at a list that filled in meanwhile.
   const openChannel = useMemo(
     () =>
       threadChannel({
@@ -253,8 +238,17 @@ export default function ChatThreadScreen() {
         viewerId,
         names: roster.byId,
       }),
-    [channelQuery.data, queryClient, channelId, viewerId, roster.byId],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+    [
+      channelQuery.data,
+      channelQuery.isFetching,
+      queryClient,
+      channelId,
+      viewerId,
+      roster.byId,
+    ],
   );
+  const headerTitle = threadTitleFor(openChannel, channelQuery.isFetching);
   const channelStart = useMemo(
     () =>
       openChannel ? (
@@ -1022,9 +1016,27 @@ export default function ChatThreadScreen() {
             // only messages are being held is not an empty channel, and the
             // notice above is what explains the gap.
             // Not an empty-state card: the channel's start, at the bottom
-            // where its first message will land (`writing.md` § Chat,
-            // Channel start).
-            <View style={styles.channelStartSlot}>{channelStart}</View>
+            // where its first message will land (`writing.md` § Chat
+            // (dashboard), Channel start). It scrolls, so a long description
+            // on a short screen (keyboard up) stays reachable. Until the
+            // channel's row is known there is no name to welcome anyone to:
+            // nothing while it is still being read, then the bare
+            // start-of-history caption if the read found nothing.
+            <ScrollView
+              style={styles.flex}
+              contentContainerStyle={styles.channelStartSlot}
+              keyboardShouldPersistTaps="handled"
+            >
+              {channelStart ??
+                (channelQuery.isFetching ? null : (
+                  <ThreadHistoryEdge
+                    hasOlder={false}
+                    isLoadingOlder={false}
+                    olderError={false}
+                    onLoadOlder={handleLoadOlder}
+                  />
+                ))}
+            </ScrollView>
           ) : (
             // The rows reach the image viewer through this, not through a
             // prop threaded down the row and its body.
@@ -1296,7 +1308,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       color: tokens.color.text.mutedForeground,
     },
     channelStartSlot: {
-      flex: 1,
+      flexGrow: 1,
       justifyContent: "flex-end",
     },
     saveError: {

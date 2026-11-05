@@ -230,8 +230,18 @@ export function threadHeaderTitle(input: {
   /** The single-channel read is fetching right now. */
   isFetching: boolean;
 }): string {
-  const found = threadChannel(input);
-  if (!found) return input.isFetching ? "" : THREAD_HEADER_FALLBACK;
+  return threadTitleFor(threadChannel(input), input.isFetching);
+}
+
+/**
+ * {@link threadHeaderTitle} for a row already resolved with
+ * {@link threadChannel}, so a screen that needs the row too resolves it once.
+ */
+export function threadTitleFor(
+  found: { channel: ChannelSummary; name: string } | null,
+  isFetching: boolean,
+): string {
+  if (!found) return isFetching ? "" : THREAD_HEADER_FALLBACK;
   return isDirectChannel(found.channel) ? found.name : `#${found.name}`;
 }
 

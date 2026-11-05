@@ -206,9 +206,11 @@ export const DEFAULT_SYSTEM_ROLES = [
  *
  * `description` is the line the channel header shows beside the name and the
  * channel start repeats ("Welcome to #general"). Officers edit it in Chat
- * admin. Migration `20261105200000_default_channel_descriptions.sql` writes the
- * same four lines into existing chapters where the field is still blank, so a
- * change here should change there too.
+ * admin. Migration `20261105200000_default_channel_descriptions.sql` wrote the
+ * same four lines into chapters created before they were seeded. Changing one
+ * here only reaches new chapters: to change existing ones, add a new forward
+ * migration (never edit the shipped one), and update the Channel header row in
+ * `spec/ui/design-system/writing.md`.
  */
 export const DEFAULT_CHANNELS = [
   {

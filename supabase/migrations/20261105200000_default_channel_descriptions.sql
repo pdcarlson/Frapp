@@ -8,8 +8,10 @@
 -- these lines from `ChapterService.create`; this fills them in for chapters
 -- created before that.
 --
--- Only blank descriptions are written (null, or empty after trimming), so a
--- description an officer has already typed is never replaced. Only the four
+-- Only a description that was never set (null) is written. Chat admin saves a
+-- cleared description as '', so an officer's text, and an officer's choice to
+-- leave it blank, are both kept. On 2026-11-05 every one of these rows on
+-- frapp-prod and frapp-staging was null. Only the four
 -- seeded names are touched, and only for the channel types they are seeded
 -- with, so a DM or a private channel that happens to share a name is left
 -- alone. Running it twice changes nothing the second time.
@@ -21,7 +23,7 @@ set description = case name
   when 'chapter-audit' then 'Officer changes to dues, roles and settings, posted automatically.'
   when 'alumni' then 'Alumni and actives keeping in touch.'
 end
-where coalesce(btrim(description), '') = ''
+where description is null
   and (
     (name in ('general', 'announcements', 'chapter-audit') and type = 'PUBLIC')
     or (name = 'alumni' and type = 'ROLE_GATED')

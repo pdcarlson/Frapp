@@ -341,21 +341,24 @@ function ChatAdminBody({
   // `?channel=` from the channel start. Applied once, during render rather
   // than in an effect, so the editor's first paint already shows the channel.
   // The description field takes focus as the editor mounts (`autoFocus`), so
-  // the officer lands where the channel start sent them.
+  // the officer lands where the channel start sent them. Any later pick
+  // clears it (`selectChannel`), so the field doesn't take focus again when
+  // the editor remounts.
   const [initialApplied, setInitialApplied] = useState(false);
   const [focusDescription, setFocusDescription] = useState(false);
   if (!initialApplied && initialChannelId) {
     const initial = channels.find((c) => c.id === initialChannelId);
     if (initial) {
       setInitialApplied(true);
-      setFocusDescription(true);
       selectChannel(initial);
+      setFocusDescription(true);
     } else if (channelsQuery.isSuccess) {
       setInitialApplied(true);
     }
   }
 
   function selectChannel(channel: AdminChannel) {
+    setFocusDescription(false);
     setSelectedChannelId(channel.id);
     setNameDraft(channel.name);
     setDescriptionDraft(channel.description ?? "");

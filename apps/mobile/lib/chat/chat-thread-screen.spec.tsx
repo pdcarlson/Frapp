@@ -35,7 +35,11 @@ import {
   NotificationLevelControl,
   NotificationLevelMenu,
 } from "@/components/chat/notification-level-control";
-import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
+import { ChannelStart } from "@/components/chat/channel-start";
+import {
+  HISTORY_START_COPY,
+  ThreadHistoryEdge,
+} from "@/components/chat/thread-history-edge";
 import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
 import { jumpToLatestLabel } from "@/components/chat/jump-to-latest-button";
 import { reactionActionType } from "@repo/chat-core/types";
@@ -247,7 +251,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useChannel: (id: string) =>
     channelRow === "found"
       ? {
-          data: { id, name: "general", can_post: true, is_read_only: false },
+          data: {
+            id,
+            name: "general",
+            type: "PUBLIC",
+            description: "The whole chapter.",
+            can_post: true,
+            is_read_only: false,
+          },
           isFetching: false,
         }
       : // No row and no cached list: a blank title while it is read, then the
@@ -1541,6 +1552,46 @@ describe("chat thread composer placeholder", () => {
     );
     expect(input.props.placeholder).toBe("Message");
     expect(input.props.accessibilityLabel).toBe("Message");
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread channel start", () => {
+  it("shows the channel's description under its name in the header", () => {
+    const tree = render();
+    expect(screenText(tree)).toContain("The whole chapter.");
+    act(() => tree.unmount());
+  });
+
+  it("starts an empty channel with its channel start, in a scrolling slot", () => {
+    channel = channelState({ messages: [], hasOlder: false });
+    const tree = render();
+
+    const start = tree.root.findByType(ChannelStart);
+    expect(start.props).toMatchObject({
+      channelName: "general",
+      description: "The whole chapter.",
+    });
+    expect(start.parent?.type).toBe("ScrollView");
+    act(() => tree.unmount());
+  });
+
+  it("says where the history starts when the channel's row can't be read", () => {
+    channelRow = "missing";
+    channel = channelState({ messages: [], hasOlder: false });
+    const tree = render();
+
+    expect(tree.root.findAllByType(ChannelStart)).toHaveLength(0);
+    expect(screenText(tree)).toContain(HISTORY_START_COPY);
+    act(() => tree.unmount());
+  });
+
+  it("hands the history edge the channel start for the top of a long channel", () => {
+    channel = channelState({ hasOlder: false });
+    const tree = render();
+
+    const edge = lists(tree)[0]!.findByType(ThreadHistoryEdge);
+    expect(edge.props.start).toBeTruthy();
     act(() => tree.unmount());
   });
 });

@@ -235,11 +235,12 @@ interface TimelineHeaderContext {
 
 /**
  * The row above the oldest loaded message: the older-history read in flight,
- * or its failure with a Retry. Nothing otherwise — the day divider under it
- * already says where the history starts, and it also keeps the first row's
- * action bar (centred on the row's top edge) inside the scroller: the oldest
- * loaded row starts a day, and its divider renders in the same item. (A row
- * whose timestamp cannot be read gets no divider, so there the bar clips.)
+ * or its failure with a Retry. Otherwise the channel start, once no older page
+ * is left (`context.start` is unset while one is), and nothing before that.
+ * The oldest loaded row starts a day and its divider renders in the same item,
+ * which keeps the first row's action bar (centred on the row's top edge)
+ * inside the scroller. (A row whose timestamp cannot be read gets no divider,
+ * so there the bar clips.)
  */
 function TimelineHeader({ context }: { context?: TimelineHeaderContext }) {
   if (context?.olderStatus === "loading") {
@@ -817,14 +818,19 @@ export const MessageTimeline = forwardRef<
   }
   if (thread.rows.length === 0) {
     // Counted after the block list, held rows included: a channel whose only
-    // messages are being held is not an empty channel, and saying "Nothing in
-    // this channel yet" over them would be false. `BlockListNotice` above the
-    // timeline says they are held.
+    // messages are being held is not an empty channel, so it gets no channel
+    // start either. `BlockListNotice` above the timeline says they are held.
     if (thread.heldCount > 0) return <div className="h-full" />;
     // Not an empty-state card: the channel's start, at the bottom where its
-    // first message will land (`writing.md` § Chat, Channel start).
+    // first message will land (`writing.md` § Chat (dashboard), Channel start).
+    // The box scrolls and the inner column is at least its height, so a start
+    // taller than a short window is scrolled to, not clipped at the top.
     return (
-      <div className="flex h-full flex-col justify-end">{channelStart}</div>
+      <div className="h-full overflow-y-auto">
+        <div className="flex min-h-full flex-col justify-end">
+          {channelStart}
+        </div>
+      </div>
     );
   }
 

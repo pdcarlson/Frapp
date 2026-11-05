@@ -7,6 +7,7 @@ import {
   channelStartCopy,
   type ChannelStartType,
 } from "@repo/hooks/channel-start";
+import { isDirectChannel } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AuditGlyph, DirectMessageGlyph, LockGlyph } from "./chat-glyphs";
@@ -39,7 +40,7 @@ export function ChannelMark({
 }) {
   if (channel?.name === "chapter-audit")
     return <AuditGlyph className={className} />;
-  if (channel?.type === "DM" || channel?.type === "GROUP_DM")
+  if (channel && isDirectChannel(channel))
     return <DirectMessageGlyph className={className} />;
   if (channel?.type === "PRIVATE" || channel?.type === "ROLE_GATED")
     return <LockGlyph className={className} />;
@@ -51,7 +52,7 @@ export function ChannelMark({
 }
 
 /**
- * The start of a channel's history (`writing.md` § Chat, Channel start).
+ * The start of a channel's history (`writing.md` § Chat (dashboard), Channel start).
  *
  * Not an empty state. An empty channel draws this just above the composer,
  * where its first message will land, and a channel with history draws it
@@ -80,7 +81,7 @@ export function ChannelStart({
     name: displayName,
     description: channel.description,
   });
-  const isDirect = channel.type === "DM" || channel.type === "GROUP_DM";
+  const isDirect = isDirectChannel(channel);
 
   return (
     <section
