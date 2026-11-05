@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { can, canAny } from "@repo/validation";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,15 @@ type Props = {
    * initial load. Once that read has failed the gate says every module is off.
    */
   isModuleEnabled?: (moduleKey: string) => boolean;
+  /**
+   * Act in place instead of navigating. The Chat row on `/chat`'s module face
+   * uses it to slide the channel list back (`nav-face.tsx`): its route is
+   * already open, and a link to `/chat` would drop the `?channel=` a deep link
+   * opened, so it renders as a button with the same geometry.
+   */
+  onSelect?: () => void;
+  /** Trailing marks after the label (an unread dot, a chevron). Expanded rows only. */
+  trailing?: ReactNode;
 };
 
 function isGranted(
@@ -74,7 +84,11 @@ export function isNavItemVisible(
   if (item.module && isModuleEnabled && !isModuleEnabled(item.module)) {
     return false;
   }
-  if (resolved && item.showWhen && !item.showWhen(permissions, isModuleEnabled)) {
+  if (
+    resolved &&
+    item.showWhen &&
+    !item.showWhen(permissions, isModuleEnabled)
+  ) {
     return false;
   }
   return true;
@@ -100,6 +114,8 @@ export function ProtectedNavItem({
   focusClassName,
   isModuleEnabled,
   collapsed = false,
+  onSelect,
+  trailing,
 }: Props) {
   if (!isNavItemVisible(item, permissions, isModuleEnabled)) {
     return null;
@@ -121,6 +137,47 @@ export function ProtectedNavItem({
    * stock-text-on-branded-surface failures (#1150/#1164). Hover skips to
    * `--card`, the board's own hover step.
    */
+  const className = cn(
+    /*
+     * 34px is the board's POINTER geometry. The drawer that renders this
+     * below `lg` is touch-only, and `--touch-min` (44px) is binding on
+     * web as well as mobile (foundations §9) - so the row is 44px until
+     * the desktop breakpoint, then takes the board's density.
+     */
+    "flex min-h-touch items-center rounded-[10px] text-left text-sm transition lg:h-[34px] lg:min-h-0",
+    collapsed ? "w-[34px] justify-center" : "w-full gap-2.5 px-2.5",
+    focusClassName,
+    isActive
+      ? "bg-accent-subtle font-semibold text-accent-text"
+      : "text-muted-foreground hover:bg-card hover:text-foreground",
+  );
+  const content = (
+    <>
+      <item.icon className={iconClassName} active={isActive} />
+      {collapsed ? null : <span className="truncate">{item.label}</span>}
+      {collapsed || !trailing ? null : (
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {trailing}
+        </span>
+      )}
+    </>
+  );
+
+  if (onSelect) {
+    return (
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-current={current}
+        aria-label={collapsed ? item.label : undefined}
+        title={collapsed ? item.label : item.description}
+        className={className}
+      >
+        {content}
+      </button>
+    );
+  }
+
   return (
     <Link
       href={item.href}
@@ -130,25 +187,9 @@ export function ProtectedNavItem({
       // has to come from somewhere other than the text content.
       aria-label={collapsed ? item.label : undefined}
       title={collapsed ? item.label : item.description}
-      className={cn(
-        /*
-         * 34px is the board's POINTER geometry. The drawer that renders this
-         * below `lg` is touch-only, and `--touch-min` (44px) is binding on
-         * web as well as mobile (foundations §9) - so the row is 44px until
-         * the desktop breakpoint, then takes the board's density.
-         */
-        "flex min-h-touch items-center rounded-[10px] text-left text-sm transition lg:h-[34px] lg:min-h-0",
-        collapsed
-          ? "w-[34px] justify-center"
-          : "w-full gap-2.5 px-2.5",
-        focusClassName,
-        isActive
-          ? "bg-accent-subtle font-semibold text-accent-text"
-          : "text-muted-foreground hover:bg-card hover:text-foreground",
-      )}
+      className={className}
     >
-      <item.icon className={iconClassName} active={isActive} />
-      {collapsed ? null : <span className="truncate">{item.label}</span>}
+      {content}
     </Link>
   );
 }
