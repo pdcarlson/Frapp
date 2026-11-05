@@ -403,8 +403,9 @@ export function GeofencesAdminPage() {
   }
 
   /*
-   * `4c` pin 1: the gear sits beside the page title and "shows only for roles
-   * that hold that page's manage permission". "New study zone" sits beside it,
+   * `4c` pin 1: the gear "shows only for roles that hold that page's manage
+   * permission". It sits in the route's `PageActions` row (the title it was
+   * drawn beside is in the top bar now), and "New study zone" sits beside it,
    * so the route has one toolbar row, on the same boolean.
    *
    * **Read through `can()` rather than a second `<Can>`.** The screen-level

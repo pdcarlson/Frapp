@@ -9,6 +9,11 @@ import { cn } from "@/lib/utils";
  * so a route with no actions renders no row at all and its content starts at
  * the top of the pane, and a route with actions keeps only them.
  *
+ * **An empty row collapses** (`empty:hidden`). Most call sites wrap their
+ * controls in a `<Can>`, which renders nothing for a role without the
+ * permission and while permissions load; without the collapse those members
+ * would get a blank 34px band where the title used to be.
+ *
  * Deliberately a server component: it holds no state and nothing here needs the
  * client bundle.
  */
@@ -27,7 +32,7 @@ export function PageActions({ children, className }: PageActionsProps) {
     */
     <div
       className={cn(
-        "flex min-h-[34px] max-w-full flex-wrap items-center justify-end gap-2",
+        "flex min-h-[34px] max-w-full flex-wrap items-center justify-end gap-2 empty:hidden",
         className,
       )}
     >

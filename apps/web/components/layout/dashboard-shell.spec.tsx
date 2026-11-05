@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 
 /*
@@ -72,6 +72,11 @@ vi.mock("@/components/layout/dashboard-notification-drawer", () => ({
 import { DashboardShell } from "./dashboard-shell";
 import { DASHBOARD_SHELL_ATTR } from "@/components/shared/offline-banner-focus";
 
+afterEach(() => {
+  mockPathname.value = "/events";
+  mockPermissions.value = [];
+});
+
 describe("DashboardShell", () => {
   it("hides a switched-off module's row from a member who cannot read chapter config", () => {
     // #1982: the gate used to come from the config read, which errors for
@@ -133,11 +138,11 @@ describe("DashboardShell", () => {
     expect(
       within(banner).queryByRole("link", { name: "Settings" }),
     ).not.toBeInTheDocument();
-    mockPathname.value = "/events";
   });
 
   it("gives a page under Settings its parent as a link back", () => {
     mockPathname.value = "/geofences";
+    mockPermissions.value = ["geofences:manage"];
     render(
       <DashboardShell>
         <p>route content</p>
@@ -150,7 +155,24 @@ describe("DashboardShell", () => {
     expect(
       within(banner).getByRole("link", { name: "Settings" }),
     ).toHaveAttribute("href", "/settings");
-    mockPathname.value = "/events";
+  });
+
+  it("offers no Settings crumb to a member the nav hides Settings from", () => {
+    // The parent follows the Settings row's own gates: a member holding none of
+    // Settings' permissions sees the tool's title, and no door the nav closed.
+    mockPathname.value = "/reports";
+    render(
+      <DashboardShell>
+        <p>route content</p>
+      </DashboardShell>,
+    );
+    const banner = screen.getByRole("banner");
+    expect(within(banner).getByRole("heading", { level: 1 })).toHaveTextContent(
+      "Reports",
+    );
+    expect(
+      within(banner).queryByRole("link", { name: "Settings" }),
+    ).not.toBeInTheDocument();
   });
 
   it("leaves the title cell empty on a route it does not know", () => {
@@ -164,7 +186,46 @@ describe("DashboardShell", () => {
     );
     expect(screen.queryByRole("heading")).not.toBeInTheDocument();
     expect(screen.getByRole("banner")).not.toHaveTextContent("Dashboard");
-    mockPathname.value = "/events";
+  });
+
+  it("hides the title below sm without taking it out of the accessibility tree", () => {
+    // jsdom applies no CSS, so this pins the classes: `sr-only` keeps the h1
+    // in the tree on a phone, where `hidden` (display: none) would drop the
+    // route's only level-1 heading. It sits on the wrapper so `not-sr-only`
+    // cannot undo the h1's own `truncate`.
+    mockPathname.value = "/study";
+    render(
+      <DashboardShell>
+        <p>route content</p>
+      </DashboardShell>,
+    );
+    const h1 = within(screen.getByRole("banner")).getByRole("heading", {
+      level: 1,
+    });
+    const wrapper = h1.parentElement as HTMLElement;
+    expect(wrapper.className).toMatch(/(^|\s)sr-only(\s|$)/);
+    expect(wrapper.className).toMatch(/\bsm:not-sr-only\b/);
+    expect(`${wrapper.className} ${h1.className}`).not.toMatch(
+      /(^|\s)hidden(\s|$)/,
+    );
+    expect(h1.className).toMatch(/\btruncate\b/);
+  });
+
+  it("keeps the find field centered at lg: both side cells flex-1", () => {
+    // The find field is centered only because the two side cells grow equally.
+    // Below sm the left cell is only the drawer trigger, so the field keeps
+    // the rest of a phone-width bar.
+    render(
+      <DashboardShell>
+        <p>route content</p>
+      </DashboardShell>,
+    );
+    const cells = Array.from(screen.getByRole("banner").children);
+    const left = cells[0] as HTMLElement;
+    const right = cells[cells.length - 1] as HTMLElement;
+    expect(left.className).toMatch(/\bsm:flex-1\b/);
+    expect(left.className).toMatch(/\bshrink-0\b/);
+    expect(right.className).toMatch(/\blg:flex-1\b/);
   });
 
   it("advertises no ⌘K affordance", () => {

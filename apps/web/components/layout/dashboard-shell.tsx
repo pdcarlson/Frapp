@@ -18,6 +18,7 @@ import { AccountMenu } from "@/components/layout/account-menu";
 import { persistNavCollapsed } from "@/components/layout/nav-collapse";
 import { isFullBleedRoute } from "@/components/layout/full-bleed-routes";
 import { resolvePageTitle } from "@/components/layout/page-title";
+import { isNavItemVisible } from "@/components/layout/protected-nav-item";
 import { useChapterTheme } from "@/lib/hooks/use-chapter-theme";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard-gate";
@@ -42,10 +43,10 @@ import { cn } from "@/lib/utils";
  *   summoned. The `cmdk` dependency stays: `components/ui/command.tsx` still
  *   serves the chat slash palette and the chapter wizard.
  * - **The page title is the top bar's**, derived from the route by
- *   `page-title.ts` (2026-11-05). It reads the nav rows' own labels, so there
- *   is still no second route-to-title map to drift, and a route it does not
- *   know gets no title rather than a made-up one: the "a route with no nav row
- *   is called Dashboard" defect stays retired.
+ *   `page-title.ts` (2026-11-05). It reads the nav rows' own labels rather
+ *   than keeping a table of its own, and a route it does not know gets no
+ *   title rather than a made-up one: the "a route with no nav row is called
+ *   Dashboard" defect stays retired.
  * - **No account menu in the nav, no subscription card, no BETA row.** Identity
  *   moved to the top-bar avatar; the other two are deleted outright (`1t`).
  *
@@ -71,7 +72,6 @@ export function DashboardShell({
 }: DashboardShellProps) {
   const pathname = usePathname();
   const fullBleed = isFullBleedRoute(pathname);
-  const pageTitle = useMemo(() => resolvePageTitle(pathname), [pathname]);
   // Chapter accent, shell-wide: maps the persisted engine roles onto the
   // semantic tokens signet.css defines. Mounted here (not in ChatProvider) so
   // the nav's active-item tint does not depend on which route is open.
@@ -94,6 +94,15 @@ export function DashboardShell({
   // out during the initial load. Read from the member-readable current chapter,
   // never the officer-only config read (#1982; the hook says why).
   const isModuleEnabled = useChapterModuleGate();
+  // The crumb's parent link follows its nav row's gates, so the top bar never
+  // offers a member the Settings door the nav hides from them.
+  const pageTitle = useMemo(
+    () =>
+      resolvePageTitle(pathname, (item) =>
+        isNavItemVisible(item, permissions, isModuleEnabled),
+      ),
+    [pathname, permissions, isModuleEnabled],
+  );
 
   const { data: notificationsData } = useNotifications();
   const unreadNotifications = useMemo(() => {

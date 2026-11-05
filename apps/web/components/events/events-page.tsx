@@ -27,6 +27,7 @@ import {
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { SectionLabel } from "@/components/shared/section-label";
+import { PageActions } from "@/components/layout/page-actions";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -374,18 +375,18 @@ export function EventsPage() {
         One toolbar row: search, the three filters, the List/Calendar toggle
         and New event, all at the toolbar height (board `1f` pin 2). The
         filters used to sit in a second row and the toggle in a third. The
-        route's title is in the top bar (`top-bar.tsx`), so the row has no
-        heading: search and filters hold the leading edge (`sm:mr-auto`) and
-        the toggle and New event sit at the trailing edge, as every route's
-        actions do (`page-actions.tsx`).
+        route's title is in the top bar (`top-bar.tsx`), so search and filters
+        hold the leading edge (`sm:mr-auto`) and the toggle and New event sit
+        at the trailing edge, as every route's actions do.
 
-        It is its own row rather than `PageActions`, so a phone can reorder
-        it: there the first line keeps the view toggle and New event, and
-        search and the filters drop to their own rows under it. The filters
-        become one strip that scrolls sideways, bleeding to the screen edges,
-        rather than three stacked rows of selects.
+        `PageActions` renders its children as direct flex items, so a phone can
+        reorder them: there the first line keeps the view toggle and New event,
+        and search and the filters drop to their own rows under it
+        (`order-last w-full`). The filters become one strip that scrolls
+        sideways, bleeding to the screen edges, rather than three stacked rows
+        of selects.
       */}
-      <div className="flex min-h-[34px] flex-wrap items-center justify-end gap-x-3 gap-y-2">
+      <PageActions className="gap-x-3 gap-y-2">
         <div className="order-last flex w-full min-w-0 flex-wrap items-center gap-2 sm:order-none sm:mr-auto sm:w-auto">
           <div className="relative w-full sm:w-56">
             <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
@@ -469,7 +470,7 @@ export function EventsPage() {
           <Plus className="h-4 w-4" />
           New event
         </Button>
-      </div>
+      </PageActions>
 
       {/*
         Under the row it explains. Search and the filters stay live: a lapsed

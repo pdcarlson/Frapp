@@ -11,22 +11,24 @@ import { NotificationsGlyph } from "@/components/layout/nav-glyphs";
 import type { PageTitle } from "@/components/layout/page-title";
 
 /**
- * The 48px top bar: find, notifications, Ask, account.
+ * The 48px top bar: page title, find, notifications, Ask, account.
  *
  * Board option `1b`. What it no longer carries, all from the deletion list
- * (`1t`): the breadcrumb, the page `<h1>`, the per-route primary action button,
- * and the "Search (⌘K)" button. The bar shrank 64px to 48px as a result.
+ * (`1t`): the breadcrumb block, the per-route primary action button, and the
+ * "Search (⌘K)" button. The bar shrank 64px to 48px as a result.
  *
  * **The page title is here** (2026-11-05, reversing #2141's "titles not in
- * top bar"). It sits in the left cell at 14/700, which is where the board put
- * it (`1b`) before #2141 moved it into each page's toolbar row; the owner
- * asked for it back up here so every page gets that row's height back. It is
- * the route's only `<h1>`, derived from the route (`page-title.ts`), so it is
- * there on the loading, offline and error paths too. A page under Settings
- * adds its parent as a link and a chevron, "Settings › Study zones"; a
- * top-level route shows its title alone.
+ * top bar" at the owner's request). It sits in the left cell at 14/700, which
+ * is `1f` pin 1 ("Page title in the top bar") before #2141 moved it into each
+ * page's toolbar row; back up here, every page gets that row's height back.
+ * It is the route's only `<h1>`, derived from the route (`page-title.ts`), so
+ * it is there on the loading, offline and error paths too. A page under
+ * Settings adds its parent as a link and a chevron, "Settings › Study zones";
+ * a top-level route shows its title alone. `/chat` shows "Chat" too, which
+ * board `1b` (the chat board) leaves out: one rule for every route beats a
+ * chat exception, and the channel name below stays the thread's own `h2`.
  *
- * The left cell still balances the right one: at `lg` both side cells are
+ * The left cell still balances the right one: from `lg` both side cells are
  * `flex-1`, so the find field is centered in the viewport only because the two
  * side cells are the same width. Dropping either cell's `flex-1` walks the
  * find field off-center as the title or the right cluster changes width. The
@@ -66,9 +68,12 @@ export function TopBar({
         Left cell. Below `lg` it leads with the drawer trigger, which is the
         only way to reach navigation at that width. It carries the page title,
         shown from `sm` up, which truncates before anything else in the bar
-        gives way. It is `flex-1` to balance the right cluster at `lg`.
+        gives way. From `sm` it is `flex-1` and splits the free space with the
+        find field (and balances the right cluster at `lg`); below `sm`, where
+        the title is hidden, it is `shrink-0`, only as wide as the trigger, so
+        the find field keeps the rest of a phone-width bar.
       */}
-      <div className="flex min-w-0 flex-1 basis-0 items-center gap-1.5">
+      <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:flex-1 sm:basis-0">
         <button
           type="button"
           onClick={onOpenMobileNav}
@@ -158,7 +163,9 @@ export function TopBar({
  * 24px inset below it (12 of bar padding plus 12).
  *
  * **Below `sm` it is visually hidden**, and stays the `<h1>` for a screen
- * reader. A 390px bar holds the drawer trigger, the find field and the right
+ * reader. The `sr-only` sits on the wrapper, not the `<h1>`: `not-sr-only`
+ * resets `overflow` and `white-space`, which on the `<h1>` would undo
+ * `truncate` from `sm` up and let a long name wrap the bar. A 390px bar holds the drawer trigger, the find field and the right
  * cluster, and nothing else: sharing it cut the title to "Stud…" and the find
  * field to a bare glyph (measured 2026-11-05). On a phone the drawer marks the
  * open row, and the mobile app, which has its own titles, is the phone surface.
@@ -168,25 +175,25 @@ export function TopBar({
 function TopBarTitle({ pageTitle }: { pageTitle: PageTitle }) {
   const { title, parent } = pageTitle;
   return (
-    <div className="flex min-w-0 items-center gap-1 lg:pl-3">
+    <div className="sr-only flex min-w-0 items-center gap-1 sm:not-sr-only lg:pl-3">
       {parent ? (
         <>
           <Link
             href={parent.href}
             className={cn(
-              "hidden shrink-0 rounded-[6px] px-0.5 text-label font-medium text-muted-foreground transition hover:text-foreground sm:inline",
+              "shrink-0 rounded-[6px] px-0.5 text-label font-medium text-muted-foreground transition hover:text-foreground",
               FOCUS_RING_SHELL,
             )}
           >
             {parent.label}
           </Link>
           <ChevronRight
-            className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground sm:block"
+            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
             aria-hidden="true"
           />
         </>
       ) : null}
-      <h1 className="sr-only min-w-0 truncate text-label font-bold text-foreground sm:not-sr-only">
+      <h1 className="min-w-0 truncate text-label font-bold text-foreground">
         {title}
       </h1>
     </div>
