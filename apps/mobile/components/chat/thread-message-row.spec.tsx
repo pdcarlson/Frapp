@@ -139,6 +139,7 @@ function renderRow(
     onReload?: (userId: string) => void;
     startsRun?: boolean;
     startsDay?: boolean;
+    roleColorFor?: (userId: string) => string | null;
   } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -151,6 +152,7 @@ function renderRow(
           startsDay={overrides.startsDay ?? false}
           viewerId={VIEWER}
           nameFor={(id) => (id === BLOCKED ? "Blake" : "Casey")}
+          roleColorFor={overrides.roleColorFor}
           replyParent={overrides.replyParent}
           blockState={overrides.blockState ?? READY_WITH_BLOCKED}
           onVote={vi.fn()}
@@ -1192,5 +1194,44 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
       );
       expect(text, kind).toContain("Something happened");
     }
+  });
+});
+
+// #3485: the screen hands the row a role-color resolver, and the row must pass
+// it on to both shapes it draws, a text message and a card.
+describe("the author's role color reaches the author line", () => {
+  const roleColorFor = (id: string) => (id === FRIEND ? "#5CC8F0" : null);
+
+  function authorStyle(tree: ReactTestRenderer): string {
+    const name = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "Casey",
+    );
+    return JSON.stringify(name.props.style);
+  }
+
+  it("paints a text message's author name", () => {
+    const tree = renderRow(
+      { message: message(), visibility: "visible" },
+      { roleColorFor },
+    );
+    expect(authorStyle(tree)).toContain('"color":"#5CC8F0"');
+  });
+
+  it("paints a card's author name", () => {
+    const tree = renderRow(
+      {
+        message: message({
+          kind: "poll",
+          payload: {
+            question: "Formal theme?",
+            options: [{ id: "o1", label: "Masquerade" }],
+          },
+        }),
+        visibility: "visible",
+      },
+      { roleColorFor },
+    );
+    expect(authorStyle(tree)).toContain('"color":"#5CC8F0"');
   });
 });

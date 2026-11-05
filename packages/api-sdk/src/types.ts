@@ -552,7 +552,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Display roster for the chapter — id, name and avatar only */
+        /** Display roster for the chapter — id, name, avatar and role color only */
         get: operations["MemberController_roster_v1"];
         put?: never;
         post?: never;
@@ -3637,13 +3637,21 @@ export interface components {
             name: string;
             permissions: string[];
             display_order?: number;
-            color?: string;
+            /**
+             * @description One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.
+             * @enum {string|null}
+             */
+            color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
         };
         UpdateRoleDto: {
             name?: string;
             permissions?: string[];
             display_order?: number;
-            color?: string;
+            /**
+             * @description One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.
+             * @enum {string|null}
+             */
+            color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
         };
         TransferPresidencyDto: {
             /** Format: uuid */
@@ -3694,6 +3702,8 @@ export interface components {
             /** @description May be an empty string: the column is NOT NULL DEFAULT '', so clients treat empty as unresolved rather than rendering a blank name. */
             display_name: string;
             avatar_url: string | null;
+            /** @description Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it. */
+            role_color: string | null;
         };
         UpdateMemberRolesDto: {
             role_ids: string[];

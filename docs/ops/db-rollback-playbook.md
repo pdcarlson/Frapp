@@ -2780,6 +2780,30 @@ drop index if exists public.chat_channels_dm_pair_key;
 alter table public.chat_channels drop constraint if exists chat_channels_dm_two_members;
 ```
 
+## Rollback the role palette defaults (20261105200000)
+
+* **Migration**: `20261105200000_role_color_palette_defaults.sql`
+
+Rewrites `roles.color` on untouched seeded system roles onto the role palette (#3485). No schema changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Reverted code writes any hex again and paints names plain, and the palette values it finds are valid hexes, so nothing breaks while the rows keep their new colors. To restore the old seeds anyway, do it in a later forward migration, not by hand, and only for rows still on the new defaults:
+
+```sql
+update public.roles as r
+set color = v.old_color
+from (
+  values
+    ('PRESIDENT', '#F2994A', '#FFD700'),
+    ('TREASURER', '#6FD08C', '#10B981'),
+    ('VICE_PRESIDENT', '#8FA8FF', null),
+    ('SECRETARY', '#F47FA4', null),
+    ('ALUMNI', '#A9B4C2', '#6B7280')
+) as v(system_key, new_color, old_color)
+where r.system_key = v.system_key
+  and r.is_system = true
+  and r.color = v.new_color;
+```
+
 ## Rollback one document row per object (20261104210000)
 
 * **Migration**: `20261104210000_chapter_documents_storage_path_key.sql`
