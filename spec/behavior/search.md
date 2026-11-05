@@ -4,7 +4,7 @@ A single search bar accessible from the top of the mobile and web app:
 
 - Searches across: Backwork resources (title, department, course, professor, tags), chat messages (content), events (name, description), and members (name).
 - Results are grouped by domain (Backwork, Chat, Events, Members).
-- All results respect chapter scoping and permission checks. Chat-message results are filtered through the same `canAccessChannel` predicate the chat surface uses ([`chat/README.md`](chat/README.md)); vault content is never indexed ([`vault.md`](vault.md#search-indexing)); the member directory requires `members:view`.
+- All results respect chapter scoping and permission checks. Chat-message results are filtered through the same `canAccessChannel` predicate the chat surface uses ([`chat/README.md`](chat/README.md)); vault content is never indexed ([`vault.md`](vault.md#search-indexing)); the member directory requires `members:view`; backwork hits come back only to a caller holding `backwork:upload` or `backwork:admin`, the same any-of gate as the library itself ([`backwork.md` § Taxonomy Admin](backwork.md#taxonomy-admin)), and are an empty array for anyone else (2026-11-05: before this the source checked nothing, which no client exposed until the web Find dialog listed backwork); event hits pass the same role-targeting filter as `GET /v1/events`.
 - Implementation: Postgres full-text search (`tsvector` / `to_tsquery`) on relevant columns. **All four sources are now on it.** Each matches a `GENERATED ALWAYS ... STORED` tsvector behind a GIN index, queried with `websearch_to_tsquery('english', …)`:
 
   | Source | Column | Covers | Index | Migration |
@@ -34,8 +34,8 @@ alone could not express.
   running the other three would be work no such caller renders.
 
   This saving applies to the **single-channel form only**. A chat caller searching chapter-wide
-  sends no `channelId` and still pays the full four-source fan-out, exactly as the command
-  palette does — there is no source-selection parameter today. Do not read this bullet as
+  sends no `channelId` and still pays the full four-source fan-out, exactly as the web Find
+  dialog does — there is no source-selection parameter today. Do not read this bullet as
   "chat search is cheap"; it is cheap for the default scope and unchanged for the wide one.
 - **The channel is intersected with the caller's accessible-channel set, never trusted.** It is
   the same `accessibleChannelIds` → `canAccessChannel` path the unscoped form uses, so search
