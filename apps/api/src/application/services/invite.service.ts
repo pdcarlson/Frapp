@@ -42,6 +42,7 @@ import {
   chapterTextMark,
   dedupeEmails,
 } from '@repo/validation';
+import { orgHidingGreekLettersIn } from '@repo/org-archetypes';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 
 /**
@@ -53,7 +54,9 @@ export interface InvitePreview {
   university: string;
   /**
    * The chapter's text mark: its short name, else its Greek letters if it
-   * shows them (`chapterTextMark`), else null. Never letters a chapter hides.
+   * shows them (`chapterTextMark`), else null. Never letters a chapter hides,
+   * nor those of an organization that never displays them (FIJI), whatever
+   * the chapter's stored switch says (#3421).
    */
   mark_text: string | null;
   accent_color: string | null;
@@ -354,10 +357,19 @@ export class InviteService {
     ]);
     // A chapter deleted under a live invite: as dead as the link gets.
     if (!chapter) throw new GoneException('Invite not found');
+    // An organization that never displays its letters (FIJI) keeps them off
+    // the card even when the chapter's stored switch was never turned off, as
+    // for one created before its org profile knew to (#3421). The match reads
+    // the organization's name inside the chapter's ("Phi Gamma Delta Tau
+    // Nu"), the override web's nav crest and mobile's Chat home also apply.
+    // Done here rather than on the card so every client gets it.
+    const branding = orgHidingGreekLettersIn(chapter.name)
+      ? { ...chapter.branding, show_greek_letters: false }
+      : chapter.branding;
     return {
       chapter_name: chapter.name,
       university: chapter.university,
-      mark_text: chapterTextMark(chapter.branding)?.text ?? null,
+      mark_text: chapterTextMark(branding)?.text ?? null,
       accent_color: chapter.accent_color,
       invited_by: inviter?.display_name ?? null,
       role: role?.name ?? null,
