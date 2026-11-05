@@ -7,6 +7,7 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   SheetGrabber,
   SheetHeader,
+  SheetScrim,
   useSheetBackgroundStyle,
 } from "@/components/sheet-scaffold";
 import type { StudyZoneModel } from "@/lib/study/zones";
@@ -41,14 +42,15 @@ export const ZonePickerSheet = forwardRef<BottomSheetModal, ZonePickerSheetProps
         snapPoints={SNAP_POINTS}
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
+        backdropComponent={SheetScrim}
       >
         <View style={styles.header}>
           <SheetHeader
             title="Study zone"
             onCancel={() => {
               // `ref` is the caller's; dismissing is theirs to own too, so the
-              // cancel path goes through the same `onSelect`-free close the
-              // backdrop uses.
+              // cancel path goes through the same `onSelect`-free close a tap
+              // on the scrim makes.
               (ref as React.RefObject<BottomSheetModal>)?.current?.dismiss();
             }}
           />

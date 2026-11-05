@@ -1,12 +1,14 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { HistoryRow } from "@/components/history-row";
 import { formatHoursLabel, formatSessionRange } from "@/lib/study/format";
 import type { StudySessionModel } from "@/lib/study/session";
 import { isTerminal } from "@/lib/study/session";
 
 /**
- * One row of s10's session history — zone, when, and how long.
+ * One row of s10's session history — zone, when, and how long, drawn by the
+ * shared `HistoryRow`.
  *
  * The drawn rows all read as clean completions. A real history also contains
  * `EXPIRED` and `LOCATION_INVALID` sessions, which credit **zero** points
@@ -36,48 +38,26 @@ export function SessionRow({ session, zoneName, isLast }: SessionRowProps) {
   const duration = formatHoursLabel(session.totalForegroundMinutes);
 
   return (
-    <View style={[styles.row, isLast ? null : styles.rowDivided]}>
-      <View style={styles.text}>
-        <Text style={styles.name}>{zoneName ?? "Study session"}</Text>
-        {meta.length > 0 ? <Text style={styles.meta}>{meta}</Text> : null}
-      </View>
-      <Text
-        style={[styles.duration, note ? styles.durationMuted : null]}
-        accessibilityLabel={`${duration}${
-          isTerminal(session.status) && note ? `, ${note}` : ""
-        }`}
-      >
-        {duration}
-      </Text>
-    </View>
+    <HistoryRow
+      title={zoneName ?? "Study session"}
+      meta={meta.length > 0 ? meta : null}
+      isLast={isLast}
+      trailing={
+        <Text
+          style={[styles.duration, note ? styles.durationMuted : null]}
+          accessibilityLabel={`${duration}${
+            isTerminal(session.status) && note ? `, ${note}` : ""
+          }`}
+        >
+          {duration}
+        </Text>
+      }
+    />
   );
 }
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    row: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.md,
-      paddingVertical: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-    },
-    rowDivided: {
-      borderBottomWidth: 1,
-      borderBottomColor: tokens.color.border.hairline,
-    },
-    text: {
-      flex: 1,
-    },
-    name: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
-    meta: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      marginTop: 2,
-    },
     duration: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,

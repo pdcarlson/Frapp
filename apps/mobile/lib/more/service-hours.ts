@@ -6,7 +6,11 @@
  * comes back here is already the member's own history — no client-side filter
  * makes that true, and none should pretend to.
  */
-import { formatMinutesRounded, parseBareDateLocalNoon } from "@repo/formatting";
+import {
+  formatMinutesRounded,
+  localIsoDate,
+  parseBareDateLocalNoon,
+} from "@repo/formatting";
 import { metaLine, num, records, str } from "./narrow";
 import { formatHours } from "./profile";
 
@@ -94,34 +98,57 @@ export function summarizeServiceEntries(rows: ServiceEntryRow[]): ServiceSummary
   };
 }
 
+/** The stepper's increment, and its floor: the board steps in half hours. */
+export const DURATION_STEP_MINUTES = 30;
+
+/** Where the s20 stepper starts: one hour. */
+export const DEFAULT_DURATION_MINUTES = 60;
+
 /**
- * Parse an `H:MM` or decimal-hours duration into whole minutes for the s20
- * sheet, or `null` when it is not a duration.
+ * One tap of the s20 duration stepper, clamped to half an hour and a day.
  *
- * Both forms are accepted because members write both — "1:30" and "1.5" are the
- * same shift — and rejecting one of them would be a validation error over
- * nothing. Zero is rejected: a zero-minute entry is not a submission.
- *
- * **A bare number is hours**, so `45` means 45 hours, not 45 minutes. That
- * reading is unavoidable if `2` is to mean two hours, and it is a plausible
- * mistake in a field labelled "How long?" — so the sheet echoes the parsed
- * duration back before submit, and anything over a day is rejected here. The
- * history has no edit or delete affordance, so a wrong entry would otherwise
- * need an officer to reject it.
+ * The stepper replaced a free-text duration field. That field took "2:30" or
+ * "2.5", which on Android meant hunting for the colon on the symbols layer
+ * (`numbers-and-punctuation` is an iOS keyboard), and it read a bare "45" as 45
+ * hours. A stepper needs no keyboard and has no ambiguous input. It costs
+ * quarter-hour precision, which an officer reviewing a shift doesn't need.
  */
-export function parseDurationInput(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return null;
+export function stepDuration(minutes: number, direction: 1 | -1): number {
+  const next = minutes + direction * DURATION_STEP_MINUTES;
+  return Math.min(MAX_DURATION_MINUTES, Math.max(DURATION_STEP_MINUTES, next));
+}
 
-  const inRange = (minutes: number) =>
-    minutes > 0 && minutes <= MAX_DURATION_MINUTES ? minutes : null;
+export interface ServiceDatePreset {
+  /** Days before today: the chip's stable value across a day change. */
+  daysAgo: number;
+  label: string;
+  /** `YYYY-MM-DD`, device-local: the `date` the entry is filed under. */
+  date: string;
+}
 
-  const clock = /^(\d{1,3}):([0-5]\d)$/.exec(trimmed);
-  if (clock) return inRange(Number(clock[1]) * 60 + Number(clock[2]));
+/** How many days the date chips reach, today included. */
+const DATE_PRESET_COUNT = 4;
 
-  // A leading `.` is allowed — `.5` is what a numeric keypad invites.
-  const decimal = /^(?:\d{1,3}(?:\.\d{1,2})?|\.\d{1,2})$/.exec(trimmed);
-  if (decimal) return inRange(Math.round(Number(trimmed) * 60));
-
-  return null;
+/**
+ * The s20 date chips: Today, Yesterday, then the two days before by weekday
+ * ("Tue", "Mon"), so a Saturday shift can still be logged on Monday.
+ *
+ * Backwards only, the mirror of s19's due presets, because a shift is logged
+ * after it happens. Short weekday names keep all four chips on one row at
+ * phone width, where "Wednesday" would wrap it. Counted in calendar days
+ * rather than by subtracting 24 hours, so a daylight-saving change can't skip
+ * or repeat a day.
+ */
+export function serviceDatePresets(now: Date): ServiceDatePreset[] {
+  return Array.from({ length: DATE_PRESET_COUNT }, (_, daysAgo) => {
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    day.setDate(day.getDate() - daysAgo);
+    const label =
+      daysAgo === 0
+        ? "Today"
+        : daysAgo === 1
+          ? "Yesterday"
+          : day.toLocaleDateString(undefined, { weekday: "short" });
+    return { daysAgo, label, date: localIsoDate(day) };
+  });
 }

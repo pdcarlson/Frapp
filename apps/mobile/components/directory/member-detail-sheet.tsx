@@ -26,6 +26,7 @@ import { ErrorState, SkeletonLines } from "@/components/state-block";
 import {
   SheetGrabber,
   SheetHeader,
+  SheetScrim,
   useSheetBackgroundStyle,
 } from "@/components/sheet-scaffold";
 import {
@@ -200,6 +201,7 @@ export const MemberDetailSheet = forwardRef<
       snapPoints={SNAP_POINTS}
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
+      backdropComponent={SheetScrim}
       onDismiss={onDismiss}
     >
       <BottomSheetScrollView

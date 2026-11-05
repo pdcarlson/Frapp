@@ -14,7 +14,7 @@ import {
   useCreateTask,
   useViewerUserId,
 } from "@repo/hooks";
-import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
 import { initialsFor } from "@/lib/more/narrow";
 import { FilterChips } from "@/components/filter-chips";
@@ -22,6 +22,7 @@ import {
   SheetGrabber,
   SheetHeader,
   SheetPrimaryButton,
+  SheetScrim,
   sheetFieldStyles,
   useSheetBackgroundStyle,
 } from "@/components/sheet-scaffold";
@@ -44,9 +45,9 @@ import {
  *
  * Creation is a bottom sheet by rule, not by preference:
  * `spec/ui/mobile/README.md` § Native-feel rules binds "new task" to
- * `@gorhom/bottom-sheet` v5. Mechanics mirror `app/(tabs)/service-hours.tsx`,
- * the sheet C4 landed — `BottomSheetTextInput` throughout, because a plain
- * `TextInput` breaks the sheet's keyboard coordination.
+ * `@gorhom/bottom-sheet` v5. `BottomSheetTextInput` throughout, because a
+ * plain `TextInput` breaks the sheet's keyboard coordination. s20's log sheet
+ * (`components/service-hours/log-hours-sheet.tsx`) is built on the same chrome.
  *
  * ## Two deviations from the drawing, both forced
  *
@@ -58,8 +59,7 @@ import {
  * `box-shadow: 0 0 0 3px rgba(239,182,59,.22)`. React Native has no
  * `box-shadow`, and drop shadows are banned outright by the De-Google
  * guardrails. Rendered instead as a wrapping view carrying `focus.ringWidth` /
- * `focus.ringOpacity` — the first consumer of those tokens, which existed for
- * exactly this and had no caller.
+ * `focus.ringOpacity`, from `sheetFieldStyles` so s20 draws the same ring.
  */
 
 /** A list has no natural height, so the picker snaps rather than sizing to content. */
@@ -196,7 +196,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     }, [reset, dismiss]);
 
     const submit = useCallback(() => {
-      // `canSubmit`, not just `body`, as in `service-hours.tsx`: otherwise
+      // `canSubmit`, not just `body`, as in s20's log sheet: otherwise
       // only the button's `disabled` stands between a refused sheet (or a
       // create already in flight) and another POST.
       if (!body || !canSubmit) return;
@@ -251,6 +251,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         keyboardBehavior="interactive"
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
+        backdropComponent={SheetScrim}
         onDismiss={reset}
       >
         <BottomSheetView style={styles.body}>
@@ -366,6 +367,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         keyboardBehavior="interactive"
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
+        backdropComponent={SheetScrim}
       >
         <BottomSheetFlatList
           data={filteredRoster}
@@ -438,14 +440,8 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       paddingBottom: tokens.spacing.xl,
       gap: tokens.spacing.sm,
     },
-    ring: {
-      borderRadius: tokens.radius.control + tokens.focus.ringWidth,
-      borderWidth: tokens.focus.ringWidth,
-      borderColor: "transparent",
-    },
-    ringActive: {
-      borderColor: tint(brand.accent, tokens.focus.ringOpacity),
-    },
+    ring: fieldStyles.ring,
+    ringActive: fieldStyles.ringActive,
     field: {
       ...fieldStyles.field,
       flexDirection: "row",

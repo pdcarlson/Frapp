@@ -8,6 +8,7 @@ import {
   SheetGrabber,
   SheetHeader,
   SheetPrimaryButton,
+  SheetScrim,
   useSheetBackgroundStyle,
 } from "@/components/sheet-scaffold";
 
@@ -47,6 +48,7 @@ export const LocationPrimerSheet = forwardRef<
       enableDynamicSizing
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
+      backdropComponent={SheetScrim}
     >
       <BottomSheetView style={styles.body}>
         <SheetHeader

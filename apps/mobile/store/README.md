@@ -572,7 +572,7 @@ Where each answer comes from:
   under the Photos or Videos row above. A PDF or Office file still uploads only
   from the web dashboard, since picking one needs `expo-document-picker`, a
   native module no store build carries yet. Backwork has no mobile screen, and
-  proof attachment in `app/(tabs)/service-hours.tsx` still omits its affordance
+  proof attachment in the s20 sheet still omits its affordance
   deliberately, so both stay web-dashboard-only and neither is claimed here as
   shipped.
 - **User ID carries Analytics** because PostHog identifies members with

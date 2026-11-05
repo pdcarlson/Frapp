@@ -5,11 +5,12 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
-import { screenText } from "@/test/screen-text";
+import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
 import { expectViewerScopedReads } from "@/test/service-entry-reads";
+import { serviceDatePresets } from "@/lib/more/service-hours";
 
 /**
  * The s20 "Log service hours" sheet on a subscription refusal (#2410), the
@@ -22,7 +23,8 @@ import { expectViewerScopedReads } from "@/test/service-entry-reads";
  * "try again" copy. The module gate (`@RequireModule('hours')`, #2718) is the
  * other refusal retrying can't win, and gets the same treatment.
  *
- * It renders `app/(tabs)/service-hours.tsx` but lives here: a spec under
+ * It renders `app/(tabs)/service-hours.tsx`, and through it the sheet in
+ * `components/service-hours/log-hours-sheet.tsx`, but lives here: a spec under
  * `app/` ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -70,14 +72,19 @@ const FAILED = {
 const TRY_AGAIN = "That didn't save. Your entry is still here — try again.";
 
 let failure: unknown = REFUSED;
-const mutate = vi.fn(
-  (_body: unknown, options: { onError: (error: unknown) => void }) =>
-    options.onError(failure),
-);
+interface MutateOptions {
+  onSuccess: () => void;
+  onError: (error: unknown) => void;
+}
+const failNow = (_body: unknown, options: MutateOptions) =>
+  options.onError(failure);
+const mutate = vi.fn(failNow);
+let isPending = false;
 
 let viewerUserId: string | null = "user-1";
+let entries: unknown[] = [];
 const useServiceEntries = vi.fn<(...args: unknown[]) => unknown>(() => ({
-  data: [],
+  data: entries,
   isPending: false,
   isError: false,
   isSuccess: true,
@@ -88,7 +95,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useViewerUserId: () => viewerUserId,
   useCurrentUser: () => ({ isError: false }),
   useServiceEntries: (...args: unknown[]) => useServiceEntries(...args),
-  useCreateServiceEntry: () => ({ mutate, isPending: false }),
+  useCreateServiceEntry: () => ({ mutate, isPending }),
 }));
 
 /** `null` online; the offline copy from `lib/connection/state.ts` otherwise. */
@@ -104,6 +111,10 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import ServiceHoursScreen from "@/app/(tabs)/service-hours";
 
+/** Stands in for gorhom's modal instance, so a spec can see `dismiss()`. */
+const dismiss = vi.fn();
+const present = vi.fn();
+
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -111,17 +122,41 @@ function render(): ReactTestRenderer {
       <FrappThemeProvider>
         <ServiceHoursScreen />
       </FrappThemeProvider>,
+      {
+        createNodeMock: (element) =>
+          (element.type as unknown) === "BottomSheetModal"
+            ? { dismiss, present }
+            : null,
+      },
     );
   });
+  // What gorhom reports as `present()` starts bringing the sheet up.
+  act(() => modal(tree).props.onAnimate(-1, 0));
   return tree;
 }
 
-/** The sheet's primary action, the only control carrying `accessibilityState`. */
+const modal = (tree: ReactTestRenderer) =>
+  tree.root.find((node) => (node.type as unknown) === "BottomSheetModal");
+
+const pressable = (tree: ReactTestRenderer, text: string) =>
+  tree.root.find(
+    (node) =>
+      node.type === ("Pressable" as never) && drawnText(node) === text,
+  );
+
+/** The sheet's primary action. */
 const submitButton = (tree: ReactTestRenderer) =>
   tree.root.find(
     (node) =>
       node.type === ("Pressable" as never) &&
-      node.props.accessibilityState !== undefined,
+      /^Submit(ting…| for approval)$/.test(drawnText(node)),
+  );
+
+const stepButton = (tree: ReactTestRenderer, label: string) =>
+  tree.root.find(
+    (node) =>
+      node.type === ("Pressable" as never) &&
+      node.props.accessibilityLabel === label,
   );
 
 const logButton = (tree: ReactTestRenderer) =>
@@ -132,10 +167,12 @@ const logButton = (tree: ReactTestRenderer) =>
   );
 
 function fill(tree: ReactTestRenderer) {
-  const field = (label: string) =>
-    tree.root.find((node) => node.props.accessibilityLabel === label);
-  act(() => field("Service description").props.onChangeText("Food bank"));
-  act(() => field("Duration in hours").props.onChangeText("2:30"));
+  const field = tree.root.find(
+    (node) =>
+      (node.type as unknown) === "BottomSheetTextInput" &&
+      node.props.accessibilityLabel === "Service description",
+  );
+  act(() => field.props.onChangeText("Food bank"));
 }
 
 function submitEntry(tree: ReactTestRenderer) {
@@ -145,7 +182,11 @@ function submitEntry(tree: ReactTestRenderer) {
 }
 
 beforeEach(() => {
-  mutate.mockClear();
+  mutate.mockReset();
+  mutate.mockImplementation(failNow);
+  dismiss.mockReset();
+  isPending = false;
+  entries = [];
   writeBlockedReason = null;
   viewerUserId = "user-1";
 });
@@ -233,15 +274,16 @@ describe("Service hours on a subscription refusal (#2410)", () => {
     act(() => tree.unmount());
   });
 
-  it("clears the refusal when the sheet is opened again", () => {
+  it("clears the refusal once the sheet closes", () => {
     // A tab screen is never unmounted, so without the reset an officer fixing
-    // billing would leave Submit dead until a force-quit.
+    // billing would leave Submit dead until a force-quit. Reopening is the
+    // member's deliberate second try.
     failure = REFUSED;
     const tree = render();
     submitEntry(tree);
     expect(submitButton(tree).props.disabled).toBe(true);
 
-    act(() => logButton(tree).props.onPress());
+    act(() => modal(tree).props.onDismiss());
 
     expect(screenText(tree)).not.toContain(
       SUBSCRIPTION_REFUSAL_COPY.serviceHours,
@@ -269,7 +311,7 @@ describe("Service hours on a module-off refusal (#2718)", () => {
     act(() => tree.unmount());
   });
 
-  it("clears a module-off refusal when the sheet is opened again", () => {
+  it("clears a module-off refusal once the sheet closes", () => {
     // An officer may have turned hours back on since, and reopening is the
     // member's deliberate second try, not a retry in place.
     failure = MODULE_OFF;
@@ -277,7 +319,7 @@ describe("Service hours on a module-off refusal (#2718)", () => {
     submitEntry(tree);
     expect(submitButton(tree).props.disabled).toBe(true);
 
-    act(() => logButton(tree).props.onPress());
+    act(() => modal(tree).props.onDismiss());
 
     expect(screenText(tree)).not.toContain(MODULE_REFUSAL_COPY.serviceHours);
     expect(submitButton(tree).props.disabled).toBe(false);
@@ -321,5 +363,178 @@ describe("Service hours back row (#3022)", () => {
     const tree = render();
     expectBackRow(tree, "More", "/more");
     tree.unmount();
+  });
+});
+
+/**
+ * #26: s20 on the shared sheet chrome, with the board's stepper. The duration
+ * is never typed, so Android's full keyboard never opens for it, and the date
+ * can be a recent day rather than always today.
+ */
+describe("Log service hours sheet", () => {
+  const sent = () =>
+    mutate.mock.calls[0]?.[0] as {
+      date: string;
+      duration_minutes: number;
+      description: string;
+    };
+
+  it("opens from the header's + tile", () => {
+    present.mockClear();
+    const tree = render();
+    act(() => logButton(tree).props.onPress());
+    expect(present).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("dims the screen behind it", () => {
+    const tree = render();
+    expect(modal(tree).props.backdropComponent).toBeDefined();
+    act(() => tree.unmount());
+  });
+
+  it("posts the stepper's duration and the chosen day", () => {
+    const tree = render();
+    fill(tree);
+    // One hour to start; two taps up is two hours, one down is an hour and a half.
+    act(() => stepButton(tree, "Half an hour more").props.onPress());
+    act(() => stepButton(tree, "Half an hour more").props.onPress());
+    act(() => stepButton(tree, "Half an hour less").props.onPress());
+    expect(screenText(tree)).toContain("1.5");
+    act(() => pressable(tree, "Yesterday").props.onPress());
+    act(() => submitButton(tree).props.onPress());
+
+    expect(sent()).toEqual({
+      date: serviceDatePresets(new Date())[1]?.date,
+      duration_minutes: 90,
+      description: "Food bank",
+    });
+    act(() => tree.unmount());
+  });
+
+  it("files today's date unless another day is picked", () => {
+    const tree = render();
+    submitEntry(tree);
+    expect(sent().date).toBe(serviceDatePresets(new Date())[0]?.date);
+    expect(sent().duration_minutes).toBe(60);
+    act(() => tree.unmount());
+  });
+
+  it("stops the stepper at half an hour", () => {
+    const tree = render();
+    act(() => stepButton(tree, "Half an hour less").props.onPress());
+    expect(stepButton(tree, "Half an hour less").props.disabled).toBe(true);
+    expect(stepButton(tree, "Half an hour more").props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("holds Submit until there's a description", () => {
+    const tree = render();
+    expect(submitButton(tree).props.disabled).toBe(true);
+    fill(tree);
+    expect(submitButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("closes and clears the draft when the entry saves", () => {
+    mutate.mockImplementation((_body, options) => options.onSuccess());
+    const tree = render();
+    submitEntry(tree);
+
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    const field = tree.root.find(
+      (node) => node.props.accessibilityLabel === "Service description",
+    );
+    expect(field.props.value).toBe("");
+    act(() => tree.unmount());
+  });
+
+  // gorhom's `dismiss()` on a modal that already closed leaves it stuck
+  // mid-dismiss, and the next `present()` draws nothing (#3405).
+  it("doesn't dismiss again when a save lands after the sheet closed", () => {
+    let succeed = () => {};
+    mutate.mockImplementation((_body, options) => {
+      succeed = options.onSuccess;
+    });
+    const tree = render();
+    submitEntry(tree);
+    act(() => modal(tree).props.onDismiss());
+    act(() => succeed());
+    expect(dismiss).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("leaves a sheet reopened mid-save open when the save lands", () => {
+    let succeed = () => {};
+    mutate.mockImplementation((_body, options) => {
+      succeed = options.onSuccess;
+    });
+    const tree = render();
+    submitEntry(tree);
+    act(() => modal(tree).props.onDismiss());
+    act(() => modal(tree).props.onAnimate(-1, 0)); // reopened
+    act(() => succeed());
+    expect(dismiss).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("sends one entry however often Submit is pressed mid-save", () => {
+    mutate.mockImplementation(() => {});
+    const tree = render();
+    fill(tree);
+    act(() => {
+      submitButton(tree).props.onPress();
+      submitButton(tree).props.onPress();
+    });
+    expect(mutate).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
+/** #33: drawn like Dues and Study, with no narrating meta. */
+describe("Service hours summary and history", () => {
+  const entry = (overrides: Record<string, unknown>) => ({
+    id: "e-1",
+    description: "Food bank shift",
+    status: "APPROVED",
+    duration_minutes: 150,
+    date: "2026-10-27",
+    ...overrides,
+  });
+
+  it("leads with approved hours and counts what is pending", () => {
+    entries = [
+      entry({ id: "a" }),
+      entry({ id: "b", status: "PENDING", duration_minutes: 60 }),
+      entry({ id: "c", status: "PENDING", duration_minutes: 60 }),
+    ];
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain("Approved hours");
+    expect(text).toContain("2.5");
+    expect(text).toContain("2 pending");
+    expect(text).not.toContain("awaiting review");
+    act(() => tree.unmount());
+  });
+
+  it("says nothing about pending when nothing is", () => {
+    entries = [entry({})];
+    const tree = render();
+    expect(screenText(tree)).not.toMatch(/pending|review/i);
+    act(() => tree.unmount());
+  });
+
+  it("labels each history row's status", () => {
+    entries = [
+      entry({ id: "a", status: "APPROVED" }),
+      entry({ id: "b", status: "PENDING" }),
+      entry({ id: "c", status: "REJECTED" }),
+    ];
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain("Approved");
+    expect(text).toContain("Pending");
+    expect(text).toContain("Rejected");
+    act(() => tree.unmount());
   });
 });

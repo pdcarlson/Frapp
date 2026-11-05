@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { formatMinutesRounded } from "@repo/formatting";
 import {
-  parseDurationInput,
+  DURATION_STEP_MINUTES,
+  MAX_DURATION_MINUTES,
   selectServiceEntryRows,
+  serviceDatePresets,
+  stepDuration,
   summarizeServiceEntries,
 } from "./service-hours";
 
@@ -101,41 +104,54 @@ describe("summarizeServiceEntries", () => {
   });
 });
 
-describe("parseDurationInput", () => {
-  // Both forms because members write both — "1:30" and "1.5" are the same shift,
-  // and rejecting one would be a validation error over nothing.
-  it("accepts clock and decimal forms alike", () => {
-    expect(parseDurationInput("1:30")).toBe(90);
-    expect(parseDurationInput("1.5")).toBe(90);
-    expect(parseDurationInput("2")).toBe(120);
-    expect(parseDurationInput("0:45")).toBe(45);
-    expect(parseDurationInput(" 3 ")).toBe(180);
+describe("stepDuration", () => {
+  it("steps in half hours", () => {
+    expect(stepDuration(60, 1)).toBe(90);
+    expect(stepDuration(90, -1)).toBe(60);
   });
 
-  it("accepts a bare decimal point, which a numeric keypad invites", () => {
-    expect(parseDurationInput(".5")).toBe(30);
+  // A zero-minute entry is not a submission, and a single shift longer than a
+  // day is a slip of the thumb, not a shift.
+  it("stops at half an hour and at a day", () => {
+    expect(stepDuration(DURATION_STEP_MINUTES, -1)).toBe(DURATION_STEP_MINUTES);
+    expect(stepDuration(MAX_DURATION_MINUTES, 1)).toBe(MAX_DURATION_MINUTES);
+  });
+});
+
+describe("serviceDatePresets", () => {
+  // Thursday 2026-11-05, mid-afternoon local time.
+  const now = new Date(2026, 10, 5, 15, 30);
+
+  it("offers today, yesterday and the two days before, newest first", () => {
+    expect(serviceDatePresets(now)).toEqual([
+      { daysAgo: 0, label: "Today", date: "2026-11-05" },
+      { daysAgo: 1, label: "Yesterday", date: "2026-11-04" },
+      {
+        daysAgo: 2,
+        label: new Date(2026, 10, 3).toLocaleDateString(undefined, {
+          weekday: "short",
+        }),
+        date: "2026-11-03",
+      },
+      {
+        daysAgo: 3,
+        label: new Date(2026, 10, 2).toLocaleDateString(undefined, {
+          weekday: "short",
+        }),
+        date: "2026-11-02",
+      },
+    ]);
   });
 
-  it("rejects anything that is not a duration", () => {
-    expect(parseDurationInput("")).toBeNull();
-    expect(parseDurationInput("an hour")).toBeNull();
-    expect(parseDurationInput("1:60")).toBeNull();
-    expect(parseDurationInput("-1")).toBeNull();
-  });
-
-  // A bare number reads as hours, so "45" — a plausible way to mean 45 minutes
-  // — would otherwise log 45 hours against a member with no way to correct it.
-  it("rejects a shift longer than a day", () => {
-    expect(parseDurationInput("45")).toBeNull();
-    expect(parseDurationInput("25:00")).toBeNull();
-    expect(parseDurationInput("24")).toBe(1440);
-    expect(parseDurationInput("23:59")).toBe(1439);
-  });
-
-  // A zero-minute entry is not a submission — the sheet should stay blocked
-  // rather than POST something the reviewer has to reject.
-  it("rejects zero", () => {
-    expect(parseDurationInput("0")).toBeNull();
-    expect(parseDurationInput("0:00")).toBeNull();
+  it("crosses a month boundary by calendar day", () => {
+    const dates = serviceDatePresets(new Date(2026, 2, 1, 0, 5)).map(
+      (preset) => preset.date,
+    );
+    expect(dates).toEqual([
+      "2026-03-01",
+      "2026-02-28",
+      "2026-02-27",
+      "2026-02-26",
+    ]);
   });
 });
