@@ -22,7 +22,7 @@ import {
 } from "@repo/hooks";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -37,16 +37,10 @@ import { AttendancePanel } from "@/components/events/attendance-panel";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { formatDayTimeRange } from "@repo/formatting";
 import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
-import { cn, downloadBlob, getErrorMessage } from "@/lib/utils";
+import { downloadBlob, getErrorMessage } from "@/lib/utils";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 
 type EventRecord = Record<string, unknown>;
-
-/**
- * A header icon action: the image viewer's control size, 36 under a mouse and
- * the 44 touch floor under a finger (components.md §2).
- */
-const HEADER_ACTION = "size-9 pointer-coarse:size-11";
 
 type EventDetailSheetProps = {
   open: boolean;
@@ -259,7 +253,8 @@ export function EventDetailSheet({
           the image viewer's are (components.md § Chrome weight). They were
           three full-width worded buttons opening the body, which made the
           first thing in an event's details a toolbar. The words live on as
-          each control's accessible name and tooltip. `right-12` clears the
+          each control's accessible name and tooltip (`IconButton`, components.md
+          § Icon-only actions). `right-12` clears the
           close button `SheetContent` draws at `right-4`, and the title's
           right padding clears both, plus 8px: the icons' left edge sits
           180px from the sheet's edge under a finger (156px under a mouse),
@@ -271,12 +266,8 @@ export function EventDetailSheet({
           <SheetTitle>{eventName}</SheetTitle>
         </SheetHeader>
         <div className="absolute right-12 top-2.5 flex items-center">
-          <Button
-            variant="quiet"
-            size="icon"
-            className={HEADER_ACTION}
-            aria-label="Add to calendar"
-            title="Add to calendar"
+          <IconButton
+            label="Add to calendar"
             disabled={!canMutate || downloadIcsMutation.isPending}
             onClick={handleAddToCalendar}
           >
@@ -285,28 +276,21 @@ export function EventDetailSheet({
             ) : (
               <CalendarPlus aria-hidden="true" />
             )}
-          </Button>
-          <Button
-            variant="quiet"
-            size="icon"
-            className={HEADER_ACTION}
-            aria-label="Edit event"
+          </IconButton>
+          <IconButton
+            label="Edit event"
             {...editControl}
-            title={editControl.title ?? "Edit event"}
             onClick={() => {
               if (!resolvedEvent) return;
               onRequestEdit(resolvedEvent);
             }}
           >
             <Pencil aria-hidden="true" />
-          </Button>
-          <Button
-            variant="quiet"
-            size="icon"
-            className={cn(HEADER_ACTION, "hover:text-destructive-text")}
-            aria-label="Delete event"
+          </IconButton>
+          <IconButton
+            label="Delete event"
+            className="hover:text-destructive-text"
             {...deleteControl}
-            title={deleteControl.title ?? "Delete event"}
             onClick={handleDelete}
           >
             {deleteEventMutation.isPending ? (
@@ -314,7 +298,7 @@ export function EventDetailSheet({
             ) : (
               <Trash2 aria-hidden="true" />
             )}
-          </Button>
+          </IconButton>
         </div>
 
         {usingPreviewData ? (

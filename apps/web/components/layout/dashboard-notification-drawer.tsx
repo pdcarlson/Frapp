@@ -10,6 +10,7 @@ import {
   useNotifications,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import {
   Sheet,
@@ -170,17 +171,13 @@ export function DashboardNotificationDrawer({
           <SheetTitle>Notifications</SheetTitle>
         </SheetHeader>
         <div className="absolute right-12 top-2.5 flex items-center">
-          <Button
-            variant="quiet"
-            size="icon"
-            className="size-9 pointer-coarse:size-11"
-            aria-label="Mark all read"
-            title="Mark all read"
+          <IconButton
+            label="Mark all read"
             disabled={unreadCount === 0 || markRead.isPending}
             onClick={() => void markAllRead()}
           >
             <CheckCheck aria-hidden="true" />
-          </Button>
+          </IconButton>
         </div>
 
         <div className="-mx-3 flex-1 overflow-y-auto px-3">
