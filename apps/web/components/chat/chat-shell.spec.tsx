@@ -1880,7 +1880,12 @@ describe("ChatShell channel description and start", () => {
     render(<ChatShell initialChannelId="chan-general" />);
 
     const lines = await screen.findAllByText("The whole chapter.");
-    expect(lines.some((line) => line.closest("header") !== null)).toBe(true);
+    const header = lines
+      .map((line) => line.closest("header"))
+      .find((found) => found !== null)!;
+    expect(header).toBeTruthy();
+    // The channel name is the thread's own h2, so the start's h3 sits under it.
+    expect(within(header).getByRole("heading", { level: 2 })).toBeInTheDocument();
     expect(
       within(screen.getByTestId("channel-start")).getByRole("heading", {
         level: 3,
