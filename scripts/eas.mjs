@@ -41,6 +41,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, w
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
+import { prepareUpdate, uploadSourceMaps } from "./eas-update.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 export const MOBILE_BUILD_WORKFLOW = path.join(ROOT, ".github", "workflows", "_mobile-build.yml");
@@ -315,19 +316,52 @@ export function install(
   return easBin(dir, pin.version);
 }
 
-/** Run eas with `argv` in apps/mobile, installing the pin first if this machine lacks it. */
-export function main(argv, { pin = readEasCliPin(), cacheRoot = CACHE_ROOT, spawn = spawnSync, installer = install } = {}) {
+/**
+ * Run eas with `argv` in apps/mobile, installing the pin first if this machine lacks it.
+ *
+ * `update` (an OTA publish) goes through `scripts/eas-update.mjs` first, which refuses an unsafe
+ * publish and shapes the arguments and env eas-cli gets (#3472). Other commands, including the
+ * `update:*` ones that publish nothing new, pass straight through.
+ */
+export function main(
+  argv,
+  {
+    pin = readEasCliPin(),
+    cacheRoot = CACHE_ROOT,
+    spawn = spawnSync,
+    installer = install,
+    guardUpdate = prepareUpdate,
+    afterUpdate = uploadSourceMaps,
+  } = {},
+) {
+  let args = argv;
+  let env = process.env;
+  let publishedProduction = false;
+  if (argv[0] === "update") {
+    const guard = guardUpdate(argv.slice(1));
+    if (!guard.ok) {
+      log("ERROR: refusing to publish this update:");
+      for (const e of guard.errors) log(`  - ${e}`);
+      log("How the by-hand OTA path works: docs/ops/deployment/mobile.md § 6.7.");
+      return 1;
+    }
+    for (const n of guard.notes) log(n);
+    args = ["update", ...guard.args];
+    env = guard.env;
+    publishedProduction = guard.profileName === "production";
+  }
   const bin = easBin(pinDir(pin, cacheRoot), pin.version) ?? installer(pin, { cacheRoot, spawn });
   if (!bin) return 1;
   if (!existsSync(MOBILE_DIR)) {
     log(`ERROR: ${MOBILE_DIR} is missing, so eas has no project to run against.`);
     return 1;
   }
-  const result = spawn(process.execPath, [bin, ...argv], { cwd: MOBILE_DIR, stdio: "inherit" });
+  const result = spawn(process.execPath, [bin, ...args], { cwd: MOBILE_DIR, stdio: "inherit", env });
   if (result.error) {
     log(`ERROR: could not start eas: ${result.error.message}`);
     return 1;
   }
+  if (result.status === 0 && publishedProduction) afterUpdate({ env, log });
   return result.status ?? 1;
 }
 

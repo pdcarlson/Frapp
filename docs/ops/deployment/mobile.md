@@ -461,4 +461,61 @@ to its deadline.
 laptop too; after a bump, or when a run disagrees, re-check it against
 `npm run eas -- submit --help`.
 
+### 6.7 OTA updates (by hand)
+
+A JS-only fix can reach installed beta builds as an over-the-air update instead of a store build.
+There is no publishing pipeline yet (#2511 owns CI publishing, a staging app variant and staged
+rollout). Until then, a person publishes from a laptop, and only through the guard:
+
+```bash
+# From the repo root, on main and up to date, after `npm ci`:
+git switch main && git pull && npm ci
+npm run eas -- update --channel production --message "<what changed, for the EAS dashboard>"
+```
+
+`npm run eas -- update` runs [`scripts/eas-update.mjs`](../../../scripts/eas-update.mjs) before
+eas-cli, and refuses to publish when any check fails. It names what to fix. The checks fix four
+traps a bare `eas update` falls into (eas-cli 24.8.0 source, read 2026-11-05, #3472):
+
+- **The build `env` in `eas.json`.** `eas update` reads only EAS environment variables, so
+  `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_SENTRY_ENVIRONMENT` would fall back to
+  `http://localhost:3001` and `development`. The guard passes `--environment` for the channel's
+  build profile and adds that profile's `env`. It also drops every `EXPO_PUBLIC_*` your shell
+  holds, so nothing local is inlined. An EAS variable still wins over both for any name it
+  defines.
+- **The production fences.** `app.config.js` reads `FRAPP_EAS_UPDATE_PROFILE`, which the guard
+  sets, so the API, Supabase, app URL and Ask fences run as they would for a store build. A
+  production update also needs `EXPO_PUBLIC_SENTRY_DSN`. A local run loads only EAS variables whose
+  visibility is Plain text or Sensitive, never Secret, so keep the § 6.3 variables Plain text.
+- **How far an update reaches.** `runtimeVersion` uses the `appVersion` policy, so an update
+  reaches every installed build whose `expo.version` matches, on that channel. If native code
+  changed since one of those builds, the update calls a module the binary lacks, and the app
+  crashes at launch. For `production`, the guard reads every store build of the current
+  `expo.version` from `apps/mobile/store/shipped-builds.json`. It refuses unless `app.json`,
+  `app.config.js` and every native package's lockfile version match that build's commit. When it
+  refuses, the fix is the "Native changes" rule in
+  [`spec/environments/README.md` § Mobile (EAS)](../../../spec/environments/README.md#mobile-eas):
+  bump `expo.version` and ship a store build (§ 6.6). The new version starts a runtime that the
+  next updates can reach.
+- **What gets published.** For `production`, the tree must be clean and `HEAD` must already be on
+  `origin/main`. `--branch`, `--auto`, `--skip-bundler` and `--input-dir` are refused, because each
+  publishes somewhere other than the channel, or a bundle the guard didn't shape.
+
+**Source maps.** After a production publish, the guard uploads the bundle's source maps to Sentry
+(`sentry-expo-upload-sourcemaps dist`) when `SENTRY_AUTH_TOKEN` is set in your shell. The EAS
+variable of that name is Secret and never reaches a local run. Without it, the update is still
+live and its errors still reach Sentry, but with minified stack traces, and the guard prints the
+command to run later. Never pass the token as a command-line argument (the note at the top of § 6).
+
+**Check it landed.** `npm run eas -- update:list --branch production` shows the new group. Open
+the app twice: the first launch downloads the update, the second runs it. Sentry events from the
+update carry the commit as the `git_sha` tag, and the `production` environment.
+
+**Rolling back.** `npm run eas -- update:roll-back-to-embedded --channel production` (or
+`update:republish` of an earlier group) passes through without the guard, because it publishes
+no new bundle. Read its `--help` first; eas-cli's rollback flags change between versions.
+
+The `preview` and `development` channels go through the same argument and env handling. There
+are no store-build records for those channels, so the native check is skipped there.
+
 ---
