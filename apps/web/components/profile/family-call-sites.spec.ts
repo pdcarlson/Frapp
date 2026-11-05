@@ -48,6 +48,10 @@ const FAMILY = [
   "components/auth/auth-screen.tsx",
   "components/auth/auth-frame.tsx",
   "components/auth/sign-in-screen.tsx",
+  // Split out of the two forms when they were compressed (2026-11-05).
+  "components/auth/auth-mode-toggle.tsx",
+  "components/auth/floating-field.tsx",
+  "components/auth/oauth-buttons.tsx",
   "components/auth/chapter-showcase.tsx",
   "components/auth/signet-mark.tsx",
   "components/profile/profile-panel.tsx",
@@ -213,6 +217,9 @@ describe("the accent slot never paints a pre-auth screen", () => {
     "components/auth/auth-screen.tsx",
     "components/auth/auth-frame.tsx",
     "components/auth/sign-in-screen.tsx",
+    "components/auth/auth-mode-toggle.tsx",
+    "components/auth/floating-field.tsx",
+    "components/auth/oauth-buttons.tsx",
   ] as const;
 
   it.each(PRE_AUTH)("%s paints no bare accent-slot class", (file) => {
