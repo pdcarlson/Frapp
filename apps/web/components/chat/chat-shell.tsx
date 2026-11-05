@@ -40,6 +40,7 @@ import {
   useSetSidebarFilter,
   useSetSidebarSectionCollapsed,
   useSidebarPreferences,
+  landingChannelId,
 } from "@repo/hooks";
 import { can, isAnnouncementChannel } from "@repo/validation";
 import { ChevronLeft, X } from "lucide-react";
@@ -54,7 +55,7 @@ import {
   useMaskedRefresh,
   useThreadBlockList,
 } from "@/lib/chat/use-thread-block-list";
-import { coldLoadDefaultChannelId } from "@/lib/chat/default-channel";
+import { readLastChannel, writeLastChannel } from "@/lib/chat/last-channel";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
@@ -497,6 +498,13 @@ export function ChatShell({
     !channels.some(
       (ch) => ch.id === initialChannelId || ch.name === initialChannelId,
     );
+  // Where this browser last left Chat in this chapter. Read once per member
+  // and chapter: after that the selection carries the open channel, and the
+  // write below keeps the stored value current.
+  const lastChannelId = useMemo(
+    () => readLastChannel(userId, activeChapterId),
+    [userId, activeChapterId],
+  );
   const activeChannelId = useMemo(() => {
     if (requestedChannelMissing) return null;
     if (
@@ -508,8 +516,13 @@ export function ChatShell({
     if (channels.length === 0) return null;
     // Shared with the first-chunk cache, which pins this channel's tail against
     // eviction — the two rules have to be one rule or the cache misses here.
-    return coldLoadDefaultChannelId(channels);
-  }, [selectedChannelId, channels, requestedChannelMissing]);
+    return landingChannelId(channels, lastChannelId);
+  }, [selectedChannelId, channels, requestedChannelMissing, lastChannelId]);
+  useEffect(() => {
+    if (activeChannelId) {
+      writeLastChannel(userId, activeChapterId, activeChannelId);
+    }
+  }, [activeChannelId, userId, activeChapterId]);
 
   const activeChannel = useMemo(
     () => channels.find((ch) => ch.id === activeChannelId) ?? null,

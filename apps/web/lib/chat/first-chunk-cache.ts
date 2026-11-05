@@ -134,11 +134,16 @@
  */
 
 import Dexie, { type Table } from "dexie";
-import { toRawRow, type ChatMessage, type RawChatMessage } from "@repo/chat-core/types";
+import {
+  toRawRow,
+  type ChatMessage,
+  type RawChatMessage,
+} from "@repo/chat-core/types";
 // Type-only: erased at compile time, so the channel rail's component graph is
 // not on this module's runtime import graph.
 import type { ChatChannel } from "@/components/chat/channel-list";
-import { coldLoadDefaultChannelId } from "./default-channel";
+import { landingChannelId } from "@repo/hooks";
+import { readLastChannel } from "./last-channel";
 import { FIRST_CHUNK_DB_NAME } from "./first-chunk-wipe";
 // Type-only: the shared scope definition, erased at compile time.
 import type { ChatScope } from "./chat-scope";
@@ -268,7 +273,8 @@ export interface CachedBlockFloor {
 }
 
 /** A {@link CachedBlockFloor} with the scope it was written under. */
-export interface CachedBlockFloorRow extends CachedBlockFloor, FirstChunkScope {}
+export interface CachedBlockFloorRow
+  extends CachedBlockFloor, FirstChunkScope {}
 
 /**
  * The viewer's `users.id` under one scope.
@@ -319,7 +325,8 @@ class ChatReadCacheDB extends Dexie {
     */
     this.version(1).stores({
       channelLists: "[userId+chapterId]",
-      channelTails: "[userId+chapterId+channelId], [userId+chapterId], cachedAt",
+      channelTails:
+        "[userId+chapterId+channelId], [userId+chapterId], cachedAt",
     });
     /*
       v2 adds `viewerIds` and changes nothing that exists.
@@ -516,13 +523,13 @@ export async function readFirstChunk(
         like the viewer id, its whole key is the scope.
       */
       blockFloor: scopeRow?.blockFloor
-          ? {
-              userId: scopeRow.userId,
-              chapterId: scopeRow.chapterId,
-              ids: scopeRow.blockFloor.ids,
-              readAt: scopeRow.blockFloor.readAt,
-            }
-          : null,
+        ? {
+            userId: scopeRow.userId,
+            chapterId: scopeRow.chapterId,
+            ids: scopeRow.blockFloor.ids,
+            readAt: scopeRow.blockFloor.readAt,
+          }
+        : null,
     };
   } catch {
     return EMPTY_CHUNK;
@@ -686,9 +693,16 @@ async function evictOldestTails(
     channels makes `#general` the oldest tail and loses it, and their next
     reload goes straight to the one channel with nothing cached. Pinning it
     costs one slot and covers the commonest cold load there is.
-    `default-channel.ts` holds the rule both sides read.
+    `landingChannelId` in `@repo/hooks` holds the rule both sides read; it
+    starts from the member's last channel, which recency would keep anyway,
+    and falls back to that fixed default.
   */
-  const pinned = list ? coldLoadDefaultChannelId(list.channels) : null;
+  const pinned = list
+    ? landingChannelId(
+        list.channels,
+        readLastChannel(scope.userId, scope.chapterId),
+      )
+    : null;
   const evictable = tails
     .filter((row) => row.channelId !== pinned)
     .sort((a, b) => a.cachedAt - b.cachedAt);

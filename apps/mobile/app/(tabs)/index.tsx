@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -21,6 +21,8 @@ import {
   useCategories,
   useChannelNotificationPreferences,
   useChannelUnreadCounts,
+  lastChannelLandingId,
+  useActiveChapterId,
   useGetOrCreateDm,
   useChannels,
   useChapterRoster,
@@ -70,6 +72,7 @@ import {
   type ChannelSummary,
 } from "@/lib/chat/channel-list";
 import { confirmHideConversation } from "@/lib/chat/hide-conversation-prompt";
+import { claimChatLaunch, readLastChannel } from "@/lib/chat/last-channel";
 import { openChannelRowActions } from "@/lib/chat/channel-row-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -224,6 +227,30 @@ export default function ChatHomeScreen() {
     viewerId,
     memberNames,
   ]);
+
+  /*
+    Launch opens the last channel the member was in, the way Discord does
+    (owner, 2026-11-05). Once per app process, only once the list has
+    answered, so a channel that was deleted or is no longer visible falls
+    through to this list instead of a thread that cannot load. A notification
+    tap that launched the app goes where it points instead
+    (`lib/chat/last-channel.ts`). Back from the thread returns here.
+  */
+  const chapterId = useActiveChapterId();
+  const listAnswered = channelsQuery.isSuccess;
+  useEffect(() => {
+    if (!listAnswered || !viewerId) return;
+    // No cancellation on cleanup: the claim is spent either way, and a
+    // cancelled read would lose the jump for good (Strict Mode re-runs this).
+    if (!claimChatLaunch()) return;
+    void readLastChannel(viewerId, chapterId).then((stored) => {
+      const target = lastChannelLandingId(allChannels, stored);
+      if (target) openChannel(target);
+    });
+    // Launch-only: `claimChatLaunch` makes later runs no-ops, so the list
+    // changing afterwards never re-opens anything.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listAnswered, viewerId]);
 
   function openChannel(channelId: string) {
     // Object form, because the route takes a param. Note this is invisible to
