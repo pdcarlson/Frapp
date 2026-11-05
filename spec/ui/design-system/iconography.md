@@ -137,9 +137,12 @@ duotone. Interim rules:
   set (§1.1). Ionicons remains the interim pack for
   in-screen icons until each screen is reskinned.
 - Do not mix icon packs within a single surface. The §1 stroke recipe and the
-  §1.1 nav set count as one Signet family for this rule, but a row or a list
-  should not mix them: a glyph drawn beside a nav glyph takes the nav set
-  (the folder rail, the event schedule row, invite and profile, §6.2.3–§6.2.7).
+  §1.1 nav set count as one Signet family for this rule, and the target is a
+  single family: a glyph drawn in the same list as a nav glyph takes the nav
+  set (the folder rail, the event schedule rows, invite and profile,
+  §6.2.3–§6.2.7). The rest of the stroke-recipe glyphs, `SearchGlyph` in the
+  toolbars among them, move over under
+  [#3491](https://github.com/pdcarlson/Frapp/issues/3491).
 - Surfaces built or rebuilt under the Signet reskin use the duotone recipe
   (§1); legacy surfaces keep their pack until reskinned.
 - Note the interim outline/fill pairs below are a *deliberate* violation of §1
@@ -223,7 +226,7 @@ it.
 | Event card | `EventsGlyph` (the Events tab's) | `components/tab-glyphs.tsx` |
 | Task card | `TasksGlyph` (the Tasks tab's) | `components/tab-glyphs.tsx` |
 | Points card | `PointsGlyph` (the nav set's trophy, §1.1) | `components/chat/card-glyphs.tsx` |
-| Hours card | `ServiceHoursGlyph` (the nav set's hand-heart, as the More hub draws it) | `components/chat/card-glyphs.tsx` |
+| Hours card | `ServiceHoursGlyph` (the nav set's hand-heart, the More hub's shape) | `components/chat/card-glyphs.tsx` |
 | Recruitment candidate card | `RushGlyph` (funnel, inner line stroke-only; the module catalog's `funnel`) | `components/chat/card-glyphs.tsx` |
 | Announcement card | `AnnouncementGlyph` (megaphone, sound arc stroke-only) | `components/chat/card-glyphs.tsx` |
 | `#chapter-audit` card, neutral | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |
@@ -352,12 +355,12 @@ Three things this table deliberately does not contain:
 
 ### 6.2.3 Directory & Finance (Signet duotone)
 
-Since the #920 Directory & Finance slice these four families draw the duotone
-recipe (§1). The glyphs live in
+Since the #920 Directory & Finance slice these four families draw Signet
+glyphs: the nav set (§1.1) for the re-exports and `InviteGlyph`, the §1 stroke
+recipe for the points glyphs and search. The glyphs live in
 [`apps/web/components/members/directory-glyphs.tsx`](../../../apps/web/components/members/directory-glyphs.tsx)
 and [`apps/web/components/points/points-glyphs.tsx`](../../../apps/web/components/points/points-glyphs.tsx),
-both composing the shared recipe module and re-exporting the shell's
-silhouettes rather than redrawing them. Rendered at 20px in card, dialog and
+both re-exporting the shell's silhouettes rather than redrawing them. Rendered at 20px in card, dialog and
 sheet titles, 16px in table cells, and 14–16px as a badge companion (§2).
 Inside a `Button` they render at 16 whatever the call site asks for, because
 `buttonVariants` pins `[&_svg]:size-4` — which is also what keeps the required
@@ -422,8 +425,9 @@ four and is corrected here rather than left drifting):
 
 ### 6.2.4 Chapter Ops (Signet duotone)
 
-Since the #920 Chapter Ops slice these five families draw the duotone recipe
-(§1). The glyphs live in
+Since the #920 Chapter Ops slice these five families draw Signet glyphs, all
+from the nav set (§1.1) except the stroke-recipe search glyph. The glyphs live
+in
 [`apps/web/components/events/chapter-ops-glyphs.tsx`](../../../apps/web/components/events/chapter-ops-glyphs.tsx),
 one file for five screens rather than five files, because the five share their
 intents rather than partitioning them — the map pin marks an event's location,
@@ -464,8 +468,9 @@ points — and the events table drew its role-targeting and recurrence markers a
 
 ### 6.2.5 Resources & Reporting (Signet duotone)
 
-Since the #920 Resources & Reporting slice these four families draw the
-duotone recipe (§1). The glyphs live in
+Since the #920 Resources & Reporting slice these four families draw Signet
+glyphs, all from the nav set (§1.1) except the stroke-recipe search glyph. The
+glyphs live in
 [`apps/web/components/documents/resources-glyphs.tsx`](../../../apps/web/components/documents/resources-glyphs.tsx),
 one file for four screens rather than four files, for the reason §6.2.4 gives:
 the four share their intents rather than partitioning them. The document
@@ -534,6 +539,9 @@ the cutover skill calls out by name ("do not add a parallel token set next to
 the one in use"; "a definition or `index.ts` re-export is not evidence anything
 still calls it"). The four preceding family files each earn their place by
 drawing at least one glyph no nav intent covers; this family has none to draw.
+(Since 2026-11-05 the geometry of those glyphs, folder, schedule, invite and
+profile, lives in the shared set in `packages/theme` with the nav glyphs; the
+family files still own the intent and the component.)
 
 **The tab rail stays text-only.** Ten triggers, no icons, and adding them would
 be new design rather than a repaint — the Canvas reference draws Settings
@@ -550,19 +558,19 @@ draws for the same tone, not a domain intent.
 The #920 Profile & pre-auth slice — `/profile`, the onboarding wizard and
 tutorial, and the routes outside `(dashboard)`. Family file:
 [`apps/web/components/profile/profile-glyphs.tsx`](../../../apps/web/components/profile/profile-glyphs.tsx),
-homed in `profile/` because `ProfileGlyph` is the one glyph both it and
-`onboarding/` consume; §6.2.3's rule applies, so importing across a directory
-is fine and redrawing is not.
+homed in `profile/` because `ProfileGlyph` is a profile intent, though its one
+consumer today is the onboarding tutorial; §6.2.3's rule applies, so importing
+across a directory is fine and redrawing is not.
 
 | Semantic intent | Glyph |
 |---|---|
-| You — the viewer's own account (tutorial slide 7) | `ProfileGlyph`, **drawn here** from the nav set's `profile` entry (Phosphor `user`, §1.1) |
+| You — the viewer's own account (tutorial slide 7) | `ProfileGlyph`, defined here; its shape is the nav set's `profile` entry (Phosphor `user`, §1.1) |
 | An invite link (s02's hint card on `/join`) | `LinkGlyph`, **drawn here** |
 | Chat, Events, Backwork, Study hours, Points (tutorial slides 2–6) | `ChatGlyph`, `EventsGlyph`, `BackworkGlyph`, `StudyGlyph`, `PointsGlyph`, re-exported from [`nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx) |
 | Directory search (the wizard's no-results state) | `SearchGlyph`, same source |
 | Locked out of the chapter (`/no-access`) | `LockGlyph`, re-exported from [`chat-glyphs.tsx`](../../../apps/web/components/chat/chat-glyphs.tsx) |
 
-**Two drawn, and both were genuinely undrawn.** `ProfileGlyph` has no nav
+**Two defined here, and both were genuinely undrawn.** `ProfileGlyph` has no nav
 intent to re-export because Profile left the sidebar for the account menu in
 the Wave 0 restructure, and neither neighbour is it: `DirectoryGlyph` is a
 group and `InviteGlyph` is a person *plus a mark*, the officer issuing a

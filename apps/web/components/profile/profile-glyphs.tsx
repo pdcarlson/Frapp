@@ -2,21 +2,22 @@
  * Signet duotone glyphs for the Profile & pre-auth family — `/profile`, the
  * onboarding wizard and tutorial, and the four pre-auth routes.
  *
- * `ProfileGlyph` and the re-exports draw the shared two-tone set
+ * `ProfileGlyph` and the nav re-exports draw the shared two-tone set
  * (`@repo/theme/nav-glyphs`, `spec/ui/design-system/iconography.md` §1.1);
  * `LinkGlyph` keeps the stroke recipe in `components/ui/duotone.tsx` (§1),
- * because a filled silhouette breaks a chain link. The
+ * because a filled silhouette breaks a chain link, and so do the re-exported
+ * `SearchGlyph` and `LockGlyph` until #3491. The
  * intent → glyph map lives in `iconography.md` §6.2.7 and MUST be updated in
  * the same PR as any change here (§6.3).
  *
  * One file for three directories, as Chapter Ops does for five: `profile/`,
  * `onboarding/` and `auth/` share their intents rather than partitioning them.
- * It is homed here because `ProfileGlyph` — the one glyph both `profile/` and
- * `onboarding/` consume — is a profile intent, and §6.2.3 already records that
+ * It is homed here because `ProfileGlyph` is a profile intent (its one consumer
+ * today is the onboarding tutorial), and §6.2.3 already records that
  * a cross-directory import is fine: "§1 rule 1 is about not redrawing, not
  * about where an import points."
  *
- * **Two drawn, the rest re-exported**, which is the bar §6.2.6 sets for
+ * **Two defined here, the rest re-exported**, which is the bar §6.2.6 sets for
  * shipping a family file at all. Five of the tutorial's eight slides name
  * intents the sidebar already draws, so migrating those five and leaving the
  * sixth on Lucide would be one intent in two glyph sets — the drift §1 rule 1
@@ -62,8 +63,9 @@ export type ProfileGlyphProps = DuotoneGlyphProps;
 /**
  * You — the viewer's own account.
  *
- * Genuinely undrawn before this family, which is why `account-menu.tsx` and the
- * tutorial's profile slide both reached for Lucide. The shell has no profile
+ * Genuinely undrawn before this family, which is why the tutorial's profile
+ * slide reached for Lucide (the account menu still draws Lucide's `User` as
+ * furniture). The shell has no profile
  * nav intent to re-export because Profile left the sidebar for the account menu
  * in the Wave 0 restructure (`spec/ui/web-dashboard/README.md`), and neither
  * neighbour is this intent: `DirectoryGlyph` is a group (the chapter's roster)

@@ -6,8 +6,8 @@
  * hub (`apps/mobile/components/tab-glyphs.tsx`, `more/more-glyphs.tsx`), so a
  * destination draws the same silhouette on both surfaces. The web in-screen
  * families re-export the nav glyphs, and the few web glyphs drawn right beside
- * them (folder, schedule, invite, profile) live here too, so no row mixes this
- * set with the older stroke recipe.
+ * them (folder, schedule, invite, profile) live here too, so those lists draw
+ * one family. The remaining stroke-recipe glyphs move here under #3491.
  *
  * Each glyph is two filled paths on a 256 grid, from Phosphor's duotone weight:
  * `back` is the silhouette, painted in the glyph's own hue at
@@ -182,7 +182,7 @@ export const NAV_GLYPHS = {
     front:
       "M256,136a8,8,0,0,1-8,8H232v16a8,8,0,0,1-16,0V144H200a8,8,0,0,1,0-16h16V112a8,8,0,0,1,16,0v16h16A8,8,0,0,1,256,136Zm-57.87,58.85a8,8,0,0,1-12.26,10.3C165.75,181.19,138.09,168,108,168s-57.75,13.19-77.87,37.15a8,8,0,0,1-12.25-10.3c14.94-17.78,33.52-30.41,54.17-37.17a68,68,0,1,1,71.9,0C164.6,164.44,183.18,177.07,198.13,194.85ZM108,152a52,52,0,1,0-52-52A52.06,52.06,0,0,0,108,152Z",
   },
-  /** Profile, the viewer (web account menu and tutorial): Phosphor `user`. */
+  /** Profile, the viewer (web onboarding tutorial): Phosphor `user`. */
   profile: {
     back: "M192,96a64,64,0,1,1-64-64A64,64,0,0,1,192,96Z",
     front:

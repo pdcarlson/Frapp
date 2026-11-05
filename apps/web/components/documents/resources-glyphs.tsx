@@ -3,7 +3,8 @@
  * backwork, polls and reports.
  *
  * Every glyph here draws the shared two-tone set (`@repo/theme/nav-glyphs`,
- * `spec/ui/design-system/iconography.md` §1.1). The
+ * `spec/ui/design-system/iconography.md` §1.1) except the re-exported
+ * `SearchGlyph`, which keeps the §1 stroke recipe until #3491. The
  * intent → glyph map lives in `iconography.md` §6.2.5 and MUST be updated in
  * the same PR as any change here (§6.3).
  *
@@ -12,8 +13,8 @@
  * silhouette marks a document row on `/documents`, the "No folder" filter
  * beside it, and the PDF a report exports to — two screens, one shape.
  *
- * **Four of the five are re-exports, and that is the point.** `nav-glyphs.tsx`
- * already draws all four of this family's nav intents, and a second copy of
+ * **Five of the six are re-exports, and that is the point.** `nav-glyphs.tsx`
+ * already draws all five, and a second copy of
  * the same path data is the drift §1 rule 1 bans. Since the nav glyphs moved
  * to the shared two-tone set (`@repo/theme/nav-glyphs`, iconography.md §1.1),
  * `DocumentsGlyph` is Phosphor `file-text`, no longer the board's s12/s21 file

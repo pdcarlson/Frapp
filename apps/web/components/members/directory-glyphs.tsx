@@ -3,7 +3,8 @@
  * of `/members`.
  *
  * Every glyph here draws the shared two-tone set (`@repo/theme/nav-glyphs`,
- * `spec/ui/design-system/iconography.md` §1.1). The
+ * `spec/ui/design-system/iconography.md` §1.1) except the re-exported
+ * `SearchGlyph`, which keeps the §1 stroke recipe until #3491. The
  * intent → glyph map lives in `iconography.md` §6.2.3 and MUST be updated in
  * the same PR as any change here (§6.3).
  *

@@ -19,7 +19,9 @@ import {
  * low opacity, and the detail strokes stay stroke-only.
  *
  * Points and Service hours draw the shared nav set (iconography.md §1.1)
- * through `TabGlyph`, like web's cards; the others below keep the stroke
+ * through `TabGlyph`, the same shapes as web's cards (an accent eyebrow lifts
+ * the silhouette like a focused tab; web's cards draw it at rest, a
+ * difference that predates the nav set); the others below keep the stroke
  * recipe. The event and task cards draw the Events and Tasks tab glyphs
  * themselves.
  */
@@ -101,7 +103,7 @@ export function AuditGlyph(props: TabGlyphProps) {
   );
 }
 
-/** Service hours: the nav set's hand-heart, as the More hub draws it. */
+/** Service hours: the nav set's hand-heart, the More hub's shape, lifted when focused like its sibling eyebrows. */
 export function ServiceHoursGlyph(props: TabGlyphProps) {
   return <TabGlyph name="service" {...props} />;
 }

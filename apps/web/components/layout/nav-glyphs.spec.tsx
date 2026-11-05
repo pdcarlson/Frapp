@@ -62,11 +62,21 @@ function paths(Glyph: DuotoneGlyphComponent, active?: boolean) {
 }
 
 describe("shared nav glyphs on web", () => {
-  it.each(SHAPES)("%s draws its shared shape", (_label, Glyph, key) => {
-    const [back, front] = paths(Glyph);
-    expect(back?.getAttribute("d")).toBe(NAV_GLYPHS[key].back);
-    expect(front?.getAttribute("d")).toBe(NAV_GLYPHS[key].front);
-  });
+  it.each(SHAPES)(
+    "%s draws its shared shape and lifts it when active",
+    (_label, Glyph, key) => {
+      const [back, front] = paths(Glyph);
+      expect(back?.getAttribute("d")).toBe(NAV_GLYPHS[key].back);
+      expect(front?.getAttribute("d")).toBe(NAV_GLYPHS[key].front);
+      expect(Number(back?.getAttribute("opacity"))).toBe(
+        GLYPH_BACK_OPACITY.rest,
+      );
+      const [activeBack] = paths(Glyph, true);
+      expect(Number(activeBack?.getAttribute("opacity"))).toBe(
+        GLYPH_BACK_OPACITY.active,
+      );
+    },
+  );
 
   it("draws the silhouette at 20% at rest and 30% when active, never solid", () => {
     const [restBack, restFront] = paths(SettingsGlyph);
