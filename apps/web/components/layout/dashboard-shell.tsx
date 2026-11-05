@@ -89,30 +89,33 @@ export function DashboardShell({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // `/chat`'s left column is the channel list, with the module nav one back
-  // arrow away (`nav-face.tsx`). The face is remembered per pathname, so every
-  // arrival at Chat opens on the channels, and it is derived rather than reset
-  // in an effect, so there is no frame of the old face after navigating.
+  // arrow away (`nav-face.tsx`). Every arrival at Chat opens on the channels:
+  // the face resets whenever the pathname changes, during render (React's
+  // "adjust state when a prop changes"), so there is no frame of the old face
+  // after navigating. Leaving Chat by a module row and coming back is the
+  // common path, and it must not land on the modules.
   const channelsNav = isChannelsNavRoute(pathname);
-  const [faceState, setFaceState] = useState<{ face: NavFace; path: string }>({
-    face: "channels",
-    path: pathname,
-  });
-  const face: NavFace =
-    faceState.path === pathname ? faceState.face : "channels";
+  const [face, setFace] = useState<NavFace>("channels");
+  const [facePath, setFacePath] = useState(pathname);
+  if (facePath !== pathname) {
+    setFacePath(pathname);
+    setFace("channels");
+  }
+  // Stable, so chat can call them from an effect without re-running it.
+  const showModules = useCallback(() => setFace("modules"), []);
+  const showChannels = useCallback(() => setFace("channels"), []);
   const [channelsSlot, setChannelsSlot] = useState<HTMLElement | null>(null);
   const navFace = useMemo<NavFaceContextValue | null>(
     () =>
       channelsNav
         ? {
             face,
-            showModules: () =>
-              setFaceState({ face: "modules", path: pathname }),
-            showChannels: () =>
-              setFaceState({ face: "channels", path: pathname }),
+            showModules,
+            showChannels,
             channelsSlot,
           }
         : null,
-    [channelsNav, face, pathname, channelsSlot],
+    [channelsNav, face, showModules, showChannels, channelsSlot],
   );
 
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
@@ -222,6 +225,7 @@ export function DashboardShell({
         {navFace ? (
           <ChatNavColumn
             face={navFace.face}
+            onShowModules={navFace.showModules}
             onShowChannels={navFace.showChannels}
             channelsSlotRef={setChannelsSlot}
             permissions={permissions}
@@ -261,9 +265,11 @@ export function DashboardShell({
 
           A full-bleed route (`full-bleed-routes.ts`) gets the same landmark
           with no inset and no scroll: it is handed the frame and owns what
-          happens inside it. That is the only way chat's channels column can sit
-          flush against the nav and its composer can pin to the bottom of the
-          viewport instead of the bottom of a scrolling document.
+          happens inside it. That is how chat's thread sits flush against the
+          left column and its composer pins to the bottom of the viewport
+          instead of the bottom of a scrolling document. (Below `lg` chat's
+          channel list is inline here too; from `lg` up it is the left column
+          itself, `chat-nav-column.tsx`.)
         */}
         <main
           id="main-content"

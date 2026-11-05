@@ -434,6 +434,7 @@ export function ChatShell({
   const navFace = useNavFace();
   const isDesktopShell = useIsDesktopShell();
   const channelsInNav = Boolean(navFace?.channelsSlot && isDesktopShell);
+  const showChannelsInNav = navFace?.showChannels;
 
   useEffect(() => {
     if (
@@ -461,7 +462,11 @@ export function ChatShell({
     // reading is not what "no target" should mean.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronizing to the URL, the external system this whole effect exists to follow; the six setState calls above it are the same act
     if (initialChannelId) setNarrowPane("thread");
-  }, [initialChannelId, initialMessageId]);
+    // The same from `lg` up: a link that lands while the left column shows
+    // the module nav brings the channel list back, so the channel it opened
+    // is on screen in the list too.
+    if (initialChannelId) showChannelsInNav?.();
+  }, [initialChannelId, initialMessageId, showChannelsInNav]);
 
   // `useChannels()` can serve a read up to its `staleTime` old. A channel
   // created moments ago (a fresh DM, a newly shared private channel) can
@@ -1529,10 +1534,12 @@ export function ChatShell({
     <div className="flex h-full min-h-0">
       {/*
         `dashboard-shell.tsx`'s "Skip to main content" link lands the keyboard
-        user at the top of `/chat`, which is still the whole layout, including
-        the channel column this link exists to skip past. Every visit to this
-        route needs re-skipping, so it earns its own target. Only offered when
-        there is a timeline to land on.
+        user at the top of `/chat`'s `<main>`. Below `lg` that still holds the
+        channel list this link exists to skip past; from `lg` up the list is
+        the shell's left column, before `<main>`, and the link still lands past
+        the channel header and status strip. Every visit to this route needs
+        re-skipping, so it earns its own target. Only offered when there is a
+        timeline to land on.
       */}
       {timelineReady ? (
         <a href="#chat-timeline" className={SKIP_LINK_CLASSES}>
@@ -1577,9 +1584,8 @@ export function ChatShell({
         pin 5). From `lg` up inside the dashboard shell it is the left column
         itself: the shell owns the column and its chapter header, and this pane
         is portaled into it, beside a back arrow to the module nav
-        (`components/layout/nav-face.tsx`). Inline, it takes `--surface-1`,
-        the same step as the app nav, so the two read as one piece of chrome.
-        Below `lg`, and outside the shell, it stays inline.
+        (`components/layout/nav-face.tsx`). Below `lg`, and outside the shell,
+        it stays inline, on `--surface-1`, the step the left column takes.
       */}
       {channelsInNav && navFace?.channelsSlot
         ? createPortal(

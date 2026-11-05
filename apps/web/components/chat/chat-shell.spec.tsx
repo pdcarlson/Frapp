@@ -2914,6 +2914,24 @@ describe("ChatShell inside the shell's left column", () => {
     expect(value.showModules).toHaveBeenCalledTimes(1);
   });
 
+  it("brings the channel list back when a link to a channel lands", () => {
+    stubDesktop(true);
+    const value = navFace({ face: "modules" });
+    const { rerender } = render(
+      <NavFaceContext.Provider value={value}>
+        <ChatShell />
+      </NavFaceContext.Provider>,
+    );
+    expect(value.showChannels).not.toHaveBeenCalled();
+
+    rerender(
+      <NavFaceContext.Provider value={value}>
+        <ChatShell initialChannelId="chan-general" />
+      </NavFaceContext.Provider>,
+    );
+    expect(value.showChannels).toHaveBeenCalledTimes(1);
+  });
+
   it("stays inline below lg, hidden from lg up until the column takes it", () => {
     stubDesktop(false);
     render(

@@ -16,22 +16,31 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
  * the title there instead.
  */
 
-const { mockPathname, mockChapter, mockPermissions, mockUnread, mockLevels } =
-  vi.hoisted(() => ({
-    mockPathname: { value: "/events" },
-    mockUnread: {
-      value: [] as {
-        channel_id: string;
-        unread_count: number;
-        mention_count: number;
-      }[],
-    },
-    mockLevels: { value: [] as { channel_id: string; level: string }[] },
-    // `undefined` is a chapter read still in flight, which every test but the
-    // module-gating one wants: nothing is gated until it resolves.
-    mockChapter: { value: undefined as unknown },
-    mockPermissions: { value: [] as string[] },
-  }));
+const {
+  mockPathname,
+  mockChapter,
+  mockPermissions,
+  mockUnread,
+  mockLevels,
+  mockChannels,
+} = vi.hoisted(() => ({
+  mockPathname: { value: "/events" },
+  mockUnread: {
+    value: [] as {
+      channel_id: string;
+      unread_count: number;
+      mention_count: number;
+    }[],
+  },
+  mockLevels: {
+    value: [] as { channel_id: string; level: string }[] | undefined,
+  },
+  mockChannels: { value: [] as { id: string; type: string }[] },
+  // `undefined` is a chapter read still in flight, which every test but the
+  // module-gating one wants: nothing is gated until it resolves.
+  mockChapter: { value: undefined as unknown },
+  mockPermissions: { value: [] as string[] },
+}));
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname.value,
   useRouter: () => ({ push: vi.fn() }),
@@ -43,6 +52,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     // The real rules for which counts and levels mean "unread" and "muted".
     sidebarUnreadCounts: actual.sidebarUnreadCounts,
     sidebarMutedChannelIds: actual.sidebarMutedChannelIds,
+    countsAddressMember: actual.countsAddressMember,
     useChannelUnreadCounts: () => ({ data: mockUnread.value, isError: false }),
     useChannelNotificationPreferences: () => ({
       data: mockLevels.value,
@@ -57,7 +67,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useCurrentChapter: () => ({ data: mockChapter.value, isError: false }),
     useCurrentUser: () => ({ data: { display_name: "Paul Carlson" } }),
     useSearch: () => ({ data: undefined, isFetching: false }),
-    useChannels: () => ({ data: [] }),
+    useChannels: () => ({ data: mockChannels.value }),
     SEARCH_MIN_QUERY_LENGTH: 3,
   };
 });
@@ -98,15 +108,17 @@ afterEach(() => {
   mockPermissions.value = [];
   mockUnread.value = [];
   mockLevels.value = [];
+  mockChannels.value = [];
+  mockChapter.value = undefined;
 });
 
-/** Stands in for chat: the back arrow ChatShell puts beside "Channels". */
+/** Stands in for the back arrow ChatShell's own pane puts beside "Channels". */
 function BackToMenu() {
   const navFace = useNavFace();
   if (!navFace) return <p>no nav face</p>;
   return (
     <button type="button" onClick={navFace.showModules}>
-      Back to menu
+      Chat pane back arrow
     </button>
   );
 }
@@ -414,7 +426,9 @@ describe("DashboardShell", () => {
       );
       const slot = container.querySelector("[data-nav-channels-slot]")!;
 
-      fireEvent.click(screen.getByRole("button", { name: "Back to menu" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Chat pane back arrow" }),
+      );
       const nav = screen.getByRole("navigation", { name: "Primary" });
       expect(nav.closest("[inert]")).toBeNull();
       expect(slot.closest("[inert]")).not.toBeNull();
@@ -453,6 +467,101 @@ describe("DashboardShell", () => {
           { name: /^Chat/ },
         ),
       ).toHaveAccessibleName(/unread messages/);
+    });
+
+    it("opens on the channels again after leaving Chat from the module face", () => {
+      mockPathname.value = "/chat";
+      const { container, rerender } = render(
+        <DashboardShell>
+          <BackToMenu />
+        </DashboardShell>,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Chat pane back arrow" }),
+      );
+
+      // Leave by a module row, then come back: the common path out and in.
+      mockPathname.value = "/events";
+      rerender(
+        <DashboardShell>
+          <BackToMenu />
+        </DashboardShell>,
+      );
+      mockPathname.value = "/chat";
+      rerender(
+        <DashboardShell>
+          <BackToMenu />
+        </DashboardShell>,
+      );
+      const slot = container.querySelector("[data-nav-channels-slot]")!;
+      expect(slot.closest("[inert]")).toBeNull();
+    });
+
+    it("moves focus with the slide, and keeps a way back while chat is not mounted", () => {
+      mockPathname.value = "/chat";
+      render(<DashboardShell>content</DashboardShell>);
+
+      // No chat pane in the slot (loading, or a failed segment): the column's
+      // own placeholder still offers the back arrow.
+      const back = screen.getByRole("button", { name: "Back to menu" });
+      fireEvent.click(back);
+      const nav = screen.getByRole("navigation", { name: "Primary" });
+      const chatRow = within(nav).getByRole("button", { name: /^Chat/ });
+      expect(document.activeElement).toBe(chatRow);
+
+      fireEvent.click(chatRow);
+      expect(document.activeElement).toBe(back);
+    });
+
+    it("keeps the chapter switcher pinned above the channels", () => {
+      mockPathname.value = "/chat";
+      mockChapter.value = { name: "Alpha Beta Gamma" };
+      const { container } = render(<DashboardShell>content</DashboardShell>);
+      const switcher = screen.getByRole("button", { name: /chapter menu/i });
+      expect(switcher.closest("[inert]")).toBeNull();
+      const slot = container.querySelector("[data-nav-channels-slot]")!;
+      // Before the channels in document order, outside both faces.
+      expect(
+        switcher.compareDocumentPosition(slot) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it("lets a mention or a DM through a mute, and lights nothing on unknown levels", () => {
+      mockPathname.value = "/chat";
+      const chatRowName = () =>
+        within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+          "button",
+          { name: /^Chat/ },
+        );
+
+      // A mention in a muted channel still addresses the member.
+      mockUnread.value = [
+        { channel_id: "c1", unread_count: 1, mention_count: 1 },
+      ];
+      mockLevels.value = [{ channel_id: "c1", level: "off" }];
+      const first = render(<DashboardShell>content</DashboardShell>);
+      expect(chatRowName()).toHaveAccessibleName(/unread messages/);
+      first.unmount();
+
+      // So does anything unread in a DM, muted or not.
+      mockUnread.value = [
+        { channel_id: "d1", unread_count: 2, mention_count: 0 },
+      ];
+      mockLevels.value = [{ channel_id: "d1", level: "off" }];
+      mockChannels.value = [{ id: "d1", type: "DM" }];
+      const second = render(<DashboardShell>content</DashboardShell>);
+      expect(chatRowName()).toHaveAccessibleName(/unread messages/);
+      second.unmount();
+
+      // Plain unread with levels never loaded could be a muted channel.
+      mockUnread.value = [
+        { channel_id: "c2", unread_count: 4, mention_count: 0 },
+      ];
+      mockLevels.value = undefined;
+      mockChannels.value = [];
+      render(<DashboardShell>content</DashboardShell>);
+      expect(chatRowName()).not.toHaveAccessibleName(/unread/);
     });
 
     it("gives every other route the module nav, with no nav face for the page", () => {
