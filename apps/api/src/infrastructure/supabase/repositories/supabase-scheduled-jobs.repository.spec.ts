@@ -610,7 +610,7 @@ describe('SupabaseScheduledJobsRepository', () => {
         expect(captureException).toHaveBeenCalledTimes(1);
         expect(reportedFingerprints()[0]?.slice(0, 2)).toEqual([
           'caught-failure',
-          'scheduled-dispatch-release-failed',
+          'scheduled-dispatch-release-failed:event.auto-absent',
         ]);
       } finally {
         error.mockRestore();

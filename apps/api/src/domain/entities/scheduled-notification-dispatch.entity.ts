@@ -17,6 +17,20 @@ export type DispatchEntityType = 'INVOICE' | 'TASK' | 'EVENT' | 'POLL';
 export type DispatchThreshold =
   'DUE_SOON' | 'OVERDUE' | 'AUTO_ABSENT' | 'EXPIRED' | 'EVENT_REMINDER';
 
+/**
+ * The reminder sweep a dispatch belongs to, as an identifier-shaped id
+ * (`invoice.due-soon`, `event.event-reminder`). The claim, release and
+ * delivery helpers every sweep shares report their failures under it, so one
+ * sweep failing is one Sentry issue, apart from the others.
+ */
+export function dispatchSweepId(
+  entityType: DispatchEntityType,
+  threshold: DispatchThreshold,
+): string {
+  const kebab = (value: string) => value.toLowerCase().replace(/_/g, '-');
+  return `${kebab(entityType)}.${kebab(threshold)}`;
+}
+
 export interface ScheduledNotificationDispatch {
   id: string;
   chapter_id: string;

@@ -160,6 +160,32 @@ describe('reportCaughtFailure', () => {
     expect(captureException).toHaveBeenCalledTimes(3);
   });
 
+  it('throttles each fault at a site on its own, so a recurring one cannot hide a new one', () => {
+    const at = (code: string, now: number) =>
+      reportCaughtFailure(
+        logger(),
+        {
+          level: 'error',
+          site: 'scheduled-sweep-candidate-read:event-reminder',
+          message: 'm',
+          error: new SupabaseQueryError({ code, message: 'q' }),
+        },
+        now,
+      );
+    at('57014', 0);
+    at('57014', 1_000);
+    at('42703', 2_000);
+
+    expect(captureException).toHaveBeenCalledTimes(2);
+    expect(captureException.mock.calls[1]?.[1]).toMatchObject({
+      fingerprint: [
+        'caught-failure',
+        'scheduled-sweep-candidate-read:event-reminder',
+        'SupabaseQueryError:42703',
+      ],
+    });
+  });
+
   it('logs but does not report an invalid site id', () => {
     const log = logger();
     reportCaughtFailure(log, {

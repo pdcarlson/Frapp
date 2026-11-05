@@ -95,10 +95,9 @@ async function withinBudget<T>(
     if (!timedOut) return;
     reportCaughtFailure(logger, {
       level: 'error',
-      site: 'search-source-late-failure',
+      site: `search-source-late-failure:${source}`,
       message: `search source "${source}" failed after the ${SEARCH_TIMEOUT_MS}ms budget; reported to the caller as a timeout`,
       error,
-      tags: { source },
     });
   });
 

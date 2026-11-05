@@ -427,7 +427,7 @@ describe('ScheduledJobsService', () => {
       expect(releaseDispatch).not.toHaveBeenCalled();
     });
 
-    it('reports a partial delivery once per event, as the drop it is', async () => {
+    it('reports a partial delivery under its sweep, as the drop it is', async () => {
       findEventsStartingBetween.mockResolvedValue([UPCOMING]);
       resolveRequiredMembers.mockResolvedValue([
         { user_id: 'user-1', role_ids: [] },
@@ -452,12 +452,12 @@ describe('ScheduledJobsService', () => {
 
         expect(captureMessage).toHaveBeenCalledTimes(1);
         expect(captureMessage).toHaveBeenCalledWith(
-          'caught failure: scheduled-reminder-partial-delivery',
+          'caught failure: scheduled-reminder-partial-delivery:event.event-reminder',
           expect.objectContaining({
             level: 'error',
             fingerprint: [
               'caught-failure',
-              'scheduled-reminder-partial-delivery',
+              'scheduled-reminder-partial-delivery:event.event-reminder',
             ],
           }),
         );

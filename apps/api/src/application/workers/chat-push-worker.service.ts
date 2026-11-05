@@ -357,12 +357,14 @@ export class ChatPushWorkerService
 
       await this.traceFanOut(row, () => this.fanOut(row));
     } catch (err) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `chat-push: unexpected error for message ${row.id}`,
-        err,
-      );
+      // Past the claim this drops the message's remaining pushes: the claim
+      // stops every other instance from sending them.
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'chat-push-fan-out-failed',
+        message: `chat-push: unexpected error for message ${row.id}`,
+        error: err,
+      });
     }
   }
 
@@ -527,12 +529,12 @@ export class ChatPushWorkerService
         );
         outcome.sent += 1;
       } catch (err) {
-        logThrowable(
-          this.logger,
-          'warn',
-          `chat-push: notify failed for recipient ${recipientId}`,
-          err,
-        );
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'chat-push-notify-recipient',
+          message: `chat-push: notify failed for recipient ${recipientId}`,
+          error: err,
+        });
       }
     }
     return outcome;
@@ -579,12 +581,12 @@ export class ChatPushWorkerService
             ] as const;
           } catch (err) {
             // Fail closed: an unresolved permission set must not become a push.
-            logThrowable(
-              this.logger,
-              'warn',
-              `chat-push: permission lookup failed for ${userId}; skipping`,
-              err,
-            );
+            reportCaughtFailure(this.logger, {
+              level: 'warning',
+              site: 'chat-push-permission-lookup',
+              message: `chat-push: permission lookup failed for ${userId}; skipping`,
+              error: err,
+            });
             return [userId, null] as const;
           }
         }),
@@ -626,12 +628,12 @@ export class ChatPushWorkerService
     try {
       data = await this.channels.findPushRouting(channelId);
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        'chat-push: channel lookup failed',
-        error,
-      );
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-push-channel-lookup',
+        message: 'chat-push: channel lookup failed',
+        error: error,
+      });
       return null;
     }
     if (!data) return null;

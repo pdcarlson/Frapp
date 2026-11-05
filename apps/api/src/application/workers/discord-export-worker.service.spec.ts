@@ -13,7 +13,10 @@ import {
   DISCORD_IMPORT_REPOSITORY,
 } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
-import { DISCORD_BOT_GATEWAY } from '#domain/adapters/discord.interface';
+import {
+  DISCORD_BOT_GATEWAY,
+  DiscordImportStoppedError,
+} from '#domain/adapters/discord.interface';
 import {
   ARCHIVE_MEDIA_COPIER,
   ArchiveMediaCopyError,
@@ -326,6 +329,12 @@ describe('DiscordExportWorkerService — the tenant boundary', () => {
         runArgs(harness, { job: job({ guild_id: GUILD }) }),
       ),
     ).rejects.toThrow(/was created for Discord server/);
+    // An admin-facing stop, which the import sweep logs and does not report.
+    await expect(
+      harness.worker.runSlice(
+        runArgs(harness, { job: job({ guild_id: GUILD }) }),
+      ),
+    ).rejects.toBeInstanceOf(DiscordImportStoppedError);
 
     expect(harness.bot.fetchMessagePage).not.toHaveBeenCalled();
   });
@@ -336,6 +345,9 @@ describe('DiscordExportWorkerService — the tenant boundary', () => {
     await expect(harness.worker.runSlice(runArgs(harness))).rejects.toThrow(
       /no longer has a Discord server connected/,
     );
+    await expect(
+      harness.worker.runSlice(runArgs(harness)),
+    ).rejects.toBeInstanceOf(DiscordImportStoppedError);
     expect(harness.bot.fetchMessagePage).not.toHaveBeenCalled();
   });
 

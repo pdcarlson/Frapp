@@ -40,7 +40,10 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-/** Lines above `index`, skipping blank lines and the call's own preamble. */
+/**
+ * The run of `//` comment lines directly above `index`. A blank line ends
+ * it, so an exemption must sit on the call, not a paragraph away.
+ */
 function precedingComment(lines: string[], index: number): string {
   const above: string[] = [];
   for (let i = index - 1; i >= 0 && above.length < 6; i -= 1) {
@@ -51,13 +54,15 @@ function precedingComment(lines: string[], index: number): string {
   return above.join(' ');
 }
 
-function findUnreported(): string[] {
+function findUnreported(): { scanned: string[]; offenders: string[] } {
   const offenders: string[] = [];
+  const scanned: string[] = [];
   for (const file of sourceFiles(SRC)) {
     const rel = relative(SRC, file);
     if (rel.startsWith(OWN_FOLDER + sep) || STANDALONE_SCRIPTS.has(rel)) {
       continue;
     }
+    scanned.push(rel);
     const text = readFileSync(file, 'utf8');
     const lines = text.split('\n');
     for (const match of text.matchAll(ERROR_LOG)) {
@@ -72,7 +77,7 @@ function findUnreported(): string[] {
       offenders.push(`${rel}:${index + 1}: ${line.trim()}`);
     }
   }
-  return offenders;
+  return { scanned, offenders };
 }
 
 describe('caught failures reach Sentry', () => {
@@ -80,7 +85,12 @@ describe('caught failures reach Sentry', () => {
     // Each line is a catch that logs at error level and never reaches Sentry.
     // Use reportCaughtFailure there, or, if the failure is rethrown or
     // reported nearby, say so in a `// caught-failure-exempt:` comment.
-    expect(findUnreported()).toEqual([]);
+    const { scanned, offenders } = findUnreported();
+    // A wrong root would scan nothing and pass; pin a file the rule exists for.
+    expect(scanned).toContain(
+      join('application', 'workers', 'scheduled-jobs.service.ts'),
+    );
+    expect(offenders).toEqual([]);
   });
 
   it('finds a log-only catch and honors an exemption', () => {

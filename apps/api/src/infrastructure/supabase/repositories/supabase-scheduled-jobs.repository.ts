@@ -9,7 +9,11 @@ import {
 } from '../supabase.utils';
 import { reportCaughtFailure } from '../../observability/report-caught-failure';
 import { TaskStatus } from '#domain/entities';
-import type { DispatchEntityType, DispatchThreshold } from '#domain/entities';
+import {
+  dispatchSweepId,
+  type DispatchEntityType,
+  type DispatchThreshold,
+} from '#domain/entities';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { SupabaseQueryError } from '../supabase-query-error';
 import type {
@@ -406,7 +410,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
 
     reportCaughtFailure(this.logger, {
       level: 'error',
-      site: 'scheduled-dispatch-claim-failed',
+      site: `scheduled-dispatch-claim-failed:${dispatchSweepId(entityType, threshold)}`,
       message: `dispatch claim failed for ${entityType} ${entityId} (${threshold})`,
       error,
     });
@@ -446,7 +450,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
     if (error) {
       reportCaughtFailure(this.logger, {
         level: 'error',
-        site: 'scheduled-dispatch-release-failed',
+        site: `scheduled-dispatch-release-failed:${dispatchSweepId(entityType, threshold)}`,
         message: `dispatch release failed for ${entityType} ${entityId} (${threshold}) — this reminder will not be retried`,
         error,
       });

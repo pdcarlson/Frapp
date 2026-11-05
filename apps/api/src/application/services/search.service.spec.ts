@@ -703,13 +703,13 @@ describe('SearchService', () => {
         expect(captureException).toHaveBeenCalledTimes(1);
         expect(captureException.mock.calls[0]?.[1]).toMatchObject({
           level: 'error',
-          tags: { source: 'backwork', caught_at: 'search-source-late-failure' },
+          tags: { caught_at: 'search-source-late-failure:backwork' },
         });
         expect(
           (
             captureException.mock.calls[0]?.[1] as { fingerprint: string[] }
           ).fingerprint.slice(0, 2),
-        ).toEqual(['caught-failure', 'search-source-late-failure']);
+        ).toEqual(['caught-failure', 'search-source-late-failure:backwork']);
       } finally {
         logged.mockRestore();
         jest.useRealTimers();

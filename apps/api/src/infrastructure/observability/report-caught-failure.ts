@@ -19,9 +19,9 @@ export type CaughtFailure = {
   level: 'error' | 'warning';
   /**
    * Stable, lowercase, hyphenated id of the catch (`poll-expiry-sweep-poll`).
-   * It is the Sentry fingerprint, the `caught_at` tag, and the throttle key,
-   * so a rename starts a new issue. A site shared by several callers adds
-   * the caller with a `:` (`scheduled-sweep-candidate-read:invoice-sweep`).
+   * It leads the Sentry fingerprint and the throttle key, and is the
+   * `caught_at` tag, so a rename starts a new issue. A site shared by several
+   * callers adds the caller with a `:` (`scheduled-sweep-candidate-read:invoice`).
    */
   site: string;
   /**
@@ -76,27 +76,27 @@ export function reportCaughtFailure(
     logger.warn(`reportCaughtFailure: invalid site id "${site}"`);
     return;
   }
-  if (!claimReportSlot(site, now)) return;
+  const fingerprint = ['caught-failure', site, ...caughtParts(failure)];
+  // Throttled by the whole fingerprint, not the site: a timeout recurring at
+  // a site must not hold back the first missing-column error there.
+  if (!claimReportSlot(fingerprint.join('|'), now)) return;
 
   reportSwallowed(logger, `caught failure ${site}`, () => {
     const tags = { ...failure.tags, caught_at: site };
     if (!('error' in failure)) {
-      return {
-        message: `caught failure: ${site}`,
-        level,
-        tags,
-        fingerprint: ['caught-failure', site],
-      };
+      return { message: `caught failure: ${site}`, level, tags, fingerprint };
     }
-    return {
-      error,
-      level,
-      tags,
-      fingerprint: [
-        'caught-failure',
-        site,
-        ...errorChainParts(toReportableError(error)),
-      ],
-    };
+    return { error, level, tags, fingerprint };
   });
+}
+
+/** The cause chain's `kind[:code]` tokens; none when nothing was thrown. */
+function caughtParts(failure: CaughtFailure): string[] {
+  if (!('error' in failure)) return [];
+  try {
+    return errorChainParts(toReportableError(failure.error));
+  } catch {
+    // Grouping by site alone beats losing the report.
+    return [];
+  }
 }

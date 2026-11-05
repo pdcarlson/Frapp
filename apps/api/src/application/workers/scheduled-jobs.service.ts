@@ -22,7 +22,11 @@ import {
   type SweepPollRow,
   type SweepUpcomingEventRow,
 } from '#domain/repositories/scheduled-jobs.repository.interface';
-import type { DispatchEntityType, DispatchThreshold } from '#domain/entities';
+import {
+  dispatchSweepId,
+  type DispatchEntityType,
+  type DispatchThreshold,
+} from '#domain/entities';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
 import {
@@ -893,8 +897,9 @@ export class ScheduledJobsService {
    * - **Every send failed.** The claim is released so the next sweep retries;
    *   otherwise one transient error would suppress that reminder forever.
    * - **Some sends failed.** The claim is kept — retrying would re-notify the
-   *   recipients who already got it — and the shortfall is reported, once per
-   *   entity rather than per recipient. Partial delivery still counts as sent.
+   *   recipients who already got it — and the shortfall is reported under the
+   *   sweep's own site, not per recipient, at most once per window however
+   *   many entities fall short. Partial delivery still counts as sent.
    *
    * Recipients are deduped and delivered independently, so one member's
    * failure cannot silence another's; that matters for overdue tasks, where
@@ -928,6 +933,7 @@ export class ScheduledJobsService {
       params.dueDate,
     );
     if (!claimed) return false;
+    const sweep = dispatchSweepId(params.entityType, params.threshold);
 
     // Resolved after the claim, so a thunk's cost is paid only by the tick
     // that actually sends. A rejection here would strand the claim, so it is
@@ -941,7 +947,7 @@ export class ScheduledJobsService {
     } catch (error) {
       reportCaughtFailure(this.logger, {
         level: 'warning',
-        site: 'scheduled-reminder-resolve-recipients',
+        site: `scheduled-reminder-resolve-recipients:${sweep}`,
         message: `${params.entityType} ${params.entityId} (${params.threshold}): could not resolve recipients`,
         error,
       });
@@ -963,7 +969,7 @@ export class ScheduledJobsService {
       } catch (error) {
         reportCaughtFailure(this.logger, {
           level: 'warning',
-          site: 'scheduled-reminder-delivery',
+          site: `scheduled-reminder-delivery:${sweep}`,
           message: `${params.entityType} ${params.entityId} (${params.threshold}): delivery to ${userId} failed`,
           error,
         });
@@ -984,12 +990,8 @@ export class ScheduledJobsService {
     if (delivered < recipients.length) {
       reportCaughtFailure(this.logger, {
         level: 'error',
-        site: 'scheduled-reminder-partial-delivery',
+        site: `scheduled-reminder-partial-delivery:${sweep}`,
         message: `${params.entityType} ${params.entityId} (${params.threshold}): delivered to ${delivered}/${recipients.length} recipients; not retrying`,
-        tags: {
-          entity_type: params.entityType.toLowerCase(),
-          threshold: params.threshold.toLowerCase(),
-        },
       });
     }
     return true;

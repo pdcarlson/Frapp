@@ -43,6 +43,7 @@ import {
 import { parseRoleMapping } from '#domain/utils/discord-role-gates';
 import {
   DiscordApiError,
+  DiscordImportStoppedError,
   DiscordNotConfiguredError,
 } from '#domain/adapters/discord.interface';
 import { RbacService } from '../services/rbac.service';
@@ -102,18 +103,6 @@ export const MAX_WARNINGS = 50;
  * ordinary API write on the same row.
  */
 const WORKER_MAY_CONTINUE: DiscordImportStatus[] = ['ready', 'running'];
-
-/**
- * An import stopped on a condition the admin can see and fix, its message the
- * sentence the Watch panel shows. Not a fault: the sweep logs it and does not
- * report it.
- */
-export class DiscordImportStoppedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'DiscordImportStoppedError';
-  }
-}
 
 /** Discord's answers for a bot that lost its token, access, or the resource. */
 const DISCORD_REFUSAL_STATUSES = new Set([401, 403, 404]);

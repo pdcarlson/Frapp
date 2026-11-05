@@ -791,6 +791,26 @@ describe('ChatPushWorkerService', () => {
       expect(findByChapter).toHaveBeenCalledTimes(1);
     });
 
+    it('a caught failure that drops a claimed message reports to Sentry', async () => {
+      // Past the claim no other instance will send this message, so the
+      // failure is a dropped fan-out, not a log line.
+      const worker = await compileWorker({ claim: sharedClaimStore() });
+      worker.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      findByChapter.mockRejectedValue(new Error('roster read failed'));
+      jest.mocked(Sentry.captureException).mockClear();
+
+      await expect(worker.handleMessage(MESSAGE)).resolves.toBeUndefined();
+
+      expect(notifyUser).not.toHaveBeenCalled();
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+      expect(
+        jest.mocked(Sentry.captureException).mock.calls[0]?.[1],
+      ).toMatchObject({
+        level: 'error',
+        tags: { caught_at: 'chat-push-fan-out-failed' },
+      });
+    });
+
     it('the instance that loses the claim still joins the channel presence', async () => {
       // Presence is what keeps a push off the screen of someone already
       // reading the channel, and a subscription only knows the roster once it
