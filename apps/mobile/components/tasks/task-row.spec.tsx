@@ -5,7 +5,6 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
-import { expectRoundedRipple } from "@/test/pressable-row";
 
 // The row itself takes no chapter accent, but `useChapterBranding` reaches
 // `useCurrentChapter` and would drag the API client and a QueryClient into a
@@ -27,8 +26,8 @@ import type { TaskRowModel } from "@/lib/tasks/board";
 /**
  * These pin the four rules that are cheapest to break by copying a neighbouring
  * row component, and one of them is a literal acceptance criterion of #995:
- * an overdue date is `semantic.destructive`, never the mention red that
- * `foundations.md:67` reserves for direct address.
+ * an overdue date is `semantic.destructiveText` (danger's AA lift), never the
+ * mention red that `foundations.md:67` reserves for direct address.
  */
 
 const NOW = new Date(2026, 7, 17, 12, 0, 0, 0);
@@ -94,7 +93,7 @@ function styleOfText(tree: ReactTestRenderer, needle: string) {
 }
 
 describe("TaskRow — the overdue colour", () => {
-  it("draws an urgent due date in semantic.destructive, not the mention red", () => {
+  it("draws an urgent due date in semantic.destructiveText, not the mention red", () => {
     const tree = render(
       <TaskRow
         row={row({ dueDate: "2026-08-15", displayStatus: "OVERDUE", isOverdue: true })}
@@ -104,7 +103,7 @@ describe("TaskRow — the overdue colour", () => {
     );
 
     const style = styleOfText(tree, "Overdue by");
-    expect(style.color).toBe(signetDarkTokens.color.semantic.destructive);
+    expect(style.color).toBe(signetDarkTokens.color.semantic.destructiveText);
     expect(style.color).not.toBe(signetDarkTokens.color.semantic.mention);
   });
 
@@ -120,10 +119,12 @@ describe("TaskRow — the overdue colour", () => {
 });
 
 // A task row is a list row, so it answers a press as every list row does
-// (`usePressFeedback`, through `PressableRow`): a ripple on Android and, because the row is itself a
-// card, a lift to the popover step on iOS. Never the fade it used to give.
+// (`usePressFeedback`, through `PressableRow`): a ripple on Android and a lift
+// to the card step on iOS. Never the fade it used to give. Since 2026-11-05 the
+// row sits flush on the floor (web's list grammar), so it is square and lifts
+// from the floor, not from a card of its own.
 describe("TaskRow — press feedback", () => {
-  it("ripples on Android and lifts card to popover on iOS, never fading", () => {
+  it("ripples on Android and lifts floor to card on iOS, never fading", () => {
     const tree = render(
       <TaskRow row={row()} now={NOW} onToggle={() => {}} />,
     );
@@ -132,19 +133,29 @@ describe("TaskRow — press feedback", () => {
     );
     // The suite's react-native stub runs as iOS.
     const held = flatten(pressable.props.style({ pressed: true }));
+    const resting = flatten(pressable.props.style({ pressed: false }));
 
     expect(pressable.props.android_ripple?.color).toMatch(/^rgba\(/);
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
     expect(held).not.toHaveProperty("opacity");
-    // The ripple is rounded by a parent clip with the card's radius
-    // (`PressableRow`); the row's own `overflow` would leave it square.
-    const { clip } = expectRoundedRipple(
-      pressable,
-      signetDarkTokens.radius.card,
+    expect(resting).not.toHaveProperty("backgroundColor");
+    expect(resting).not.toHaveProperty("borderRadius");
+  });
+
+  it("draws a hairline above every row but the first in its group", () => {
+    const first = render(
+      <TaskRow row={row()} now={NOW} onToggle={() => {}} isFirst />,
     );
-    // The row has no margins, so the clip adds none and the row stays put.
-    expect(Object.keys(clip).filter((key) => key.startsWith("margin"))).toEqual(
-      [],
+    const next = render(<TaskRow row={row()} now={NOW} onToggle={() => {}} />);
+    const style = (tree: typeof first) =>
+      flatten(
+        tree.root
+          .find((node) => (node.type as unknown) === "Pressable")
+          .props.style({ pressed: false }),
+      );
+    expect(style(first)).not.toHaveProperty("borderTopWidth");
+    expect(style(next).borderTopColor).toBe(
+      signetDarkTokens.color.border.hairline,
     );
   });
 });
@@ -174,14 +185,10 @@ describe("TaskRow — a row in flight", () => {
       (node) => (node.type as unknown) === "Pressable",
     );
     expect(pressable.props.accessibilityState).toMatchObject({ busy: true });
-    const { clip, resting } = expectRoundedRipple(
-      pressable,
-      signetDarkTokens.radius.card,
-    );
-    // The dim is the row's, not the clip's: `splitRowStyle` keeps opacity on
-    // the Pressable.
+    // The dim is the row's own: `splitRowStyle` keeps opacity on the Pressable.
+    const resting = flatten(pressable.props.style({ pressed: false }));
     expect(resting.opacity).toBe(0.8);
-    expect(clip).not.toHaveProperty("opacity");
+    expect(flatten(pressable.parent!.props.style)).not.toHaveProperty("opacity");
   });
 
   it("is neither dimmed nor busy at rest", () => {

@@ -415,10 +415,11 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
     },
     bioCard: {
-      borderRadius: tokens.radius.cardLarge,
+      // The ListSection recipe beside it, as Profile's own bio card draws it.
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
     },
     bioText: {
