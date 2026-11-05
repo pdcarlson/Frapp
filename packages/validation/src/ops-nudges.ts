@@ -1,6 +1,7 @@
 /**
  * The ops-module setup nudges, shared so the surface that renders them and the
- * endpoint that records their dismissal agree on one closed set of keys.
+ * endpoint that records their dismissal agree on one closed set of keys
+ * (`MEMBER_DISMISSAL_KEYS` below, which adds the setup checklist's key).
  *
  * `spec/product/modules.md` § "Ops-setup nudges" fixes both the membership and
  * the order: **one nudge per module, in the fixed priority Dues > Events >
@@ -93,8 +94,9 @@ const OPS_NUDGE_KEYS: ReadonlySet<string> = new Set(
 /**
  * Whether `value` is a module this catalog nudges for.
  *
- * The API validates a dismissal against this before writing, so a client
- * cannot grow the array with arbitrary strings.
+ * Nudge keys only. The API validates a dismissal against the wider
+ * `MEMBER_DISMISSAL_KEYS`, so don't use this to vet what the column holds: it
+ * rejects `setup-checklist`.
  */
 export function isOpsNudgeModuleKey(
   value: unknown,
@@ -130,3 +132,20 @@ export function selectOpsNudge(
     ) ?? null
   );
 }
+
+/**
+ * The officer "Set up your chapter" checklist's dismissal, stored in the same
+ * `members.dismissed_ops_nudges` array as the nudges (per user, per chapter),
+ * so it needs no column of its own. `selectOpsNudge` ignores it: it only reads
+ * keys it has a nudge for.
+ */
+export const SETUP_CHECKLIST_DISMISS_KEY = "setup-checklist";
+
+/** Every key `PATCH /v1/members/me/ops-nudges/dismiss` accepts. */
+export const MEMBER_DISMISSAL_KEYS = [
+  ...OPS_NUDGE_MODULES.map((module) => module.key),
+  SETUP_CHECKLIST_DISMISS_KEY,
+] as const;
+
+export type MemberDismissalKey =
+  OpsNudgeModuleKey | typeof SETUP_CHECKLIST_DISMISS_KEY;

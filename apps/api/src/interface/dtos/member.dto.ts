@@ -1,7 +1,7 @@
 import { IsArray, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { OPS_NUDGE_MODULES } from '@repo/validation';
+import { MEMBER_DISMISSAL_KEYS } from '@repo/validation';
 
 export class UpdateMemberRolesDto {
   @ApiProperty({ type: [String] })
@@ -31,11 +31,11 @@ export class UpdateOnboardingDto {
 
 export class DismissOpsNudgeDto {
   @ApiProperty({
-    enum: OPS_NUDGE_MODULES.map((m) => m.key),
+    enum: [...MEMBER_DISMISSAL_KEYS],
     description:
-      'Module whose ops-setup nudge to dismiss for the caller in the active chapter. Validated against the shared catalog rather than accepted as free text: `members.dismissed_ops_nudges` is an unconstrained `text[]`, so an unchecked value would persist forever and suppress nothing.',
+      'Module whose ops-setup nudge to dismiss for the caller in the active chapter, or `setup-checklist` for the officer setup checklist on chat home. Validated against the shared catalog rather than accepted as free text: `members.dismissed_ops_nudges` is an unconstrained `text[]`, so an unchecked value would persist forever and suppress nothing.',
   })
   @IsString()
-  @IsIn(OPS_NUDGE_MODULES.map((m) => m.key))
+  @IsIn([...MEMBER_DISMISSAL_KEYS])
   module_key: string;
 }

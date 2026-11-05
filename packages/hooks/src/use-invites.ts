@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { markLegalAcceptanceRecorded } from "./legal-acceptance";
 
-export function useInvites() {
+export function useInvites(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
@@ -15,7 +15,7 @@ export function useInvites() {
       return data;
     },
     staleTime: 60_000,
-    enabled: !!chapterId,
+    enabled: (options?.enabled ?? true) && !!chapterId,
   });
 }
 
