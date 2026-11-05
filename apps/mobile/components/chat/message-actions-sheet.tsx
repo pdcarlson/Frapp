@@ -581,7 +581,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: tokens.color.surface.card,
       alignItems: "center",
       justifyContent: "center",
     },
@@ -593,10 +593,11 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
     },
     reasons: {
-      borderRadius: tokens.radius.cardLarge,
+      // The ListSection recipe, so the reasons read as the same grouped list.
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: tokens.color.surface.card,
       overflow: "hidden",
     },
     reasonRow: {

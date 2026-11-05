@@ -568,3 +568,23 @@ describe("EventDetailSheet schedule and policy", () => {
     );
   });
 });
+
+describe("EventDetailSheet Mandatory badge", () => {
+  // A status, so danger as the events list and mobile draw it, never the
+  // chapter accent (components.md §5).
+  it("draws Mandatory as the danger badge", () => {
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={{ ...baseEvent, is_mandatory: true }}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+    const badge = screen.getByText("Mandatory");
+    expect(badge.className).toContain("text-destructive-text");
+    expect(badge.className).not.toContain("text-accent-text");
+  });
+});
