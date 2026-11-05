@@ -239,8 +239,10 @@ const DETAIL_ROWS = 4;
  * The screen's loading state, on the loaded screen's own styles: the photo's
  * circle with the name and meta lines under it, the two stat cards, and the
  * Details list. The Details caption is fixed text, so it is drawn as itself.
+ *
+ * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
  */
-function ProfileSkeleton() {
+export function ProfileSkeleton() {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens, accent);

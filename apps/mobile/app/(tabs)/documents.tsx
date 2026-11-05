@@ -161,7 +161,7 @@ export default function DocumentsScreen() {
     if (documentsQuery.isPending) {
       // Document rows in the list's own section: a title and its meta line.
       return (
-        <SkeletonRegion label="Loading documents">
+        <SkeletonRegion label="Loading chapter documents">
           <ListSection>
             {Array.from({ length: 4 }, (_, index) => (
               <ListRowSkeleton key={index} index={index} description />

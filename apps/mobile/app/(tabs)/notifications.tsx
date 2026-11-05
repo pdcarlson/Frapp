@@ -253,8 +253,10 @@ const SKELETON_TITLE_WIDTHS = ["62%", "48%", "70%", "54%"] as const;
  * and body lines, the meta line), so the real list lands in place. The dot
  * column is left empty, as on a read row: which rows are unread isn't known
  * yet.
+ *
+ * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
  */
-function NotificationListSkeleton({ rows = 4 }: { rows?: number }) {
+export function NotificationListSkeleton({ rows = 4 }: { rows?: number }) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
@@ -275,7 +277,11 @@ function NotificationListSkeleton({ rows = 4 }: { rows?: number }) {
               }
             />
             <SkeletonText role={label} lineHeight={LINE_HEIGHT} width="86%" />
-            <SkeletonText role={caption} width="24%" style={styles.rowMeta} />
+            <SkeletonText
+              role={caption}
+              width="24%"
+              style={styles.rowMetaSkeleton}
+            />
           </View>
         </View>
       ))}
@@ -292,6 +298,7 @@ const LINE_HEIGHT = 20;
 
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   const DOT_SIZE = tokens.spacing.sm;
+  const META_MARGIN_TOP = tokens.spacing.xs;
   return StyleSheet.create({
     headerAction: {
       ...typeRole(tokens.typography.role.label),
@@ -358,7 +365,11 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     rowMeta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
-      marginTop: tokens.spacing.xs,
+      marginTop: META_MARGIN_TOP,
+    },
+    // The meta line's margin, read from it so the two can't drift.
+    rowMetaSkeleton: {
+      marginTop: META_MARGIN_TOP,
     },
   });
 }

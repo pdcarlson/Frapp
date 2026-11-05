@@ -205,15 +205,17 @@ const SKELETON_NAME_WIDTHS = ["62%", "48%", "56%"] as const;
  * with the date block's two lines in its 52pt column, the name and the meta
  * line beside it, and a chip where the points land. The real cards replace
  * them in place.
+ *
+ * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
  */
-function EventListSkeleton({ cards = 3 }: { cards?: number }) {
+export function EventListSkeleton({ cards = 3 }: { cards?: number }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens, accent);
   const { caption, headline, title } = tokens.typography.role;
 
   return (
-    <SkeletonRegion label="Loading events" style={styles.skeletonList}>
+    <SkeletonRegion label="Loading chapter events" style={styles.skeletonList}>
       {Array.from({ length: cards }, (_, index) => (
         <View key={index} style={styles.card}>
           <View style={styles.dateBlock}>

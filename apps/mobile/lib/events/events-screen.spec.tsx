@@ -198,7 +198,9 @@ describe("Events list states", () => {
 
     // One region, named for what loads, shaped as the event cards.
     expect(skeletons(tree)).toHaveLength(1);
-    expect(skeletons(tree)[0]!.props.accessibilityLabel).toBe("Loading events");
+    expect(skeletons(tree)[0]!.props.accessibilityLabel).toBe(
+      "Loading chapter events",
+    );
     expect(screenText(tree)).not.toContain("Loading events");
   });
 

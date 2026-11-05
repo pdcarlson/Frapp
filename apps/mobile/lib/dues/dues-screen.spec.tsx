@@ -120,7 +120,10 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import DuesScreen from "@/app/(tabs)/dues";
-import { BalanceCard } from "@/components/dues/balance-card";
+import {
+  BalanceCard,
+  BalanceCardSkeleton,
+} from "@/components/dues/balance-card";
 import { OpenInvoiceRow } from "@/components/dues/open-invoice-row";
 import { CardListSkeleton } from "@/components/card-list-skeleton";
 import { SkeletonLines } from "@/components/state-block";
@@ -258,6 +261,8 @@ describe("Dues loading", () => {
 
     expect(tree.root.findAllByType(CardListSkeleton)).toHaveLength(1);
     expect(tree.root.findAllByType(SkeletonLines)).toHaveLength(0);
+    // The balance card's own skeleton, so the card doesn't grow in on load.
+    expect(tree.root.findAllByType(BalanceCardSkeleton)).toHaveLength(1);
   });
 });
 

@@ -254,7 +254,7 @@ export default function TasksScreen() {
       // place. The caption is a bar: which section comes first (DUE THIS WEEK
       // or LATER) depends on the tasks.
       return (
-        <SkeletonRegion label="Loading tasks" style={styles.skeleton}>
+        <SkeletonRegion label="Loading chapter tasks" style={styles.skeleton}>
           <SectionHeaderSkeleton width="30%" />
           <View style={styles.rows}>
             {Array.from({ length: 3 }, (_, index) => (

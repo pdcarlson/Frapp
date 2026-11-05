@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -20,6 +20,17 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
+// The screens' skeletons are imported from their route files, which reach
+// native modules through these; the skeletons use none of them.
+vi.mock("@/lib/auth-session", () => ({
+  useAuthSession: () => ({ email: null }),
+}));
+vi.mock("@/components/profile/profile-photo", () => ({
+  PROFILE_PHOTO_SIZE: 84,
+  ProfilePhoto: "ProfilePhoto",
+}));
+vi.mock("@/lib/ask/flag", () => ({ isAskAvailable: () => false }));
+
 import {
   SkeletonBlock,
   SkeletonPulse,
@@ -33,6 +44,16 @@ import { ChoiceRow, ChoiceRowSkeleton } from "./auth/choice-row";
 import { CardListSkeleton } from "./card-list-skeleton";
 import { BalanceCardSkeleton } from "./dues/balance-card";
 import { StartCardSkeleton } from "./study/start-card";
+import { ThreadSkeleton } from "./chat/thread-skeleton";
+import { ChannelListSkeleton } from "./chat/channel-row";
+import { JoinedChannelsSkeleton } from "./onboarding/joined-channels-card";
+import { EventListSkeleton } from "@/app/(tabs)/events";
+import { EventDetailSkeleton } from "@/app/(tabs)/event-details";
+import {
+  NotificationListRow,
+  NotificationListSkeleton,
+} from "@/app/(tabs)/notifications";
+import { ProfileSkeleton } from "@/app/(tabs)/profile";
 
 /**
  * components.md §10: "the skeleton mirrors the layout it becomes — same
@@ -175,6 +196,153 @@ describe("SkeletonRegion", () => {
     expect(style.marginTop).toBe(8);
     expect(style.borderRadius).toBe(tokens.radius.chip);
   });
+
+  // `style` is layout only: a caller's fill or opacity never wins over the
+  // neutral block or the shared pulse.
+  it("never lets a caller's style override the block's look", () => {
+    const tree = render(
+      <SkeletonPulse>
+        <SkeletonBlock
+          width={10}
+          height={10}
+          style={{ backgroundColor: "#FF0000", opacity: 0.1, borderRadius: 0 }}
+        />
+      </SkeletonPulse>,
+    );
+    const style = flatten(
+      tree.root.findByType("Animated.View" as never).props.style,
+    );
+    expect(style.backgroundColor).toBe(tokens.color.surface.popover);
+    expect(style.borderRadius).toBe(tokens.radius.chip);
+    expect(style.opacity).not.toBe(0.1);
+  });
+});
+
+/**
+ * Every skeleton's shapes are `SkeletonBlock`s, so the shimmer lands in one
+ * place: no host `View` paints the skeleton fill itself.
+ */
+describe("Every skeleton draws its shapes with SkeletonBlock", () => {
+  const SKELETONS: [string, React.ReactElement][] = [
+    [
+      "CardListSkeleton",
+      <CardListSkeleton
+        key="c"
+        label="Loading"
+        card={<BalanceCardSkeleton />}
+        summary
+      />,
+    ],
+    ["StartCardSkeleton", <StartCardSkeleton key="s" />],
+    ["ThreadSkeleton", <ThreadSkeleton key="t" />],
+    ["ChannelListSkeleton", <ChannelListSkeleton key="ch" />],
+    ["JoinedChannelsSkeleton", <JoinedChannelsSkeleton key="j" />],
+    ["EventListSkeleton", <EventListSkeleton key="e" />],
+    ["EventDetailSkeleton", <EventDetailSkeleton key="ed" />],
+    ["NotificationListSkeleton", <NotificationListSkeleton key="n" />],
+    ["ProfileSkeleton", <ProfileSkeleton key="p" />],
+  ];
+
+  it.each(SKELETONS)("%s", (_, node) => {
+    const tree = render(node);
+    const handDrawn = tree.root
+      .findAllByType("View" as never)
+      .filter(
+        (view) =>
+          flatten(view.props.style).backgroundColor ===
+          tokens.color.surface.popover,
+      );
+    expect(handDrawn).toHaveLength(0);
+    expect(tree.root.findAllByType(SkeletonBlock).length).toBeGreaterThan(0);
+  });
+});
+
+describe("Screen skeletons sit on their screen's frames", () => {
+  const views = (tree: ReactTestRenderer) =>
+    tree.root.findAllByType("View" as never).map((v) => flatten(v.props.style));
+
+  it("Events: cards on the event card's frame, with the 52pt date column", () => {
+    const tree = render(<EventListSkeleton cards={2} />);
+    const cards = views(tree).filter(
+      (style) => style.borderRadius === tokens.radius.cardLarge,
+    );
+    expect(cards).toHaveLength(2);
+    expect(cards[0]).toMatchObject({
+      flexDirection: "row",
+      gap: tokens.spacing.md,
+      padding: tokens.spacing.lg,
+      borderWidth: 1,
+      backgroundColor: tokens.color.surface.card,
+    });
+    expect(views(tree).filter((style) => style.width === 52)).toHaveLength(2);
+  });
+
+  it("Event details: the check-in card's frame and the calendar button's", () => {
+    const tree = render(<EventDetailSkeleton />);
+    expect(
+      views(tree).filter(
+        (style) =>
+          style.borderRadius === tokens.radius.card &&
+          style.padding === tokens.spacing.lg,
+      ),
+    ).toHaveLength(1);
+    expect(views(tree).filter((style) => style.height === 50)).toHaveLength(1);
+  });
+
+  it("Notifications: rows on the row's frame, with 20pt title and body lines", () => {
+    const real = render(
+      <NotificationListRow
+        row={
+          {
+            id: "n-1",
+            title: "Dues reminder",
+            body: "Spring dues are open.",
+            categoryLabel: "Dues",
+            time: "9:41 PM",
+            isUnread: false,
+            href: "/dues",
+          } as never
+        }
+        onPress={() => {}}
+      />,
+    );
+    const skeleton = render(<NotificationListSkeleton rows={1} />);
+    const row = views(skeleton).find((style) => style.minHeight !== undefined)!;
+
+    expect(frame(row)).toEqual(frame(firstStyle(real, "Pressable")));
+    expect(views(skeleton).filter((style) => style.height === 20)).toHaveLength(
+      2,
+    );
+  });
+
+  it("Profile: the photo's circle, two stat cards and four detail rows", () => {
+    const tree = render(<ProfileSkeleton />);
+    const photo = tree.root
+      .findAllByType("Animated.View" as never)
+      .map((node) => flatten(node.props.style))
+      .find((style) => style.width === 84);
+    expect(photo?.borderRadius).toBe(42);
+    expect(
+      views(tree).filter(
+        (style) =>
+          style.flex === 1 &&
+          style.backgroundColor === tokens.color.surface.surface1,
+      ),
+    ).toHaveLength(2);
+    expect(tree.root.findAllByType(ListRowSkeleton)).toHaveLength(4);
+  });
+
+  it("Joined channels: rows on the card row's frame", () => {
+    const tree = render(<JoinedChannelsSkeleton rows={3} />);
+    const rows = views(tree).filter(
+      (style) => style.minHeight === tokens.touch.minimum,
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.md,
+    });
+  });
 });
 
 describe("Placeholder rows sit on their real row's frame", () => {
@@ -255,7 +423,12 @@ describe("Placeholder rows sit on their real row's frame", () => {
 describe("CardListSkeleton", () => {
   it("draws every shape as a SkeletonBlock, so the shimmer lands once", () => {
     const tree = render(
-      <CardListSkeleton card={<BalanceCardSkeleton />} rows={3} summary />,
+      <CardListSkeleton
+        label="Loading your dues"
+        card={<BalanceCardSkeleton />}
+        rows={3}
+        summary
+      />,
     );
     const blocks = tree.root.findAllByType(SkeletonBlock);
     const drawn = tree.root.findAllByType("Animated.View" as never);
@@ -267,7 +440,12 @@ describe("CardListSkeleton", () => {
   });
 
   it("is one busy node with one pulse", () => {
-    const tree = render(<CardListSkeleton card={<StartCardSkeleton />} />);
+    const tree = render(
+      <CardListSkeleton
+        label="Loading study zones"
+        card={<StartCardSkeleton />}
+      />,
+    );
     const progress = tree.root.findAll(
       (node) => node.props.accessibilityRole === "progressbar",
     );
@@ -312,6 +490,7 @@ describe("Loading states stay shaped like their screens", () => {
   const files = [
     ...sources(join(root, "app")),
     ...sources(join(root, "components")),
+    ...sources(join(root, "lib")),
   ];
 
   /**
@@ -325,10 +504,23 @@ describe("Loading states stay shaped like their screens", () => {
     "components/state-block.tsx",
   ]);
 
+  /** The allowlist is written with `/`, whatever the host's separator. */
+  const posixRelative = (path: string) =>
+    relative(root, path).split(sep).join("/");
+
+  /**
+   * A spinner next to a "Loading…" caption, in either order, with the
+   * ellipsis character or three dots.
+   */
+  const SPINNER_OVER_CAPTION = [
+    /<ActivityIndicator[^]{0,200}?Loading[^<]*(…|\.\.\.)/,
+    /Loading[^<]*(…|\.\.\.)[^]{0,200}?<ActivityIndicator/,
+  ];
+
   it("keeps the generic card of bars off every screen", () => {
     const offenders = files
       .filter((path) => /<SkeletonLines\b/.test(readFileSync(path, "utf8")))
-      .map((path) => relative(root, path))
+      .map(posixRelative)
       .filter((path) => !GENERIC_ALLOWED.has(path));
 
     expect(offenders).toEqual([]);
@@ -337,11 +529,11 @@ describe("Loading states stay shaped like their screens", () => {
   it("never sets a spinner over a Loading caption", () => {
     const offenders = files
       .filter((path) =>
-        /<ActivityIndicator[^]{0,200}?Loading[^<]*…/.test(
-          readFileSync(path, "utf8"),
+        SPINNER_OVER_CAPTION.some((pattern) =>
+          pattern.test(readFileSync(path, "utf8")),
         ),
       )
-      .map((path) => relative(root, path));
+      .map(posixRelative);
 
     expect(offenders).toEqual([]);
   });

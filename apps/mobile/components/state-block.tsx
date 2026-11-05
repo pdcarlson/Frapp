@@ -162,8 +162,8 @@ const PULSE_HALF_MS = 600;
  * {@link SkeletonBlock} reads one opacity, so a skeleton of twenty blocks
  * makes one reduced-motion subscription, one pair of focus and blur
  * listeners and one animation, and its blocks are in step by construction.
- * {@link SkeletonLines} wraps its blocks in one, and a list whose loading
- * shape is its own rows (Chat home's `ChannelListSkeleton`) wraps them itself.
+ * {@link SkeletonLines} wraps its blocks in one, and {@link SkeletonRegion},
+ * which every screen's own skeleton draws in, brings one.
  *
  * The pulse runs on the UI thread. It holds still at full opacity, as the
  * blocks drew before there was a pulse:

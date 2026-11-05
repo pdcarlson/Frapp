@@ -319,8 +319,10 @@ function CheckInCard({
  * and the Add to calendar button's frame. The optional badge row is left out,
  * since most events carry no badge and a placeholder for one would leave a gap
  * when it doesn't land.
+ *
+ * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
  */
-function EventDetailSkeleton() {
+export function EventDetailSkeleton() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const { body, caption, label } = tokens.typography.role;

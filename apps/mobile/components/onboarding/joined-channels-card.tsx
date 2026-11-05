@@ -68,8 +68,10 @@ const SKELETON_NAME_WIDTHS = ["38%", "52%", "30%"] as const;
 /**
  * The card's loading state: channel rows on the loaded rows' own styles, the
  * `#`'s slot, the name, and the trailing word, split by the same rules.
+ *
+ * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
  */
-function JoinedChannelsSkeleton({ rows = 3 }: { rows?: number }) {
+export function JoinedChannelsSkeleton({ rows = 3 }: { rows?: number }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const { caption, label, title } = tokens.typography.role;
@@ -81,7 +83,7 @@ function JoinedChannelsSkeleton({ rows = 3 }: { rows?: number }) {
           {index > 0 ? <View style={styles.rule} /> : null}
           <View style={styles.row}>
             <SkeletonText role={title} width={tokens.spacing.md} />
-            <View style={styles.name}>
+            <View style={styles.nameSlot}>
               <SkeletonText
                 role={label}
                 width={
@@ -127,6 +129,10 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
+    },
+    // The name's flex, for the skeleton's bar.
+    nameSlot: {
+      flex: 1,
     },
     trailing: {
       ...typeRole(tokens.typography.role.caption),

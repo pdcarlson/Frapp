@@ -657,7 +657,11 @@ function ChapterDues() {
       return (
         <>
           {standalone}
-          <CardListSkeleton card={<BalanceCardSkeleton />} rows={3} />
+          <CardListSkeleton
+            label="Loading your dues"
+            card={<BalanceCardSkeleton />}
+            rows={3}
+          />
         </>
       );
     }

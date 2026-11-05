@@ -229,6 +229,8 @@ export function BalanceCardSkeleton() {
 }
 
 function createStyles(tokens: SignetTokens) {
+  // Shared by the card's lines and its skeleton's, so the two can't drift.
+  const margin = { amount: tokens.spacing.sm, button: tokens.spacing.lg };
   return StyleSheet.create({
     card: {
       borderRadius: tokens.radius.cardLarge,
@@ -253,7 +255,7 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.display),
       letterSpacing: -0.8,
       color: tokens.color.text.foreground,
-      marginTop: tokens.spacing.sm,
+      marginTop: margin.amount,
     },
     amountFraction: {
       // The drawn second tier: the cents sit at roughly half the dollar size in
@@ -270,14 +272,14 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       alignItems: "center",
       justifyContent: "center",
-      marginTop: tokens.spacing.lg,
+      marginTop: margin.button,
     },
-    // The skeleton's copies of the margins its real lines carry.
+    // The skeleton's lines take the margins the real ones do, from `margin`.
     skeletonAmount: {
-      marginTop: tokens.spacing.sm,
+      marginTop: margin.amount,
     },
     skeletonButton: {
-      marginTop: tokens.spacing.lg,
+      marginTop: margin.button,
     },
     payButtonPressed: {
       opacity: 0.85,

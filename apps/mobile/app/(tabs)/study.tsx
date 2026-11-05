@@ -869,7 +869,14 @@ export default function StudyScreen() {
     }
 
     if (sessionsQuery.isPending || zonesQuery.isPending) {
-      return <CardListSkeleton card={<StartCardSkeleton />} summary rows={3} />;
+      return (
+        <CardListSkeleton
+          label="Loading study zones"
+          card={<StartCardSkeleton />}
+          summary
+          rows={3}
+        />
+      );
     }
 
     if (sessionsQuery.isError) {

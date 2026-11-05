@@ -154,6 +154,12 @@ export function StartCardSkeleton() {
 }
 
 function createStyles(tokens: SignetTokens) {
+  // Shared by the card's lines and its skeleton's, so the two can't drift.
+  const margin = {
+    zoneMeta: 2,
+    button: tokens.spacing.md,
+    grace: tokens.spacing.md,
+  };
   return StyleSheet.create({
     card: {
       borderRadius: tokens.radius.cardLarge,
@@ -188,7 +194,7 @@ function createStyles(tokens: SignetTokens) {
     zoneMeta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
-      marginTop: 2,
+      marginTop: margin.zoneMeta,
     },
     chevron: {
       ...typeRole(tokens.typography.role.title),
@@ -199,7 +205,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       alignItems: "center",
       justifyContent: "center",
-      marginTop: tokens.spacing.md,
+      marginTop: margin.button,
     },
     startButtonPressed: {
       opacity: 0.85,
@@ -210,20 +216,20 @@ function createStyles(tokens: SignetTokens) {
     startLabel: {
       ...typeRole(tokens.typography.role.label),
     },
-    // The skeleton's copies of the margins its real lines carry.
+    // The skeleton's lines take the margins the real ones do, from `margin`.
     skeletonMeta: {
-      marginTop: 2,
+      marginTop: margin.zoneMeta,
     },
     skeletonButton: {
-      marginTop: tokens.spacing.md,
+      marginTop: margin.button,
     },
     skeletonGrace: {
-      marginTop: tokens.spacing.md,
+      marginTop: margin.grace,
     },
     grace: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
-      marginTop: tokens.spacing.md,
+      marginTop: margin.grace,
     },
   });
 }

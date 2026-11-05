@@ -25,10 +25,13 @@ import { useFrappTheme } from "@/lib/theme";
  * dependency `state-block.tsx` documents) lands once in `SkeletonBlock`.
  */
 export function CardListSkeleton({
+  label,
   card,
   rows = 3,
   summary = false,
 }: {
+  /** What is loading, for assistive tech (writing.md §7). */
+  label: string;
   /** The action card's own skeleton (`StartCardSkeleton`, `BalanceCardSkeleton`). */
   card: ReactNode;
   /** List rows to draw under the section caption. */
@@ -41,7 +44,7 @@ export function CardListSkeleton({
   const { caption } = tokens.typography.role;
 
   return (
-    <SkeletonRegion label="Loading" style={styles.stack}>
+    <SkeletonRegion label={label} style={styles.stack}>
       {card}
 
       {summary ? (

@@ -89,6 +89,7 @@ export function HistoryRowsSkeleton({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const META_MARGIN_TOP = 2;
   return StyleSheet.create({
     row: {
       flexDirection: "row",
@@ -111,10 +112,11 @@ function createStyles(tokens: SignetTokens) {
     meta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
-      marginTop: 2,
+      marginTop: META_MARGIN_TOP,
     },
+    // The meta line's margin, shared so the skeleton's can't drift from it.
     metaSkeleton: {
-      marginTop: 2,
+      marginTop: META_MARGIN_TOP,
     },
   });
 }

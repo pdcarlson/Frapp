@@ -295,7 +295,13 @@ export default function DirectoryScreen() {
           // The skeleton stands in for the rows themselves, so it takes no
           // inset: the empty and error cards do.
           !!chapterId && activeQuery.isPending ? (
-            <MemberListSkeleton />
+            <MemberListSkeleton
+              label={
+                tab === "alumni"
+                  ? "Loading alumni directory"
+                  : "Loading chapter members"
+              }
+            />
           ) : (
             <View style={styles.emptyWrap}>{renderBody()}</View>
           )
@@ -382,13 +388,20 @@ const SKELETON_NAME_WIDTHS = [
  * an avatar-sized circle and the name and meta lines, split by the same
  * hairlines, so the real rows land in place.
  */
-export function MemberListSkeleton({ rows = 6 }: { rows?: number }) {
+export function MemberListSkeleton({
+  label,
+  rows = 6,
+}: {
+  /** writing.md §7's string for the tab that is loading. */
+  label: string;
+  rows?: number;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const { caption, label } = tokens.typography.role;
+  const { role } = tokens.typography;
 
   return (
-    <SkeletonRegion label="Loading members">
+    <SkeletonRegion label={label}>
       {Array.from({ length: rows }, (_, index) => (
         <View key={index} style={styles.row}>
           <SkeletonBlock
@@ -398,10 +411,10 @@ export function MemberListSkeleton({ rows = 6 }: { rows?: number }) {
           />
           <View style={styles.rowText}>
             <SkeletonText
-              role={label}
+              role={role.label}
               width={SKELETON_NAME_WIDTHS[index % SKELETON_NAME_WIDTHS.length]!}
             />
-            <SkeletonText role={caption} width="28%" />
+            <SkeletonText role={role.caption} width="28%" />
           </View>
         </View>
       ))}

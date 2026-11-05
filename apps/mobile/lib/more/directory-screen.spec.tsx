@@ -384,7 +384,7 @@ describe("s13's loading state", () => {
       );
       skeleton = create(
         <FrappThemeProvider>
-          <MemberListSkeleton rows={2} />
+          <MemberListSkeleton label="Loading chapter members" rows={2} />
         </FrappThemeProvider>,
       );
     });
@@ -397,7 +397,7 @@ describe("s13's loading state", () => {
     const [region, firstRow] = skeleton.root.findAllByType("View" as never);
 
     expect(region!.props.accessibilityRole).toBe("progressbar");
-    expect(region!.props.accessibilityLabel).toBe("Loading members");
+    expect(region!.props.accessibilityLabel).toBe("Loading chapter members");
     const row = flat(firstRow!.props.style);
     for (const key of [
       "paddingVertical",
