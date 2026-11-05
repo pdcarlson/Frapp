@@ -90,7 +90,7 @@ export function AskPill({ className }: { className?: string }) {
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             In the meantime, everything Ask would quote is already readable:
-            find channels, members and messages from the top bar
+            find channels, members, messages and more from the top bar
             {documentsEnabled ? ", and chapter files live under Documents." : "."}
           </p>
           <DialogFooter>

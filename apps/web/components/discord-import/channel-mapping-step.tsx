@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 import {
+  dashboardFilterSelectClassName,
   dashboardFormSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
@@ -765,7 +766,7 @@ function BulkVisibilitySelect({
   return (
     <select
       aria-label={label}
-      className={cn(dashboardFormSelectClassName, "h-11 w-auto")}
+      className={cn(dashboardFilterSelectClassName, "w-auto")}
       value=""
       onChange={(event) => bulk.choose(event.target.value)}
     >

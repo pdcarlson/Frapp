@@ -227,9 +227,10 @@ export function OpsSetupNudgeCard({
           */
           aria-label={`Dismiss the ${label} suggestion`}
           className={cn(
-            // 44px square: §2's touch floor applies to the one control on this
-            // card that destroys something, and it sits beside a 44px button.
-            "inline-flex h-11 w-11 items-center justify-center rounded-md",
+            // Square at the Small step, 36 to a mouse and 44 to a finger: §2's
+            // touch floor applies to the one control on this card that
+            // destroys something, and it matches the `sm` button beside it.
+            "inline-flex h-9 w-9 items-center justify-center rounded-md pointer-coarse:h-11 pointer-coarse:w-11",
             "text-accent-text transition-colors hover:bg-accent-subtle-hover",
             FOCUS_RING,
           )}

@@ -9,15 +9,18 @@ import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 /*
  * The toggle, `spec/ui/design-system/components.md` §4.
  *
- * Track 50×30, thumb 24, full-round — **the only sanctioned pill in the
- * system** (§2 bans pill shapes everywhere else, and names this as the one
- * exception). The scaffold shipped it at 36×20 with a 16px thumb, which is
- * under the 44px touch floor on its own; the row it sits in still has to carry
- * the ≥44px hit area (§2), which is the caller's layout, not this primitive's.
+ * Track 36×22 with an 18px thumb to a mouse (the board's `4c` toggle) and
+ * 50×30 with a 24px thumb to a finger, full-round — **the only sanctioned
+ * pill in the system** (§2 bans pill shapes everywhere else, and names this as
+ * the one exception). Until 2026-11-05 it was 50×30 everywhere, which stood
+ * taller than the 40px field beside it; the coarse size keeps the touch
+ * geometry (#3057). The row it sits in still has to carry the ≥44px hit area
+ * on touch (§2), which is the caller's layout, not this primitive's.
  *
- * The thumb travels the track's inner width minus its own — 50 − 2×1px border
- * − 24 — so the 24px offset here is derived from the geometry above rather
- * than eyeballed, and stays correct as long as the two move together.
+ * The thumb travels the track's inner width minus its own — 36 − 2×1px border
+ * − 18 = 16, and 50 − 2 − 24 = 24 — so each offset here is derived from the
+ * geometry above rather than eyeballed, and stays correct as long as they
+ * move together.
  *
  * ## Every state rule here is `enabled:`-scoped, deliberately
  *
@@ -39,7 +42,7 @@ const Switch = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SwitchPrimitives.Root
     className={cn(
-      "group peer inline-flex h-[30px] w-[50px] shrink-0 cursor-pointer items-center rounded-full border transition-colors",
+      "group peer inline-flex h-[22px] w-9 shrink-0 pointer-coarse:h-[30px] pointer-coarse:w-[50px] cursor-pointer items-center rounded-full border transition-colors",
       "enabled:data-[state=checked]:border-transparent enabled:data-[state=checked]:bg-primary",
       "enabled:data-[state=unchecked]:border-input enabled:data-[state=unchecked]:bg-popover",
       FOCUS_RING_OFFSET,
@@ -88,8 +91,8 @@ const Switch = React.forwardRef<
   >
     <SwitchPrimitives.Thumb
       className={cn(
-        "pointer-events-none block h-6 w-6 rounded-full ring-0 transition-transform",
-        "data-[state=checked]:translate-x-6 data-[state=checked]:bg-primary-foreground",
+        "pointer-events-none block h-[18px] w-[18px] rounded-full ring-0 transition-transform pointer-coarse:h-6 pointer-coarse:w-6",
+        "data-[state=checked]:translate-x-4 pointer-coarse:data-[state=checked]:translate-x-6 data-[state=checked]:bg-primary-foreground",
         "data-[state=unchecked]:translate-x-0 data-[state=unchecked]:bg-muted",
         // The thumb is a child, so `disabled:` on the root never reaches it.
         // Radix stamps `data-disabled` on the root; `group-data-` carries two

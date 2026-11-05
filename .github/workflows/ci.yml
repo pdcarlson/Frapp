@@ -89,6 +89,8 @@ jobs:
               - '.github/environments.json'
               # The search-column landmark reads the API's search repository.
               - 'apps/api/src/infrastructure/supabase/repositories/supabase-search.repository.ts'
+              # The default-channel-descriptions tier checks its lines against the seeder.
+              - 'apps/api/src/domain/constants/permissions.ts'
               # The job's own definition and npm script. Required (#2538): every file the
               # check reads belongs in this list.
               - '.github/workflows/ci.yml'
