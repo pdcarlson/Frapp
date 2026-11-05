@@ -3,7 +3,6 @@ import { Alert, AppState, StyleSheet, View } from "react-native";
 import type { AppStateStatus } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
-  useActiveChapterId,
   useCurrentChapter,
   useGeofences,
   usePauseStudySession,
@@ -149,16 +148,9 @@ export default function StudyScreen() {
   );
   const zonesQuery = useGeofences();
   const sessionsQuery = useStudySessions();
-  // Zones and sessions resolve a sole membership server-side, so the pull
-  // works without the claim (see `renderBody`); only the chapter read is
-  // gated on it, since `refetch` ignores `enabled`. A refetched page adopts a
-  // session and never clears one, so a pull cannot end a live session.
-  const chapterId = useActiveChapterId();
-  const refresh = useRefetchAll(
-    chapterId
-      ? [chapterQuery.refetch, zonesQuery.refetch, sessionsQuery.refetch]
-      : [zonesQuery.refetch, sessionsQuery.refetch],
-  );
+  // A refetched page adopts a session and never clears one (below), so a
+  // pull cannot end a live session.
+  const refresh = useRefetchAll([chapterQuery, zonesQuery, sessionsQuery]);
 
   const startSession = useStartStudySession();
   const heartbeat = useStudyHeartbeat();

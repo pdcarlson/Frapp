@@ -23,7 +23,7 @@ import {
   useChannelUnreadCounts,
   useGetOrCreateDm,
   useChannels,
-  useActiveChapterId,
+  useChapterRoster,
   useEvents,
   useLeaveChannel,
   useMemberDisplayNames,
@@ -31,6 +31,7 @@ import {
   useSetSidebarFilter,
   useSetSidebarSectionCollapsed,
   useSidebarPreferences,
+  useSidebarPreferencesRefetch,
   useTasks,
   useViewerUserId,
 } from "@repo/hooks";
@@ -108,17 +109,6 @@ export default function ChatHomeScreen() {
   const unreadQuery = useChannelUnreadCounts();
   const eventsQuery = useEvents();
   const tasksQuery = useTasks();
-  const chapterId = useActiveChapterId();
-  const refresh = useRefetchAll(
-    [
-      channelsQuery.refetch,
-      categoriesQuery.refetch,
-      unreadQuery.refetch,
-      eventsQuery.refetch,
-      tasksQuery.refetch,
-    ],
-    !!chapterId,
-  );
   // A DM row's title is the *other* participant, so the list needs the viewer's
   // `users.id` to subtract. Deliberately not `useChatRuntime()`, which would
   // reconfigure the realtime manager and boot the outbox flush from this screen.
@@ -170,6 +160,20 @@ export default function ChatHomeScreen() {
     useSetSidebarSectionCollapsed(sidebarWriteOptions);
   const { mutate: setSidebarFilter } = useSetSidebarFilter(sidebarWriteOptions);
   const notificationPrefsQuery = useChannelNotificationPreferences();
+  // Everything the list draws: rows, categories, badges, the agenda, mute
+  // state, the arrangement, and the names a DM row is titled with.
+  const sidebarRefetch = useSidebarPreferencesRefetch();
+  const rosterQuery = useChapterRoster();
+  const refresh = useRefetchAll([
+    channelsQuery,
+    categoriesQuery,
+    unreadQuery,
+    eventsQuery,
+    tasksQuery,
+    notificationPrefsQuery,
+    sidebarRefetch,
+    rosterQuery,
+  ]);
 
   // Categories are grouping only. While they load, or if the read fails,
   // `selectCategories` gives `[]` and every channel sits under CHANNELS, the

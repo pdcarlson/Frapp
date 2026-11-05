@@ -53,26 +53,34 @@ const MEMBERS = [MARCUS, CHARLES, ANDRE, DANIEL];
 /** `GET /v1/alumni`: its own endpoint, its own payload. */
 const ALUMNI = [CHARLES, DANIEL];
 
-function read(data: unknown) {
+function read(data: unknown, refetch = vi.fn()) {
   return {
     data,
     isPending: false,
     isError: false,
     isSuccess: true,
     isFetching: false,
-    refetch: vi.fn(),
+    refetch,
   };
 }
 
 const state = vi.hoisted(() => ({ search: [] as unknown[] }));
 
+// One refetch per read, so a pull can be checked against each of them.
+const refetches = vi.hoisted(() => ({
+  members: vi.fn(),
+  alumni: vi.fn(),
+  search: vi.fn(),
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => "c-1",
-  useMembers: () => read(MEMBERS),
+  useMembers: () => read(MEMBERS, refetches.members),
   useAlumni: (filters?: { company?: string }) =>
-    read(filters?.company === "Acme" ? [CHARLES] : ALUMNI),
-  useMemberSearch: (q: string) => (q ? read(state.search) : read(undefined)),
+    read(filters?.company === "Acme" ? [CHARLES] : ALUMNI, refetches.alumni),
+  useMemberSearch: (q: string) =>
+    read(q ? state.search : undefined, refetches.search),
 }));
 
 // The back row paints the chapter accent; its value is back-row.spec.tsx's.
@@ -188,6 +196,9 @@ function countOf(tree: ReactTestRenderer, value: string) {
 
 beforeEach(() => {
   state.search = [];
+  for (const refetch of Object.values(refetches)) {
+    refetch.mockReset().mockResolvedValue(undefined);
+  }
 });
 
 describe("s13 Directory on a chapter with alumni (#2484)", () => {
@@ -282,6 +293,21 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
     });
   });
 
+  it("refreshes the members, alumni and search reads on a pull (#3385)", async () => {
+    const tree = render();
+    const control = list(tree).props.refreshControl as React.ReactElement<{
+      refresh: () => Promise<unknown>;
+    }>;
+
+    await act(async () => {
+      await control.props.refresh();
+    });
+
+    for (const refetch of Object.values(refetches)) {
+      expect(refetch).toHaveBeenCalledWith({ cancelRefetch: false });
+    }
+  });
+
   it("searches across both lists", () => {
     state.search = [CHARLES, MARCUS];
     const tree = render();
@@ -352,9 +378,9 @@ describe("s13's member rows", () => {
   it("gives a row with nothing to open no feedback", () => {
     const row = pressableOf(undefined);
     expect(row.props.android_ripple).toBeUndefined();
-    expect(
-      JSON.stringify(row.props.style({ pressed: true })),
-    ).not.toContain(signetDarkTokens.color.surface.card);
+    expect(JSON.stringify(row.props.style({ pressed: true }))).not.toContain(
+      signetDarkTokens.color.surface.card,
+    );
   });
 });
 

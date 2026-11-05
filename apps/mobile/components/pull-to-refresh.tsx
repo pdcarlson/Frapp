@@ -10,28 +10,48 @@ import { useFrappTheme } from "@/lib/theme";
 export type ScreenRefresh = () => Promise<unknown>;
 
 /**
- * A screen's refresh: every query it reads, refetched together, or nothing
- * to pull when the screen has no chapter yet. That gate matters because a
- * disabled query's `refetch` still runs its fetch, and every chapter-scoped
- * hook is disabled until a chapter is active.
+ * The part of a TanStack query result a pull needs. `isEnabled` is optional
+ * only so a spec's stand-in can leave it out; every real result carries it.
+ */
+export type RefreshableQuery = {
+  refetch: (options?: { cancelRefetch?: boolean }) => Promise<unknown>;
+  isEnabled?: boolean;
+};
+
+/**
+ * A screen's refresh: every query it reads, refetched together.
  *
- * Returns a stable callback that always calls the latest `refetch`es, so a
- * screen passes `[query.refetch, …]` inline.
+ * Only the queries that are enabled right now are refetched, because a
+ * query's `refetch` ignores `enabled` and runs its fetch anyway. Each hook's
+ * own gate (an active chapter, the viewer's id, a non-empty search) therefore
+ * holds for the pull too, with no gate restated per screen: a viewer-scoped
+ * read waiting on `/v1/users/me` would otherwise go out unscoped and fetch
+ * the whole chapter's rows.
+ *
+ * A pull that lands on a focus or reconnect refetch already in flight joins
+ * it (`cancelRefetch: false`, as TanStack's own focus and reconnect paths
+ * do) rather than cancelling it and asking again.
+ *
+ * Returns a stable callback that reads the latest results, so a screen passes
+ * `[query, …]` inline.
  */
 export function useRefetchAll(
-  refetches: readonly (() => Promise<unknown>)[],
-  enabled = true,
-): ScreenRefresh | undefined {
-  const latest = useRef(refetches);
+  queries: readonly RefreshableQuery[],
+): ScreenRefresh {
+  const latest = useRef(queries);
   // After commit, not during render: a pull always comes after one.
   useEffect(() => {
-    latest.current = refetches;
+    latest.current = queries;
   });
-  const refresh = useCallback(
-    () => Promise.all(latest.current.map((refetch) => refetch())),
+  return useCallback(
+    () =>
+      Promise.all(
+        latest.current
+          .filter((query) => query.isEnabled !== false)
+          .map((query) => query.refetch({ cancelRefetch: false })),
+      ),
     [],
   );
-  return enabled ? refresh : undefined;
 }
 
 /**
@@ -74,6 +94,12 @@ export function usePullToRefresh(refresh: ScreenRefresh): {
  * through to `RefreshControl`, and that matters: on Android the scroll view
  * clones this element with the list itself as its children and a style, so a
  * wrapper that dropped them would draw an empty screen.
+ *
+ * A scroll view renders a different tree with a control than without one
+ * (Android wraps itself in the clone; iOS adds a sibling), so adding or
+ * removing the control remounts the whole list. A screen that offers the pull
+ * therefore offers it for its whole life, and `useRefetchAll` turns a pull
+ * with nothing enabled into a no-op instead of taking the control away.
  */
 export function ThemedRefreshControl({
   refresh,

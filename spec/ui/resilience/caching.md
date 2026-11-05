@@ -83,6 +83,7 @@ The outbox carries `chapterId` and drafts do not, which is not an oversight eith
 | Supabase Realtime event | Relevant query key (auto-updated) |
 | Window focus (tab switch) | All stale queries (TanStack built-in) |
 | Network reconnect | Mounted, enabled queries. Web forces even fresh ones (`refetchOnReconnect: "always"`); mobile leaves the default, so only stale ones refetch. Separately, a fetch the drop left paused resumes regardless of observers |
+| Member pulls a mobile list | The screen's enabled queries, fresh or not; one already in flight is joined, not restarted. A disabled query is skipped, because `refetch` ignores `enabled` ([`pull-to-refresh.tsx`](../../../apps/mobile/components/pull-to-refresh.tsx)) |
 
 **Those last two rows are delivered on mobile, not merely specified.** They depend on
 TanStack's `onlineManager` and `focusManager`, which nothing wired until
@@ -92,8 +93,8 @@ specifics: `DEGRADED` is published as **online**, because requests there are slo
 intermittent rather than impossible and telling TanStack otherwise would pause every
 retry exactly when a retry is what recovers; and there is no window, so `focusManager`
 is driven by `AppState` — `"active"` only, since iOS `inactive` is Control Center and
-the app switcher, not a background. The explicit retry controls on s04/s06 stay
-regardless: they are still the only recovery from a *server* error, which no amount of
-connectivity signalling fixes.
+the app switcher, not a background. A *server* error, which no amount of
+connectivity signalling fixes, is recovered by a pull; the explicit retry controls on
+s04/s06 stay as the recovery a member can see without knowing the gesture.
 
 ---

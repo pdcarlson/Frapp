@@ -64,13 +64,9 @@ export default function ServiceHoursScreen() {
   const entriesQuery = useServiceEntries(viewerUserId ?? undefined, undefined, {
     enabled: !!viewerUserId,
   });
-  // The pull refetches the entries only once the id is known: `refetch`
-  // ignores `enabled`, and an unscoped read is the chapter-wide list above.
-  const refresh = useRefetchAll(
-    viewerUserId
-      ? [viewerQuery.refetch, entriesQuery.refetch]
-      : [viewerQuery.refetch],
-  );
+  // The pull skips the entries while they wait on the id, as the read
+  // itself does: unscoped, it is the chapter-wide list above.
+  const refresh = useRefetchAll([viewerQuery, entriesQuery]);
 
   const rows = useMemo(
     () => selectServiceEntryRows(entriesQuery.data),

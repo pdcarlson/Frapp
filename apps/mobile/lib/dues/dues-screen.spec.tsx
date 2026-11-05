@@ -85,6 +85,7 @@ let viewerError = false;
 /** `null` while `/v1/users/me` hasn't answered. */
 let viewerId: string | null = VIEWER;
 const refetchInvoices = vi.fn();
+const refetchViewer = vi.fn();
 const payInvoice = vi.fn();
 const awaitPaid = vi.fn();
 
@@ -95,13 +96,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentUser: () => ({
     isError: viewerError,
     isFetching: false,
-    refetch: vi.fn(),
+    refetch: refetchViewer,
   }),
-  useInvoices: () => ({
+  // `isEnabled` follows the screen's `enabled`, as a TanStack result's does.
+  useInvoices: (_userId?: string, options?: { enabled?: boolean }) => ({
     data: invoicesPending ? undefined : invoices,
     isPending: invoicesPending,
     isError: invoicesError,
     isFetching: false,
+    isEnabled: options?.enabled ?? true,
     refetch: refetchInvoices,
   }),
   usePayInvoice: () => ({ mutateAsync: payInvoice }),
@@ -219,8 +222,7 @@ function flatten(style: unknown): Record<string, unknown> {
 /** The one `Text` drawing exactly `text`. */
 const line = (tree: ReactTestRenderer, text: string) =>
   tree.root.find(
-    (node) =>
-      node.type === ("Text" as never) && drawnText(node) === text,
+    (node) => node.type === ("Text" as never) && drawnText(node) === text,
   );
 
 const DESTRUCTIVE = signetDarkTokens.color.semantic.destructive;
@@ -234,6 +236,7 @@ beforeEach(() => {
   viewerId = VIEWER;
   focusManager.setFocused(undefined);
   refetchInvoices.mockReset().mockResolvedValue(undefined);
+  refetchViewer.mockReset().mockResolvedValue(undefined);
   payInvoice.mockReset().mockResolvedValue({ client_secret: "pi_secret" });
   awaitPaid.mockReset().mockResolvedValue(false);
   presentPaymentSheet.mockReset().mockResolvedValue({ kind: "completed" });
@@ -258,6 +261,42 @@ describe("Dues loading", () => {
 
     expect(tree.root.findAllByType(CardListSkeleton)).toHaveLength(1);
     expect(tree.root.findAllByType(SkeletonLines)).toHaveLength(0);
+  });
+});
+
+describe("Dues pull-to-refresh (#3385)", () => {
+  /**
+   * Pulls the screen down. The stand-in ScrollView doesn't draw its
+   * `refreshControl`, so this calls the `refresh` that element was handed.
+   */
+  async function pull(tree: ReactTestRenderer) {
+    const scroll = tree.root.find(
+      (node) =>
+        node.type === ("ScrollView" as never) &&
+        node.props.refreshControl != null,
+    );
+    await act(async () => {
+      await scroll.props.refreshControl.props.refresh();
+    });
+  }
+
+  it("refreshes the viewer and their invoices on a pull (#3385)", async () => {
+    const tree = mount();
+    await pull(tree);
+
+    expect(refetchViewer).toHaveBeenCalledWith({ cancelRefetch: false });
+    expect(refetchInvoices).toHaveBeenCalledWith({ cancelRefetch: false });
+  });
+
+  it("leaves the invoice read alone on a pull while the viewer's id is unknown", async () => {
+    // Unscoped, the read would ask for the whole chapter's ledger.
+    viewerId = null;
+    const tree = mount();
+    refetchInvoices.mockClear();
+    await pull(tree);
+
+    expect(refetchViewer).toHaveBeenCalledTimes(1);
+    expect(refetchInvoices).not.toHaveBeenCalled();
   });
 });
 

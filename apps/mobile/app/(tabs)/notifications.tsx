@@ -82,7 +82,7 @@ export default function NotificationsScreen() {
   const chapterId = useActiveChapterId();
 
   const notificationsQuery = useNotifications();
-  const refresh = useRefetchAll([notificationsQuery.refetch], !!chapterId);
+  const refresh = useRefetchAll([notificationsQuery]);
   const markRead = useMarkNotificationRead();
   const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [markAllNote, setMarkAllNote] = useState<string | null>(null);

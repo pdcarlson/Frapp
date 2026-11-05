@@ -286,13 +286,9 @@ function ChapterDues() {
   const invoicesQuery = useInvoices(viewerUserId ?? undefined, {
     enabled: !!viewerUserId,
   });
-  // The pull holds the invoice read to the same gate: a `refetch` ignores
-  // `enabled`, and without the id it would ask for the whole ledger.
-  const refresh = useRefetchAll(
-    viewerUserId
-      ? [viewerQuery.refetch, invoicesQuery.refetch]
-      : [viewerQuery.refetch],
-  );
+  // The invoice read stays off until the id is known, and the pull skips it
+  // while it is: unscoped, it would ask for the whole ledger.
+  const refresh = useRefetchAll([viewerQuery, invoicesQuery]);
   const payInvoice = usePayInvoice();
   // Wider than the web default of 8 × 1500ms: a phone returning from the Stripe
   // sheet re-renders and re-authenticates on a mobile network, so the same

@@ -60,7 +60,7 @@ export default function EventsScreen() {
     [eventsQuery.data, now],
   );
 
-  const refresh = useRefetchAll([eventsQuery.refetch], !!chapterId);
+  const refresh = useRefetchAll([eventsQuery]);
 
   function openEvent(eventId: string) {
     // Object form, because s07 now takes a param. Covered by the `pathname:`

@@ -81,15 +81,12 @@ export default function TasksScreen() {
   const tasksQuery = useTasks();
   const pointsQuery = useMyPoints("semester");
   const leaderboardQuery = useLeaderboard("semester");
-  const refresh = useRefetchAll(
-    [
-      viewerQuery.refetch,
-      tasksQuery.refetch,
-      pointsQuery.refetch,
-      leaderboardQuery.refetch,
-    ],
-    !!chapterId,
-  );
+  const refresh = useRefetchAll([
+    viewerQuery,
+    tasksQuery,
+    pointsQuery,
+    leaderboardQuery,
+  ]);
   const updateStatus = useUpdateTaskStatus();
 
   // `can` from @repo/validation, not a bare `includes` — an owner's grant is the
@@ -238,10 +235,9 @@ export default function TasksScreen() {
 
     // Checked before the pending gate below, because `useViewerUserId` reports a
     // failed `/v1/users/me` as `null` too. Without this branch a 500 there
-    // leaves the board shimmering forever with no retry — the exact "blip at
-    // launch leaves a screen dead until a force-quit" case `state-block.tsx`
-    // says `onRetry` exists to prevent. A pull refetches it too (#3385), but
-    // nothing on screen says so.
+    // leaves the board shimmering forever with no retry, a screen dead until a
+    // force-quit. A pull refetches it too (#3385), but nothing on screen says
+    // so, which is why `ErrorState` keeps its button (`state-block.tsx`).
     if (viewerQuery.isError) {
       return (
         <ErrorState

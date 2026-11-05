@@ -7,8 +7,14 @@ import { describe, expect, it, vi } from "vitest";
 import { getSignetTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+} from "@tanstack/react-query";
+import {
   ThemedRefreshControl,
   useRefetchAll,
+  type RefreshableQuery,
   type ScreenRefresh,
 } from "./pull-to-refresh";
 
@@ -103,65 +109,102 @@ describe("ThemedRefreshControl (#3385)", () => {
 
 describe("useRefetchAll (#3385)", () => {
   function Probe({
-    refetches,
-    enabled,
+    queries,
     onRefresh,
   }: {
-    refetches: (() => Promise<unknown>)[];
-    enabled?: boolean;
-    onRefresh: (refresh: ScreenRefresh | undefined) => void;
+    queries: RefreshableQuery[];
+    onRefresh: (refresh: ScreenRefresh) => void;
   }) {
-    onRefresh(useRefetchAll(refetches, enabled));
+    onRefresh(useRefetchAll(queries));
     return null;
   }
 
-  it("refetches every query together", async () => {
-    const a = vi.fn(() => Promise.resolve("a"));
-    const b = vi.fn(() => Promise.resolve("b"));
-    let refresh: ScreenRefresh | undefined;
-    render(<Probe refetches={[a, b]} onRefresh={(r) => (refresh = r)} />);
+  const query = (isEnabled?: boolean) => ({
+    refetch: vi.fn(() => Promise.resolve()),
+    ...(isEnabled === undefined ? {} : { isEnabled }),
+  });
+
+  it("refetches every enabled query together, joining one already in flight", async () => {
+    const a = query(true);
+    const b = query();
+    let refresh!: ScreenRefresh;
+    render(<Probe queries={[a, b]} onRefresh={(r) => (refresh = r)} />);
 
     await act(async () => {
-      await refresh!();
+      await refresh();
     });
-    expect(a).toHaveBeenCalledTimes(1);
-    expect(b).toHaveBeenCalledTimes(1);
+    expect(a.refetch).toHaveBeenCalledExactlyOnceWith({ cancelRefetch: false });
+    expect(b.refetch).toHaveBeenCalledExactlyOnceWith({ cancelRefetch: false });
   });
 
-  it("offers nothing to pull while disabled, since refetch ignores enabled", () => {
-    let refresh: ScreenRefresh | undefined = () => Promise.resolve();
-    render(
-      <Probe
-        refetches={[() => Promise.resolve()]}
-        enabled={false}
-        onRefresh={(r) => (refresh = r)}
-      />,
-    );
+  it("skips a disabled query, since refetch ignores enabled", async () => {
+    const on = query(true);
+    const off = query(false);
+    let refresh!: ScreenRefresh;
+    render(<Probe queries={[on, off]} onRefresh={(r) => (refresh = r)} />);
 
-    expect(refresh).toBeUndefined();
+    await act(async () => {
+      await refresh();
+    });
+    expect(on.refetch).toHaveBeenCalledTimes(1);
+    expect(off.refetch).not.toHaveBeenCalled();
   });
 
-  it("stays the same callback across renders and calls the latest refetches", async () => {
-    const first = vi.fn(() => Promise.resolve());
-    const second = vi.fn(() => Promise.resolve());
-    const seen: (ScreenRefresh | undefined)[] = [];
+  it("stays the same callback across renders and reads the latest queries", async () => {
+    const first = query(true);
+    const second = query(true);
+    const seen: ScreenRefresh[] = [];
     let tree!: ReactTestRenderer;
     act(() => {
       tree = create(
-        <Probe refetches={[first]} onRefresh={(r) => seen.push(r)} />,
+        <Probe queries={[first]} onRefresh={(r) => seen.push(r)} />,
       );
     });
     act(() => {
-      tree.update(
-        <Probe refetches={[second]} onRefresh={(r) => seen.push(r)} />,
-      );
+      tree.update(<Probe queries={[second]} onRefresh={(r) => seen.push(r)} />);
     });
 
     expect(seen[0]).toBe(seen[seen.length - 1]);
     await act(async () => {
       await seen[seen.length - 1]!();
     });
-    expect(first).not.toHaveBeenCalled();
-    expect(second).toHaveBeenCalledTimes(1);
+    expect(first.refetch).not.toHaveBeenCalled();
+    expect(second.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("never fetches a real query its hook keeps off", async () => {
+    // Against TanStack itself, not a stand-in: the guarantee rests on
+    // `isEnabled` mirroring `enabled`, which a mock cannot prove.
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const gated = vi.fn(() => Promise.resolve("whole ledger"));
+    const open = vi.fn(() => Promise.resolve("mine"));
+    let refresh!: ScreenRefresh;
+    function Screen() {
+      const off = useQuery({
+        queryKey: ["off"],
+        queryFn: gated,
+        enabled: false,
+      });
+      const on = useQuery({ queryKey: ["on"], queryFn: open });
+      refresh = useRefetchAll([off, on]);
+      return null;
+    }
+    await act(async () => {
+      create(
+        <QueryClientProvider client={client}>
+          <Screen />
+        </QueryClientProvider>,
+      );
+    });
+    open.mockClear();
+
+    await act(async () => {
+      await refresh();
+    });
+    expect(gated).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledTimes(1);
+    client.clear();
   });
 });

@@ -51,9 +51,10 @@ type ScreenShellProps = {
    */
   headerAction?: ReactNode;
   /**
-   * Pull-to-refresh on the shell's scroll view (#3385): the screen's queries'
-   * `refetch`, awaited together. The spinner stays up until it settles. A
-   * screen with nothing to refetch passes none, and draws no control.
+   * Pull-to-refresh on the shell's scroll view (#3385): `useRefetchAll` over
+   * the screen's queries. The spinner stays up until it settles. Pass it for
+   * the screen's whole life or not at all: adding or removing the control
+   * remounts everything under the scroll view.
    */
   refresh?: ScreenRefresh;
   children: ReactNode;

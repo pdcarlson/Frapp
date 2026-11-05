@@ -123,15 +123,9 @@ export default function DirectoryScreen() {
     : tab === "actives"
       ? membersQuery
       : alumniQuery;
-  // The pull refetches what the screen shows: the search results while
-  // searching (that query is also gated on a non-empty term), otherwise both
-  // lists, since the tab chips count each.
-  const refresh = useRefetchAll(
-    isSearching
-      ? [searchQuery.refetch]
-      : [membersQuery.refetch, alumniQuery.refetch],
-    !!chapterId,
-  );
+  // Both lists, since the tab chips count each, and the search results
+  // while there is a term (that query is off without one).
+  const refresh = useRefetchAll([membersQuery, alumniQuery, searchQuery]);
 
   // `GET /v1/members` is the whole chapter; the Actives tab is the part of it
   // that isn't on the Alumni tab (#2484). Search stays directory-wide: it hides
@@ -317,9 +311,7 @@ export default function DirectoryScreen() {
         )}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
-        refreshControl={
-          refresh ? <ThemedRefreshControl refresh={refresh} /> : undefined
-        }
+        refreshControl={<ThemedRefreshControl refresh={refresh} />}
       />
       <MemberDetailSheet
         ref={detailSheetRef}

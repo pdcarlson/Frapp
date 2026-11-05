@@ -214,6 +214,25 @@ describe("Events list states", () => {
     expect(refetch).toHaveBeenCalled();
   });
 
+  it("refreshes the events on a pull (#3385)", async () => {
+    refetch.mockClear();
+    const tree = render();
+
+    // The scroll view is a string host here, so it never renders its control.
+    // The control is read off its prop instead, and its refresh is the pull.
+    const [scroll] = tree.root.findAllByType(
+      "ScrollView" as unknown as React.ElementType,
+    );
+    const control = scroll.props.refreshControl as
+      React.ReactElement<{ refresh: () => Promise<unknown> }> | undefined;
+    expect(control).toBeDefined();
+    await act(async () => {
+      await control!.props.refresh();
+    });
+
+    expect(refetch).toHaveBeenCalledWith({ cancelRefetch: false });
+  });
+
   it("says nothing is scheduled without narrating the screen", () => {
     events = [];
     const tree = render();

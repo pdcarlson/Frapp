@@ -107,10 +107,7 @@ export default function DocumentsScreen() {
     search: deferredSearch || undefined,
   });
   const openDocument = useDocumentDownloadUrl();
-  const refresh = useRefetchAll(
-    [foldersQuery.refetch, documentsQuery.refetch],
-    !!chapterId,
-  );
+  const refresh = useRefetchAll([foldersQuery, documentsQuery]);
 
   const folders = useMemo(
     () => selectDocumentFolders(foldersQuery.data),
