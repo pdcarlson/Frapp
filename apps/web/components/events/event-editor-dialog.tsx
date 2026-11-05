@@ -640,11 +640,11 @@ export function EventEditorDialog({
                     : "No roles are available for this chapter yet."}
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-0.5">
                 {displayedRoles.map((role) => (
                   <label
                     key={role.id}
-                    className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition hover:bg-accent-subtle"
+                    className="flex min-h-8 cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1 text-sm transition hover:bg-accent-subtle pointer-coarse:min-h-11 pointer-coarse:text-base"
                   >
                     <span className="font-semibold">{role.name}</span>
                     <input

@@ -38,7 +38,6 @@ import { denseListClassName } from "@/components/shared/table-controls";
 import {
   ErrorState,
   anyReadUncached,
-  LoadingState,
   OfflineState,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
@@ -70,6 +69,7 @@ import {
   formatMinutesRounded,
   localIsoDate,
 } from "@repo/formatting";
+import { ServicePageSkeleton } from "@/components/service/service-skeleton";
 
 type ServiceEntry = {
   id: string;
@@ -434,11 +434,7 @@ export function ServiceHoursPage() {
   }
 
   if (entriesQuery.isPending) {
-    return (
-      <>
-        <LoadingState message="Loading service entries..." />
-      </>
-    );
+    return <ServicePageSkeleton />;
   }
 
   if (entriesQuery.isError) {

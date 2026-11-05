@@ -432,7 +432,7 @@ function createStyles(tokens: SignetTokens) {
     },
     composerField: {
       flex: 1,
-      // 46 exactly, which is what `touch.button` is for.
+      // The touch Field step (foundations.md §9), which `touch.button` carries.
       height: tokens.touch.button,
       borderRadius: tokens.radius.control,
       borderWidth: 1,

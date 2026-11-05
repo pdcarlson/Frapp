@@ -93,6 +93,9 @@ export const WALKS = {
   },
   // Every directory under app/ is a route segment, `coverage` and `.well-known` included.
   webApp: { roots: ["apps/web/app"], ext: /\.(?:ts|tsx)$/, exclude: /\.spec\./, all: true },
+  // The signed-out screens: their routes, and the components that render the
+  // sign-in screen and the frame, which live outside app/ since 2026-11-05.
+  webAuth: { roots: ["apps/web/app", "apps/web/components/auth"], ext: /\.(?:ts|tsx)$/, exclude: /\.spec\./, all: true },
   landing: { roots: ["apps/landing"], ext: /\.(?:ts|tsx)$/, skip: ["public"], exclude: /\.(?:spec|test)\.|\.d\.ts$/ },
   // Every product source, specs included: `Signet System` is never a note.
   product: { roots: ["apps/web", "apps/api", "apps/mobile", "packages"], ext: /\.(?:ts|tsx|js|mjs)$/ },
@@ -237,6 +240,16 @@ export function jsxProp(source, prop) {
   return [...source.matchAll(pattern)].map((match) => match[1] || match[2]);
 }
 
+/**
+ * A screen's `title` or `subtitle`: the literal JSX prop, plus a
+ * `const SIGN_IN_TITLE = "…"` the prop names instead (`sign-in-screen.tsx`).
+ */
+export function authTitles(source, prop) {
+  // The lookbehind keeps `title` from also reading every `*_SUBTITLE`.
+  const constant = new RegExp(`\\bconst [A-Z_]*(?<!SUB)${prop.toUpperCase()}\\s*=\\s*["']([^"']+)["']`, "g");
+  return [...jsxProp(source, prop), ...[...source.matchAll(constant)].map((match) => match[1])];
+}
+
 /** JSON-quoted `*Permission` keys, and the unquoted JS form Expo config files use. `false` is not a prompt. */
 export function permissionStrings(source) {
   const pattern = /(?:^|[\s,{])(?:"([A-Za-z]+Permission)"|([A-Za-z]+Permission)):\s*["']([^"']+)["']/gm;
@@ -268,11 +281,14 @@ export const SITE_ROSTERS = [
     sites: ["packages/validation/src/ops-nudges.ts"],
   },
   {
-    // Join, sign-up and no-access titles are not the product wordmark.
+    // No screen title is the product wordmark. Until 2026-11-05 `/` and
+    // `/sign-in` used it as their title; the wordmark is the signed-out
+    // frame's lockup now (`apps/web/components/auth/auth-frame.tsx`, pinned
+    // below), and every screen titles itself.
     kind: "web auth wordmark",
-    walk: "webApp",
-    is: (source) => jsxProp(source, "title").some((title) => title === "Frapp" || title === "Signet"),
-    sites: ["apps/web/app/page.tsx", "apps/web/app/sign-in/page.tsx"],
+    walk: "webAuth",
+    is: (source) => authTitles(source, "title").some((title) => title === "Frapp" || title === "Signet"),
+    sites: [],
   },
   {
     kind: "mobile permission and Expo Go copy",
@@ -334,14 +350,14 @@ export const COLLECTED = [
   },
   {
     what: "web auth title",
-    walk: "webApp",
-    collect: (source) => jsxProp(source, "title").map((value) => ({ key: "title", value })),
+    walk: "webAuth",
+    collect: (source) => authTitles(source, "title").map((value) => ({ key: "title", value })),
     wrong: (value) => value === "Signet",
   },
   {
     what: "web auth subtitle",
-    walk: "webApp",
-    collect: (source) => jsxProp(source, "subtitle").map((value) => ({ key: "subtitle", value })),
+    walk: "webAuth",
+    collect: (source) => authTitles(source, "subtitle").map((value) => ({ key: "subtitle", value })),
     wrong: (value) => /\bSignet\b/.test(value),
   },
   {
@@ -595,14 +611,13 @@ export const PINS = [
     has: ['template: "%s · Frapp"', 'default: "Frapp"', `description: "${TAGLINE}"`],
   },
   {
-    file: "apps/web/app/page.tsx",
-    why: "the web home wordmark and brand tagline",
-    has: [propCount("title", "Frapp", 1), propCount("subtitle", TAGLINE, 1)],
-  },
-  {
-    file: "apps/web/app/sign-in/page.tsx",
-    why: "the sign-in form's and its Suspense fallback's wordmark and tagline",
-    has: [propCount("title", "Frapp", 2), propCount("subtitle", TAGLINE, 2)],
+    // The tagline left the sign-in screen on 2026-11-05 with the wordmark:
+    // Ask is not built, so the page body holds it back as the landing page
+    // does (spec/ui/landing/README.md D8). The root layout's description above
+    // still carries it.
+    file: "apps/web/components/auth/auth-frame.tsx",
+    why: "the signed-out frame's wordmark, beside the mark on every pre-auth route",
+    has: [/<span className="[^"]*">\s*Frapp\s*<\/span>/],
   },
 
   // --- Mobile (ADR-25 step 2) ----------------------------------------------
@@ -921,8 +936,7 @@ test("the table keeps its floors and roots", () => {
   assert.equal(floor("web metadata title"), 18);
   assert.equal(floor("landing metadata title"), 7);
   const pinned = (file) => PINS.filter((pin) => pin.file === file).flatMap((pin) => pin.has ?? []);
-  assert.deepEqual(pinned("apps/web/app/page.tsx").map((entry) => entry.min), [1, 1]);
-  assert.deepEqual(pinned("apps/web/app/sign-in/page.tsx").map((entry) => entry.min), [2, 2]);
+  assert.equal(pinned("apps/web/components/auth/auth-frame.tsx").length, 1);
   assert.equal(pinned("apps/landing/app/layout.tsx")[0].exactly, 3);
   assert.equal(pinned("apps/landing/app/page.tsx")[0].exactly, 2);
   assert.deepEqual(SETTINGS_SITES, ["apps/mobile/lib/study/location-settings-path.ts"]);
@@ -940,6 +954,7 @@ test("the table keeps its floors and roots", () => {
   assert.deepEqual(roots.api, ["apps/api/src"]);
   assert.deepEqual(roots.web, ["apps/web", ...packageSources()]);
   assert.deepEqual(roots.webApp, ["apps/web/app"]);
+  assert.deepEqual(roots.webAuth, ["apps/web/app", "apps/web/components/auth"]);
   assert.deepEqual(roots.landing, ["apps/landing"]);
   assert.deepEqual(roots.product, ["apps/web", "apps/api", "apps/mobile", "packages"]);
   assert.deepEqual(roots.validation, ["packages/validation"]);
@@ -1144,7 +1159,7 @@ test("every row reports its own planted leftover", () => {
   TEXT_BANS.forEach((row, i) => assert.equal(textBanProblems(row, [{ rel: "x", source: textSamples[i] }]).length, 1, String(row.ban)));
   const collectedSamples = {
     "mobile *Permission prompt": 'module.exports = { cameraPermission: "Allow the app to use the camera." };',
-    "web auth title": "<AuthScreen title={'Signet'} />",
+    "web auth title": "const SIGN_IN_TITLE = 'Signet';",
     "web auth subtitle": '<AuthScreen subtitle="Ask Signet anything." />',
     "web metadata title": "export const metadata = {\n  title: 'Tasks · Frapp'\n}",
     "landing metadata title": "export const metadata = {\n  title: 'Signet — Privacy',\n};",

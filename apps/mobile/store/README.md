@@ -856,8 +856,9 @@ compared against nothing. Why it blocks, and how it fails:
 [`quality-gates.md` § Two comparisons, two postures](../../../docs/ci-cd/quality-gates.md#two-comparisons-two-postures).
 
 **Record a build when it is first uploaded to TestFlight or a Play track**, before any tester can
-install it, in a PR that adds one entry per build. When **Deploy production** uploads the build
-(its `mobile_build` input), its `record` job opens that PR for you
+install it, in a PR that adds one entry per build. When **Deploy production** submits the build
+(its `mobile_build` input), its `record` job opens that PR for you as soon as EAS accepts the
+submission, while Expo may still be uploading it
 ([`mobile.md` § 6.6](../../../docs/ops/deployment/mobile.md#66-store-submission)). If that PR's
 `api-contract-check` fails, `main` already breaks the build just uploaded: fix it on `main` before
 the next production ship, or waive the route as below. A build uploaded by hand is recorded by
@@ -886,7 +887,10 @@ production minimum above it fails the deploy, so record a build before raising t
 ([`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md) § API-Only Settings), so
 every install of it is held at the update gate until its owner updates. Name the minimum and the
 date it went live in that PR. Until then the build is still calling the API, whatever the stores
-show.
+show. The one exception is an entry for a build that never reached a store: Deploy production
+records a build once EAS accepts its submission, and its `confirm` job goes red when the upload
+then fails (#3483). No install of that build exists, and keeping its entry would make each
+deploy's client check ask about a build nobody runs, so drop it at once and link that run.
 
 **A break the shipped binaries don't depend on** (a route only the web dashboard calls) is waived
 in [`api-breaking-ignore.txt`](api-breaking-ignore.txt), which the check hands to oasdiff's

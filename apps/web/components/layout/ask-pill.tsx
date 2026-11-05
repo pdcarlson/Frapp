@@ -4,7 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 
@@ -86,7 +90,7 @@ export function AskPill({ className }: { className?: string }) {
         </p>
         <p className="text-muted-foreground">
           It will answer questions about your chapter in plain language. Until
-          then, find channels, members and messages from the search bar
+          then, find channels, members, messages and more from the top bar
           {documentsEnabled ? ", and chapter files live in Documents." : "."}
         </p>
         {documentsEnabled ? (

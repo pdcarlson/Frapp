@@ -39,7 +39,6 @@ import { Badge } from "@/components/ui/badge";
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { SectionLabel } from "@/components/shared/section-label";
@@ -62,6 +61,7 @@ import {
   parseGuardedInt,
 } from "@/lib/utils";
 import { taskDueClause } from "./task-due";
+import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
 
 type Task = {
   id: string;
@@ -342,11 +342,7 @@ export function TasksBoard() {
    * region and the heading each state is this page's only one of.
    */
   if (tasksQuery.isPending) {
-    return (
-      <div className="space-y-6">
-        <NestedLoading sole message="Loading chapter tasks..." />
-      </div>
-    );
+    return <TasksPageSkeleton />;
   }
 
   // Only swap the whole board out when there is nothing to show. v5 keeps the

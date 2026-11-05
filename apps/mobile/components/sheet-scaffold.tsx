@@ -349,9 +349,10 @@ function createStyles(tokens: SignetTokens) {
     },
     primaryButton: {
       marginTop: tokens.spacing.sm,
-      // 50px as drawn; the reference wins over components.md §9's 48px per
-      // `spec/ui/README.md`'s precedence rule.
-      height: 50,
+      // The Primary step of foundations.md §9's control size scale. The board
+      // draws 50; the owner's 2026-11-05 sizing pass rounded every primary
+      // onto the scale's 48.
+      height: tokens.touch.buttonLarge,
       borderRadius: tokens.radius.control,
       alignItems: "center",
       justifyContent: "center",

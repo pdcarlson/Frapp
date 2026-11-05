@@ -10,7 +10,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
-import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
+import {
+  dashboardFilterSelectClassName,
+  dashboardFormSelectClassName,
+} from "@/components/shared/table-controls";
 import {
   PermissionCheckboxGrid,
   type PermissionCatalogEntry,
@@ -660,7 +663,7 @@ function BulkVisibilitySelect({
   return (
     <select
       aria-label={label}
-      className={cn(dashboardFormSelectClassName, "h-11 w-auto")}
+      className={cn(dashboardFilterSelectClassName, "w-auto")}
       value=""
       onChange={(event) => bulk.choose(event.target.value)}
     >

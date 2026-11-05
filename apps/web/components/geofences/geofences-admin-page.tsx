@@ -37,7 +37,6 @@ import {
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { denseListClassName } from "@/components/shared/table-controls";
@@ -58,6 +57,7 @@ import {
   guardIntDraft,
   parseGuardedInt,
 } from "@/lib/utils";
+import { GeofenceRowsSkeleton } from "@/components/geofences/geofences-skeleton";
 
 type Geofence = {
   id: string;
@@ -578,11 +578,7 @@ export function GeofencesAdminPage() {
             for access.
           </p>
         }
-        fallback={
-          <p className="text-sm text-muted-foreground">
-            Checking your chapter permissions…
-          </p>
-        }
+        fallback={<GeofenceRowsSkeleton />}
         offlineFallback={(retry) => (
           <PermissionsOfflineSurface
             description="Reconnect to check whether you can manage study zones."
@@ -625,7 +621,7 @@ export function GeofencesAdminPage() {
               }}
             />
           ) : geofencesQuery.isPending ? (
-            <NestedLoading sole message="Loading study zones..." />
+            <GeofenceRowsSkeleton className="" />
           ) : geofencesQuery.isError ? (
             <NestedError
               sole

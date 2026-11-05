@@ -327,11 +327,15 @@ job then calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.ym
    - Only a build EAS reports `FINISHED` from the shipped commit goes on.
    - The latest-tag check runs again: a ship made while EAS was building (a rollback, say) stops
      every upload.
-   - Then `eas submit --platform <p> --profile production --id <build id> --non-interactive --wait`;
-     iOS also passes `--no-auto-testflight-setup`, so CI never creates a TestFlight group.
+   - Then `eas submit --platform <p> --profile production --id <build id> --non-interactive --no-wait`;
+     iOS also passes `--no-auto-testflight-setup`, so CI never creates a TestFlight group. The
+     step ends once EAS accepts the submission and hands its id on, because Expo's free plan
+     queues a submission for about 47 minutes before uploading, and waiting for that turned
+     uploads that worked into red runs with nothing recorded (#3483, 2026-11-05).
 
    One platform's failure doesn't stop the other's build or upload.
-2. **`record`** opens the PR that adds one `shipped-builds.json` entry per uploaded build
+2. **`record`** opens the PR that adds one `shipped-builds.json` entry per build whose
+   submission EAS accepted, which may still be in Expo's queue
    (`scripts/ci/record-shipped-builds.mjs`). It uses the PR base sync GitHub App's token, because
    a PR opened with the Actions `GITHUB_TOKEN` starts no CI, and that PR's `api-contract-check`
    is the point. **Merge it before any tester installs the build.** A build EAS reports from any
@@ -342,26 +346,43 @@ job then calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.ym
    build until it was listed. Fix it on `main` before the next production ship, or waive a route
    no shipped binary calls ([`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract)).
    Don't merge around it.
-3. **`snapshot`** dispatches **Migration snapshot** as the store build starts. The run stays in
+3. **`confirm`** waits out Expo's queue beside `record`
+   (`scripts/ci/confirm-store-submissions.mjs`). It polls each submission through EAS's GraphQL
+   API with `EXPO_TOKEN`, from the trusted ref with nothing installed. `eas submit:view --json`
+   shows the same thing, but would put eas-cli's unlocked dependencies (#3118) in a job holding
+   the token. It goes green when every successful upload has `FINISHED`, and red, with what to
+   do, when one errors, is cancelled, is still queued at its 280-minute deadline, can't be read,
+   or came back with no submission id. `FINISHED` means the binary reached the store, not that it
+   passed processing: App Store Connect can still reject an iOS binary by email afterwards, as it
+   did iOS 0.9.1 (8) with ITMS-90683.
+4. **`snapshot`** dispatches **Migration snapshot** as the store build starts. The run stays in
    flight for as long as EAS takes, and the snapshot otherwise publishes only when a Deploy
    production run completes, so the required PR migration gates would judge production against
    the pre-ship state until then (`download-migration-snapshot`'s header).
 
-All three jobs name the `automation` environment, which has no reviewers, so a ship stays one Approve
+All four jobs name the `automation` environment, which has no reviewers, so a ship stays one Approve
 click ([`agent-infra.md` § GitHub environments and bootstrap secrets](../../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets)).
 The build reads the same EAS `production` environment variables (§ 6.3) and credentials as a
 laptop build, so anything a hand build needs, this one needs too.
 
 **When it fails.** Production and the tag are already live and stay as they are. The `mobile` job
 goes red on its own, and the deploy summary and alert don't change. The `record` job's summary
-lists each platform's EAS id, status and upload, and says which of these applies. A build that
+lists each platform's EAS id, status and upload, and says which of these applies, except a
+red `confirm`, whose own summary says what happened to each submission. A build that
 uploaded but couldn't be recorded is listed there as the JSON entries to add.
 
 A re-run builds every platform the run asked for again, so re-run only when nothing uploaded and
 nothing is still building.
 
-- **A build finished but its upload failed:** fix the cause, run the summary's
-  `npm run eas -- submit … --id <build id>` from the repo root, and record the build by hand.
+- **A build finished but EAS refused its submission** (the `build` job is red): fix the cause,
+  run the summary's `npm run eas -- submit … --id <build id>` from the repo root, and record the
+  build by hand.
+- **EAS accepted a submission and then failed to upload it** (the `confirm` job is red): the
+  record PR already lists the build. Either, while its commit is still the latest `v*` tag, fix
+  the cause and upload it again with the `npm run eas -- submit … --id <build id>` the `confirm`
+  summary gives, and keep the entry, or drop the entry: from the record PR before merging, or in a PR of its own if it has merged. A
+  build that never reached a store can be dropped at once
+  ([`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract)).
 - **A build was still running when the job stopped waiting:** it may finish on EAS. Don't start
   another. When it finishes, and its commit is still the latest `v*` tag, upload it with the same
   `npm run eas -- submit … --id` and record it.
@@ -474,7 +495,9 @@ version's `--help` and source on 2026-10-01 (#3111): `eas build --no-wait --json
 started builds as a JSON array (`platform` `IOS` or `ANDROID`) and exits; `eas build:view <id>
 --json` prints one build with `status`, `appVersion`, `appBuildVersion` and `gitCommitHash`, and
 eas-cli sets no request timeout on it; `eas submit --wait` exits 1 unless the submission
-`FINISHED`, and `--auto-testflight-setup` defaults to on. On a version bump, re-check those
+`FINISHED`, and `--auto-testflight-setup` defaults to on. *2026-11-05 (#3483):* CI now passes
+`--[no-]wait`'s `--no-wait`, read from the same version's `eas submit --help`; eas then prints a
+`Submission details:` link ending in the submission id and exits. On a version bump, re-check those
 shapes too: with a changed `build:view` shape, no build ever reads as finished, and the wait runs
 to its deadline.
 `npm run eas` runs the version CI pins (see the top of this section), so the table holds on a

@@ -404,7 +404,7 @@ jobs:
     uses: ./.github/workflows/_mobile-build.yml
     # A called job gets at most what its caller grants. `actions: write` is
     # for the called `snapshot` job alone, which dispatches the migration
-    # snapshot publish; `build` and `record` each grant themselves
+    # snapshot publish; `build`, `record` and `confirm` each grant themselves
     # `contents: read` only.
     permissions:
       contents: read

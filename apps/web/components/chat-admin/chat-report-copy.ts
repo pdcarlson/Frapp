@@ -94,7 +94,7 @@ export const chatReportCopy = {
     "Each report shows the message as it read when reported. Who reported it is never shown.",
   openHint:
     "Mark reviewed and Dismiss close a report and leave the message up. Only an open report can remove its message.",
-  loading: "Loading reports...",
+  loading: "Loading reports",
   errorTitle: "Couldn't load reports",
   /** Over rows a failed background refetch left on screen. */
   stale: "Couldn't refresh the reports. These are the last ones that loaded.",
