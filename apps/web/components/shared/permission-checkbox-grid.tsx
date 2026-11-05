@@ -16,7 +16,7 @@ export interface PermissionCatalogEntry {
 /**
  * The required-permissions picker for a ROLE_GATED channel.
  *
- * Shared by chat admin's create dialog and edit panel, and by the Discord
+ * Shared by chat admin's create panel and in-page edit pane, and by the Discord
  * import's channel mapping, because all three are choosing the same thing: the
  * permission strings a member needs one of to read the channel. They also need
  * to degrade the same way when the catalog can't load.

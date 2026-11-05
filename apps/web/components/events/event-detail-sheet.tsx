@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo } from "react";
 import { AlertTriangle, CalendarPlus, Loader2, Trash2 } from "lucide-react";
+import { SectionSkeleton } from "@/components/shared/page-skeletons";
+import { SkeletonText } from "@/components/shared/async-states";
 import {
   PointsGlyph,
   RolesGlyph,
@@ -247,10 +249,10 @@ export function EventDetailSheet({
           ) : null}
 
           {eventQuery.isLoading && !usingPreviewData ? (
-            <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading event details...
-            </div>
+            // A skeleton, not a spinner and caption (`components.md` §10).
+            <SectionSkeleton label="Loading event details" className="mt-6">
+              <SkeletonText lines={4} />
+            </SectionSkeleton>
           ) : null}
 
           <div className="mt-4 flex flex-wrap gap-2">

@@ -448,7 +448,7 @@ function ChatAdminBody({
     }
   }
 
-  // ── Create-channel dialog ───────────────────────────────────────────────
+  // ── Create-channel panel ────────────────────────────────────────────────
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createDescription, setCreateDescription] = useState("");
@@ -868,7 +868,7 @@ function ChatAdminBody({
               list by a hairline rather than lifted onto a card. Its heading
               carries the channel's type as a badge, and the form has no type
               field. That replaces a description that said "Type is set at
-              creation and can't be changed here"; the create dialog, where
+              creation and can't be changed here"; the create panel, where
               the type is chosen, now says it is final.
             */}
             <div className="lg:border-l lg:border-border lg:pl-6">

@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, MessageSquare, Trash2 } from "lucide-react";
 import { RolesGlyph } from "@/components/members/directory-glyphs";
+import { SectionSkeleton } from "@/components/shared/page-skeletons";
+import { SkeletonText } from "@/components/shared/async-states";
 import {
   useCustomRoles,
   useGetOrCreateDm,
@@ -464,10 +466,10 @@ export function MemberDetailSheet({
           ) : null}
 
           {memberQuery.isLoading && !usingPreviewData ? (
-            <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading member profile...
-            </div>
+            // A skeleton, not a spinner and caption (`components.md` §10).
+            <SectionSkeleton label="Loading member profile" className="mt-6">
+              <SkeletonText lines={4} />
+            </SectionSkeleton>
           ) : null}
 
           {memberQuery.isError && !usingPreviewData ? (

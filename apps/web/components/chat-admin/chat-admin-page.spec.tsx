@@ -13,7 +13,7 @@ import { networkMock } from "@/tests/network";
 /*
  * Chat Admin's channel structure (#2500): flush on the page surface, its
  * states from the nested family, a background read that fails keeps what is
- * already loaded, and the create dialog tells the three types apart truthfully.
+ * already loaded, and the create panel tells the three types apart truthfully.
  *
  * The report queue above it has its own spec (`chat-reports-card.spec.tsx`)
  * and is stubbed here; so is the screen-level `<Can>`, whose fallbacks
@@ -198,7 +198,7 @@ describe("ChatAdminPage — row heights", () => {
   });
 });
 
-describe("ChatAdminPage — the create dialog", () => {
+describe("ChatAdminPage — the create panel", () => {
   it("says a private channel is for its members, and that the type is final", () => {
     render(<ChatAdminPage />);
     fireEvent.click(screen.getByRole("button", { name: "New channel" }));
