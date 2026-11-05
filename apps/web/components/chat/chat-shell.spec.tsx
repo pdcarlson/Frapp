@@ -433,8 +433,10 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 // Heavy children (real timeline/composer need Virtuoso/tiptap DOM APIs jsdom
 // doesn't provide) are stubbed — this test is about ChatShell's own
 // deep-link wiring, not their internals.
-vi.mock("./channel-list", () => ({
+vi.mock("./channel-list-skeleton", () => ({
   ChannelListSkeleton: () => <div data-testid="channel-list-skeleton" />,
+}));
+vi.mock("./channel-list", () => ({
   ChannelFilters: ({
     onChange,
   }: {
@@ -823,6 +825,10 @@ vi.mock("./message-timeline", async () => {
 
 import { blockClearance } from "@repo/chat-core/blocks";
 import { ChatShell } from "./chat-shell";
+import {
+  NavFaceContext,
+  type NavFaceContextValue,
+} from "@/components/layout/nav-face";
 
 /**
  * The notice for a jump target the channel's whole history did not hold. The
@@ -2886,6 +2892,110 @@ describe("ChatShell narrow viewports (#2142)", () => {
     await waitFor(() => {
       expect(columns().thread.className).not.toContain("max-lg:hidden");
     });
+  });
+});
+
+/**
+ * From `lg` up inside the dashboard shell, the channels pane is the shell's
+ * left column, in place of the module nav (owner, 2026-11-05;
+ * `components/layout/nav-face.tsx`).
+ */
+describe("ChatShell inside the shell's left column", () => {
+  let slot: HTMLDivElement;
+  const realMatchMedia = window.matchMedia;
+
+  function stubDesktop(matches: boolean) {
+    window.matchMedia = ((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  }
+
+  function navFace(overrides: Partial<NavFaceContextValue> = {}) {
+    return {
+      face: "channels" as const,
+      showModules: vi.fn(),
+      showChannels: vi.fn(),
+      channelsSlot: slot,
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    slot = document.createElement("div");
+    document.body.appendChild(slot);
+  });
+  afterEach(() => {
+    slot.remove();
+    window.matchMedia = realMatchMedia;
+  });
+
+  it("renders the channels pane into the shell's column, with a back arrow to the menu", () => {
+    stubDesktop(true);
+    const value = navFace();
+    render(
+      <NavFaceContext.Provider value={value}>
+        <ChatShell />
+      </NavFaceContext.Provider>,
+    );
+
+    const channels = screen.getByRole("region", { name: "Channels" });
+    expect(slot.contains(channels)).toBe(true);
+    // Exactly one copy: nothing inline beside the thread.
+    expect(screen.getAllByRole("region", { name: "Channels" })).toHaveLength(1);
+
+    fireEvent.click(
+      within(channels).getByRole("button", { name: "Back to menu" }),
+    );
+    expect(value.showModules).toHaveBeenCalledTimes(1);
+  });
+
+  it("brings the channel list back when a link to a channel lands", () => {
+    stubDesktop(true);
+    const value = navFace({ face: "modules" });
+    const { rerender } = render(
+      <NavFaceContext.Provider value={value}>
+        <ChatShell />
+      </NavFaceContext.Provider>,
+    );
+    expect(value.showChannels).not.toHaveBeenCalled();
+
+    rerender(
+      <NavFaceContext.Provider value={value}>
+        <ChatShell initialChannelId="chan-general" />
+      </NavFaceContext.Provider>,
+    );
+    expect(value.showChannels).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays inline below lg, hidden from lg up until the column takes it", () => {
+    stubDesktop(false);
+    render(
+      <NavFaceContext.Provider value={navFace()}>
+        <ChatShell />
+      </NavFaceContext.Provider>,
+    );
+
+    const channels = screen.getByRole("region", { name: "Channels" });
+    expect(slot.contains(channels)).toBe(false);
+    expect(channels.classList.contains("lg:hidden")).toBe(true);
+    // The drawer is the way to the modules below lg, so no back arrow here.
+    expect(
+      within(channels).queryByRole("button", { name: "Back to menu" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("stays inline, and visible from lg up, outside the shell", () => {
+    stubDesktop(true);
+    render(<ChatShell />);
+    const channels = screen.getByRole("region", { name: "Channels" });
+    expect(channels.classList.contains("lg:hidden")).toBe(false);
   });
 });
 
