@@ -1,4 +1,4 @@
-import { Redirect, Tabs } from "expo-router";
+import { Redirect, Tabs, type ErrorBoundaryProps } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ChatGlyph,
@@ -8,6 +8,7 @@ import {
   TasksGlyph,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
+import { AppErrorScreen, screenErrorLayout } from "@/components/route-error";
 import { resolveAuthGate } from "@/lib/auth-gate";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -85,6 +86,9 @@ export default function TabLayout() {
       // back from an event opened on Events landed on Chat, not Events.
       // `spec/ui/mobile/navigation.md` § Back rows.
       backBehavior="history"
+      // Each screen in its own error boundary, so one that fails to render
+      // leaves the tab bar and the other tabs working (#3378).
+      screenLayout={screenErrorLayout}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: accent,
@@ -185,4 +189,13 @@ export default function TabLayout() {
       />
     </Tabs>
   );
+}
+
+/**
+ * What expo-router renders if this layout itself fails: the navigator, the
+ * tab bar, or a hook above them. A screen's own failure stops at its
+ * `screenLayout` boundary first. `components/route-error.tsx` has the rest.
+ */
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <AppErrorScreen {...props} boundary="tabs" />;
 }
