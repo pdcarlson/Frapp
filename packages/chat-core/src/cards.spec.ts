@@ -6,6 +6,7 @@ import {
   readEventPayload,
   readHoursPayload,
   readPointsPayload,
+  readRushPayload,
   readSystemAuditPayload,
   readTaskPayload,
 } from "./cards";
@@ -64,6 +65,17 @@ const HOURS = {
   description: "Food bank shift",
   date: "2026-11-04",
   status: "PENDING",
+  created_at: "2026-11-04T18:00:00.000Z",
+};
+
+/** The shape `RushService.postRushCard` posts for `/rush add`. */
+const RUSH = {
+  candidate_id: "cand-1",
+  display_name: "Jordan Reyes",
+  added_by_user_id: "user-a",
+  added_by_name: "Paul Carlson",
+  stage: "new",
+  bid_status: "none",
   created_at: "2026-11-04T18:00:00.000Z",
 };
 
@@ -323,5 +335,46 @@ describe("auditChangeSummary", () => {
 
   it("says when the change touched no field", () => {
     expect(auditChangeSummary(audit({}))).toBe("No field changes recorded");
+  });
+});
+
+describe("readRushPayload", () => {
+  it("reads the payload the server posts", () => {
+    expect(readRushPayload(withPayload(RUSH))).toEqual(RUSH);
+  });
+
+  it("returns null without the candidate id, the candidate's name or the adder's name", () => {
+    for (const key of ["candidate_id", "display_name", "added_by_name"]) {
+      expect(readRushPayload(withPayload({ ...RUSH, [key]: undefined }))).toBe(
+        null,
+      );
+    }
+    expect(readRushPayload(withPayload({ ...RUSH, candidate_id: "" }))).toBe(
+      null,
+    );
+    expect(readRushPayload(withPayload(null))).toBe(null);
+  });
+
+  it("always reports the creation-time bid, whatever the row says", () => {
+    expect(
+      readRushPayload(withPayload({ ...RUSH, bid_status: "extended" }))
+        ?.bid_status,
+    ).toBe("none");
+  });
+
+  it("defaults the optional fields", () => {
+    expect(
+      readRushPayload(
+        withPayload({
+          candidate_id: "cand-1",
+          display_name: "Jordan Reyes",
+          added_by_name: "Paul Carlson",
+        }),
+      ),
+    ).toEqual({
+      ...RUSH,
+      added_by_user_id: "",
+      created_at: "",
+    });
   });
 });

@@ -5,9 +5,14 @@ import React from "react";
 import { FrappClientProvider } from "./use-frapp-client";
 import { useReviewServiceEntry, useServiceEntry } from "./use-service-entries";
 
-function createWrapper(queryClient: QueryClient, mockClient: unknown) {
+function createWrapper(
+  queryClient: QueryClient,
+  mockClient: unknown,
+  chapterId: string | null = "chapter-1",
+) {
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <FrappClientProvider
+      chapterId={chapterId}
       client={
         mockClient as unknown as ReturnType<
           typeof import("@repo/api-sdk").createFrappClient
@@ -45,10 +50,15 @@ describe("useServiceEntry", () => {
     expect(result.current.data).toEqual({ id: "entry-1", status: "APPROVED" });
   });
 
-  it("asks nothing for an empty id, the card's 'can't read it' signal", () => {
+  it("asks nothing for an empty id, the card's 'can't read it' signal, or without a chapter", () => {
+    // Without a chapter the permissions read is held too, and an owner's card
+    // would otherwise ask for its entry with no chapter context.
     const GET = vi.fn();
     renderHook(() => useServiceEntry(""), {
       wrapper: createWrapper(queryClient, { GET }),
+    });
+    renderHook(() => useServiceEntry("entry-1"), {
+      wrapper: createWrapper(queryClient, { GET }, null),
     });
     expect(GET).not.toHaveBeenCalled();
   });
@@ -93,6 +103,21 @@ describe("useServiceEntry", () => {
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.data).toBeUndefined();
+  });
+
+  it("throws a chapter-context 403, which clears by itself, so it keeps its retry", async () => {
+    const GET = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: {
+        statusCode: 403,
+        code: "chapter.context.mismatch",
+        message: "Chapter context mismatch",
+      },
+    });
+    const { result } = renderHook(() => useServiceEntry("entry-1"), {
+      wrapper: createWrapper(queryClient, { GET }),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
   });
 
   it("refreshes when an officer reviews the entry from any screen", async () => {

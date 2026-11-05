@@ -19,6 +19,15 @@
  * rejects a future format instead of mis-reading it. */
 export const CHECK_IN_QR_PREFIX = "frapp-checkin:v1";
 
+/**
+ * How long a code is the current one. Must match `CHECK_IN_TOKEN_WINDOW_MS` in
+ * the API, which a spec reads from the API's source: the mint response says
+ * when *this* code rotates, but not how long the server goes on accepting it
+ * after that (one more window), which s22 needs to know whether a code it is
+ * holding still redeems.
+ */
+export const CHECK_IN_TOKEN_WINDOW_MS = 30_000;
+
 export interface ScannedCheckInCode {
   eventId: string;
   token: string;
