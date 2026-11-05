@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OAuthButtons } from "./oauth-buttons";
 import { GOOGLE_MARK_COLORS } from "./oauth-brand-icons";
+import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth/oauth";
 
 describe("OAuthButtons", () => {
   it("renders Apple and Google as equal secondary actions", () => {
@@ -49,5 +50,18 @@ describe("OAuthButtons", () => {
     render(<OAuthButtons onSelect={vi.fn()} pending="apple" />);
     expect(screen.getByRole("button", { name: "Continue with Apple" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Continue with Google" })).toBeDisabled();
+  });
+
+  it("shows the membership hint only where it is asked for (sign-up)", () => {
+    const { rerender } = render(<OAuthButtons onSelect={vi.fn()} />);
+    expect(screen.queryByText(OAUTH_MEMBERSHIP_HINT)).toBeNull();
+    rerender(<OAuthButtons onSelect={vi.fn()} hint />);
+    expect(screen.getByText(OAUTH_MEMBERSHIP_HINT)).toBeInTheDocument();
+  });
+
+  it("shows the provider's name and keeps the full phrase as the accessible name", () => {
+    render(<OAuthButtons onSelect={vi.fn()} />);
+    const apple = screen.getByRole("button", { name: "Continue with Apple" });
+    expect(apple.textContent).toBe("Apple");
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { replace, refresh, searchParams, signInWithOAuth } = vi.hoisted(() => ({
@@ -126,20 +126,29 @@ describe("the redirect chain survives the rebuild", () => {
     // `/chat` instead of the deep link they opened.
     searchParams.value = new URLSearchParams("redirectTo=%2Fevents");
     render(<SignInPage />);
+    const toggle = screen.getByRole("navigation", {
+      name: "Sign in or create an account",
+    });
     expect(
-      screen.getByRole("link", { name: "Create an account" }).getAttribute("href"),
+      within(toggle).getByRole("link", { name: "Create account" }).getAttribute("href"),
     ).toBe("/sign-up?redirectTo=%2Fevents");
+    expect(
+      within(toggle).getByRole("link", { name: "Sign in" }).getAttribute("aria-current"),
+    ).toBe("page");
     searchParams.value = new URLSearchParams();
   });
 
-  it("offers Apple, Google, and magic-link as equal secondary methods", () => {
+  it("keeps the password primary, the providers equal, and the magic link a text link", () => {
     render(<SignInPage />);
     const apple = screen.getByRole("button", { name: "Continue with Apple" });
     const google = screen.getByRole("button", { name: "Continue with Google" });
     const magic = screen.getByRole("button", { name: "Email me a magic link" });
-    expect(apple.className).toMatch(/\bw-full\b/);
-    expect(google.className).toMatch(/\bw-full\b/);
-    expect(magic.className).toMatch(/\bw-full\b/);
+    expect(apple.className).toBe(google.className);
+    // A text link, not a third full-width button (Paul, 2026-11-05).
+    expect(magic.className).not.toMatch(/\bw-full\b/);
+    // The labels sit inside the fields and still name them.
+    expect(screen.getByLabelText("Email")).toHaveAttribute("type", "email");
+    expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
   });
 
   it("kicks off Apple OAuth toward the callback with redirectTo intact", async () => {

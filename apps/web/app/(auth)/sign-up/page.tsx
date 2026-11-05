@@ -4,11 +4,11 @@ import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { AuthModeToggle } from "@/components/auth/auth-mode-toggle";
 import { AuthDivider, AuthScreen } from "@/components/auth/auth-screen";
+import { FloatingField } from "@/components/auth/floating-field";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { SkeletonText } from "@/components/shared/async-states";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getErrorMessage } from "@/lib/utils";
@@ -28,7 +28,11 @@ import {
  * than a transcription. Since 2026-11-05 it sits in the same signed-out frame
  * as sign-in (`app/(auth)/layout.tsx`), so the hop between them swaps only the
  * form and the product panel keeps running. It draws no "‹ Back" for the same
- * reason: the two are one page, and the footer link is the way across.
+ * reason: the two are one page, and the mode toggle above the title
+ * (`auth-mode-toggle.tsx`) is the way across. Compressed with sign-in on
+ * 2026-11-05 (floating labels, no subtitle, side-by-side providers) so the
+ * column fits a laptop screen; the membership hint stays here, under the
+ * providers, because this is where an Apple Hide My Email account is made.
  *
  * The #920 Profile & pre-auth slice replaced a two-card grid whose eyebrow read
  * "Frapp account setup", whose heading promised "live staging walkthroughs",
@@ -120,34 +124,28 @@ function SignUpPageContent() {
   return (
     <AuthScreen
       title="Create your account"
-      subtitle="One account, then join your chapter or start one."
-      footer={<SignUpFooter redirectTo={redirectTo} />}
+      toggle={<AuthModeToggle current="sign-up" redirectTo={redirectTo} />}
+      footer={SIGN_UP_FOOTER}
     >
-      <form className="flex flex-col gap-4" onSubmit={handleSignUp}>
-        <div className="space-y-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="you@university.edu"
-            required
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="Create a password"
-            required
-          />
-        </div>
+      <form className="flex flex-col gap-3" onSubmit={handleSignUp}>
+        <FloatingField
+          id="email"
+          label="Email"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          required
+        />
+        <FloatingField
+          id="password"
+          label="Password"
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          required
+        />
         <Button type="submit" className="w-full" disabled={isSubmitting || oauthBusy}>
           {isSubmitting ? <Loader2 className="animate-spin" /> : null}
           Create account
@@ -162,25 +160,21 @@ function SignUpPageContent() {
         }}
         pending={pendingOAuth}
         disabled={isSubmitting}
+        hint
       />
     </AuthScreen>
   );
 }
 
-/** Its own component so the Suspense fallback draws the same footer. */
-function SignUpFooter({ redirectTo }: { redirectTo: string }) {
-  return (
-    <p>
-      Already have an account?{" "}
-      <Link
-        href={`/sign-in?redirectTo=${encodeURIComponent(redirectTo)}`}
-        className="font-semibold text-accent-text hover:underline"
-      >
-        Sign in
-      </Link>
-    </p>
-  );
-}
+/** Shared with the Suspense fallback, so nothing shifts on hydration. */
+const SIGN_UP_FOOTER = (
+  <p>
+    Have an invite?{" "}
+    <Link href="/join" className="font-semibold text-accent-text hover:underline">
+      Join your chapter
+    </Link>
+  </p>
+);
 
 export default function SignUpPage() {
   return (
@@ -188,8 +182,10 @@ export default function SignUpPage() {
       fallback={
         <AuthScreen
           title="Create your account"
-          subtitle="One account, then join your chapter or start one."
-          footer={<SignUpFooter redirectTo={resolveRedirectPath(null)} />}
+          toggle={
+            <AuthModeToggle current="sign-up" redirectTo={resolveRedirectPath(null)} />
+          }
+          footer={SIGN_UP_FOOTER}
         >
           <div role="status" aria-busy="true" aria-live="polite">
             <span className="sr-only">Loading the sign-up form…</span>
