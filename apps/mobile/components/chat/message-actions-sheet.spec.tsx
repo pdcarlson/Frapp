@@ -40,6 +40,8 @@ vi.mock("@/lib/chapter-branding", () => ({
     accent: "#C49A3A",
     accentPrimary: "#C49A3A",
     accentOnPrimary: "#2B2009",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
     logoUrl: null,
     chapterName: null,
   }),
@@ -47,6 +49,8 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import {
   MessageActionsSheet,
+  QUICK_REACTIONS,
+  quickReactionLabel,
   type MessageActionsSheetHandle,
   type MessageActionsTarget,
 } from "./message-actions-sheet";
@@ -170,6 +174,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     senderInDirectory: true,
     senderLabel: "Blake",
     sentAt: SENT_AT,
+    reactedWith: [],
   };
 
   it("says who sent the message and when, since a follow-on row shows neither", () => {
@@ -203,6 +208,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
       senderInDirectory: true,
       senderLabel: "Blake",
       sentAt: SENT_AT,
+      reactedWith: [],
     });
     expect(hasRow(tree, "Reply")).toBe(true);
     expect(hasRow(tree, "Edit message")).toBe(false);
@@ -256,6 +262,102 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
   });
 });
 
+describe("MessageActionsSheet — quick reactions", () => {
+  // The thread draws no reaction control on a message nobody has reacted to,
+  // so this row is where the first reaction starts.
+  const TARGET: MessageActionsTarget = {
+    ...SOMEONE_ELSES,
+    messageId: "m4",
+    blockUserId: null,
+    senderName: "Blake",
+    senderInDirectory: true,
+    senderLabel: "Blake",
+    sentAt: SENT_AT,
+    reactedWith: ["🔥"],
+  };
+
+  function renderWith(
+    target: MessageActionsTarget,
+    handlers: {
+      onReact?: (messageId: string, emoji: string) => void;
+      onUnreact?: (messageId: string, emoji: string) => void;
+    },
+    dismiss = vi.fn(),
+  ) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MessageActionsSheet
+            ref={createRef<MessageActionsSheetHandle>()}
+            target={target}
+            {...handlers}
+          />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            element.type === "BottomSheetModal" ? { dismiss } : null,
+        },
+      );
+    });
+    return tree;
+  }
+
+  it("draws web's four picks ahead of the rows", () => {
+    const tree = renderWith(TARGET, { onReact: vi.fn(), onUnreact: vi.fn() });
+    const labels = tree.root
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          typeof node.props.accessibilityLabel === "string",
+      )
+      .map((node) => node.props.accessibilityLabel as string);
+    expect(QUICK_REACTIONS).toEqual(["👍", "🙏", "✅", "🔥"]);
+    const picks = QUICK_REACTIONS.map((emoji) =>
+      quickReactionLabel(emoji, emoji === "🔥"),
+    );
+    for (const pick of picks) expect(labels).toContain(pick);
+    expect(labels.indexOf(picks[3]!)).toBeLessThan(
+      labels.indexOf("Report message"),
+    );
+  });
+
+  it("adds a reaction, and closes the sheet", () => {
+    const onReact = vi.fn();
+    const onUnreact = vi.fn();
+    const dismiss = vi.fn();
+    const tree = renderWith(TARGET, { onReact, onUnreact }, dismiss);
+    pressByLabel(tree, quickReactionLabel("👍", false));
+    expect(onReact).toHaveBeenCalledWith("m4", "👍");
+    expect(onUnreact).not.toHaveBeenCalled();
+    expect(dismiss).toHaveBeenCalled();
+  });
+
+  it("draws one the viewer already used as selected, and takes it back on a tap", () => {
+    const onReact = vi.fn();
+    const onUnreact = vi.fn();
+    const tree = renderWith(TARGET, { onReact, onUnreact });
+    const mine = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === quickReactionLabel("🔥", true),
+    );
+    expect(mine.props.accessibilityState).toEqual({ selected: true });
+    const style = JSON.stringify(mine.props.style({ pressed: false }));
+    // The chapter's quiet fill and border, as on the reacted chip.
+    expect(style).toContain("#251A33");
+    expect(style).toContain("#5C3E8A");
+    pressByLabel(tree, quickReactionLabel("🔥", true));
+    expect(onUnreact).toHaveBeenCalledWith("m4", "🔥");
+    expect(onReact).not.toHaveBeenCalled();
+  });
+
+  it("draws no picks when the thread wires no reaction handlers", () => {
+    const tree = renderWith(TARGET, {});
+    expect(text(tree)).not.toContain("🙏");
+  });
+});
+
 describe("MessageActionsSheet — menu", () => {
   it("offers Report and Block for a blockable sender", () => {
     const tree = render({
@@ -266,6 +368,7 @@ describe("MessageActionsSheet — menu", () => {
       senderInDirectory: true,
       senderLabel: "Blake",
       sentAt: SENT_AT,
+      reactedWith: [],
     });
     expect(text(tree)).toContain("Report message");
     expect(text(tree)).toContain("Block Blake");
@@ -280,6 +383,7 @@ describe("MessageActionsSheet — menu", () => {
       senderInDirectory: false,
       senderLabel: "Blake",
       sentAt: SENT_AT,
+      reactedWith: [],
     });
     expect(text(tree)).toContain("Report message");
     expect(text(tree)).not.toContain("Block Frapp");
@@ -295,6 +399,7 @@ describe("MessageActionsSheet — menu", () => {
       senderInDirectory: true,
       senderLabel: "Blake",
       sentAt: SENT_AT,
+      reactedWith: [],
     });
 
     pressByLabel(tree, "Block Blake");
@@ -320,6 +425,7 @@ describe("MessageActionsSheet — menu", () => {
       senderInDirectory: true,
       senderLabel: "Blake",
       sentAt: SENT_AT,
+      reactedWith: [],
     });
     expect(text(tree)).toContain(BLOCK_ROW_DESCRIPTION);
   });
@@ -339,6 +445,7 @@ describe("MessageActionsSheet — menu", () => {
         senderInDirectory: false,
         senderLabel: "Blake",
         sentAt: SENT_AT,
+        reactedWith: [],
       },
       onSenderDeparted,
     );
@@ -366,6 +473,7 @@ describe("MessageActionsSheet — report", () => {
     senderInDirectory: true,
     senderLabel: "Blake",
     sentAt: SENT_AT,
+    reactedWith: [],
   };
 
   function sendButton(tree: ReactTestRenderer) {
