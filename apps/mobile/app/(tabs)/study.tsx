@@ -1,12 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Alert,
-  AppState,
-  Platform,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Alert, AppState, StyleSheet, Text, View } from "react-native";
 import type { AppStateStatus } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
@@ -53,6 +46,7 @@ import {
   startErrorCopy,
 } from "@/lib/study/errors";
 import { startOfWeek } from "@/lib/study/format";
+import { locationSettingsPath } from "@/lib/study/location-settings-path";
 import {
   creditedSeconds,
   isReportingStale,
@@ -119,18 +113,13 @@ const MIRROR_RETRY_MS = 15 * 1000;
 
 /**
  * The line for a member who said no to location. It spells out the path to the
- * switch for the member's own OS, since this line has no button to get them
- * there (the primer's blocked branch does), and one OS's path sends the other's
- * members looking for a screen that doesn't exist. Both paths name the app as
- * Settings lists it, `expo.name`, which `frapp-naming.test.mjs` pins (ADR-25
- * step 2). iOS 18 moved every app's page under Settings → Apps.
+ * switch, since this line has no button to get them there (the primer's
+ * blocked branch does). The path is {@link locationSettingsPath}'s, the one the
+ * primer uses too: it differs by OS and by iOS version, and naming the wrong
+ * one sends the member looking for a row that isn't there.
  */
 function locationRequiredCopy(): string {
-  const path =
-    Platform.OS === "android"
-      ? "Settings → Apps → Frapp → Permissions → Location"
-      : "Settings → Apps → Frapp → Location";
-  return `Frapp confirms you're in the study zone, so it needs location while you study. Turn it on in ${path}.`;
+  return `Frapp confirms you're in the study zone, so it needs location while you study. Turn it on in ${locationSettingsPath()}.`;
 }
 
 export default function StudyScreen() {

@@ -829,13 +829,16 @@ describe("Study loading and empty states", () => {
 });
 
 describe("Study when location can't be read", () => {
-  const os = Platform.OS;
+  const platform = Platform as { OS: string; Version?: string | number };
+  const { OS: os, Version: version } = platform;
   afterEach(() => {
-    (Platform as { OS: string }).OS = os;
+    platform.OS = os;
+    platform.Version = version;
   });
 
-  async function failedLocationLine(platform: string) {
-    (Platform as { OS: string }).OS = platform;
+  async function failedLocationLine(on: string, osVersion: string | number) {
+    platform.OS = on;
+    platform.Version = osVersion;
     vi.mocked(readForegroundPermission).mockRejectedValueOnce(
       new Error("location unavailable"),
     );
@@ -847,13 +850,20 @@ describe("Study when location can't be read", () => {
   }
 
   it("spells out the iOS path on iPhone", async () => {
-    const line = await failedLocationLine("ios");
+    const line = await failedLocationLine("ios", "18.1");
     expect(line).toContain("Turn it on in Settings → Apps → Frapp → Location.");
+  });
+
+  it("skips the Apps row before iOS 18, which has none", async () => {
+    // This line has no Open Settings button, so a row that isn't there is a
+    // dead end.
+    const line = await failedLocationLine("ios", "17.5.1");
+    expect(line).toContain("Turn it on in Settings → Frapp → Location.");
   });
 
   it("spells out Android's own path on Android", async () => {
     // The iOS path was all this said, and Android has no such screen.
-    const line = await failedLocationLine("android");
+    const line = await failedLocationLine("android", 34);
     expect(line).toContain(
       "Turn it on in Settings → Apps → Frapp → Permissions → Location.",
     );

@@ -74,9 +74,11 @@ describe("LocationPrimerSheet", () => {
   });
 
   describe("when the OS will not ask again", () => {
-    const os = Platform.OS;
+    const platform = Platform as { OS: string; Version?: string | number };
+    const { OS: os, Version: version } = platform;
     afterEach(() => {
-      (Platform as { OS: string }).OS = os;
+      platform.OS = os;
+      platform.Version = version;
     });
 
     const blocked = () =>
@@ -91,7 +93,8 @@ describe("LocationPrimerSheet", () => {
       ).join("");
 
     it("spells out the iOS path on iPhone, naming the app, and no OS", () => {
-      (Platform as { OS: string }).OS = "ios";
+      platform.OS = "ios";
+      platform.Version = "18.2";
       const copy = blocked();
       expect(copy).toContain(`Location is turned off for ${APP_NAME}`);
       expect(copy).toContain(`Settings → Apps → ${APP_NAME} → Location`);
@@ -101,9 +104,17 @@ describe("LocationPrimerSheet", () => {
       expect(copy).not.toMatch(/\b(iOS|Android)\b/);
     });
 
+    it("skips the Apps row before iOS 18, which has none", () => {
+      platform.OS = "ios";
+      platform.Version = "17.6";
+      expect(blocked()).toContain(
+        `Turn it on in Settings → ${APP_NAME} → Location, then`,
+      );
+    });
+
     it("spells out Android's own path on Android", () => {
       // The iOS path was all this said, and Android has no such screen.
-      (Platform as { OS: string }).OS = "android";
+      platform.OS = "android";
       const copy = blocked();
       expect(copy).toContain(
         `Settings → Apps → ${APP_NAME} → Permissions → Location`,

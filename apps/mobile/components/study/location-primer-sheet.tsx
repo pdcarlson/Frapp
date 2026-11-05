@@ -1,9 +1,10 @@
 import { forwardRef } from "react";
-import { Linking, Platform, StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { locationSettingsPath } from "@/lib/study/location-settings-path";
 import {
   SheetGrabber,
   SheetHeader,
@@ -25,9 +26,8 @@ import {
  * It also handles the already-declined case, where nothing will ask again and
  * the only honest next step is Settings, so that branch opens it. Its copy
  * still spells out the path, for a member who lands somewhere else or comes
- * back to it later, and spells out the member's own OS's path, since the way
- * to the switch differs between iOS and Android. Both name the app as Settings
- * lists it, `expo.name`, which `frapp-naming.test.mjs` pins (ADR-25 step 2).
+ * back to it later. The path is `locationSettingsPath`'s, the one the Start
+ * card's failure line uses too: it differs by OS and by iOS version.
  */
 export interface LocationPrimerSheetProps {
   /** False once the OS will no longer prompt — the copy and CTA both change. */
@@ -44,11 +44,7 @@ export const LocationPrimerSheet = forwardRef<
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
-  // iOS 18 moved every app's page under Settings → Apps.
-  const settingsPath =
-    Platform.OS === "android"
-      ? "Settings → Apps → Frapp → Permissions → Location"
-      : "Settings → Apps → Frapp → Location";
+  const settingsPath = locationSettingsPath();
 
   return (
     <BottomSheetModal
