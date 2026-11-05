@@ -411,6 +411,24 @@ describe("the reaction row", () => {
     }
   });
 
+  it("forwards a long press on + to the row's actions, as every chip does", () => {
+    // The + is its own Pressable and claims the touch: without the forward, a
+    // long press on it would end as a tap.
+    const onOpenActions = vi.fn();
+    const tree = renderItem(
+      message({ reactions: { [reactionActionType("🔥")]: [OTHER] } }),
+      undefined,
+      { onOpenActions },
+    );
+    const [add] = addChip(tree);
+    expect(add!.props.accessibilityRole).toBe("button");
+
+    act(() => add!.props.onLongPress());
+    expect(onOpenActions).toHaveBeenCalledTimes(1);
+    act(() => add!.props.onPress());
+    expect(onOpenActions).toHaveBeenCalledTimes(2);
+  });
+
   it("still offers + after the viewer's own reaction", () => {
     const tree = renderItem(
       message({ reactions: { [reactionActionType("👍")]: [VIEWER] } }),

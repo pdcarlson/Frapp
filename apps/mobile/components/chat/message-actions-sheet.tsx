@@ -143,7 +143,10 @@ export interface MessageActionsTarget {
   senderInDirectory: boolean;
   /**
    * The emoji the viewer has already reacted with on this message, so the
-   * quick reactions can draw them selected and take them back on a tap.
+   * quick reactions can draw them selected and take them back on a tap. The
+   * caller reads it from the current message on every render, not once at the
+   * long-press, so it follows a rollback or another device while the sheet is
+   * open.
    */
   reactedWith: readonly string[];
 }

@@ -1,10 +1,10 @@
 import { StyleSheet, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, useFrappTheme } from "@/lib/theme";
+import { MESSAGE_AVATAR_SIZE } from "./message-item";
 
 /** How many message shapes to draw: enough to fill the lower half of a phone. */
 const ROWS = 4;
-const AVATAR_SIZE = 32;
 /** Body widths, cycling through the ~45–70% range §10 gives text lines. */
 const BODY_WIDTHS = ["70%", "52%", "60%", "45%"] as const;
 
@@ -21,6 +21,11 @@ const BODY_WIDTHS = ["70%", "52%", "60%", "45%"] as const;
  * Static, like `SkeletonLines` in `components/state-block.tsx`, and for the
  * same reason: the §10 shimmer needs a gradient primitive this app does not
  * have. Neutral only, never the accent.
+ *
+ * TODO-DESIGN: shimmer sweep per components.md §10, as `SkeletonLines` carries
+ * it, once a gradient dependency lands. Nearest pattern used: static neutral
+ * blocks at the row's shapes. A second hand-drawn skeleton until this folds
+ * onto the shared skeleton block, so whoever lands the shimmer finds it here.
  */
 export function ThreadSkeleton() {
   const { tokens } = useFrappTheme();
@@ -66,9 +71,9 @@ function createStyles(tokens: SignetTokens) {
       paddingTop: tokens.spacing.lg,
     },
     avatar: {
-      width: AVATAR_SIZE,
-      height: AVATAR_SIZE,
-      borderRadius: avatarRadius(AVATAR_SIZE),
+      width: MESSAGE_AVATAR_SIZE,
+      height: MESSAGE_AVATAR_SIZE,
+      borderRadius: avatarRadius(MESSAGE_AVATAR_SIZE),
       backgroundColor: tokens.color.surface.popover,
     },
     column: {
@@ -79,11 +84,15 @@ function createStyles(tokens: SignetTokens) {
     author: {
       width: "28%",
       height: tokens.spacing.md,
+      // TODO-DESIGN: §10 specifies radius 6 for skeleton text lines. `chip` (8)
+      // is the nearest token; a raw 6 would be a hard-coded value, which
+      // foundations.md bans. Same gap as `SkeletonLines`.
       borderRadius: tokens.radius.chip,
       backgroundColor: tokens.color.surface.popover,
     },
     line: {
       height: tokens.spacing.md,
+      // TODO-DESIGN: radius 6, as on `author` above.
       borderRadius: tokens.radius.chip,
       backgroundColor: tokens.color.surface.popover,
     },

@@ -79,10 +79,14 @@ import {
 } from "@/lib/chat/channel-list";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
-import { useJumpToLatest } from "@/lib/chat/use-jump-to-latest";
+import {
+  FOLLOW_ARRIVALS_WITHIN,
+  useJumpToLatest,
+} from "@/lib/chat/use-jump-to-latest";
 import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
+import { selectionHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
@@ -91,8 +95,16 @@ const NO_DEPARTED: ReadonlySet<string> = new Set();
 /** One object for the list's life: the native prop is diffed by identity. */
 const MAINTAIN_POSITION = {
   minIndexForVisible: 0,
-  autoscrollToTopThreshold: 80,
+  // `useJumpToLatest` watches the same line: past it an arrival is unseen.
+  autoscrollToTopThreshold: FOLLOW_ARRIVALS_WITHIN,
 } as const;
+
+/**
+ * The typing line's height, reserved whether or not anyone is typing. A caption
+ * has no line height of its own, so the slot fixes one: the line coming and
+ * going used to move every row, and the jump control, by a line.
+ */
+const TYPING_LINE_HEIGHT = 16;
 
 /**
  * s05 — Chat thread.
@@ -506,14 +518,22 @@ export default function ChatThreadScreen() {
     [remove],
   );
 
-  // The actions sheet's quick reactions, through the same optimistic calls a
-  // chip under the message makes; a refusal lands in the reaction banner.
+  // A reaction chip's tap and the actions sheet's quick row, through the same
+  // optimistic calls; a refusal lands in the reaction banner. Each tap ticks
+  // once (`spec/ui/mobile/README.md` § Native-feel rules), here where the
+  // member acted, so a rollback or a re-render never does.
   const handleReact = useCallback(
-    (messageId: string, emoji: string) => void react(messageId, emoji),
+    (messageId: string, emoji: string) => {
+      selectionHaptic();
+      void react(messageId, emoji);
+    },
     [react],
   );
   const handleUnreact = useCallback(
-    (messageId: string, emoji: string) => void unreact(messageId, emoji),
+    (messageId: string, emoji: string) => {
+      selectionHaptic();
+      void unreact(messageId, emoji);
+    },
     [unreact],
   );
 
@@ -546,9 +566,10 @@ export default function ChatThreadScreen() {
   // One sheet for the thread, retargeted per long-press — the same shape the
   // directory uses for its member sheet.
   const actionsSheetRef = useRef<MessageActionsSheetHandle>(null);
-  const [actionTarget, setActionTarget] = useState<MessageActionsTarget | null>(
-    null,
-  );
+  const [actionTarget, setActionTarget] = useState<Omit<
+    MessageActionsTarget,
+    "reactedWith"
+  > | null>(null);
   const openActions = useCallback(
     (message: ChatMessage) => {
       const actions = messageActionsFor(message, viewerId, {
@@ -581,12 +602,6 @@ export default function ChatThreadScreen() {
         sentAt: message.created_at,
         senderInDirectory:
           message.sender_id !== null && isMember(message.sender_id) === true,
-        // `canOpen` above already required a known viewer.
-        reactedWith: viewerId
-          ? groupReactions(message, viewerId)
-              .filter((group) => group.mine)
-              .map((group) => group.emoji)
-          : [],
       });
       actionsSheetRef.current?.present();
     },
@@ -600,6 +615,25 @@ export default function ChatThreadScreen() {
       viewerId,
     ],
   );
+
+  // The viewer's reactions on the sheet's message, read from the cache on
+  // every render rather than kept from the long-press: a rollback, or a
+  // reaction from their other device, can change them while the sheet is
+  // open, and the quick row's selected state and which way a tap goes must
+  // follow.
+  const sheetTarget = useMemo<MessageActionsTarget | null>(() => {
+    if (!actionTarget) return null;
+    const current = byId.get(actionTarget.messageId);
+    return {
+      ...actionTarget,
+      reactedWith:
+        current && viewerId
+          ? groupReactions(current, viewerId)
+              .filter((group) => group.mine)
+              .map((group) => group.emoji)
+          : [],
+    };
+  }, [actionTarget, byId, viewerId]);
 
   const renderItem = useCallback(
     ({ item }: { item: ThreadRow }) => {
@@ -624,8 +658,8 @@ export default function ChatThreadScreen() {
           }
           onRetry={(id) => void retry(id)}
           onDiscard={(id) => void discard(id)}
-          onReact={(id, emoji) => void react(id, emoji)}
-          onUnreact={(id, emoji) => void unreact(id, emoji)}
+          onReact={handleReact}
+          onUnreact={handleUnreact}
           onOpenActions={openActions}
           onJumpToMessage={jumpToMessage}
           onUnblock={handleUnblock}
@@ -642,8 +676,8 @@ export default function ChatThreadScreen() {
       nameFor,
       retry,
       discard,
-      react,
-      unreact,
+      handleReact,
+      handleUnreact,
       act,
       byId,
       layout,
@@ -907,6 +941,12 @@ export default function ChatThreadScreen() {
               {/* The list and the jump control over its corner. */}
               <View style={styles.flex}>
                 <FlatList
+                  // One list per channel. The screen stays mounted across a
+                  // switch, so a shared list kept the last channel's scroll
+                  // offset and opened a cached channel mid-history, with no
+                  // jump control to say so. A fresh list opens at offset 0,
+                  // the newest message.
+                  key={channelId ?? undefined}
                   ref={listRef}
                   onScrollToIndexFailed={handleScrollToIndexFailed}
                   data={inverted}
@@ -946,7 +986,7 @@ export default function ChatThreadScreen() {
                   contentContainerStyle={styles.listContent}
                   style={styles.flex}
                 />
-                {latest.isAway ? (
+                {latest.showsJump ? (
                   <JumpToLatestButton
                     hasNew={latest.hasNewBelow}
                     onPress={() => jumpToLatest()}
@@ -956,13 +996,29 @@ export default function ChatThreadScreen() {
             </ImageViewerContext.Provider>
           )}
 
-          {shownTypingUsers.length > 0 ? (
-            <Text style={styles.typing}>
-              {shownTypingUsers.length === 1
-                ? "Someone is typing…"
-                : `${shownTypingUsers.length} people are typing…`}
-            </Text>
-          ) : null}
+          {/*
+          Always mounted at one line's height, so someone starting or stopping
+          typing moves nothing above it. Empty, it is hidden from a screen
+          reader rather than read as a blank element. It is not a live region,
+          as it never was: a line that changes with every keystroke pause would
+          talk over the thread.
+          */}
+          <View
+            testID="typing-line"
+            style={styles.typingSlot}
+            accessibilityElementsHidden={shownTypingUsers.length === 0}
+            importantForAccessibility={
+              shownTypingUsers.length === 0 ? "no-hide-descendants" : "auto"
+            }
+          >
+            {shownTypingUsers.length > 0 ? (
+              <Text style={styles.typing} numberOfLines={1}>
+                {shownTypingUsers.length === 1
+                  ? "Someone is typing…"
+                  : `${shownTypingUsers.length} people are typing…`}
+              </Text>
+            ) : null}
+          </View>
 
           {/*
           react/unreact and inline card actions (poll votes, #528) have no
@@ -1081,7 +1137,7 @@ export default function ChatThreadScreen() {
       </KeyboardAvoidingArea>
       <MessageActionsSheet
         ref={actionsSheetRef}
-        target={actionTarget}
+        target={sheetTarget}
         onSenderDeparted={markDeparted}
         onReply={staging.startReply}
         onEdit={staging.startEdit}
@@ -1155,11 +1211,17 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       color: tokens.color.text.mutedForeground,
       textAlign: "center",
     },
-    typing: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
+    typingSlot: {
+      height: TYPING_LINE_HEIGHT + tokens.spacing.xs,
       paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xs,
+    },
+    typing: {
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        lineHeight: TYPING_LINE_HEIGHT,
+      }),
+      color: tokens.color.text.muted,
     },
     reactionErrorBanner: {
       flexDirection: "row",

@@ -1,6 +1,10 @@
 /** @vitest-environment jsdom */
 import React from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import {
+  create,
+  type ReactTestInstance,
+  type ReactTestRenderer,
+} from "react-test-renderer";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
@@ -222,20 +226,78 @@ describe("the states that must stay visible", () => {
   });
 });
 
-// The note is a caption about the message, lifted off `--muted` like every
-// chat caption (components.md §1): the self bubble it once had to match is gone
-// (#2873), so every row's note takes the same tone.
-describe("the note colour", () => {
-  it("draws the loading note in the lifted caption tone", () => {
-    hookState.result = { isPending: true, isError: false, data: undefined };
-    const tree = render({ count: 1 });
+// A one-line caption that a photo up to 240pt tall then replaced pushed the
+// thread with every photo that landed (components.md §10).
+describe("the loading tiles", () => {
+  const tiles = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        node.props.testID === "attachment-loading-tile",
+    );
 
-    const [note] = tree.root.findAllByType(
-      "Text" as unknown as React.ElementType,
+  it("reserves a preview's frame and an unsized preview's height per file", () => {
+    hookState.result = { isPending: true, isError: false, data: undefined };
+    const tree = render({ count: 2 });
+
+    expect(tiles(tree)).toHaveLength(2);
+    // No caption line to grow out of.
+    expect(tree.root.findAllByType("Text" as never)).toHaveLength(0);
+
+    const tile = tiles(tree)[0]!;
+    const frame = JSON.stringify(tile.props.style);
+    const block = JSON.stringify(
+      (tile.children[0] as ReactTestInstance).props.style,
     );
-    expect(JSON.stringify(note!.props.style)).toContain(
-      `"color":"${signetDarkTokens.color.text.mutedForeground}"`,
+    expect(frame).toContain(
+      `"borderRadius":${signetDarkTokens.radius.control}`,
     );
+    expect(frame).toContain(
+      `"backgroundColor":"${signetDarkTokens.color.surface.surface1}"`,
+    );
+    expect(block).toContain('"height":180');
+    expect(block).toContain(
+      `"borderRadius":${signetDarkTokens.radius.control}`,
+    );
+    expect(block).toContain(
+      `"backgroundColor":"${signetDarkTokens.color.surface.popover}"`,
+    );
+  });
+
+  it("keeps the loading line's name for a screen reader", () => {
+    hookState.result = { isPending: true, isError: false, data: undefined };
+    const one = render({ count: 1 });
+    const [status] = one.root.findAll(
+      (node) => node.props.accessibilityRole === "progressbar",
+    );
+    expect(status!.props.accessibilityLabel).toBe("Loading attachment…");
+    expect(status!.props.accessible).toBe(true);
+
+    const two = render({ count: 2 });
+    expect(
+      two.root.find((node) => node.props.accessibilityRole === "progressbar")
+        .props.accessibilityLabel,
+    ).toBe("Loading 2 attachments…");
+  });
+
+  it("draws the tile as tall as the photo it stands in for, when that photo is unsized", () => {
+    hookState.result = { isPending: true, isError: false, data: undefined };
+    const loading = render({ count: 1 });
+    const tileBlock = tiles(loading)[0]!.children[0] as ReactTestInstance;
+
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [attachment({ content_type: "image/jpeg" })],
+    };
+    const loaded = render({ count: 1 });
+    const image = loaded.root.findAllByType(
+      "Image" as unknown as React.ElementType,
+    )[0]!;
+
+    const height = (style: unknown) =>
+      (JSON.stringify(style).match(/"height":(\d+)/) ?? [])[1];
+    expect(height(tileBlock.props.style)).toBe(height(image.props.style));
   });
 });
 

@@ -73,6 +73,14 @@ vi.mock("react-native", async () => {
   return { ...reactNativeStub, FlatList: RenderingFlatList };
 });
 
+// The reaction tick. Mocked so a spec can count it: one per tap, never per
+// render.
+const selectionHaptic = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/haptics", () => ({
+  selectionHaptic: () => selectionHaptic(),
+  successHaptic: vi.fn(),
+}));
+
 vi.mock("@/components/chat/thread-message-row", async () => {
   const { createElement } = await import("react");
   const { useOpenImageViewer } = await import("@/components/chat/image-viewer");
@@ -192,6 +200,9 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 
 let viewerQuery = { isError: false, isFetching: false, refetch: vi.fn() };
 
+/** What `useChannel` hands back: the channel, or no row yet. */
+let channelRow: "found" | "reading" | "missing" = "found";
+
 /** A ready list with one member on it, stable across renders as the hook's is. */
 const BLOCK_LIST = {
   status: "ready" as const,
@@ -227,10 +238,15 @@ const requestUploadUrl = { mutateAsync: vi.fn() };
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => "chapter-1",
-  useChannel: (id: string) => ({
-    data: { id, name: "general", can_post: true, is_read_only: false },
-    isFetching: false,
-  }),
+  useChannel: (id: string) =>
+    channelRow === "found"
+      ? {
+          data: { id, name: "general", can_post: true, is_read_only: false },
+          isFetching: false,
+        }
+      : // No row and no cached list: a blank title while it is read, then the
+        // `Thread` fallback (`threadHeaderTitle`).
+        { data: undefined, isFetching: channelRow === "reading" },
   useCurrentUser: () => viewerQuery,
   useMemberDisplayNames: () => ROSTER,
   usePermissionList: () => [],
@@ -355,6 +371,7 @@ beforeEach(() => {
   channel = channelState();
   viewerQuery = { isError: false, isFetching: false, refetch: vi.fn() };
   params = { channelId: CHANNEL };
+  channelRow = "found";
   queryClient = new QueryClient();
 });
 
@@ -662,6 +679,55 @@ describe("chat thread typing indicator after the block list (#2496)", () => {
   });
 });
 
+describe("chat thread typing line holds its place", () => {
+  // Mounting and unmounting in flow between the list and the composer moved
+  // every row, and the jump control, by a line each time.
+  const slot = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("View" as never) && node.props.testID === "typing-line",
+    );
+  const flat = (style: unknown) =>
+    Object.assign({}, ...[style].flat(Infinity).filter(Boolean)) as Record<
+      string,
+      unknown
+    >;
+
+  it("reserves one fixed line whether or not anyone is typing", () => {
+    const idle = render();
+    const idleStyle = flat(slot(idle).props.style);
+    expect(idleStyle.height).toEqual(expect.any(Number));
+    expect(slot(idle).findAllByType("Text" as never)).toHaveLength(0);
+    act(() => idle.unmount());
+
+    channel = channelState({ typingUsers: [MEMBER] });
+    const typing = render();
+    expect(flat(slot(typing).props.style).height).toBe(idleStyle.height);
+    // The caption's line fits the slot, so the text can't grow it.
+    const [line] = slot(typing).findAllByType("Text" as never);
+    expect(
+      (flat(line!.props.style).lineHeight as number) +
+        ((idleStyle.paddingBottom as number) ?? 0),
+    ).toBeLessThanOrEqual(idleStyle.height as number);
+    act(() => typing.unmount());
+  });
+
+  it("hides the empty line from a screen reader, and shows the full one", () => {
+    const idle = render();
+    expect(slot(idle).props.accessibilityElementsHidden).toBe(true);
+    expect(slot(idle).props.importantForAccessibility).toBe(
+      "no-hide-descendants",
+    );
+    act(() => idle.unmount());
+
+    channel = channelState({ typingUsers: [MEMBER] });
+    const typing = render();
+    expect(slot(typing).props.accessibilityElementsHidden).toBe(false);
+    expect(slot(typing).props.importantForAccessibility).toBe("auto");
+    act(() => typing.unmount());
+  });
+});
+
 describe("chat thread scrollback (#2772)", () => {
   // The list is inverted, so its end is the top: reaching it asks for the
   // next older page, which lands past the rows on screen.
@@ -772,6 +838,22 @@ describe("chat thread loading state (components.md §10)", () => {
     expect(lists(tree)).toHaveLength(0);
     act(() => tree.unmount());
   });
+
+  it("sits the shapes at the bottom, where an inverted thread's rows land", () => {
+    channel = channelState({ isLoading: true });
+    const tree = render();
+
+    const container = skeletons(tree)[0]!.find(
+      (node) =>
+        node.type === ("View" as never) &&
+        node.props.accessibilityLabel === "Loading messages",
+    );
+    expect(container.props.style).toMatchObject({
+      flex: 1,
+      justifyContent: "flex-end",
+    });
+    act(() => tree.unmount());
+  });
 });
 
 describe("chat thread list behaviour", () => {
@@ -867,6 +949,67 @@ describe("chat thread jump to latest", () => {
     act(() => tree.unmount());
   });
 
+  it("says so when a message lands out of sight just past the follow threshold", () => {
+    // Past 80pt the list stops following arrivals, so one that lands while
+    // the reader is less than a screen back is still out of sight.
+    const tree = renderMeasured();
+    scrollTo(tree, 200);
+    expect(jumpButtons(tree)).toHaveLength(0);
+
+    channel = {
+      ...channel,
+      messages: [
+        ...channel.messages,
+        message("m3", {
+          created_at: new Date(2026, 8, 28, 17, 2).toISOString(),
+        }),
+      ],
+    };
+    rerender(tree);
+
+    expect(jumpButtons(tree)[0]!.props.accessibilityLabel).toBe(
+      jumpToLatestLabel(true),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("opens another channel at its newest message, with no jump control", () => {
+    // The screen stays mounted across a switch. A shared list kept the last
+    // channel's offset, so a cached channel opened mid-history with no ↓.
+    const mounted: object[] = [];
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(<Screen />, {
+        createNodeMock: (element) => {
+          if (element.type !== "FlatList") return null;
+          const instance = { scrollToOffset: vi.fn(), scrollToIndex: vi.fn() };
+          mounted.push(instance);
+          return instance;
+        },
+      });
+    });
+    act(() =>
+      list(tree).props.onLayout({ nativeEvent: { layout: { height: 500 } } }),
+    );
+    scrollTo(tree, 1200);
+    expect(jumpButtons(tree)).toHaveLength(1);
+    // Read off the test instance, never `.instance`, which builds a fresh
+    // node mock on every read.
+    const before = list(tree);
+    rerender(tree);
+    expect(list(tree)).toBe(before);
+    expect(mounted).toHaveLength(1);
+
+    params = { channelId: OTHER_CHANNEL };
+    rerender(tree);
+
+    // A new native list, which opens at offset 0: the newest message.
+    expect(mounted).toHaveLength(2);
+    expect(list(tree)).not.toBe(before);
+    expect(jumpButtons(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
   it("takes a member who sends a new message to the bottom to see it go", () => {
     const scrollToOffset = vi.fn();
     const tree = renderMeasured(scrollToOffset);
@@ -935,6 +1078,70 @@ describe("chat thread reactions from the actions sheet", () => {
     expect(channel.unreact).toHaveBeenCalledWith("m1", "🔥");
     act(() => tree.unmount());
   });
+
+  it("follows the viewer's reactions as they change under the open sheet", () => {
+    // A rollback, or the viewer's other device, can change them while the
+    // sheet is up; a copy taken at the long-press would draw 🔥 selected and
+    // send a second "remove" for a reaction that is already gone.
+    channel = channelState({
+      messages: [
+        message("m1", {
+          reactions: { [reactionActionType("🔥")]: [VIEWER] },
+        }),
+      ],
+    });
+    const tree = render();
+    const row = rows(tree)[0]!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+    const target = () =>
+      tree.root.findByType("MessageActionsSheet" as never).props.target;
+    expect(target().reactedWith).toEqual(["🔥"]);
+
+    channel = {
+      ...channel,
+      messages: [
+        message("m1", {
+          reactions: {
+            [reactionActionType("🔥")]: [MEMBER],
+            [reactionActionType("👍")]: [VIEWER],
+          },
+        }),
+      ],
+    };
+    rerender(tree);
+
+    expect(target()).toMatchObject({ messageId: "m1", reactedWith: ["👍"] });
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread reaction haptic (README § Native-feel rules)", () => {
+  it("ticks once per reaction a member adds or takes back, from a chip or the sheet", () => {
+    const tree = render();
+    const row = rows(tree)[0]!;
+    const sheet = () => tree.root.findByType("MessageActionsSheet" as never);
+    const call = (fn: unknown, ...args: string[]) =>
+      act(() => (fn as (...a: string[]) => void)(...args));
+
+    call(row.props.onReact, "m2", "👍");
+    expect(selectionHaptic).toHaveBeenCalledTimes(1);
+    expect(channel.react).toHaveBeenCalledTimes(1);
+    call(row.props.onUnreact, "m2", "👍");
+    expect(selectionHaptic).toHaveBeenCalledTimes(2);
+    call(sheet().props.onReact, "m2", "🔥");
+    call(sheet().props.onUnreact, "m2", "🔥");
+    expect(selectionHaptic).toHaveBeenCalledTimes(4);
+
+    // Not on a render: a rollback lands as new messages, not as a tap.
+    channel = { ...channel, messages: [...channel.messages] };
+    rerender(tree);
+    expect(selectionHaptic).toHaveBeenCalledTimes(4);
+    act(() => tree.unmount());
+  });
 });
 
 describe("chat thread composer placeholder", () => {
@@ -943,6 +1150,23 @@ describe("chat thread composer placeholder", () => {
     expect(tree.root.findByType(ChatComposer).props.placeholder).toBe(
       "Message #general",
     );
+    act(() => tree.unmount());
+  });
+
+  it.each([
+    ["while the channel is read and the title is blank", "reading" as const],
+    ["once the title falls back to Thread", "missing" as const],
+  ])("says plain Message %s", (_label, row) => {
+    channelRow = row;
+    const tree = render();
+    expect(tree.root.findByType(ChatComposer).props.placeholder).toBe(
+      "Message",
+    );
+    const input = tree.root.find(
+      (node) => node.type === ("TextInput" as never),
+    );
+    expect(input.props.placeholder).toBe("Message");
+    expect(input.props.accessibilityLabel).toBe("Message");
     act(() => tree.unmount());
   });
 });

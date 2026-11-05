@@ -15,8 +15,9 @@ import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding
 /**
  * The s05 composer (`canvas-screens.dc.html:186-189`).
  *
- * Drawn as a 44pt input between a 44pt attach button and a 44pt send button,
- * above a top hairline. One line of input measures exactly the buttons'
+ * The board draws a 44pt input between a 38pt attach button and a 38pt send
+ * button, above a top hairline. The buttons here take the 44pt touch floor
+ * instead (components.md §2), and one line of input measures exactly that
  * height, so the three share a top and a bottom edge until the draft wraps
  * (`INPUT_LINE_HEIGHT`).
  *

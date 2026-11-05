@@ -823,7 +823,11 @@ export function ReactionRow({
   );
 }
 
-const AVATAR_SIZE = 32;
+/**
+ * The 32pt avatar, and the gutter it sets (components.md §11). Exported for
+ * the thread's loading shapes (`thread-skeleton.tsx`), which mirror the row.
+ */
+export const MESSAGE_AVATAR_SIZE = 32;
 /** The crest raster's field colour (`spec/ui/brand-identity.md` §2, "Mark field"). */
 const CREST_FIELD = "#1A1A1A";
 
@@ -843,7 +847,7 @@ function createStyles(tokens: SignetTokens) {
       marginBottom: 2,
     },
     elbow: {
-      marginLeft: AVATAR_SIZE / 2,
+      marginLeft: MESSAGE_AVATAR_SIZE / 2,
       marginTop: 10,
       width: 24,
       height: 10,
@@ -860,9 +864,9 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.md,
     },
     avatar: {
-      width: AVATAR_SIZE,
-      height: AVATAR_SIZE,
-      borderRadius: avatarRadius(AVATAR_SIZE),
+      width: MESSAGE_AVATAR_SIZE,
+      height: MESSAGE_AVATAR_SIZE,
+      borderRadius: avatarRadius(MESSAGE_AVATAR_SIZE),
       backgroundColor: tokens.color.surface.popover,
       alignItems: "center",
       justifyContent: "center",
@@ -874,8 +878,8 @@ function createStyles(tokens: SignetTokens) {
       overflow: "hidden",
     },
     systemAvatarImage: {
-      width: AVATAR_SIZE,
-      height: AVATAR_SIZE,
+      width: MESSAGE_AVATAR_SIZE,
+      height: MESSAGE_AVATAR_SIZE,
     },
     // Initials at caption / 700 (§11 Row anatomy), as web's avatar draws them.
     // Weight comes from the Figtree family, never `fontWeight` (see `typeRole`).
@@ -887,7 +891,7 @@ function createStyles(tokens: SignetTokens) {
     // Held open on every row of a run, so a follow-on's text lines up under
     // the first row's. Stretches to the row's height so a screen reader's
     // focus ring on it covers the row.
-    gutter: { width: AVATAR_SIZE, alignSelf: "stretch" },
+    gutter: { width: MESSAGE_AVATAR_SIZE, alignSelf: "stretch" },
     column: { flex: 1, minWidth: 0 },
     authorLine: {
       flexDirection: "row",

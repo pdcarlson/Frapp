@@ -805,7 +805,10 @@ Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 
 | State | Title | Description | Home |
 |---|---|---|---|
-| Actions sheet rows | — | `Reply` · `Edit message` · `Delete message` (destructive), above the Report and Block rows | mobile `components/chat/message-actions-sheet.tsx` |
+| Actions sheet rows | — | The quick row first, web's four reactions, each read `React with <emoji>`, or `Remove <emoji> reaction` for one the viewer already made; then `Reply` · `Edit message` · `Delete message` (destructive), above the Report and Block rows | mobile `components/chat/message-actions-sheet.tsx` (`quickReactionLabel`) |
+| Add-reaction chip | — | `+` after a message's reactions, read `Add reaction`; it opens the actions sheet | mobile `components/chat/message-item.tsx` (`ADD_REACTION_A11Y_LABEL`) |
+| Jump to latest | — | A `↓` over the thread, read `Jump to latest`, or `New messages. Jump to latest` once something new lands out of sight | mobile `components/chat/jump-to-latest-button.tsx` (`jumpToLatestLabel`) |
+| Composer placeholder | — | `Message <title>`, the header's title (`Message #general`, `Message Casey`); plain `Message` while the title is blank or falls back to `Thread`. The input's accessible name is the same string | mobile `app/(tabs)/chat-thread.tsx` |
 | Delete confirmation | `Delete this message?` | `This can't be undone. Everyone in the channel will see "[message deleted]" in its place.` · confirm `Delete message`. A native alert on mobile, the shell's confirm dialog on web | `message-actions` (`DELETE_MESSAGE_CONFIRM_TITLE`, `_BODY`, `_LABEL`) |
 | Delete failed | `Couldn't delete message` | The reason chat-core classified from the response (an alert) | mobile `lib/chat/confirm-delete-message.ts` |
 | Reply strip | `Replying to <name>` | One line of the parent, as its quote will show it. A parent the block list hides, or one not loaded: `Replying to a message` over the quote's placeholder. Cancel reads `Cancel reply` | mobile `lib/chat/use-composer-staging.ts`; the cancel label in `components/chat/chat-composer.tsx` (`composerCancelLabel`) |

@@ -13,16 +13,17 @@ const DOT = 10;
 
 /**
  * The s05 thread's way back to the newest message once the reader has scrolled
- * a screen or more into history (`useJumpToLatest` decides when). A small
- * round `↓` over the list's bottom-right corner, just above the composer, so
- * it reserves no height and the thread under it never moves.
+ * a screen or more into history, or once something new lands out of sight
+ * below them (`useJumpToLatest` decides when). A small round `↓` over the
+ * list's bottom-right corner, just above the composer, so it reserves no
+ * height and the thread under it never moves.
  *
  * Elevated `--popover` with a hairline, the neutral recipe a floating control
  * takes, and the chapter's solid accent only on the dot that says a newer
- * message landed while the reader was away. 40pt drawn, with `hitSlop` up to
+ * message landed out of sight. 40pt drawn, with `hitSlop` up to
  * the 44pt floor.
  *
- * The caller renders it only while the reader is away.
+ * The caller renders it only while `useJumpToLatest` says to (`showsJump`).
  */
 export function JumpToLatestButton({
   hasNew,

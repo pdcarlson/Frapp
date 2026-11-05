@@ -11,17 +11,31 @@ import type {
   NativeSyntheticEvent,
 } from "react-native";
 
+/**
+ * How close to the newest message, in points, the list still follows an
+ * arrival: `maintainVisibleContentPosition.autoscrollToTopThreshold` on the
+ * thread's list. Past it a new message lands out of sight, which is the line
+ * this hook watches.
+ */
+export const FOLLOW_ARRIVALS_WITHIN = 80;
+
 /** The one scroll call the jump needs, as a `FlatList` provides it. */
 export interface LatestScrollableList {
   scrollToOffset(params: { offset: number; animated?: boolean }): void;
 }
 
+/**
+ * How far back the reader is. `newest`: within the follow threshold, where an
+ * arrival scrolls into view by itself. `near`: past it but within one screen.
+ * `away`: more than one screen back.
+ */
+type Zone = "newest" | "near" | "away";
+
 /** Where the reader is, per channel. */
-interface AwayState {
+interface ReadingState {
   channelKey: string | null;
-  /** Scrolled back past one screen from the newest message. */
-  away: boolean;
-  /** The newest row when they left it, so a later arrival can be noticed. */
+  zone: Zone;
+  /** The newest row when they left `newest`, so a later arrival can be noticed. */
   newestWhenLeft: string | null;
 }
 
@@ -30,20 +44,21 @@ interface AwayState {
  * history.
  *
  * The list is inverted, so an offset of 0 is the newest message and the offset
- * grows as the reader scrolls up. Past one screen of it the reader is "away":
- * the thread draws a small jump control, and marks it once a newer message
- * than the one they left lands below. Within one screen nothing shows, since
- * the newest rows are still in view.
+ * grows as the reader scrolls up. Within `FOLLOW_ARRIVALS_WITHIN` of it the
+ * list follows arrivals, so nothing shows. Past that, an arrival no longer
+ * scrolls into view, so once one lands the thread draws a small jump control
+ * with a dot that says so, wherever the reader is. Past one screen the control
+ * also shows on its own, without the dot, as a way back.
  *
- * The thread keeps its place while the reader is away through the list's own
- * `maintainVisibleContentPosition`, so arrivals no longer shift what they are
- * reading; this is only the way back and the notice. A send is the other way
- * back: the thread calls `jumpToLatest` when the member sends, so their own
- * message never lands out of sight.
+ * The thread keeps its place while the reader is back in history through the
+ * list's own `maintainVisibleContentPosition`, so arrivals no longer shift what
+ * they are reading; this is only the way back and the notice. A send is the
+ * other way back: the thread calls `jumpToLatest` when the member sends, so
+ * their own message never lands out of sight.
  *
- * Per channel (`channelKey`): the thread reuses one screen, and one list,
- * across channels, and a reader away in one channel is not away in the next.
- * Kept out of `app/(tabs)/chat-thread.tsx` so it can be tested.
+ * Per channel (`channelKey`): the thread reuses one screen across channels,
+ * and a reader back in history in one channel is not in the next. Kept out of
+ * `app/(tabs)/chat-thread.tsx` so it can be tested.
  */
 export function useJumpToLatest<L extends LatestScrollableList>({
   listRef,
@@ -55,30 +70,30 @@ export function useJumpToLatest<L extends LatestScrollableList>({
   newestId: string | null;
   channelKey: string | null;
 }) {
-  const [state, setState] = useState<AwayState>({
+  const [state, setState] = useState<ReadingState>({
     channelKey,
-    away: false,
+    zone: "newest",
     newestWhenLeft: null,
   });
   // Reset during render when the channel changes, as the thread does its
   // other per-channel state, so no frame draws the last channel's control.
   if (state.channelKey !== channelKey) {
-    setState({ channelKey, away: false, newestWhenLeft: null });
+    setState({ channelKey, zone: "newest", newestWhenLeft: null });
   }
 
-  const away = state.channelKey === channelKey && state.away;
+  const zone: Zone = state.channelKey === channelKey ? state.zone : "newest";
 
   // Read from the scroll handler, which stays one function for the list's
   // life. Mirrored in effects because refs cannot be written in render.
   const viewportRef = useRef(0);
   const newestRef = useRef(newestId);
-  const awayRef = useRef(away);
+  const zoneRef = useRef(zone);
   useEffect(() => {
     newestRef.current = newestId;
   }, [newestId]);
   useEffect(() => {
-    awayRef.current = away;
-  }, [away]);
+    zoneRef.current = zone;
+  }, [zone]);
 
   const onLayout = useCallback((event: LayoutChangeEvent) => {
     viewportRef.current = event.nativeEvent.layout.height;
@@ -89,14 +104,29 @@ export function useJumpToLatest<L extends LatestScrollableList>({
       const viewport = viewportRef.current;
       // Unmeasured, so there is no screen to be "past" yet.
       if (viewport <= 0) return;
-      const away = event.nativeEvent.contentOffset.y > viewport;
+      const offset = event.nativeEvent.contentOffset.y;
+      const next: Zone =
+        offset <= FOLLOW_ARRIVALS_WITHIN
+          ? "newest"
+          : offset > viewport
+            ? "away"
+            : "near";
       // Only a crossing is a state change: a scroll event fires per frame.
-      if (away === awayRef.current) return;
-      awayRef.current = away;
+      if (next === zoneRef.current) return;
+      const leftNewest = zoneRef.current === "newest";
+      zoneRef.current = next;
+      const newest = newestRef.current;
       setState((previous) => ({
         ...previous,
-        away,
-        newestWhenLeft: away ? newestRef.current : null,
+        zone: next,
+        // Remembered from the moment the reader stopped following arrivals,
+        // and kept while they move between `near` and `away`.
+        newestWhenLeft:
+          next === "newest"
+            ? null
+            : leftNewest
+              ? newest
+              : previous.newestWhenLeft,
       }));
     },
     [],
@@ -106,25 +136,36 @@ export function useJumpToLatest<L extends LatestScrollableList>({
    * Scrolls to the newest message. Animated for the control's tap; a send
    * passes `animated: false`, so the list is already at the bottom when the
    * new row lands and `maintainVisibleContentPosition` follows it there,
-   * rather than adjusting for it halfway through an animation.
+   * rather than adjusting for it halfway through an animation. An unanimated
+   * jump is at the bottom at once, so it also clears the control there and
+   * then: the member's own message landing must not light the dot for the
+   * frame before the scroll event says they are back.
    */
   const jumpToLatest = useCallback(
     (options: { animated?: boolean } = {}) => {
-      listRef.current?.scrollToOffset({
-        offset: 0,
-        animated: options.animated ?? true,
-      });
+      const animated = options.animated ?? true;
+      listRef.current?.scrollToOffset({ offset: 0, animated });
+      if (!animated) {
+        zoneRef.current = "newest";
+        setState((previous) => ({
+          ...previous,
+          zone: "newest",
+          newestWhenLeft: null,
+        }));
+      }
     },
     [listRef],
   );
+
+  /** A newer message landed since the reader stopped following arrivals. */
+  const hasNewBelow = zone !== "newest" && newestId !== state.newestWhenLeft;
 
   return {
     onLayout,
     onScroll,
     jumpToLatest,
     /** Draw the jump control. */
-    isAway: away,
-    /** A newer message landed since the reader left the newest one. */
-    hasNewBelow: away && newestId !== state.newestWhenLeft,
+    showsJump: zone === "away" || hasNewBelow,
+    hasNewBelow,
   };
 }
