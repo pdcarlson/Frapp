@@ -331,7 +331,7 @@ export class WorkerSubscription {
  * that; a pending reopen or outage check must not hold a draining process, or
  * a test run, open after everything else has stopped.
  */
-function backgroundTimer(
+export function backgroundTimer(
   fn: () => void,
   ms: number,
 ): ReturnType<typeof setTimeout> {

@@ -38,7 +38,12 @@ import { ChannelCacheService } from '../services/channel-cache.service';
 import type { CachedChannelRow } from '../services/channel-cache.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
-import { releaseChannel, WorkerSubscription } from './worker-subscription';
+import {
+  backgroundTimer,
+  releaseChannel,
+  WORKER_SUBSCRIPTION_DOWN_AFTER_MS,
+  WorkerSubscription,
+} from './worker-subscription';
 
 interface ChatMessageRow {
   id: string;
@@ -103,17 +108,20 @@ export const MAX_PRESENCE_CHANNELS = 80;
  */
 const FANOUT_START_MAX_AGE_MS = 10 * 60 * 1000;
 
-/** Sentry reports for a refused or timed-out presence join, at most one per window. */
+/**
+ * Sentry reports for a presence join still failing after its grace period, at
+ * most one per window.
+ */
 const PRESENCE_REPORT_INTERVAL_MS = 10 * 60 * 1000;
 
 /**
  * How long a presence channel may stay unjoined after a `CHANNEL_ERROR` or
- * `TIMED_OUT` before Sentry hears of it (#3473). realtime-js reconnects a
- * dropped socket and rejoins its channels within seconds (its backoff tops out
- * at 10 s), so a channel still unjoined after this is a refusal or an outage,
- * not a blip.
+ * `TIMED_OUT` before Sentry hears of it (#3473). It is the message
+ * subscription's outage threshold, for the same reason: a routine socket blip
+ * rejoins within seconds, so a channel still unjoined after this is a refusal
+ * or an outage.
  */
-export const PRESENCE_JOIN_GRACE_MS = 60 * 1000;
+export const PRESENCE_JOIN_GRACE_MS = WORKER_SUBSCRIPTION_DOWN_AFTER_MS;
 
 /**
  * Where a fan-out span starts: the message's insert, unless that is unreadable,
@@ -757,15 +765,17 @@ export class ChatPushWorkerService
       pending.status = status;
       return;
     }
-    // Dropping the channel (eviction, a server close, shutdown) clears this
-    // timer, so when it fires the worker still holds the channel.
-    const timer = setTimeout(() => {
-      const latest = this.unjoinedPresence.get(ch)?.status ?? status;
-      this.unjoinedPresence.delete(ch);
-      this.reportPresenceRefusal(latest);
-    }, PRESENCE_JOIN_GRACE_MS);
-    timer.unref?.();
-    this.unjoinedPresence.set(ch, { timer, status });
+    // Dropping the channel (eviction, a server close, shutdown) and a
+    // SUBSCRIBED both clear this timer, so when it fires the worker still
+    // holds the channel and its entry is still here.
+    const entry = {
+      status,
+      timer: backgroundTimer(() => {
+        this.unjoinedPresence.delete(ch);
+        this.reportPresenceRefusal(entry.status);
+      }, PRESENCE_JOIN_GRACE_MS),
+    };
+    this.unjoinedPresence.set(ch, entry);
   }
 
   private clearUnjoined(ch: RealtimeChannel): void {

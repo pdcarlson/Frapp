@@ -272,7 +272,7 @@ describe('ChatPushWorkerService — presence channels and the fan-out span', () 
             'chat-push presence join failed',
             expect.objectContaining({
               level: 'warning',
-              tags: expect.objectContaining({ realtime_status: status }),
+              tags: { realtime_status: status, presence_channels: '1' },
               // One issue per status, not one for every refused join.
               fingerprint: ['chat-push-presence-join', status],
             }),
