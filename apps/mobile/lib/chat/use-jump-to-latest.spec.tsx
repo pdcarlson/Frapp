@@ -25,15 +25,28 @@ const scroll = (y: number) =>
   >;
 
 /**
- * The thread's rows, newest first as the inverted list draws them. A key
- * ending in `*` is the viewer's own send that the server has not confirmed.
+ * The thread's rows, newest first as the inverted list draws it, a second
+ * apart. A key ending in `*` is the viewer's own message (unconfirmed, or
+ * confirmed from any device), and one ending in `~` is drawn with nothing to
+ * read (a blocked member's tombstone, or a deleted message).
  */
 const rows = (...ids: string[]): LatestRow[] =>
-  ids.map((id) =>
-    id.endsWith("*")
-      ? { id: id.slice(0, -1), local: true }
-      : { id, local: false },
-  );
+  ids.map((id, index) => {
+    const own = id.endsWith("*");
+    const silent = id.endsWith("~");
+    return {
+      id: own || silent ? id.slice(0, -1) : id,
+      own,
+      silent,
+      createdAt: (ids.length - index) * 1000,
+    };
+  });
+
+/** One row at an explicit time, in seconds; `rows`' markers apply. */
+const at = (id: string, seconds: number): LatestRow => ({
+  ...rows(id)[0]!,
+  createdAt: seconds * 1000,
+});
 
 /** Messages 1..n, newest first. */
 const thread = (n: number) =>
@@ -108,15 +121,27 @@ describe("useJumpToLatest", () => {
   // from someone else can then sit below the newest row, and neither the
   // newest row nor the timestamp they left at says anything arrived.
   it("notices an arrival behind the newest row after the reader's own message re-sorts", () => {
-    const { result, rerender } = setup(rows("own*", "c-2", "c-1"));
+    // Sent on a clock 60s ahead: drawn newest at its device time.
+    const { result, rerender } = setup([
+      at("own*", 90),
+      at("c-2", 30),
+      at("c-1", 0),
+    ]);
     act(() => result.current.onScroll(scroll(FOLLOW_ARRIVALS_WITHIN + 1)));
 
     // Confirmed, and re-sorted behind c-2 by its server time: nothing new.
-    rerender({ rows: rows("c-2", "own", "c-1"), channelKey: "chan-1" });
+    rerender({
+      rows: [at("c-2", 30), at("own*", 10), at("c-1", 0)],
+      channelKey: "chan-1",
+    });
     expect(result.current.hasNewBelow).toBe(false);
 
-    // Someone else's message lands in the skew window, below the newest row.
-    rerender({ rows: rows("c-2", "c-3", "own", "c-1"), channelKey: "chan-1" });
+    // Someone else's message lands in the skew window, below the newest row,
+    // stamped a little before it (a write that ran long).
+    rerender({
+      rows: [at("c-2", 30), at("c-3", 20), at("own*", 10), at("c-1", 0)],
+      channelKey: "chan-1",
+    });
     expect(result.current.hasNewBelow).toBe(true);
     expect(result.current.showsJump).toBe(true);
   });
@@ -128,8 +153,10 @@ describe("useJumpToLatest", () => {
     const { result, rerender } = setup(rows("own*", "c-2", "c-1"));
     act(() => result.current.onScroll(scroll(FOLLOW_ARRIVALS_WITHIN + 1)));
 
+    // Confirmed at the server's time, after the backfill, which is why the
+    // reader's own message is no measure of what they had seen.
     rerender({
-      rows: rows("own", "b-2", "b-1", "c-2", "c-1"),
+      rows: rows("own*", "b-2", "b-1", "c-2", "c-1"),
       channelKey: "chan-1",
     });
     expect(result.current.hasNewBelow).toBe(true);
@@ -147,17 +174,79 @@ describe("useJumpToLatest", () => {
     expect(result.current.hasNewBelow).toBe(false);
   });
 
-  // Its row lands a moment before the send that queued it takes the reader to
-  // the newest message; the dot must not flash in between.
-  it("does not count the reader's own unconfirmed send as news", () => {
+  // The send's tap takes the reader to the newest message, but they can be
+  // back in history before their row is drawn, and again before the server
+  // confirms it, under a key they never saw. It is never news to them.
+  it("does not count the reader's own message as news, before or after it is confirmed", () => {
+    const { result, rerender } = setup(thread(3));
+    act(() => result.current.onScroll(scroll(VIEWPORT * 2)));
+
+    // Pending, then confirmed under the same key at the server's time.
+    rerender({
+      rows: [at("mine*", 9), ...thread(3)],
+      channelKey: "chan-1",
+    });
+    expect(result.current.hasNewBelow).toBe(false);
+    rerender({
+      rows: [at("mine*", 4), ...thread(3)],
+      channelKey: "chan-1",
+    });
+    expect(result.current.hasNewBelow).toBe(false);
+    expect(result.current.showsJump).toBe(true);
+
+    // And someone else's reply after it still says so.
+    rerender({
+      rows: [at("c-4", 5), at("mine*", 4), ...thread(3)],
+      channelKey: "chan-1",
+    });
+    expect(result.current.hasNewBelow).toBe(true);
+  });
+
+  // The thread draws a blocked member's message as a tombstone, and a deleted
+  // one as a placeholder: nothing to read, so nothing to say arrived.
+  it("does not count a row with nothing to read as news", () => {
     const { result, rerender } = setup(thread(3));
     act(() => result.current.onScroll(scroll(VIEWPORT * 2)));
 
     rerender({
-      rows: rows("mine*", "c-3", "c-2", "c-1"),
+      rows: rows("t-5~", "d-4~", "c-3", "c-2", "c-1"),
       channelKey: "chan-1",
     });
     expect(result.current.hasNewBelow).toBe(false);
+  });
+
+  // A row the thread held (the block list was still loading) is released
+  // between rows the reader had already seen. It is history coming into view.
+  it("does not count an older row that comes into view mid-history as news", () => {
+    const { result, rerender } = setup([
+      at("c-3", 300),
+      at("c-2", 200),
+      at("c-1", 100),
+    ]);
+    act(() => result.current.onScroll(scroll(VIEWPORT * 2)));
+
+    rerender({
+      rows: [at("c-3", 300), at("c-2", 200), at("h-1", 150), at("c-1", 100)],
+      channelKey: "chan-1",
+    });
+    expect(result.current.hasNewBelow).toBe(false);
+  });
+
+  // The same release, of a row newer than anything from anyone else the
+  // reader had seen: only their own message sat above it. That is news.
+  it("counts a released row newer than the last message from anyone else they saw", () => {
+    const { result, rerender } = setup([
+      at("m-2*", 400),
+      at("c-2", 200),
+      at("c-1", 100),
+    ]);
+    act(() => result.current.onScroll(scroll(VIEWPORT * 2)));
+
+    rerender({
+      rows: [at("m-2*", 400), at("h-1", 300), at("c-2", 200), at("c-1", 100)],
+      channelKey: "chan-1",
+    });
+    expect(result.current.hasNewBelow).toBe(true);
   });
 
   it("says nothing of an arrival within the follow threshold, which scrolls into view", () => {

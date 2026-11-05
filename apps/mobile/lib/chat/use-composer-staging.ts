@@ -106,16 +106,26 @@ export interface ComposerStagingInput {
   blockState: BlockState;
   draft: string;
   setDraft: (body: string) => void;
-  /** Resolves `true` once the message is queued, `false` when it was not. */
+  /**
+   * Whether a photo is staged, which makes an empty draft a message (an
+   * attachment-only send is a real one).
+   */
+  hasAttachments: boolean;
+  /**
+   * Resolves `true` once the message is queued, `false` when it was not.
+   * Online it settles only after the server has answered, so nothing that
+   * belongs to the tap waits on it.
+   */
   send: (content: string, options?: SendOptions) => Promise<boolean>;
   edit: (messageId: string, content: string) => Promise<void>;
   /**
-   * Runs once a message `submit` sent is queued. Never for an edit, a
-   * resubmit while the staged reply is still in flight, or a send that
-   * queued nothing, so the thread can follow a real send without moving the
-   * reader for one that didn't happen.
+   * Runs on the tap, synchronously, once `submit` has decided a message goes
+   * out and just before it hands that message to `send`: not for an edit, a
+   * resubmit while the staged reply is still in flight, or a draft with
+   * nothing in it. So the thread can follow a send at once, rather than a
+   * network round-trip later and possibly in another channel.
    */
-  onSent?: () => void;
+  onSending?: () => void;
 }
 
 export interface ComposerStaging {
@@ -165,9 +175,10 @@ export function useComposerStaging({
   blockState,
   draft,
   setDraft,
+  hasAttachments,
   send,
   edit,
-  onSent,
+  onSending,
 }: ComposerStagingInput): ComposerStaging {
   // One staged reply and one open edit per channel, keyed by channel id: the
   // screen stays mounted across channels, and what a member left staged or
@@ -355,13 +366,17 @@ export function useComposerStaging({
     // the send didn't take it, unless the member has staged another since.
     const staged = activeReply;
     if (staged && replyInFlightRef.current === staged) return;
+    // Nothing to send: `send` would refuse it too, but deciding here is what
+    // lets `onSending` run on the tap only for a message that goes out. The
+    // composer already greys Send out on an empty draft; this is the belt.
+    if (!channelId || (!draft.trim() && !hasAttachments)) return;
     if (staged) {
       replyInFlightRef.current = staged;
       setReplies((current) => withoutKey(current, staged.channelId));
     }
+    onSending?.();
     void send(draft, { replyToId: staged?.messageId ?? null }).then(
       (dispatched) => {
-        if (dispatched) onSent?.();
         if (!staged) return;
         if (replyInFlightRef.current === staged)
           replyInFlightRef.current = null;
@@ -374,7 +389,17 @@ export function useComposerStaging({
         }
       },
     );
-  }, [activeEdit, activeReply, cancelEdit, draft, edit, onSent, send]);
+  }, [
+    activeEdit,
+    activeReply,
+    cancelEdit,
+    channelId,
+    draft,
+    edit,
+    hasAttachments,
+    onSending,
+    send,
+  ]);
 
   // An edit emptied of the text it had can't be saved, and the composer greys
   // Save out; this is what says why, rather than leaving a dead button. A

@@ -455,7 +455,6 @@ describe("the reaction row", () => {
   });
 });
 
-/** The rows' own layout (components.md §11, #2873). */
 describe("a tap on the row", () => {
   // The thread's list keeps taps for its controls while the keyboard is up
   // (`keyboardShouldPersistTaps="handled"`), and the row's frame claims a tap
@@ -477,6 +476,7 @@ describe("a tap on the row", () => {
   });
 });
 
+/** The rows' own layout (components.md §11, #2873). */
 describe("compact layout (#2873)", () => {
   /** Accessible containers carrying the long-press action. */
   function actionHosts(tree: ReactTestRenderer) {

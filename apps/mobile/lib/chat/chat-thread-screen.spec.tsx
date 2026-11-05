@@ -1049,65 +1049,153 @@ describe("chat thread jump to latest", () => {
     act(() => tree.unmount());
   });
 
-  it("takes a member who sends a new message to the bottom to see it go", async () => {
+  /** A send the test settles itself, as a slow POST holds it open. */
+  function heldSend() {
+    const held: { settle: (queued: boolean) => void } = { settle: () => {} };
+    const send = vi.fn(
+      () => new Promise<boolean>((resolve) => (held.settle = resolve)),
+    );
+    return { send, held };
+  }
+
+  // Online, `send` settles only once the server has answered, so the jump
+  // can't wait for it: it comes on the tap.
+  it("takes a member who sends a new message to the bottom on the tap", async () => {
+    const { send, held } = heldSend();
+    channel = channelState({ draft: "on my way", send });
     const scrollToOffset = vi.fn();
     const tree = renderMeasured(scrollToOffset);
     scrollTo(tree, 1200);
 
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: false });
+    expect(jumpButtons(tree)).toHaveLength(0);
+
     await act(async () => {
-      tree.root.findByType(ChatComposer).props.onSend();
+      held.settle(true);
       await Promise.resolve();
     });
-
-    expect(scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: false });
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 
-  // A send that queued nothing (the outbox write failed) has no row to show,
-  // so taking the reader to the bottom only lost their place in history.
-  it("leaves the reader where they are when the send queued nothing", async () => {
-    channel = channelState({ send: vi.fn(async () => false) });
+  // The composer greys Send out then; this is the belt to it.
+  it("leaves the reader where they are when there is nothing to send", () => {
     const scrollToOffset = vi.fn();
     const tree = renderMeasured(scrollToOffset);
     scrollTo(tree, 1200);
 
-    await act(async () => {
-      tree.root.findByType(ChatComposer).props.onSend();
-      await Promise.resolve();
-    });
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
 
+    expect(channel.send).not.toHaveBeenCalled();
     expect(scrollToOffset).not.toHaveBeenCalled();
     expect(jumpButtons(tree)).toHaveLength(1);
     act(() => tree.unmount());
   });
 
-  it("does not move the reader for a second tap while their reply is still on its way", async () => {
-    let settle!: (queued: boolean) => void;
-    channel = channelState({
-      send: vi.fn(() => new Promise<boolean>((resolve) => (settle = resolve))),
-    });
+  it("does not move the reader again for a second tap while their reply is still on its way", async () => {
+    const { send, held } = heldSend();
+    channel = channelState({ draft: "same here", send });
     const scrollToOffset = vi.fn();
     const tree = renderMeasured(scrollToOffset);
     const sheet = tree.root.findByType("MessageActionsSheet" as never);
     act(() => (sheet.props.onReply as (id: string) => void)("m1"));
     scrollTo(tree, 1200);
 
-    await act(async () => {
+    act(() => {
       // One render: the second tap meets the same staged reply, in flight.
       const composer = tree.root.findByType(ChatComposer);
       composer.props.onSend();
       composer.props.onSend();
-      await Promise.resolve();
     });
-    expect(channel.send).toHaveBeenCalledTimes(1);
-    expect(scrollToOffset).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      settle(true);
+      held.settle(true);
       await Promise.resolve();
     });
     expect(scrollToOffset).toHaveBeenCalledTimes(1);
-    expect(scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: false });
+    act(() => tree.unmount());
+  });
+
+  // The screen stays mounted across channels, so anything still waiting on a
+  // send would act on whichever channel is open when it settles.
+  it("does not scroll the next channel when a send from the last one settles", async () => {
+    const { send, held } = heldSend();
+    channel = channelState({ draft: "see you there", send });
+    const mounted: { scrollToOffset: ReturnType<typeof vi.fn> }[] = [];
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(<Screen />, {
+        createNodeMock: (element) => {
+          if (element.type !== "FlatList") return null;
+          const instance = { scrollToOffset: vi.fn(), scrollToIndex: vi.fn() };
+          mounted.push(instance);
+          return instance;
+        },
+      });
+    });
+    const measure = () =>
+      act(() =>
+        list(tree).props.onLayout({
+          nativeEvent: { layout: { height: 500 } },
+        }),
+      );
+    measure();
+    scrollTo(tree, 1200);
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+    expect(mounted[0]!.scrollToOffset).toHaveBeenCalledTimes(1);
+
+    params = { channelId: OTHER_CHANNEL };
+    channel = channelState({ draft: "", send });
+    rerender(tree);
+    measure();
+    scrollTo(tree, 1200);
+    expect(jumpButtons(tree)).toHaveLength(1);
+
+    await act(async () => {
+      held.settle(true);
+      await Promise.resolve();
+    });
+    expect(mounted[1]!.scrollToOffset).not.toHaveBeenCalled();
+    expect(jumpButtons(tree)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  // Taken down on the tap, the reader can be back in history before their
+  // message is drawn, and so before the server confirms it, which leaves it
+  // newest under a key they never saw. It is still their own.
+  it("lights no dot for the viewer's own message when it is confirmed", () => {
+    const { send } = heldSend();
+    channel = channelState({ draft: "running late", send });
+    const tree = renderMeasured();
+    scrollTo(tree, 200);
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+    // Back up the thread before their row is even drawn.
+    scrollTo(tree, 200);
+
+    const mine = message("mine", {
+      sender_id: VIEWER,
+      created_at: new Date(2026, 8, 28, 17, 2).toISOString(),
+      _status: "pending",
+    });
+    channel = { ...channel, messages: [...channel.messages, mine] };
+    rerender(tree);
+    expect(jumpButtons(tree)).toHaveLength(0);
+    channel = {
+      ...channel,
+      messages: [
+        ...channelState().messages,
+        // Re-keyed under the server's id, its client key unchanged.
+        { ...mine, id: "srv-mine", _status: "confirmed" },
+      ],
+    };
+    rerender(tree);
+
+    expect(jumpButtons(tree)).toHaveLength(0);
     act(() => tree.unmount());
   });
 
@@ -1151,8 +1239,8 @@ describe("chat thread jump to latest", () => {
     act(() => tree.unmount());
   });
 
-  // The viewer's own message lands a moment before the send that queued it
-  // takes them down; it is not news to them.
+  // The viewer's own message is not news to them, before it is confirmed or
+  // after.
   it("lights no dot for the viewer's own unconfirmed message", () => {
     const tree = renderMeasured();
     scrollTo(tree, 200);
@@ -1170,6 +1258,33 @@ describe("chat thread jump to latest", () => {
     };
     rerender(tree);
 
+    expect(jumpButtons(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  // Thread rows the viewer has nothing to read in: a blocked member's message
+  // is drawn as a tombstone, and a deleted one as a placeholder.
+  it("lights no dot for a message from a member the viewer blocked, or one deleted", () => {
+    const tree = renderMeasured();
+    scrollTo(tree, 200);
+
+    channel = {
+      ...channel,
+      messages: [
+        ...channel.messages,
+        message("b1", {
+          sender_id: BLOCKED,
+          created_at: new Date(2026, 8, 28, 17, 2).toISOString(),
+        }),
+        message("d1", {
+          is_deleted: true,
+          content: "",
+          created_at: new Date(2026, 8, 28, 17, 3).toISOString(),
+        }),
+      ],
+    };
+    rerender(tree);
+    expect(rows(tree)).toHaveLength(4);
     expect(jumpButtons(tree)).toHaveLength(0);
     act(() => tree.unmount());
   });
@@ -1289,6 +1404,29 @@ describe("chat thread reactions from the actions sheet", () => {
       ...channel,
       messages: [message("m1", { is_deleted: true, content: "" })],
     };
+    rerender(tree);
+
+    expect(dismissSheet).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("closes the sheet when its message leaves the cache while it is open", () => {
+    // A hard delete, or a re-read that drops the older page it was on: the
+    // sheet's actions would act on a message the thread no longer draws.
+    channel = channelState({ messages: [message("m1"), message("m2")] });
+    const tree = render();
+    const row = rows(tree).find(
+      (node) => (node.props.row as ThreadRow).message.id === "m1",
+    )!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+    rerender(tree);
+    expect(dismissSheet).not.toHaveBeenCalled();
+
+    channel = { ...channel, messages: [message("m2")] };
     rerender(tree);
 
     expect(dismissSheet).toHaveBeenCalledTimes(1);

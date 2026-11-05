@@ -453,11 +453,15 @@ export default function ChatThreadScreen() {
   // the order the list draws them.
   const latestRows = useMemo<LatestRow[]>(
     () =>
-      inverted.map((row) => ({
-        id: row.message.client_message_id,
-        local: row.message._status !== "confirmed",
+      inverted.map(({ message, visibility }) => ({
+        id: message.client_message_id,
+        own:
+          message._status !== "confirmed" ||
+          (viewerId !== null && message.sender_id === viewerId),
+        silent: visibility === "tombstone" || message.is_deleted,
+        createdAt: Date.parse(message.created_at),
       })),
-    [inverted],
+    [inverted, viewerId],
   );
   const latest = useJumpToLatest({
     listRef,
@@ -502,11 +506,16 @@ export default function ChatThreadScreen() {
   }, [messages]);
 
   // A new message lands at the bottom, so a member who sends from deep in
-  // history is taken there to see it go, once it is queued. Only then: a send
-  // that queued nothing (the outbox write failed, or the staged reply is
-  // still on its way) leaves them where they were reading, next to the
-  // message they were replying to. An edit stays where it is too: its message
-  // is the one they were reading.
+  // history is taken there on the tap to see it go: `onSending` runs once the
+  // composer has decided a message goes out, before `send` is awaited, which
+  // online settles only after the server answers. Waiting for that moved the
+  // reader a round-trip later, wherever they had scrolled to by then, and in
+  // whichever channel was on screen. Nothing runs when the send settles, so a
+  // switch in between can't scroll the next channel. A send that then queues
+  // nothing (the outbox write failed) has cost them a jump they asked for by
+  // tapping Send, and its hint below says why nothing went. An edit, a second
+  // tap while a staged reply is still on its way, and an empty draft don't
+  // move them at all: an edit's message is the one they were reading.
   const followSend = useCallback(
     () => jumpToLatest({ animated: false }),
     [jumpToLatest],
@@ -522,9 +531,10 @@ export default function ChatThreadScreen() {
     blockState,
     draft,
     setDraft: handleChangeText,
+    hasAttachments: attachments.length > 0,
     send,
     edit,
-    onSent: followSend,
+    onSending: followSend,
   });
   const submitComposer = staging.submit;
   const handleSend = useCallback(() => {
@@ -1009,7 +1019,9 @@ export default function ChatThreadScreen() {
                   // once with the keyboard up; React Native's default spent
                   // that tap on dismissing the keyboard. Dragging the thread
                   // puts the keyboard away, as every messenger does, and so
-                  // does a tap on a message itself (`MessageRowFrame`).
+                  // does a tap on a plain message (`MessageRowFrame`). A tap
+                  // on a card's body doesn't yet: the card's own long-press
+                  // Pressable takes it first.
                   // `on-drag` rather than iOS's `interactive`, on both: the
                   // avoiding view under the composer follows keyboard frame
                   // events, which an interactive drag only sends at its end,

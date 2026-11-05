@@ -33,14 +33,37 @@ export interface LatestScrollableList {
 type Zone = "newest" | "near" | "away";
 
 /**
- * One row of the thread, newest first as the inverted list draws it: its
- * stable key (`client_message_id`, unchanged through confirmation) and whether
- * it is the viewer's own send from this device that the server has not echoed
- * yet (any `_status` but `confirmed`). Such a row is never news to them.
+ * How much older than the newest message from someone else that the reader
+ * had seen a row can be and still count as an arrival. The server stamps
+ * `created_at` when the insert starts, so a message whose write ran long can
+ * reach the reader just after a newer one; a row older than this is history
+ * coming into view (a held row released once the block list loads), not news.
+ */
+export const ARRIVAL_ORDER_SLACK_MS = 60_000;
+
+/**
+ * One row of the thread, newest first as the inverted list draws it.
  */
 export interface LatestRow {
+  /** Its stable key: `client_message_id`, unchanged through confirmation. */
   id: string;
-  local: boolean;
+  /**
+   * The viewer's own message: an unconfirmed send from this device, or one
+   * of theirs the server has confirmed, from here or another device. Never
+   * news to them, and its time says nothing about what they had seen (the
+   * device clock until confirmed, then the server's, which for a message
+   * queued offline is later than everything backfilled from the outage).
+   */
+  own: boolean;
+  /**
+   * Drawn with nothing to read: a tombstone for a member the viewer blocked
+   * (on their list, or masked by the server), or a deleted message. Never
+   * news either. Blocked members' messages raise no unread badge for the
+   * same reason (spec/behavior/chat § Read Receipts).
+   */
+  silent: boolean;
+  /** `created_at` in epoch ms; read only for rows that are not `own`. */
+  createdAt: number;
 }
 
 /** Where the reader is, per channel. */
@@ -56,8 +79,8 @@ interface ReadingState {
 
 /**
  * Whether a row landed below the reader since they left `newest`, judged on
- * the cache's order as it is now rather than on anything frozen when they
- * left. The newest row's identity or timestamp is not enough:
+ * the cache as it is now rather than on anything frozen when they left. The
+ * newest row's identity or timestamp is not enough:
  *
  * - The viewer's own message is re-sorted when the server confirms it (its
  *   `created_at` becomes the server's), so a device clock ahead of the
@@ -69,13 +92,19 @@ interface ReadingState {
  * - Discarding your own failed newest message takes a row away, and the row
  *   before it becomes the newest without anything having arrived.
  *
- * So: a row arrived when its key was not there when they left and it sits
- * newer than the oldest row that was, which every row they could have been
- * reading is. An older page loads past that end and is not news; a removal
- * adds no key. With none of the old rows left (an empty thread when they
- * left), anything there now arrived. The viewer's own unconfirmed sends never
- * count: their row lands a moment before the send that queued it takes them
- * to the newest message, and must not light the dot in between.
+ * So a row arrived when all of these hold:
+ *
+ * - Its key was not there when they left. A removal adds no key.
+ * - It sits newer than the oldest row that was, which every row they could
+ *   have been reading is. An older page loads past that end. With none of
+ *   the old rows left (an empty thread when they left), anything there now
+ *   arrived.
+ * - It is not older, by more than `ARRIVAL_ORDER_SLACK_MS`, than the newest
+ *   message from someone else they had seen, read at its time now. A row
+ *   from the middle of history that comes into view is not news. Their own
+ *   messages are left out of that measure (see `LatestRow.own`); with none
+ *   from anyone else, nothing bounds it.
+ * - It is someone else's and has something to read (`own`, `silent`).
  */
 function arrivedSince(
   rows: readonly LatestRow[],
@@ -83,15 +112,20 @@ function arrivedSince(
 ): boolean {
   if (seen === null) return false;
   let oldestSeen = rows.length;
+  let newestSeenTime = Number.NEGATIVE_INFINITY;
   for (let index = rows.length - 1; index >= 0; index -= 1) {
-    if (seen.has(rows[index]!.id)) {
-      oldestSeen = index;
-      break;
-    }
+    const row = rows[index]!;
+    if (!seen.has(row.id)) continue;
+    if (oldestSeen === rows.length) oldestSeen = index;
+    if (!row.own && row.createdAt > newestSeenTime)
+      newestSeenTime = row.createdAt;
   }
+  const notBefore = newestSeenTime - ARRIVAL_ORDER_SLACK_MS;
   for (let index = 0; index < oldestSeen; index += 1) {
     const row = rows[index]!;
-    if (!row.local && !seen.has(row.id)) return true;
+    if (row.own || row.silent || seen.has(row.id)) continue;
+    // Negated, so a time that didn't parse counts rather than hides news.
+    if (!(row.createdAt < notBefore)) return true;
   }
   return false;
 }
@@ -110,9 +144,8 @@ function arrivedSince(
  * The thread keeps its place while the reader is back in history through the
  * list's own `maintainVisibleContentPosition`, so arrivals no longer shift what
  * they are reading; this is only the way back and the notice. A send is the
- * other way back: the thread calls `jumpToLatest` once the composer has
- * queued the member's message, so it never lands out of sight (and a send
- * that queued nothing leaves them where they were reading).
+ * other way back: the thread calls `jumpToLatest` on the Send tap, before the
+ * send is awaited, so the member's message never lands out of sight.
  *
  * Per channel (`channelKey`): the thread reuses one screen across channels,
  * and a reader back in history in one channel is not in the next. Kept out of

@@ -71,6 +71,7 @@ function setup(overrides: Partial<ComposerStagingInput> = {}) {
     blockState: READY,
     draft: "the draft",
     setDraft: vi.fn(),
+    hasAttachments: false,
     send: vi.fn().mockResolvedValue(true),
     edit: vi.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -189,31 +190,43 @@ describe("useComposerStaging — reply", () => {
   });
 });
 
-// The thread follows a send to the newest message through `onSent`, so it
-// must run only for a message that was actually queued.
-describe("useComposerStaging — onSent", () => {
-  it("runs once the message is queued", async () => {
-    const onSent = vi.fn();
-    const { result } = setup({ onSent });
+// The thread follows a send to the newest message through `onSending`, on the
+// tap: it must run before the send settles (online, that is after the server
+// answers), and only when a message goes out.
+describe("useComposerStaging — onSending", () => {
+  it("runs on the tap, before the send settles, and not again when it does", async () => {
+    let settle!: (queued: boolean) => void;
+    const send = vi.fn(
+      () => new Promise<boolean>((resolve) => (settle = resolve)),
+    );
+    const onSending = vi.fn(() => {
+      // Before the message is handed over, so the jump comes first.
+      expect(send).not.toHaveBeenCalled();
+    });
+    const { result } = setup({ onSending, send });
+    act(() => result.current.submit());
+    expect(onSending).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+
     await act(async () => {
-      result.current.submit();
+      settle(true);
       await Promise.resolve();
     });
-    expect(onSent).toHaveBeenCalledTimes(1);
+    expect(onSending).toHaveBeenCalledTimes(1);
   });
 
-  it("does not run when the send queued nothing", async () => {
-    const onSent = vi.fn();
-    const { result } = setup({
-      onSent,
-      send: vi.fn().mockResolvedValue(false),
-    });
-    act(() => result.current.startReply("m1"));
-    await act(async () => {
-      result.current.submit();
-      await Promise.resolve();
-    });
-    expect(onSent).not.toHaveBeenCalled();
+  it("does not run for an empty draft, and does for a photo with no caption", () => {
+    const onSending = vi.fn();
+    const send = vi.fn().mockResolvedValue(true);
+    const { result, rerender, input } = setup({ onSending, send, draft: " " });
+    act(() => result.current.submit());
+    expect(onSending).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+
+    rerender({ ...input, hasAttachments: true });
+    act(() => result.current.submit());
+    expect(onSending).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(" ", { replyToId: null });
   });
 
   it("does not run for a resubmit while the staged reply is still in flight", async () => {
@@ -221,34 +234,33 @@ describe("useComposerStaging — onSent", () => {
     const send = vi.fn(
       () => new Promise<boolean>((resolve) => (settle = resolve)),
     );
-    const onSent = vi.fn();
-    const { result } = setup({ onSent, send });
+    const onSending = vi.fn();
+    const { result } = setup({ onSending, send });
     act(() => result.current.startReply("m1"));
-    await act(async () => {
+    act(() => {
       // One render: the second tap sees the same staged reply, in flight.
       result.current.submit();
       result.current.submit();
-      await Promise.resolve();
     });
     expect(send).toHaveBeenCalledTimes(1);
-    expect(onSent).not.toHaveBeenCalled();
+    expect(onSending).toHaveBeenCalledTimes(1);
     await act(async () => {
       settle(true);
       await Promise.resolve();
     });
-    expect(onSent).toHaveBeenCalledTimes(1);
+    expect(onSending).toHaveBeenCalledTimes(1);
   });
 
   it("does not run for an edit", async () => {
-    const onSent = vi.fn();
-    const { result } = setup({ onSent });
+    const onSending = vi.fn();
+    const { result } = setup({ onSending });
     act(() => result.current.startEdit("m2"));
     act(() => result.current.onChangeText("fixed text"));
     await act(async () => {
       result.current.submit();
       await Promise.resolve();
     });
-    expect(onSent).not.toHaveBeenCalled();
+    expect(onSending).not.toHaveBeenCalled();
   });
 });
 
