@@ -4,6 +4,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { CARD_KINDS } from "@repo/chat-core/message-actions";
 import { reactionActionType } from "@repo/chat-core/types";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -50,6 +51,8 @@ vi.mock("@repo/hooks", async () => {
     useUpdateTaskStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useRejectTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    // The hours card's live read (#3383); its own spec covers the badge.
+    useServiceEntry: () => ({ data: undefined }),
   };
 });
 
@@ -948,5 +951,231 @@ describe("ThreadMessageRow — runs and day dividers (#2873)", () => {
       }),
     );
     expect(onJumpToMessage).toHaveBeenCalledWith("parent-1");
+  });
+});
+
+describe("ThreadMessageRow — record cards (#3383)", () => {
+  const visible = (m: ChatMessage): ThreadRow => ({
+    message: m,
+    visibility: "visible",
+  });
+  const allDrawnText = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map(drawnText)
+      .join(" ");
+
+  const POINTS = {
+    actor_user_id: FRIEND,
+    actor_name: "Alice",
+    recipient_user_id: VIEWER,
+    recipient_name: "Bob",
+    amount: -3,
+    category: "FINE",
+    reason: "Late to chapter",
+  };
+  const HOURS = {
+    entry_id: "entry-1",
+    user_id: FRIEND,
+    user_name: "Casey Lin",
+    duration_minutes: 150,
+    description: "Food bank shift",
+    date: "2026-11-04",
+  };
+  const AUDIT = {
+    action: "role_updated",
+    actor_user_id: BLOCKED,
+    diff: { permissions: { added: ["tasks:manage"], removed: [] } },
+  };
+
+  /**
+   * One drawable payload per kind mobile draws as a card, and the eyebrow that
+   * says so. A kind added to `CARD_KINDS` fails the coverage case below until
+   * it is drawn here or listed in `TEXT_ON_MOBILE` on purpose.
+   */
+  const CARDS: Record<string, { payload: unknown; eyebrow: string }> = {
+    poll: {
+      payload: {
+        question: "Formal theme?",
+        options: [
+          { id: "a", label: "Casino" },
+          { id: "b", label: "Masquerade" },
+        ],
+      },
+      eyebrow: "Poll",
+    },
+    event: {
+      payload: {
+        event_id: "evt-1",
+        name: "Chapter meeting",
+        start_time: "2026-11-05T23:00:00.000Z",
+        end_time: "2026-11-06T00:00:00.000Z",
+      },
+      eyebrow: "Event",
+    },
+    task: {
+      payload: {
+        task_id: "task-1",
+        title: "Fix the door",
+        assigner_name: "Alice",
+        assignee_name: "Bob",
+        due_date: "2026-11-07",
+      },
+      eyebrow: "Task",
+    },
+    points: { payload: POINTS, eyebrow: "Points" },
+    hours: { payload: HOURS, eyebrow: "Service hours" },
+    announcement: { payload: { body: "Dues are due Friday" }, eyebrow: "Announcement" },
+    system_audit: { payload: AUDIT, eyebrow: "Audit" },
+  };
+  /** Card kinds mobile still draws as their text (`cardFor`). */
+  const TEXT_ON_MOBILE = ["rush", "dues", "loading"];
+
+  it("draws every card kind as a card, but the ones it means to leave as text", () => {
+    expect(new Set([...Object.keys(CARDS), ...TEXT_ON_MOBILE])).toEqual(
+      new Set(CARD_KINDS),
+    );
+    for (const [kind, { payload, eyebrow }] of Object.entries(CARDS)) {
+      const text = allDrawnText(
+        renderRow(
+          visible(
+            message({
+              kind: kind as ChatMessage["kind"],
+              content: kind === "announcement" ? "Dues are due Friday" : "FALLBACK",
+              payload: payload as ChatMessage["payload"],
+            }),
+          ),
+        ),
+      );
+      expect(text, kind).toContain(eyebrow);
+      expect(text, kind).not.toContain("FALLBACK");
+    }
+    for (const kind of TEXT_ON_MOBILE) {
+      const text = allDrawnText(
+        renderRow(
+          visible(
+            message({
+              kind: kind as ChatMessage["kind"],
+              content: "FALLBACK",
+              payload: {},
+            }),
+          ),
+        ),
+      );
+      expect(text, kind).toContain("FALLBACK");
+    }
+  });
+
+  it("draws a points card as web's sentence and the reason", () => {
+    const text = allDrawnText(
+      renderRow(
+        visible(
+          message({
+            kind: "points",
+            content: "Alice deducted 3 points from Bob",
+            payload: POINTS,
+          }),
+        ),
+      ),
+    );
+    expect(text).toContain("Alice deducted \u22123 points from Bob");
+    expect(text).toContain("\u201CLate to chapter\u201D");
+  });
+
+  it("draws an hours card with the duration and the day, not the stored date", () => {
+    const text = allDrawnText(
+      renderRow(
+        visible(message({ kind: "hours", content: "Logged", payload: HOURS })),
+      ),
+    );
+    expect(text).toContain("Casey Lin logged 2h 30m on");
+    expect(text).not.toContain("2026-11-04");
+    expect(text).toContain("\u201CFood bank shift\u201D");
+  });
+
+  it("names the audit actor from the roster, never by an id prefix", () => {
+    const text = allDrawnText(
+      renderRow(
+        visible(
+          message({
+            kind: "system_audit",
+            sender_id: SYSTEM_SENDER_ID,
+            content: "role_updated: permissions",
+            payload: AUDIT,
+          }),
+        ),
+      ),
+    );
+    expect(text).toContain("role_updated");
+    expect(text).toContain("by Blake");
+    expect(text).not.toContain(BLOCKED.slice(0, 6));
+    expect(text).toContain("Changed: permissions");
+  });
+
+  it("draws the server's own notices, which carry no audit payload, as their sentence", () => {
+    const text = allDrawnText(
+      renderRow(
+        visible(
+          message({
+            kind: "system_audit",
+            sender_id: SYSTEM_SENDER_ID,
+            content: "This poll has closed.",
+            payload: null,
+          }),
+        ),
+      ),
+    );
+    expect(text).toContain("This poll has closed.");
+    expect(text).not.toContain("Audit");
+  });
+
+  it("draws an announcement's content, the words the push showed, over its payload", () => {
+    const text = allDrawnText(
+      renderRow(
+        visible(
+          message({
+            kind: "announcement",
+            content: "Chapter at 8, **formal** dress",
+            payload: { body: "Something else entirely" },
+          }),
+        ),
+      ),
+    );
+    expect(text).toContain("Chapter at 8, formal dress");
+    expect(text).not.toContain("Something else entirely");
+  });
+
+  it("offers an announcement's links to a screen reader on the card", () => {
+    const tree = renderRow(
+      visible(
+        message({
+          kind: "announcement",
+          content: "Sign up at https://example.com/formal",
+          payload: null,
+        }),
+      ),
+    );
+    const host = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        Array.isArray(node.props.accessibilityActions) &&
+        node.props.accessibilityActions.some((action: { label?: string }) =>
+          action.label?.startsWith("Open "),
+        ),
+    );
+    expect(host.props.accessible).toBe(true);
+  });
+
+  it("draws a points or hours row whose payload doesn't read as its text", () => {
+    for (const kind of ["points", "hours"] as const) {
+      const text = allDrawnText(
+        renderRow(
+          visible(
+            message({ kind, content: "Something happened", payload: { id: 3 } }),
+          ),
+        ),
+      );
+      expect(text, kind).toContain("Something happened");
+    }
   });
 });

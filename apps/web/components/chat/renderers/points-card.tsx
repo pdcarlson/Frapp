@@ -5,53 +5,23 @@ import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
-import type { PointsPayload } from "@repo/chat-core/integrations";
+import { pointsChange, readPointsPayload } from "@repo/chat-core/cards";
 
 interface PointsCardProps {
   message: ChatMessage;
 }
 
 /**
- * Defensive read of a `points` payload. A malformed row (missing names, a
- * non-numeric amount) returns `null` so the renderer falls back to the
- * hot-path `content` string instead of blanking the timeline.
- */
-function readPayload(message: ChatMessage): PointsPayload | null {
-  const raw = message.payload;
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw as Record<string, unknown>;
-  const { amount } = r;
-  if (
-    typeof r.actor_name !== "string" ||
-    typeof r.recipient_name !== "string" ||
-    typeof r.reason !== "string" ||
-    typeof amount !== "number" ||
-    !Number.isFinite(amount)
-  ) {
-    return null;
-  }
-  return {
-    actor_user_id: typeof r.actor_user_id === "string" ? r.actor_user_id : "",
-    actor_name: r.actor_name,
-    recipient_user_id:
-      typeof r.recipient_user_id === "string" ? r.recipient_user_id : "",
-    recipient_name: r.recipient_name,
-    amount,
-    category: r.category === "FINE" ? "FINE" : "MANUAL",
-    reason: r.reason,
-    transaction_id:
-      typeof r.transaction_id === "string" ? r.transaction_id : "",
-    created_at: typeof r.created_at === "string" ? r.created_at : "",
-  };
-}
-
-/**
  * Points card: a read-only, append-only record of a single ledger adjustment
  * (`actor → recipient`, signed amount, reason). Server-originated — there are no
  * action buttons and the card is never edited (corrections are new entries).
+ *
+ * The payload reader and the sentence's words (`readPointsPayload`,
+ * `pointsChange`) are `@repo/chat-core/cards`, which mobile's card reads too.
+ * A malformed row falls back to the hot-path `content` string.
  */
 export function PointsCard({ message }: PointsCardProps) {
-  const payload = readPayload(message);
+  const payload = readPointsPayload(message);
   if (!payload) {
     return (
       <div className="mt-1 whitespace-pre-wrap break-words text-base">
@@ -60,8 +30,7 @@ export function PointsCard({ message }: PointsCardProps) {
     );
   }
 
-  const isFine = payload.amount < 0 || payload.category === "FINE";
-  const magnitude = Math.abs(payload.amount);
+  const change = pointsChange(payload);
 
   return (
     <Card className={cn(MESSAGE_CARD)}>
@@ -70,9 +39,7 @@ export function PointsCard({ message }: PointsCardProps) {
       </div>
       <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-base">
         <span className="font-semibold">{payload.actor_name}</span>
-        <span className="text-muted-foreground">
-          {isFine ? "deducted" : "granted"}
-        </span>
+        <span className="text-muted-foreground">{change.verb}</span>
         {/*
           Semantic tokens, not palette. These were `text-red-600` /
           `text-emerald-700` with `dark:` twins that could never fire — nothing
@@ -82,20 +49,21 @@ export function PointsCard({ message }: PointsCardProps) {
         */}
         <span
           className={
-            isFine
+            change.fine
               ? "font-semibold text-destructive-text"
               : "font-semibold text-success"
           }
         >
-          {isFine ? "−" : "+"}
-          {magnitude} {magnitude === 1 ? "point" : "points"}
+          {change.amount}
         </span>
-        <span className="text-muted-foreground">{isFine ? "from" : "to"}</span>
+        <span className="text-muted-foreground">{change.preposition}</span>
         <span className="font-semibold">{payload.recipient_name}</span>
       </div>
-      <div className="mt-2 whitespace-pre-wrap break-words text-base text-muted-foreground">
-        &ldquo;{payload.reason}&rdquo;
-      </div>
+      {payload.reason.trim() ? (
+        <div className="mt-2 whitespace-pre-wrap break-words text-base text-muted-foreground">
+          &ldquo;{payload.reason}&rdquo;
+        </div>
+      ) : null}
     </Card>
   );
 }
