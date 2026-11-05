@@ -1,7 +1,7 @@
 import { ReportsPage } from "@/components/reports/reports-page";
 
 export const metadata = {
-  title: "Reports & Export",
+  title: "Reports",
 };
 
 export default function Reports() {

@@ -139,6 +139,7 @@ import {
   expectClearingEntriesEmpty,
   expectRefusedEntriesKeep,
 } from "@/tests/numeric-input";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 import { ProfilePanel } from "./profile-panel";
 
 /** The body the panel would PATCH, or undefined if it never submitted. */
@@ -149,7 +150,7 @@ function lastSettingsBody() {
 
 async function savePreferences() {
   await userEvent.click(
-    screen.getByRole("button", { name: /save preferences/i }),
+    screen.getByRole("button", { name: /save quiet hours/i }),
   );
 }
 
@@ -163,7 +164,7 @@ describe("ProfilePanel — quiet-hours timezone save (#687)", () => {
     mocks.updateSettings.isError = false;
   });
 
-  // The headline regression of this change. The Preferences card renders before
+  // The headline regression of this change. The Quiet hours section renders before
   // the settings query resolves, so the draft is empty — and mapping that absent
   // value to an explicit null would tell the server to CLEAR the member's stored
   // zone. Absent must stay absent so the PATCH omits the field.
@@ -410,6 +411,37 @@ function resetQueries() {
 describe("ProfilePanel — offline, then loading, then error, then the screen", () => {
   beforeEach(resetQueries);
 
+  it("paints no card on the loaded screen or any of its states", () => {
+    // The Page grammar's "no wrapper card": `/profile` was seven stacked
+    // `Card`s. Each block is a section on the page surface now, and the
+    // screen-level states are the nested family with `sole`.
+    const loaded = render(<ProfilePanel />);
+    expect(cardFilledContainers(loaded.container)).toEqual([]);
+    loaded.unmount();
+
+    mocks.userQuery.data = undefined;
+    mocks.userQuery.isPending = true;
+    mocks.userQuery.isLoading = true;
+    const loading = render(<ProfilePanel />);
+    expect(cardFilledContainers(loading.container)).toEqual([]);
+    loading.unmount();
+
+    mocks.userQuery.isPending = false;
+    mocks.userQuery.isLoading = false;
+    mocks.userQuery.isError = true;
+    const failed = render(<ProfilePanel />);
+    expect(screen.getByText(/couldn't load your profile/i)).toBeInTheDocument();
+    expect(cardFilledContainers(failed.container)).toEqual([]);
+    failed.unmount();
+
+    mocks.userQuery.isError = false;
+    mocks.userQuery.isPending = true;
+    mocks.userQuery.fetchStatus = "paused";
+    mockOffline.value = true;
+    const offline = render(<ProfilePanel />);
+    expect(cardFilledContainers(offline.container)).toEqual([]);
+  });
+
   it("states the network rather than spinning, when nothing is cached", () => {
     mockOffline.value = true;
     mocks.userQuery.data = undefined;
@@ -522,7 +554,7 @@ describe("ProfilePanel — offline, then loading, then error, then the screen", 
   });
 });
 
-describe("ProfilePanel — the Preferences card has its own states", () => {
+describe("ProfilePanel — the Quiet hours section has its own states", () => {
   beforeEach(resetQueries);
 
   it("refuses to offer Save when the stored preferences could not be read", () => {
@@ -540,7 +572,7 @@ describe("ProfilePanel — the Preferences card has its own states", () => {
       screen.getByText(/couldn't load your preferences/i),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /save preferences/i }),
+      screen.queryByRole("button", { name: /save quiet hours/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -568,10 +600,11 @@ describe("ProfilePanel — the Preferences card has its own states", () => {
     mocks.settingsQuery.isLoading = true;
     render(<ProfilePanel />);
 
-    const heading = screen.queryByRole("heading", { name: /preferences/i });
-    // `CardTitle` is a `<div>`, so the card's own title is not a heading — and
-    // the nested state must not add a second one.
-    expect(heading).toBeNull();
+    // The section's own label is the one heading named for it; the nested
+    // state must not add a second.
+    expect(
+      screen.getAllByRole("heading", { name: /quiet hours/i }),
+    ).toHaveLength(1);
   });
 });
 

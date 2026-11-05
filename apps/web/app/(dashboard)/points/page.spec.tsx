@@ -1,6 +1,9 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { formatDay, formatTimestampFull } from "@repo/formatting";
+import { denseListClassName } from "@/components/shared/table-controls";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 
 // Query state is swapped per test through these holders. `refetch` is shared so
 // tests can assert the ErrorState retry actually re-runs both reads.
@@ -279,6 +282,31 @@ describe("PointsPage failure states", () => {
     ).not.toBeInTheDocument();
   });
 
+  it.each([
+    ["loading", { leaderboard: { isLoading: true } }],
+    ["error", { leaderboard: { isError: true } }],
+    [
+      "offline",
+      {
+        offline: true,
+        leaderboard: { data: undefined },
+        summary: { data: undefined },
+      },
+    ],
+  ] as const)(
+    "titles the %s state Points and draws it in the nested family, not a card",
+    (_state, overrides) => {
+      setQueries(overrides);
+
+      const { container } = render(<PointsPage />);
+
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Points" }),
+      ).toBeInTheDocument();
+      expect(cardFilledContainers(container)).toEqual([]);
+    },
+  );
+
   it("shows the loading state while a read is in flight", () => {
     setQueries({ leaderboard: { isLoading: true } });
 
@@ -315,12 +343,115 @@ describe("PointsPage success state", () => {
     expect(screen.getByText("Member user-a")).toBeInTheDocument();
     // The leaderboard total and the balance are both 42; match each by the
     // element that owns it so a future shared value can't make these ambiguous.
-    expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
+    const board = within(screen.getByRole("region", { name: "Leaderboard" }));
+    expect(board.getByText("42")).toBeInTheDocument();
     expect(screen.getByText("My balance")).toBeInTheDocument();
-    expect(screen.getByText("42 points")).toBeInTheDocument();
+    expect(screen.getByRole("definition")).toHaveTextContent("42 points");
     expect(screen.getByText("Founders Day check-in")).toBeInTheDocument();
     expect(screen.getByText("+12")).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load the points ledger")).not.toBeInTheDocument();
+  });
+
+  it("sits flush on the page surface: no card, sectioned lists", () => {
+    setQueries({
+      leaderboard: { data: [{ user_id: "user-a", total: 42 }] },
+      summary: {
+        data: {
+          balance: 42,
+          transactions: [
+            {
+              id: "txn-1",
+              amount: 12,
+              category: "ATTENDANCE",
+              description: "Founders Day check-in",
+              created_at: "2026-08-01T12:00:00Z",
+            },
+          ],
+        },
+      },
+    });
+
+    const { container } = render(<PointsPage />);
+
+    expect(cardFilledContainers(container)).toEqual([]);
+    expect(screen.getByRole("heading", { level: 1, name: "Points" })).toBeInTheDocument();
+    for (const name of ["Leaderboard", "My transactions"]) {
+      const section = screen.getByRole("region", { name });
+      expect(within(section).getByRole("list")).toHaveClass(
+        ...denseListClassName.split(" "),
+      );
+    }
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    // The narration the summary card and the two list cards carried is gone.
+    expect(screen.queryByText(/Track chapter ranking/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Current ranking for selected/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Most recent point activity/)).not.toBeInTheDocument();
+  });
+
+  it("labels a transaction's category and dates it in the house shape", () => {
+    const at = "2026-08-01T12:00:00Z";
+    setQueries({
+      summary: {
+        data: {
+          balance: 12,
+          transactions: [
+            {
+              id: "txn-1",
+              amount: 12,
+              category: "ACADEMIC",
+              description: "Dean's list",
+              created_at: at,
+            },
+          ],
+        },
+      },
+    });
+
+    render(<PointsPage />);
+
+    const row = within(
+      screen.getByRole("region", { name: "My transactions" }),
+    ).getByRole("listitem");
+    expect(row).toHaveTextContent("Academic");
+    expect(row).not.toHaveTextContent("ACADEMIC");
+    const time = row.querySelector("time");
+    expect(time?.textContent).toBe(formatDay(at));
+    expect(time).toHaveAttribute("title", formatTimestampFull(at));
+    expect(time).toHaveAttribute("datetime", at);
+  });
+
+  it("filters by every ledger category, Academic included", () => {
+    setQueries({
+      summary: {
+        data: {
+          balance: 12,
+          transactions: [
+            {
+              id: "txn-1",
+              amount: 12,
+              category: "ACADEMIC",
+              description: "Dean's list",
+              created_at: "2026-08-01T12:00:00Z",
+            },
+            {
+              id: "txn-2",
+              amount: 4,
+              category: "STUDY",
+              description: "Library session",
+              created_at: "2026-08-02T12:00:00Z",
+            },
+          ],
+        },
+      },
+    });
+
+    render(<PointsPage />);
+    fireEvent.change(screen.getByLabelText(/filter transactions by category/i), {
+      target: { value: "ACADEMIC" },
+    });
+
+    expect(screen.getByText("Dean's list")).toBeInTheDocument();
+    expect(screen.queryByText("Library session")).not.toBeInTheDocument();
   });
 
   it("renders empty states when the chapter has no point activity yet", () => {
@@ -347,8 +478,9 @@ describe("PointsPage leaderboard naming (#1197)", () => {
     setQueries({ leaderboard: { data: rows }, roster: { names } });
   }
 
-  const userCell = (text: string) => screen.getByRole("cell", { name: text });
-  const search = () => screen.getByPlaceholderText("Search by member name");
+  const board = () => within(screen.getByRole("region", { name: "Leaderboard" }));
+  const userCell = (text: string) => board().getByText(text);
+  const search = () => screen.getByPlaceholderText("Search members");
 
   const BOARD = [
     { user_id: ALICE, total: 42 },
@@ -429,7 +561,7 @@ describe("PointsPage leaderboard naming (#1197)", () => {
 
     expect(screen.getByText("Carol Diaz")).toBeInTheDocument();
     expect(userCell("#3")).toBeInTheDocument();
-    expect(screen.queryByRole("cell", { name: "#1" })).not.toBeInTheDocument();
+    expect(board().queryByText("#1")).not.toBeInTheDocument();
   });
 
   it("does not let a short name query match hex inside the hidden ids", () => {
@@ -496,7 +628,7 @@ describe("PointsPage leaderboard naming (#1197)", () => {
 
     expect(screen.queryByText("Loading points ledger...")).not.toBeInTheDocument();
     expect(userCell("Member 8f14e4")).toBeInTheDocument();
-    expect(screen.getByText("42 points")).toBeInTheDocument();
+    expect(screen.getByRole("definition")).toHaveTextContent("42 points");
     expect(screen.getByRole("button", { name: /Adjust points/ })).toBeEnabled();
   });
 
@@ -515,7 +647,7 @@ describe("PointsPage leaderboard naming (#1197)", () => {
 
     expect(screen.queryByText("Couldn't load the points ledger")).not.toBeInTheDocument();
     expect(userCell("Member 8f14e4")).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
+    expect(userCell("42")).toBeInTheDocument();
   });
 
   it("recovers names from the page's retry controls", () => {
@@ -648,6 +780,12 @@ describe("PointsPage transaction bulk actions", () => {
     // Only the selected row — the unselected fine is not exported.
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ Description: "Founders Day check-in" });
+    // The category reads as the row does; the timestamp stays ISO, which a
+    // spreadsheet can sort and parse.
+    expect(rows[0]).toMatchObject({
+      Category: "Attendance",
+      Time: "2026-08-01T12:00:00Z",
+    });
   });
 
   it("drops the selection when the category filter changes, so a stale count can't export the wrong rows", () => {
@@ -673,7 +811,7 @@ describe("PointsPage transaction bulk actions", () => {
     expect(screen.getByText(/1 transaction selected/i)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/filter transactions by category/i), {
-      target: { value: "fine" },
+      target: { value: "FINE" },
     });
 
     expect(
@@ -728,9 +866,14 @@ describe("PointsPage archived period picker (#377)", () => {
     expect(lastLeaderboardArgs).toEqual(["all", "sa-1"]);
     expect(lastSummaryArgs).toEqual(["all", "sa-1"]);
 
-    // None of the window buttons read as active (the "default" variant's
-    // filled background) while an archive is selected.
-    expect(screen.getByRole("button", { name: "All Time" })).not.toHaveClass(
+    // None of the window buttons reads as selected while an archive is.
+    for (const name of ["All time", "Semester", "Month"]) {
+      expect(screen.getByRole("button", { name })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+    }
+    expect(screen.getByRole("button", { name: "All time" })).not.toHaveClass(
       "bg-primary",
     );
   });

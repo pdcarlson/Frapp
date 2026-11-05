@@ -248,9 +248,7 @@ describe("ChatAdminPage — the channel structure's states", () => {
     render(<ChatAdminPage />);
     fireEvent.click(screen.getByRole("button", { name: /^#officers/ }));
 
-    expect(
-      screen.queryByText(/Couldn't load the permission catalog/),
-    ).toBeNull();
+    expect(screen.queryByText(/Couldn.t load the permission list/)).toBeNull();
     expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
   });
 
@@ -259,7 +257,7 @@ describe("ChatAdminPage — the channel structure's states", () => {
       "has failed with nothing loaded",
       { isError: true },
       false,
-      /Couldn.t load the permission catalog/,
+      /Couldn.t load the permission list/,
     ],
     [
       "is loading",

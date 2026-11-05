@@ -27,11 +27,19 @@ import { type SettingsTool } from "@/components/settings/settings-access";
 //
 // Below `lg` the rail is still a horizontal wrap row, so the chip reads the
 // same either way — there is no underline variant to keep in sync any more.
-const RAIL_TRIGGER_CLASS =
-  "h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-muted-foreground data-[state=active]:bg-accent-subtle data-[state=active]:font-semibold data-[state=active]:text-accent-text data-[state=active]:shadow-none lg:w-full lg:flex-none";
+/*
+ * A rail row, not a tab: the shared `TabsTrigger` is the underlined tab, so
+ * its 44px floor, its 2px underline and its `-mb-px` are taken back off
+ * here. Without that the rows stood 44px apart under 34px tool links, and the
+ * active chip carried an accent underline (2026-11-05). `pointer-coarse`
+ * keeps the 44px touch floor where the rail wraps into chips on a phone.
+ */
+const RAIL_ROW_RESET =
+  "mb-0 min-h-0 border-b-0 py-0 enabled:data-[state=active]:border-transparent pointer-coarse:min-h-11";
 
-const RAIL_DANGER_TRIGGER_CLASS =
-  "h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-destructive data-[state=active]:bg-destructive-tint data-[state=active]:font-semibold data-[state=active]:text-destructive-text data-[state=active]:shadow-none lg:mt-auto lg:w-full lg:flex-none";
+const RAIL_TRIGGER_CLASS = `${RAIL_ROW_RESET} h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-muted-foreground enabled:hover:bg-card data-[state=active]:bg-accent-subtle data-[state=active]:font-semibold data-[state=active]:text-accent-text data-[state=active]:shadow-none enabled:data-[state=active]:text-accent-text lg:w-full lg:flex-none`;
+
+const RAIL_DANGER_TRIGGER_CLASS = `${RAIL_ROW_RESET} h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-destructive enabled:hover:bg-card data-[state=active]:bg-destructive-tint data-[state=active]:font-semibold data-[state=active]:text-destructive-text data-[state=active]:shadow-none enabled:data-[state=active]:text-destructive-text lg:mt-auto lg:w-full lg:flex-none`;
 
 // Valid `?tab=` deep-link targets — mirrors the rail triggers below.
 //
@@ -76,7 +84,7 @@ export const SETTINGS_TAB_VALUES: readonly string[] = SETTINGS_TABS.map(
 // own full-width page. Same row geometry as a rail trigger, with the nav's
 // hover step, since clicking one leaves this page rather than switching a tab.
 const RAIL_LINK_CLASS = cn(
-  "flex h-[34px] items-center rounded-[10px] px-[10px] text-sm text-muted-foreground transition hover:bg-card hover:text-foreground lg:w-full",
+  "flex h-[34px] items-center rounded-[10px] px-[10px] text-sm text-muted-foreground transition hover:bg-card hover:text-foreground pointer-coarse:h-11 lg:w-full",
   FOCUS_RING,
 );
 
@@ -121,7 +129,7 @@ export function SettingsRail({
       ) : null}
       <TabsList
         aria-label="Chapter setup"
-        className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 bg-transparent p-0 lg:flex-1 lg:flex-col lg:flex-nowrap lg:items-stretch"
+        className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 border-b-0 bg-transparent p-0 lg:flex-1 lg:flex-col lg:flex-nowrap lg:items-stretch"
       >
         {visibleTabs.map((tab) => (
           <TabsTrigger
