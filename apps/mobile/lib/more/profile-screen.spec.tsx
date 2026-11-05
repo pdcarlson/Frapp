@@ -5,6 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { ListRow } from "@/components/list-section";
+import { PencilGlyph } from "@/components/control-glyphs";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
@@ -123,7 +124,7 @@ describe("Profile back row (#3022)", () => {
 });
 
 /**
- * #3387. Edit sits at the far end of the `‹ More` row, where the board draws
+ * #3387. Edit (a pencil since 2026-11-05) sits at the far end of the `‹ More` row, where the board draws
  * it, and opens the edit sheet. It appears only over a loaded profile: a sheet
  * opened while loading would prefill blanks over fields already set.
  */
@@ -165,11 +166,12 @@ describe("Profile Edit (#3387)", () => {
         node.props.accessibilityLabel === "Back to More",
     ).parent!;
     expect(backRow.findAll((node) => node === edit)).toHaveLength(1);
-    // The back row's own colour, the chapter accent (the mock's), not gold.
-    const label = edit!.findByType("Text" as unknown as React.ElementType);
-    expect([label.props.style].flat()).toContainEqual(
-      expect.objectContaining({ color: "#DDB844" }),
-    );
+    // A pencil, not the word (components.md § Icon-only actions), in the
+    // back row's own colour: the chapter accent (the mock's), not gold.
+    expect(
+      edit!.findAllByType("Text" as unknown as React.ElementType),
+    ).toHaveLength(0);
+    expect(edit!.findByType(PencilGlyph).props.color).toBe("#DDB844");
 
     act(() => {
       edit!.props.onPress();
