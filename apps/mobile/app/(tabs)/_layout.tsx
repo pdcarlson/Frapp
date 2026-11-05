@@ -79,6 +79,12 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      // Android's back button returns to the screen the member came from,
+      // not to Chat home. Every pushed screen here is a hidden tab, and the
+      // tab router's default ("firstRoute") sent each one straight to Chat:
+      // back from an event opened on Events landed on Chat, not Events.
+      // `spec/ui/mobile/navigation.md` § Back rows.
+      backBehavior="history"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: accent,

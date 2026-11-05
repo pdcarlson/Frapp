@@ -94,6 +94,19 @@ function resolved(
   return (options as Record<string, unknown> | undefined) ?? {};
 }
 
+describe("Android back", () => {
+  /**
+   * Every pushed screen is a hidden tab, and the tab router's default
+   * (`firstRoute`) sent back from any of them to Chat home, so back from an
+   * event opened on Events landed on Chat. History sends it to the screen the
+   * member came from.
+   */
+  it("returns to the screen the member came from", () => {
+    const [tabs] = hosts(render().root, "Tabs");
+    expect(tabs.props.backBehavior).toBe("history");
+  });
+});
+
 describe("tab layout (#2485)", () => {
   it("draws no navigator header over any screen", () => {
     const tree = render();

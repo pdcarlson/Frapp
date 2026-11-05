@@ -83,7 +83,7 @@ A screen reached from another one draws a back row above its title, as the board
 | s10 Study hours, s11 Dues, s12 Documents, s13 Directory, s15 Profile, s16 Settings, Service hours | `‹ More` | More |
 | s14 Notifications | `‹ Chat` | Chat home |
 
-- **It goes to the place it names, not back through history.** These routes are hidden tabs (`href: null`), and a notification tap or a `frapp://` link can open one with nothing behind it, so `router.back()` could land nowhere or somewhere the label doesn't say. The row calls `router.navigate` with its fixed destination, as s05's `‹` goes to Chat home. Android's back button keeps the history behavior.
+- **It goes to the place it names, not back through history.** These routes are hidden tabs (`href: null`), and a notification tap or a `frapp://` link can open one with nothing behind it, so `router.back()` could land nowhere or somewhere the label doesn't say. The row calls `router.navigate` with its fixed destination, as s05's `‹` goes to Chat home. Android's back button keeps the history behavior: the tab navigator sets `backBehavior="history"` (2026-11-05), because its default, `firstRoute`, sent back from every hidden route to Chat home, so back from an event opened on Events landed on Chat.
 - **s15 draws Edit at the row's far end**, as the board does (`‹ More` … `Edit`), through `ScreenShell`'s `backAction` ([#3387](https://github.com/pdcarlson/Frapp/issues/3387)). It appears only over a loaded profile.
 - **s12 draws its upload glyph in the same slot**, for a viewer holding `chapter_docs:upload` only, opening s21 ([#3399](https://github.com/pdcarlson/Frapp/issues/3399)).
 - **Every state of a screen draws it**, the loading and error states included: a link to an event that's gone lands on s07's error state, and that state still needs a way out.
@@ -338,7 +338,7 @@ it would have added was lost, and Android draws edge to edge. The layout now rea
 `useSafeAreaInsets()` and adds the bottom inset to the bar's height and bottom padding,
 so the 62pt row sits above the system bar. `lib/tab-layout.spec.tsx` pins the sum.
 
-**Paul's Android pass touched `app/(tabs)/_layout.tsx`, as an integrator change** (2026-11-05). The chat thread, check-in and host check-in registrations hide the tab bar (`tabBarStyle`, through `FULL_WINDOW`), for the reason [§ Tab bar](#tab-bar--4-tabs-locked) gives. No route or tab was added, removed or renamed, and no header option changed.
+**Paul's Android pass touched `app/(tabs)/_layout.tsx`, as an integrator change** (2026-11-05). The chat thread, check-in and host check-in registrations hide the tab bar (`tabBarStyle`, through `FULL_WINDOW`), for the reason [§ Tab bar](#tab-bar--4-tabs-locked) gives, and the navigator takes `backBehavior="history"` so Android's back button returns to the screen a member came from ([§ Back rows](#back-rows)). No route or tab was added, removed or renamed, and no header option changed.
 
 **#3023 touched `components/screen-shell.tsx`, as an integrator change.** `subtitle`
 became optional and the shell draws no line when it is absent, and every caller was reviewed in
