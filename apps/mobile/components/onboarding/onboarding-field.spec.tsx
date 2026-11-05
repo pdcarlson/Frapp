@@ -28,7 +28,7 @@ function renderField(): ReactTestRenderer["root"] {
 }
 
 describe("OnboardingTextInput", () => {
-  it("is 48pt tall, over the sheets' 44pt field it's built on", () => {
+  it("is the 44pt touch Field step, the same as the sheets' field it's built on", () => {
     const input = renderField();
     const sheetField = sheetFieldStyles(
       signetDarkTokens,
@@ -37,7 +37,7 @@ describe("OnboardingTextInput", () => {
 
     expect(sheetField.minHeight).toBe(signetDarkTokens.touch.minimum);
     expect(flatStyle(input.props.style).minHeight).toBe(
-      signetDarkTokens.touch.buttonLarge,
+      signetDarkTokens.touch.minimum,
     );
   });
 });
