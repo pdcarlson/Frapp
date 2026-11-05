@@ -28,7 +28,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useSubscriptionGate } from "@/components/shared/subscription-gate";
+import {
+  useSubscriptionGate,
+  type SubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
@@ -55,13 +58,16 @@ type RenameTarget = Target & { current: string };
  * Delete is not offered here. From a row it would always fail, since that row
  * still references the entry; the drawer keeps delete for unused entries.
  */
-export function useBackworkTaxonomyActions(): {
+export function useBackworkTaxonomyActions(pageGate?: SubscriptionGate): {
   requestRename: (target: RenameTarget) => void;
   requestMerge: (target: Target) => void;
   dialogs: ReactNode;
 } {
   const { toast } = useToast();
-  const gate = useSubscriptionGate();
+  // The page's gate when it passes one, so `aria-describedby` names the
+  // notice the page renders; a gate of its own otherwise.
+  const ownGate = useSubscriptionGate();
+  const gate = pageGate ?? ownGate;
   const departmentsQuery = useDepartments();
   const professorsQuery = useProfessors();
   const departments = useMemo(
@@ -78,20 +84,27 @@ export function useBackworkTaxonomyActions(): {
   const mergeProfessors = useMergeProfessors();
 
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
+  // The last target, kept after close: Radix keeps the content mounted for
+  // its exit animation, and a title built from `null` would read
+  // "Rename undefined" as it fades.
+  const [renameShown, setRenameShown] = useState<RenameTarget | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [renaming, setRenaming] = useState(false);
 
   const [mergeTarget, setMergeTarget] = useState<Target | null>(null);
+  const [mergeShown, setMergeShown] = useState<Target | null>(null);
   const [mergeSelection, setMergeSelection] = useState("");
   const [merging, setMerging] = useState(false);
 
   function requestRename(target: RenameTarget) {
     setRenameTarget(target);
+    setRenameShown(target);
     setRenameDraft(target.current);
   }
 
   function requestMerge(target: Target) {
     setMergeTarget(target);
+    setMergeShown(target);
     setMergeSelection("");
   }
 
@@ -170,7 +183,7 @@ export function useBackworkTaxonomyActions(): {
             .map((p) => ({ id: p.id, label: p.name }))
         : [];
 
-  const isDepartment = renameTarget?.entity === "department";
+  const isDepartment = renameShown?.entity === "department";
 
   const dialogs = (
     <>
@@ -185,8 +198,8 @@ export function useBackworkTaxonomyActions(): {
             <DialogHeader>
               <DialogTitle>
                 {isDepartment
-                  ? `Name the ${renameTarget?.label} department`
-                  : `Rename ${renameTarget?.label}`}
+                  ? `Name the ${renameShown?.label} department`
+                  : `Rename ${renameShown?.label}`}
               </DialogTitle>
               <DialogDescription>
                 Every file filed under it shows the new name.
@@ -235,7 +248,7 @@ export function useBackworkTaxonomyActions(): {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Merge &quot;{mergeTarget?.label}&quot;</DialogTitle>
+            <DialogTitle>Merge &quot;{mergeShown?.label}&quot;</DialogTitle>
             <DialogDescription>
               Every resource tagged with this entry moves to the one you pick
               below, then this entry is deleted. This cannot be undone.

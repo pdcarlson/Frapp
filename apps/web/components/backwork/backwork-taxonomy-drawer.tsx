@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/sheet";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useBackworkTaxonomyActions } from "@/components/backwork/backwork-taxonomy-actions";
+import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
@@ -46,9 +47,12 @@ type Entity = "department" | "professor";
 export function BackworkTaxonomyDrawer({
   open,
   onOpenChange,
+  gate,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The page's gate, so the shared merge dialog points at its notice. */
+  gate?: SubscriptionGate;
 }) {
   const departmentsQuery = useDepartments();
   const professorsQuery = useProfessors();
@@ -68,7 +72,7 @@ export function BackworkTaxonomyDrawer({
 
   const { toast } = useToast();
   const { confirm, confirmDialog } = useConfirmDialog();
-  const { requestMerge, dialogs } = useBackworkTaxonomyActions();
+  const { requestMerge, dialogs } = useBackworkTaxonomyActions(gate);
 
   async function handleRename(
     entity: Entity,

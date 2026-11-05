@@ -5,7 +5,8 @@
  * library in one unpaginated response (capped at PostgREST's `max_rows`, which
  * the page surfaces): once the rows are on the client, matching them here is
  * instant and can forgive typos, which the server's `websearch` full-text
- * search cannot (`spec/behavior/search.md` § Typo tolerance). It is not a
+ * library's `?search=` (a case-insensitive substring match, #1357) and global
+ * search (`spec/behavior/search.md` § MVP defaults) cannot. It is not a
  * replacement for server search on anything paginated.
  *
  * The rules, per query word:
@@ -38,7 +39,9 @@ export function normalizeWords(text: string): string[] {
     .toLowerCase()
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
+    // Letters and digits of any script, so a Greek or CJK query narrows the
+    // list instead of normalising to nothing and matching everything.
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
     .split(" ")
     .filter(Boolean);
@@ -132,13 +135,26 @@ export function fuzzyMatch<T>(
   toText: (item: T) => string,
   aliases: Readonly<Record<string, string>> = {},
 ): FuzzyResult<T>[] {
+  return fuzzyMatchWords(items, query, (item) => normalizeWords(toText(item)), aliases);
+}
+
+/**
+ * `fuzzyMatch` for items whose words the caller normalised once, ahead of
+ * time, so a keystroke does not re-normalise every item's text.
+ */
+export function fuzzyMatchWords<T>(
+  items: readonly T[],
+  query: string,
+  toWords: (item: T) => readonly string[],
+  aliases: Readonly<Record<string, string>> = {},
+): FuzzyResult<T>[] {
   const queryWords = normalizeWords(query);
   if (queryWords.length === 0) {
     return items.map((item) => ({ item, score: 0, hits: [] }));
   }
   const results: FuzzyResult<T>[] = [];
   for (const item of items) {
-    const words = normalizeWords(toText(item));
+    const words = toWords(item);
     let total = 0;
     const hits: string[] = [];
     let matched = true;

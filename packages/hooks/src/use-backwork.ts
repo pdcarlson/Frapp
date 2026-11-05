@@ -52,6 +52,12 @@ export function useFetchBackworkResource() {
           return data;
         },
         staleTime: 0,
+        // A press wants an answer now: no retry ladder on a 404 (another
+        // officer deleted the file), and no pause offline, either of which
+        // would hold the spinner and open the tab long after the click, past
+        // the browser's popup allowance.
+        retry: false,
+        networkMode: "always",
       }),
     [client, queryClient],
   );

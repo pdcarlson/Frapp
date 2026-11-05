@@ -16,7 +16,6 @@ import {
   Merge,
   MoreHorizontal,
   Pencil,
-  Search,
   Trash2,
   X,
 } from "lucide-react";
@@ -79,9 +78,12 @@ import {
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
-import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
+import { Input } from "@/components/ui/input";
+import { SearchGlyph } from "@/components/documents/resources-glyphs";
 import {
   compactControlClassName,
+  dashboardToolbarSearchClassName,
+  dashboardToolbarSearchGlyphClassName,
   denseListClassName,
 } from "@/components/shared/table-controls";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
@@ -232,7 +234,7 @@ export function BackworkPage() {
   const deleteResource = useDeleteBackworkResource();
   const { data: permissionsPayload } = useMyPermissions();
   const isAdmin = can("backwork:admin", permissionsPayload?.permissions);
-  const taxonomy = useBackworkTaxonomyActions();
+  const taxonomy = useBackworkTaxonomyActions(gate);
   const { confirm, confirmDialog } = useConfirmDialog();
 
   const rows = useMemo(
@@ -309,7 +311,9 @@ export function BackworkPage() {
     if (!gateRef.current.allowed) {
       toast({
         title: "Couldn't delete the file",
-        description: "This chapter can't make changes right now. The notice above says why.",
+        description: gateRef.current.isOffline
+          ? "You're offline. Reconnect, then try again."
+          : "This chapter can't make changes right now. The notice above says why.",
         variant: "destructive",
       });
       return;
@@ -338,6 +342,7 @@ export function BackworkPage() {
         key: "download",
         label: "Download",
         icon: Download,
+        disabled: downloading.has(row.resource.id),
         onSelect: () => void download(row),
       },
     ];
@@ -479,18 +484,10 @@ export function BackworkPage() {
         aria-label="Search and filter backwork"
         className="flex flex-wrap items-center gap-2"
       >
-        {/* The top bar's find field recipe (`find-bar.tsx`), at toolbar height. */}
-        <div
-          className={cn(
-            "flex h-9 min-w-[220px] flex-[1_1_280px] items-center gap-2 rounded-[10px] border border-input bg-surface-1 px-3 pointer-coarse:h-11",
-            FOCUS_RING_WITHIN,
-          )}
-        >
-          <Search
-            className="h-4 w-4 shrink-0 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <input
+        {/* The shared toolbar search recipe, as on `/documents`. */}
+        <div className="relative min-w-[220px] flex-[1_1_280px]">
+          <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
+          <Input
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -504,14 +501,14 @@ export function BackworkPage() {
             placeholder="Search titles, courses, professors, tags"
             autoComplete="off"
             spellCheck={false}
-            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            className={cn(dashboardToolbarSearchClassName, query && "pr-10")}
           />
           {query ? (
             <Button
               type="button"
               variant="quiet"
               size="icon"
-              className="h-7 w-7 shrink-0"
+              className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
               aria-label="Clear search"
               title="Clear search"
               onClick={() => setQuery("")}
@@ -580,6 +577,7 @@ export function BackworkPage() {
             <BackworkTaxonomyDrawer
               open={cleanupOpen}
               onOpenChange={setCleanupOpen}
+              gate={gate}
             />
           </Can>
           <Can permission="backwork:upload">
@@ -639,14 +637,23 @@ export function BackworkPage() {
           />
         ) : resourcesQuery.isLoading ||
           (resourcesQuery.isPending &&
-            resourcesQuery.fetchStatus === "paused") ? (
+            resourcesQuery.fetchStatus === "paused") ||
+          // Rows join departments and professors on the client; without them
+          // a course reads as a bare number and search misses "cogs".
+          (rows.length > 0 && (departmentsQuery.isLoading || professorsQuery.isLoading)) ? (
           <BackworkRowsSkeleton />
-        ) : resourcesQuery.isError ? (
+        ) : resourcesQuery.isError ||
+          departmentsQuery.isError ||
+          professorsQuery.isError ? (
           <NestedError
             sole
             title="Couldn't load backwork"
             description="Confirm your chapter access and retry."
-            onRetry={() => void resourcesQuery.refetch()}
+            onRetry={() => {
+              void resourcesQuery.refetch();
+              void departmentsQuery.refetch();
+              void professorsQuery.refetch();
+            }}
           />
         ) : rows.length === 0 ? (
           <NestedEmpty

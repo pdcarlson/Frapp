@@ -107,6 +107,25 @@ const CHAPTER_ID = "chapter-abc";
       expect(mockGet).not.toHaveBeenCalled();
     });
 
+    it("fails a press at once instead of retrying, whatever the client defaults", async () => {
+      // The app's QueryClient retries 3 times; a Download press must not
+      // wait out that ladder on a 404.
+      const retrying = new QueryClient({ defaultOptions: { queries: { retry: 3 } } });
+      const mockGet = vi.fn().mockResolvedValue({ data: null, error: new Error("Not found") });
+      const { result } = renderHook(() => useFetchBackworkResource(), {
+        wrapper: ({ children }: { children: React.ReactNode }) => (
+          <FrappClientProvider
+            client={{ GET: mockGet } as unknown as ReturnType<typeof createFrappClient>}
+            chapterId={CHAPTER_ID}
+          >
+            <QueryClientProvider client={retrying}>{children}</QueryClientProvider>
+          </FrappClientProvider>
+        ),
+      });
+      await expect(result.current("gone")).rejects.toThrow("Not found");
+      expect(mockGet).toHaveBeenCalledTimes(1);
+    });
+
     it("fetches the resource fresh on every call, so a signed link is never reused", async () => {
       const mockGet = vi
         .fn()

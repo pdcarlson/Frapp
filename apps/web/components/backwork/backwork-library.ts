@@ -1,5 +1,9 @@
 import { ASSIGNMENT_TYPES, DOCUMENT_VARIANTS } from "@repo/validation";
-import { fuzzyMatch, type FuzzyResult } from "@/lib/search/fuzzy-match";
+import {
+  fuzzyMatchWords,
+  normalizeWords,
+  type FuzzyResult,
+} from "@/lib/search/fuzzy-match";
 
 /**
  * The `/backwork` library's search, filters and ordering, kept free of React
@@ -49,7 +53,20 @@ export type LibraryRow = {
   /** "Fall 2026", "Fall", "2026", or null. */
   term: string | null;
   title: string;
+  /** `searchText` normalised once, so a keystroke only scores. */
+  words: readonly string[];
 };
+
+/**
+ * A Course filter value naming a whole department ("every COGS file") rather
+ * than one course, so the library still browses by department as
+ * `spec/behavior/backwork.md` § Browsing and Search says.
+ */
+const DEPARTMENT_PREFIX = "dept:";
+
+export function departmentFilterValue(departmentId: string): string {
+  return `${DEPARTMENT_PREFIX}${departmentId}`;
+}
 
 export type LibraryFilters = {
   course: string | null;
@@ -114,14 +131,17 @@ export function toLibraryRows(
       resource.assignment_number,
       course ? `· ${course}` : null,
     ]);
-    return {
+    const row = {
       resource,
       department,
       professor,
       course,
       term: joinNonEmpty([resource.semester, resource.year]),
       title: resource.title?.trim() || fallbackTitle || "Untitled",
+      words: [] as readonly string[],
     };
+    row.words = normalizeWords(searchText(row));
+    return row;
   });
 }
 
@@ -162,7 +182,12 @@ export function compareByTerm(a: LibraryRow, b: LibraryRow): number {
 }
 
 function passesFilters(row: LibraryRow, filters: LibraryFilters): boolean {
-  if (filters.course !== null && row.course !== filters.course) return false;
+  if (filters.course !== null) {
+    const matches = filters.course.startsWith(DEPARTMENT_PREFIX)
+      ? row.department?.id === filters.course.slice(DEPARTMENT_PREFIX.length)
+      : row.course === filters.course;
+    if (!matches) return false;
+  }
   if (filters.professorId !== null && row.resource.professor_id !== filters.professorId) {
     return false;
   }
@@ -184,7 +209,7 @@ export function queryLibrary(
   filters: LibraryFilters,
 ): FuzzyResult<LibraryRow>[] {
   const ordered = rows.filter((row) => passesFilters(row, filters)).sort(compareByTerm);
-  return fuzzyMatch(ordered, query, searchText, BACKWORK_SEARCH_ALIASES);
+  return fuzzyMatchWords(ordered, query, (row) => row.words, BACKWORK_SEARCH_ALIASES);
 }
 
 export function hasActiveFilters(filters: LibraryFilters): boolean {
@@ -234,11 +259,20 @@ export function filterOptions(rows: readonly LibraryRow[]): {
   variant: FilterOption[];
 } {
   const courses = new Map<string, string>();
+  const departments = new Map<string, { code: string; courses: Set<string> }>();
   const professors = new Map<string, string>();
   const terms = new Map<string, LibraryRow>();
   const types = new Set<string>();
   const variants = new Set<string>();
   for (const row of rows) {
+    if (row.department && row.course) {
+      const entry = departments.get(row.department.id) ?? {
+        code: row.department.code,
+        courses: new Set<string>(),
+      };
+      entry.courses.add(row.course);
+      departments.set(row.department.id, entry);
+    }
     if (row.course) {
       courses.set(
         row.course,
@@ -252,7 +286,18 @@ export function filterOptions(rows: readonly LibraryRow[]): {
   }
   const byLabel = (a: FilterOption, b: FilterOption) => a.label.localeCompare(b.label);
   return {
-    course: [...courses].map(([value, label]) => ({ value, label })).sort(byLabel),
+    // Each course, plus "every course" for a department that has more than
+    // one, which sorts first among its courses ("COGS · all courses" before
+    // "COGS 2120").
+    course: [
+      ...[...courses].map(([value, label]) => ({ value, label })),
+      ...[...departments]
+        .filter(([, entry]) => entry.courses.size > 1)
+        .map(([id, entry]) => ({
+          value: departmentFilterValue(id),
+          label: `${entry.code} · all courses`,
+        })),
+    ].sort(byLabel),
     professor: [...professors].map(([value, label]) => ({ value, label })).sort(byLabel),
     term: [...terms.values()]
       .sort(compareByTerm)

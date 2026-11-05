@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   boundedEditDistance,
   fuzzyMatch,
+  fuzzyMatchWords,
   highlightRuns,
   normalizeWords,
 } from "./fuzzy-match";
@@ -23,6 +24,24 @@ describe("normalizeWords", () => {
       "3",
       "part",
       "b",
+    ]);
+  });
+});
+
+describe("normalizeWords, other scripts", () => {
+  it("keeps Greek and CJK letters, so such a query narrows instead of matching all", () => {
+    expect(normalizeWords("Ψυχολογία 101")).toEqual(["ψυχολογια", "101"]);
+    const docs = ["Ψυχολογία notes", "Physics notes"];
+    expect(fuzzyMatch(docs, "ψυχολογια", (d) => d).map((r) => r.item)).toEqual([docs[0]]);
+    expect(fuzzyMatch(docs, "王", (d) => d)).toEqual([]);
+  });
+});
+
+describe("fuzzyMatchWords", () => {
+  it("scores pre-normalised words the same as fuzzyMatch scores text", () => {
+    const items = [{ words: ["homework", "2"] }, { words: ["exam", "1"] }];
+    expect(fuzzyMatchWords(items, "homwork", (i) => i.words).map((r) => r.item)).toEqual([
+      items[0],
     ]);
   });
 });
@@ -78,6 +97,18 @@ describe("fuzzyMatch", () => {
 
   it("lets a single letter start a word, so live search never blanks on the first key", () => {
     expect(find("d")).toEqual([docs[2], docs[3]]);
+  });
+
+  it("allows one edit from 4 letters and two from 7, no more", () => {
+    const words = ["lab", "quiz", "midterm", "homeworksheets"];
+    const match = (q: string) => fuzzyMatch(words, q, (d) => d).map((r) => r.item);
+    expect(match("quix")).toEqual(["quiz"]); // 4 letters, 1 edit
+    expect(match("qxix")).toEqual([]); // 4 letters, 2 edits
+    expect(match("mdtrem")).toEqual([]); // 6 letters, 2 edits
+    expect(match("mdterrm")).toEqual(["midterm"]); // 7 letters, 2 edits
+    expect(match("mdtrrem")).toEqual([]); // 7 letters, 3 edits
+    // A typo near the start of a longer word: 1 edit from its first letters.
+    expect(match("homewrk")).toEqual(["homeworksheets"]);
   });
 
   it("does not fuzz three-letter words", () => {

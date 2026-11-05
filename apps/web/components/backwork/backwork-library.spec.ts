@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   NO_FILTERS,
   compareByTerm,
+  departmentFilterValue,
   filterOptions,
   hasActiveFilters,
   liveFilters,
@@ -203,5 +204,34 @@ describe("liveFilters", () => {
     expect(
       liveFilters({ ...NO_FILTERS, professorId: "p-merged-away", course: "COGS 2120" }, options),
     ).toEqual({ ...NO_FILTERS, course: "COGS 2120" });
+  });
+});
+
+describe("department filter", () => {
+  const two = toLibraryRows(
+    [
+      resource({ id: "a", department_id: "d-cogs", course_number: "2120" }),
+      resource({ id: "b", department_id: "d-cogs", course_number: "4960" }),
+      resource({ id: "c", department_id: "d-csci", course_number: "1100" }),
+    ],
+    departments,
+    professors,
+  );
+
+  it("offers every course of a department with more than one, sorted with its courses", () => {
+    expect(filterOptions(two).course.map((o) => o.label)).toEqual([
+      "COGS · all courses",
+      "COGS 2120 · Cognitive Science",
+      "COGS 4960 · Cognitive Science",
+      "CSCI 1100",
+    ]);
+  });
+
+  it("matches every file in that department", () => {
+    const ids = queryLibrary(two, "", {
+      ...NO_FILTERS,
+      course: departmentFilterValue("d-cogs"),
+    }).map((hit) => hit.item.resource.id);
+    expect(ids.sort()).toEqual(["a", "b"]);
   });
 });
