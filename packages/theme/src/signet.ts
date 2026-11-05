@@ -58,6 +58,11 @@ export type SignetTokens = {
       success: string;
       warning: string;
       destructive: string;
+      /**
+       * The AA-lifted tone for danger TEXT on a danger tint or on `popover`
+       * (components.md §5). The solid `destructive` stays the fill and border.
+       */
+      destructiveText: string;
       info: string;
       /** "You were addressed" — @-mention or DM. Never replaced by the chapter accent. */
       mention: string;
@@ -153,6 +158,7 @@ const SIGNET_DARK: SignetTokens = {
       success: "#3FB950",
       warning: "#E5A000",
       destructive: "#F85149",
+      destructiveText: "#FF7B72",
       info: "#2F81F7",
       mention: "#E5484D",
       mentionForeground: "#FFFFFF",
@@ -251,6 +257,7 @@ export function getSignetCssVars(
     "--success": t.color.semantic.success,
     "--warning": t.color.semantic.warning,
     "--destructive": t.color.semantic.destructive,
+    "--destructive-text": t.color.semantic.destructiveText,
     "--info": t.color.semantic.info,
     "--mention": t.color.semantic.mention,
     "--mention-foreground": t.color.semantic.mentionForeground,

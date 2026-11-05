@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectEventDetail } from "./select";
+import { type EventRow, groupByWeek, selectEventDetail } from "./select";
 
 function event(overrides: Record<string, unknown> = {}) {
   return {
@@ -68,5 +68,42 @@ describe("selectEventDetail — recurrence", () => {
 
   it("does not require recurrence fields for an event to resolve", () => {
     expect(selectEventDetail(event())).not.toBeNull();
+  });
+});
+
+describe("groupByWeek", () => {
+  function at(start: Date | string, name: string): EventRow {
+    return {
+      id: name,
+      name,
+      location: null,
+      start_time: typeof start === "string" ? start : start.toISOString(),
+      end_time: typeof start === "string" ? start : start.toISOString(),
+      point_value: null,
+      is_mandatory: false,
+    };
+  }
+  // Wednesday 8 PM, local time, so the split is by calendar day wherever the
+  // suite runs.
+  const now = new Date(2026, 10, 4, 20, 0);
+
+  it("splits by calendar day, as the date block does, not by 168 hours", () => {
+    const { thisWeek, later } = groupByWeek(
+      [
+        at(new Date(2026, 10, 10, 23, 0), "next Tuesday night"),
+        // Under 168 hours away, but seven calendar days: its date block reads
+        // the month, so it belongs under Later.
+        at(new Date(2026, 10, 11, 19, 0), "next Wednesday"),
+      ],
+      now,
+    );
+    expect(thisWeek.map((e) => e.name)).toEqual(["next Tuesday night"]);
+    expect(later.map((e) => e.name)).toEqual(["next Wednesday"]);
+  });
+
+  it("files an unparseable start under Later instead of throwing", () => {
+    const { thisWeek, later } = groupByWeek([at("not a date", "broken")], now);
+    expect(thisWeek).toEqual([]);
+    expect(later.map((e) => e.name)).toEqual(["broken"]);
   });
 });

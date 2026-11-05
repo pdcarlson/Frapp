@@ -157,6 +157,14 @@ describe("EventsPage list", () => {
 
     const meeting = within(row(/chapter meeting/i));
     expect(meeting.getByText("Mandatory")).toBeInTheDocument();
+    // A status, so danger as the board and mobile draw it, never the accent
+    // (components.md §5).
+    expect(meeting.getByText("Mandatory").className).toContain(
+      "text-destructive-text",
+    );
+    expect(meeting.getByText("Mandatory").className).not.toContain(
+      "text-accent-text",
+    );
     expect(meeting.getByText("Weekly")).toBeInTheDocument();
     expect(meeting.queryByText("WEEKLY")).toBeNull();
   });

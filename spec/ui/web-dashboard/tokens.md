@@ -81,8 +81,8 @@ current values and the reason.)*
 ### Two AA text lifts
 
 The lighter ladder pushed two solid semantics under the 4.5:1 gate on the surfaces their badges sit
-on. `--destructive-text` already existed; `--info-text` is new. Both are CSS-only and are not new
-semantics. [`foundations.md`](../design-system/foundations.md) §5 carries the rule and the
+on. `--destructive-text` already existed; `--info-text` is new. Neither is a new semantic. `--info-text`
+is CSS-only; `--destructive-text` is also a `signetDarkTokens` entry, for mobile (2026-11-05). [`foundations.md`](../design-system/foundations.md) §5 carries the rule and the
 measurements.
 
 ### One accessibility fix the ladder forced
