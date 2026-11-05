@@ -3,9 +3,9 @@
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { NestedLoading } from "@/components/shared/nested-states";
 import { MembersDirectory } from "@/components/members/members-directory";
 import { AlumniDirectory } from "@/components/alumni/alumni-directory";
+import { DirectoryBodySkeleton } from "@/components/members/directory-skeleton";
 
 /**
  * Actives and alumni, one surface, two tabs.
@@ -111,15 +111,10 @@ export function DirectoryPage() {
         has no invite.
       */}
       {/*
-        The nested loading state, not the whole-screen one, for the reason
-        `members-directory.tsx` spells out at its own import: the whole-screen
-        family paints `--card`, and this route has no cards left. `sole` because
-        while this fallback is up it is the only async state on the page, so it
-        needs the live region the nested variant leaves off by default.
+        The tab row and roster rows, drawn as they will load, so reading
+        `?tab=` does not swap a placeholder for the page.
       */}
-      <Suspense
-        fallback={<NestedLoading sole message="Loading directory..." />}
-      >
+      <Suspense fallback={<DirectoryBodySkeleton />}>
         <DirectoryPageContent />
       </Suspense>
     </div>
