@@ -6,6 +6,8 @@ import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectRoundedRipple } from "@/test/pressable-row";
+import { PressableRow } from "@/components/list-section";
 import { signetDarkTokens } from "@repo/theme/signet";
 import {
   drawnText as screenTextOf,
@@ -373,11 +375,8 @@ describe("Chat home hide conversation (#2303)", () => {
  */
 function layout(tree: ReactTestRenderer): [string, string[]][] {
   return tree.root
-    .findAll(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityRole === "header",
-    )
+    .findAllByType(PressableRow)
+    .filter((header) => header.props.accessibilityRole === "header")
     .map((header) => [
       // Since #2877 the header is a fold control: a chevron, then the label.
       String(
@@ -925,8 +924,12 @@ describe("Chat home loading and error states", () => {
 
     const error = tree.root.findByType(ErrorState);
     expect(error.props.title).toBe("Couldn't load channels");
+    // The retry names what it retries, so it still makes sense heard on its
+    // own, away from the card's title.
+    const retry = pressableLabelled(tree, "Try loading channels again");
+    expect(screenTextOf(retry)).toBe("Try loading channels again");
     act(() => {
-      pressableLabelled(tree, "Try again").props.onPress();
+      retry.props.onPress();
     });
     expect(refetch).toHaveBeenCalledTimes(1);
   });
@@ -939,7 +942,7 @@ describe("Chat home loading and error states", () => {
     };
     const tree = render();
 
-    const retry = pressableLabelled(tree, "Try again");
+    const retry = pressableLabelled(tree, "Try loading channels again");
     expect(retry.props.disabled).toBe(true);
     expect(screenTextOf(retry)).toBe("Retrying…");
   });
@@ -979,8 +982,9 @@ describe("Chat home press feedback", () => {
 
   // Like the channel rows, the fold headers and the Hidden toggle pad by `sm`
   // and bleed it into the gutter, so their captions line up with the rows'
-  // sigils.
-  it("bleeds section headers and the Hidden toggle into the gutter", () => {
+  // sigils. The bleed sits on the clip that rounds the ripple
+  // (`PressableRow`), so each control is where it was.
+  it("bleeds section headers and the Hidden toggle into the gutter, inside a rounded clip", () => {
     const tree = render();
     const headers = tree.root.findAll(
       (node) =>
@@ -990,12 +994,13 @@ describe("Chat home press feedback", () => {
     expect(headers.length).toBeGreaterThan(0);
 
     for (const control of [...headers, hiddenToggle(tree)]) {
-      const resting = Object.assign(
-        {},
-        ...[control.props.style({ pressed: false })].flat(Infinity),
-      ) as Record<string, unknown>;
+      const { clip, resting } = expectRoundedRipple(
+        control,
+        signetDarkTokens.radius.control,
+      );
       expect(resting.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
-      expect(resting.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
+      expect(clip.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
+      expect(resting).not.toHaveProperty("marginHorizontal");
     }
   });
 });

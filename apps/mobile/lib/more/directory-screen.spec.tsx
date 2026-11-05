@@ -3,7 +3,8 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FrappThemeProvider } from "@/lib/theme";
+import { getSignetTokens } from "@repo/theme/signet";
+import { FrappThemeProvider, typeRole } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 import type { DirectoryRow } from "@/lib/more/directory";
@@ -377,6 +378,14 @@ describe("s13's frame (#2485)", () => {
     );
 
     expect(title.children).toBe("Directory");
+    // The same headline as every ScreenShell title: s13's own header spreads
+    // the shell's screenTitleStyle because its body is a FlatList.
+    expect(title.style).toEqual(
+      expect.objectContaining({
+        ...typeRole(getSignetTokens().typography.role.headline),
+        letterSpacing: -0.3,
+      }),
+    );
   });
 });
 

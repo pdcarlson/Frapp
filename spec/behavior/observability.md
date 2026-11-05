@@ -507,8 +507,8 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | Event | Recorded when | Properties |
 | --- | --- | --- |
 | `rush-candidate-added` | A member adds a candidate. No name is sent | `is_existing_user`, `posted_to_chat` |
-| `rush-candidate-voted` | A member votes for a candidate. A repeat vote succeeds again and counts again | — |
-| `rush-candidate-bid` | An officer extends a bid. A repeat counts again | — |
+| `rush-candidate-voted` | A member votes for a candidate. A repeat vote succeeds again and is recorded again, though the tally doesn't move | — |
+| `rush-candidate-bid` | A member extends a bid (any member may: there are no rush permissions). A repeat bid succeeds again and is recorded again | — |
 
 **Reports (`reports`)**
 

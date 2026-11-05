@@ -4,6 +4,8 @@ import {
   Platform,
   Pressable,
   type PressableAndroidRippleConfig,
+  type PressableProps,
+  type StyleProp,
   StyleSheet,
   Text,
   View,
@@ -84,12 +86,22 @@ export function listRowHint(
  * for it finds them, and a row that draws its own press state is the exception.
  * This is only the mechanism.
  *
- * `ripple` goes to `android_ripple` (iOS ignores it). The ripple is bounded by
- * the row, so a row that wants its feedback to clear the text pads itself
- * rather than relying on a parent, and a rounded row clips it with
- * `overflow: "hidden"`. `lift(pressed)` goes into the `style` callback: on iOS
- * it fills the row with a higher surface while it is held, and on Android it
- * returns nothing, since the ripple is already the signal.
+ * `ripple` goes to `android_ripple` (iOS ignores it). The ripple fills the
+ * row's rectangle, so a row that wants its feedback to clear the text pads
+ * itself rather than relying on a parent. `lift(pressed)` goes into the
+ * `style` callback: on iOS it fills the row with a higher surface while it is
+ * held, and on Android it returns nothing, since the ripple is already the
+ * signal.
+ *
+ * A row's own `borderRadius` does not round its ripple, and neither does
+ * `overflow: "hidden"` on the row itself. React Native 0.86 paints the ripple
+ * as the view's background (a `RippleDrawable` with a rectangular mask), and a
+ * view's `overflow` clips only its children, in `dispatchDraw`, after that
+ * background is drawn. What rounds it is a parent with the radius and
+ * `overflow: "hidden"`, which clips the child's whole drawing, background
+ * included. A rounded row therefore renders through {@link PressableRow},
+ * which adds that parent; `ListRow` gets it from `ListSection`. A square row
+ * can take the hook directly.
  *
  * The default lift is `surface.card`: a row on the screen background rises two
  * steps to it, and a `ListRow` on its `surface1` group, or the More profile
@@ -120,6 +132,91 @@ export function usePressFeedback({
       lift: (pressed: boolean) => (pressed ? lifted : null),
     };
   }, [tokens, onCard]);
+}
+
+/**
+ * A rounded row that answers a press: a `Pressable` carrying
+ * {@link usePressFeedback}'s ripple and lift, inside a clip `View` that rounds
+ * the ripple (see that hook for why the row cannot round it itself).
+ *
+ * `style` is the row's resting style, written as it would be on a bare
+ * `Pressable`. The clip takes the row's outer margins, so a row that bleeds
+ * into the screen gutter still sits where it did, and copies its corner radius;
+ * the row keeps the radius too, for its own border and iOS lift. Any other
+ * outer layout (`flex`, `alignSelf`, a position) would also belong on the clip,
+ * and no row passes one yet. Everything else goes to the `Pressable` as given.
+ */
+/**
+ * The gutter bleed a list row on the screen background takes: it pads itself
+ * by `sm` and pulls that `sm` back out into the screen gutter, so its content
+ * stays on the gutter line while its press feedback (ripple or lift) clears
+ * the content on both sides instead of stopping flush with it. One value for
+ * every such row, because the alignment holds only while they all bleed the
+ * same: Chat home's section header and Hidden toggle, its channel rows and UP
+ * NEXT rows line their captions, sigils and glyphs up on that line, and the
+ * Directory's member rows keep the gutter Chat home does.
+ *
+ * `rounded` adds the control radius a rounded row's lift and clip take; a
+ * square row (a member row, split by hairlines) passes `false`.
+ */
+export function gutterBleed(
+  tokens: SignetTokens,
+  { rounded = true }: { rounded?: boolean } = {},
+): ViewStyle {
+  return {
+    paddingHorizontal: tokens.spacing.sm,
+    marginHorizontal: -tokens.spacing.sm,
+    ...(rounded ? { borderRadius: tokens.radius.control } : null),
+  };
+}
+
+export type PressableRowProps = Omit<
+  PressableProps,
+  "style" | "android_ripple" | "children"
+> & {
+  style?: StyleProp<ViewStyle>;
+  /** The row is itself a card: see {@link usePressFeedback}'s `onCard`. */
+  onCard?: boolean;
+  children?: ReactNode;
+};
+
+export function PressableRow({
+  style,
+  onCard = false,
+  children,
+  ...pressable
+}: PressableRowProps) {
+  const feedback = usePressFeedback({ onCard });
+  const { clip, row } = splitRowStyle(style);
+  return (
+    <View style={clip}>
+      <Pressable
+        {...pressable}
+        android_ripple={pressable.disabled ? undefined : feedback.ripple}
+        style={({ pressed }) => [row, feedback.lift(pressed)]}
+      >
+        {children}
+      </Pressable>
+    </View>
+  );
+}
+
+/** Splits a row's style into the clip's part (margins, radius) and the row's. */
+function splitRowStyle(style: StyleProp<ViewStyle>): {
+  clip: ViewStyle;
+  row: ViewStyle;
+} {
+  const clip: Record<string, unknown> = { overflow: "hidden" };
+  const row: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(StyleSheet.flatten(style) ?? {})) {
+    if (key.startsWith("margin")) {
+      clip[key] = value;
+    } else {
+      if (key.startsWith("border") && key.endsWith("Radius")) clip[key] = value;
+      row[key] = value;
+    }
+  }
+  return { clip: clip as ViewStyle, row: row as ViewStyle };
 }
 
 export type ListRowProps = {

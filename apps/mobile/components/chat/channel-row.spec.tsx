@@ -23,6 +23,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectRoundedRipple } from "@/test/pressable-row";
 import {
   accessibilityLabelFor,
   badgeLabel,
@@ -353,12 +354,18 @@ describe("ChannelRow unread emphasis and press feedback", () => {
   // The row pads itself by `sm` and bleeds that same `sm` into the screen
   // gutter, so the sigil lines up with the section captions and the press
   // lift still clears the text. Dropping either half breaks one of the two.
-  it("bleeds its own padding into the screen gutter", () => {
+  // The bleed sits on the clip that rounds the ripple (`PressableRow`), so the
+  // row is where it was before the clip wrapped it.
+  it("bleeds its own padding into the screen gutter, inside a rounded clip", () => {
     const row = pressable(renderRow({}));
-    const resting = flatten(row.props.style({ pressed: false }));
+    const { clip, resting } = expectRoundedRipple(
+      row,
+      signetDarkTokens.radius.control,
+    );
 
     expect(resting.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
-    expect(resting.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
+    expect(clip.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
+    expect(resting).not.toHaveProperty("marginHorizontal");
   });
 });
 

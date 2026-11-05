@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import {
@@ -6,7 +6,7 @@ import {
   useChapterBranding,
 } from "@/lib/chapter-branding";
 import { initialsFor } from "@/lib/chat/display-name";
-import { usePressFeedback } from "@/components/list-section";
+import { gutterBleed, PressableRow } from "@/components/list-section";
 import { SkeletonBlock } from "@/components/state-block";
 import {
   HIDE_CONVERSATION_LABEL,
@@ -35,7 +35,7 @@ import {
  * itself never takes a fill at rest. It used to lift every unread row onto
  * `surface1`, which on a busy chapter striped the list in card-coloured bars
  * that said nothing the badge didn't; the lift is now only the iOS press
- * state (`usePressFeedback`).
+ * state (`usePressFeedback`, through `PressableRow`).
  *
  * "fill and text are the only difference, so badge geometry stays one recipe" —
  * hence a single `styles.badge` with two colour overlays rather than two badges.
@@ -112,8 +112,6 @@ export function ChannelRow({
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
-  const feedback = usePressFeedback();
-
   // Red means "you were addressed": an @-mention, or anything unread in a
   // direct message (foundations.md §5). The DM half was missing here until
   // #2877, so an unread DM drew the neutral badge while web drew it red; the
@@ -128,7 +126,7 @@ export function ChannelRow({
   const isUnread = unreadCount > 0 || hasMention;
 
   return (
-    <Pressable
+    <PressableRow
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabelFor({
         name,
@@ -164,8 +162,7 @@ export function ChannelRow({
             }
           : undefined
       }
-      android_ripple={feedback.ripple}
-      style={({ pressed }) => [styles.row, feedback.lift(pressed)]}
+      style={styles.row}
     >
       {isDirect ? (
         <View style={styles.avatar}>
@@ -202,7 +199,7 @@ export function ChannelRow({
           />
         ) : null}
       </View>
-    </Pressable>
+    </PressableRow>
   );
 }
 
@@ -323,12 +320,8 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       gap: tokens.spacing.md,
       minHeight: tokens.touch.minimum,
       paddingVertical: tokens.spacing.md,
-      paddingHorizontal: tokens.spacing.sm,
-      // The row bleeds its own padding into the screen gutter, as the board
-      // draws it: the sigil lines up with the section captions and the UP
-      // NEXT glyphs, and the press lift still clears the text on both sides.
-      marginHorizontal: -tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
+      // As the board draws it: the sigil sits on the gutter line.
+      ...gutterBleed(tokens),
     },
     skeletonList: {
       gap: tokens.spacing.xs,

@@ -39,8 +39,8 @@ function isServiceEntryStatus(value: unknown): value is ServiceEntryStatus {
 
 /**
  * `useServiceEntry`'s data as a `LiveServiceEntry`, or `null` when there is
- * none yet (loading, a 403 or 404, an entry since deleted, or a shape without
- * an id or a known status).
+ * none (loading, a read the hook resolved to no entry, or a shape without an
+ * id or a known status).
  */
 export function readLiveServiceEntry(data: unknown): LiveServiceEntry | null {
   if (!data || typeof data !== "object") return null;
@@ -56,11 +56,20 @@ export function readLiveServiceEntry(data: unknown): LiveServiceEntry | null {
  * it is a guaranteed 403, and the card shows no badge. (The route also needs
  * the Hours module; a card doesn't wait on that read, and a 403 from it reads
  * as no badge, see `useServiceEntry`.)
+ *
+ * Until the viewer's permissions are known (still loading, or that read
+ * failed) only the member who logged it asks: every seeded role holds
+ * `members:view`, so their own badge doesn't wait on a permissions read that
+ * may keep failing, while a thread of other members' entries doesn't send a
+ * read each that is likely to be refused.
  */
 export function canReadCardServiceEntry(input: {
   isOwner: boolean;
   canApprove: boolean;
   canViewMembers: boolean;
+  /** Whether the viewer's permissions have been read. */
+  permissionsKnown: boolean;
 }): boolean {
+  if (!input.permissionsKnown) return input.isOwner;
   return input.canViewMembers && (input.isOwner || input.canApprove);
 }

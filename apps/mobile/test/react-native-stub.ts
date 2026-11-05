@@ -50,7 +50,19 @@ export const reactNativeStub = {
   // component tests; string stand-ins render fine under react-test-renderer.
   StyleSheet: {
     create: <T>(styles: T) => styles,
-    flatten: (style: unknown) => style,
+    // Merges nested arrays left to right and skips falsy entries, as React
+    // Native's does, so code that reads a flattened style sees real values.
+    flatten: function flatten(style: unknown): Record<string, unknown> {
+      if (Array.isArray(style)) {
+        return style.reduce<Record<string, unknown>>(
+          (acc, entry) => ({ ...acc, ...flatten(entry) }),
+          {},
+        );
+      }
+      return style && typeof style === "object"
+        ? (style as Record<string, unknown>)
+        : {};
+    },
     hairlineWidth: 1,
   },
   useColorScheme: () => "dark",

@@ -121,8 +121,26 @@ vi.mock("expo-router", () => {
   // is pushed over it: `act(() => __blur())`, then `__refocus` brings it back.
   const refocusers = new Set<() => void>();
   const blurrers = new Set<() => void>();
+  // What `useIsFocused` reads: true from the first render, as the real hook is
+  // on a focused screen, false after `__blur` and true again after
+  // `__refocus`. One flag for the whole file, so a spec that blurs refocuses
+  // before its test ends.
+  let focused = true;
+  const focusListeners = new Set<() => void>();
+  const setFocused = (next: boolean) => {
+    focused = next;
+    for (const listener of [...focusListeners]) listener();
+  };
+  const subscribeFocus = (listener: () => void) => {
+    focusListeners.add(listener);
+    return () => {
+      focusListeners.delete(listener);
+    };
+  };
   return {
     useRouter: () => router,
+    useIsFocused: () =>
+      React.useSyncExternalStore(subscribeFocus, () => focused),
     // Runs the effect on mount and on every callback-identity change, which
     // is the focused-screen behavior. `__refocus` below is the rest of it: the
     // real hook runs the cleanup on blur and the effect again on focus.
@@ -147,9 +165,11 @@ vi.mock("expo-router", () => {
       }, [callback]);
     },
     __refocus: () => {
+      setFocused(true);
       for (const refocus of [...refocusers]) refocus();
     },
     __blur: () => {
+      setFocused(false);
       for (const blur of [...blurrers]) blur();
     },
     useLocalSearchParams: vi.fn(() => ({})),

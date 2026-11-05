@@ -104,7 +104,7 @@ export function isPushAvailable(): boolean {
  * `spec/ui/design-system/writing.md` § Push availability.
  *
  * Its one reader is Settings (s16), which keeps a push row in every build and
- * states this in place of On/Off. The s03 primer card is not drawn at all when
+ * states this in place of the switch. The s03 primer card is not drawn at all when
  * push is unavailable (`primer.ts`, #2299), so it never needs a reason.
  */
 export function pushUnavailableReason(): string | null {
@@ -164,11 +164,40 @@ export async function getPushPermission() {
   return mod ? mod.getPermissionsAsync() : null;
 }
 
+/** `AndroidImportance.NONE`. A number, not the enum, as in `ensureAndroidChannel()`. */
+const ANDROID_IMPORTANCE_NONE = 2;
+
+/**
+ * Whether the member has switched off `ANDROID_CHANNEL_ID` in the OS settings
+ * (the "Chapter notifications" category, or "Turn off" on a delivered push).
+ * It is the channel FCM shows a push on when the push names none (`app.json`
+ * sets it as the plugin's `defaultChannel`), and the API's pushes name none,
+ * so with it off they don't show.
+ *
+ * `getPushPermission()` can't see it. On Android it reports the
+ * POST_NOTIFICATIONS permission and the app-wide switch
+ * (`areNotificationsEnabled()`), and switching one channel off leaves both as
+ * they were (`NotificationPermissionsModule.kt`). Nor does the boot-time
+ * `ensureAndroidChannel()` undo it: Android doesn't raise the importance of a
+ * channel the member has changed.
+ *
+ * `false` wherever there is no channel to read: iOS, a module that can't
+ * load, Android before 8, and a channel not created yet.
+ */
+export async function isPushChannelBlocked(): Promise<boolean> {
+  const mod = localOnlyModule();
+  if (!mod || Platform.OS !== "android") return false;
+  const channel = await mod.getNotificationChannelAsync(ANDROID_CHANNEL_ID);
+  return channel?.importance === ANDROID_IMPORTANCE_NONE;
+}
+
 /**
  * Requests OS permission, creating the Android channel first.
  *
- * Only ever called from the primer's "Turn on" — never at launch
- * (`patterns.md` § Push notifications, "Contextual primer, never at launch").
+ * Only ever called from `acceptPrimer()` in `primer.ts`, which the primer's
+ * "Turn on" and a tap on Settings' push switch both go through — never at
+ * launch (`patterns.md` § Push notifications, "Contextual primer, never at
+ * launch").
  */
 export async function requestPushPermission(): Promise<boolean> {
   const mod = localOnlyModule();

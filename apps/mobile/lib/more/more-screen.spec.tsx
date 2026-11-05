@@ -4,6 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectRoundedRipple } from "@/test/pressable-row";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -210,9 +211,9 @@ describe("More hub anatomy (#1048)", () => {
     );
   });
 
-  // The profile card answers a press as a list row does (`usePressFeedback`).
-  // It sits on `surface1`, the tone of the rows under it, so its iOS lift is
-  // the rows' own one step, to `card`.
+  // The profile card answers a press as a list row does (`usePressFeedback`,
+  // through `PressableRow`). It sits on `surface1`, the tone of the rows
+  // under it, so its iOS lift is the rows' own one step, to `card`.
   it("draws the profile card in the rows' tone, ripples it on Android and lifts it a step on iOS", () => {
     const card = render().root.find(
       (node) =>
@@ -236,6 +237,9 @@ describe("More hub anatomy (#1048)", () => {
     // The suite's react-native stub runs as iOS.
     expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
     expect(held).not.toHaveProperty("opacity");
+    // The ripple is rounded by a parent clip with the card's radius
+    // (`PressableRow`); the card's own `overflow` would leave it square.
+    expectRoundedRipple(card, signetDarkTokens.radius.cardLarge);
     // The chevron is `ListRow`'s, at the label role's size.
     const chevron = card.find(
       (node) =>

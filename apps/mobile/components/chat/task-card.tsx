@@ -1,8 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState } from "react-native";
-import { useFocusEffect } from "expo-router";
 import type { TaskPayload } from "@repo/chat-core/cards";
-import { serverMessageOf } from "@repo/api-sdk";
 import {
   canReadCardTask,
   readLiveTask,
@@ -22,7 +18,6 @@ import { SignetTokens } from "@repo/theme/signet";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { TasksGlyph } from "@/components/tab-glyphs";
 import { StatusChip } from "@/components/status-chip";
-import { useConnection } from "@/lib/connection/use-connection";
 import { formatDueDate, formatDueSubtitle } from "@/lib/tasks/format";
 import { taskStatusGateRefusal } from "@/lib/tasks/status-refusal";
 import { useFrappTheme } from "@/lib/theme";
@@ -37,6 +32,7 @@ import {
   PointsChip,
   type ChatCardFrameProps,
 } from "./chat-card";
+import { useCardWrite } from "./use-card-write";
 
 /**
  * The chat task card on mobile (#3185), web's
@@ -56,8 +52,8 @@ import {
  * rejects a completion, never their own (#1056). The writes are the shared
  * hooks, which update the cache optimistically and roll back on refusal.
  *
- * Mobile has no toast, so a refusal is a line on the card. A gate refusal is
- * in the board's own words (`taskStatusGateRefusal`) and withdraws the
+ * Mobile has no toast, so a refusal is a line on the card (`useCardWrite`,
+ * which the rush card shares). A gate refusal is in the board's own words (`taskStatusGateRefusal`) and withdraws the
  * controls, as the board's does (`writing.md`): pressing again would only
  * fetch the same refusal. Like the board's, it lasts until the member comes
  * back to the thread or to the app. Any other refusal relays the server's
@@ -92,64 +88,17 @@ export function TaskCard({
     ? []
     : taskCardControls({ live, isAssignee, canManage });
 
-  const { writeBlockedReason } = useConnection();
   const updateStatus = useUpdateTaskStatus();
   const confirmTask = useConfirmTask();
   const rejectTask = useRejectTask();
-  const [refusal, setRefusal] = useState<{
-    text: string;
-    /** A gate's: the controls stay withdrawn rather than invite a retry. */
-    gate: boolean;
-  } | null>(null);
-  // Cleared when the member comes back, as the board's is: an officer may have
-  // sorted the gate out since, and nothing on a withdrawn card can be pressed
-  // to find out. Back to the thread is a navigation focus; back to the app
-  // with the thread still open is an AppState change, which focus never sees.
-  // The listener is held only while there is a refusal to clear, so a thread
-  // of task cards doesn't register one per card.
-  useFocusEffect(
-    useCallback(() => {
-      setRefusal(null);
-      return undefined;
-    }, []),
-  );
-  const hasRefusal = refusal !== null;
-  useEffect(() => {
-    if (!hasRefusal) return undefined;
-    const subscription = AppState.addEventListener("change", (next) => {
-      if (next === "active") setRefusal(null);
-    });
-    return () => subscription.remove();
-  }, [hasRefusal]);
-  const pending =
-    updateStatus.isPending || confirmTask.isPending || rejectTask.isPending;
-  // The hooks' `isPending` reaches React a tick after the press, so two taps
-  // in one frame would both send; the ref is set before the first await.
-  const inFlight = useRef(false);
-
-  /** Runs one write; a refusal lands on the card, the hook has rolled back. */
-  const act = async (write: () => Promise<unknown>, fallback: string) => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setRefusal(null);
-    try {
-      await write();
-    } catch (error) {
-      const gate = taskStatusGateRefusal(error);
-      setRefusal(
-        gate
-          ? { text: gate, gate: true }
-          : { text: serverMessageOf(error) ?? fallback, gate: false },
-      );
-    } finally {
-      inFlight.current = false;
-    }
-  };
-
-  const blockedReason =
-    writeBlockedReason ?? (refusal?.gate ? refusal.text : null);
-  const disabled = !frame.isConfirmed || pending || blockedReason !== null;
-  const hint = blockedReason ?? undefined;
+  // The refusal's lifecycle is the rush card's too (`useCardWrite`): a gate's
+  // withdraws the controls until the member comes back to the thread or app.
+  const { refusal, act, disabled, hint } = useCardWrite({
+    gateRefusal: taskStatusGateRefusal,
+    isConfirmed: frame.isConfirmed,
+    pending:
+      updateStatus.isPending || confirmTask.isPending || rejectTask.isPending,
+  });
 
   return (
     <ChatCardShell

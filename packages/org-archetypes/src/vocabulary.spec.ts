@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { memberViewVocabulary, titleCase, vocab } from "./vocabulary";
+import { memberViewVocabulary, titleCase, vocab } from "./index";
 
 describe("vocab", () => {
   it("falls back to the IFC default when the chapter has no override", () => {
@@ -16,6 +16,17 @@ describe("vocab", () => {
   it("ignores a blank or non-string override and falls back to the default", () => {
     expect(vocab("pledge", { vocabulary: { pledge: "   " } })).toBe(
       "New member",
+    );
+    // The member view sends the stored column as it is.
+    expect(vocab("pledge", { vocabulary: { pledge: 7 } })).toBe("New member");
+    expect(vocab("pledge", { vocabulary: { pledge: null } })).toBe(
+      "New member",
+    );
+  });
+
+  it("trims the chapter's word", () => {
+    expect(vocab("recruitment", { vocabulary: { recruitment: " Intake " } })).toBe(
+      "Intake",
     );
   });
 });
@@ -66,7 +77,47 @@ describe("memberViewVocabulary", () => {
     ).toBe("Rush");
   });
 
+  it("keeps the archetype's word under a blank or non-string stored one", () => {
+    // The config PATCH takes any string, so a cleared field is stored as "".
+    for (const stored of ["", "   ", null, 7]) {
+      expect(
+        vocab(
+          "recruitment",
+          memberViewVocabulary({
+            org_archetype: "nphc",
+            vocabulary: { recruitment: stored },
+          }),
+        ),
+      ).toBe("Intake");
+    }
+  });
+
   it("says nothing until the read answers", () => {
     expect(memberViewVocabulary(undefined)).toBeUndefined();
+  });
+});
+
+// Web's chat shell and both rush cards name recruitment with this, so a chapter
+// sees its own council's word on every surface.
+describe("the recruitment word per archetype", () => {
+  it.each([
+    ["ifc", "Rush"],
+    ["npc", "Recruitment"],
+    ["nphc", "Intake"],
+    ["mgc", "Intake"],
+    ["professional", "Recruitment"],
+    ["service", "Rush"],
+    ["honor", "Induction"],
+    ["colony", "Rush"],
+  ])("%s says %s", (org_archetype, word) => {
+    expect(
+      vocab("recruitment", memberViewVocabulary({ org_archetype })),
+    ).toBe(word);
+  });
+
+  it("reads an unknown archetype as IFC", () => {
+    expect(
+      vocab("recruitment", memberViewVocabulary({ org_archetype: "guild" })),
+    ).toBe("Rush");
   });
 });

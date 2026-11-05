@@ -17,9 +17,10 @@ import {
 } from "@/components/state-block";
 import { BACK_TO_MORE, BackRow } from "@/components/back-row";
 import { Chip, FilterChips, SearchField } from "@/components/filter-chips";
-import { usePressFeedback } from "@/components/list-section";
+import { gutterBleed, usePressFeedback } from "@/components/list-section";
 import { DirectoryGlyph } from "@/components/more/more-glyphs";
 import { SearchGlyph } from "@/components/search-glyph";
+import { screenTitleStyle } from "@/components/screen-shell";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import {
   type DirectoryRow,
@@ -391,21 +392,16 @@ function createStyles(tokens: SignetTokens) {
     alumniFilters: {
       gap: tokens.spacing.sm,
     },
-    title: {
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.foreground,
-      letterSpacing: -0.4,
-    },
+    // ScreenShell's own title style: this screen draws its own header only
+    // because its body is a FlatList.
+    title: screenTitleStyle(tokens),
     row: {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.md,
       paddingVertical: tokens.spacing.md,
-      // Pads itself by `sm` and bleeds that `sm` into the screen gutter, as
-      // Chat home's channel rows do: the avatar and text stay on the gutter
-      // line, and the ripple and lift clear them instead of stopping flush.
-      paddingHorizontal: tokens.spacing.sm,
-      marginHorizontal: -tokens.spacing.sm,
+      // A square row: hairlines split the list, so no radius.
+      ...gutterBleed(tokens, { rounded: false }),
       minHeight: tokens.touch.minimum,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: tokens.color.border.hairline,

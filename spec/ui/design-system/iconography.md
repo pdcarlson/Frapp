@@ -147,6 +147,12 @@ second, filled variant to swap to.
 Retired with the 4-tab collapse: the Home, Points, and Profile tabs. Home and
 Points no longer exist as screens; Profile moved into the More hub.
 
+Chat home's UP NEXT rows (s04, `apps/mobile/components/chat/up-next-strip.tsx`)
+draw the same file's `EventsGlyph` and `TasksGlyph` at 20px (§2's list-row
+size): the event row's focused, in the chapter accent, and the task row's
+unfocused, in `text.muted`, so the two rows read apart. The s05 chat cards reuse
+them too (§6.1.3).
+
 ### 6.1.1 Mobile in-screen icons (Ionicons, interim)
 
 Screens that have not been reskinned yet still draw Ionicons per §5. Each
@@ -177,7 +183,6 @@ The same file's `NotificationsGlyph` (bell, clapper stroke-only; s09 and web
 (`components/chat/notifications-bell.tsx`), in `text.foreground` with the
 neutral fill, since the More row it was drawn for moved there (#3362).
 The More screens' empty-state tiles (`EmptyState` in `components/state-block.tsx`) reuse the same file's glyphs for the screen they sit on, in the chapter accent: `DocumentsGlyph` on s12, `DirectoryGlyph` on s13 and the Blocked members sheet, `NotificationsGlyph` on s14's inbox, and `ChapterGlyph` on the no-chapter card. A search or filter that finds nothing draws `SearchGlyph`, there and on Chat home's filtered channel list (s04): `components/search-glyph.tsx`, web's search geometry in the More glyphs' recipe, which it copies until the two share one definition ([#3428](https://github.com/pdcarlson/Frapp/issues/3428)). s15's avatar badge draws s20's camera (`CameraGlyph`, `components/service-hours/camera-glyph.tsx`) in the accent's on-colour, its body at §1's emphasis fill.
-Chat home's UP NEXT rows (`components/chat/up-next-strip.tsx`) reuse the tab bar's `EventsGlyph` (focused, in the chapter accent) and `TasksGlyph` (unfocused, `text.muted`) from §6.1 at 20px, to tell the event from the task.
 
 ### 6.1.3 Mobile chat cards (Signet duotone, shipped)
 
@@ -193,6 +198,7 @@ card's, which is drawn neutral, as web draws it.
 | Task card | `TasksGlyph` (the Tasks tab's) | `components/tab-glyphs.tsx` |
 | Points card | `PointsGlyph` (star) | `components/chat/card-glyphs.tsx` |
 | Hours card | The More hub's `ServiceGlyph` heart, adapted as `ServiceHoursGlyph` | `components/chat/card-glyphs.tsx` |
+| Recruitment candidate card | `RushGlyph` (funnel, inner line stroke-only; the module catalog's `funnel`) | `components/chat/card-glyphs.tsx` |
 | Announcement card | `AnnouncementGlyph` (megaphone, sound arc stroke-only) | `components/chat/card-glyphs.tsx` |
 | `#chapter-audit` card, neutral | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |
 
