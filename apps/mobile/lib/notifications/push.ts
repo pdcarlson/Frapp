@@ -167,9 +167,10 @@ export async function getPushPermission() {
 /**
  * Requests OS permission, creating the Android channel first.
  *
- * Only ever called from the primer's "Turn on" or a tap on Settings' push
- * switch — never at launch (`patterns.md` § Push notifications, "Contextual
- * primer, never at launch").
+ * Only ever called from `acceptPrimer()` in `primer.ts`, which the primer's
+ * "Turn on" and a tap on Settings' push switch both go through — never at
+ * launch (`patterns.md` § Push notifications, "Contextual primer, never at
+ * launch").
  */
 export async function requestPushPermission(): Promise<boolean> {
   const mod = localOnlyModule();

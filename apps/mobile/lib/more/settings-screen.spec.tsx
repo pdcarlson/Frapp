@@ -3,11 +3,13 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { signetDarkTokens } from "@repo/theme/signet";
 import {
   defaultNotificationCategoryState,
   NOTIFICATION_CATEGORIES,
 } from "@repo/validation";
+import { PUSH_PRIMER_STORAGE_KEY } from "@/lib/notifications/primer";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
@@ -19,7 +21,9 @@ import { screenText } from "@/test/screen-text";
  * Everything below the screen is stubbed at its own seam: the preference
  * sync hook has its own spec (`lib/use-notification-preferences-sync.spec.tsx`),
  * and the session, push permission and delete-account prompt each sit behind
- * a module whose native half doesn't exist under vitest.
+ * a module whose native half doesn't exist under vitest. The primer module is
+ * real, so the push switch's accept runs the same `acceptPrimer()` as the s03
+ * card, and its stored decision lands in the suite's AsyncStorage mock.
  */
 
 type PushStatus = { granted: boolean; canAskAgain: boolean; status: string };
@@ -35,10 +39,7 @@ const state = vi.hoisted(() => ({
   quietHoursEnabled: false,
   getPushPermission: (() =>
     new Promise(() => undefined)) as () => Promise<PushStatus | null>,
-  requestPushPermission: vi.fn(async () => true),
-  recordPrimerDecision: vi.fn<(decision: string) => Promise<void>>(
-    async () => undefined,
-  ),
+  requestPushPermission: vi.fn<() => Promise<boolean>>(async () => true),
   openSettings: vi.fn(async () => undefined),
 }));
 
@@ -77,11 +78,6 @@ vi.mock("@/lib/notifications/push", () => ({
   getPushPermission: () => state.getPushPermission(),
   requestPushPermission: () => state.requestPushPermission(),
   pushUnavailableReason: () => state.pushReason,
-}));
-
-vi.mock("@/lib/notifications/primer", () => ({
-  recordPrimerDecision: (decision: string) =>
-    state.recordPrimerDecision(decision),
 }));
 
 vi.mock("@/lib/use-notification-preferences-sync", () => ({
@@ -140,8 +136,8 @@ beforeEach(() => {
   state.quietHoursEnabled = false;
   state.getPushPermission = () => new Promise(() => undefined);
   state.requestPushPermission.mockReset().mockResolvedValue(true);
-  state.recordPrimerDecision.mockReset().mockResolvedValue(undefined);
   state.openSettings.mockReset().mockResolvedValue(undefined);
+  vi.mocked(AsyncStorage.setItem).mockClear();
 });
 
 afterEach(() => {
@@ -169,6 +165,23 @@ function pushSwitch(tree: ReactTestRenderer) {
   const found = pushSwitches(tree);
   expect(found).toHaveLength(1);
   return found[0];
+}
+
+/** The push row drawn while the permission is unread or unreadable. */
+function pushFallbackRow(tree: ReactTestRenderer) {
+  return tree.root.find(
+    (node) =>
+      (node.type as unknown) === "Pressable" &&
+      node.props.accessibilityLabel === "Push notifications",
+  );
+}
+
+/** The stored primer decisions, in the order they were written. */
+function primerWrites(): unknown[] {
+  return vi
+    .mocked(AsyncStorage.setItem)
+    .mock.calls.filter(([key]) => key === PUSH_PRIMER_STORAGE_KEY)
+    .map(([, value]) => value);
 }
 
 /** #3022. s16 opens from More's Settings row and draws `‹ More`. */
@@ -204,9 +217,11 @@ describe("Settings switches", () => {
 });
 
 /**
- * #45. Settings states settings, not what they're for: the screen used to
- * carry a two-line hint under every category, a body-size sentence on quiet
- * hours, and standing footnotes that narrated (writing.md §1).
+ * Settings states settings, not what they're for (the owner's Android test
+ * feedback, 2026-11-04). The screen used to carry a two-line hint under every
+ * category, a body-size sentence on quiet hours, and standing footnotes even
+ * when there was nothing to report, where writing.md §1 asks for "the fewest
+ * words that stay clear".
  */
 describe("Settings copy", () => {
   it("draws the category switches with their labels only", () => {
@@ -246,7 +261,7 @@ describe("Settings copy", () => {
     expect(text).not.toContain("web dashboard");
   });
 
-  it("fills the quiet-hours fields in the card's own tone (#46)", () => {
+  it("fills the quiet-hours fields in the card's own tone", () => {
     const tree = render();
     const input = tree.root.find(
       (node) =>
@@ -261,8 +276,11 @@ describe("Settings copy", () => {
 });
 
 /**
- * #51. The push row is the drawn switch. A tap asks the OS while it still
- * will, and opens the OS settings only when it won't, or to turn push off.
+ * The push row is the drawn switch, on only when the OS will show a push. A
+ * tap asks the OS while a prompt can still help, and opens the OS settings
+ * when it can't, or to turn push off. Turning push on used to mean More, then
+ * Settings, then Notifications, then the phone's settings on every tap (the
+ * owner's Android test feedback, 2026-11-04).
  */
 describe("Settings push switch", () => {
   it("asks the OS when it hasn't asked yet, then shows the answer", async () => {
@@ -287,10 +305,119 @@ describe("Settings push switch", () => {
     act(() => pushSwitch(tree).props.onValueChange(true));
     await settle();
 
-    expect(state.recordPrimerDecision).toHaveBeenCalledWith("accepted");
+    expect(primerWrites()).toEqual(["accepted"]);
     expect(state.requestPushPermission).toHaveBeenCalledTimes(1);
     expect(state.openSettings).not.toHaveBeenCalled();
     expect(pushSwitch(tree).props.value).toBe(true);
+  });
+
+  it("records the primer decision before it shows the OS prompt", async () => {
+    // So an app killed while the prompt is up still counts as asked, and the
+    // s03 card isn't offered again with a "Turn on" the OS would ignore.
+    state.getPushPermission = async () => ({
+      granted: false,
+      canAskAgain: true,
+      status: "undetermined",
+    });
+    const tree = render();
+    await settle();
+
+    act(() => pushSwitch(tree).props.onValueChange(true));
+    await settle();
+
+    const setItem = vi.mocked(AsyncStorage.setItem);
+    const record = setItem.mock.calls.findIndex(
+      ([key, value]) => key === PUSH_PRIMER_STORAGE_KEY && value === "accepted",
+    );
+    expect(record).toBeGreaterThanOrEqual(0);
+    expect(state.requestPushPermission).toHaveBeenCalledTimes(1);
+    expect(setItem.mock.invocationCallOrder[record]).toBeLessThan(
+      state.requestPushPermission.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("stays off after the member denies the OS prompt, and says where to turn it on", async () => {
+    let asked = false;
+    state.getPushPermission = async () =>
+      asked
+        ? { granted: false, canAskAgain: false, status: "denied" }
+        : { granted: false, canAskAgain: true, status: "undetermined" };
+    state.requestPushPermission.mockImplementation(async () => {
+      asked = true;
+      return false;
+    });
+    const tree = render();
+    await settle();
+
+    expect(screenText(tree)).not.toContain("Turn on in your phone's settings.");
+    act(() => pushSwitch(tree).props.onValueChange(true));
+    await settle();
+
+    expect(state.requestPushPermission).toHaveBeenCalledTimes(1);
+    expect(state.openSettings).not.toHaveBeenCalled();
+    expect(pushSwitch(tree).props.value).toBe(false);
+    expect(pushSwitch(tree).props.accessibilityLabel).toBe(
+      "Push notifications, turn on in your phone's settings",
+    );
+    expect(screenText(tree)).toContain("Turn on in your phone's settings.");
+  });
+
+  it("asks once for two taps made before the first settles", async () => {
+    // The second tap lands while the OS prompt is up.
+    state.getPushPermission = async () => ({
+      granted: false,
+      canAskAgain: true,
+      status: "undetermined",
+    });
+    let answer!: (granted: boolean) => void;
+    state.requestPushPermission.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const tree = render();
+    await settle();
+
+    act(() => {
+      pushSwitch(tree).props.onValueChange(true);
+      pushSwitch(tree).props.onValueChange(true);
+    });
+    await settle();
+
+    expect(state.requestPushPermission).toHaveBeenCalledTimes(1);
+    expect(state.openSettings).not.toHaveBeenCalled();
+
+    answer(false);
+    await settle();
+    expect(state.requestPushPermission).toHaveBeenCalledTimes(1);
+    expect(state.openSettings).not.toHaveBeenCalled();
+  });
+
+  it("reads off on Android 13+ when the permission is granted but the app's notifications are blocked", async () => {
+    // expo-notifications 57 sets `granted` from POST_NOTIFICATIONS alone and
+    // reports the blocked app only in `status`. No prompt can fix that state
+    // (Android answers the request at once), so a tap opens the OS settings.
+    state.getPushPermission = async () => ({
+      granted: true,
+      canAskAgain: true,
+      status: "denied",
+    });
+    const tree = render();
+    await settle();
+
+    expect(pushSwitch(tree).props.value).toBe(false);
+    expect(pushSwitch(tree).props.accessibilityLabel).toBe(
+      "Push notifications, turn on in your phone's settings",
+    );
+    expect(screenText(tree)).toContain("Turn on in your phone's settings.");
+
+    act(() => pushSwitch(tree).props.onValueChange(true));
+    await settle();
+
+    expect(state.requestPushPermission).not.toHaveBeenCalled();
+    expect(primerWrites()).toEqual([]);
+    expect(state.openSettings).toHaveBeenCalledTimes(1);
   });
 
   it("opens the OS settings once the OS won't ask again", async () => {
@@ -336,6 +463,58 @@ describe("Settings push switch", () => {
     const tree = render();
 
     expect(pushSwitches(tree)).toHaveLength(0);
+  });
+
+  it("keeps a row that acts on a tap while the permission is unread", async () => {
+    // The mount read never answers; the tap's own reads do.
+    let reads = 0;
+    let granted = false;
+    state.getPushPermission = () => {
+      reads += 1;
+      if (reads === 1) return new Promise(() => undefined);
+      return Promise.resolve({
+        granted,
+        canAskAgain: !granted,
+        status: granted ? "granted" : "undetermined",
+      });
+    };
+    state.requestPushPermission.mockImplementation(async () => {
+      granted = true;
+      return true;
+    });
+    const tree = render();
+    await settle();
+
+    const row = pushFallbackRow(tree);
+    expect(row.props.accessibilityValue).toEqual({ text: "—" });
+    act(() => row.props.onPress());
+    await settle();
+
+    expect(state.requestPushPermission).toHaveBeenCalledTimes(1);
+    expect(pushSwitch(tree).props.value).toBe(true);
+  });
+
+  it("opens the OS settings when the permission can't be read, without an unhandled rejection", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      state.getPushPermission = () => Promise.reject(new Error("unreadable"));
+      const tree = render();
+      await settle();
+
+      expect(pushSwitches(tree)).toHaveLength(0);
+      act(() => pushFallbackRow(tree).props.onPress());
+      await settle();
+      // Unhandled rejections are reported after the microtasks drain.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(state.requestPushPermission).not.toHaveBeenCalled();
+      expect(state.openSettings).toHaveBeenCalledTimes(1);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 
   it("states why in a build that can't push, with nothing to tap", async () => {

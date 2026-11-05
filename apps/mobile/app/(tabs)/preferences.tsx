@@ -39,12 +39,12 @@ import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { shouldShowDonationCta } from "@/lib/more/donation";
 import { LEGAL_LINKS } from "@/lib/more/legal";
-import { recordPrimerDecision } from "@/lib/notifications/primer";
+import { acceptPrimer } from "@/lib/notifications/primer";
 import {
   getPushPermission,
   pushUnavailableReason,
-  requestPushPermission,
 } from "@/lib/notifications/push";
+import type { PushPermissionStatus } from "@/lib/notifications/push-types";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
   type QuietHoursWindow,
@@ -77,15 +77,15 @@ import {
  * - **Appearance is static text.** The app is dark-only by design
  *   (`lib/theme.tsx`), and Canvas draws this row as a value, not a control.
  * - **"Push notifications" is a switch that reports the device permission.**
- *   Canvas draws a toggle, and it shows what is true: on only when the OS has
- *   granted push. A tap asks the OS while it still will (the tap is the member
- *   accepting, so `patterns.md`'s "OS prompt only after the member accepts"
- *   holds) and otherwise opens the OS settings: an app cannot revoke its own
- *   permission, and iOS never re-prompts once asked. Before this the row always
- *   sent the member to the OS settings, even when the OS had never asked
- *   (More → Settings → Notifications → device settings, the owner's
- *   2026-11-04 complaint). In a build that can't push it stays a status row
- *   that states why (`pushUnavailableReason()`).
+ *   Canvas draws a toggle, and it shows what is true: on only when the OS will
+ *   show a push (`pushIsOn()`). A tap asks the OS while a prompt can still help
+ *   (the tap is the member accepting, so `patterns.md`'s "OS prompt only after
+ *   the member accepts" holds) and otherwise opens the OS settings: an app
+ *   cannot revoke its own permission, and iOS never re-prompts once asked.
+ *   Before this the row always sent the member to the OS settings, even when
+ *   the OS had never asked (More → Settings → Notifications → device
+ *   settings, the owner's 2026-11-04 complaint). In a build that can't push it
+ *   stays a status row that states why (`pushUnavailableReason()`).
  * - **"Blocked members" is here and is not drawn.** `spec/behavior/chat/README.md`
  *   § Block makes a Settings list the one durable place a block is undone
  *   (#2257), and App Store Guideline 1.2 is why the control exists at all. It
@@ -93,7 +93,9 @@ import {
  *   meets the rule.
  * - **"Mandatory events only" is still not built.** It has no backing field on
  *   `events` and no preference key. The per-category switches below are what the
- *   API actually enforces.
+ *   API actually enforces. They are drawn as the drawing draws its switches,
+ *   a label and nothing under it, so the shared catalog's one-line hint per
+ *   category is web's alone (why: the comment where they are mapped below).
  */
 
 const TIME_INPUT_PATTERN = /^\d{2}:\d{2}$/;
@@ -119,20 +121,45 @@ function formatTimeOfDay(value: string): string {
   return `${displayHours}:${rawMinutes} ${suffix}`;
 }
 
-type PushPermission = NonNullable<
-  Awaited<ReturnType<typeof getPushPermission>>
->;
+/**
+ * Whether the OS will show a push, which is what the switch reports.
+ *
+ * `status`, not `granted`. On Android 13+ (`targetSdk` 33 and up)
+ * expo-notifications 57 sets `granted` from the POST_NOTIFICATIONS runtime
+ * permission alone, and reports the app's notifications being switched off
+ * (`areNotificationsEnabled()`) only in `status`. So
+ * `{ granted: true, status: "denied" }` is a real answer, and that device
+ * shows nothing (`NotificationPermissionsModule.kt`,
+ * `getPermissionsWithPromiseImplApi33`). Below Android 13 and on iOS the two
+ * fields agree. iOS reports `status: "granted"` only for full authorization
+ * (`ExpoNotificationsPermissionsRequester.swift`): a provisional or ephemeral
+ * grant reads `"undetermined"`, so the switch is off there and a tap asks for
+ * the full prompt.
+ */
+function pushIsOn(permission: PushPermissionStatus): boolean {
+  return permission.status === "granted";
+}
+
+/**
+ * Whether a tap should show the OS prompt: nothing granted yet, and the OS
+ * will still ask. A granted permission whose notifications are blocked (the
+ * Android 13+ case above) is not one: Android answers that request at once,
+ * with no prompt, so only the OS settings can turn it back on.
+ */
+function pushTapAsks(permission: PushPermissionStatus): boolean {
+  return !permission.granted && permission.canAskAgain;
+}
 
 /**
  * The push switch's accessible name, which says what a tap does whenever that
- * isn't the switch flipping: on, and off once the OS stops asking, a tap opens
+ * isn't the switch flipping: on, and off once no prompt can help, a tap opens
  * the phone's settings instead.
  */
-function pushToggleLabel(permission: PushPermission): string {
-  if (permission.granted) {
+function pushToggleLabel(permission: PushPermissionStatus): string {
+  if (pushIsOn(permission)) {
     return "Push notifications, turn off in your phone's settings";
   }
-  return permission.canAskAgain
+  return pushTapAsks(permission)
     ? "Push notifications"
     : "Push notifications, turn on in your phone's settings";
 }
@@ -209,7 +236,8 @@ function QuietHoursCard({
           <Text style={styles.toggleTitle}>Quiet hours</Text>
           {/* The window, and only while it is in force. The label and the
               fields below say what quiet hours are, so a sentence explaining
-              them was narration (writing.md §1). */}
+              them was more words than clarity needs (writing.md §1, "in the
+              fewest words that stay clear"). */}
           {enabled ? (
             <Text style={styles.toggleDescription}>
               {`${formatTimeOfDay(quietHoursWindow.start)} – ${formatTimeOfDay(
@@ -315,9 +343,8 @@ export default function PreferencesScreen() {
    * would be worse than no row. `null` while unread, so the switch never
    * flashes off at a member who has granted it.
    */
-  const [pushPermission, setPushPermission] = useState<PushPermission | null>(
-    null,
-  );
+  const [pushPermission, setPushPermission] =
+    useState<PushPermissionStatus | null>(null);
   useEffect(() => {
     let cancelled = false;
     const read = () => {
@@ -366,25 +393,27 @@ export default function PreferencesScreen() {
    * first rather than trusting the last read, because the answer can change
    * outside the app (the OS settings, or a prompt answered elsewhere).
    *
-   * - Not granted, and the OS will still ask: ask. The member tapping this
-   *   row is them accepting, which is the step `patterns.md` § Push
-   *   notifications puts before the OS prompt. The primer's decision is
-   *   recorded first, as its own "Turn on" does, so the s03 card isn't offered
-   *   afterwards with a "Turn on" the OS would now ignore.
-   * - Granted: the OS settings, since an app cannot revoke its own permission.
-   * - Not granted, and the OS won't ask again (iOS after one answer, Android
-   *   after a second "Don't allow"): the OS settings, the only place left.
+   * - Not granted, and the OS will still ask (`pushTapAsks()`): ask. The
+   *   member tapping this row is them accepting, which is the step
+   *   `patterns.md` § Push notifications puts before the OS prompt, so it goes
+   *   through the primer's own accept (`acceptPrimer()`): the decision is
+   *   recorded first, so the s03 card isn't offered afterwards with a
+   *   "Turn on" the OS would now ignore.
+   * - On: the OS settings, since an app cannot revoke its own permission.
+   * - Off, and no prompt can help: the OS settings, the only place left. That
+   *   is iOS after one answer, Android after a second "Don't allow", and
+   *   Android 13+ with the permission granted but the app's notifications
+   *   blocked.
    */
   async function handlePushTap() {
     if (pushTapInFlight.current) return;
     pushTapInFlight.current = true;
     try {
       const current = await getPushPermission().catch(() => null);
-      if (current && !current.granted && current.canAskAgain) {
-        await recordPrimerDecision("accepted");
+      if (current && pushTapAsks(current)) {
         // A prompt the OS failed to show reads as not granted; the re-read
         // below reports whatever is true either way.
-        await requestPushPermission().catch(() => false);
+        await acceptPrimer();
         setPushPermission(await getPushPermission().catch(() => null));
         return;
       }
@@ -501,13 +530,13 @@ export default function PreferencesScreen() {
           <ListRow
             label="Push notifications"
             description={
-              !pushPermission.granted && !pushPermission.canAskAgain
+              !pushIsOn(pushPermission) && !pushTapAsks(pushPermission)
                 ? "Turn on in your phone's settings."
                 : null
             }
             trailing={
               <Toggle
-                value={pushPermission.granted}
+                value={pushIsOn(pushPermission)}
                 onValueChange={() => void handlePushTap()}
                 accessibilityLabel={pushToggleLabel(pushPermission)}
               />

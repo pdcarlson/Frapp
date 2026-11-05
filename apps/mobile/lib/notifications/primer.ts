@@ -12,8 +12,9 @@
  *
  * - **The OS prompt is downstream of the card.** iOS gives an app exactly one
  *   permission dialog ever; spending it on a cold launch is unrecoverable. So
- *   nothing calls `requestPushPermission()` except the card's "Turn on" and a
- *   tap on s16 Settings' push switch, which is the member asking for it.
+ *   nothing calls `requestPushPermission()` except `acceptPrimer()` below,
+ *   which the card's "Turn on" and a tap on s16 Settings' push switch (the
+ *   member asking for it) both go through.
  * - **"Not now" has to stick.** A primer that reappears on every launch is the
  *   nag the contextual pattern exists to avoid, so the decision is persisted.
  *   It is deliberately *not* permanent: a member who changes their mind taps
@@ -25,6 +26,7 @@
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { requestPushPermission } from "@/lib/notifications/push";
 
 export const PUSH_PRIMER_STORAGE_KEY = "frapp.mobile.push-primer";
 
@@ -58,6 +60,25 @@ export async function recordPrimerDecision(
   } catch {
     // Cosmetic. The worst case is the primer offering itself again.
   }
+}
+
+/**
+ * The member accepting the primer: records the decision, then shows the OS
+ * prompt. Resolves with whether the OS granted permission, and never rejects:
+ * a prompt the OS failed to show counts as not granted.
+ *
+ * The one place the two steps are paired, so the card's "Turn on"
+ * (`use-push-primer.ts`) and s16 Settings' push switch accept the same way.
+ * The record comes first so that a crash mid-prompt still counts as asked;
+ * otherwise the card could come back offering a "Turn on" the OS would now
+ * ignore (`shouldOfferPrimer` reads the decision, not whether the OS will
+ * still ask). `onRecorded` runs between the two, which is where the card's
+ * host hides it.
+ */
+export async function acceptPrimer(onRecorded?: () => void): Promise<boolean> {
+  await recordPrimerDecision("accepted");
+  onRecorded?.();
+  return requestPushPermission().catch(() => false);
 }
 
 export interface PrimerVisibilityInput {
