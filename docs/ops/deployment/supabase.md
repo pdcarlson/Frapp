@@ -184,7 +184,7 @@ still per-machine and still #765.
 (late), for the web app.** GoTrue matches an allow-list entry as a glob, and a bare origin is a
 glob that matches only itself — `https://app.frapp.live` admits exactly that string. Every web
 `emailRedirectTo` is `${origin}${redirectTo}`: `/chat` by default, `/join?token=…` from an invite
-link (`apps/web/app/sign-in/page.tsx`, `sign-up/page.tsx`). With only the bare origin listed, GoTrue
+link (`apps/web/components/auth/sign-in-screen.tsx`, `apps/web/app/(auth)/sign-up/page.tsx`). With only the bare origin listed, GoTrue
 silently swapped each of those for the Site URL — the magic link still signed the member in, but at
 `/`, and a sign-up made from an invite link arrived without its token. Verified before and after
 with the unauthenticated probe `GET /auth/v1/verify?token=<invalid>&type=magiclink&redirect_to=<url>`
