@@ -79,3 +79,9 @@ export function isWithinArchiveUploadSizeLimit(byteLength: number): boolean {
     byteLength <= MAX_ARCHIVE_UPLOAD_BYTES
   );
 }
+
+/**
+ * Most recent warnings kept on an import's job row, by the scan and the worker
+ * alike.
+ */
+export const MAX_WARNINGS = 50;

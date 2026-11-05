@@ -16,7 +16,10 @@ import { RbacService } from '../services/rbac.service';
 import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
-import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import {
+  CHAT_CATEGORY_REPOSITORY,
+  CHAT_CHANNEL_REPOSITORY,
+} from '#domain/repositories/chat.repository.interface';
 import type {
   DiscordImport,
   DiscordImportChannel,
@@ -168,6 +171,9 @@ function channelMapping(
     private_in_discord: null,
     discord_reader_role_ids: null,
     new_channel_same_as_discord: false,
+    new_channel_group: null,
+    discord_category_position: null,
+    new_channel_category_id: null,
     ...overrides,
   };
 }
@@ -291,6 +297,7 @@ function makeRepo(initial: DiscordImport) {
     deleteEmptyCreatedChannels: jest.fn(
       async (): Promise<string[]> => repoRef.deletedChannels,
     ),
+    deleteEmptyCreatedCategories: jest.fn(async (): Promise<string[]> => []),
     create: jest.fn(),
     findById: jest.fn(async () => current),
     findByChapter: jest.fn(async () => [current]),
@@ -344,6 +351,14 @@ async function buildWorker(
         : null,
     ),
   };
+  // The groups `start` resolved; any other id reads as deleted since.
+  const categoryRepo = {
+    findById: jest.fn(async (id: string, chapterId: string) =>
+      chapterId === CHAPTER && id === 'group-1'
+        ? { id, chapter_id: chapterId, name: 'Committees', display_order: 0 }
+        : null,
+    ),
+  };
   const connectionRepo = { deleteExpiredStates: jest.fn(async () => 0) };
   const exportWorker = options.exportWorker ?? {
     runSlice: jest.fn(async () => {
@@ -367,6 +382,7 @@ async function buildWorker(
       { provide: DISCORD_IMPORT_REPOSITORY, useValue: repo },
       { provide: STORAGE_PROVIDER, useValue: storage },
       { provide: CHAT_CHANNEL_REPOSITORY, useValue: channelRepo },
+      { provide: CHAT_CATEGORY_REPOSITORY, useValue: categoryRepo },
       // Every job in this file is `source: 'upload'`, so the sweeper never
       // delegates here. Stubbed rather than real so a regression that DID
       // delegate an upload job would fail loudly instead of hitting Discord.
@@ -383,6 +399,7 @@ async function buildWorker(
   return {
     worker: moduleRef.get(DiscordImportWorkerService),
     channelRepo,
+    categoryRepo,
     channelCache,
     connectionRepo,
   };
@@ -692,6 +709,85 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(channelRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'PUBLIC', required_permissions: null }),
     );
+  });
+
+  it('creates a channel in the group the import resolved for it', async () => {
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'rush',
+        new_channel_type: 'PUBLIC',
+        new_channel_group: 'Committees',
+        new_channel_category_id: 'group-1',
+      }),
+    ];
+    const { worker, channelRepo, categoryRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(categoryRepo.findById).toHaveBeenCalledWith('group-1', CHAPTER);
+    expect(channelRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'rush', category_id: 'group-1' }),
+    );
+  });
+
+  it('creates the channel with no group when its group was deleted since the import started', async () => {
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'rush',
+        new_channel_type: 'PUBLIC',
+        new_channel_group: 'Committees',
+        new_channel_category_id: 'group-deleted',
+      }),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(channelRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'rush', category_id: null }),
+    );
+    expect(repoRef.state().status).not.toBe('failed');
+  });
+
+  it('creates the channel with no group when the group is deleted between its read and the insert', async () => {
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'rush',
+        new_channel_type: 'PUBLIC',
+        new_channel_group: 'Committees',
+        new_channel_category_id: 'group-1',
+      }),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    const create = channelRepo.create as jest.Mock;
+    const original = create.getMockImplementation();
+    create.mockImplementationOnce(() =>
+      Promise.reject(Object.assign(new Error('fk'), { code: '23503' })),
+    );
+    if (original) create.mockImplementation(original);
+
+    await worker.sweepImports(NOW);
+
+    expect(create.mock.calls.map(([data]) => data.category_id)).toEqual([
+      'group-1',
+      null,
+    ]);
+    expect(repoRef.state().status).not.toBe('failed');
   });
 
   it('stops when the admin cancels mid-slice, instead of resurrecting the job', async () => {
@@ -1555,6 +1651,29 @@ describe('DiscordImportWorkerService — purging', () => {
       ['created-a'],
       ['created-b'],
     ]);
+    expect(repoRef.updates.at(-1)).toMatchObject({ status: 'purged' });
+  });
+
+  it('deletes the channel groups it created after its channels, before the objects', async () => {
+    repoRef.deletedRounds = [12];
+    const storage = makeStorage(null);
+    storage.listFiles.mockImplementation(async () => ['a/one.png']);
+    const { worker } = await buildWorker(repoRef, storage);
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.deleteEmptyCreatedCategories).toHaveBeenCalledWith(
+      job().id,
+      CHAPTER,
+    );
+    const groups =
+      repoRef.deleteEmptyCreatedCategories.mock.invocationCallOrder[0];
+    expect(groups).toBeGreaterThan(
+      repoRef.deleteEmptyCreatedChannels.mock.invocationCallOrder[0],
+    );
+    expect(storage.deleteFiles.mock.invocationCallOrder[0]).toBeGreaterThan(
+      groups,
+    );
     expect(repoRef.updates.at(-1)).toMatchObject({ status: 'purged' });
   });
 
