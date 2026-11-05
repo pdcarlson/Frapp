@@ -130,6 +130,14 @@ describe("formatEventDateBlock", () => {
     });
   });
 
+  it("takes the month for a multi-day event that started a week or more ago", () => {
+    // Still listed while it runs; "Tue 3" would read as a Tuesday to come.
+    expect(block(at(2026, 3, 3, 9, 0))).toMatchObject({
+      label: "Mar",
+      day: "3",
+    });
+  });
+
   it("carries the start clock for the meta line", () => {
     expect(block(at(2026, 3, 10, 18, 0))?.clock).toBe(
       formatEventClock(at(2026, 3, 10, 18, 0)),

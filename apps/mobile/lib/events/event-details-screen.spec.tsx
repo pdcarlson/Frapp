@@ -188,11 +188,18 @@ describe("Event details back row (#3022)", () => {
     expectBackRow(tree, "Events", "/events");
   });
 
-  it("draws ‹ Events over the no-chapter state", () => {
+  /**
+   * No "No chapter selected" branch: the API resolves a sole membership when
+   * the token carries no `active_chapter_id` claim, so a member opening an
+   * event from a push or a calendar link still gets it (study.tsx gives the
+   * same reasoning).
+   */
+  it("still draws the event when no chapter is active", () => {
     chapterId = null;
 
     const tree = render();
-    expect(screenText(tree)).toContain("No chapter selected");
+    expect(screenText(tree)).not.toContain("No chapter selected");
+    expect(screenText(tree).startsWith("‹ Events\nChapter meeting")).toBe(true);
     expectBackRow(tree, "Events", "/events");
   });
 });
@@ -275,6 +282,56 @@ describe("Event details layout", () => {
     expect(flat(textNode(tree, "Scan QR to check in")!).color).toBe(
       signetDarkTokens.color.gold.onHouse,
     );
+  });
+
+  /** The card's header row: the dot is the View drawn beside the title. */
+  const dotColor = (tree: ReactTestRenderer, title: string) => {
+    const node = textNode(tree, title);
+    const dot = node!.parent!.children.find(
+      (child): child is ReactTestInstance =>
+        typeof child !== "string" && child !== node,
+    );
+    return flat(dot!).backgroundColor;
+  };
+
+  it("lights the open card's dot green", () => {
+    expect(dotColor(render(), "Check-in is open")).toBe(
+      signetDarkTokens.color.semantic.success,
+    );
+  });
+
+  it("leaves a closed card's dot muted", () => {
+    vi.setSystemTime(new Date(START.getTime() + 3 * 60 * 60_000));
+    expect(dotColor(render(), "Check-in is closed")).toBe(
+      signetDarkTokens.color.text.muted,
+    );
+  });
+
+  it("draws Add to calendar at the scan button's height and radius", () => {
+    const tree = render();
+    const [button] = tree.root.findAll(
+      (node) =>
+        node.props.accessibilityLabel === "Add this event to your calendar" &&
+        typeof node.props.style === "function",
+    );
+    const rest = Object.assign(
+      {},
+      ...[button.props.style({ pressed: false })].flat(Infinity).filter(Boolean),
+    );
+    const held = Object.assign(
+      {},
+      ...[button.props.style({ pressed: true })].flat(Infinity).filter(Boolean),
+    );
+
+    expect(rest).toMatchObject({
+      height: 50,
+      borderRadius: signetDarkTokens.radius.control,
+    });
+    // Press feedback is a lift up the surface ladder (the stub is iOS) and a
+    // ripple on Android, never an opacity fade.
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(held).not.toHaveProperty("opacity");
+    expect(button.props.android_ripple?.color).toBeDefined();
   });
 
   it("says no more than the card does", () => {

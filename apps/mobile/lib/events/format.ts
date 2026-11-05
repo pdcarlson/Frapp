@@ -3,11 +3,13 @@
  * (detail) and s18 (scanner).
  *
  * Pure and `now`-injected so the screens stay presentational and the states are
- * testable without freezing a clock. Deliberately separate from the relative
- * labels in `components/chat/up-next-strip.tsx`: that strip answers "how soon"
- * in a one-line pulse ("tmrw 6:00 PM"), while these answer "when and for how
- * long" in a detail context ("Tonight · 6:00 – 7:00 PM"). Merging them would
- * force one of the two surfaces to render the wrong register.
+ * testable without freezing a clock. The window formatters are deliberately
+ * separate from the relative labels in `components/chat/up-next-strip.tsx`:
+ * that strip answers "how soon" in a one-line pulse ("tmrw 6:00 PM"), while
+ * they answer "when and for how long" in a detail context ("Tonight · 6:00 –
+ * 7:00 PM"). The s06 date block is the exception: a 52pt block has room only
+ * for the strip's short register ("Tmrw", "THU"), so it takes that register
+ * on purpose and its day ladder repeats the strip's.
  */
 
 import { dayDelta, parseInstant } from "@repo/formatting";
@@ -105,9 +107,11 @@ export function formatEventDateBlock(
     label = "Today";
   } else if (days === 1) {
     label = "Tmrw";
-  } else if (days < 7) {
+  } else if (days > -7 && days < 7) {
     // A negative delta lands here too: an event that started late last night
     // stays on the list while its check-in window is open, under its weekday.
+    // A week or more back (a multi-day event still running) takes the month,
+    // or "WED 28" would read as a Wednesday still to come.
     label = start.toLocaleDateString(undefined, { weekday: "short" });
   } else {
     label = start.toLocaleDateString(undefined, { month: "short" });

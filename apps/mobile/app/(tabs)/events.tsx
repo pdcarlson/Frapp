@@ -156,10 +156,10 @@ function EventRowCard({
       accessibilityLabel={`Open ${event.name}`}
       accessibilityHint="View event details and check in."
       onPress={onPress}
-      // Press feedback per platform, as `ListRow` does it: Android gets the
-      // ripple the tab bar draws, clipped to the card's corners by
-      // `overflow: hidden`; iOS has no ripple, so the card lifts one rung up
-      // the surface ladder while it is held.
+      // Press feedback per platform, as `ListRow` does it: Android gets a
+      // bounded ripple of the foreground at 12%, clipped to the card's corners
+      // by `overflow: hidden`; iOS has no ripple, so the card lifts one rung
+      // up the surface ladder while it is held.
       android_ripple={{ color: styles.ripple.color }}
       style={({ pressed }) => [
         styles.card,

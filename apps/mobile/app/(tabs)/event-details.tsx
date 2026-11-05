@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useActiveChapterId, useEvent, useNowDate } from "@repo/hooks";
+import { useEvent, useNowDate } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_EVENTS } from "@/components/back-row";
@@ -9,7 +9,6 @@ import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import {
   EmptyState,
   ErrorState,
-  NoChapterState,
   SkeletonLines,
 } from "@/components/state-block";
 import { AccentChip, StatusChip } from "@/components/status-chip";
@@ -59,7 +58,6 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 export default function EventDetailsScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const chapterId = useActiveChapterId();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const eventId = Array.isArray(params.id) ? params.id[0] : (params.id ?? "");
 
@@ -120,18 +118,6 @@ export default function EventDetailsScreen() {
           title="Nothing to show"
           body="Open an event from the Events tab."
         />
-      </ScreenShell>
-    );
-  }
-
-  // `useEvent` runs on the id alone, but every event is chapter-scoped, so
-  // without an active chapter (a `frapp://event-details` link opened before
-  // one is picked) the request can only fail. Saying so beats blaming the
-  // network, and it is the state the Events tab shows in the same case.
-  if (!chapterId) {
-    return (
-      <ScreenShell back={BACK_TO_EVENTS} title="Event">
-        <NoChapterState noun="this event" />
       </ScreenShell>
     );
   }

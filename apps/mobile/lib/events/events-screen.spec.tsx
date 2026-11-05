@@ -6,6 +6,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { formatEventDateBlock } from "@/lib/events/format";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -139,9 +140,30 @@ describe("Event card", () => {
 
   it("draws the date block in the chapter accent over the day", () => {
     const tree = render();
-    // Mounted the same day as the event (local time, whatever CI's zone).
-    expect(styleOf(tree, "Today").color).toBe(ACCENT);
+    // Mounted a minute before the event, which is the same local day in most
+    // zones but the day before in some (UTC+6 puts the start at midnight), so
+    // the label comes from the formatter, which format.spec.ts pins.
+    const block = formatEventDateBlock(START.toISOString(), MOUNTED_AT);
+    expect(styleOf(tree, block!.label).color).toBe(ACCENT);
     expect(screenText(tree)).toContain(String(START.getDate()));
+  });
+
+  it("answers a press with a lift and a ripple, not a fade", () => {
+    const tree = render();
+    const [card] = tree.root.findAll(
+      (node) =>
+        node.props.accessibilityLabel === "Open Chapter meeting" &&
+        typeof node.props.style === "function",
+    );
+    const held = Object.assign(
+      {},
+      ...[card.props.style({ pressed: true })].flat(Infinity).filter(Boolean),
+    );
+
+    // The suite's stub is iOS: the card lifts one rung up the surface ladder.
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(held).not.toHaveProperty("opacity");
+    expect(card.props.android_ripple?.color).toBeDefined();
   });
 
   it("paints Mandatory as a danger status and points in the accent", () => {
