@@ -66,17 +66,32 @@ export const RETRY_KEEPS_DRAFT =
  * copy (`lib/more/document-upload.ts` § "A confirm that fails keeps the bytes
  * it already sent").
  *
+ * ## The draft outlives a close, not a Cancel
+ *
+ * The sheets' keep-the-draft rule (`spec/ui/mobile/patterns.md` § Bottom
+ * sheets, "A draft outlives a close"): a swipe or scrim close keeps the picked
+ * photo, the title and the folder for the next visit, Cancel or an upload that
+ * files it gives them up, and Cancel is held while the upload runs, in a visit
+ * reopened mid-upload too. What is particular to s21:
+ *
+ * - A close after a failed confirm keeps the held upload with the draft, so
+ *   reopening retries the confirm instead of sending the photo again; a new
+ *   pick gives it up. s12 mounts a new sheet per chapter, since the draft
+ *   belongs to the chapter it was started in and the held path was minted
+ *   under it.
+ * - A kept folder is re-read against s12's folders on every visit. One an
+ *   officer has since deleted or renamed falls back to what the sheet starts
+ *   on with nothing chosen (s12's filter, when that folder still exists, else
+ *   None), and a held retry's folder falls back to None, so Upload never
+ *   files into a folder no chip shows as selected; the API would otherwise
+ *   create it again (`ensureFolder`).
+ *
  * ## Closing mid-upload
  *
- * The same rules as s15's edit sheet (`components/profile/edit-profile-sheet.tsx`),
- * through the same `useSheetVisit`: the draft stays until the upload settles, a
- * success closes only the visit it was sent from, and `dismiss()` runs only on
- * a presented sheet.
- *
- * A swipe or scrim close after a failed confirm keeps the held upload too, so
- * reopening retries the confirm instead of sending the photo again; Cancel and
- * a new pick give it up. s12 mounts a new sheet per chapter, since the held
- * path was minted under the chapter it was sent from.
+ * Through the same `useSheetVisit` as s15's edit sheet
+ * (`components/profile/edit-profile-sheet.tsx`): a swipe mid-upload keeps the
+ * draft until the upload settles, a success closes only the visit it was sent
+ * from, and `dismiss()` runs only on a presented sheet.
  */
 export const UploadDocumentSheet = forwardRef<
   BottomSheetModal,
@@ -99,7 +114,8 @@ export const UploadDocumentSheet = forwardRef<
   const [picking, setPicking] = useState(false);
   const [title, setTitle] = useState("");
   // `undefined` until the member taps a chip: the sheet then follows s12's
-  // filter, which can change between visits.
+  // filter, which can change between visits. Read through `draftFolder`,
+  // never directly, since the folder it names may be gone by the next visit.
   const [chosenFolder, setChosenFolder] = useState<string | null | undefined>(
     undefined,
   );
@@ -122,10 +138,23 @@ export const UploadDocumentSheet = forwardRef<
   const [stored, setStored] = useState<SentUpload | null>(null);
   const draftHeld = uploading || stored !== null;
 
+  // A folder the chips can show: None, or one s12 still lists. A kept chip,
+  // or s12's filter, can name one an officer deleted or renamed since.
+  const listed = (name: string | null) =>
+    name === null || folders.some((entry) => entry.name === name);
+  const startFolder = listed(initialFolder) ? initialFolder : null;
+  const draftFolder =
+    chosenFolder !== undefined && listed(chosenFolder)
+      ? chosenFolder
+      : startFolder;
   // A held retry files into the folder it was sent with, so the chips show
   // that one; a new pick drops the hold and the chips follow the draft again.
-  const draftFolder = chosenFolder === undefined ? initialFolder : chosenFolder;
-  const folder = stored ? stored.folder : draftFolder;
+  // One deleted or renamed since files at None, where a deleted folder's
+  // documents go: sending its old name would have `ensureFolder` create it
+  // again when the first confirm never landed. When it did land, the API
+  // answers with that row, wherever it now sits, so the folder sent is moot.
+  const heldFolder = stored && listed(stored.folder) ? stored.folder : null;
+  const folder = stored ? heldFolder : draftFolder;
   const canUpload = picked !== null && !uploading && !picking && !refusal;
 
   const reset = useCallback(() => {
@@ -148,25 +177,30 @@ export const UploadDocumentSheet = forwardRef<
   // picker draws doesn't launch another (Android rejects the second launch).
   const pickingNow = useRef(false);
 
-  // A swipe or scrim close keeps an upload that is in flight, or one a
-  // failed confirm left in the bucket: reopening offers the same retry rather
-  // than uploading the photo a second time. Cancel is the way to give it up.
-  // A refusal is dropped, since the officer may have lifted it by the next
-  // visit, and the server will say so again if not.
+  // A swipe or scrim close keeps the draft (see the header), an upload that
+  // is in flight, and one a failed confirm left in the bucket: reopening
+  // offers the same retry rather than uploading the photo a second time.
+  // Cancel is the way to give it up. A refusal is dropped, since the officer
+  // may have lifted it by the next visit, and the server will say so again if
+  // not. So is a failure with nothing held, because reopening is the member's
+  // next try; one with bytes held stays, since it says why the title and
+  // folder hold still.
   const closed = () => {
     markClosed();
     setTitleFocused(false);
     if (sending.current) return;
-    if (stored !== null) {
-      setRefusal(null);
-      setPickRefusal(null);
-      return;
-    }
-    reset();
+    setRefusal(null);
+    setPickRefusal(null);
+    if (stored === null) setFailure(null);
   };
 
+  // Held while an upload runs (`cancelDisabled` below): the upload can't be
+  // called back, so a Cancel then would clear a draft that gets filed anyway,
+  // or lose a failure no visit hears of. `sending` covers a tap in the same
+  // batch as Upload, before `uploading` reaches a render.
   const cancel = () => {
-    if (!sending.current) reset();
+    if (sending.current) return;
+    reset();
     dismiss();
   };
 
@@ -203,7 +237,7 @@ export const UploadDocumentSheet = forwardRef<
         requestUploadUrl: (body) => requestUploadUrl.mutateAsync(body),
         confirm: (body) => confirmUpload.mutateAsync(body),
       },
-      stored ?? undefined,
+      stored ? { ...stored, folder: heldFolder } : undefined,
     );
     sending.current = false;
     setUploading(false);
@@ -238,7 +272,11 @@ export const UploadDocumentSheet = forwardRef<
       onDismiss={closed}
     >
       <BottomSheetView style={styles.body}>
-        <SheetHeader title="Upload document" onCancel={cancel} />
+        <SheetHeader
+          title="Upload document"
+          onCancel={cancel}
+          cancelDisabled={uploading}
+        />
 
         <Pressable
           accessibilityRole="button"

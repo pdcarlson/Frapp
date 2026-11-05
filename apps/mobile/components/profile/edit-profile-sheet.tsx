@@ -61,6 +61,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * it is the same account's (a loaded s15 always has it cached), so a save
  * closes onto the saved values rather than flashing the old ones.
  *
+ * So a swipe or scrim close outside a save drops the edits rather than
+ * keeping them for the next visit, the exception to the sheets'
+ * keep-the-draft rule (`spec/ui/mobile/patterns.md` § Bottom sheets, "A draft
+ * outlives a close", which says why: `rebaseEdits` keeps a typed field over a
+ * profile that moves under it, right within one visit and wrong across one).
+ *
  * ## A fixed detent, not dynamic sizing
  *
  * Five fields and a bio that grows as it is typed, under a keyboard, don't fit

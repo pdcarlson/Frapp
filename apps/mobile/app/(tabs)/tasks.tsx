@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
-import { AppState, Pressable, StyleSheet, Text, View } from "react-native";
+import { AppState, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
@@ -15,6 +15,7 @@ import {
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { HeaderAddButton } from "@/components/header-add-button";
 import { SectionHeader } from "@/components/list-section";
 import {
   EmptyState,
@@ -25,11 +26,11 @@ import {
 import { TaskRow } from "@/components/tasks/task-row";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
-import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectTaskRows, type TaskRowModel } from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
 import { nextTapSequence } from "@/lib/tasks/transitions";
 import { taskStatusGateRefusal } from "@/lib/tasks/status-refusal";
+import { successHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -67,8 +68,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  */
 export default function TasksScreen() {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
-  const styles = createStyles(tokens, accent);
+  const styles = createStyles(tokens);
   const sheetRef = useRef<BottomSheetModal>(null);
 
   const chapterId = useActiveChapterId();
@@ -89,10 +89,12 @@ export default function TasksScreen() {
   const canManageTasks = can("tasks:manage", permissions);
 
   // One clock for the whole render, so the two sections cannot straddle a tick
-  // and disagree about what "today" means — but re-read whenever the screen is
-  // focused. A tab is never unmounted and the JS context survives days of
-  // backgrounding, so a mount-only clock would keep bucketing by the day the app
-  // was opened, and the sheet's "Today" chip would file a task already overdue.
+  // and disagree about what "today" means — but re-read whenever the member
+  // comes back: to the screen (a navigation focus, here) or to the app on this
+  // tab (the AppState listener below, which `useFocusEffect` never sees). A tab
+  // is never unmounted and the JS context survives days of backgrounding, so a
+  // mount-only clock would keep bucketing by the day the app was opened, and
+  // the sheet's "Today" chip would file a task already overdue.
   const [now, setNow] = useState(() => new Date());
   useFocusEffect(
     useCallback(() => {
@@ -143,7 +145,11 @@ export default function TasksScreen() {
   );
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (next) => {
-      if (next === "active") setRefusal(null);
+      if (next !== "active") return;
+      setRefusal(null);
+      // The clock too (see `now` above): a member who leaves the app on this
+      // tab overnight comes back to today's board and today's chips.
+      setNow(new Date());
     });
     return () => subscription.remove();
   }, []);
@@ -170,6 +176,12 @@ export default function TasksScreen() {
         for (const status of sequence) {
           await updateStatus.mutateAsync({ id: row.id, body: { status } });
         }
+        // The confirming action (`spec/ui/mobile/README.md` § Native-feel
+        // rules), felt once the server holds the task done: a TODO row
+        // writes two rungs, the first only draws it in progress, and a gate
+        // can refuse either. Only a sequence that completes the task earns
+        // it.
+        if (sequence[sequence.length - 1] === "COMPLETED") successHaptic();
       } catch (error) {
         // The hook has already reverted its own write and invalidated, so the
         // row redraws at whatever the server actually holds. A gate refusal
@@ -287,21 +299,13 @@ export default function TasksScreen() {
       title="Tasks"
       headerAction={
         canManageTasks ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="New task"
-            hitSlop={tokens.spacing.sm}
+          <HeaderAddButton
+            label="New task"
             onPress={() => {
               setNotice(null);
               sheetRef.current?.present();
             }}
-            style={({ pressed }) => [
-              styles.headerAction,
-              pressed ? styles.headerActionPressed : null,
-            ]}
-          >
-            <Text style={styles.headerActionGlyph}>+</Text>
-          </Pressable>
+          />
         ) : undefined
       }
     >
@@ -313,6 +317,9 @@ export default function TasksScreen() {
       {renderBoard()}
 
       <NewTaskSheet
+        // A new sheet per chapter: a kept draft's assignee is a member of the
+        // chapter it was started in, and the API refuses one who isn't.
+        key={chapterId ?? "no-chapter"}
         ref={sheetRef}
         now={now}
         // A task assigned to someone else never appears on this board, so
@@ -329,28 +336,8 @@ export default function TasksScreen() {
   );
 }
 
-function createStyles(tokens: SignetTokens, accent: string) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    headerAction: {
-      width: 38,
-      height: 38,
-      // TODO-DESIGN: Canvas draws radius 11; `navItem` is 10 and is the nearest
-      // role in the locked radius map (foundations.md § Radius).
-      borderRadius: tokens.radius.navItem,
-      backgroundColor: accent,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    headerActionPressed: {
-      opacity: 0.85,
-    },
-    headerActionGlyph: {
-      ...typeRole(tokens.typography.role.title),
-      // Drawn on house gold. The chapter accent is free to differ, and a dark
-      // ink on an arbitrary accent is the contrast hazard `service-hours.tsx`
-      // already carries — matched here rather than diverged from, and filed.
-      color: tokens.color.gold.onHouse,
-    },
     rows: {
       gap: tokens.spacing.sm,
     },
