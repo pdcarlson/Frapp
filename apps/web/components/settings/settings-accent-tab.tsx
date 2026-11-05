@@ -267,11 +267,8 @@ export function SettingsAccentTab({
           `settings-accent.spec.tsx` pins it against the tokens.
         */}
         <CardDescription>
-          Paints primary buttons, your own name in chat and the nav&apos;s
-          active item, lightened where it needs to stand out. Saving derives the
-          rest of the palette from it, and contrast is checked against the dark
-          surfaces it lands on. The Frapp mark, the Ask pill and the scrollbars
-          never change.
+          Paints primary buttons, your own name in chat and the active nav
+          item. The Frapp mark and the Ask pill keep their own colors.
         </CardDescription>
       </CardHeader>
       <form onSubmit={saveAccent}>

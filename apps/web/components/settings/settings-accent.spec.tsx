@@ -37,12 +37,12 @@ const settingsPage = readFileSync(
  * assertion on a change that altered no copy \u2014 and the fix a reader reaches for
  * is loosening the regex rather than reading it.
  */
+// Two sentences since 2026-11-05: what the accent paints, and what it never
+// does. How the palette is derived and checked is the engine's business, and
+// the warnings below say so when it matters.
 const DESCRIPTION =
-  "Paints primary buttons, your own name in chat and the nav&apos;s active item, " +
-  "lightened where it needs to stand out. " +
-  "Saving derives the rest of the palette from it, and contrast is checked " +
-  "against the dark surfaces it lands on. The Frapp mark, the Ask pill and " +
-  "the scrollbars never change.";
+  "Paints primary buttons, your own name in chat and the active nav item. " +
+  "The Frapp mark and the Ask pill keep their own colors.";
 
 const collapse = (text: string) => text.replace(/\s+/g, " ").trim();
 

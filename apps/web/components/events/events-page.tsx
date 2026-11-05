@@ -381,14 +381,15 @@ export function EventsPage() {
         `1f` pin 2). The filters used to sit in a second row and the toggle in
         a third.
 
-        The controls sit beside `PageHeader` rather than in its `actions`: that
-        slot does not shrink, so seven controls in it ran off a 375px screen.
-        Here the control group drops under the title when the row runs out of
-        width and then wraps within itself.
+        The controls sit beside `PageHeader` rather than in its `actions`, so
+        a phone can reorder them: there the title row keeps the view toggle
+        and New event, and search and the filters drop to their own rows under
+        it. The filters become one strip that scrolls sideways, bleeding to
+        the screen edges, rather than three stacked rows of selects.
       */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <PageHeader title="Events" className="min-w-[6rem] flex-1" />
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <PageHeader title="Events" className="min-w-[4rem] flex-1" />
+        <div className="order-last flex w-full min-w-0 flex-wrap items-center gap-2 sm:order-none sm:w-auto">
           <div className="relative w-full sm:w-56">
             <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
             <Input
@@ -400,75 +401,77 @@ export function EventsPage() {
               className={dashboardToolbarSearchClassName}
             />
           </div>
-          <select
-            value={timeFilter}
-            onChange={(event) =>
-              setTimeFilter(event.target.value as TimeFilter)
-            }
-            className={dashboardFilterSelectClassName}
-            aria-label="Filter events by time window"
-          >
-            <option value="upcoming">Time: Upcoming</option>
-            <option value="past">Time: Past</option>
-            <option value="all">Time: All</option>
-          </select>
-          <select
-            value={attendanceFilter}
-            onChange={(event) =>
-              setAttendanceFilter(
-                event.target.value as "all" | "mandatory" | "optional",
-              )
-            }
-            className={dashboardFilterSelectClassName}
-            aria-label="Filter events by attendance policy"
-          >
-            <option value="all">Attendance: All</option>
-            <option value="mandatory">Attendance: Mandatory</option>
-            <option value="optional">Attendance: Optional</option>
-          </select>
-          <select
-            value={recurrenceFilter}
-            onChange={(event) =>
-              setRecurrenceFilter(
-                event.target.value as "all" | "recurring" | "one-time",
-              )
-            }
-            className={dashboardFilterSelectClassName}
-            aria-label="Filter events by cadence"
-          >
-            <option value="all">Cadence: All</option>
-            <option value="recurring">Cadence: Recurring</option>
-            <option value="one-time">Cadence: One-time</option>
-          </select>
-          {/*
-            Underlined, not a segmented pill (`components.md` §6), and pulled
-            down to the toolbar height. The list's own hairline is dropped: in
-            a toolbar row the active item's underline is the only mark needed.
-          */}
-          <TabsList aria-label="View" className="w-auto gap-4 border-b-0">
-            <TabsTrigger
-              value="list"
-              className="min-h-9 py-1.5 pointer-coarse:min-h-11"
+          <div className="-mx-4 flex w-[calc(100%+2rem)] gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:w-auto sm:overflow-visible sm:px-0">
+            <select
+              value={timeFilter}
+              onChange={(event) =>
+                setTimeFilter(event.target.value as TimeFilter)
+              }
+              className={`${dashboardFilterSelectClassName} shrink-0`}
+              aria-label="Filter events by time window"
             >
-              List
-            </TabsTrigger>
-            <TabsTrigger
-              value="calendar"
-              className="min-h-9 py-1.5 pointer-coarse:min-h-11"
+              <option value="upcoming">Time: Upcoming</option>
+              <option value="past">Time: Past</option>
+              <option value="all">Time: All</option>
+            </select>
+            <select
+              value={attendanceFilter}
+              onChange={(event) =>
+                setAttendanceFilter(
+                  event.target.value as "all" | "mandatory" | "optional",
+                )
+              }
+              className={`${dashboardFilterSelectClassName} shrink-0`}
+              aria-label="Filter events by attendance policy"
             >
-              Calendar
-            </TabsTrigger>
-          </TabsList>
-          <Button
-            size="toolbar"
-            className="gap-2"
-            {...eventWriteControls}
-            onClick={() => openCreate(null)}
-          >
-            <Plus className="h-4 w-4" />
-            New event
-          </Button>
+              <option value="all">Attendance: All</option>
+              <option value="mandatory">Attendance: Mandatory</option>
+              <option value="optional">Attendance: Optional</option>
+            </select>
+            <select
+              value={recurrenceFilter}
+              onChange={(event) =>
+                setRecurrenceFilter(
+                  event.target.value as "all" | "recurring" | "one-time",
+                )
+              }
+              className={`${dashboardFilterSelectClassName} shrink-0`}
+              aria-label="Filter events by cadence"
+            >
+              <option value="all">Cadence: All</option>
+              <option value="recurring">Cadence: Recurring</option>
+              <option value="one-time">Cadence: One-time</option>
+            </select>
+          </div>
         </div>
+        {/*
+          Underlined, not a segmented pill (`components.md` §6), and pulled
+          down to the toolbar height. The list's own hairline is dropped: in
+          a toolbar row the active item's underline is the only mark needed.
+        */}
+        <TabsList aria-label="View" className="w-auto gap-4 border-b-0">
+          <TabsTrigger
+            value="list"
+            className="min-h-9 py-1.5 pointer-coarse:min-h-11"
+          >
+            List
+          </TabsTrigger>
+          <TabsTrigger
+            value="calendar"
+            className="min-h-9 py-1.5 pointer-coarse:min-h-11"
+          >
+            Calendar
+          </TabsTrigger>
+        </TabsList>
+        <Button
+          size="toolbar"
+          className="gap-2"
+          {...eventWriteControls}
+          onClick={() => openCreate(null)}
+        >
+          <Plus className="h-4 w-4" />
+          New event
+        </Button>
       </div>
 
       {/*
