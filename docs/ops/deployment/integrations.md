@@ -32,9 +32,11 @@
    an existing endpoint means re-creating it, which issues a new signing secret (step 4).
    Staging's `we_1U93QB3Dzz3XLCb6mYeeNzUF` is not pinned, and its `invoice.paid` events
    arrive as `2026-08-26.dahlia` (both read from the test-mode account, 2026-11-04). The
-   live endpoint's version has not been recorded. Agent sessions have test-mode access
-   only, so it comes from the live dashboard
-   ([#2285](https://github.com/pdcarlson/Frapp/issues/2285)) or from the API's log:
+   live endpoint, `we_1UFnMC3Dzz3XLCb6m9G8Wpai`, shows `2026-08-26.dahlia` in the live
+   dashboard (read by the owner, 2026-11-05,
+   [#2285](https://github.com/pdcarlson/Frapp/issues/2285)); the dashboard doesn't say
+   whether that is a pin or the account default. Agent sessions have test-mode access
+   only, so a later check comes from the live dashboard or from the API's log:
    `BillingService` prints the API version of every delivery it processes, while
    `StripeWebhookConsistencyService` logs at boot only the endpoint's pin, if it has one.
    Since `2025-03-31.basil` an invoice names its subscription at

@@ -397,11 +397,14 @@ nothing is still building.
   existing API Key for EAS Submit). The table below gives the error otherwise. *Status
   (`eas credentials --platform ios`, 2026-10-01):* a key is assigned to `live.frapp.mobile` for EAS
   Submit.
-- **Android:** the Play service-account key in EAS credentials (#2556, #938). Until it exists,
-  choose `ios`: an Android build would finish and then fail its upload. The keystore is no
+- **Android:** the Play service-account key in EAS credentials, assigned to `live.frapp.mobile`
+  for Play Store submissions. Without it an Android build would finish and then fail its upload.
+  *Status (`npm run eas -- credentials -p android`, 2026-11-05):*
+  `play-upload@frapp-67722.iam.gserviceaccount.com` is assigned (#2556). The keystore is no
   obstacle: a non-interactive build generates one when none exists (`CreateKeystore`). A
   production Android build also needs the `GOOGLE_SERVICES_JSON` file variable
-  (`apps/mobile/app.config.js` refuses to evaluate without it).
+  (`apps/mobile/app.config.js` refuses to evaluate without it), set in EAS since 2026-11-03
+  (#1826).
 - **An EAS plan whose build quota covers each ticked ship** (one build per platform). *Status
   (Expo → account → Billing, 2026-10-01):* the Free plan, with 15 iOS and 15 Android builds a
   month, on the low-priority queue. A queued build can outlast the wait's deadline (When it fails,
@@ -417,7 +420,7 @@ build's own profile has no submit profile of the same name.
 
 **Google Play:** `npm run eas -- submit -p android --latest` uploads to the `internal` track, the one the
 profile sets. It authenticates with the Play service-account key held in EAS credentials, or a
-local file named by `serviceAccountKeyPath` in the profile. No key exists yet (#2556, #938); where
+local file named by `serviceAccountKeyPath` in the profile. The EAS-held key is assigned (2026-11-05, #2556); where
 it lives: [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md#appsmobile-expo--eas), the
 `eas submit` note.
 
