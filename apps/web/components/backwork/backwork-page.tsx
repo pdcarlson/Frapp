@@ -55,8 +55,10 @@ import {
   TypeTag,
 } from "@/components/backwork/backwork-row-parts";
 import {
+  BACKWORK_LIST_CAP,
   NO_FILTERS,
   filterOptions,
+  liveFilters,
   hasActiveFilters,
   queryLibrary,
   toLibraryRows,
@@ -71,6 +73,10 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
+import {
+  compactControlClassName,
+  denseListClassName,
+} from "@/components/shared/table-controls";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 
 /**
@@ -82,8 +88,8 @@ import { asArray, cn, getErrorMessage } from "@/lib/utils";
  *   they needed are gone.
  * - **Search forgives typos** and covers every field a row shows, tags
  *   included, which the old box's placeholder promised and the server never
- *   did (#585). It runs on the client over the whole library; see
- *   `backwork-library.ts` for why that is sound here.
+ *   did (#585). It runs on the client over the library the list endpoint
+ *   returns; see `backwork-library.ts` for why, and for its row cap.
  * - **Rows you can tell apart**: a colored type tag, course code, professor,
  *   term, an icon per copy type, the date added, and an icon-only Download.
  * - **Rare tools behind a menu.** Each row's actions open on right-click and
@@ -193,10 +199,16 @@ export function BackworkPage() {
   const deferredQuery = useDeferredValue(query);
   const [filters, setFilters] = useState<LibraryFilters>(NO_FILTERS);
   const [cleanupOpen, setCleanupOpen] = useState(false);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  // A set, not one slot: two downloads in flight must not clear each other's
+  // spinner.
+  const [downloading, setDownloading] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
 
-  // Unfiltered on purpose: the whole library comes back in one response and
-  // every filter and search below runs on it in memory.
+  // Unfiltered on purpose: the library comes back in one unpaginated response
+  // and every filter and search below runs on it in memory. Past
+  // `BACKWORK_LIST_CAP` rows the response is truncated, which the page says
+  // (#3525).
   const resourcesQuery = useBackworkResources();
   const departmentsQuery = useDepartments();
   const professorsQuery = useProfessors();
@@ -217,11 +229,18 @@ export function BackworkPage() {
     [resourcesQuery.data, departmentsQuery.data, professorsQuery.data],
   );
   const options = useMemo(() => filterOptions(rows), [rows]);
-  const results = useMemo(
-    () => queryLibrary(rows, deferredQuery, filters),
-    [rows, deferredQuery, filters],
+  // A filter whose value no row has any more (a merge from a row menu deleted
+  // the professor it named) drops out instead of emptying the list.
+  const applied = useMemo(
+    () => liveFilters(filters, options),
+    [filters, options],
   );
-  const narrowed = deferredQuery.trim() !== "" || hasActiveFilters(filters);
+  const results = useMemo(
+    () => queryLibrary(rows, deferredQuery, applied),
+    [rows, deferredQuery, applied],
+  );
+  const narrowed = deferredQuery.trim() !== "" || hasActiveFilters(applied);
+  const truncated = rows.length >= BACKWORK_LIST_CAP;
 
   function setFilter(key: ChipKey, value: string | null) {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -233,7 +252,8 @@ export function BackworkPage() {
   }
 
   async function download(row: LibraryRow) {
-    setDownloadingId(row.resource.id);
+    const id = row.resource.id;
+    setDownloading((prev) => new Set(prev).add(id));
     try {
       const url = selectDownloadUrl(await fetchResource(row.resource.id));
       if (!url) throw new Error("No download URL returned.");
@@ -248,7 +268,11 @@ export function BackworkPage() {
         variant: "destructive",
       });
     } finally {
-      setDownloadingId(null);
+      setDownloading((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   }
 
@@ -275,6 +299,9 @@ export function BackworkPage() {
 
   function rowEntries(row: LibraryRow): RowMenuEntry[] {
     const { course, professor, department } = row;
+    // Rename, merge and delete are paid-ops writes like upload, so they go
+    // dark with it on a lapsed chapter; the notice under the toolbar says why.
+    const writeBlocked = !gate.allowed;
     const entries: RowMenuEntry[] = [
       {
         type: "item",
@@ -310,6 +337,7 @@ export function BackworkPage() {
         {
           type: "item",
           key: "rename-professor",
+          disabled: writeBlocked,
           label: `Rename ${professor.name}…`,
           icon: Pencil,
           onSelect: () =>
@@ -323,6 +351,7 @@ export function BackworkPage() {
         {
           type: "item",
           key: "merge-professor",
+          disabled: writeBlocked,
           label: `Merge ${professor.name} into…`,
           icon: Merge,
           onSelect: () =>
@@ -339,6 +368,7 @@ export function BackworkPage() {
         {
           type: "item",
           key: "rename-department",
+          disabled: writeBlocked,
           label: `Name the ${department.code} department…`,
           icon: Pencil,
           onSelect: () =>
@@ -352,6 +382,7 @@ export function BackworkPage() {
         {
           type: "item",
           key: "merge-department",
+          disabled: writeBlocked,
           label: `Merge ${department.code} into…`,
           icon: Merge,
           onSelect: () =>
@@ -374,6 +405,7 @@ export function BackworkPage() {
         label: "Delete file…",
         icon: Trash2,
         destructive: true,
+        disabled: writeBlocked,
         onSelect: () => void removeFile(row),
       },
     );
@@ -456,7 +488,7 @@ export function BackworkPage() {
               label={chip.label}
               anyLabel={chip.anyLabel}
               options={options[OPTION_KEY[chip.key]]}
-              value={filters[chip.key]}
+              value={applied[chip.key]}
               onChange={(value) => setFilter(chip.key, value)}
             />
           ))}
@@ -526,11 +558,22 @@ export function BackworkPage() {
         downloadable on a lapsed chapter, so only the upload flow goes dark and
         it explains itself here. Silent offline on purpose: this explains a
         disabled control and has nothing of its own to retry
-        (`can-fallback.spec.tsx`).
+        (`can-fallback.spec.tsx`). Officers see it too: their row-menu rename,
+        merge and delete are paid-ops writes that go dark with upload.
       */}
-      <Can permission="backwork:upload" offlineFallback={null}>
-        <SubscriptionNotice gate={gate} feature="uploading backwork" />
+      <Can
+        anyOf={["backwork:upload", "backwork:admin"]}
+        offlineFallback={null}
+      >
+        <SubscriptionNotice gate={gate} feature="uploading or changing backwork" />
       </Can>
+
+      {truncated ? (
+        <p className="text-caption text-muted-foreground" role="status">
+          Showing the newest {BACKWORK_LIST_CAP.toLocaleString("en-US")} files.
+          Search and filters look only at these for now.
+        </p>
+      ) : null}
 
       <section aria-label="Backwork files">
         {/*
@@ -580,7 +623,7 @@ export function BackworkPage() {
             <div
               aria-hidden="true"
               className={cn(
-                "hidden gap-3 border-b border-border px-2 pb-1.5 text-caption font-semibold uppercase tracking-[0.06em] text-muted md:grid",
+                "hidden gap-3 px-2 pb-1.5 text-caption font-semibold uppercase tracking-[0.06em] text-muted md:grid",
                 ROW_GRID,
               )}
             >
@@ -592,7 +635,7 @@ export function BackworkPage() {
               <span>Added</span>
               <span />
             </div>
-            <ul className="divide-y divide-border border-b border-border">
+            <ul className={denseListClassName}>
               {results.map(({ item: row, hits }) => (
                 <RowMenu
                   key={row.resource.id}
@@ -613,9 +656,11 @@ export function BackworkPage() {
                         </p>
                         <p className="truncate text-caption text-muted-foreground">
                           {row.course ? (
-                            <span className="font-mono text-caption tracking-[0.02em] text-foreground">
-                              {row.course}
-                            </span>
+                            <Highlighted
+                              text={row.course}
+                              hits={hits}
+                              className="font-mono text-caption tracking-[0.02em] text-foreground"
+                            />
                           ) : null}
                           {row.department?.name ? (
                             <>
@@ -654,7 +699,9 @@ export function BackworkPage() {
                           <span className="hidden md:order-3 md:block" />
                         )}
                         <span className="whitespace-nowrap tabular-nums text-foreground md:order-4 md:text-sm">
-                          {row.term ?? ""}
+                          {row.term ? (
+                            <Highlighted text={row.term} hits={hits} />
+                          ) : null}
                         </span>
                         <span className="md:order-5">
                           <CopyLabel
@@ -672,13 +719,13 @@ export function BackworkPage() {
                           type="button"
                           variant="quiet"
                           size="icon"
-                          className="h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11"
+                          className={compactControlClassName}
                           aria-label={`Download ${row.title}`}
                           title="Download"
-                          disabled={downloadingId === row.resource.id}
+                          disabled={downloading.has(row.resource.id)}
                           onClick={() => void download(row)}
                         >
-                          {downloadingId === row.resource.id ? (
+                          {downloading.has(row.resource.id) ? (
                             <Loader2
                               className="h-4 w-4 animate-spin"
                               aria-hidden="true"

@@ -1,9 +1,10 @@
 /**
  * Typo-tolerant word matching for lists the page already holds in memory.
  *
- * Built for `/backwork`, whose `GET /v1/backwork` returns the chapter's whole
- * library in one response: once the rows are on the client, matching them here
- * is instant and can forgive typos, which the server's `websearch` full-text
+ * Built for `/backwork`, whose `GET /v1/backwork` returns the chapter's
+ * library in one unpaginated response (capped at PostgREST's `max_rows`, which
+ * the page surfaces): once the rows are on the client, matching them here is
+ * instant and can forgive typos, which the server's `websearch` full-text
  * search cannot (`spec/behavior/search.md` § Typo tolerance). It is not a
  * replacement for server search on anything paginated.
  *
@@ -13,9 +14,12 @@
  *   ("homew" finds "homework"), then a near miss: one edit for words of 4 to 6
  *   letters, two from 7 ("homwork", "thompsn"), counting a swap of two
  *   neighbouring letters as one edit;
- * - numbers never fuzz: "2" must start a word, so "Homework 2" is not found by
- *   "3", and "2120" is not found by "2210";
- * - a short alias table expands the shorthand people type ("hw", "key").
+ * - a word with a digit in it never fuzzes, so "2210" does not find "2120"
+ *   and "cs201" does not find "cs101";
+ * - a number of one or two digits must match a whole word, so "hw 2" finds
+ *   Homework 2 but not a Homework 5 from 2025; from three digits a number may
+ *   start a word ("212" finds "2120");
+ * - a short alias table expands the shorthand people type ("hw", "mt").
  *
  * The result keeps the item words each query word matched, so the caller can
  * highlight them.
@@ -87,25 +91,26 @@ function scoreWord(
   query: string,
   words: readonly string[],
 ): { score: number; hit: string | null } {
-  const numeric = /^\d+$/.test(query);
-  const edits = numeric ? 0 : allowedEdits(query);
+  const hasDigit = /\d/.test(query);
+  const edits = hasDigit ? 0 : allowedEdits(query);
+  const prefixOk = !/^\d{1,2}$/.test(query);
   let best = 0;
   let hit: string | null = null;
   for (const word of words) {
     let score = 0;
     if (word === query) {
       score = EXACT;
-    } else if (word.startsWith(query) && (numeric || query.length >= 2)) {
+    } else if (prefixOk && word.startsWith(query)) {
       score = PREFIX;
     } else if (edits > 0) {
       // Compare against the whole word, and against its first
       // `query.length + 1` letters, so a typo in the start of a long word
       // ("homewrk" for "homeworks") still counts as a near miss.
       const head = word.slice(0, query.length + 1);
-      const distance = Math.min(
-        boundedEditDistance(query, word, edits),
-        boundedEditDistance(query, head, edits),
-      );
+      let distance = boundedEditDistance(query, word, edits);
+      if (head !== word) {
+        distance = Math.min(distance, boundedEditDistance(query, head, edits));
+      }
       if (distance <= edits) score = NEAR - distance * 0.5;
     }
     if (score > best) {

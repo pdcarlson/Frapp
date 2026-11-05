@@ -46,8 +46,7 @@ import {
 /**
  * The one-file upload: any allowed type (Office, text, images, PDF) with its
  * metadata typed in by hand. Moved out of `backwork-page.tsx` unchanged in the
- * 2026-11-05 redesign, where it became the "Upload one file" link beside the
- * drop strip; PDFs in bulk go through `/backwork/upload` instead.
+ * 2026-11-05 redesign; the toolbar's Upload button opens it.
  *
  * `children` is the trigger. The caller spreads `gate.controlProps()` on it.
  */

@@ -4,6 +4,7 @@ import {
   compareByTerm,
   filterOptions,
   hasActiveFilters,
+  liveFilters,
   queryLibrary,
   searchText,
   toLibraryRows,
@@ -191,5 +192,16 @@ describe("filterOptions", () => {
       "Answer Key",
     ]);
     expect(options.type.map((option) => option.value)).not.toContain("Quiz");
+  });
+});
+
+describe("liveFilters", () => {
+  it("drops a filter whose value no row has any more", () => {
+    const options = filterOptions(rows);
+    const kept = { ...NO_FILTERS, professorId: "p-bram", term: "Fall 2025" };
+    expect(liveFilters(kept, options)).toBe(kept);
+    expect(
+      liveFilters({ ...NO_FILTERS, professorId: "p-merged-away", course: "COGS 2120" }, options),
+    ).toEqual({ ...NO_FILTERS, course: "COGS 2120" });
   });
 });

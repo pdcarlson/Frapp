@@ -91,4 +91,62 @@ describe("RowMenu", () => {
     expect(onDownload).toHaveBeenCalledOnce();
     expect(onDelete).not.toHaveBeenCalled();
   });
+
+  const selectTitle = () => {
+    const range = document.createRange();
+    range.selectNodeContents(screen.getByTestId("title"));
+    window.getSelection()!.addRange(range);
+  };
+
+  it("leaves a right-click on selected text to the browser", async () => {
+    render(<Row entries={entries} />);
+    selectTitle();
+    const title = screen.getByTestId("title");
+    fireEvent.pointerDown(title, { button: 2, pointerType: "mouse" });
+    fireEvent.contextMenu(title);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("treats a Mac Ctrl+click on selected text like a right-click", () => {
+    render(<Row entries={entries} />);
+    selectTitle();
+    const title = screen.getByTestId("title");
+    fireEvent.pointerDown(title, { button: 0, ctrlKey: true, pointerType: "mouse" });
+    fireEvent.contextMenu(title);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("opens the row menu from the menu key after a right-click left the browser its menu", async () => {
+    render(<Row entries={entries} />);
+    selectTitle();
+    const title = screen.getByTestId("title");
+    fireEvent.pointerDown(title, { button: 2, pointerType: "mouse" });
+    fireEvent.contextMenu(title);
+    window.getSelection()!.removeAllRanges();
+
+    fireEvent.keyDown(title, { key: "ContextMenu" });
+    fireEvent.contextMenu(title);
+    expect(await screen.findByRole("menu")).toBeInTheDocument();
+  });
+
+  it("opens the row menu from a touch long-press even right after such a right-click", async () => {
+    render(<Row entries={entries} />);
+    selectTitle();
+    const title = screen.getByTestId("title");
+    fireEvent.pointerDown(title, { button: 2, pointerType: "mouse" });
+    fireEvent.contextMenu(title);
+
+    fireEvent.pointerDown(title, { button: 0, pointerType: "touch" });
+    fireEvent.contextMenu(title);
+    expect(await screen.findByRole("menu")).toBeInTheDocument();
+  });
+
+  it("does not stack the row menu on an open ⋯ menu when an item is right-clicked", async () => {
+    const user = userEvent.setup();
+    render(<Row entries={entries} />);
+    await user.click(screen.getByRole("button", { name: "More for Homework 2" }));
+    const item = await screen.findByRole("menuitem", { name: "Download" });
+    fireEvent.contextMenu(item);
+    expect(screen.getAllByRole("menu", { hidden: true })).toHaveLength(1);
+  });
 });

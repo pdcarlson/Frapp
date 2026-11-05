@@ -496,7 +496,6 @@ button, and the PDF a report exports to.
 |---|---|
 | A document row on `/documents`, the "No folder" filter, and the PDF a report exports to | `DocumentsGlyph` (re-export) |
 | A folder, and the folder filter that names one | `FolderGlyph` |
-| A backwork resource, and the archive that holds them | `BackworkGlyph` (re-export) |
 | A poll, and the control that casts a vote on one | `PollsGlyph` (re-export) |
 | A report, and the control that generates one | `ReportsGlyph` (re-export) |
 | Search, in the `/documents` toolbar | `SearchGlyph` (re-export) |

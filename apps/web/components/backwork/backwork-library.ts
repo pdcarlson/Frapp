@@ -5,10 +5,20 @@ import { fuzzyMatch, type FuzzyResult } from "@/lib/search/fuzzy-match";
  * The `/backwork` library's search, filters and ordering, kept free of React
  * so they can be tested on plain rows.
  *
- * All of it runs on the client: `GET /v1/backwork` returns the chapter's whole
- * library in one response, so once it has loaded, a filter or a keystroke
- * re-ranks what is already in memory instead of asking the server again.
+ * All of it runs on the client: `GET /v1/backwork` returns the chapter's
+ * library in one unpaginated response, so once it has loaded, a filter or a
+ * keystroke re-ranks what is already in memory instead of asking the server
+ * again. That response is capped at `BACKWORK_LIST_CAP` rows, newest first;
+ * past it the page says it is showing only the newest files.
  */
+
+/**
+ * PostgREST's `max_rows` (`supabase/config.toml`, and Supabase's hosted
+ * default). The list query has no `.range()`, so a library longer than this
+ * comes back as its newest rows with no signal; a response this long is
+ * treated as truncated.
+ */
+export const BACKWORK_LIST_CAP = 1000;
 
 export type BackworkResource = {
   id: string;
@@ -182,6 +192,34 @@ export function hasActiveFilters(filters: LibraryFilters): boolean {
 }
 
 export type FilterOption = { value: string; label: string };
+
+type Options = ReturnType<typeof filterOptions>;
+
+const OPTION_FOR: Record<keyof LibraryFilters, keyof Options> = {
+  course: "course",
+  professorId: "professor",
+  term: "term",
+  type: "type",
+  variant: "variant",
+};
+
+/**
+ * The filters with any value no row has any more set back to "any", so a
+ * filter naming a professor a merge just deleted cannot empty the list or
+ * leave its chip showing a raw id.
+ */
+export function liveFilters(filters: LibraryFilters, options: Options): LibraryFilters {
+  let changed = false;
+  const next = { ...filters };
+  for (const key of Object.keys(OPTION_FOR) as (keyof LibraryFilters)[]) {
+    const value = filters[key];
+    if (value !== null && !options[OPTION_FOR[key]].some((o) => o.value === value)) {
+      next[key] = null;
+      changed = true;
+    }
+  }
+  return changed ? next : filters;
+}
 
 /**
  * The choices each filter offers: only values some row actually has, so no

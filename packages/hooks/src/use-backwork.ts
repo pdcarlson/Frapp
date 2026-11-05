@@ -4,24 +4,19 @@ import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
-export function useBackworkResources(filters?: {
-  department_id?: string;
-  professor_id?: string;
-  course_number?: string;
-  year?: number;
-  semester?: string;
-  assignment_type?: string;
-  document_variant?: string;
-  search?: string;
-}) {
+/**
+ * The chapter's whole backwork list, unfiltered. `/backwork` searches and
+ * filters it in memory (`apps/web/components/backwork/backwork-library.ts`), so
+ * this takes no filters: a server-filtered subset here would silently shrink
+ * the search, the filter options and the file count built on it.
+ */
+export function useBackworkResources() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["backwork", chapterId, filters],
+    queryKey: ["backwork", chapterId, "list"],
     queryFn: async () => {
-      const { data, error } = await client.GET("/v1/backwork", {
-        params: { query: filters },
-      });
+      const { data, error } = await client.GET("/v1/backwork");
       if (error) throw error;
       return data;
     },

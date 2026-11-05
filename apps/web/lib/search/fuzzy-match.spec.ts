@@ -57,7 +57,27 @@ describe("fuzzyMatch", () => {
   it("never fuzzes numbers", () => {
     expect(find("homework 3")).toEqual([]);
     expect(find("2210")).toEqual([]);
-    expect(find("21")).toEqual([docs[0], docs[1]]);
+    expect(find("212")).toEqual([docs[0], docs[1]]);
+  });
+
+  it("never fuzzes a word with a digit in it", () => {
+    const courses = ["CS 101 cs101", "CS 102 cs102", "COGS 2120 cogs2120"];
+    const match = (q: string) => fuzzyMatch(courses, q, (d) => d).map((r) => r.item);
+    expect(match("cs201")).toEqual([]);
+    expect(match("cs101")).toEqual([courses[0]]);
+    expect(match("cogs2210")).toEqual([]);
+    expect(match("cogs21")).toEqual([courses[2]]);
+  });
+
+  it("matches a one or two digit number as a whole word only", () => {
+    // "2" must not find Homework 5 through its year or course number.
+    expect(find("homework 2")).toEqual([docs[0]]);
+    expect(find("hw 2", { hw: "homework" })).toEqual([docs[0]]);
+    expect(find("21")).toEqual([]);
+  });
+
+  it("lets a single letter start a word, so live search never blanks on the first key", () => {
+    expect(find("d")).toEqual([docs[2], docs[3]]);
   });
 
   it("does not fuzz three-letter words", () => {

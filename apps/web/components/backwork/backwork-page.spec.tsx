@@ -1005,6 +1005,93 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
     await waitFor(() => expect(mockDeleteResource).toHaveBeenCalledWith("bw-cogs"));
   });
 
+  it("keeps the file when the officer cancels the delete", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    await user.click(await screen.findByRole("menuitem", { name: "Delete file…" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^cancel$/i }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mockDeleteResource).not.toHaveBeenCalled();
+  });
+
+  it("disables an officer's row writes on a lapsed chapter, but not download or filters", async () => {
+    chapter.pastDue();
+    render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    const item = async (name: string) => screen.findByRole("menuitem", { name });
+    for (const name of ["Rename Bram…", "Merge Bram into…", "Merge COGS into…", "Delete file…"]) {
+      expect(await item(name)).toHaveAttribute("aria-disabled", "true");
+    }
+    for (const name of ["Download", "Show only COGS 2120", "Show only Bram"]) {
+      expect(await item(name)).not.toHaveAttribute("aria-disabled");
+    }
+  });
+
+  it("highlights what the search matched, in the title, course and term", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+
+    await user.type(screen.getByLabelText("Search backwork"), "homewrk cogs fall");
+    await waitFor(() => expect(titles()).toEqual(["Cog Sci Homework 2"]));
+    const marks = Array.from(document.querySelectorAll("mark")).map((m) => m.textContent);
+    expect(marks).toEqual(expect.arrayContaining(["Homework", "COGS", "Fall"]));
+  });
+
+  it("drops a filter once no file has its value, instead of emptying the list", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    await user.click(await screen.findByRole("menuitem", { name: "Show only Bram" }));
+    await waitFor(() => expect(titles()).toEqual(["Cog Sci Homework 2"]));
+
+    // A merge moved Bram's files to Thompson and deleted Bram.
+    resourcesQuery.data = LIBRARY.map((r) => ({ ...r, professor_id: "prof-thompson" }));
+    taxonomyData.professors = [{ id: "prof-thompson", name: "Thompson" }];
+    rerender(<BackworkPage />);
+
+    await waitFor(() => expect(titles()).toHaveLength(2));
+    expect(screen.getByRole("button", { name: /^professor$/i })).toBeInTheDocument();
+  });
+
+  it("says when the list hit the server's row cap", () => {
+    resourcesQuery.data = Array.from({ length: 1000 }, (_, i) => ({
+      ...RESOURCE,
+      id: `bw-${i}`,
+    }));
+    render(<BackworkPage />);
+    expect(screen.getByText(/showing the newest 1,000 files/i)).toBeInTheDocument();
+  });
+
+  it("keeps each download's spinner until that download finishes", async () => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    const pending = new Map<string, (value: unknown) => void>();
+    mockFetchResource.mockImplementation(
+      (id: string) => new Promise((resolve) => pending.set(id, resolve)),
+    );
+    try {
+      render(<BackworkPage />);
+      const cogs = screen.getByRole("button", { name: "Download Cog Sci Homework 2" });
+      const csci = screen.getByRole("button", { name: "Download Data Structures Exam 1" });
+      await user.click(cogs);
+      await user.click(csci);
+      expect(cogs).toBeDisabled();
+      expect(csci).toBeDisabled();
+
+      pending.get("bw-cogs")!({ downloadUrl: "https://signed/a.pdf" });
+      await waitFor(() => expect(cogs).toBeEnabled());
+      expect(csci).toBeDisabled();
+    } finally {
+      open.mockRestore();
+    }
+  });
+
   it("opens the clean-up drawer from the page's More menu", async () => {
     const user = userEvent.setup();
     render(<BackworkPage />);

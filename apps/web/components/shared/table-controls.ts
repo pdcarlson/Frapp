@@ -157,7 +157,9 @@ export const compactControlClassName =
  * four now import this.
  *
  * **What is deliberately NOT extracted with it: the row.** `/documents` and
- * `/backwork` draw a two-line `min-h-11` row that is not itself a control;
+ * `/backwork` draw a row that is not itself a control (`/documents` two lines
+ * at `min-h-11`; `/backwork` a column grid at `md:min-h-12`, two stacked lines
+ * below `md`);
  * `/members` draws a one-line `min-h-9 pointer-coarse:min-h-11` row that is the
  * member's whole hit target. They differ in line count, height and whether they
  * are interactive at all, so a shared parent would be a name over two things

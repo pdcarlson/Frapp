@@ -19,6 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { compactControlClassName } from "@/components/shared/table-controls";
 import { cn } from "@/lib/utils";
 
 /**
@@ -126,9 +127,10 @@ export function RowMenu({
   label: string;
   children: (menuButton: ReactNode) => ReactElement;
 }) {
-  // Decided on the right button's pointerdown, which React flushes before the
-  // browser fires `contextmenu`, so a disabled trigger leaves that event to the
-  // browser instead of opening this menu.
+  // Decided on every pointerdown, which React flushes before the browser fires
+  // `contextmenu`, so a disabled trigger leaves that event to the browser
+  // instead of opening this menu. Every press decides afresh, so a verdict from
+  // an earlier right-click can never block a later long-press or menu key.
   const [browserMenu, setBrowserMenu] = useState(false);
   const [buttonOpen, setButtonOpen] = useState(false);
 
@@ -142,7 +144,8 @@ export function RowMenu({
           aria-label={label}
           title="More"
           className={cn(
-            "h-8 w-8 shrink-0 pointer-coarse:h-11 pointer-coarse:w-11",
+            compactControlClassName,
+            "shrink-0",
             // Out of the way until the row is hovered or focused; never hidden
             // from touch, where there is no hover.
             "opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100",
@@ -151,7 +154,19 @@ export function RowMenu({
           <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[220px]">
+      <DropdownMenuContent
+        align="end"
+        className="min-w-[220px]"
+        // The content is portaled, but React still bubbles its events up the
+        // component tree to the row's context-menu trigger: without this, a
+        // right-click or a long-press on an open ⋯ menu would open the row's
+        // menu on top of it.
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
         <Entries entries={entries} kind="dropdown" />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -163,8 +178,15 @@ export function RowMenu({
         asChild
         disabled={browserMenu}
         onPointerDown={(event) => {
-          if (event.button !== 2) return;
-          setBrowserMenu(keepsBrowserMenu(event.target, event.currentTarget));
+          // The right button, or a Mac's Ctrl+click, opens a context menu
+          // with the mouse. A touch long-press does not get the browser
+          // menu: the row menu is the only one touch can reach.
+          const opensMenu =
+            event.pointerType !== "touch" &&
+            (event.button === 2 || (event.button === 0 && event.ctrlKey));
+          setBrowserMenu(
+            opensMenu && keepsBrowserMenu(event.target, event.currentTarget),
+          );
         }}
         onKeyDown={(event) => {
           // The menu key and Shift+F10 fire `contextmenu` with no pointerdown

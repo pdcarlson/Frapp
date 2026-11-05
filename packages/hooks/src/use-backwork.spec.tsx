@@ -26,7 +26,7 @@ const BACKWORK_DEPARTMENTS_KEY = ["backwork", "departments"];
 //
 // The invalidation assertions below stay chapter-less because that is what the
 // hooks currently pass — the bare `["backwork"]` prefix, which still matches
-// `["backwork", chapterId, filters]`. That is a description of today's code,
+// `["backwork", chapterId, "list"]`. That is a description of today's code,
 // not an endorsement: `useFetchBackworkResource`, `useDepartments` and
 // `useProfessors` omit chapterId from their keys entirely, which #784 tracks
 // (that issue is scoped to keys and their paired invalidations, not to
@@ -74,29 +74,7 @@ const CHAPTER_ID = "chapter-abc";
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(mockGet).toHaveBeenCalledWith("/v1/backwork", {
-        params: { query: undefined },
-      });
-      expect(result.current.data).toEqual(mockData);
-    });
-
-    it("fetches backwork resources with filters", async () => {
-      const mockData = [{ id: "1", title: "Test" }];
-      const mockGet = vi.fn().mockResolvedValue({ data: mockData, error: null });
-      const mockClient = { GET: mockGet };
-      const filters = { department_id: "dep1", search: "midterm" };
-
-      const { result } = renderHook(() => useBackworkResources(filters), {
-        wrapper: createWrapper(mockClient),
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(mockGet).toHaveBeenCalledWith("/v1/backwork", {
-        params: { query: filters },
-      });
+      expect(mockGet).toHaveBeenCalledWith("/v1/backwork");
       expect(result.current.data).toEqual(mockData);
     });
 

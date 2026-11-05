@@ -360,7 +360,8 @@ Three of these exist to keep one state from impersonating another:
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading backwork...` |
-| Empty | `No backwork matches this view` | `Loosen the filters, or upload the first resource to build the library.` |
+| Empty (no files at all) | `No backwork yet` | `Upload the first exam, homework or study guide to start the library.` |
+| Empty (search or filters match nothing) | `No files match` | `Try fewer words, or clear a filter.` Action: `Clear search and filters` |
 | Error | `Couldn't load backwork` | `Confirm your chapter access and retry.` |
 | Offline | `Backwork unavailable offline` | `Reconnect to browse the coursework archive and download a resource.` |
 
