@@ -342,11 +342,38 @@ test("isNativePackage spots Expo modules, Android projects and podspecs, and not
   }
 });
 
-test("isNativePackage finds the native modules in the real install", () => {
-  for (const name of ["react-native", "expo-updates", "@sentry/react-native", "expo-haptics"]) {
-    assert.equal(isNativePackage(join(REPO, "node_modules", name)), true, name);
+// The ci-scripts-tests job installs nothing, so this mirrors the real packages' root layouts
+// (read from node_modules on 2026-11-05) instead of reading node_modules.
+test("isNativePackage recognises the root layouts of the app's real native modules", () => {
+  const root = mkdtempSync(join(tmpdir(), "frapp-native-real-"));
+  try {
+    const layouts = {
+      // Only podspecs at its root: no android/, ios/ or expo-module.config.json.
+      "react-native": ["React.podspec", "React-Core.podspec", "third-party-podspecs/x.podspec", "index.js"],
+      "expo-updates": ["expo-module.config.json", "android/build.gradle", "ios/EXUpdates.podspec"],
+      "@sentry/react-native": ["RNSentry.podspec", "expo-module.config.json", "android/build.gradle", "ios/x.m"],
+      "expo-haptics": ["expo-module.config.json", "android/build.gradle", "ios/x.swift"],
+      "@tanstack/react-query": ["package.json", "build/modern/index.js", "src/index.ts"],
+    };
+    const native = {};
+    for (const [name, files] of Object.entries(layouts)) {
+      const dir = join(root, name);
+      for (const f of files) {
+        mkdirSync(dirname(join(dir, f)), { recursive: true });
+        writeFileSync(join(dir, f), "");
+      }
+      native[name] = isNativePackage(dir);
+    }
+    assert.deepEqual(native, {
+      "react-native": true,
+      "expo-updates": true,
+      "@sentry/react-native": true,
+      "expo-haptics": true,
+      "@tanstack/react-query": false,
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
-  assert.equal(isNativePackage(join(REPO, "node_modules", "@tanstack", "react-query")), false);
 });
 
 test("refuses when no store build of the runtime is recorded", () => {
