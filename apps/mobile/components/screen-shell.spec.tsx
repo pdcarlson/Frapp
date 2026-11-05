@@ -55,6 +55,34 @@ describe("ScreenShell (#2485)", () => {
     ]);
   });
 
+  it("draws the title in the board's headline role, a level above a card's title", () => {
+    const tree = render(
+      <ScreenShell title="Tasks">
+        <Text>Body</Text>
+      </ScreenShell>,
+    );
+    const [title] = textHeadings(tree);
+
+    // canvas-screens.dc.html draws every shell title 24/700 at -.3px.
+    expect(title!.props.style).toEqual(
+      expect.objectContaining({ fontSize: 24, letterSpacing: -0.3 }),
+    );
+  });
+
+  it("keeps a tap that lands while the keyboard is up, and drops the keyboard on a drag", () => {
+    const tree = render(
+      <ScreenShell title="Documents">
+        <Text>Body</Text>
+      </ScreenShell>,
+    );
+    const body = tree.root.findByType(
+      "ScrollView" as unknown as React.ElementType,
+    );
+
+    expect(body.props.keyboardShouldPersistTaps).toBe("handled");
+    expect(body.props.keyboardDismissMode).toBe("on-drag");
+  });
+
   it("draws a title mark on the title's row, ahead of the title", () => {
     const tree = render(
       <ScreenShell title="Tau Nu" titleMark={<View testID="mark" />}>

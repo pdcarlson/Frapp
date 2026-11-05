@@ -2,6 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import { Keyboard } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
@@ -39,6 +40,15 @@ describe("BackRow (#3022)", () => {
     const tree = render(<BackRow {...target} />);
 
     expectBackRow(tree, label, href);
+  });
+
+  it("drops the keyboard before it leaves, so a field that saves on blur saves", () => {
+    const tree = render(<BackRow {...BACK_TO_MORE} />);
+    const row = tree.root.findByProps({ accessibilityLabel: "Back to More" });
+
+    act(() => row.props.onPress());
+
+    expect(Keyboard.dismiss).toHaveBeenCalledTimes(1);
   });
 
   it("draws in the board's back-row gold, whatever the chapter's accent", () => {

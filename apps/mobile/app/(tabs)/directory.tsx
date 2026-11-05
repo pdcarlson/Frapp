@@ -349,10 +349,12 @@ function createStyles(tokens: SignetTokens) {
     alumniFilters: {
       gap: tokens.spacing.sm,
     },
+    // The same headline as every ScreenShell title (components/screen-shell.tsx):
+    // this screen draws its own header only because its body is a FlatList.
     title: {
-      ...typeRole(tokens.typography.role.title),
+      ...typeRole(tokens.typography.role.headline),
       color: tokens.color.text.foreground,
-      letterSpacing: -0.4,
+      letterSpacing: -0.3,
     },
     row: {
       flexDirection: "row",
