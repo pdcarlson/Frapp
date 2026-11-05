@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Share } from "react-native";
+import { ReduceMotion } from "react-native-reanimated";
 import type { ChapterDirectoryResult } from "@repo/hooks";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -731,6 +732,26 @@ describe("chapter setup — identity fields", () => {
     expect(last.props.maxLength).toBe(4);
   });
 
+  it("skips the letters field for an organization that hides its letters", async () => {
+    const root = await renderWithFocus();
+    await pickRow(root, "Phi Gamma Delta");
+    await press(root, "Edit details");
+
+    // FIJI draws no letters field, so Return on Short name goes on to the
+    // next field that is drawn rather than to one that isn't there.
+    expect(
+      root
+        .findAllByType("TextInput" as never, { deep: true })
+        .some((i) => i.props.accessibilityLabel === "Greek letters"),
+    ).toBe(false);
+    const shortName = field(root, "Short name");
+    expect(shortName.props.returnKeyType).toBe("next");
+    act(() => {
+      shortName.props.onSubmitEditing();
+    });
+    expect(focused).toEqual(["School short name"]);
+  });
+
   it("skips a field the step hides: by hand with details closed, School is last", async () => {
     const root = await renderWithFocus();
     await press(root, "Not in our directory?");
@@ -780,5 +801,44 @@ describe("chapter setup — identity fields", () => {
     expect(field(root, "Search the chapter directory").props.placeholder).toBe(
       "Organization or school",
     );
+  });
+});
+
+/**
+ * Each step fades in, and the mark zooms in on the live step, but neither
+ * moves for a member who reduces motion: the reanimated mock keeps the
+ * setting each builder was given.
+ */
+describe("chapter setup — motion", () => {
+  function entering(root: Node): { reduceMotionMode?: string }[] {
+    return root
+      .findAllByType("Animated.View" as never, { deep: true })
+      .map((view) => view.props.entering as { reduceMotionMode?: string });
+  }
+
+  it("fades every step in, and holds still for reduced motion", async () => {
+    const { root } = await render();
+    expect(entering(root)).toEqual([
+      expect.objectContaining({ reduceMotionMode: ReduceMotion.System }),
+    ]);
+
+    await pickRow(root, "Phi Gamma Delta");
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.color);
+    expect(entering(root)).toEqual([
+      expect.objectContaining({ reduceMotionMode: ReduceMotion.System }),
+    ]);
+
+    await press(root, "agree");
+    await act(async () => {
+      primary(root).props.onPress();
+    });
+    await settle();
+    // The mark's zoom and the step's fade.
+    expect(title(root)).toBe("FIJI is live");
+    expect(entering(root)).toEqual([
+      expect.objectContaining({ reduceMotionMode: ReduceMotion.System }),
+      expect.objectContaining({ reduceMotionMode: ReduceMotion.System }),
+    ]);
   });
 });

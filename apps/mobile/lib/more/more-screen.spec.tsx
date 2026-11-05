@@ -2,6 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import { useRouter } from "expo-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
@@ -328,5 +329,22 @@ describe("More hub anatomy (#1048)", () => {
     expect(text).toContain("Admin");
     expect(text).toContain("Host check-in");
     expect(text).toContain("No upcoming event");
+  });
+
+  it("tells the chapter picker that More opened it, so it draws ‹ More", () => {
+    const row = render().root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Switch chapter",
+    );
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    act(() => {
+      row.props.onPress();
+    });
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/(auth)/chapter-picker",
+      params: { from: "more" },
+    });
   });
 });

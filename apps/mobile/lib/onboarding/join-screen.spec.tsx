@@ -7,6 +7,7 @@ import * as expoRouter from "expo-router";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Linking from "expo-linking";
 import * as Haptics from "expo-haptics";
+import { ReduceMotion } from "react-native-reanimated";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import {
@@ -1313,8 +1314,9 @@ describe("join screen — the confirm card's chapter (#3352)", () => {
 /**
  * The onboarding polish pass: s02 draws the board's `‹ Back` row in house
  * gold (the shared `BackRow`, not a bare chevron), the question carries no
- * line narrating its own two choices, and a join that lands marks it with
- * the same success tap a chapter going live gets.
+ * line narrating its own two choices, each view fades in (but not for a
+ * member who reduces motion), and a join that lands marks it with the same
+ * success tap a chapter going live gets.
  */
 describe("join screen — polish", () => {
   beforeEach(() => {
@@ -1351,6 +1353,26 @@ describe("join screen — polish", () => {
     typeToken(tree.root, "invite-token-9");
     continueToConfirm(tree.root);
     expect(labelled(tree.root, "Back to the invite")).toBeDefined();
+  });
+
+  it("fades each view in, and holds still for reduced motion", async () => {
+    const tree = render();
+    // The reanimated mock keeps the setting each builder was given.
+    const entering = () =>
+      tree.root
+        .findAllByType("Animated.View" as never, { deep: true })
+        .map((view) => view.props.entering as { reduceMotionMode?: string });
+    const still = [
+      expect.objectContaining({ reduceMotionMode: ReduceMotion.System }),
+    ];
+
+    expect(entering()).toEqual(still);
+    openInvite(tree.root);
+    expect(entering()).toEqual(still);
+    typeToken(tree.root, "invite-token-3");
+    continueToConfirm(tree.root);
+    await settle();
+    expect(entering()).toEqual(still);
   });
 
   it("taps once when the join lands, and not when it fails", async () => {

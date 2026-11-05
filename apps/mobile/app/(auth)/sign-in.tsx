@@ -28,6 +28,7 @@ import {
   OnboardingTextInput,
 } from "@/components/onboarding/onboarding-field";
 import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-primary-button";
+import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -73,9 +74,9 @@ export default function SignIn() {
   const passwordRef = useRef<TextInput>(null);
 
   // Android's back button and back gesture close the email form, as its
-  // chevron does, instead of leaving s01 (the `(auth)` anchor) and backgrounding
-  // the app. While a sign-in is in flight both are held, so a late result
-  // can't land on the provider view.
+  // `‹ Back` row does, instead of leaving s01 (the `(auth)` anchor) and
+  // backgrounding the app. While a sign-in is in flight both are held, so a
+  // late result can't land on the provider view.
   useEffect(() => {
     if (!emailOpen) return undefined;
     const subscription = BackHandler.addEventListener(
@@ -204,9 +205,10 @@ export default function SignIn() {
       );
     }
     // The phone's own account, the one light fill on the page. Pressed as the
-    // onboarding buttons are: a ripple on Android, a dimmed fill on iOS.
+    // onboarding buttons are, by the same owner: a ripple on Android, a
+    // dimmed fill on iOS.
     return (
-      <Pressable
+      <OnboardingPressable
         key={provider}
         accessibilityRole="button"
         accessibilityState={{ disabled: submitting }}
@@ -214,23 +216,14 @@ export default function SignIn() {
         onPress={() => {
           void handleOAuth(provider);
         }}
-        android_ripple={
-          submitting ? undefined : { color: styles.filledRipple.color }
-        }
-        style={({ pressed }) => [
-          styles.button,
-          styles.buttonFilled,
-          submitting ? styles.buttonDisabled : null,
-          pressed && !submitting && Platform.OS !== "android"
-            ? styles.buttonPressed
-            : null,
-        ]}
+        rippleColor={styles.filledRipple.color}
+        style={[styles.button, styles.buttonFilled]}
       >
         {mark}
         <Text style={[styles.buttonText, styles.buttonTextFilled]}>
           {label}
         </Text>
-      </Pressable>
+      </OnboardingPressable>
     );
   }
 
@@ -594,14 +587,6 @@ function createStyles(tokens: SignetTokens) {
     // gold, which stays the email form's primary.
     buttonFilled: {
       backgroundColor: tokens.color.text.foreground,
-      // Keeps Android's ripple inside the rounded corners.
-      overflow: "hidden",
-    },
-    buttonDisabled: {
-      opacity: 0.55,
-    },
-    buttonPressed: {
-      opacity: 0.85,
     },
     // Not a style a view takes: the light button's ripple, a shade of the
     // page it sits on.

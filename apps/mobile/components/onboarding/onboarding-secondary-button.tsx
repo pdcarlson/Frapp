@@ -1,14 +1,9 @@
 import type { ReactNode } from "react";
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-} from "react-native";
+import { ActivityIndicator, StyleSheet, Text } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { ONBOARDING_COLUMN_WIDTH } from "./onboarding-primary-button";
+import { OnboardingPressable } from "./onboarding-pressable";
 
 /**
  * The outlined button beside `OnboardingPrimaryButton`: components.md
@@ -21,8 +16,9 @@ import { ONBOARDING_COLUMN_WIDTH } from "./onboarding-primary-button";
  * `leading` sits before the label (a provider's mark, or its spinner while
  * that provider's sign-in runs). `busy` swaps the label for a spinner.
  *
- * Pressed as `ListRow` is: Android ripples, iOS lifts the fill one rung, to
- * the elevated surface (mobile has no `--card-hover`).
+ * Pressed as `ListRow` is, through `OnboardingPressable`: Android ripples,
+ * iOS lifts the fill one rung, to the elevated surface (mobile has no
+ * `--card-hover`).
  */
 export function OnboardingSecondaryButton({
   label,
@@ -42,20 +38,15 @@ export function OnboardingSecondaryButton({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   return (
-    <Pressable
+    <OnboardingPressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? (busy ? label : undefined)}
       accessibilityState={{ disabled, busy }}
       disabled={disabled}
       onPress={onPress}
-      android_ripple={disabled ? undefined : { color: styles.ripple.color }}
-      style={({ pressed }) => [
-        styles.button,
-        disabled ? styles.disabled : null,
-        pressed && !disabled && Platform.OS !== "android"
-          ? styles.pressed
-          : null,
-      ]}
+      rippleColor={styles.ripple.color}
+      heldStyle={styles.pressed}
+      style={styles.button}
     >
       {busy ? (
         <ActivityIndicator color={tokens.color.text.foreground} />
@@ -67,7 +58,7 @@ export function OnboardingSecondaryButton({
           </Text>
         </>
       )}
-    </Pressable>
+    </OnboardingPressable>
   );
 }
 
@@ -80,7 +71,6 @@ function createStyles(tokens: SignetTokens) {
       flexDirection: "row",
       gap: tokens.spacing.sm,
       borderRadius: tokens.radius.control,
-      overflow: "hidden",
       borderWidth: 1,
       borderColor: tokens.color.border.input,
       backgroundColor: tokens.color.surface.card,
@@ -88,9 +78,6 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: tokens.spacing.md,
-    },
-    disabled: {
-      opacity: 0.55,
     },
     pressed: {
       backgroundColor: tokens.color.surface.popover,

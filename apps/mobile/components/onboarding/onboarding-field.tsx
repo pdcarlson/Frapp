@@ -1,6 +1,7 @@
 import { useState, type Ref } from "react";
 import { StyleSheet, Text, TextInput, type TextInputProps } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
+import { sheetFieldStyles } from "@/components/sheet-scaffold";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -9,11 +10,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * component, so the flow has one field and one label rather than the three
  * label styles and two heights it had.
  *
- * components.md § Text input: 48pt tall, the surface fill under the input
- * border at rest, and the border in the text-level gold while the field has
- * focus, which is what tells a member where they're typing. Gold, not a
- * chapter accent, since nothing in `(auth)` has a chapter yet. Sheets do the
- * same with the chapter accent (`sheetFieldStyles`).
+ * The sheets' field (`sheetFieldStyles`, which owns components.md § Text
+ * input's paint and focus border), with the focus border in the text-level
+ * gold, since nothing in `(auth)` has a chapter yet, and 48pt tall, the spec's
+ * height, where a sheet's field is 44. The border is what tells a member
+ * where they're typing.
  *
  * Every `TextInput` prop passes through, `ref` included, so a screen can still
  * move focus from one field to the next on Return.
@@ -58,21 +59,13 @@ export function OnboardingFieldLabel({ children }: { children: string }) {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const field = sheetFieldStyles(tokens, tokens.color.gold.askText);
   return StyleSheet.create({
     input: {
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
+      ...field.field,
       minHeight: tokens.touch.buttonLarge,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
     },
-    focused: {
-      borderColor: tokens.color.gold.askText,
-    },
+    focused: field.fieldFocused,
     label: {
       ...typeRole(tokens.typography.role.label),
       letterSpacing: 0.3,

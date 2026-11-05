@@ -3,21 +3,25 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useRouter } from "expo-router";
+import * as expoRouter from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText } from "@/test/screen-text";
 
 /**
  * The chapter picker, opened from More (`app/(tabs)/more.tsx`). It draws
  * `‹ More` like every screen opened from a More row (navigation.md § Back
- * rows), going back rather than opening More again, and marks the chapter
- * that's open now, which a tap just leaves rather than re-selecting.
+ * rows), but only when More's row says it opened it: a link has sign-in
+ * anchored under it, so "something to go back to" doesn't mean More. The row
+ * goes back rather than opening More again, and holds while a switch runs. The
+ * chapter that's open now is marked, and a tap on it selects it again like any
+ * row, since the mark reads a token claim that can lag the server.
  *
  * Here, not beside the screen: a spec under `app/` is a route module and
  * ships in the bundle (`lib/routes.spec.ts`).
  */
 
-const selectChapter = vi.fn().mockResolvedValue(true);
+const selectChapter = vi.fn();
 
 vi.mock("@/lib/auth-session", () => ({
   useAuthSession: () => ({
@@ -67,6 +71,31 @@ function render(): ReactTestRenderer {
 
 const router = vi.mocked(useRouter)();
 
+function moreRow(root: Node): Node | undefined {
+  return root
+    .findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Back to More",
+    )
+    .at(0);
+}
+
+/** A switch that waits for the spec to settle it. */
+function pendingSwitch(): (ok: boolean) => Promise<void> {
+  let settle!: (ok: boolean) => void;
+  selectChapter.mockReturnValueOnce(
+    new Promise<boolean>((resolve) => {
+      settle = resolve;
+    }),
+  );
+  return async (ok) => {
+    await act(async () => {
+      settle(ok);
+    });
+  };
+}
+
 function rowFor(root: Node, name: string): Node {
   return root.find(
     (node) =>
@@ -77,17 +106,18 @@ function rowFor(root: Node, name: string): Node {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  selectChapter.mockResolvedValue(true);
+  // Something is under the picker either way: the More tab, or sign-in,
+  // which `(auth)/_layout.tsx` anchors under a screen a link opens.
   vi.mocked(router.canGoBack).mockReturnValue(true);
+  // As More's Switch chapter row opens it.
+  vi.mocked(useLocalSearchParams).mockReturnValue({ from: "more" });
 });
 
 describe("chapter picker, opened from More", () => {
   it("draws ‹ More, which goes back to the tabs underneath", () => {
     const tree = render();
-    const back = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityLabel === "Back to More",
-    );
+    const back = moreRow(tree.root)!;
 
     expect(drawnText(back)).toBe("‹ More");
     act(() => {
@@ -98,17 +128,66 @@ describe("chapter picker, opened from More", () => {
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
-  it("draws no row when a link opened it with nothing behind", () => {
-    vi.mocked(router.canGoBack).mockReturnValue(false);
+  it("draws no row, and keeps the centred column, when a link opened it", () => {
+    // A link carries no `from`, and has sign-in under it: `canGoBack` is
+    // still true (beforeEach), so it can't be what decides.
+    vi.mocked(useLocalSearchParams).mockReturnValue({});
     const tree = render();
+    const column = tree.root.findByType("ScrollView" as never);
 
+    expect(moreRow(tree.root)).toBeUndefined();
     expect(
-      tree.root.findAll(
-        (node) =>
-          (node.type as unknown) === "Pressable" &&
-          node.props.accessibilityLabel === "Back to More",
-      ),
-    ).toHaveLength(0);
+      Object.assign({}, ...column.props.contentContainerStyle).justifyContent,
+    ).toBe("center");
+  });
+
+  it("holds ‹ More while a switch is in flight", async () => {
+    const settle = pendingSwitch();
+    const tree = render();
+    expect(moreRow(tree.root)?.props.disabled).toBe(false);
+
+    await act(async () => {
+      rowFor(tree.root, "Sigma Phi Epsilon").props.onPress();
+    });
+    expect(moreRow(tree.root)?.props.disabled).toBe(true);
+
+    await settle(false);
+    expect(moreRow(tree.root)?.props.disabled).toBe(false);
+  });
+
+  it("doesn't navigate when a switch lands after the picker went away", async () => {
+    const settle = pendingSwitch();
+    const tree = render();
+    await act(async () => {
+      rowFor(tree.root, "Sigma Phi Epsilon").props.onPress();
+    });
+
+    // Backed out with Android back or the edge swipe while it ran.
+    act(() => {
+      tree.unmount();
+    });
+    await settle(true);
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it("doesn't navigate when a switch lands while another screen covers it", async () => {
+    const settle = pendingSwitch();
+    const tree = render();
+    await act(async () => {
+      rowFor(tree.root, "Sigma Phi Epsilon").props.onPress();
+    });
+
+    const focus = expoRouter as unknown as {
+      __blur: () => void;
+      __refocus: () => void;
+    };
+    act(() => focus.__blur());
+    await settle(true);
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+    act(() => focus.__refocus());
+    tree.unmount();
   });
 
   it("has no line narrating the list under its title", () => {
@@ -117,7 +196,7 @@ describe("chapter picker, opened from More", () => {
     expect(drawnText(tree.root)).not.toContain("Pick the chapter");
   });
 
-  it("marks the chapter that's open, and only leaves when it's tapped", () => {
+  it("marks the chapter that's open, and selects it again when it's tapped", async () => {
     const tree = render();
     const current = rowFor(tree.root, "FIJI Tau Nu");
     const other = rowFor(tree.root, "Sigma Phi Epsilon");
@@ -125,19 +204,22 @@ describe("chapter picker, opened from More", () => {
     expect(drawnText(current)).toContain("Current");
     expect(drawnText(other)).not.toContain("Current");
 
-    act(() => {
+    // The mark reads the token's claim, which can lag the server's active
+    // chapter, so the tap re-asserts it as any row's tap would.
+    await act(async () => {
       current.props.onPress();
     });
-    expect(selectChapter).not.toHaveBeenCalled();
+    expect(selectChapter).toHaveBeenCalledWith("chapter-tau-nu");
     expect(router.back).toHaveBeenCalledTimes(1);
   });
 
-  it("still switches to another chapter", async () => {
+  it("still switches to another chapter, then goes back", async () => {
     const tree = render();
 
     await act(async () => {
       rowFor(tree.root, "Sigma Phi Epsilon").props.onPress();
     });
     expect(selectChapter).toHaveBeenCalledWith("chapter-eta");
+    expect(router.back).toHaveBeenCalledTimes(1);
   });
 });

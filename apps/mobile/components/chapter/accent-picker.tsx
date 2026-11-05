@@ -13,6 +13,7 @@ import {
   type AccentSwatch,
 } from "@repo/hooks/chapter-identity";
 import { SignetTokens } from "@repo/theme/signet";
+import { sheetFieldStyles } from "@/components/sheet-scaffold";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -87,7 +88,7 @@ export function AccentPicker({
   focusColor,
 }: AccentPickerProps) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const styles = createStyles(tokens, focusColor);
   const [hexFocused, setHexFocused] = useState(false);
 
   // A preset the organization already offers is shown once, under the
@@ -228,7 +229,7 @@ export function AccentPicker({
               style={[
                 styles.input,
                 styles.inputFlex,
-                hexFocused ? { borderColor: focusColor } : null,
+                hexFocused ? styles.inputFocused : null,
               ]}
             />
           </View>
@@ -261,7 +262,10 @@ export function AccentPicker({
 const DOT = 36;
 const RING_GAP = 3;
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, focusColor: string) {
+  // The sheets' field, so a fix to components.md § Text input lands here too:
+  // 44pt, the height of the swatch preview beside it, in mono for the hex.
+  const field = sheetFieldStyles(tokens, focusColor);
   return StyleSheet.create({
     root: { gap: tokens.spacing.md },
     group: { gap: tokens.spacing.sm },
@@ -317,17 +321,10 @@ function createStyles(tokens: SignetTokens) {
       borderColor: tokens.color.border.hairline,
     },
     input: {
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
-      ...typeRole(tokens.typography.role.body),
+      ...field.field,
       fontFamily: MONO_FONT_FAMILY,
-      color: tokens.color.text.foreground,
     },
+    inputFocused: field.fieldFocused,
     inputFlex: { flex: 1 },
     helperText: {
       ...typeRole(tokens.typography.role.caption),

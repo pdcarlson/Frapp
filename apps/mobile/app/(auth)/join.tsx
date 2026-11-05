@@ -14,7 +14,6 @@ import {
 import * as Linking from "expo-linking";
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -47,6 +46,7 @@ import {
   ONBOARDING_COLUMN_WIDTH,
   OnboardingPrimaryButton,
 } from "@/components/onboarding/onboarding-primary-button";
+import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
 import { useAuthSession } from "@/lib/auth-session";
@@ -717,7 +717,12 @@ export default function JoinChapter() {
               >
                 {email ? `Signed in as ${email}` : "Your account"}
               </Text>
-              <Pressable
+              {/*
+                The onboarding press (`OnboardingPressable`), lifting a rung
+                while held as `ListRow` does. A disabled row dims as a whole;
+                it has no fill of its own, so that dims just its label.
+              */}
+              <OnboardingPressable
                 accessibilityRole="button"
                 accessibilityState={{ disabled: submitting }}
                 disabled={submitting}
@@ -725,50 +730,28 @@ export default function JoinChapter() {
                   setAccountOpen(false);
                   void handleSignOut();
                 }}
-                android_ripple={
-                  submitting ? undefined : { color: styles.menuRipple.color }
-                }
-                style={({ pressed }) => [
-                  styles.menuRow,
-                  pressed && Platform.OS !== "android"
-                    ? styles.menuRowPressed
-                    : null,
-                ]}
+                rippleColor={styles.menuRipple.color}
+                heldStyle={styles.menuRowPressed}
+                disabledStyle={styles.disabled}
+                style={styles.menuRow}
               >
-                <Text
-                  style={[
-                    styles.menuRowText,
-                    submitting ? styles.disabled : null,
-                  ]}
-                >
-                  Sign out
-                </Text>
-              </Pressable>
-              <Pressable
+                <Text style={styles.menuRowText}>Sign out</Text>
+              </OnboardingPressable>
+              <OnboardingPressable
                 accessibilityRole="button"
                 accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
                 accessibilityState={{ disabled: submitting, busy: deleting }}
                 disabled={submitting}
                 onPress={handleDeleteAccount}
-                android_ripple={
-                  submitting ? undefined : { color: styles.menuRipple.color }
-                }
-                style={({ pressed }) => [
-                  styles.menuRow,
-                  pressed && Platform.OS !== "android"
-                    ? styles.menuRowPressed
-                    : null,
-                ]}
+                rippleColor={styles.menuRipple.color}
+                heldStyle={styles.menuRowPressed}
+                disabledStyle={styles.disabled}
+                style={styles.menuRow}
               >
-                <Text
-                  style={[
-                    styles.menuRowDestructive,
-                    submitting ? styles.disabled : null,
-                  ]}
-                >
+                <Text style={styles.menuRowDestructive}>
                   {deleting ? "Deleting account…" : "Delete account"}
                 </Text>
-              </Pressable>
+              </OnboardingPressable>
             </View>
           </>
         ) : null}

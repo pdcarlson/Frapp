@@ -5,7 +5,7 @@ import { BackHandler, Platform } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
-import { FrappThemeProvider } from "@/lib/theme";
+import { FrappThemeProvider, tint } from "@/lib/theme";
 import {
   OAUTH_MEMBERSHIP_HINT,
   signInProviderLayout,
@@ -214,6 +214,33 @@ describe("sign-in providers on iOS", () => {
     expect(filledLabels(tree.root)).toEqual(["Continue with Apple"]);
     expect(hasHint(tree.root)).toBe(true);
   });
+
+  it("presses the light button as the gold one presses, and not while it runs", async () => {
+    const tree = render();
+    const lead = () =>
+      tree.root.find(
+        (node) =>
+          isHost(node, "Pressable") &&
+          flat(node.props.style).backgroundColor ===
+            signetDarkTokens.color.text.foreground,
+      );
+    const held = () =>
+      Object.assign(
+        {},
+        ...[lead().props.style({ pressed: true })].flat(Infinity),
+      ) as Record<string, unknown>;
+
+    expect(held().opacity).toBe(0.85);
+    expect(lead().props.android_ripple).toEqual({ color: expect.any(String) });
+
+    // Never settles, so the sign-in stays in flight.
+    auth.signInWithOAuthProvider.mockReturnValue(new Promise(() => {}));
+    await act(async () => {
+      lead().props.onPress();
+    });
+    expect(lead().props.android_ripple).toBeUndefined();
+    expect(held().opacity).toBe(0.55);
+  });
 });
 
 describe("the email form", () => {
@@ -235,6 +262,40 @@ describe("the email form", () => {
     });
     expect(buttonLabels(tree.root)).toContain("Continue with Google");
     expect(buttonLabels(tree.root)).not.toContain("Sign in");
+  });
+
+  it("marks the chosen mode in house gold, as the flow's other selections are", () => {
+    const tree = render();
+    act(() => {
+      pressableLabelled(tree.root, "Continue with email").props.onPress();
+    });
+    const gold = signetDarkTokens.color.gold;
+    const look = (label: string) => {
+      const chip = pressableLabelled(tree.root, label);
+      const text = chip.find((node) => isHost(node, "Text"));
+      return {
+        fill: flat(chip.props.style).backgroundColor,
+        ink: flat(text.props.style).color,
+        selected: chip.props.accessibilityState?.selected,
+      };
+    };
+    const chosen = {
+      fill: tint(gold.house),
+      ink: gold.askText,
+      selected: true,
+    };
+
+    expect(look("Password")).toEqual(chosen);
+    expect(look("Magic link")).toEqual(
+      expect.objectContaining({ selected: false }),
+    );
+    expect(look("Magic link").ink).not.toBe(gold.askText);
+
+    act(() => {
+      pressableLabelled(tree.root, "Magic link").props.onPress();
+    });
+    expect(look("Magic link")).toEqual(chosen);
+    expect(look("Password").fill).not.toBe(tint(gold.house));
   });
 });
 

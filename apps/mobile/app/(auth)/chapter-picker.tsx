@@ -1,5 +1,10 @@
-import { useState } from "react";
-import { Redirect, useRouter } from "expo-router";
+import { useCallback, useRef, useState } from "react";
+import {
+  Redirect,
+  useFocusEffect,
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
 import {
   ActivityIndicator,
   Pressable,
@@ -32,9 +37,9 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * There is no local write on selection — see `lib/select-chapter.ts`. Because
  * the gate exempts this route, it will not push the member back out when a
- * switch lands, so every exit here is an explicit `router.replace`: to `(tabs)`
- * on success, to sign-in on sign-out. Nothing waits on a redirect that may
- * never come.
+ * switch lands, so every exit here is explicit: back to (or into) `(tabs)` on
+ * success, to sign-in on sign-out. Nothing waits on a redirect that may never
+ * come.
  */
 export default function ChapterPicker() {
   const { tokens } = useFrappTheme();
@@ -42,16 +47,40 @@ export default function ChapterPicker() {
   const router = useRouter();
   const { status, signOut, chapterId: currentChapterId } = useAuthSession();
   const selectChapter = useSelectChapter();
-  // Opened from More, with the tabs underneath to go back to. A deep link
-  // opens it with nothing behind it, and keeps the centred layout and no row.
-  const canGoBack = router.canGoBack();
+  // More's Switch chapter row says it opened the picker (`from: "more"`), and
+  // only then is the More tab underneath to go back to, so only then does the
+  // picker draw `‹ More` and start its column at the top. A deep link keeps
+  // the centred layout and no row. `router.canGoBack()` can't tell the two
+  // apart: `(auth)/_layout.tsx` anchors sign-in under a linked screen, so it
+  // is true there too, and a row that went back would land on sign-in under a
+  // label that says More.
+  const { from } = useLocalSearchParams<{ from?: string | string[] }>();
+  const openedFromMore = from === "more";
+
+  // Whether the picker is still the screen in front. A switch can settle
+  // after the member has gone back (Android back, or the edge swipe, which
+  // nothing here holds), and `leave()` then would move whatever screen is
+  // showing by then: from More, a second `back()` would take the member off
+  // the More tab they had just gone back to.
+  const inFront = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      inFront.current = true;
+      return () => {
+        inFront.current = false;
+      };
+    }, []),
+  );
 
   /** Back to the tabs this was opened over, or into them from a link. */
   function leave() {
     // Back, not a navigate: arriving from More means `(tabs)` is already on
     // the stack underneath, and opening it again would leave a second copy
-    // on top of the first. Replace is the fallback for arriving by deep link,
-    // where there is nothing to go back to.
+    // on top of the first. A link opened at launch has sign-in under it (the
+    // `(auth)` anchor), and going back there hands the member to the layout,
+    // which sends them on to where the gate says: the tabs, once they have a
+    // chapter. Replace is the fallback for a stack with nothing under the
+    // picker at all.
     if (router.canGoBack()) {
       router.back();
     } else {
@@ -99,7 +128,9 @@ export default function ChapterPicker() {
       // gate exempts this route so a member can open it deliberately from More,
       // which also means it will not push them back out when the switch lands.
       // An earlier version waited for that redirect and spun forever.
-      leave();
+      // Unless the picker has gone already, backed out of or covered: leaving
+      // then would move whichever screen is in front instead.
+      if (inFront.current) leave();
     } finally {
       // Always clear. The screen usually unmounts before this matters, but
       // "usually" is what stranded members on a dead list of disabled rows.
@@ -122,7 +153,7 @@ export default function ChapterPicker() {
         style={styles.scroll}
         contentContainerStyle={[
           styles.container,
-          canGoBack ? styles.containerTop : null,
+          openedFromMore ? styles.containerTop : null,
         ]}
         keyboardShouldPersistTaps="handled"
       >
@@ -130,10 +161,16 @@ export default function ChapterPicker() {
           `‹ More`, as every screen opened from a More row draws
           (navigation.md § Back rows), in house gold like the rest of this
           group. It goes back rather than navigating to More, for the reason
-          `leave` gives.
+          `leave` gives, and holds while a switch is in flight, as the chapter
+          rows do and the other `(auth)` back rows do while they wait.
         */}
-        {canGoBack ? (
-          <BackRow house label="More" onPress={() => router.back()} />
+        {openedFromMore ? (
+          <BackRow
+            house
+            label="More"
+            disabled={pendingId !== null}
+            onPress={() => router.back()}
+          />
         ) : null}
         {/* No line under the title: the list says the rest. */}
         <Text style={styles.title}>Choose your chapter</Text>
@@ -191,19 +228,18 @@ export default function ChapterPicker() {
             <View style={styles.list}>
               {data.map((membership) => {
                 const isPendingRow = pendingId === membership.chapter_id;
-                // The chapter open now says so, and tapping it just goes
-                // back: switching to the chapter you're in has nothing to do.
+                // The chapter open now says so. A tap on it still selects it,
+                // as on any row: `Current` reads the token's claim, which can
+                // lag the active chapter the server holds (a switch on web, or
+                // a switch here whose refresh failed), and selecting it again
+                // is what puts the server back on the chapter shown.
                 const isCurrent = membership.chapter_id === currentChapterId;
                 return (
                   <ChoiceRow
                     key={membership.chapter_id}
                     title={membership.chapter.name}
                     body={membership.chapter.university}
-                    accessibilityHint={
-                      isCurrent
-                        ? "The chapter you have open."
-                        : `Open ${membership.chapter.name}.`
-                    }
+                    accessibilityHint={`Open ${membership.chapter.name}.`}
                     disabled={pendingId !== null}
                     dimmed={pendingId !== null && !isPendingRow}
                     busy={isPendingRow}
@@ -215,8 +251,7 @@ export default function ChapterPicker() {
                       ) : undefined
                     }
                     onPress={() => {
-                      if (isCurrent) leave();
-                      else void handleSelect(membership.chapter_id);
+                      void handleSelect(membership.chapter_id);
                     }}
                   />
                 );

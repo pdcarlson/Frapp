@@ -225,4 +225,32 @@ describe("sign-in return key, magic-link mode", () => {
     });
     expect(auth.signInWithPassword).not.toHaveBeenCalled();
   });
+
+  it("names the wait as a link being sent, not a sign-in", async () => {
+    // Never settles, so the screen stays submitting.
+    auth.sendMagicLink.mockReturnValue(new Promise(() => {}));
+    const tree = render();
+    act(() => {
+      pressableLabelled(tree.root, "Magic link").props.onPress();
+    });
+    type(field(tree.root, "username"), "brother@westfield.edu");
+
+    await act(async () => {
+      field(tree.root, "username").props.onSubmitEditing();
+    });
+
+    const busy = pressableLabelled(tree.root, "Sending link…");
+    expect(busy.props.disabled).toBe(true);
+    expect(busy.props.accessibilityState).toEqual({
+      disabled: true,
+      busy: true,
+    });
+    expect(
+      tree.root.findAll(
+        (node) =>
+          isHost(node, "Pressable") &&
+          node.props.accessibilityLabel === "Signing in…",
+      ),
+    ).toHaveLength(0);
+  });
 });

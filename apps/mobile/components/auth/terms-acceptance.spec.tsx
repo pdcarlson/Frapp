@@ -98,12 +98,32 @@ describe("TermsAcceptance", () => {
       ACCEPTANCE_LINKS.map((link) => link.label),
     );
     for (const link of links) {
-      // A label-role line is 20pt; 12 above and below brings it to 44.
-      expect(link.props.hitSlop).toEqual(
-        expect.objectContaining({ top: 12, bottom: 12 }),
-      );
+      // The link's own height, with its slop above and below, is the floor.
+      const { top, bottom } = link.props.hitSlop;
+      expect(
+        flat(link.props.style).minHeight + top + bottom,
+      ).toBeGreaterThanOrEqual(signetDarkTokens.touch.minimum);
     }
     const line = links[0]!.parent!;
     expect(flat(line.props.style).flexDirection).toBe("row");
+  });
+
+  it("keeps each link's slop out of the checkbox row above it", () => {
+    const { tree, row } = render(false);
+    const block = row.parent!;
+    const links = tree.root.findAll(
+      (node: Node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "link",
+    );
+
+    // The row, then the line of links, a gap apart: a top slop wider than
+    // the gap would take the row's bottom edge from the checkbox.
+    expect(block.children[0]).toBe(row);
+    const gap = flat(block.props.style).gap as number;
+    expect(gap).toBeGreaterThan(0);
+    for (const link of links) {
+      expect(link.props.hitSlop.top).toBeLessThanOrEqual(gap);
+    }
   });
 });

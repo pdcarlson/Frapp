@@ -112,9 +112,8 @@ vi.mock("expo-router", () => {
     replace: vi.fn(),
     navigate: vi.fn(),
     back: vi.fn(),
-    // Nothing behind the screen, as when a link opens it, unless a spec
-    // says otherwise (`mockReturnValue(true)`, as the chapter picker's does
-    // for "opened from More").
+    // Nothing behind the screen unless a spec says otherwise
+    // (`mockReturnValue(true)`, as the chapter picker's does).
     canGoBack: vi.fn(() => false),
   };
   // Every mounted focus effect, re-runnable as one "the member came back"
@@ -285,17 +284,26 @@ vi.mock("react-native-reanimated", () => ({
   withTiming: <T>(value: T) => value,
   // Entering animations are builders: each modifier returns the builder.
   ZoomIn: (() => {
-    const builder: Record<string, unknown> = {};
-    builder.duration = () => builder;
-    builder.reduceMotion = () => builder;
-    return builder;
+    // Each modifier returns a new builder that keeps what it was given, so a
+    // spec can read the reduced-motion setting (`entering.reduceMotionMode`)
+    // off the view the builder was handed to.
+    const build = (config: object): object => ({
+      ...config,
+      duration: (ms: number) => build({ ...config, durationMs: ms }),
+      reduceMotion: (mode: string) =>
+        build({ ...config, reduceMotionMode: mode }),
+    });
+    return build({});
   })(),
-  // Join's views and setup's steps fade in.
+  // Join's views and setup's steps fade in. Built as `ZoomIn` is.
   FadeIn: (() => {
-    const builder: Record<string, unknown> = {};
-    builder.duration = () => builder;
-    builder.reduceMotion = () => builder;
-    return builder;
+    const build = (config: object): object => ({
+      ...config,
+      duration: (ms: number) => build({ ...config, durationMs: ms }),
+      reduceMotion: (mode: string) =>
+        build({ ...config, reduceMotionMode: mode }),
+    });
+    return build({});
   })(),
   ReduceMotion: { System: "system", Always: "always", Never: "never" },
 }));

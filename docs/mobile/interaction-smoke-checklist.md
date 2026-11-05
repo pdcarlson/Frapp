@@ -28,7 +28,7 @@ came with #2302 (PR #2611).
 | Join (`/(auth)/join`) | First view | Asks "How are you getting in?" with I have an invite and I'm starting our chapter; no invite field, and no Sign out or Delete account until Account is tapped |
 | Join (`/(auth)/join`) | Open an invite link while signed in with no chapter | Skips the question and the field: "Join <chapter>?" opens with the chapter's mark, name and school, who invited you and the role |
 | Join (`/(auth)/join`) | Account (top corner) | Shows the signed-in email, Sign out and Delete account; tapping outside, or Android back, closes it |
-| Join (`/(auth)/join`) | I have an invite, then back | Opens "Join with an invite"; the chevron and Android back return to the question without leaving the app |
+| Join (`/(auth)/join`) | I have an invite, then back | Opens "Join with an invite"; the gold ‹ Back row and Android back return to the question without leaving the app |
 | Join (`/(auth)/join`) | Paste an invite, Continue, then back | Continue opens the "Join <chapter>?" card without using the invite; back returns to the field with the invite still in it |
 | Join (`/(auth)/join`) | Join chapter with a valid invite, box unticked | For a user who hasn't accepted the current Terms, shows the checkbox and `Agree to the Terms of Service and Privacy Policy to join.`; redeems nothing |
 | Join (`/(auth)/join`) | Join chapter with a valid invite, box ticked (or already accepted, no box shown) | Redeems `POST /v1/invites/redeem`, selects the chapter, lands on welcome (s03) |
@@ -40,10 +40,10 @@ came with #2302 (PR #2611).
 | Welcome (`/(auth)/welcome`) | Go to chat (the one button, pinned at the bottom) | PATCHes `has_completed_onboarding: true` and replaces into `/(tabs)` |
 | Chapter picker (empty) | Join or start a chapter | Opens join (s02), which asks invite or start |
 | Create chapter (`/(auth)/create-chapter`) | Directory row → Continue → color + Terms → Create; or Not in our directory? → fields + archetype → Continue | `POST /v1/chapters/onboard`; the later steps stay on this route. A FIJI row shows no letters anywhere |
-| Create chapter (`/(auth)/create-chapter`) | Back chevron / Android back on confirm and color | Steps back one; on find, leaves for join |
+| Create chapter (`/(auth)/create-chapter`) | The gold ‹ Back row (find, confirm and color) / Android back (confirm and color) | Steps back one; on find, the row leaves for join |
 | Create chapter (`/(auth)/create-chapter`) | Live: Add your chapter's logo / Continue | Optional picker → `POST /v1/chapters/current/logo-url`, PUT, `POST /v1/chapters/current/logo`; the mark becomes the logo. A success haptic plays on arrival |
 | Create chapter (`/(auth)/create-chapter`) | Primer, only when the build can push: Turn on / Not now | OS prompt on Turn on; either answer opens the invite step, or chat when the new chapter couldn't be made active |
-| Create chapter (`/(auth)/create-chapter`) | Create invite link / Share invite / Skip for now / Go to chat | Optional `POST /v1/invites`; the primary replaces into `/(tabs)` |
+| Create chapter (`/(auth)/create-chapter`) | Create invite link / Share invite (the gold primary), Skip for now / Go to chat (the quiet line under it) | The primary makes the invite (`POST /v1/invites`), then opens the share sheet as Share invite; the quiet line replaces into `/(tabs)` |
 
 Magic-link rows additionally need `frapp://` allowlisted in Supabase Auth →
 URL Configuration (#765), or the link opens the web app instead.
@@ -78,7 +78,8 @@ in the S2 nav restructure (#957) — see
 | Notifications (`/(tabs)/notifications`) | `‹ Chat` above the title | Lands on Chat home |
 | Chat thread | Retry failed upload | Requeues retry state + feedback |
 | Chat thread | Queue message | Queues message + feedback |
-| Chapter picker | Chapter row (multi-chapter account only) | Activates, refreshes the session, lands in the tabs |
+| Chapter picker | Chapter row, the one marked Current included (multi-chapter account only) | Activates, refreshes the session, lands in the tabs |
+| Chapter picker (More → Switch chapter) | `‹ More` above the title, and again while a switch is running | Lands on the More tab; while a switch runs it is dimmed and does nothing. Opened from a `frapp://chapter-picker` link, the picker draws no row |
 | Study hours | Study zone row (2+ zones) | Opens the zone picker sheet; picking one closes it and updates the card |
 | Study hours | Start session (location not yet granted) | Opens the **primer sheet first**, never the OS prompt — "Not now" dismisses quietly |
 | Study hours | Start session (location granted) | Session card replaces the start card; the timer ticks |

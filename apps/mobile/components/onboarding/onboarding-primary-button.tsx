@@ -1,12 +1,7 @@
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-} from "react-native";
+import { ActivityIndicator, StyleSheet, Text } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { OnboardingPressable } from "./onboarding-pressable";
 
 /**
  * The widest an onboarding screen's column, and its pinned button, grows on a
@@ -26,10 +21,9 @@ export const ONBOARDING_COLUMN_WIDTH = 400;
  * `busy` swaps the label for a spinner. A disabled button dims, so a member
  * waiting on a slow request doesn't take it for a frozen screen.
  *
- * A press shows, as `ListRow`'s does: Android draws the ripple the tab bar
- * already draws, darkened toward gold's own ink (components.md § Buttons:
- * pressed is the fill plus a dark overlay); iOS has no ripple, so the fill
- * dims while it is held, as the sheet primary's does.
+ * A press shows through `OnboardingPressable`: on Android a ripple darkened
+ * toward gold's own ink (components.md § Buttons: pressed is the fill plus a
+ * dark overlay), and on iOS the fill dims while it is held.
  */
 export function OnboardingPrimaryButton({
   label,
@@ -45,20 +39,14 @@ export function OnboardingPrimaryButton({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   return (
-    <Pressable
+    <OnboardingPressable
       accessibilityRole="button"
       accessibilityLabel={busy ? label : undefined}
       accessibilityState={{ disabled, busy }}
       disabled={disabled}
       onPress={onPress}
-      android_ripple={disabled ? undefined : { color: styles.ripple.color }}
-      style={({ pressed }) => [
-        styles.button,
-        disabled ? styles.disabled : null,
-        pressed && !disabled && Platform.OS !== "android"
-          ? styles.pressed
-          : null,
-      ]}
+      rippleColor={styles.ripple.color}
+      style={styles.button}
     >
       {busy ? (
         <ActivityIndicator color={tokens.color.gold.onHouse} />
@@ -67,7 +55,7 @@ export function OnboardingPrimaryButton({
           {label}
         </Text>
       )}
-    </Pressable>
+    </OnboardingPressable>
   );
 }
 
@@ -78,20 +66,11 @@ function createStyles(tokens: SignetTokens) {
       maxWidth: ONBOARDING_COLUMN_WIDTH,
       alignSelf: "center",
       borderRadius: tokens.radius.control,
-      // Keeps Android's ripple inside the rounded corners.
-      overflow: "hidden",
       backgroundColor: tokens.color.gold.house,
       minHeight: tokens.touch.button,
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: tokens.spacing.md,
-    },
-    disabled: {
-      opacity: 0.55,
-    },
-    // The sheet primary's held value (`components/sheet-scaffold.tsx`).
-    pressed: {
-      opacity: 0.85,
     },
     label: {
       ...typeRole(tokens.typography.role.label),
