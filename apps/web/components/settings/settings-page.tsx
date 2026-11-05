@@ -295,8 +295,9 @@ function SettingsPageContent() {
   // Discord-import role mapping step).
   // `memberViewVocabulary` lays the archetype's words under the chapter's: a
   // reader the config read refuses gets the member view's stored column as
-  // it is, `{}` for a chapter that never changed a word, which alone would
-  // name an NPHC chapter's aspirants "New Member".
+  // it is, which can be `{}` (a chapter created without onboarding's seed) or
+  // hold a cleared `""`, and either alone would name an NPHC chapter's
+  // aspirants "New Member".
   const pledgeTerm = titleCase(
     vocab(
       "pledge",

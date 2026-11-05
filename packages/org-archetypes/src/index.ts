@@ -676,15 +676,17 @@ export type MemberViewVocabulary = {
  * shaped for `vocab()`. Any member can read the member view; the config read
  * needs `chapter-config:view`, which no seeded role below President holds
  * (#2957). The member view carries the stored `vocabulary` column as-is, so
- * this applies the merge `ChapterConfigService.getConfig` does: the
- * archetype's defaults, then the chapter's stored words. Without it a chapter
- * with no stored words would lose its archetype's `/intake`. `undefined`
- * until the read answers.
+ * this lays the chapter's stored words over its archetype's defaults, as
+ * `ChapterConfigService.getConfig` does. Without it a chapter with no stored
+ * words would lose its archetype's `/intake`. `undefined` until the read
+ * answers.
  *
- * Only a non-blank stored word replaces the archetype's. The config PATCH
- * accepts any string, so a cleared field can be stored as `""`; laid over the
- * defaults as it is, that blank would reach `vocab()`, which falls back to the
- * IFC word, and an NPHC chapter would read "Rush" instead of "Intake".
+ * Unlike `getConfig`, only a non-blank stored word replaces the archetype's.
+ * The config PATCH accepts any string, so a cleared field can be stored as
+ * `""`; laid over the defaults as it is, that blank would reach `vocab()`,
+ * which falls back to the IFC word, and an NPHC chapter would read "Rush"
+ * instead of "Intake". The config read keeps the blank, because it is what
+ * Settings edits; a surface naming a word from it goes through this too.
  */
 export function memberViewVocabulary(
   chapter: MemberViewVocabulary | undefined,

@@ -36,7 +36,8 @@ interface HoursCardProps {
  * `service-entry-card.ts` that mobile's card applies too: only a `members:view`
  * holder who logged it or holds `service:approve` can read an entry, so nobody
  * else asks (for them it is a guaranteed 403), and their card, like every card
- * before its read lands or after a 403 or 404, shows no badge. The hue is the
+ * before its read lands or when it answers with no entry, shows no badge.
+ * Until the viewer's permissions are read, only the member who logged it asks. The hue is the
  * service page's own mapping (`serviceStatusKind`).
  */
 export function HoursCard({ message, viewerId }: HoursCardProps) {

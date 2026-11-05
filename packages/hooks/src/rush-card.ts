@@ -28,8 +28,8 @@ export interface LiveRushCandidate {
 
 /**
  * `useRushCandidate`'s data as a `LiveRushCandidate`, or `null` when there is
- * none yet (loading, a 403 or 404, a candidate since deleted, or a shape
- * without an id or a finite count).
+ * none (loading, a read the hook resolved to no candidate, or a shape without
+ * an id or a finite count).
  */
 export function readLiveRushCandidate(data: unknown): LiveRushCandidate | null {
   if (!data || typeof data !== "object") return null;
@@ -116,7 +116,7 @@ export function rushCardTally(live: LiveRushCandidate): string {
   return live.viewer_has_voted ? `${count} · you voted` : count;
 }
 
-/** The tally's place when the candidate read failed for a reason other than a 403 or 404. */
+/** The tally's place when the candidate read failed, rather than answered with no candidate (`isCardReadMiss`). */
 export const RUSH_CARD_TALLY_ERROR = "Couldn't load votes";
 
 /**

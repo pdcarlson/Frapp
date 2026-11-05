@@ -65,13 +65,14 @@ export function useServiceEntries(
  * `["service-entries"]` prefix, so a review or a delete from any screen
  * refreshes it.
  *
- * A 404, or a 403 from the route's own checks, resolves to `null` rather than
+ * A 404, or a 403 a retry won't change, resolves to `null` rather than
  * throwing (`isCardReadMiss`). Both are answers (the entry was deleted, or the
  * viewer lost a permission or the module was turned off), and a thrown refetch
  * would keep the badge read before it, so a deleted entry would go on saying
  * "Approved". Resolving also keeps an expected miss out of the query's retries
- * and out of Sentry. `ChapterGuard`'s `chapter.context.*` 403s still throw:
- * they clear once the token catches up with a chapter switch.
+ * and out of Sentry. `ChapterGuard`'s `chapter.context.mismatch` still throws:
+ * it clears once the token catches up with a chapter switch. No chapter, no
+ * read, as for every chapter-scoped query.
  */
 export function useServiceEntry(id: string) {
   const client = useFrappClient();
@@ -89,7 +90,7 @@ export function useServiceEntry(id: string) {
       return data;
     },
     staleTime: 30_000,
-    enabled: !!id,
+    enabled: !!chapterId && !!id,
   });
 }
 

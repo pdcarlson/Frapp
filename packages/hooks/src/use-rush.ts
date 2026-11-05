@@ -19,12 +19,13 @@ export type RushCandidateView = components["schemas"]["RushCandidateViewDto"];
  * `members:view`; a caller passes `undefined` when the viewer lacks it, and the
  * hook asks nothing.
  *
- * A 404, or a 403 from the route's own checks, resolves to `null` rather than
+ * A 404, or a 403 a retry won't change, resolves to `null` rather than
  * throwing, as `useServiceEntry` does (`isCardReadMiss`): a candidate since
  * deleted, or a permission since lost, then clears the tally instead of
  * keeping the last read, and an expected miss is neither retried nor
  * reported. Any other failure still throws, including `ChapterGuard`'s
- * `chapter.context.*` 403s, which clear by themselves and keep their retry.
+ * `chapter.context.mismatch`, which clears once the token catches up with a
+ * chapter switch and keeps its retry.
  */
 export function useRushCandidate(id: string | undefined) {
   const client = useFrappClient();

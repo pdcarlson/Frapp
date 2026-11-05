@@ -39,8 +39,8 @@ function isServiceEntryStatus(value: unknown): value is ServiceEntryStatus {
 
 /**
  * `useServiceEntry`'s data as a `LiveServiceEntry`, or `null` when there is
- * none yet (loading, a 403 or 404, an entry since deleted, or a shape without
- * an id or a known status).
+ * none (loading, a read the hook resolved to no entry, or a shape without an
+ * id or a known status).
  */
 export function readLiveServiceEntry(data: unknown): LiveServiceEntry | null {
   if (!data || typeof data !== "object") return null;
