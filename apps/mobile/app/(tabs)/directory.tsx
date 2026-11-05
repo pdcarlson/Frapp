@@ -18,6 +18,7 @@ import {
 import { BACK_TO_MORE, BackRow } from "@/components/back-row";
 import { FilterChips, SearchField } from "@/components/filter-chips";
 import { usePressFeedback } from "@/components/list-section";
+import { screenTitleStyle } from "@/components/screen-shell";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import {
   type DirectoryRow,
@@ -355,11 +356,9 @@ function createStyles(tokens: SignetTokens) {
     alumniFilters: {
       gap: tokens.spacing.sm,
     },
-    title: {
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.foreground,
-      letterSpacing: -0.4,
-    },
+    // ScreenShell's own title style: this screen draws its own header only
+    // because its body is a FlatList.
+    title: screenTitleStyle(tokens),
     row: {
       flexDirection: "row",
       alignItems: "center",
