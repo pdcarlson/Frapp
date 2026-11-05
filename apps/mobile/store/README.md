@@ -10,19 +10,18 @@ fields or submission).
 
 **Screenshots: produced by a script, uploaded by the owner.** App Store Connect does not
 accept a submission without them ([#2454](https://github.com/pdcarlson/Frapp/issues/2454)).
-The owner approved renders of the real app on Expo web as the set (2026-09-22), so they
-no longer wait on a device build or on `preview` (#2415):
-`node scripts/demo/capture-mobile.mjs --app-store` signs in to the local demo chapter and
-writes seven 1320 × 2868 PNGs (the 6.9" iPhone size) to `screenshots/app-store/`, with
-no Ask screen, because this binary has none (#2259), and no Dues screen, because a
-populated ledger shows the Stripe footer § Review notes keeps from App Review. The
-procedure, and where the size comes from, are in
-[`mobile.md` § 6.4](../../../docs/ops/deployment/mobile.md#64-app-store-screenshots).
+The owner approved renders of the real app on Expo web as the screens (2026-09-22), so they
+no longer wait on a device build or on `preview` (#2415), and picked a framed design for both
+stores (2026-11-05): `node scripts/demo/capture-mobile.mjs --store` signs in to the local demo
+chapter, captures seven screens once, and frames them with a caption in the feature graphic's
+charcoal and gold, into `screenshots/app-store/` (1320 × 2868, the 6.9" iPhone size) and
+`screenshots/google-play/` (1242 × 2208). No Ask screen, because this binary has none (#2259),
+and no Dues screen, because a populated ledger shows the Stripe footer § Review notes keeps from
+App Review. The procedure, the captions, and where the sizes come from are in
+[`mobile.md` § 6.4](../../../docs/ops/deployment/mobile.md#64-store-screenshots).
 They are generated rather than committed (`screenshots/` is gitignored). Whether they
-have been uploaded is recorded on #2454, not here: until that issue closes, assume not.
-Google Play can't take that size, so `--google-play` writes the same seven screens at
-1242 × 2208 to `screenshots/google-play/`
-([`mobile.md` § 6.5](../../../docs/ops/deployment/mobile.md#65-google-play-screenshots)).
+have been uploaded is recorded on #2454 (App Store) and #2720 (Play), not here: until those
+issues close, assume not.
 
 **Graphics: rendered by a script, committed, uploaded by the owner.** Google Play's listing
 needs a 512 × 512 icon and a 1024 × 500 feature graphic, and Play Console won't publish the

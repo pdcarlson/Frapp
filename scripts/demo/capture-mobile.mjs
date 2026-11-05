@@ -19,36 +19,30 @@
  *   npx expo start --web --port 3002                  # from apps/mobile
  *   node scripts/demo/capture-mobile.mjs
  *
- * ## App Store preset (`--app-store`, or `APP_STORE=1`)
+ * ## Store sets (`--store`, or `STORE=1`)
  *
- * The owner approved these renders as the App Store screenshots (#2454), and
- * the store binary has no Ask (#2259), so the store set is a different list
- * from the marketing one above, not a subset of its output:
+ * The owner approved renders of the real app as the store screenshots
+ * (#2454), and the store binary has no Ask (#2259), so the store set is a
+ * different list from the marketing one above, not a subset of its output.
+ * Each screen is captured once, at the 6.9" iPhone viewport, then framed by
+ * `store-frames.mjs` (caption, phone, one lifted card) for both stores:
  *
- *   app-store/         1320x2868 PNGs (440x956 at 3x, the 6.9" iPhone size)
+ *   store-raw/         the seven bare captures, 1320x2868 (440x956 at 3x)
+ *   app-store/         the framed set, 1320x2868
+ *   google-play/       the framed set, 1242x2208 (9:16; Play caps the long
+ *                      side at 2x the short, which the App Store size passes)
  *
  * No Ask shot, no reference board, and a hard stop: if any ✦ Ask surface is on
  * screen — which is what an Expo server started with `EXPO_PUBLIC_ASK_ENABLED`
- * set looks like — the run deletes the folder and exits non-zero, so a
+ * set looks like — the run deletes all three folders and exits non-zero, so a
  * flag-on dev server can never produce a store set. Run it with the flag
- * unset. Procedure and the size's provenance:
- * `docs/ops/deployment/mobile.md` § 6.4.
- *
- * ## Google Play preset (`--google-play`, or `GOOGLE_PLAY=1`)
- *
- * The same seven screens, with the same Ask refusal, at Play's shape (#2557):
- *
- *   google-play/       1242x2208 PNGs (414x736 at 3x, 9:16)
- *
- * The App Store size is about 2.17:1, past Play's 2:1 cap on a screenshot's
- * long side, so Play cannot reuse that set. Procedure and the size's
- * provenance: `docs/ops/deployment/mobile.md` § 6.5. Both presets,
- * and the checks each file must pass, live in `store-screenshots.mjs`; any
- * failed check deletes the store folder, like the Ask refusal.
+ * unset. The presets and the checks each file must pass live in
+ * `store-screenshots.mjs`; any failed check deletes the folders, like the Ask
+ * refusal. Procedure and the sizes' provenance:
+ * `docs/ops/deployment/mobile.md` § 6.4 and § 6.5.
  *
  * Env: MOBILE_URL (default http://localhost:3002), OUT_ROOT, CHROMIUM_PATH,
- *      DEMO_EMAIL, DEMO_PASSWORD, EVENT_ID, SKIP_REFERENCE=1, APP_STORE=1,
- *      GOOGLE_PLAY=1
+ *      DEMO_EMAIL, DEMO_PASSWORD, EVENT_ID, SKIP_REFERENCE=1, STORE=1
  */
 import { chromium } from "playwright";
 import { mkdir, rm, readFile } from "node:fs/promises";
@@ -56,23 +50,20 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { LOCAL_DEMO_EMAIL, LOCAL_DEMO_PASSWORD, TEMPLATE_NAMESPACE, demoIds } from "./seed-demo.mjs";
-import { pngHeader } from "../lib/brand-pixels.mjs";
-import {
-  APP_STORE_PRESET,
-  GOOGLE_PLAY_PRESET,
-  STORE_SCALE,
-  storeSetProblems,
-} from "./store-screenshots.mjs";
+import { APP_STORE_PRESET, STORE_SCALE, storeSetProblems } from "./store-screenshots.mjs";
+import { composeStoreFrames } from "./store-frames.mjs";
 
 const MOBILE_URL = process.env.MOBILE_URL ?? "http://localhost:3002";
 const OUT_ROOT = process.env.OUT_ROOT ?? "screenshots";
 const APP_DIR = path.join(OUT_ROOT, "mobile-app");
 const REF_DIR = path.join(OUT_ROOT, "mobile-reference");
 
-const APP_STORE =
-  process.argv.includes("--app-store") || process.env.APP_STORE === "1";
-const GOOGLE_PLAY =
-  process.argv.includes("--google-play") || process.env.GOOGLE_PLAY === "1";
+const STORE = process.argv.includes("--store") || process.env.STORE === "1";
+for (const retired of ["--app-store", "--google-play"]) {
+  if (process.argv.includes(retired)) {
+    throw new Error(`${retired} is retired: --store captures once and frames both store sets.`);
+  }
+}
 
 // The local login setup-demo.sh creates; seed-demo.mjs owns the values.
 const EMAIL = process.env.DEMO_EMAIL ?? LOCAL_DEMO_EMAIL;
@@ -255,7 +246,7 @@ const GENERAL_ROW_SHOWN = () =>
 const GENERAL_THREAD_SHOWN = () =>
   [...document.querySelectorAll('[role="heading"], h1')].some(
     (heading) => heading.textContent === "#general",
-  ) && Boolean(document.querySelector('[placeholder="Message"]'));
+  ) && Boolean(document.querySelector('[placeholder^="Message"]'));
 
 /**
  * The signed-in screens, in capture order.
@@ -318,11 +309,13 @@ const APP_SCREENS = [
 ];
 
 /**
- * The store set, for both stores' presets: what the listing sells
- * (`apps/mobile/store/README.md` § Description), in the order a browser of
- * the listing should meet it —
- * chat first, because that is the product's centre, then the officer's QR,
- * then the member's week. Every screen here ships in the store binary; there
+ * The store set: what the listing sells (`apps/mobile/store/README.md`
+ * § Description), in the order a browser of the listing should meet it. Most
+ * visitors judge a listing by its first three frames, so those carry the daily
+ * loop: talk (Chat home), plan (Events), show up (Host check-in, the thing a
+ * group chat can't do). The rest of the member's week follows. The slugs are
+ * the framed files' names too, and `store-frames.mjs` keys its captions on
+ * them. Every screen here ships in the store binary; there
  * is deliberately no Ask shot, because that binary has no Ask (#2259).
  *
  * No Dues shot either: a populated ledger footers "Payments run through your
@@ -349,7 +342,23 @@ const STORE_SCREENS = [
       /\n\d+\n/.test(document.body.innerText),
   },
   {
-    slug: "02-chat-thread",
+    slug: "02-events",
+    route: "/events",
+    label: "Events — upcoming, with points and the mandatory meeting",
+    ready: () =>
+      document.body.innerText.includes("Chapter Meeting") &&
+      document.body.innerText.includes("pts"),
+  },
+  {
+    slug: "03-host-check-in",
+    route: `/host-check-in?eventId=${EVENT_ID}`,
+    label: "Host check-in — rotating QR at the door (officer)",
+    // Same clock rule as the marketing shot: twelve seconds or more left,
+    // for the reason given there.
+    ready: () => /Rotates in 0:(1[2-9]|2\d)/.test(document.body.innerText),
+  },
+  {
+    slug: "04-chat-thread",
     route: "/",
     label: "Chat thread — #general",
     async act(page) {
@@ -358,22 +367,6 @@ const STORE_SCREENS = [
     },
     ready: GENERAL_THREAD_SHOWN,
     expectRoute: "/chat-thread",
-  },
-  {
-    slug: "03-events",
-    route: "/events",
-    label: "Events — upcoming, with points and the mandatory meeting",
-    ready: () =>
-      document.body.innerText.includes("Chapter Meeting") &&
-      document.body.innerText.includes("pts"),
-  },
-  {
-    slug: "04-host-check-in",
-    route: `/host-check-in?eventId=${EVENT_ID}`,
-    label: "Host check-in — rotating QR at the door (officer)",
-    // Same clock rule as the marketing shot: twelve seconds or more left,
-    // for the reason given there.
-    ready: () => /Rotates in 0:(1[2-9]|2\d)/.test(document.body.innerText),
   },
   {
     slug: "05-tasks",
@@ -491,6 +484,7 @@ async function captureRunningApp(
     scale = SCALE,
     outDir = APP_DIR,
     noAsk = false,
+    timezoneId,
   } = {},
 ) {
   const context = await browser.newContext({
@@ -499,6 +493,7 @@ async function captureRunningApp(
     colorScheme: "dark",
     isMobile: true,
     hasTouch: true,
+    ...(timezoneId ? { timezoneId } : {}),
   });
   const page = await context.newPage();
   const done = [];
@@ -637,14 +632,33 @@ async function captureReferenceBoard(browser) {
   return done;
 }
 
-async function captureStoreSet(browser, preset) {
-  const { name, viewport } = preset;
-  const dir = path.join(OUT_ROOT, preset.folder);
-  await rm(dir, { recursive: true, force: true });
-  await mkdir(dir, { recursive: true });
+/**
+ * The demo seed puts each event at a UTC hour (`demo-seed.sql` § Events), so
+ * the store run renders in UTC to show the 7:00 PM chapter meeting at 7:00 PM.
+ * Chat and study times are minutes before the seed ran, so a run in the small
+ * hours stamps the thread "3:00 AM". Seed and shoot inside this UTC window.
+ */
+const STORE_TIMEZONE = "UTC";
+const STORE_HOURS_UTC = { from: 13, to: 23 };
 
+async function captureStoreSet(browser) {
+  const rawDir = path.join(OUT_ROOT, "store-raw");
+  const dirs = [rawDir, ...["app-store", "google-play"].map((f) => path.join(OUT_ROOT, f))];
+  const clear = () => Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true })));
+  await clear();
+  await mkdir(rawDir, { recursive: true });
+
+  const hour = new Date().getUTCHours();
+  if (hour < STORE_HOURS_UTC.from || hour > STORE_HOURS_UTC.to) {
+    console.log(
+      `  warning: it is ${hour}:00 UTC. Chat and study times will read as the small hours; ` +
+        `re-seed and shoot between ${STORE_HOURS_UTC.from}:00 and ${STORE_HOURS_UTC.to}:59 UTC.`,
+    );
+  }
+
+  const { viewport } = APP_STORE_PRESET;
   console.log(
-    `${name} set, ${viewport.width}x${viewport.height} @${STORE_SCALE}x ` +
+    `Store screens, ${viewport.width}x${viewport.height} @${STORE_SCALE}x ` +
       "(signed in against the seeded demo chapter):",
   );
   const failuresBefore = failures.length;
@@ -654,58 +668,58 @@ async function captureStoreSet(browser, preset) {
       screens: STORE_SCREENS,
       viewport,
       scale: STORE_SCALE,
-      outDir: dir,
+      outDir: rawDir,
       noAsk: true,
+      timezoneId: STORE_TIMEZONE,
     });
   } catch (error) {
     // No partial store set survives a run that saw Ask: a folder of the shots
     // taken before it is exactly what someone would upload by mistake.
-    await rm(dir, { recursive: true, force: true });
+    await clear();
     throw error;
   }
 
   // captureRunningApp words and records its own screen failures.
   const screenFailures = failures.slice(failuresBefore);
-  const files = [];
-  for (const shot of shots) {
-    const bytes = await readFile(shot.file);
-    const header = pngHeader(bytes);
-    shot.size = header ? `${header.width}x${header.height}` : "not a PNG";
-    files.push({ slug: shot.slug, bytes });
+  const read = (list) =>
+    Promise.all(list.map(async ({ slug, file }) => ({ slug, bytes: await readFile(file) })));
+  const problems = storeSetProblems(APP_STORE_PRESET, await read(shots), screenFailures);
+
+  let sets = [];
+  if (!problems.length) {
+    sets = await composeStoreFrames(browser, { rawDir, outRoot: OUT_ROOT });
+    for (const set of sets) {
+      for (const problem of storeSetProblems(set.preset, await read(set.files))) {
+        problems.push(`${set.preset.name}: ${problem}`);
+      }
+    }
   }
-  const problems = storeSetProblems(preset, files, screenFailures);
   failures.push(...problems.slice(screenFailures.length));
 
   // The same rule as the Ask refusal, for every other problem: a screen that
   // never rendered, a file the store would reject, or a count it won't take
   // leaves nothing behind to upload.
   if (problems.length) {
-    await rm(dir, { recursive: true, force: true });
-    console.log(`\n${name} set not written: ${dir} removed, see below.`);
-    return shots;
+    await clear();
+    console.log("\nStore sets not written: store-raw/, app-store/ and google-play/ removed, see below.");
+    return;
   }
 
-  console.log(`\n${shots.length} ${name} screens -> ${dir}`);
-  for (const { slug, label, size } of shots) {
-    console.log(`  ${slug}.png  ${size}  ${label}`);
+  for (const { preset, dir, files } of sets) {
+    const { width, height } = preset.pixels;
+    console.log(`\n${files.length} ${preset.name} frames, ${width}x${height} -> ${dir}`);
+    for (const { slug } of files) console.log(`  ${slug}.png`);
   }
-  return shots;
 }
 
 async function main() {
-  if (APP_STORE && GOOGLE_PLAY) {
-    throw new Error("Pass --app-store or --google-play, not both.");
-  }
   const browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_PATH || undefined,
     args: ["--no-sandbox"],
   });
-  if (APP_STORE || GOOGLE_PLAY) {
+  if (STORE) {
     try {
-      await captureStoreSet(
-        browser,
-        APP_STORE ? APP_STORE_PRESET : GOOGLE_PLAY_PRESET,
-      );
+      await captureStoreSet(browser);
     } finally {
       await browser.close();
     }
