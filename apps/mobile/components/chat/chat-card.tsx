@@ -18,7 +18,7 @@ import type { MessageLink } from "./message-markdown";
 
 /**
  * The frame every mobile chat card shares: the poll, event, task, points,
- * service hours, announcement and audit cards (#3185, #3383).
+ * service hours, rush candidate, announcement and audit cards (#3185, #3383).
  *
  * `thread-message-row.tsx` puts a card inside `MessageRowFrame`, which draws
  * the reply quote, the avatar and the author line every row has. The frame

@@ -197,6 +197,7 @@ card's, which is drawn neutral, as web draws it.
 | Task card | `TasksGlyph` (the Tasks tab's) | `components/tab-glyphs.tsx` |
 | Points card | `PointsGlyph` (star) | `components/chat/card-glyphs.tsx` |
 | Hours card | The More hub's `ServiceGlyph` heart, adapted as `ServiceHoursGlyph` | `components/chat/card-glyphs.tsx` |
+| Recruitment candidate card | `RushGlyph` (funnel, inner line stroke-only; the module catalog's `funnel`) | `components/chat/card-glyphs.tsx` |
 | Announcement card | `AnnouncementGlyph` (megaphone, sound arc stroke-only) | `components/chat/card-glyphs.tsx` |
 | `#chapter-audit` card, neutral | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |
 

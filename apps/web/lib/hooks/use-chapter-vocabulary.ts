@@ -2,7 +2,7 @@
 
 import { useCurrentChapter } from "@repo/hooks";
 import { useChapterStore } from "@/lib/stores/chapter-store";
-import { memberViewVocabulary, type VocabConfig } from "@/lib/vocabulary";
+import { memberViewVocabulary, type VocabConfig } from "@repo/org-archetypes";
 
 /**
  * The active chapter's vocabulary for member-facing surfaces, from the member
@@ -16,9 +16,5 @@ export function useChapterVocabulary(): VocabConfig | undefined {
     chapterId: activeChapterId,
     enabled: !!activeChapterId,
   });
-  return memberViewVocabulary(
-    chapterQuery.data as
-      | Parameters<typeof memberViewVocabulary>[0]
-      | undefined,
-  );
+  return memberViewVocabulary(chapterQuery.data);
 }

@@ -44,6 +44,8 @@ vi.mock("@repo/hooks", async () => {
     // The event and task cards' reads and writes (#3185); their own specs
     // cover what each one does. Here they only have to draw.
     usePermissionList: () => [],
+    // The hours and rush cards read the query itself (#3383).
+    useMyPermissions: () => ({ data: { permissions: [] } }),
     useTask: () => ({ data: undefined }),
     useEvent: () => ({ data: undefined, isError: false }),
     useAttendance: () => ({ data: undefined }),
@@ -53,6 +55,10 @@ vi.mock("@repo/hooks", async () => {
     useRejectTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
     // The hours card's live read (#3383); its own spec covers the badge.
     useServiceEntry: () => ({ data: undefined }),
+    // The rush card's live read and writes (#3383); its own spec covers them.
+    useRushCandidate: () => ({ data: undefined, isError: false }),
+    useVoteRushCandidate: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useBidRushCandidate: () => ({ mutateAsync: vi.fn(), isPending: false }),
   };
 });
 
@@ -1027,9 +1033,18 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
     hours: { payload: HOURS, eyebrow: "Service hours" },
     announcement: { payload: { body: "Dues are due Friday" }, eyebrow: "Announcement" },
     system_audit: { payload: AUDIT, eyebrow: "Audit" },
+    rush: {
+      payload: {
+        candidate_id: "cand-1",
+        display_name: "Jordan Reyes",
+        added_by_name: "Alice",
+      },
+      // The IFC word: the mocked chapter names no archetype.
+      eyebrow: "Rush",
+    },
   };
-  /** Card kinds mobile still draws as their text (`cardFor`). */
-  const TEXT_ON_MOBILE = ["rush", "dues", "loading"];
+  /** Card kinds mobile draws as their text on purpose (`cardFor`). */
+  const TEXT_ON_MOBILE = ["dues", "loading"];
 
   it("draws every card kind as a card, but the ones it means to leave as text", () => {
     expect(new Set([...Object.keys(CARDS), ...TEXT_ON_MOBILE])).toEqual(
@@ -1166,8 +1181,8 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
     expect(host.props.accessible).toBe(true);
   });
 
-  it("draws a points or hours row whose payload doesn't read as its text", () => {
-    for (const kind of ["points", "hours"] as const) {
+  it("draws a points, hours or rush row whose payload doesn't read as its text", () => {
+    for (const kind of ["points", "hours", "rush"] as const) {
       const text = allDrawnText(
         renderRow(
           visible(

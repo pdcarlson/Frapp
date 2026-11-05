@@ -5,7 +5,7 @@ import {
   canReadCardServiceEntry,
   readLiveServiceEntry,
   SERVICE_ENTRY_CARD_LABELS,
-  usePermissionList,
+  useMyPermissions,
   useServiceEntry,
   type ServiceEntryStatus,
 } from "@repo/hooks";
@@ -36,7 +36,8 @@ import {
  * that web's card applies too. Only a `members:view` holder who logged it or
  * holds `service:approve` may read an entry; anyone else would get a 403, so
  * their card asks nothing and shows no badge, as it does before the read lands
- * and after a 403 or 404.
+ * and when the read answers with no entry. Until the viewer's permissions are
+ * read, only the member who logged it asks (`canReadCardServiceEntry`).
  */
 export function HoursCard({
   payload,
@@ -45,11 +46,18 @@ export function HoursCard({
   const { tokens } = useFrappTheme();
   // `!!viewerId`: a missing viewer must never match a missing member id.
   const isOwner = !!frame.viewerId && frame.viewerId === payload.user_id;
-  const permissions = usePermissionList();
+  // The query, not `usePermissionList()`: its `[]` can't tell "holds
+  // nothing" from "not read yet", and the read rule treats those apart.
+  const permissions = useMyPermissions().data?.permissions;
   const canApprove = can("service:approve", permissions);
   const canViewMembers = can("members:view", permissions);
   const entryQuery = useServiceEntry(
-    canReadCardServiceEntry({ isOwner, canApprove, canViewMembers })
+    canReadCardServiceEntry({
+      isOwner,
+      canApprove,
+      canViewMembers,
+      permissionsKnown: Array.isArray(permissions),
+    })
       ? payload.entry_id
       : "",
   );

@@ -10,6 +10,7 @@ export * from "./use-activity-feed";
 export * from "./use-attendance";
 export * from "./task-card";
 export * from "./service-entry-card";
+export * from "./rush-card";
 export * from "./use-points";
 export * from "./use-chat";
 export * from "./hide-conversation";
