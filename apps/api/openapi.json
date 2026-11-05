@@ -11615,7 +11615,21 @@
             "maximum": 1000000000
           },
           "color": {
-            "type": "string"
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "#F2994A",
+              "#F47FA4",
+              "#B392F0",
+              "#8FA8FF",
+              "#5CC8F0",
+              "#3DD6C4",
+              "#6FD08C",
+              "#C5E06A",
+              "#D9B99B",
+              "#A9B4C2"
+            ],
+            "description": "One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), exactly as listed. Null clears the color."
           }
         },
         "required": [
@@ -11641,7 +11655,21 @@
             "maximum": 1000000000
           },
           "color": {
-            "type": "string"
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "#F2994A",
+              "#F47FA4",
+              "#B392F0",
+              "#8FA8FF",
+              "#5CC8F0",
+              "#3DD6C4",
+              "#6FD08C",
+              "#C5E06A",
+              "#D9B99B",
+              "#A9B4C2"
+            ],
+            "description": "One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), exactly as listed. Null clears the color."
           }
         }
       },
@@ -11830,12 +11858,18 @@
           "avatar_url": {
             "type": "string",
             "nullable": true
+          },
+          "role_color": {
+            "type": "string",
+            "nullable": true,
+            "description": "Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it."
           }
         },
         "required": [
           "user_id",
           "display_name",
-          "avatar_url"
+          "avatar_url",
+          "role_color"
         ]
       },
       "UpdateMemberRolesDto": {

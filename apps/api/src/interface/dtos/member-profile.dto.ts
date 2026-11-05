@@ -96,4 +96,12 @@ export class MemberRosterEntryDto {
    */
   @ApiProperty({ type: String, nullable: true })
   avatar_url: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it.',
+  })
+  role_color: string | null;
 }

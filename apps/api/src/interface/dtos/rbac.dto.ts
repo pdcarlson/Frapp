@@ -1,17 +1,17 @@
 import {
   IsArray,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
-  Matches,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ROLE_NAME_MAX_LENGTH } from '@repo/validation';
+import { ROLE_COLOR_HEXES, ROLE_NAME_MAX_LENGTH } from '@repo/validation';
 import { POSITION_MAX } from '#domain/constants/field-limits';
 
 export class CreateRoleDto {
@@ -33,10 +33,18 @@ export class CreateRoleDto {
   @Max(POSITION_MAX)
   display_order?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    enum: ROLE_COLOR_HEXES,
+    description:
+      'One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), exactly as listed. Null clears the color.',
+  })
   @IsOptional()
-  @Matches(/^#[0-9A-Fa-f]{6}$/, { message: 'color must be a valid hex color' })
-  color?: string;
+  @IsIn(ROLE_COLOR_HEXES, {
+    message: 'color must be one of the role palette colors',
+  })
+  color?: string | null;
 }
 
 export class UpdateRoleDto {
@@ -59,10 +67,18 @@ export class UpdateRoleDto {
   @Max(POSITION_MAX)
   display_order?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    enum: ROLE_COLOR_HEXES,
+    description:
+      'One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), exactly as listed. Null clears the color.',
+  })
   @IsOptional()
-  @Matches(/^#[0-9A-Fa-f]{6}$/, { message: 'color must be a valid hex color' })
-  color?: string;
+  @IsIn(ROLE_COLOR_HEXES, {
+    message: 'color must be one of the role palette colors',
+  })
+  color?: string | null;
 }
 
 export class TransferPresidencyDto {

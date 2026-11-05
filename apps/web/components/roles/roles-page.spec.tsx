@@ -499,3 +499,65 @@ describe("display order guard (#2206)", () => {
     ).toBeUndefined();
   });
 });
+
+describe("role color swatches (#3485)", () => {
+  async function selectPresident() {
+    const user = userEvent.setup();
+    render(<RolesAndPermissionsPage />);
+    await user.click(screen.getByRole("button", { name: /president/i }));
+    return user;
+  }
+
+  it("offers the palette instead of a free color input", async () => {
+    await selectPresident();
+    const group = screen.getAllByRole("group", { name: /^color$/i })[0]!;
+    // "No color" plus the ten palette swatches.
+    expect(within(group).getAllByRole("button")).toHaveLength(11);
+    expect(
+      within(group).getByRole("button", { name: "No color" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(document.querySelector('input[type="color"]')).toBeNull();
+  });
+
+  it("saves the picked swatch's palette hex", async () => {
+    const user = await selectPresident();
+    const group = screen.getAllByRole("group", { name: /^color$/i })[0]!;
+    await user.click(within(group).getByRole("button", { name: "Orange" }));
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+
+    await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
+    expect(updateRole.mutateAsync.mock.calls[0]![0].body.color).toBe("#F2994A");
+  });
+
+  it("clears a color with null, and leaves an untouched one out", async () => {
+    Object.assign(roles, {
+      data: [{ ...SYSTEM_ROLE, color: "#F2994A" }, CUSTOM_ROLE],
+    });
+    const user = await selectPresident();
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+    await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
+    expect(updateRole.mutateAsync.mock.calls[0]![0].body.color).toBeUndefined();
+
+    const group = screen.getAllByRole("group", { name: /^color$/i })[0]!;
+    await user.click(within(group).getByRole("button", { name: "No color" }));
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+    await waitFor(() =>
+      expect(updateRole.mutateAsync).toHaveBeenCalledTimes(2),
+    );
+    expect(updateRole.mutateAsync.mock.calls[1]![0].body.color).toBeNull();
+  });
+
+  it("reads an off-palette stored color as none and does not rewrite it", async () => {
+    Object.assign(roles, {
+      data: [{ ...SYSTEM_ROLE, color: "#FFD700" }, CUSTOM_ROLE],
+    });
+    const user = await selectPresident();
+    const group = screen.getAllByRole("group", { name: /^color$/i })[0]!;
+    expect(
+      within(group).getByRole("button", { name: "No color" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+    await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
+    expect(updateRole.mutateAsync.mock.calls[0]![0].body.color).toBeUndefined();
+  });
+});

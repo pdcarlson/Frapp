@@ -138,7 +138,7 @@ describe("useCreateRole", () => {
       name: "Secretary",
       permissions: ["members.read"],
       display_order: 1,
-      color: "#000000",
+      color: "#F47FA4" as const,
     };
 
     const promise = result.current.mutateAsync(payload);

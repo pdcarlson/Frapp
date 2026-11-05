@@ -1,7 +1,16 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+
+/**
+ * Role write bodies, read from the contract rather than restated: `color` is a
+ * palette enum there (#3485), which a hand-written `string` would hide until
+ * the API refused the request.
+ */
+export type CreateRoleBody = components["schemas"]["CreateRoleDto"];
+export type UpdateRoleBody = components["schemas"]["UpdateRoleDto"];
 
 export function useRoles() {
   const client = useFrappClient();
@@ -40,12 +49,7 @@ export function useCreateRole() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    mutationFn: async (body: {
-      name: string;
-      permissions: string[];
-      display_order?: number;
-      color?: string;
-    }) => {
+    mutationFn: async (body: CreateRoleBody) => {
       const { data, error } = await client.POST("/v1/roles", { body });
       if (error) throw error;
       return data;
@@ -61,18 +65,7 @@ export function useUpdateRole() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    mutationFn: async ({
-      id,
-      body,
-    }: {
-      id: string;
-      body: {
-        name?: string;
-        permissions?: string[];
-        display_order?: number;
-        color?: string;
-      };
-    }) => {
+    mutationFn: async ({ id, body }: { id: string; body: UpdateRoleBody }) => {
       const { data, error } = await client.PATCH("/v1/roles/{id}", {
         params: { path: { id } },
         body,
