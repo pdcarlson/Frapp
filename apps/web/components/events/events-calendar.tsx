@@ -6,7 +6,8 @@ import { EventsGlyph } from "@/components/events/chapter-ops-glyphs";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
-import { formatClock, localIsoDate, parseInstant } from "@repo/formatting";
+import { compactControlClassName } from "@/components/shared/table-controls";
+import { formatTimeOfDay, localIsoDate, parseInstant } from "@repo/formatting";
 
 type EventRow = Record<string, unknown>;
 
@@ -53,8 +54,8 @@ export function startOfMonth(date: Date): Date {
 }
 
 // Local (viewer-timezone) day key, not UTC — an event's calendar day is
-// wherever the officer viewing it is standing, matching how `formatDate`
-// elsewhere on this page already renders `start_time` in local time.
+// wherever the officer viewing it is standing, matching how the list row
+// on this page renders `start_time` in local time.
 const localDayKey = localIsoDate;
 
 // A 6x7 grid anchored to the Sunday on/before the 1st, so every month
@@ -137,24 +138,28 @@ export function EventsCalendar({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold">{monthLabel}</h3>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={goToToday}>
+    <section aria-labelledby="events-calendar-month" className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h2 id="events-calendar-month" className="text-base font-semibold">
+          {monthLabel}
+        </h2>
+        <div className="flex items-center gap-1">
+          <Button variant="secondary" size="toolbar" onClick={goToToday}>
             Today
           </Button>
           <Button
-            variant="secondary"
+            variant="quiet"
             size="icon"
+            className={compactControlClassName}
             aria-label="Previous month"
             onClick={goToPreviousMonth}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <Button
-            variant="secondary"
+            variant="quiet"
             size="icon"
+            className={compactControlClassName}
             aria-label="Next month"
             onClick={goToNextMonth}
           >
@@ -163,10 +168,14 @@ export function EventsCalendar({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-md border border-border">
+      {/*
+        A hairline frame on the page surface, not a card: the grid's 1px gaps
+        show `--border` between cells that paint `--background`.
+      */}
+      <div className="overflow-hidden rounded-[14px] border border-border">
         <div className="grid grid-cols-7 gap-px bg-border text-xs font-semibold text-muted-foreground">
           {WEEKDAY_LABELS.map((label) => (
-            <div key={label} className="bg-card px-2 py-1.5 text-center">
+            <div key={label} className="bg-background px-2 py-1.5 text-center">
               {label}
             </div>
           ))}
@@ -194,8 +203,8 @@ export function EventsCalendar({
               <div
                 key={key}
                 className={cn(
-                  "flex min-h-24 flex-col gap-1 bg-card p-2",
-                  !isCurrentMonth && "bg-muted/40",
+                  "flex min-h-24 flex-col gap-1 p-2",
+                  isCurrentMonth ? "bg-background" : "bg-surface-1",
                 )}
               >
                 <button
@@ -240,7 +249,8 @@ export function EventsCalendar({
                     const isSeriesInstance =
                       typeof event.parent_event_id === "string" &&
                       event.parent_event_id.length > 0;
-                    const clockLabel = formatClock(event.start_time);
+                    // The time of day only: the day is the cell's own.
+                    const clockLabel = formatTimeOfDay(event.start_time);
 
                     return (
                       <button
@@ -249,7 +259,7 @@ export function EventsCalendar({
                         title={eventName}
                         aria-label={`View ${eventName}${clockLabel ? `, ${clockLabel}` : ""}${isMandatory ? ", mandatory" : ""}`}
                         className={cn(
-                          "flex items-center gap-1 truncate rounded-xs border-l-2 bg-card px-1.5 py-1 text-left text-[11px] font-semibold text-foreground transition-colors",
+                          "flex items-center gap-1 truncate rounded-xs border-l-2 bg-surface-1 px-1.5 py-1 text-left text-[11px] font-semibold text-foreground transition-colors",
                           FOCUS_RING,
                           "hover:bg-accent-subtle",
                           isMandatory ? "border-l-primary" : "border-l-border",
@@ -295,6 +305,6 @@ export function EventsCalendar({
           })}
         </div>
       </div>
-    </div>
+    </section>
   );
 }

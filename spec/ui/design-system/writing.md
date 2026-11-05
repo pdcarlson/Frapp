@@ -40,10 +40,10 @@ Three things already pointed the same way:
   `Reload`, `Try again`, `Back to chat`, `Transfer presidency`, `Start new semester` — is sentence
   case. These four rows were the document's only Title Case strings.
 
-**What this rule does NOT already describe, stated so nobody reads it as settled everywhere.** Two
-Title Case controls ship on the web dashboard today — `New Event`
-(`apps/web/components/events/events-page.tsx`) and `Open Documents`
-(`apps/web/components/layout/ask-pill.tsx`) — and
+**What this rule does NOT already describe, stated so nobody reads it as settled everywhere.** One
+Title Case control ships on the web dashboard today — `Open Documents`
+(`apps/web/components/layout/ask-pill.tsx`); `/events`' `New Event` became `New event` in November
+2026 — and
 [`../web-dashboard/reference/web-framework.dc.html`](../web-dashboard/reference/web-framework.dc.html),
 which outranks written docs on the web surface
 ([`../web-dashboard/README.md` § Sources and precedence](../web-dashboard/README.md#sources-and-precedence)),
@@ -75,6 +75,8 @@ Template:
 Example:
 
 `Unable to load members. This view requires an authenticated chapter context. Sign in and retry.`
+
+Copy never shows a permission key such as `roles:manage`. A permission-denied line names what the role can't do (`Your role can't manage roles.`) and who can change that; an error that may be an access problem says `Confirm your chapter access and retry.`; a toast with no server message says `Try again in a moment.` Where a screen has to name a permission, it uses the words in [`permission-labels.ts`](../../../apps/web/lib/permission-labels.ts) (2026-11-05).
 
 ## 4. Empty state pattern
 
@@ -117,10 +119,13 @@ Billing, legal, and data-sensitive surfaces MUST:
 - Avoid overpromising
 - Explicitly indicate preview/demo data when shown
 
-Examples:
+Example (the event detail sheet's preview notice):
 
-- `Showing preview event data`
-- `Sign in to load live event scheduling and attendance records`
+- `Showing preview event details. Sign in to edit and delete live events.`
+
+The events pair that used to sit here (`Showing preview event data` /
+`Sign in to load live event scheduling and attendance records`) had no reader
+left and was deleted from `stateMicrocopy.events` (2026-11-05).
 
 The billing pair that used to sit here (`Showing preview billing data` /
 `Sign in to load live chapter subscription and invoice records`) went with the
@@ -176,7 +181,7 @@ The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.g
 | Empty | `No actives yet` | `Actives appear here once they join.` |
 | No results (filters) | `No actives match the filters` | `Clear a filter to see more.` |
 | No results (search) | `No match for “<query>”` | `Check the spelling, or widen the filters.` |
-| Error | `Couldn't load members` | `Check your chapter access and API health.` |
+| Error | `Couldn't load members` | `Confirm your chapter access and retry.` |
 | Error (roles and points) | `Couldn't load roles and points` | `Filtering, sorting and assignment need both.` |
 | Offline | `Members unavailable offline` | `Reconnect to load the roster.` |
 
@@ -195,16 +200,20 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 |---|---|---|
 | Loading | — | `Loading chapter events...` |
 | Empty | `No events yet` | `Create your first chapter event to unlock attendance and point automation.` |
-| Error | `Couldn't load chapter events` | `The events workflow needs a healthy API response. Verify your chapter access and retry.` |
+| Empty (filtered) | `No events match the filters` | `Clear a filter to see more.` |
+| Empty (search) | `No match for “{query}”` | `Check the spelling, or widen the filters.` |
+| Error | `Couldn't load chapter events` | `Confirm your chapter access and retry.` |
 | Offline | `Events workspace unavailable offline` | `Reconnect to load event schedules and attendance updates.` |
+
+`No events yet` shows only when the chapter has no events at all. Under a filter that hides every event (the default Upcoming, once every event is past), the page says the filters matched nothing instead (2026-11-05).
 
 ### Attendance (dashboard)
 
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading attendance...` |
-| Empty | `No attendance records yet` | `Once members check in — or you record attendance manually — they'll show up here.` |
-| Error | `Attendance unavailable` | `Couldn't load attendance for this event. Retry or confirm you have events:update or permission to view attendance.` |
+| Empty | `No attendance records yet` | `Once members check in, or you record attendance manually, they'll show up here.` |
+| Error | `Attendance unavailable` | `Couldn't load attendance for this event. Confirm your chapter access and retry.` |
 
 ### Points (dashboard)
 
@@ -214,7 +223,7 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 | Empty leaderboard | `No leaderboard entries` | `Point activity will populate after attendance, study, or admin adjustments.` |
 | Leaderboard search matched nothing | `No members match that search` | `Check the spelling, or clear the search to see the full leaderboard.` |
 | Empty transactions | `No transactions in this window` | `Your attendance, study sessions, and adjustments will appear here.` |
-| Error | `Couldn't load the points ledger` | `Standings and transactions are unavailable, so none are shown. Verify your chapter access and API health, then retry.` |
+| Error | `Couldn't load the points ledger` | `Standings and transactions are unavailable, so none are shown. Confirm your chapter access and retry.` |
 | Offline | `Points ledger unavailable offline` | `Reconnect to refresh leaderboard standings and transaction history.` |
 
 ### Points — Audit tab (dashboard)
@@ -222,10 +231,11 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading audit transactions...` |
-| Empty (flagged only) | `No flagged transactions in this window` | `Large single adjustments (\|amount\| ≥ 100) will appear here automatically.` |
+| Empty (flagged only) | `No flagged transactions in this window` | `Single adjustments of \|amount\| ≥ {threshold} are flagged here automatically.`, or `Large single adjustments are flagged here automatically.` when the chapter's threshold can't be read |
 | Empty (filtered) | `No transactions match this filter` | `Try relaxing the category or member filter.` |
-| Error | `Audit unavailable` | `Couldn't load chapter transactions. Retry or confirm your points:view_all access.` |
+| Error | `Audit unavailable` | `Couldn't load chapter transactions. Confirm your chapter access and retry.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can view the chapter's transaction log.` |
+| Permission denied | `Audit` (the section label) | `Your role can't see every transaction.` |
 
 ### Roles & Permissions (dashboard)
 
@@ -233,8 +243,8 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 |---|---|---|
 | Loading | — | `Loading roles and permissions...` |
 | Empty | `No roles yet` | `Chapters always start with default system roles. Refresh to reload or create a new custom role.` |
-| Error | `Couldn't load roles` | `Retry in a moment. This view requires the roles:manage permission.` |
-| Permission denied | `Roles & Permissions` | `Managing roles requires the roles:manage permission. Ask your chapter president to grant access.` |
+| Error | `Couldn't load roles` | `Confirm your chapter access and retry.` |
+| Permission denied | — | `Your role can't manage roles. Ask your chapter president for access.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage roles.` |
 | Offline | `Roles unavailable offline` | `Reconnect to load the chapter's roles and edit their permissions.` |
 | Delete role confirmation | `Delete <name>?` | `Members assigned this role lose its permissions immediately. This cannot be undone.` · confirm `Delete role` |
@@ -261,7 +271,8 @@ The confirmation rows below and under Roles & Permissions are the five `window.c
 | Rollover confirmation | `Start a new semester labelled "<label>"?` | `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.` · confirm `Start new semester` |
 | Delete field confirmation | `Delete the field "<label>"?` | `Members lose the values they have entered for it, and the column disappears from the directory. This cannot be undone.` · confirm `Delete field` |
 | Delete custom role confirmation | `Delete the custom role "<label>"?` | `Members holding it lose its capabilities on their next request. This cannot be undone.` · confirm `Delete custom role` |
-| Number field refused at save | `<Field> needs a number` (empty) · `<Field> starts at <min>` (under its floor) | `Enter a whole number of <min> or more.` Dues amounts, grace days and installment count, a workflow threshold, a custom role's rank (#3050). `<Field>` is the input's own label, or `The threshold for “<workflow>”` for a workflow threshold. |
+| Number field refused at save | `<Field> needs a number` (empty) · `<Field> starts at <min>` (under its floor) | `Enter a whole number of <min> or more.` Dues grace days and installment count, a workflow threshold, a custom role's rank (#3050). `<Field>` is the input's own label, or `The threshold for “<workflow>”` for a workflow threshold. |
+| Dues amount refused at save | `<Field> needs an amount` | `Enter an amount in dollars, like 425 or 42.50.` Amounts are typed in dollars and stored in cents (2026-11-05; they were typed in cents). |
 
 The **Accent label illegible** row answers a different question from the **Accent preview fallback** row above it, and the pair is easy to collapse by mistake. The fallback fires when the accent is unreadable *as text on the card*, which is what `resolveChapterAccentColor` checks. This one fires when text is unreadable *on the accent* — which is what a primary button is, and what that card's own description promises the colour will be used for. They diverge: `#0086FE` passes the first and fails the second (both figures pinned in [`settings-contrast.spec.ts`](../../../apps/web/components/settings/settings-contrast.spec.ts)). Both are about the draft preview only, and each ends by saying what a save does instead, because saving differs from the preview in both cases: the entered color is stored rather than the substitute, and the saved palette's label (`on-primary`) always clears 4.5:1 ([`accent-engine.md`](accent-engine.md) §8; [#2543](https://github.com/pdcarlson/Frapp/issues/2543)). Neither says what the saved accent paints, which the engine derives (the row's "the palette is derived from it"). The **Accent hex needed** example, `#5AA9E6`, clears both checks, so following it raises neither.
 
@@ -273,7 +284,7 @@ The **Accent server contrast disclosure** row is independent of every row above 
 |---|---|---|
 | Loading | — | `Loading chapter tasks...` |
 | Empty | `No tasks yet` | `Admins can create the first chapter task to assign ownership and award points.` |
-| Error | `Couldn't load tasks` | `Confirm your chapter access and retry. Assignees see only their own tasks; admins need tasks:manage to see every task.` |
+| Error | `Couldn't load tasks` | `Confirm your chapter access and retry.` |
 | Offline | `Tasks unavailable offline` | `Reconnect to load the chapter board and move tasks through it.` |
 
 ### Service Hours (dashboard)
@@ -281,9 +292,9 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading service entries...` |
-| Empty queue | `No pending entries` | `Approved or rejected entries appear in the History card below.` |
+| Empty queue | `No pending entries` | `Approved or rejected entries appear under History.` |
 | Empty history | `No service activity yet` | `Log your first service entry to build up chapter service hours.` |
-| Error | `Couldn't load service entries` | `Members see only their own entries; admins need service:approve to see every entry.` |
+| Error | `Couldn't load service entries` | `Confirm your chapter access and retry.` |
 | Offline | `Service hours unavailable offline` | `Reconnect to log hours and review the approval queue.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review submitted hours.` |
 
@@ -329,9 +340,9 @@ Three of these exist to keep one state from impersonating another:
 | Idle | `No report generated yet` | `Generate a report to see a preview here.` |
 | Loading | — | `Generating report...` |
 | Empty filter | `Report returned no rows` | `The filters matched nothing in the active chapter.` |
-| Error | `Couldn't generate <kind> report` | the API's own message, or `The API rejected the request. Confirm reports:export and retry.` |
+| Error | `Couldn't generate <kind> report` | the API's own message, or `Confirm your chapter access and retry.` |
 | Truncated | `Incomplete report` (badge) | `<cap summary> This preview and the CSV built from it are not a complete record of the chapter.` |
-| Permission denied | `Reports & Export` | `Exporting chapter data requires the reports:export permission. Ask your chapter president to grant access.` |
+| Permission denied | — | `Your role can't export chapter data. Ask your chapter president for access.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can export chapter data.` |
 
 **This table had no Error row until the Resources & Reporting slice, and that is why the screen had no error state.** A failed run reported a toast and never touched `preview`, so the panel fell through to the Idle copy — a failure rendering as "nothing has happened yet", against [README.md](README.md) §4's requirement of an error state with a retry path on every async view. The Idle and Empty-filter titles were added in the same pass: [components.md](components.md) §10's state family needs a title and a description, and the approved sentences are kept verbatim as the descriptions rather than rewritten.
@@ -352,10 +363,10 @@ Three of these exist to keep one state from impersonating another:
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading study zones...` |
-| Empty zones | `No active study zones` | `Ask a chapter admin with geofences:manage to add one.` |
+| Empty zones | `No active study zones` | `Ask an officer who manages study zones to add one.` |
 | Empty history | `No sessions logged yet` | `Start a tracked session inside a study zone to start earning study points.` |
 | Error | `Couldn't load study data` | `Confirm your chapter access and retry.` |
-| Offline | `Study hours unavailable offline` | `Reconnect to start a session — tracking needs a live location check.` |
+| Offline | `Study hours unavailable offline` | `Reconnect to start a session. Tracking needs a live location check.` |
 | Paused (tab hidden) | `Paused (tab hidden)` (badge) | Surfaced live while the timer is paused by the Page Visibility API. |
 
 ### Subscription refused (mobile, cross-surface)
@@ -452,7 +463,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Error | `Couldn't load study zones` | `Confirm your chapter access and retry.` |
 | Offline | `Study zones unavailable offline` | `Reconnect to draw a zone or change its reward rate.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage study zones.` |
-| Permission denied | `Study zones` | `Managing study zones requires the geofences:manage permission. Ask your chapter president to grant access.` |
+| Permission denied | — | `Your role can't manage study zones. Ask your chapter president for access.` |
 
 ### Polls (dashboard)
 
@@ -463,6 +474,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Error | `Couldn't load polls` | `Confirm your chapter access and retry.` |
 | Offline | `Polls unavailable offline` | `Reconnect to load the chapter's polls and cast a vote.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can see the chapter's polls.` |
+| Permission denied | `Polls` (the page title) | `Your role can't see every poll. You can still vote in chat.` |
 
 ### Chat (dashboard)
 
@@ -482,7 +494,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | No channels | `No channels yet` | `New chapters seed #general, #announcements, and #chapter-audit during onboarding. Ask an admin if none appear.` |
 | Empty timeline | `Nothing in this channel yet` | `Be the first to post — everyone in the channel sees it right away.` |
 | Error | `Couldn't load channels` / `Couldn't load messages` | `Confirm your chapter access and retry.` |
-| Read-only channel | — | `This channel is read-only. Posting requires the announcements:post permission.` |
+| Read-only channel | — | `This channel is read-only for your role.` (mobile still quotes the permission key, [#3422](https://github.com/pdcarlson/Frapp/issues/3422)) |
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | Archived conversation (mobile only: a Group DM everyone else left, #348; web's channel list leaves archived channels out) | — | `This conversation is archived because everyone else left. You can still read it.` |
 | No chapter selected | `No chapter selected` | `Pick an active chapter to load its channels and messages.` |
@@ -526,13 +538,13 @@ The channel structure below the report queue on `/chat-admin`. Its states stand 
 | Error (pins) | `Couldn't load pins` | `Confirm your chapter access and retry.` (never `Nothing pinned`: a failed read is not an empty list) |
 | Offline (pins) | `Pins unavailable offline` | `Reconnect to load this channel's pins.` (whether the read paused or failed while offline) |
 | Loading (permission grid) | — | `Loading permissions…` |
-| Unavailable (permission grid) | — | `Couldn't load the permission catalog. You may be missing the members:view permission it requires. Existing selections are unaffected; ask your chapter president for access to change them.` (nothing loaded; a failed refresh keeps the loaded grid) |
+| Unavailable (permission grid) | — | `Couldn't load the permission list, which needs a role that can see the full directory. Your current selections are unaffected.` (nothing loaded; a failed refresh keeps the loaded grid) |
 | Offline (permission grid) | — | `Can't load the permission list while offline. Existing selections are unaffected; reconnect to change them.` |
 | Error | `Couldn't load channels` | `Confirm your chapter access and retry.` |
 | Stale | — | `Couldn't refresh the channels. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded channels and categories stay) |
 | Offline | `Channels unavailable offline` | `Reconnect to manage channels, categories and pins.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage chat channels.` |
-| Permission denied | — | `Managing channels and categories needs the channels:manage permission. Ask your chapter president to grant access.` |
+| Permission denied | — | `Your role can't manage channels. Ask your chapter president for access.` |
 
 The permission grid is the role-gated channel's, shared with the import wizard's channel step, which shows the same three lines.
 
@@ -552,7 +564,7 @@ The officer report queue ([`../../behavior/chat/README.md`](../../behavior/chat/
 | No chapter | `No chapter selected` | `Pick an active chapter to review its reports.` |
 | Offline | `Reports unavailable offline` | `Reconnect to review reported messages.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review reported messages.` |
-| Permission denied | `Reported messages` | `Reviewing reported messages needs the members:view and channels:manage permissions. Ask your chapter president to grant access.` |
+| Permission denied | `Reported messages` | `Reviewing reported messages needs a role that can see the full directory and manage channels and pins. Ask your chapter president for access.` |
 | Nothing to remove | — | `This message no longer exists, so there's nothing to remove. Mark actioned to close the report.` (hard-deleted; the row offers `Mark actioned` in place of `Remove message`) |
 | Attachments (open report) | — | `1 attachment` / `<n> attachments`, then `Kept while this report is open, even if the sender deletes the message.`, each file's name (`Unnamed file` for none) and size, and `Show attachments` to load them (#2481). Loading: `Loading attachments...`. Failed: `Couldn't load the attachments.` with `Retry`. Fewer loaded than the report holds: `1 attachment couldn't be loaded.` / `<n> attachments couldn't be loaded.` |
 | Attachments (resolved report) | — | `1 attachment` / `<n> attachments`, then `Attachments are kept only while a report is open.` and the file names, with nothing to open |
@@ -585,7 +597,7 @@ The import list on `/discord-import`, and deleting an import from it ([#2944](ht
 | Stale | — | `Couldn't refresh the imports. This is the last update that loaded.` · `Try again` (a background refresh of the list failed, or of the polled import's own row while that row still shows its copy; the loaded rows and their meters stay) |
 | Offline | `Imports unavailable offline` | `Reconnect to load your chapter's Discord imports.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can import Discord history.` |
-| Permission denied | — | `Importing a Discord archive needs channel management permission.` |
+| Permission denied | — | `Your role can't import Discord history. Ask your chapter president for access.` |
 | Loading (channel panel) | — | `Loading the import’s channels…` |
 | Error (channel panel) | `Couldn’t load the import’s channels` | `The import itself is unaffected and keeps running. Try again in a moment.` · `Retry` |
 | Offline (channel panel) | `Channels unavailable offline` | `Reconnect to see this import’s channels.` (whether the read paused or failed while offline) |
@@ -604,7 +616,7 @@ The import list on `/discord-import`, and deleting an import from it ([#2944](ht
 | Deleted (row) | — | `Deleted. The messages, attachments and archive files it brought in are gone.` |
 | Delete refused (toast) | — | The API's own message (`Cancel the running import before deleting it.`), or `Could not delete the import.` |
 
-The confirmation names the counts and the server because the button reads the same on every row: a delete of five thousand messages and one of a hundred and forty thousand look identical until the dialog says which. The row counts the messages down because a large purge runs for many minutes, and a bare `purging` badge could not tell an admin working from stuck; it stops at 99% and switches to what it is still doing, because the status, not the count, says the deletion is over (the count can finish short of the total).
+The confirmation names the counts and the server because the button reads the same on every row: a delete of five thousand messages and one of a hundred and forty thousand look identical until the dialog says which. The row counts the messages down because a large purge runs for many minutes, and a bare `Deleting` badge (the `purging` state; the badge prints a plain-language label per §5, since no import state has a §5 row) could not tell an admin working from stuck; it stops at 99% and switches to what it is still doing, because the status, not the count, says the deletion is over (the count can finish short of the total).
 
 The channel panel is what Watch and Details open on a bot import's row. Its strings keep the typographic apostrophe and ellipsis they were written with, unlike the list's, and the connect step's loading lines keep the ellipsis; match them exactly when editing any of them.
 
@@ -616,7 +628,7 @@ Implementation: the list states inline in `apps/web/components/discord-import/di
 |---|---|---|
 | Loading | — | `Loading billing overview...` |
 | Empty | `No invoices yet` | `Create your first invoice to start chapter dues collection.` |
-| Error | `Couldn't load invoices` | `Verify your chapter access and API health, then retry.` |
+| Error | `Couldn't load invoices` | `Confirm your chapter access and retry.` |
 | Empty (filtered) | `No invoices match this filter` | `Try a different status, or clear the filter to see every invoice.` |
 | Loading (plan panel) | — | `Loading plan...` |
 | Offline | `Billing unavailable offline` | `Reconnect to sync subscription status and invoice balances.` |
@@ -698,7 +710,7 @@ still out.
 | A read in flight, nothing being written | — | `Loading your preferences…` |
 | Synced | — | `Synced with your account.` |
 
-**The read row borrows the web Preferences card's loading line** (`Profile (dashboard)` below), because it is the same `GET /v1/settings`. Until #2938 a read in flight said `Saving…`, while nothing was being saved.
+**The read row borrows the web Quiet hours section's loading line** (`Profile (dashboard)` below), because it is the same `GET /v1/settings`. Until #2938 a read in flight said `Saving…`, while nothing was being saved.
 
 ### Report and block (mobile s05 / s13 / s16, web `/chat` and `/profile`)
 
@@ -861,15 +873,15 @@ Rewritten by the same lane and on the same rule as the Members table above; the 
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading your profile...` |
-| Error | `Couldn't load your profile` | `Sign in succeeded but we couldn't reach the API. Retry in a moment.` |
+| Error | `Couldn't load your profile` | `You're signed in, but Frapp couldn't be reached. Try again in a moment.` |
 | Offline | `Your profile is unavailable offline` | `Reconnect to load your directory entry and notification preferences.` |
-| Preferences card — loading | — | `Loading your preferences...` |
-| Preferences card — error | `Couldn't load your preferences` | `Quiet hours couldn't be read, so saving them would overwrite what's stored. Retry in a moment.` |
-| Preferences card — offline | `Quiet hours unavailable offline` | `Reconnect to load and change when notifications are silenced.` |
+| Quiet hours section — loading | — | `Loading your preferences...` |
+| Quiet hours section — error | `Couldn't load your preferences` | `Quiet hours couldn't be read, so saving them would overwrite what's stored. Retry in a moment.` |
+| Quiet hours section — offline | `Quiet hours unavailable offline` | `Reconnect to load and change when notifications are silenced.` |
 
 **There is deliberately no Empty row**, and saying so is the point of the line: the viewer always exists, so `/profile` has no empty branch to write. The Resources & Reporting slice's rule is about states that exist and were never written down, not a mandate to invent one — without this sentence the next reader "completes" the table with copy no code can reach.
 
-The Preferences card is a **second query** on the same screen (`GET /v1/settings` beside `GET /v1/users/me`), which is why it has its own three rows rather than borrowing the screen's. It had no states at all until the Profile & pre-auth slice, so a failed fetch rendered empty fields beside a live Save button that then reported success.
+The Quiet hours section (the Preferences card until 2026-11-05) is a **second query** on the same screen (`GET /v1/settings` beside `GET /v1/users/me`), which is why it has its own three rows rather than borrowing the screen's. It had no states at all until the Profile & pre-auth slice, so a failed fetch rendered empty fields beside a live Save button that then reported success.
 
 ### Sign in (pre-auth)
 
@@ -906,7 +918,7 @@ The Preferences card is a **second query** on the same screen (`GET /v1/settings
 | Create a chapter (secondary) | — | `Starting a chapter?` + `Create a chapter` (returns to `/chat`, which remounts the first-officer wizard). |
 | Checking the session | — | `Verifying your session…` (announced, not drawn) |
 | Session check failed, offline | `Can't check your session` | `Reconnect to confirm you're signed in, then redeem the invite.` |
-| Session check failed, error | `Couldn't check your session` | `We couldn't reach the API to confirm you're signed in. Retry in a moment.` |
+| Session check failed, error | `Couldn't check your session` | `Frapp couldn't be reached to confirm you're signed in. Try again in a moment.` |
 | Redeemed | `Chapter joined` | `You're in. Opening chat.` Mobile goes to s03, `You're in.` over `<chapter> · <school>`, with one pinned `Go to chat` (`Opening chat…` while it runs). |
 | Mobile s02, the question (#3350) | `How are you getting in?` | `Members join with an invite from an officer. The first officer sets the chapter up.` The rows above are web `/join`'s, except Unparseable paste, which mobile shares word for word; mobile s02 asks this first and offers two answers instead of a field. |
 | Mobile s02 answers | — | `I have an invite` + `Use the link your officer sent.`, then `I'm starting our chapter` + `Set it up, then invite everyone.` |

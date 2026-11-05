@@ -15,14 +15,8 @@ import {
   NestedError,
   NestedLoading,
 } from "@/components/shared/nested-states";
+import { ProfileSection } from "@/components/profile/profile-section";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -224,7 +218,7 @@ export function DiscordHistoryCard() {
         </p>
         <Button
           variant="secondary"
-          size="sm"
+          size="toolbar"
           disabled={unlink.isPending}
           onClick={() => void removeLink()}
         >
@@ -247,12 +241,12 @@ export function DiscordHistoryCard() {
   }
 
   return (
-    <Card id="discord-history" className="scroll-mt-16">
-      <CardHeader>
-        <CardTitle>{DISCORD_HISTORY_TITLE}</CardTitle>
-        <CardDescription>{DISCORD_HISTORY_DESCRIPTION}</CardDescription>
-      </CardHeader>
-      <CardContent>{body}</CardContent>
-    </Card>
+    <ProfileSection
+      id="discord-history"
+      title={DISCORD_HISTORY_TITLE}
+      hint={DISCORD_HISTORY_DESCRIPTION}
+    >
+      {body}
+    </ProfileSection>
   );
 }

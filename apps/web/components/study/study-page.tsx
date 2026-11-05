@@ -14,14 +14,6 @@ import {
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -29,8 +21,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { studySessionStatusKind } from "@/components/study/study-status";
+import {
+  studySessionStatusKind,
+  studySessionStatusLabel,
+} from "@/components/study/study-status";
 import { NestedEmpty } from "@/components/shared/nested-states";
+import { SectionLabel } from "@/components/shared/section-label";
+import { denseListClassName } from "@/components/shared/table-controls";
 import {
   ErrorState,
   anyReadUncached,
@@ -45,7 +42,8 @@ import {
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import {
-  formatLocaleDateTime as formatShortDate,
+  formatDayTimeRange,
+  formatMinutesRounded,
   formatPaddedStopwatch as formatDuration,
 } from "@repo/formatting";
 import { asArray, getErrorMessage } from "@/lib/utils";
@@ -259,7 +257,7 @@ export function StudyPage() {
         description:
           session.status === "PAUSED_EXPIRED"
             ? `You didn't return in time. ${session.total_foreground_minutes} foreground minute${session.total_foreground_minutes === 1 ? "" : "s"} were counted.`
-            : `Ended as ${session.status}.`,
+            : `Ended as ${studySessionStatusLabel(session.status).toLowerCase()}.`,
         variant: session.status === "COMPLETED" ? "default" : "destructive",
       });
       return true;
@@ -480,7 +478,7 @@ export function StudyPage() {
       toast({
         title: "Study session ended",
         description:
-          "Points are awarded if you met the minimum session length. Check /points to see the ledger.",
+          "Points are awarded if you met the minimum session length. Check Points to see the ledger.",
       });
     } catch (error) {
       toast({
@@ -533,7 +531,7 @@ export function StudyPage() {
         <PageHeader title="Study hours" />
         <OfflineState
           title="Study hours unavailable offline"
-          description="Reconnect to start a session — tracking needs a live location check."
+          description="Reconnect to start a session. Tracking needs a live location check."
           onRetry={() => {
             void geofencesQuery.refetch();
             void sessionsQuery.refetch();
@@ -571,92 +569,99 @@ export function StudyPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Study hours" />
-      <header>
-        <p className="text-sm text-muted-foreground">
-          Start a tracked study session inside a chapter study zone. Hiding the
-          tab pauses the session on the server, so time stops counting. If you
-          don&apos;t come back within the study zone&apos;s grace window the
-          session expires with only the minutes you actually studied. Closing
-          the tab ends it outright.
-        </p>
-      </header>
 
       {/*
         Disable, don't hide (§5 rule 4): session history is a read and stays
-        visible, so the notice sits above both the live-session card and the
-        starter to explain why its controls went dead.
+        visible, so the notice sits above both the live session and the starter
+        to explain why its controls went dead.
       */}
       <SubscriptionNotice gate={gate} feature="study sessions" />
 
+      {/*
+        Flush, not carded (README § Page grammar). The page opened on a
+        paragraph restating the visibility rules, and each of its three
+        `<Card>`s carried a description or footer narrating itself. What a
+        member needs before starting is one consequence, kept as the caption
+        beside Start; the grace window is reported live once it applies.
+
+        The running timer is the one framed block: it is the page's focal
+        element, so it takes the hairline frame on `--surface-1` that billing's
+        plan panel uses, never a `--card` Card.
+      */}
       {activeSession ? (
-        <Card className={pageHidden ? "border-warning/45" : ""}>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
+        <section
+          aria-labelledby="study-live-label"
+          className={`space-y-4 rounded-[14px] border bg-surface-1 p-5 ${
+            pageHidden ? "border-warning/45" : "border-border"
+          }`}
+        >
+          <div className="space-y-1">
+            <h2
+              id="study-live-label"
+              className="flex items-center gap-2 text-base font-semibold"
+            >
               <StudyZonesGlyph className="h-4 w-4 text-muted-foreground" />
               {activeGeofence?.name ?? "Study session"}
-            </CardTitle>
-            <CardDescription>
+            </h2>
+            <p className="text-caption text-muted-foreground">
               {activeGeofence
                 ? `${activeGeofence.points_per_interval} pt every ${activeGeofence.minutes_per_point} min (min ${activeGeofence.min_session_minutes} min).`
                 : "Live session in progress."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {/*
-              foundations §7's `display` role. No mono: §7's own callout
-              retired it for this numeral, and the Canvas reference (s10) draws
-              the running timer in Figtree 700 with tabular-nums in
-              `accent-text`.
-            */}
-            <div className="text-display font-bold tabular-nums tracking-tight text-accent-text">
-              {formatDuration(elapsedSeconds)}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {pageHidden ? (
-                <Badge variant="warning" className="gap-1">
-                  <EyeOff className="h-3 w-3" /> Paused (tab hidden)
-                </Badge>
-              ) : (
-                <Badge variant="success" className="gap-1">
-                  <Eye className="h-3 w-3" /> Tracking
-                </Badge>
-              )}
-              {isPaused ? (
-                <Badge variant="warning" className="gap-1">
-                  <Pause className="h-3 w-3" /> Manually paused
-                </Badge>
-              ) : null}
-              {geolocationError ? (
-                <Badge variant="destructive">
-                  Location error: the session may expire
-                </Badge>
-              ) : null}
-            </div>
-            {isPaused || pageHidden ? (
-              <p className="text-caption text-muted-foreground">
-                Return within {activeGeofence?.pause_grace_minutes ?? 5} min or
-                the session expires.
-              </p>
+            </p>
+          </div>
+          {/*
+            foundations §7's `display` role. No mono: §7's own callout retired
+            it for this numeral, and the Canvas reference (s10) draws the
+            running timer in Figtree 700 with tabular-nums in `accent-text`.
+          */}
+          <div className="text-display font-bold tabular-nums tracking-tight text-accent-text">
+            {formatDuration(elapsedSeconds)}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {pageHidden ? (
+              <Badge variant="warning" className="gap-1">
+                <EyeOff className="h-3 w-3" /> Paused (tab hidden)
+              </Badge>
+            ) : (
+              <Badge variant="success" className="gap-1">
+                <Eye className="h-3 w-3" /> Tracking
+              </Badge>
+            )}
+            {isPaused ? (
+              <Badge variant="warning" className="gap-1">
+                <Pause className="h-3 w-3" /> Manually paused
+              </Badge>
             ) : null}
             {geolocationError ? (
-              <p className="text-caption text-destructive">
-                {geolocationError}
-              </p>
+              <Badge variant="destructive">
+                Location error: the session may expire
+              </Badge>
             ) : null}
-          </CardContent>
-          <CardFooter className="flex flex-wrap gap-2">
+          </div>
+          {isPaused || pageHidden ? (
+            <p className="text-caption text-muted-foreground">
+              Return within {activeGeofence?.pause_grace_minutes ?? 5} min or
+              the session expires.
+            </p>
+          ) : null}
+          {geolocationError ? (
+            <p className="text-caption text-destructive">{geolocationError}</p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
             {/*
               Pause/Resume and Stop are deliberately NOT gated, unlike Start.
-              They act on a session that is already running, and Stop is the only
-              thing that clears `activeSession` locally — its `finally` block
-              runs even when the server rejects. Disabling them on a mid-session
-              lapse would pin the member to a live timer they cannot end from the
-              UI, while the ungated 5-minute heartbeat keeps firing; the only way
-              out would be closing the tab, which fires the very same stop write
-              from the `pagehide` handler. Every dialog on this surface leaves
-              Cancel ungated for the same reason: never gate the way out.
+              They act on a session that is already running, and Stop is the
+              only thing that clears `activeSession` locally — its `finally`
+              block runs even when the server rejects. Disabling them on a
+              mid-session lapse would pin the member to a live timer they cannot
+              end from the UI, while the ungated 5-minute heartbeat keeps
+              firing; the only way out would be closing the tab, which fires the
+              very same stop write from the `pagehide` handler. Every dialog on
+              this surface leaves Cancel ungated for the same reason: never gate
+              the way out.
             */}
             <Button
+              size="sm"
               variant="secondary"
               onClick={() => setIsPaused((prev) => !prev)}
             >
@@ -668,6 +673,7 @@ export function StudyPage() {
               {isPaused ? "Resume timer" : "Pause timer"}
             </Button>
             <Button
+              size="sm"
               variant="destructive"
               onClick={() => void handleStop()}
               disabled={stopSession.isPending}
@@ -679,29 +685,23 @@ export function StudyPage() {
               )}
               Stop &amp; award points
             </Button>
-          </CardFooter>
-        </Card>
+          </div>
+        </section>
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Start a session</CardTitle>
-            <CardDescription>
-              Pick an active study zone. Your browser will ask for location
-              permission so we can confirm you&apos;re inside the polygon.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {geofences.length === 0 ? (
-              <NestedEmpty
-                title="No active study zones"
-                description="Ask a chapter admin with geofences:manage to add one."
-              />
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+        <section aria-labelledby="study-start-label" className="space-y-3">
+          <SectionLabel id="study-start-label">Start a session</SectionLabel>
+          {geofences.length === 0 ? (
+            <NestedEmpty
+              title="No active study zones"
+              description="Ask an officer who manages study zones to add one."
+            />
+          ) : (
+            <div className="space-y-2">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,20rem)_auto] sm:items-end sm:justify-start">
                 <div className="grid gap-1">
                   <label
                     htmlFor="study-geofence"
-                    className="text-caption uppercase tracking-wide text-muted-foreground"
+                    className="text-caption text-muted-foreground"
                   >
                     Study zone
                   </label>
@@ -737,60 +737,68 @@ export function StudyPage() {
                   Start session
                 </Button>
               </div>
-            )}
-          </CardContent>
-          <CardFooter className="text-caption text-muted-foreground">
-            Closing this tab ends the session. That&apos;s a deliberate web
-            adaptation of the mobile foreground rule. Use the mobile app for
-            longer sessions or when you expect to switch tabs frequently.
-          </CardFooter>
-        </Card>
+              <p className="text-caption text-muted-foreground">
+                Hiding this tab pauses the session. Closing it ends the session.
+              </p>
+            </div>
+          )}
+        </section>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Session history</CardTitle>
-          <CardDescription>Your recent tracked sessions.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {sessions.length === 0 ? (
-            <NestedEmpty
-              title="No sessions logged yet"
-              description="Start a tracked session inside a study zone to start earning study points."
-            />
-          ) : (
-            <ul className="divide-y divide-border">
-              {sessions.map((session) => (
+      <section aria-labelledby="study-history-label" className="space-y-3">
+        <SectionLabel
+          id="study-history-label"
+          count={
+            sessions.length > 0
+              ? `${sessions.length} session${sessions.length === 1 ? "" : "s"}`
+              : null
+          }
+        >
+          Session history
+        </SectionLabel>
+        {sessions.length === 0 ? (
+          <NestedEmpty
+            title="No sessions logged yet"
+            description="Start a tracked session inside a study zone to start earning study points."
+          />
+        ) : (
+          <ul className={denseListClassName}>
+            {sessions.map((session) => {
+              // The house range shape: "Tue, Nov 3 · 12:30 – 2:10 AM". A
+              // session still running has no end, and reads as its start.
+              const when = formatDayTimeRange(
+                session.start_time,
+                session.end_time,
+              );
+              return (
                 <li
                   key={session.id}
-                  className="flex flex-col gap-1 py-3 md:flex-row md:items-center md:justify-between"
+                  className="flex min-h-11 flex-col gap-1 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold">
-                      {session.total_foreground_minutes} minute
-                      {session.total_foreground_minutes === 1 ? "" : "s"}
+                    <p className="text-sm font-semibold tabular-nums">
+                      {formatMinutesRounded(session.total_foreground_minutes)}
                     </p>
-                    <p className="text-caption text-muted-foreground">
-                      Started {formatShortDate(session.start_time)}
-                      {session.end_time
-                        ? ` · Ended ${formatShortDate(session.end_time)}`
-                        : ""}
-                    </p>
+                    {when ? (
+                      <p className="text-caption text-muted-foreground">
+                        {when}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant={studySessionStatusKind(session.status)}>
-                      {session.status}
+                      {studySessionStatusLabel(session.status)}
                     </Badge>
                     {session.points_awarded ? (
                       <Badge variant="outline">Points awarded</Badge>
                     ) : null}
                   </div>
                 </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+              );
+            })}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }
