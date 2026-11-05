@@ -28,8 +28,7 @@ type Props = {
    * read, #1982). When provided and the item declares a `module`, the item
    * hides if that module is off. Omitted while the chapter read is in flight,
    * which means "don't module-gate", so items never flash out during the
-   * initial load. Once that read has failed, or is paused offline or disabled
-   * with nothing cached, the gate says every module is off (#3160).
+   * initial load. Once that read has failed the gate says every module is off.
    */
   isModuleEnabled?: (moduleKey: string) => boolean;
 };

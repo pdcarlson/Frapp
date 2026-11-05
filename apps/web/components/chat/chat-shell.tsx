@@ -305,8 +305,7 @@ export function ChatShell({
   // `categoriesQuery.isPending`, which bought a rail that painted grouped on
   // first render rather than flat-then-reflowed, and made every cold load wait
   // out the fetch, a failing one through the query provider's retry backoff
-  // (three retries of a 5xx or a dropped request, over 1s, 2s and 4s). The
-  // framework board's
+  // (`spec/ui/resilience/api-retry.md` § Reads). The framework board's
   // first-paint contract (`1s`) prices that the other way round: it lists the
   // gate under "delete" and accepts the reflow in as many words, "Categories
   // regroup only below the fold or on next visit". So a pending fetch renders
@@ -1339,8 +1338,8 @@ export function ChatShell({
       payload into `[]`, so a pending fetch renders the flat rail and the groups
       land when they land. `1s` asks for precisely that ("Categories regroup only
       below the fold or on next visit"). The old gate bought a rail that never
-      reflowed, and made every cold load wait out the fetch, a transiently
-      failing one through the query provider's three retries of backoff.
+      reflowed, and made every cold load wait out the fetch, a failing one
+      through the query provider's retry backoff (`api-retry.md` § Reads).
     - **A whole-route loading card is the opposite of the contract**: it makes
       the channel column paint last rather than first. Channel rows shimmer in
       their own geometry instead, and the channel column's chrome is up

@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { isRetryableFailure, statusOf } from "@repo/api-sdk";
+import { isRetryableFailure } from "@repo/api-sdk";
 import { createReportingCaches } from "@/lib/sentry/query-errors";
 
 /** How many times a failed query is retried, when it is worth retrying. */
@@ -13,15 +13,15 @@ const MUTATION_RETRIES = 2;
 
 /**
  * The default query retry: up to {@link QUERY_RETRIES} more attempts, never
- * for a definitive client refusal other than the throttler's 429 (#3141). A
- * 400, 401, 403, 404, 409 or 422 is answered the same way every time, so
- * retrying it only holds the error state back by the 1s, 2s and 4s of backoff
- * before showing what the first answer already said.
+ * for a definitive client refusal (#3141). A 400, 401, 403, 404, 409, 422 or
+ * the throttler's 429 is answered the same way every time, so retrying it
+ * only holds the error state back by the 1s, 2s and 4s of backoff before
+ * showing what the first answer already said.
  *
- * A 429 is the one refusal a read repeats. A read is safe to send again, and
- * the throttler's window passes, so a later attempt can succeed where a write
- * would only be counted again. The SDK keeps no `Retry-After`, so the read
- * backs off on the ordinary schedule rather than the throttler's own.
+ * The 429 is no exception for a read. Once a caller is over the limit, the
+ * API's throttler blocks it for `blockDuration`, which defaults to the
+ * window's 60-second `ttl` (`apps/api/src/app.module.ts`), so every attempt
+ * inside the 7 seconds of backoff is refused again, and each one counts.
  *
  * A 401 is not retried either. The web client asks Supabase for the session
  * on every request (`frapp-client-provider.tsx`), and `getSession` refreshes
@@ -33,7 +33,7 @@ const MUTATION_RETRIES = 2;
  */
 export function retryQuery(failureCount: number, error: unknown): boolean {
   if (failureCount >= QUERY_RETRIES) return false;
-  return isRetryableFailure(error) || statusOf(error) === 429;
+  return isRetryableFailure(error);
 }
 
 /**

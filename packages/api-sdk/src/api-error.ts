@@ -142,7 +142,7 @@ export function isDefinitiveClientError(status: number): boolean {
  * It is the web client's default mutation retry (`query-provider.tsx`) and the
  * gate on `useAdjustPoints`' retries, so "never retry a client error"
  * (`spec/ui/resilience/api-retry.md`) is one predicate. Web's default query
- * retry is this predicate plus the 429, which a read may repeat (§ Reads).
+ * retry is this predicate too (§ Reads).
  */
 export function isRetryableFailure(error: unknown): boolean {
   const status = statusOf(error);

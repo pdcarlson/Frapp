@@ -246,10 +246,11 @@ function QueryHarness({
 /**
  * A read refused with a definitive 4xx is not retried (#3141,
  * `spec/ui/resilience/api-retry.md` § Reads): the same request gets the same
- * answer, and each retry holds the error state back by its backoff. A 5xx, an
- * intermediary's 408, a failure with no status and the throttler's 429 still
- * get three retries, because a read is safe to repeat and any of them may
- * pass next time.
+ * answer, and each retry holds the error state back by its backoff. That
+ * includes the throttler's 429, which blocks the caller for longer than the
+ * backoff lasts. A 5xx, an intermediary's 408 and a failure with no status
+ * still get three retries, because a read is safe to repeat and any of them
+ * may pass next time.
  */
 describe("QueryProvider — which failed queries retry", () => {
   async function attemptsFor(failWith: unknown): Promise<number> {
@@ -272,7 +273,7 @@ describe("QueryProvider — which failed queries retry", () => {
     return attempts;
   }
 
-  it.each([400, 401, 403, 404, 409, 422])(
+  it.each([400, 401, 403, 404, 409, 422, 429])(
     "asks once when refused with a %i",
     async (statusCode) => {
       expect(await attemptsFor({ statusCode, message: "Refused" })).toBe(1);
@@ -287,7 +288,6 @@ describe("QueryProvider — which failed queries retry", () => {
     ["a 500", { statusCode: 500 }],
     ["a 503", { statusCode: 503 }],
     ["a proxy's 408", { statusCode: 408 }],
-    ["the throttler's 429", { statusCode: 429 }],
     ["a failure with no status", new TypeError("Failed to fetch")],
   ])("retries %s three times", async (_label, failWith) => {
     expect(await attemptsFor(failWith)).toBe(4);

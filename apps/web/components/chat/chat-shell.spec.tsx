@@ -287,6 +287,7 @@ vi.mock("@repo/hooks", async () => ({
     slashGateReads.paused
       ? {
           data: undefined,
+          isPending: true,
           isError: false,
           fetchStatus: "paused",
           refetch: vi.fn(),

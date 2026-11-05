@@ -66,7 +66,7 @@
   .signet-checkbox:checked::before {
     visibility: visible;
   }
-  /* The field's disabled recipe (components.md § Input): a hairline and the disabled ink. */
+  /* Text input's Disabled row (components.md § 4 Text input): a hairline and the disabled ink. */
   .signet-checkbox:disabled {
     border-color: var(--border);
     cursor: not-allowed;

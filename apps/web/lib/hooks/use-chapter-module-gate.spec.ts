@@ -43,13 +43,15 @@ function chapterRead(
     refetch?: (...args: unknown[]) => unknown;
   } = {},
 ) {
-  return {
-    data: undefined,
+  const read = {
+    data: undefined as unknown,
     isError: false,
     fetchStatus: "fetching" as const,
     refetch: vi.fn(),
     ...overrides,
   };
+  // TanStack's `isPending` is "no data yet", whatever the fetch is doing.
+  return { ...read, isPending: read.data === undefined };
 }
 
 const { useChapterModuleGate, useChapterModuleGateState } = await import(
@@ -101,20 +103,30 @@ describe("useChapterModuleGate", () => {
     expect(result.current?.("events")).toBe(false);
   });
 
-  // #3160: a read that will not answer by itself is not "in flight", so the
-  // nav must not keep every module row up on its account.
-  it("closes while the read is paused offline with nothing cached", () => {
+  // README §5 rule 4 reserves hiding for modules the chapter switched off. A
+  // read that has not answered is not one of those, so the nav keeps its rows.
+  it("does not gate while the read is paused offline with nothing cached", () => {
     useCurrentChapter.mockReturnValue(chapterRead({ fetchStatus: "paused" }));
     const { result } = renderHook(() => useChapterModuleGate());
-    expect(result.current).toBeDefined();
-    expect(result.current?.("events")).toBe(false);
+    expect(result.current).toBeUndefined();
   });
 
-  it("closes when no chapter is active, so the read is disabled", () => {
+  it("does not gate when no chapter is active, as on the server render", () => {
+    // The chapter store's server snapshot has no active chapter, so SSR and
+    // hydration see a disabled read. Closing here hid every module row on
+    // each cold load until the store rehydrated.
     chapterStore.activeChapterId = null;
     useCurrentChapter.mockReturnValue(chapterRead({ fetchStatus: "idle" }));
     const { result } = renderHook(() => useChapterModuleGate());
-    expect(result.current).toBeDefined();
+    expect(result.current).toBeUndefined();
+  });
+
+  it("closes once the read has failed offline, as it does online", () => {
+    network.isOffline = true;
+    useCurrentChapter.mockReturnValue(
+      chapterRead({ isError: true, fetchStatus: "idle" }),
+    );
+    const { result } = renderHook(() => useChapterModuleGate());
     expect(result.current?.("events")).toBe(false);
   });
 
@@ -199,6 +211,15 @@ describe("useChapterModuleGateState", () => {
     expect(result.current.isModuleEnabled("polls")).toBe(false);
   });
 
+  it("is loading while an enabled read with no error sits idle between runs", () => {
+    // A read that a newer one cancelled, or one about to start, is reverted
+    // to idle without an error. It is not a failure, and nothing is wrong yet.
+    useCurrentChapter.mockReturnValue(chapterRead({ fetchStatus: "idle" }));
+    const { result } = renderHook(() => useChapterModuleGateState());
+    expect(result.current.status).toBe("loading");
+    expect(result.current.isModuleEnabled("polls")).toBe(false);
+  });
+
   it("is loading again while a Retry runs after a failure", () => {
     useCurrentChapter.mockReturnValue(
       chapterRead({ isError: true, fetchStatus: "fetching" }),
@@ -248,6 +269,56 @@ describe("useChapterModuleGateState", () => {
     rerender();
     expect(refetch).toHaveBeenCalledTimes(1);
     expect(refetch).toHaveBeenCalledWith({ cancelRefetch: false });
+  });
+
+  it("re-runs a read whose last attempt failed just after the reconnect", () => {
+    // Still retrying when the connection came back, the read spends its last
+    // attempt online and fails then. The outage is what left it failed.
+    const refetch = vi.fn();
+    network.isOffline = true;
+    useCurrentChapter.mockReturnValue(chapterRead({ refetch }));
+    const { rerender } = renderHook(() => useChapterModuleGateState());
+
+    network.isOffline = false;
+    rerender();
+    expect(refetch).not.toHaveBeenCalled();
+
+    useCurrentChapter.mockReturnValue(
+      chapterRead({ isError: true, fetchStatus: "idle", refetch }),
+    );
+    rerender();
+    expect(refetch).toHaveBeenCalledTimes(1);
+
+    // Once per outage: a second failure is the ordinary error state.
+    rerender();
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [
+      "a read with cached data",
+      () => chapterRead({ data: {}, isError: true, fetchStatus: "idle" }),
+    ],
+    ["a read that has not failed", () => chapterRead({ fetchStatus: "idle" })],
+  ])("does not re-run %s after a reconnect", (_label, read) => {
+    network.isOffline = true;
+    const current = read();
+    useCurrentChapter.mockReturnValue(current);
+    const { rerender } = renderHook(() => useChapterModuleGateState());
+    network.isOffline = false;
+    rerender();
+    expect(current.refetch).not.toHaveBeenCalled();
+  });
+
+  it("does not re-run a disabled read after a reconnect", () => {
+    chapterStore.activeChapterId = null;
+    network.isOffline = true;
+    const current = chapterRead({ isError: true, fetchStatus: "idle" });
+    useCurrentChapter.mockReturnValue(current);
+    const { rerender } = renderHook(() => useChapterModuleGateState());
+    network.isOffline = false;
+    rerender();
+    expect(current.refetch).not.toHaveBeenCalled();
   });
 
   it("retries the member-view read", () => {
