@@ -409,7 +409,7 @@ export function FindBar({ className }: { className?: string }) {
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onInputKeyDown}
-          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted"
+          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
       </div>
 

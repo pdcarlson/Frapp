@@ -107,7 +107,7 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 | Error | surface `#1A1A1A` | 1px `#f85149` + 3px ring danger @ ~25% | caption 12.5 `#f85149` below |
 | Disabled | surface `#1A1A1A` | 1px `rgba(255,255,255,.08)` | `#57534C` |
 
-Default height 48px, radius 12, padding-x 14, text 15.5px. The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#131211` inside the surface-level app bar).
+Default height 48px, radius 12, padding-x 14, text 15.5px. The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#131211` inside the surface-level app bar). The web top bar's find field is the named exception: it shares the bar's surface (§7). *(Exception added 2026-11-05.)*
 
 In the Error state the caption MUST be wired to the field, not merely placed under it: `aria-describedby` on the input references the caption's id, and `aria-invalid` marks the input while the error stands.
 
@@ -180,7 +180,7 @@ Container: height 48px (was 58), surface `#1A1A1A`, 1px hairline, no radius — 
 
 **Any control that exists only below `lg`** — the drawer trigger, and every nav row inside the drawer — is on the touch tier by construction and takes the 44px floor (§2, foundations §9), not the 34px pointer geometry above.
 
-There is no command menu and no ⌘K. The find field binds Cmd/Ctrl+F without advertising it: the field is always visible, so the shortcut is a convenience, not the way in. No keybinding hint, visible or in an `aria-label`, may name a shortcut the surface does not bind. *(Corrected 2026-10-01: this sentence used to attribute the ban on unwired hints to §5, which is Badges and chips and has no such rule. It is stated here now, beside the `aria-label` half this paragraph already carried.)* *(Changed 2026-11-05: the field used to show a `⌘F` keycap, and its fill was `--card`. Both were dropped at Paul's request; the binding stays.)*
+There is no command menu and no ⌘K. The find field binds Cmd/Ctrl+F without advertising it: the field is always visible, so the shortcut is a convenience, not the way in. No keybinding hint, visible or in an `aria-label`, may name a shortcut the surface does not bind. *(Corrected 2026-10-01: this sentence used to attribute the ban on unwired hints to §5, which is Badges and chips and has no such rule. It is stated here now, beside the `aria-label` half this paragraph already carried.)* *(Changed 2026-11-05: the field used to show a `⌘F` keycap, and its fill was `--card`. Both were dropped at Paul's request, recorded as a board departure in [`web-dashboard/README.md` § Top bar](../web-dashboard/README.md#top-bar); the binding stays.)*
 
 ## 8. Cards
 
