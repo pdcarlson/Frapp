@@ -39,13 +39,16 @@ export const CORS_EXPOSED_HEADERS = [
 /** The staging dashboard, the one browser origin that calls the staging API. */
 export const STAGING_APP_ORIGIN = 'https://app.staging.frapp.live';
 
+/** The dashboard's dev server (`npm run dev:web`). */
+export const DASHBOARD_DEV_ORIGIN = 'http://localhost:3000';
+
 /**
- * The dashboard's dev server (`npm run dev:web`), and Expo web on 3002, the
- * port `docs/guides/demo-data.md` and the store-screenshot runbook
- * (`mobile.md`) start it on because it is listed here. The landing's dev
- * server also runs on 3002 but never calls the API.
+ * The dashboard's dev server, and Expo web on 3002, the port
+ * `docs/guides/demo-data.md` and the store-screenshot runbook (`mobile.md`)
+ * start it on because it is listed here. The landing's dev server also runs on
+ * 3002 but never calls the API.
  */
-const LOCAL_DEV_ORIGINS = ['http://localhost:3000', 'http://localhost:3002'];
+const LOCAL_DEV_ORIGINS = [DASHBOARD_DEV_ORIGIN, 'http://localhost:3002'];
 
 /**
  * Exact browser origins per deployment (#2507). No patterns.

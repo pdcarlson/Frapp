@@ -16,12 +16,17 @@ import {
 import {
   PointsService,
   PointsWindow,
+  type AdjustPointsResult,
 } from '../../application/services/points.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
+import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -115,6 +120,17 @@ export class PointsController {
   @RequirePermissions(SystemPermissions.POINTS_ADJUST)
   @ApiOperation({ summary: 'Manually adjust member points' })
   @ApiCreatedResponse({ type: AdjustPointsResponseDto })
+  // From the ledger row: the sign of the amount, never the amount. A replayed
+  // `client_message_id` returns the original row with no replay flag, so a
+  // verbatim retry is counted again.
+  @FeatureEvent(
+    'points-adjusted',
+    ({ result }: FeatureEventInput<AdjustPointsDto, AdjustPointsResult>) => ({
+      category: result.category,
+      direction: result.amount < 0 ? 'deduct' : 'award',
+      posted_to_chat: result.card_posted === true,
+    }),
+  )
   async adjust(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') adminId: string,

@@ -28,6 +28,10 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
+import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
 import { ThrottleExpensiveWrite } from '../decorators/throttle-profiles.decorator';
 import { CurrentChapterId } from '../decorators/current-user.decorator';
 import {
@@ -45,6 +49,21 @@ import {
 
 /** Export formats every /v1/reports route accepts. Anything else is a 400. */
 const REPORT_FORMATS = ['json', 'csv', 'pdf'];
+
+/**
+ * The `report-generated` describer for one route (#593). `format` is the raw
+ * query value, already checked by `assertSupportedFormat` before the handler
+ * succeeded, so absent means the `json` default.
+ */
+function reportGenerated(kind: ReportKind) {
+  return ({ query }: FeatureEventInput) => ({
+    report_kind: kind,
+    format:
+      typeof query.format === 'string' && REPORT_FORMATS.includes(query.format)
+        ? query.format
+        : 'json',
+  });
+}
 
 /**
  * Set when a report's row ceiling cut it short.
@@ -188,6 +207,7 @@ export class ReportController {
 
   @Post('attendance')
   @ThrottleExpensiveWrite()
+  @FeatureEvent('report-generated', reportGenerated('attendance'))
   @ApiOperation({ summary: 'Generate attendance report data' })
   @ApiQuery(FORMAT_QUERY)
   @ApiCreatedResponse(EXPORT_RESPONSE)
@@ -213,6 +233,7 @@ export class ReportController {
 
   @Post('points')
   @ThrottleExpensiveWrite()
+  @FeatureEvent('report-generated', reportGenerated('points'))
   @ApiOperation({ summary: 'Generate points report data' })
   @ApiQuery(FORMAT_QUERY)
   @ApiCreatedResponse(EXPORT_RESPONSE)
@@ -240,6 +261,7 @@ export class ReportController {
 
   @Post('roster')
   @ThrottleExpensiveWrite()
+  @FeatureEvent('report-generated', reportGenerated('roster'))
   @ApiOperation({ summary: 'Generate member roster data' })
   @ApiQuery(FORMAT_QUERY)
   @ApiCreatedResponse(EXPORT_RESPONSE)
@@ -257,6 +279,7 @@ export class ReportController {
 
   @Post('service')
   @ThrottleExpensiveWrite()
+  @FeatureEvent('report-generated', reportGenerated('service'))
   @ApiOperation({ summary: 'Generate service hours report data' })
   @ApiQuery(FORMAT_QUERY)
   @ApiCreatedResponse(EXPORT_RESPONSE)

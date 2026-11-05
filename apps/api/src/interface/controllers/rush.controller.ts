@@ -22,6 +22,10 @@ import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -67,6 +71,20 @@ export class RushController {
   @Post()
   @ApiOperation({ summary: 'Add a recruitment candidate' })
   @ApiCreatedResponse({ type: CreateRushCandidateResponseDto })
+  @FeatureEvent(
+    'rush-candidate-added',
+    ({
+      body,
+      result,
+    }: FeatureEventInput<
+      CreateRushCandidateDto,
+      CreateRushCandidateResponseDto
+    >) => ({
+      is_existing_user: !!body.user_id,
+      // `card_posted` is absent when no card was due and false when it failed.
+      posted_to_chat: result.card_posted === true,
+    }),
+  )
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') createdBy: string,
@@ -88,6 +106,7 @@ export class RushController {
       'Cast a vote on a candidate (idempotent; a repeat vote returns 201 again, not a conflict)',
   })
   @ApiCreatedResponse({ type: RushCandidateViewDto })
+  @FeatureEvent('rush-candidate-voted')
   async vote(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -102,6 +121,7 @@ export class RushController {
       'Extend a bid (idempotent; a repeat bid returns 201 again, not a conflict)',
   })
   @ApiCreatedResponse({ type: RushCandidateViewDto })
+  @FeatureEvent('rush-candidate-bid')
   async bid(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,

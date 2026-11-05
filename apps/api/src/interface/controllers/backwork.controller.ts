@@ -28,6 +28,10 @@ import {
 import { RequireModule } from '../decorators/module.decorator';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -89,6 +93,15 @@ export class BackworkController {
   @Post()
   @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
   @ApiOperation({ summary: 'Confirm upload and store resource metadata' })
+  @FeatureEvent(
+    'backwork-uploaded',
+    ({ body }: FeatureEventInput<ConfirmBackworkUploadDto>) => ({
+      // A closed `@IsIn(ASSIGNMENT_TYPES)` set, so safe to send as a value.
+      assignment_type: body.assignment_type ?? null,
+      is_redacted: body.is_redacted === true,
+      tag_count: Array.isArray(body.tags) ? body.tags.length : 0,
+    }),
+  )
   async confirmUpload(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -233,6 +246,7 @@ export class BackworkController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get resource detail with download URL' })
+  @FeatureEvent('backwork-viewed')
   async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
     return this.backworkService.findById(id, chapterId);
   }

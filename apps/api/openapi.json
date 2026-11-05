@@ -10684,8 +10684,8 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "Behavioral event name in kebab-case, e.g. \"opened-channel\", \"ran-slash-command\". Must describe behavior, never content.",
-            "example": "opened-channel"
+            "description": "Behavioral event name in kebab-case, e.g. \"search-completed\", \"outbox-queued\". Must describe behavior, never content.",
+            "example": "search-completed"
           },
           "chapter_id": {
             "type": "string",

@@ -72,7 +72,7 @@ export type ClientAnalyticsApp = (typeof CLIENT_ANALYTICS_APPS)[number];
 export const RESERVED_ANALYTICS_PROPERTY_KEYS = ['app'] as const;
 
 export interface AnalyticsEvent {
-  /** Behavioral event name, e.g. "opened-channel", "ran-slash-command". */
+  /** Behavioral event name in kebab-case, e.g. "search-completed", "task-created". */
   name: string;
   /** Pseudonymous user key, `hashUserIdForAnalytics` in the API. */
   distinctId: string;

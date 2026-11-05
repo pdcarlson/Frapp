@@ -17,6 +17,61 @@
  * API accepts votes.
  */
 
+/**
+ * The `action_type` of a vote on a chat poll card (ADR-07: it upserts rather
+ * than duplicates). `POLL_VOTE_ACTION_TYPE` in `@repo/chat-core`, which the
+ * API doesn't import.
+ */
+export const CARD_VOTE_ACTION_TYPE = 'vote';
+
+/**
+ * A chat poll card's payload as the composer writes it
+ * (`@repo/chat-core/dispatch`), plus the `choice_mode` the vote rules honour,
+ * which no composer sets yet. Nothing validates it on send, so read it through
+ * the helpers below, which guard each field.
+ */
+export interface CardPollPayload {
+  options?: { id?: unknown }[];
+  closes_at?: string | null;
+  choice_mode?: 'single' | 'multi';
+}
+
+/**
+ * The card's option ids. A card with no `options` has none. `null` means
+ * `options` is there but isn't a list, so the card can't be read at all.
+ */
+export function cardPollOptionIds(card: CardPollPayload): string[] | null {
+  if (card.options == null) return [];
+  if (!Array.isArray(card.options)) return null;
+  return card.options
+    .map((option) => option?.id)
+    .filter((id): id is string => typeof id === 'string');
+}
+
+/**
+ * The card's choice mode as the vote rules hold it: absent is single-choice,
+ * matching the composer, which offers no multi-select. Any other value is held
+ * to no cardinality, so it votes as multi.
+ */
+export function cardPollChoiceMode(card: CardPollPayload): 'single' | 'multi' {
+  return card.choice_mode == null || card.choice_mode === 'single'
+    ? 'single'
+    : 'multi';
+}
+
+/**
+ * The option ids a card vote selects: its `payload.option_id` is one id or
+ * several, and anything that isn't a string is ignored.
+ */
+export function cardVoteSelection(
+  actionPayload: Record<string, unknown> | undefined,
+): string[] {
+  const raw = actionPayload?.['option_id'];
+  return (Array.isArray(raw) ? raw : [raw]).filter(
+    (id): id is string => typeof id === 'string',
+  );
+}
+
 /** Why a vote was rejected. `null` from the validators below means "accept". */
 export type PollVoteRejection =
   | { reason: 'closed' }
