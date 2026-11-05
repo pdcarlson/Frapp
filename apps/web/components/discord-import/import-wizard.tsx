@@ -466,6 +466,7 @@ export function ImportWizard({
         .filter(isImportTarget)
         .map((channel) => channel.name),
       readersOf,
+      sidebarGroups,
     );
     if (existingChannels.data === undefined) {
       issues.unshift(
@@ -490,6 +491,7 @@ export function ImportWizard({
     existingChannels.isError,
     refetchChannels,
     readersOf,
+    sidebarGroups,
   ]);
   const channelsReady = !!staged && channelIssues.length === 0;
 

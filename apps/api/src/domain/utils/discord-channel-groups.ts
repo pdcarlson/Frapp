@@ -11,11 +11,9 @@
  * is unknown (an upload).
  */
 import type { DiscordImportChannel } from '../entities/discord-import.entity';
+import { channelGroupKey, newChannelMergeKey } from './discord-channel-merge';
 
-/** A group name as the matching compares it. */
-export function channelGroupKey(name: string): string {
-  return name.trim().toLocaleLowerCase('en-US');
-}
+export { channelGroupKey };
 
 /** What `start` needs to know about one of the chapter's groups. */
 export interface ExistingChannelGroup {
@@ -36,24 +34,44 @@ type GroupRow = Pick<
   | 'mapping_action'
   | 'new_channel_group'
   | 'new_channel_category_id'
-  | 'target_channel_id'
   | 'discord_category_position'
 >;
 
+type PendingRow = GroupRow &
+  Parameters<typeof newChannelMergeKey>[0] &
+  Pick<DiscordImportChannel, 'target_channel_id'>;
+
 /**
  * The rows whose group still has to be resolved: a `create_new` row naming a
- * group, with no group resolved yet and no channel made yet. A row whose
- * channel exists is past the point a group matters, so a restart never makes a
- * group again for a channel that already landed somewhere.
+ * group, with no group resolved yet and no channel made yet.
+ *
+ * A row whose channel exists is past the point a group matters, and so is a
+ * row that will share a channel another row already made (#2856): a thread,
+ * whose row never gets a target of its own, or a like-named sibling. So a
+ * restart never makes a group again for a channel that already landed
+ * somewhere.
  */
-export function rowsNeedingGroup<T extends GroupRow>(rows: readonly T[]): T[] {
-  return rows.filter(
-    (row) =>
-      row.mapping_action === 'create_new' &&
-      !!row.new_channel_group?.trim() &&
-      row.new_channel_category_id === null &&
-      row.target_channel_id === null,
+export function rowsNeedingGroup<T extends PendingRow>(
+  rows: readonly T[],
+): T[] {
+  const made = new Set(
+    rows.flatMap((row) => {
+      const key = row.target_channel_id ? newChannelMergeKey(row) : null;
+      return key ? [key] : [];
+    }),
   );
+  return rows.filter((row) => {
+    if (
+      row.mapping_action !== 'create_new' ||
+      !row.new_channel_group?.trim() ||
+      row.new_channel_category_id !== null ||
+      row.target_channel_id !== null
+    ) {
+      return false;
+    }
+    const key = newChannelMergeKey(row);
+    return key === null || !made.has(key);
+  });
 }
 
 /**
@@ -69,11 +87,10 @@ export function planChannelGroups(
 ): ChannelGroupPlan {
   const existing = new Map<string, string>();
   // Where two of the chapter's groups share a name, the first in the
-  // chapter's order wins, as a member sees it first.
+  // chapter's order wins, as a member sees it first. `chapterGroups` comes in
+  // that order (`findByChapter`), ties included, so it is not sorted again.
   const byKey = new Map<string, ExistingChannelGroup>();
-  for (const group of [...chapterGroups].sort(
-    (a, b) => a.display_order - b.display_order || a.id.localeCompare(b.id),
-  )) {
+  for (const group of chapterGroups) {
     const key = channelGroupKey(group.name);
     if (!byKey.has(key)) byKey.set(key, group);
   }

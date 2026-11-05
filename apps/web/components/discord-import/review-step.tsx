@@ -175,10 +175,10 @@ export function ReviewStep({
       {sidebarGroups.length > 0 ? (
         <div className="rounded-lg border border-border p-3">
           <p>
-            <span className="font-semibold">Channel groups:</span>{" "}
-            {sidebarGroups.join(", ")}. A name your chapter already uses joins
-            that group. Deleting the import removes the groups it made once
-            they&rsquo;re empty.
+            <span className="font-semibold">Categories:</span>{" "}
+            {sidebarGroups.join(", ")}. Where your chapter already has a
+            category by that name, the channels go there. Deleting the import
+            removes the categories it made once they&rsquo;re empty.
           </p>
         </div>
       ) : null}

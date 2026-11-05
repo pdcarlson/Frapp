@@ -680,20 +680,27 @@ channel that reports a different one fails the import rather than being skipped.
     name, so they are listed as something to resolve.
   - **Discord's categories can come across as the chapter's channel
     categories** (the sidebar's named sections, § Channels), when the admin
-    turns on "Keep Discord's categories as channel groups". It is off by
-    default, so a chapter that arranged its sidebar finds nothing new; with it
-    on, each category is kept unless the admin unticks it. Each new channel
-    goes into the category named after its Discord one. Starting the import
-    makes that name a category: the chapter's own of that name, compared
-    trimmed and in any case, or else a new one, placed after the chapter's
-    own. New ones keep Discord's order on a bot import, which the scan reads;
-    an upload, whose export doesn't record it, places them A to Z. A merged
-    channel stays where it is, and a thread follows its channel. A category
-    is a name every member sees, which the switch says. An officer may rename
-    or delete one at any time; a channel the import still has to make then
-    lands in no category. A restart never makes a category again for a
-    channel that already exists. *2026-11-05, owner's request: a 78-channel
-    server landed as one flat list.*
+    turns on "Keep Discord's categories". It is off by default, so a chapter
+    that arranged its sidebar finds nothing new; with it on, each category is
+    kept unless the admin unticks it. Each new channel goes into the category
+    named after its Discord one. Starting the import makes that name a
+    category: the chapter's own of that name, compared trimmed and in any
+    case, or else a new one, placed after the chapter's own. New ones keep
+    Discord's order on a bot import, which the scan reads; an upload, whose
+    export doesn't record it, places them A to Z. A merged channel stays
+    where it is, and a thread follows its channel. Like-named channels bound
+    for different categories don't share a channel, so they are listed as
+    something to resolve, as above. A category is a name every member sees,
+    which the switch says.
+
+    An officer may rename or delete one at any time. A channel the import
+    still has to make then lands in no category, until the import is started
+    again: a restart resolves the name again, making the category again if
+    it is gone, but never for a channel that already exists or will share
+    one that does. A start also deletes the categories the import made that
+    no channel sits in and none of its channels is bound for any more, as
+    after a remap that unticked one (#2882). *2026-11-05, owner's request: a
+    78-channel server landed as one flat list.*
   - **A channel an import merges into stays an ordinary channel, which an
     officer can delete at any time (#2922)**: before the import starts, while
     it runs, or long after. Each import that merged into it keeps its mapping
@@ -878,8 +885,9 @@ channel that reports a different one fails the import rather than being skipped.
   the `discord_import_channels_target_present` CHECK).
 
   After its channels, the purge deletes each category the import created
-  that is left with no channel in it and that no import that isn't being or
-  hasn't been deleted still means to put a channel in. A category another
+  that is left with no channel in it and that no mapping row of an import
+  that isn't being or hasn't been deleted points at; a finished import's row
+  counts, as its record of where its channels went. A category another
   deleted import created, which this one put channels into, goes under the
   same rules, as channels do. A category the chapter already had is never
   deleted, even when the import put channels into it.

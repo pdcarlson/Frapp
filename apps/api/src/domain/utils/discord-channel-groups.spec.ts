@@ -9,6 +9,10 @@ type Row = Parameters<typeof rowsNeedingGroup>[0][number];
 function row(overrides: Partial<Row> = {}): Row {
   return {
     mapping_action: 'create_new',
+    new_channel_name: 'general',
+    new_channel_type: 'PUBLIC',
+    new_channel_is_read_only: true,
+    new_channel_required_permissions: null,
     new_channel_group: 'Committees',
     new_channel_category_id: null,
     target_channel_id: null,
@@ -36,10 +40,26 @@ describe('rowsNeedingGroup', () => {
       row({ new_channel_group: '   ' }),
       row({ new_channel_category_id: 'group-1' }),
       // The channel already exists: a restart leaves it where it landed.
-      row({ target_channel_id: 'channel-1' }),
+      row({ new_channel_name: 'made', target_channel_id: 'channel-1' }),
     ];
 
     expect(rowsNeedingGroup(rows)).toEqual([wanted]);
+  });
+
+  it('leaves out a row that will share a channel another row already made, as a thread does', () => {
+    // A thread's row never gets a target of its own: it lands in its
+    // parent's channel. On a restart after an officer deleted the group, it
+    // must not bring the group back empty.
+    const parent = row({ target_channel_id: 'channel-1' });
+    const thread = row();
+    const elsewhere = row({ new_channel_name: 'minutes' });
+    // Same name, another group: a channel of its own, so it still needs one.
+    const otherGroup = row({ new_channel_group: 'Social' });
+
+    expect(rowsNeedingGroup([parent, thread, elsewhere, otherGroup])).toEqual([
+      elsewhere,
+      otherGroup,
+    ]);
   });
 });
 
@@ -54,16 +74,17 @@ describe('planChannelGroups', () => {
     expect(plan.existing.get('committees')).toBe('group-1');
   });
 
-  it("matches the first of two like-named groups in the chapter's order", () => {
+  it("matches the first of two like-named groups in the chapter's order, as given", () => {
+    // Tied display orders keep the order the repository read them in.
     const plan = planChannelGroups(
       [row()],
       [
-        { id: 'group-b', name: 'committees', display_order: 4 },
-        { id: 'group-a', name: 'Committees', display_order: 1 },
+        { id: 'group-z', name: 'Committees', display_order: 1 },
+        { id: 'group-a', name: 'committees', display_order: 1 },
       ],
     );
 
-    expect(plan.existing.get('committees')).toBe('group-a');
+    expect(plan.existing.get('committees')).toBe('group-z');
   });
 
   it("makes the rest after the chapter's own groups, in Discord's category order", () => {
@@ -107,6 +128,22 @@ describe('planChannelGroups', () => {
       ['Other', 0],
       ['Groups', 1],
       ['Trees', 2],
+    ]);
+  });
+
+  it('places a group by the lowest position any of its rows carries', () => {
+    const plan = planChannelGroups(
+      [
+        row({ new_channel_group: 'Social', discord_category_position: 9 }),
+        row({ new_channel_group: 'Generic', discord_category_position: 5 }),
+        row({ new_channel_group: 'social', discord_category_position: 1 }),
+      ],
+      [],
+    );
+
+    expect(plan.create.map((group) => group.name)).toEqual([
+      'Social',
+      'Generic',
     ]);
   });
 

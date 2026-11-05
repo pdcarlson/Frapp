@@ -16,7 +16,10 @@ import { db, miss } from "../harness.mjs";
 //   - a group a `purged` import created that this import put channels into is
 //     re-reaped; one a finished import created, or one an officer made, is not
 //     a candidate even when this import used it;
-//   - chapter scope, and an import that isn't `purging` deletes nothing;
+//   - chapter scope; a running or finished import deletes nothing;
+//   - called at start (a `failed` import here), it deletes the groups the
+//     import made that none of its rows points at any more, after a remap,
+//     and keeps those a row still points at;
 //   - the mapping columns refuse a group on anything but a new channel, and a
 //     blank name; deleting a group clears the rows that resolved to it;
 //   - a signed-in client may not call either function, and the new table has
@@ -32,6 +35,7 @@ console.log("\n=== Functional: a deleted import takes the channel groups it made
   const B = "b6000000-0000-4000-8000-00000000000b";
   const PURGING = "a6000000-0000-4000-8000-0000000000d1";
   const OTHER = "a6000000-0000-4000-8000-0000000000d2"; // completed
+  const FAILED = "a6000000-0000-4000-8000-0000000000d5"; // remapped, restarting
   const RUNNING = "a6000000-0000-4000-8000-0000000000d3";
   const PURGED = "a6000000-0000-4000-8000-0000000000d4";
   const CHANNEL = "a6000000-0000-4000-8000-0000000000c1";
@@ -44,6 +48,8 @@ console.log("\n=== Functional: a deleted import takes the channel groups it made
     OTHERS: "a6000000-0000-4000-8000-0000000000e6", // a finished import created it, this one used it: kept
     OFFICER: "a6000000-0000-4000-8000-0000000000e7", // an officer's group this one used: kept
     IN_B: "b6000000-0000-4000-8000-0000000000e1", // recorded here, but in another chapter: kept
+    STALE: "a6000000-0000-4000-8000-0000000000f1", // the failed import made it, a remap dropped it: deleted at start
+    STILL_MEANT: "a6000000-0000-4000-8000-0000000000f2", // the failed import made it, a row still points at it: kept
   };
   const DELETABLE = [G.EMPTY, G.PINNED_BY_PURGED, G.REREAP].sort();
 
@@ -73,7 +79,8 @@ console.log("\n=== Functional: a deleted import takes the channel groups it made
         ('${PURGING}', '${A}', 'purging', now()),
         ('${OTHER}', '${A}', 'completed', now()),
         ('${RUNNING}', '${A}', 'running', now()),
-        ('${PURGED}', '${A}', 'purged', now());
+        ('${PURGED}', '${A}', 'purged', now()),
+        ('${FAILED}', '${A}', 'failed', now());
       insert into chat_channel_categories (id, chapter_id, name, display_order) values
         ('${G.EMPTY}', '${A}', 'Generic', 1),
         ('${G.HOLDS}', '${A}', 'Secret', 2),
@@ -82,13 +89,16 @@ console.log("\n=== Functional: a deleted import takes the channel groups it made
         ('${G.REREAP}', '${A}', 'Committees', 5),
         ('${G.OTHERS}', '${A}', 'Officers', 6),
         ('${G.OFFICER}', '${A}', 'Social', 0),
-        ('${G.IN_B}', '${B}', 'Generic', 1);
+        ('${G.IN_B}', '${B}', 'Generic', 1),
+        ('${G.STALE}', '${A}', 'Pledges', 7),
+        ('${G.STILL_MEANT}', '${A}', 'Alumni', 8);
       insert into chat_channels (id, chapter_id, name, type, category_id) values
         ('${CHANNEL}', '${A}', 'vault', 'PUBLIC', '${G.HOLDS}');
       insert into discord_import_created_categories (import_id, category_id) values
         ('${PURGING}', '${G.EMPTY}'), ('${PURGING}', '${G.HOLDS}'), ('${PURGING}', '${G.PINNED}'),
         ('${PURGING}', '${G.PINNED_BY_PURGED}'), ('${PURGING}', '${G.IN_B}'),
-        ('${PURGED}', '${G.REREAP}'), ('${OTHER}', '${G.OTHERS}');
+        ('${PURGED}', '${G.REREAP}'), ('${OTHER}', '${G.OTHERS}'),
+        ('${FAILED}', '${G.STALE}'), ('${FAILED}', '${G.STILL_MEANT}');
       insert into discord_import_channels
         (import_id, discord_channel_id, discord_channel_name, mapping_action, new_channel_name,
          new_channel_group, new_channel_category_id) values
@@ -98,15 +108,29 @@ console.log("\n=== Functional: a deleted import takes the channel groups it made
         ('${PURGING}', 'd4', 'officers', 'create_new', 'officers', 'Officers', '${G.OTHERS}'),
         ('${PURGING}', 'd5', 'social', 'create_new', 'social', 'Social', '${G.OFFICER}'),
         ('${RUNNING}', 'f1', 'alerts', 'create_new', 'alerts', 'Notifications', '${G.PINNED}'),
-        ('${PURGED}', 'g1', 'oak', 'create_new', 'oak', 'Trees', '${G.PINNED_BY_PURGED}');
+        ('${PURGED}', 'g1', 'oak', 'create_new', 'oak', 'Trees', '${G.PINNED_BY_PURGED}'),
+        ('${FAILED}', 'h1', 'alumni', 'create_new', 'alumni', 'Alumni', '${G.STILL_MEANT}'),
+        -- Remapped with the category dropped: no group, so nothing points at Pledges.
+        ('${FAILED}', 'h2', 'pledges', 'create_new', 'pledges', null, null);
     `);
 
     const wrongChapter = await q(`select * from delete_empty_discord_import_categories('${PURGING}', '${B}')`);
-    const notPurging = await q(`select * from delete_empty_discord_import_categories('${RUNNING}', '${A}')`);
+    const running = await q(`select * from delete_empty_discord_import_categories('${RUNNING}', '${A}')`);
+    const finished = await q(`select * from delete_empty_discord_import_categories('${OTHER}', '${A}')`);
     check(
-      "the wrong chapter id, or an import that isn't purging, deletes nothing",
-      wrongChapter.length === 0 && notPurging.length === 0 && (await groupsLeft()).length === Object.keys(G).length,
-      { wrongChapter, notPurging },
+      "the wrong chapter id, or a running or finished import, deletes nothing",
+      wrongChapter.length === 0 && running.length === 0 && finished.length === 0 &&
+        (await groupsLeft()).length === Object.keys(G).length,
+      { wrongChapter, running, finished },
+    );
+
+    const atStart = await q(`select * from delete_empty_discord_import_categories('${FAILED}', '${A}') as id`);
+    const leftAtStart = await groupsLeft();
+    check(
+      "at start, deletes only the import's own groups no row points at any more",
+      atStart.length === 1 && atStart[0].id === G.STALE &&
+        !leftAtStart.includes(G.STALE) && leftAtStart.includes(G.STILL_MEANT),
+      { atStart, leftAtStart },
     );
 
     const deleted = (await q(`select * from delete_empty_discord_import_categories('${PURGING}', '${A}') as id`))

@@ -956,6 +956,42 @@ describe('DiscordImportService — keeping Discord categories as channel groups'
     expect(repo.assignChannelGroup).not.toHaveBeenCalled();
   });
 
+  it('makes no group on a restart for a thread whose channel its parent already made', async () => {
+    // An officer deleted the group mid-import, which cleared both rows; the
+    // parent's channel exists, and the thread lands in it.
+    const svc = await buildBot();
+    repo.findChannels.mockResolvedValue([
+      newChannel('map-01', 'Secret', {
+        new_channel_name: 'vault',
+        target_channel_id: OWN_CHANNEL,
+      }),
+      newChannel('map-02', 'Secret', {
+        new_channel_name: 'vault',
+        parent_discord_channel_id: '900000000000000001',
+      }),
+    ]);
+
+    await svc.start(IMPORT_ID, CHAPTER, USER, true);
+
+    expect(categoryRepo.create).not.toHaveBeenCalled();
+    expect(repo.assignChannelGroup).not.toHaveBeenCalled();
+  });
+
+  it('clears out the groups it made that a remap left empty, after resolving the rest', async () => {
+    const svc = await buildBot();
+    repo.findChannels.mockResolvedValue([newChannel('map-01', 'Secret')]);
+
+    await svc.start(IMPORT_ID, CHAPTER, USER, true);
+
+    expect(repo.deleteEmptyCreatedCategories).toHaveBeenCalledWith(
+      IMPORT_ID,
+      CHAPTER,
+    );
+    expect(
+      repo.deleteEmptyCreatedCategories.mock.invocationCallOrder[0],
+    ).toBeGreaterThan(repo.assignChannelGroup.mock.invocationCallOrder[0]);
+  });
+
   it('touches no group when no channel names one', async () => {
     const svc = await buildBot();
     repo.findChannels.mockResolvedValue([newChannel('map-01', null)]);

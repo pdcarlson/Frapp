@@ -141,6 +141,7 @@ export async function createDiscordImportFixture(
     deleteImportedMessages: jest.fn(),
     assignChannelGroup: jest.fn(async () => undefined),
     recordCreatedCategory: jest.fn(async () => undefined),
+    deleteEmptyCreatedCategories: jest.fn(async (): Promise<string[]> => []),
   };
   const storage: Record<string, jest.Mock> = {
     getSignedUploadUrl: jest.fn(async () => 'https://signed.example/put'),

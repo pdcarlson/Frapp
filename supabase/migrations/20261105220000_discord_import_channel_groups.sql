@@ -25,17 +25,21 @@
 --    (20260930030000), so deleting the import can find it again.
 --
 -- 3. `delete_empty_discord_import_categories` is the purge's group step, run
---    after its channel step. A candidate is a group this import created, or a
---    group a `purging` or `purged` import created that this import put
---    channels into (that import's purge had to keep it while this import's
---    channels sat in it, as #2922 re-reaps channels). It deletes a candidate
---    only when no channel is in it and no mapping row of an import that isn't
---    being or hasn't been deleted still means to put a channel there. Each is
---    checked once unlocked, then locked and checked again: assigning a
---    channel to a group takes a key-share lock on the group's row (the
---    `category_id` foreign key), so the `for update` waits for it and the
---    second check sees the channel. Returns the ids it deleted. Does nothing
---    unless the import is being purged.
+--    after its channel step, and also run by `start` once it has resolved
+--    the groups, so a remap that dropped a category doesn't leave its group
+--    behind empty. A candidate is a group this import created, or a group a
+--    `purging` or `purged` import created that this import put channels into
+--    (that import's purge had to keep it while this import's channels sat in
+--    it, as #2922 re-reaps channels). It deletes a candidate only when no
+--    channel is in it and no mapping row of an import that isn't being or
+--    hasn't been deleted points at it (a finished import's row counts, as its
+--    record of where its channels went). Each is checked once unlocked, then
+--    locked and checked again: putting a channel or a mapping row in a group
+--    takes a key-share lock on the group's row (the foreign keys), so the
+--    `for update` waits for it and the second check sees it. Returns the ids
+--    it deleted. Does nothing unless the import is being purged or is in a
+--    state `start` runs from (`draft`, `ready`, `failed`): never while the
+--    worker is writing it.
 --
 -- Service role only, like the other Discord import functions. The new table
 -- has RLS on and no policies. Nothing is rewritten at apply time: every
@@ -129,7 +133,7 @@ begin
       from discord_imports
      where id = p_import_id
        and chapter_id = p_chapter_id
-       and status = 'purging'
+       and status in ('purging', 'draft', 'ready', 'failed')
   ) then
     return;
   end if;

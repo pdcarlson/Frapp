@@ -562,18 +562,20 @@ describe("ImportWizard — the bot path", () => {
     await screen.findByText(/Nothing needs attention/);
 
     const keep = screen.getByRole("switch", {
-      name: /Keep Discord.s categories as channel groups/,
+      name: /Keep Discord.s categories/,
     });
     // Off until the admin turns it on, and no per-category choice until then.
     expect(keep).not.toBeChecked();
     expect(
-      screen.queryByRole("checkbox", { name: /as a channel group/ }),
+      screen.queryByRole("checkbox", { name: /as a category/ }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/Every member can see group names/)).toBeVisible();
+    expect(
+      screen.getByText(/Every member can see category names/),
+    ).toBeVisible();
 
     fireEvent.click(keep);
     const secret = screen.getByRole("checkbox", {
-      name: "Keep Secret as a channel group",
+      name: "Keep Secret as a category",
     });
     expect(secret).toBeChecked();
     fireEvent.click(secret);
@@ -591,8 +593,10 @@ describe("ImportWizard — the bot path", () => {
       ["c2", undefined],
       ["c3", undefined],
     ]);
-    expect(await screen.findByText("Channel groups:")).toBeInTheDocument();
-    expect(screen.getByText(/^Generic\. A name your chapter/)).toBeInTheDocument();
+    expect(await screen.findByText("Categories:")).toBeInTheDocument();
+    expect(
+      screen.getByText(/^Generic\. Where your chapter/),
+    ).toBeInTheDocument();
   });
 
   it("holds Continue on a channel that was private in Discord until its visibility is chosen", async () => {
@@ -1368,6 +1372,44 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
     );
     return { onChange, onRescan };
   }
+
+  it("offers to keep a Discord category named like the no-category heading, apart from channels in none", () => {
+    const named = [
+      {
+        channelId: "a",
+        channelName: "loose",
+        category: null,
+        readable: true,
+        privateInDiscord: false,
+      },
+      {
+        channelId: "b",
+        channelName: "odd",
+        category: "No category",
+        readable: true,
+        privateInDiscord: false,
+      },
+    ];
+    const choices = defaultChoices(named);
+    render(
+      <ChannelMappingStep
+        channels={named}
+        choices={choices}
+        onChange={vi.fn()}
+        issues={mappingIssues(named, choices, [])}
+        knowsPrivacy
+        sidebarGroups={{ keep: true, dropped: new Set() }}
+        onSidebarGroups={vi.fn()}
+      />,
+    );
+    // Two sections, and only the real category can be kept.
+    expect(
+      screen.getAllByRole("checkbox", { name: /as a category/ }),
+    ).toHaveLength(1);
+    expect(
+      screen.getByRole("checkbox", { name: "Keep No category as a category" }),
+    ).toBeChecked();
+  });
 
   it("groups channels by Discord category, and opens only the group that needs something", () => {
     renderStep();

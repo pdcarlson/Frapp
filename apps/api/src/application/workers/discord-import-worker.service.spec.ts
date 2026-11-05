@@ -759,6 +759,37 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(repoRef.state().status).not.toBe('failed');
   });
 
+  it('creates the channel with no group when the group is deleted between its read and the insert', async () => {
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'rush',
+        new_channel_type: 'PUBLIC',
+        new_channel_group: 'Committees',
+        new_channel_category_id: 'group-1',
+      }),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    const create = channelRepo.create as jest.Mock;
+    const original = create.getMockImplementation();
+    create.mockImplementationOnce(() =>
+      Promise.reject(Object.assign(new Error('fk'), { code: '23503' })),
+    );
+    if (original) create.mockImplementation(original);
+
+    await worker.sweepImports(NOW);
+
+    expect(create.mock.calls.map(([data]) => data.category_id)).toEqual([
+      'group-1',
+      null,
+    ]);
+    expect(repoRef.state().status).not.toBe('failed');
+  });
+
   it('stops when the admin cancels mid-slice, instead of resurrecting the job', async () => {
     // The lease arbitrates between workers; it does nothing against an admin
     // calling cancel, which is an ordinary write on the same row. Without the

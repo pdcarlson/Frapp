@@ -339,9 +339,11 @@ export interface IDiscordImportRepository {
   /**
    * Delete the channel groups this import created that now hold no channel,
    * and that no mapping row of an import that isn't `purging` or `purged`
-   * still means to put a channel into. Also considers a group a `purging` or
-   * `purged` import created that this one put channels into. Runs only while
-   * the import is `purging`, after its channel step. Returns the ids deleted.
+   * points at (a finished import's row counts, as its record). Also considers
+   * a group a `purging` or `purged` import created that this one put channels
+   * into. Runs while the import is `purging`, after its channel step, and
+   * when it starts (`draft`, `ready` or `failed`), after its groups are
+   * resolved; does nothing in any other state. Returns the ids deleted.
    */
   deleteEmptyCreatedCategories(
     importId: string,

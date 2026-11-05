@@ -1042,7 +1042,8 @@ export class DiscordImportWorkerService {
 
     // The group `start` resolved, read back through the chapter: an officer
     // may delete it while the import runs, and a channel then lands with no
-    // group rather than failing on the foreign key.
+    // group. A delete between this read and the insert meets the foreign key,
+    // so the insert is tried again with no group rather than failing.
     const categoryId = mapping.new_channel_category_id
       ? ((
           await this.categoryRepo.findById(
@@ -1051,25 +1052,34 @@ export class DiscordImportWorkerService {
           )
         )?.id ?? null)
       : null;
-    const created = await this.channelRepo.create({
-      chapter_id: chapterId,
-      name: mapping.new_channel_name,
-      description: `Imported from Discord #${mapping.discord_channel_name}`,
-      // The admin's choice, recorded on the mapping. On the bot path a channel
-      // that was private in Discord, held a private thread, or whose privacy
-      // the scan could not read reaches here as PUBLIC only by an explicit
-      // choice (the mapping route refuses the default); an upload has no
-      // privacy to go on. ROLE_GATED always carries at least one permission
-      // (DB CHECK).
-      type: mapping.new_channel_type,
-      required_permissions:
-        mapping.new_channel_type === 'ROLE_GATED'
-          ? mapping.new_channel_required_permissions
-          : null,
-      member_ids: null,
-      category_id: categoryId,
-      is_read_only: mapping.new_channel_is_read_only,
-    });
+    const name = mapping.new_channel_name;
+    const create = (category_id: string | null) =>
+      this.channelRepo.create({
+        chapter_id: chapterId,
+        name,
+        description: `Imported from Discord #${mapping.discord_channel_name}`,
+        // The admin's choice, recorded on the mapping. On the bot path a
+        // channel that was private in Discord, held a private thread, or whose
+        // privacy the scan could not read reaches here as PUBLIC only by an
+        // explicit choice (the mapping route refuses the default); an upload
+        // has no privacy to go on. ROLE_GATED always carries at least one
+        // permission (DB CHECK).
+        type: mapping.new_channel_type,
+        required_permissions:
+          mapping.new_channel_type === 'ROLE_GATED'
+            ? mapping.new_channel_required_permissions
+            : null,
+        member_ids: null,
+        category_id,
+        is_read_only: mapping.new_channel_is_read_only,
+      });
+    let created: Awaited<ReturnType<typeof create>>;
+    try {
+      created = await create(categoryId);
+    } catch (error) {
+      if (categoryId === null || !isForeignKeyViolation(error)) throw error;
+      created = await create(null);
+    }
     // Recorded before the mapping row learns its target: remapping a failed
     // import rewrites the mapping rows without targets, and this is how the
     // purge still finds a channel the import made (#2905).

@@ -489,12 +489,26 @@ export class DiscordImportChannelMappingService {
    * Discord's categories as channel groups when the admin chooses to).
    *
    * Runs when the import starts, as the roles do, and again on a restart: a
-   * row whose group an officer deleted meanwhile is resolved again, while a
-   * row whose channel already exists is left alone. Each group it creates is
-   * recorded before any row points at it, so deleting the import finds it
-   * even if this stops part-way.
+   * row whose group an officer deleted meanwhile is resolved again, by name,
+   * while a row whose channel already exists, or will share one that does,
+   * is left alone. Each group it creates is recorded right after it is made
+   * and before any row points at it, so deleting the import finds it.
+   *
+   * Last, it deletes the groups this import made that no row of a live import
+   * points at any more and no channel sits in: after a remap that dropped a
+   * category, or turned keeping them off, they would otherwise stay as empty
+   * sidebar sections until the import is deleted.
    */
   async provisionChannelGroups(
+    id: string,
+    chapterId: string,
+    channels: readonly DiscordImportChannel[],
+  ): Promise<void> {
+    await this.resolveChannelGroups(id, chapterId, channels);
+    await this.importRepo.deleteEmptyCreatedCategories(id, chapterId);
+  }
+
+  private async resolveChannelGroups(
     id: string,
     chapterId: string,
     channels: readonly DiscordImportChannel[],
