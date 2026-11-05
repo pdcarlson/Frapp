@@ -637,7 +637,7 @@ export function EventsPage() {
                         FOCUS_RING_OFFSET,
                       )}
                     >
-                      <span className="flex min-w-0 flex-col sm:flex-1">
+                      <span className="flex min-w-0 max-w-full flex-col sm:flex-1">
                         <span className="truncate text-sm font-semibold">
                           {eventName}
                         </span>

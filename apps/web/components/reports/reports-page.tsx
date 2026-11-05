@@ -821,7 +821,7 @@ export function ReportsPage() {
                 PDF export is generated server-side; its download link is valid
                 for one hour.
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {/*
                   Not subscription-gated: this serializes the preview already in
                   memory and never reaches the API, so it is a read of data the
