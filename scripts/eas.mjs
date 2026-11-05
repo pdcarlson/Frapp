@@ -37,10 +37,12 @@
 // through cmd.exe on Windows, where `bash -c` can resolve to WSL's bash or to nothing.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
+import { parsePulledEnv, prepareUpdate, uploadSourceMaps } from "./eas-update.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 export const MOBILE_BUILD_WORKFLOW = path.join(ROOT, ".github", "workflows", "_mobile-build.yml");
@@ -315,20 +317,97 @@ export function install(
   return easBin(dir, pin.version);
 }
 
-/** Run eas with `argv` in apps/mobile, installing the pin first if this machine lacks it. */
-export function main(argv, { pin = readEasCliPin(), cacheRoot = CACHE_ROOT, spawn = spawnSync, installer = install } = {}) {
+/**
+ * Run eas with `argv` in apps/mobile, installing the pin first if this machine lacks it.
+ *
+ * `update` (an OTA publish) goes through `scripts/eas-update.mjs` first, which refuses an unsafe
+ * publish and shapes the arguments and env eas-cli gets (#3472). Other commands, including the
+ * `update:*` ones that publish nothing new, pass straight through.
+ */
+export function main(
+  argv,
+  {
+    pin = readEasCliPin(),
+    cacheRoot = CACHE_ROOT,
+    spawn = spawnSync,
+    installer = install,
+    guardUpdate = prepareUpdate,
+    afterUpdate = uploadSourceMaps,
+  } = {},
+) {
   const bin = easBin(pinDir(pin, cacheRoot), pin.version) ?? installer(pin, { cacheRoot, spawn });
   if (!bin) return 1;
   if (!existsSync(MOBILE_DIR)) {
     log(`ERROR: ${MOBILE_DIR} is missing, so eas has no project to run against.`);
     return 1;
   }
-  const result = spawn(process.execPath, [bin, ...argv], { cwd: MOBILE_DIR, stdio: "inherit" });
+  let args = argv;
+  let env = process.env;
+  let publishedProduction = false;
+  if (argv[0] === "update") {
+    const guard = guardUpdate(argv.slice(1), { pullEnv: (environment) => pullEasEnv(bin, environment, { spawn }) });
+    if (!guard.ok) {
+      log("ERROR: refusing to publish this update:");
+      for (const e of guard.errors) log(`  - ${e}`);
+      log("How the by-hand OTA path works: docs/ops/deployment/mobile.md § 6.7.");
+      return 1;
+    }
+    for (const n of guard.notes) log(n);
+    args = ["update", ...guard.args];
+    env = guard.env;
+    publishedProduction = guard.profileName === "production";
+  }
+  const result = spawn(process.execPath, [bin, ...args], { cwd: MOBILE_DIR, stdio: "inherit", env });
   if (result.error) {
     log(`ERROR: could not start eas: ${result.error.message}`);
     return 1;
   }
+  if (result.status === 0 && publishedProduction) afterUpdate({ env, log });
   return result.status ?? 1;
+}
+
+/**
+ * The `EXPO_PUBLIC_*` variables of one EAS environment, read with `eas env:pull` into a temporary
+ * file that is deleted at once. `{ vars }`, or `{ error }`. eas's own output goes to stderr.
+ */
+export function pullEasEnv(
+  bin,
+  environment,
+  { spawn = spawnSync, tmp = tmpdir(), env = process.env, mobileDir = MOBILE_DIR, remove = removeQuietly } = {},
+) {
+  let dir;
+  let text = "";
+  try {
+    dir = mkdtempSync(path.join(tmp, "frapp-eas-env-"));
+    const file = path.join(dir, "pulled.env");
+    // env:pull evaluates app.config.js itself (to find the project), so it gets the same shell env
+    // the guard publishes with, minus what the guard drops and its own update markers.
+    const result = spawn(
+      process.execPath,
+      [bin, "env:pull", "--environment", environment, "--path", file, "--non-interactive"],
+      { cwd: mobileDir, stdio: ["inherit", 2, 2], env: pullEnvFor(env) },
+    );
+    if (result.error) return { error: result.error.message };
+    if (result.status !== 0) return { error: `eas env:pull exited ${result.status}; its output above says why` };
+    text = readFileSync(file, "utf8");
+    return { vars: parsePulledEnv(text) };
+  } catch (err) {
+    return { error: err.message };
+  } finally {
+    if (dir) remove(dir);
+    // A File variable is written beside the project, not into --path: delete each one it wrote.
+    const fileDir = path.join(mobileDir, ".eas", ".env");
+    for (const line of text.split(/\r?\n/)) {
+      const value = line.slice(line.indexOf("=") + 1);
+      if (line.includes("=") && path.dirname(value) === fileDir) remove(value);
+    }
+  }
+}
+
+function pullEnvFor(env) {
+  return Object.fromEntries(
+    Object.entries(env).filter(([k]) => !/^(EXPO_PUBLIC_|EAS_BUILD_|FRAPP_EAS_UPDATE_)/.test(k)),
+  );
 }
 
 if (isInvokedDirectly(import.meta.url)) {
