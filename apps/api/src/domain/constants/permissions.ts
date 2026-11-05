@@ -1,4 +1,4 @@
-import { ALUMNI_CHANNEL_PERMISSION } from '@repo/validation';
+import { ALUMNI_CHANNEL_PERMISSION, roleColor } from '@repo/validation';
 import { ANNOUNCEMENTS_POST_PERMISSION } from '../utils/channel-access';
 
 export const WILDCARD = '*';
@@ -102,6 +102,14 @@ export const SystemRoleKeys = {
  */
 export const ALUMNI_ROLE_NAME = 'Alumni';
 
+/**
+ * Seeded on chapter creation. Colors come from the role palette in
+ * `@repo/validation` (#3485): the five officer and Alumni roles get one, while
+ * Member and New Member stay uncolored so most of a chapter's chat reads in
+ * the plain foreground and the officers stand out. Migration
+ * `20261105200000_role_color_palette_defaults.sql` moves existing chapters'
+ * untouched seeds onto the same values.
+ */
 export const DEFAULT_SYSTEM_ROLES = [
   {
     name: 'President',
@@ -109,7 +117,7 @@ export const DEFAULT_SYSTEM_ROLES = [
     permissions: [SystemPermissions.WILDCARD],
     is_system: true,
     display_order: 1,
-    color: '#FFD700',
+    color: roleColor('orange'),
   },
   {
     name: 'Treasurer',
@@ -127,7 +135,7 @@ export const DEFAULT_SYSTEM_ROLES = [
     ],
     is_system: true,
     display_order: 2,
-    color: '#10B981',
+    color: roleColor('green'),
   },
   {
     name: 'Vice President',
@@ -138,7 +146,7 @@ export const DEFAULT_SYSTEM_ROLES = [
     ],
     is_system: true,
     display_order: 3,
-    color: null,
+    color: roleColor('periwinkle'),
   },
   {
     name: 'Secretary',
@@ -149,7 +157,7 @@ export const DEFAULT_SYSTEM_ROLES = [
     ],
     is_system: true,
     display_order: 4,
-    color: null,
+    color: roleColor('rose'),
   },
   {
     name: 'Member',
@@ -188,7 +196,7 @@ export const DEFAULT_SYSTEM_ROLES = [
     ],
     is_system: true,
     display_order: 7,
-    color: '#6B7280',
+    color: roleColor('slate'),
   },
 ] as const;
 

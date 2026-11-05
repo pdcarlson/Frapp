@@ -300,6 +300,46 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
     expect(mockGet).toHaveBeenCalledTimes(1);
   });
 
+  it("resolves ids to a palette role color, dropping off-palette values (#3485)", async () => {
+    const mockGet = vi.fn().mockResolvedValue({
+      data: [
+        {
+          user_id: "user-1",
+          display_name: "A",
+          avatar_url: null,
+          role_color: "#6FD08C",
+        },
+        {
+          user_id: "user-2",
+          display_name: "B",
+          avatar_url: null,
+          role_color: null,
+        },
+        {
+          user_id: "user-3",
+          display_name: "C",
+          avatar_url: null,
+          role_color: "#FFD700",
+        },
+      ],
+      error: null,
+    });
+    mockUseFrappClient.mockReturnValue({
+      GET: mockGet,
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useMemberDisplayNames(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() =>
+      expect(result.current.roleColorFor("user-1")).toBe("#6FD08C"),
+    );
+    expect(result.current.roleColorFor("user-2")).toBeNull();
+    expect(result.current.roleColorFor("user-3")).toBeNull();
+    expect(result.current.roleColorFor("unknown")).toBeNull();
+  });
+
   it("re-runs the roster read through refetch", async () => {
     const mockGet = vi.fn().mockResolvedValue({ data: roster, error: null });
     mockUseFrappClient.mockReturnValue({

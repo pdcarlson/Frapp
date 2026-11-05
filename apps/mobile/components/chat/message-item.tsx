@@ -92,6 +92,12 @@ export interface MessageItemProps {
    */
   nameFor: (userId: string) => string | null;
   /**
+   * Resolves a `users.id` to the palette color of the member's top colored
+   * role (#3485), which paints their name on the author line. Optional: a
+   * surface without a roster draws plain names, which is a fine degradation.
+   */
+  roleColorFor?: (userId: string) => string | null;
+  /**
    * Whether this row starts a run (`@repo/chat-core/grouping`), and so draws
    * the avatar and author line.
    */
@@ -252,6 +258,7 @@ export function MessageRowFrame({
   message,
   viewerId,
   nameFor,
+  roleColorFor,
   startsRun,
   quote,
   onOpenActions,
@@ -261,6 +268,8 @@ export function MessageRowFrame({
   message: ChatMessage;
   viewerId: string;
   nameFor: (userId: string) => string | null;
+  /** `users.id` → role color for the author line (#3485); see `MessageItemProps`. */
+  roleColorFor?: (userId: string) => string | null;
   startsRun: boolean;
   /** The reply quote, when the row is a reply; drawn above the author line. */
   quote?: ReactNode;
@@ -288,6 +297,12 @@ export function MessageRowFrame({
   // `isOwnMessage` checks the sender before comparing: an imported archive row
   // has no `sender_id`, and `null === null` would otherwise make it "mine".
   const isMine = isOwnMessage(message, viewerId);
+  // The viewer's own name keeps the chapter accent (`SelfName`); everyone
+  // else's takes their role color, a contrast-checked palette value.
+  const roleColor =
+    !isMine && message.sender_id
+      ? (roleColorFor?.(message.sender_id) ?? null)
+      : null;
 
   return (
     <Pressable
@@ -362,7 +377,14 @@ export function MessageRowFrame({
               {isMine ? (
                 <SelfName label={authorLabel} style={styles.name} />
               ) : (
-                <Text style={styles.name} numberOfLines={1}>
+                <Text
+                  style={
+                    roleColor
+                      ? [styles.name, { color: roleColor }]
+                      : styles.name
+                  }
+                  numberOfLines={1}
+                >
                   {authorLabel}
                 </Text>
               )}
@@ -454,6 +476,7 @@ export function MessageItem({
   message,
   viewerId,
   nameFor,
+  roleColorFor,
   startsRun,
   onRetry,
   onDiscard,
@@ -557,6 +580,7 @@ export function MessageItem({
       message={message}
       viewerId={viewerId}
       nameFor={nameFor}
+      roleColorFor={roleColorFor}
       startsRun={startsRun}
       quote={quote}
       onOpenActions={onOpenActions}

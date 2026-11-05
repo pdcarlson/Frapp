@@ -61,6 +61,13 @@ export interface MessageItemProps {
    */
   avatarUrl?: string;
   /**
+   * The palette color of the author's highest-ranked colored role (#3485),
+   * from `useMemberDisplayNames().roleColorFor`. Paints the author's name on
+   * someone else's row; the viewer's own name stays in the chapter accent.
+   * `undefined` or `null` keeps the plain foreground.
+   */
+  authorColor?: string | null;
+  /**
    * The signed-in member's `users.id`, and it is **known** — never `null`.
    *
    * Non-nullable deliberately: the nullable version of this prop was the
@@ -228,6 +235,7 @@ export interface MessageItemProps {
 export function MessageItem({
   message,
   avatarUrl,
+  authorColor,
   viewerId,
   blockState,
   showHeader,
@@ -924,6 +932,11 @@ export function MessageItem({
                   "truncate text-sm font-semibold",
                   isMine ? "text-accent-text" : "text-foreground",
                 )}
+                // A literal from the role palette, which is contrast-checked
+                // against these surfaces (`@repo/validation` role-colors).
+                style={
+                  !isMine && authorColor ? { color: authorColor } : undefined
+                }
               >
                 {authorLabel}
               </span>

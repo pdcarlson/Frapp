@@ -223,6 +223,10 @@ describe('MemberService', () => {
         has_completed_onboarding: true,
       });
 
+    beforeEach(() => {
+      mockRoleRepo.findByChapter.mockResolvedValue([]);
+    });
+
     it('returns one display-only entry per member', async () => {
       mockRepo.findByChapter.mockResolvedValue([
         memberRow('user-1'),
@@ -240,11 +244,17 @@ describe('MemberService', () => {
       const result = await service.findRosterByChapter('chapter-1');
 
       expect(result).toEqual([
-        { user_id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+        {
+          user_id: 'user-1',
+          display_name: 'Marcus Reid',
+          avatar_url: null,
+          role_color: null,
+        },
         {
           user_id: 'user-2',
           display_name: 'Dana Lowe',
           avatar_url: 'signed:chapters/chapter-1/profiles/user-2/a.png',
+          role_color: null,
         },
       ]);
     });
@@ -317,7 +327,12 @@ describe('MemberService', () => {
       const result = await service.findRosterByChapter('chapter-1');
 
       expect(result).toEqual([
-        { user_id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+        {
+          user_id: 'user-1',
+          display_name: 'Marcus Reid',
+          avatar_url: null,
+          role_color: null,
+        },
       ]);
     });
 
@@ -341,7 +356,69 @@ describe('MemberService', () => {
       const result = await service.findRosterByChapter('chapter-1');
 
       expect(result).toEqual([
-        { user_id: 'user-1', display_name: '', avatar_url: null },
+        {
+          user_id: 'user-1',
+          display_name: '',
+          avatar_url: null,
+          role_color: null,
+        },
+      ]);
+    });
+    it('paints every name plain instead of failing when the roles read fails (#3485)', async () => {
+      mockRepo.findByChapter.mockResolvedValue([memberRow('user-1')]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+      ]);
+      mockRoleRepo.findByChapter.mockRejectedValue(new Error('timeout'));
+
+      const result = await service.findRosterByChapter('chapter-1');
+
+      expect(result).toEqual([
+        {
+          user_id: 'user-1',
+          display_name: 'Marcus Reid',
+          avatar_url: null,
+          role_color: null,
+        },
+      ]);
+    });
+
+    it("colors each entry with the member's highest-ranked palette role (#3485)", async () => {
+      mockRepo.findByChapter.mockResolvedValue([
+        memberFixture({
+          id: 'member-1',
+          user_id: 'user-1',
+          chapter_id: 'chapter-1',
+          role_ids: ['role-member', 'role-treasurer'],
+        }),
+        memberFixture({
+          id: 'member-2',
+          user_id: 'user-2',
+          chapter_id: 'chapter-1',
+          role_ids: ['role-member', 'role-legacy'],
+        }),
+      ]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+        { id: 'user-2', display_name: 'Dana Lowe', avatar_url: null },
+      ]);
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        roleFixture({
+          id: 'role-treasurer',
+          color: '#6FD08C',
+          display_order: 2,
+        }),
+        roleFixture({ id: 'role-member', color: null, display_order: 5 }),
+        // An off-palette value (the old President seed) paints nothing.
+        roleFixture({ id: 'role-legacy', color: '#FFD700', display_order: 1 }),
+      ]);
+
+      const result = await service.findRosterByChapter('chapter-1');
+
+      expect(mockRoleRepo.findByChapter).toHaveBeenCalledWith('chapter-1');
+      expect(result.map((entry) => entry.role_color)).toEqual([
+        '#6FD08C',
+        null,
       ]);
     });
   });
