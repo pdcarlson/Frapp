@@ -882,7 +882,7 @@ export function InvoiceList({ id }: { id?: string }) {
                         </Button>
                         <Button
                           size="toolbar"
-                          variant="quiet"
+                          variant="ghost"
                           {...gate.controlProps(transitioningId === invoice.id)}
                           onClick={() => void transition(invoice, "VOID")}
                         >

@@ -680,7 +680,7 @@ export function GeofencesAdminPage() {
                   <div className="flex shrink-0 flex-wrap items-center gap-1 pl-7 sm:pl-0">
                     <Button
                       size="toolbar"
-                      variant="quiet"
+                      variant="ghost"
                       {...gate.controlProps()}
                       onClick={() => openEditor(zone)}
                     >
@@ -688,7 +688,7 @@ export function GeofencesAdminPage() {
                     </Button>
                     <Button
                       size="toolbar"
-                      variant="quiet"
+                      variant="ghost"
                       {...gate.controlProps()}
                       onClick={() => void toggleActive(zone)}
                     >
@@ -701,7 +701,7 @@ export function GeofencesAdminPage() {
                     </Button>
                     <Button
                       size="toolbar"
-                      variant="quiet"
+                      variant="ghost"
                       {...gate.controlProps()}
                       onClick={() => void handleDelete(zone)}
                     >

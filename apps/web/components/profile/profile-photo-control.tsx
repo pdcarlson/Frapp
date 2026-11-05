@@ -148,7 +148,7 @@ export function ProfilePhotoControl({
       {hasPhoto ? (
         <Button
           type="button"
-          variant="quiet"
+          variant="ghost"
           size="toolbar"
           disabled={disabled || busy !== null}
           onClick={() => void handleRemove()}

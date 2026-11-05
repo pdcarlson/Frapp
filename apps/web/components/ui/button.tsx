@@ -58,13 +58,13 @@ const buttonVariants = cva(
           "border-input bg-card font-semibold text-foreground hover:bg-card-hover",
         tinted:
           "border-accent-border bg-accent-subtle font-bold text-accent-text hover:bg-accent-subtle-hover",
-        ghost: "font-semibold text-accent-text hover:bg-accent-subtle",
-        // Not one of §3's five either: a row's secondary actions (Edit,
-        // Delete, Remove, an icon). Ghost paints the chapter accent, so a
-        // column of "Delete" links read as the brightest thing on the page;
-        // these sit in the text's own tone and light up only on hover. The
-        // dialog and sheet close buttons were already this recipe.
-        quiet:
+        // The text's own tone, lit only on hover (2026-11-05). Ghost used to
+        // paint the chapter accent, which made every icon button in the
+        // composer, every row's Edit and Delete, and every Back and Cancel
+        // gold: the accent belongs to the one action that matters, so a
+        // tertiary control blends in. It absorbed the short-lived `quiet`
+        // variant, which was this recipe under a second name.
+        ghost:
           "font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground",
         // Tint, never a solid red fill (§3): `--destructive-tint` (13%) at
         // rest, `--destructive-tint-hover` (20%) on hover. The label is the

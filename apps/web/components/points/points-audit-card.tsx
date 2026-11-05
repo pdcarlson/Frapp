@@ -271,7 +271,7 @@ export function PointsAuditCard() {
               Flagged only
             </Button>
             <Button
-              variant="quiet"
+              variant="ghost"
               size="icon"
               className={TOOLBAR_ICON}
               onClick={() => void transactionsQuery.refetch()}

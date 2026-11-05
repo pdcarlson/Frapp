@@ -386,7 +386,7 @@ export default function PointsPage() {
             return (
               <Button
                 key={item.value}
-                variant={active ? "secondary" : "quiet"}
+                variant={active ? "secondary" : "ghost"}
                 size="toolbar"
                 aria-pressed={active}
                 onClick={() => {

@@ -482,7 +482,7 @@ export function RolesAndPermissionsPage() {
                         </button>
                         {role.is_system ? null : (
                           <Button
-                            variant="quiet"
+                            variant="ghost"
                             size="icon"
                             aria-label={`Delete ${role.name}`}
                             onClick={() => void handleDeleteRole(role)}

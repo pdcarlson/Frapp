@@ -263,7 +263,7 @@ function Poll({
           {!poll.isExpired ? (
             <Button
               size="toolbar"
-              variant="quiet"
+              variant="ghost"
               {...gate.controlProps(
                 !poll.userVotes?.length || unvote.isPending,
               )}
@@ -372,7 +372,7 @@ export function PollsPage() {
         </SelectContent>
       </Select>
       <Button
-        variant="quiet"
+        variant="ghost"
         size="toolbar"
         className="w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
         onClick={() => void pollsQuery.refetch()}

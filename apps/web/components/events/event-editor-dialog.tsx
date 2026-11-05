@@ -743,7 +743,7 @@ export function EventEditorDialog({
                     <div className="flex items-center gap-1">
                       <Button
                         type="button"
-                        variant="quiet"
+                        variant="ghost"
                         size="icon"
                         aria-label={`Move point ${index + 1} up`}
                         disabled={usingPreviewData || index === 0}
@@ -753,7 +753,7 @@ export function EventEditorDialog({
                       </Button>
                       <Button
                         type="button"
-                        variant="quiet"
+                        variant="ghost"
                         size="icon"
                         aria-label={`Move point ${index + 1} down`}
                         disabled={
@@ -765,7 +765,7 @@ export function EventEditorDialog({
                       </Button>
                       <Button
                         type="button"
-                        variant="quiet"
+                        variant="ghost"
                         size="icon"
                         aria-label={`Remove point ${index + 1}`}
                         disabled={usingPreviewData}

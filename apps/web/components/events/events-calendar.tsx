@@ -148,7 +148,7 @@ export function EventsCalendar({
             Today
           </Button>
           <Button
-            variant="quiet"
+            variant="ghost"
             size="icon"
             className={compactControlClassName}
             aria-label="Previous month"
@@ -157,7 +157,7 @@ export function EventsCalendar({
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <Button
-            variant="quiet"
+            variant="ghost"
             size="icon"
             className={compactControlClassName}
             aria-label="Next month"

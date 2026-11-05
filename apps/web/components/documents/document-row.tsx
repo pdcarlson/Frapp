@@ -140,7 +140,7 @@ export function DocumentRow({
           offering one per row.
         */}
           <Button
-            variant="quiet"
+            variant="ghost"
             size="icon"
             className={compactControlClassName}
             aria-label={`Delete ${doc.title}`}

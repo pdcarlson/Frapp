@@ -63,7 +63,7 @@ Colors below are given by **token role** (`accent-N` per [accent-engine.md](acce
 | Primary | `accent-9` | none | `accent-contrast` | 700 |
 | Secondary | card `#211E1A` | 1px `rgba(255,255,255,.14)` | `#EDEAE3` | 600 |
 | Tinted | `accent-3` | 1px `accent-7` | `accent-11` | 700 |
-| Ghost | transparent | none | `accent-11` | 600 |
+| Ghost | transparent | none | `--muted-foreground` | 600 |
 | Destructive | `--destructive-tint` (danger @ 13%) | none | `#f85149` | 700 |
 
 Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) borrows its *geometry* only — it is painted in the pinned house-gold tints, never the chapter accent (§11). Destructive is tint-style, never a solid red fill.
@@ -74,7 +74,8 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 | ------- | ----- | ------- | ----------------------- |
 | Primary | fill `accent-10` | fill `accent-10` + 8% black overlay | fill card `#211E1A`, border `rgba(255,255,255,.08)`, text `#57534C` |
 | Secondary | fill `--card-hover` (`#37332E`) | as hover | 〃 |
-| Tinted / Ghost | fill `accent-3` (ghost gains it; tinted lifts one step to `accent-4`) | as hover | 〃 |
+| Tinted | fill `accent-4` (one step above its rest fill) | as hover | 〃 |
+| Ghost | fill `--card-hover`, text `--foreground` | as hover | 〃 |
 | Destructive | `--destructive-tint-hover` (danger @ 20%) | as hover | 〃 |
 
 - **Secondary's hover sits above the ladder, not on it** (corrected 2026-10-01, [#1220](https://github.com/pdcarlson/Frapp/issues/1220)). It was the elevated step, which is `--popover`, so a Secondary button inside a dialog or sheet hovered to its container's own colour: 1.000:1, no feedback at all. `--card-hover` is `--popover` lifted 6% toward white. Being above every step, it reads as a state wherever the button sits: 1.199:1 on `--popover`, 1.324:1 on `--card` (the rest fill), 1.493:1 on `--background`. It's an opaque literal, so it has no `color-mix` floor. It's neutral, so it holds on the error surfaces §10 bars the chapter accent from. It's a hover, never a resting surface. Any card-filled control takes it (the web notification drawer's read rows do). A row that is transparent over a menu or table still takes §2's tint. Measured in [`apps/web/components/shared/elevation-contrast.spec.ts`](../../../apps/web/components/shared/elevation-contrast.spec.ts), which also derives the value from `--popover`.
@@ -92,7 +93,7 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 **Web's toolbar row takes Compact on a mouse** (added 2026-11-05). A dashboard route's one toolbar row (the `PageActions` row, filters, search) is 36px to a fine pointer and 44px to a coarse one: Button's `toolbar` size, and `dashboardFilterSelectClassName` / `dashboardToolbarSearchClassName` in `apps/web/components/shared/table-controls.ts`. That is the same rule the dense list rows under it follow ([`../web-dashboard/README.md` § Page grammar](../web-dashboard/README.md#page-grammar)), rounded onto the 4px grid, and §2's carve-out keeps the touch floor. At the Default 48 a route's primary action stood taller than the toolbar row it sits in and every row it acts on, which is the hierarchy the owner called off on every page (2026-11-04). Forms, dialogs and sheets keep Default.
 
-**Quiet is a row's secondary action** (added 2026-11-05): transparent, `--muted-foreground` text at 600, `--card-hover` fill and `--foreground` text on hover. It is the recipe the dialog and sheet close buttons already used. Edit, Delete, Remove and icon actions on a list row take it, because Ghost paints `accent-11`, and a column of accent "Delete" links read as the most important thing on the page. A destructive action still confirms in a dialog, where Destructive paints the commit.
+**Ghost is neutral** (changed 2026-11-05, owner's call). It painted `accent-11` until then, so every icon button in the chat composer, a row's Edit and Delete, and each wizard's Back and Cancel drew in the chapter accent and read as the loudest thing on screen. The accent belongs to the one action that matters (Primary, Tinted); a tertiary control blends in and lights up on hover. It absorbed the `quiet` variant added earlier that day for list rows' secondary actions, which was this recipe under a second name. A text link that should read as a link takes the `link` variant, which keeps `accent-11`.
 
 ## 4. Inputs and selection
 
