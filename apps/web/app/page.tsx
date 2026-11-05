@@ -11,8 +11,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * buttons, "Sign in" and "Create an account", each leading to a second page.
  * That was the mobile entry screen's shape, where the form sits behind a tap;
  * on the web it cost every returning member a click before the form. The
- * sign-in form carries both of its other exits in its footer ("Create an
- * account", "Join your chapter").
+ * sign-in form carries both of its other exits: the toggle above its title
+ * ("Create account") and its footer ("Join your chapter").
  *
  * It redirects rather than rendering the form itself because it cannot join
  * the `(auth)` group that keeps the signed-out frame mounted across routes:
