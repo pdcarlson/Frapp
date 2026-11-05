@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEvent, useNowDate } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_EVENTS } from "@/components/back-row";
+import { PressableRow } from "@/components/list-section";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import {
   EmptyState,
@@ -21,7 +22,7 @@ import {
   type CheckInWindow,
 } from "@/lib/events/format";
 import { selectEventDetail, type EventDetail } from "@/lib/events/select";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s07 — Event detail (`canvas-screens.dc.html:246`).
@@ -188,19 +189,17 @@ export default function EventDetailsScreen() {
         />
       ) : null}
 
-      <Pressable
+      <PressableRow
         accessibilityRole="button"
         accessibilityLabel="Add this event to your calendar"
         accessibilityState={{ disabled: calendarState === "exporting" }}
         disabled={calendarState === "exporting"}
         onPress={() => void handleCalendarExport()}
-        // The press feedback `ListRow` and the s06 card use: a ripple on
-        // Android, a lift up the surface ladder on iOS.
-        android_ripple={{ color: styles.ripple.color }}
-        style={({ pressed }) => [
-          styles.secondaryButton,
-          pressed && Platform.OS !== "android" ? styles.pressed : null,
-        ]}
+        // The press feedback the s06 cards use: a ripple on Android, rounded
+        // to the button's corners by `PressableRow`'s clip and dropped while
+        // exporting, and a lift from the card fill to `surface.popover` on iOS.
+        onCard
+        style={styles.secondaryButton}
       >
         <Text style={styles.secondaryButtonText}>
           {calendarState === "exporting"
@@ -211,7 +210,7 @@ export default function EventDetailsScreen() {
                 ? "Couldn't add — try again"
                 : "Add to calendar"}
         </Text>
-      </Pressable>
+      </PressableRow>
     </ScreenShell>
   );
 }
@@ -394,18 +393,10 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.card,
       alignItems: "center",
       justifyContent: "center",
-      overflow: "hidden",
     },
     secondaryButtonText: {
       color: tokens.color.text.foreground,
       ...typeRole(tokens.typography.role.label),
-    },
-    pressed: {
-      backgroundColor: tokens.color.surface.popover,
-    },
-    // Not a style a view takes: the ripple's color, as in `list-section.tsx`.
-    ripple: {
-      color: tint(tokens.color.text.foreground, 0.12),
     },
   });
 }

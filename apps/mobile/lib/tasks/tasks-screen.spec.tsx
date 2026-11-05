@@ -4,7 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
-import { AppState } from "react-native";
+import { AppState, StyleSheet } from "react-native";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
@@ -179,6 +179,43 @@ beforeEach(() => {
   mutateAsync.mockClear();
   successHaptic.mockReset();
   chapterId = "chapter-1";
+});
+
+describe("A task in flight", () => {
+  it("dims the tapped row and reads it busy until its PATCH sequence ends", async () => {
+    // The first write is held open; the second then fails quietly, which ends
+    // the sequence and clears the busy flag.
+    failure = FAILED;
+    let release!: () => void;
+    mutateAsync.mockImplementationOnce(
+      () => new Promise<never>((_resolve, reject) => {
+        release = () => reject(FAILED);
+      }),
+    );
+    const tree = render();
+    await tapRow(tree);
+
+    // The host row: the screen drops `onToggle` while the sequence runs, so
+    // this is the plain branch, and it must still look and read in progress.
+    const host = () =>
+      row(tree).find(
+        (node) =>
+          typeof node.type === "string" &&
+          node.props.accessibilityRole === "checkbox",
+      );
+    expect(row(tree).props.onToggle).toBeUndefined();
+    expect(host().props.accessibilityState).toMatchObject({ busy: true });
+    expect(StyleSheet.flatten(host().props.style).opacity).toBe(0.8);
+    // The other row is untouched.
+    expect(rows(tree)[1]!.props.isPending).toBe(false);
+
+    await act(async () => release());
+
+    expect(row(tree).props.onToggle).toBeDefined();
+    expect(host().props.accessibilityState).toMatchObject({ busy: false });
+    expect(StyleSheet.flatten(host().props.style)).not.toHaveProperty("opacity");
+    act(() => tree.unmount());
+  });
 });
 
 describe("Task status toggle on a gate refusal (#2710)", () => {
