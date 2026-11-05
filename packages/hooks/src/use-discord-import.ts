@@ -11,7 +11,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * Every hook here takes `options.enabled` and defaults the query to disabled
  * until a chapter is known: the routes require `channels:manage`, so a mount
  * for an ordinary member would otherwise fire a guaranteed-403 that the query
- * client retries and refires on focus.
+ * client refires on focus. The web client no longer retries it (#3141).
  */
 
 /** The contract's status union, so a status the API adds reaches here (#2860). */
