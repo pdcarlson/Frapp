@@ -16,10 +16,10 @@
  * would put the same re-export in five places, which is the drift
  * `ui/typography.ts` was hoisted to stop.
  *
- * **Eight of the nine are re-exports, and that is the point.** `nav-glyphs.tsx`
+ * **Six of the seven are re-exports, and that is the point.** `nav-glyphs.tsx`
  * already draws these intents for the sidebar, and a second copy of the same
  * path data is exactly the drift §1 rule 1 bans — the Directory family states
- * the same rule for its three shared silhouettes.
+ * the same rule for its two shared silhouettes.
  *
  * **Control furniture stays Lucide**, as it does in the shell, in chat and in
  * the Directory family (§6.2.2, §6.2.3). That is `Loader2`, `AlertCircle`,
@@ -42,9 +42,7 @@ export {
   PointsGlyph,
   RolesGlyph,
   SearchGlyph,
-  ServiceGlyph,
   StudyZonesGlyph,
-  TasksGlyph,
 } from "@/components/layout/nav-glyphs";
 
 export type ChapterOpsGlyphProps = DuotoneGlyphProps;

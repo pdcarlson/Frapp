@@ -22,6 +22,8 @@ import {
   sheetFieldStyles,
   useSheetBackgroundStyle,
   useSheetVisit,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import type { PickedImage } from "@/lib/chat/attachment-upload";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -141,6 +143,7 @@ export interface LogHoursSheetProps {
 
 export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
   function LogHoursSheet({ now }, ref) {
+    const closeSheet = useSheetClose(ref);
     const { tokens } = useFrappTheme();
     const { accent } = useChapterBranding();
     const styles = createStyles(tokens, accent);
@@ -398,7 +401,8 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
         onAnimate={onAnimate}
         onDismiss={closed}
       >
-        <BottomSheetView style={styles.body}>
+        <SheetBackToClose onClose={closeSheet} />
+        <BottomSheetView onAccessibilityEscape={closeSheet} style={styles.body}>
           <SheetHeader
             title="Log service hours"
             onCancel={cancel}

@@ -237,6 +237,30 @@ describe("EventDetailSheet subscription gating", () => {
   });
 });
 
+describe("EventDetailSheet header actions", () => {
+  // components.md § Chrome weight: an object's actions are icons in its
+  // header beside the close, not worded buttons opening the body.
+  it("draws Add to calendar, Edit and Delete as named icons with tooltips", () => {
+    chapter.active();
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={baseEvent}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    for (const name of ["Add to calendar", "Edit event", "Delete event"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveTextContent(/^$/);
+      expect(button).toHaveAttribute("title", name);
+    }
+  });
+});
+
 describe("EventDetailSheet check-in zone", () => {
   it("names the zone and counts its points when one is set", () => {
     render(

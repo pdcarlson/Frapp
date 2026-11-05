@@ -9,6 +9,8 @@ import {
   SheetHeader,
   SheetScrim,
   useSheetBackgroundStyle,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import type { StudyZoneModel } from "@/lib/study/zones";
 import { zoneRewardCopy } from "@/lib/study/zones";
@@ -31,6 +33,7 @@ export interface ZonePickerSheetProps {
 
 export const ZonePickerSheet = forwardRef<BottomSheetModal, ZonePickerSheetProps>(
   function ZonePickerSheet({ zones, selectedZoneId, onSelect }, ref) {
+    const closeSheet = useSheetClose(ref);
     const { tokens } = useFrappTheme();
     const { accent } = useChapterBranding();
     const styles = createStyles(tokens);
@@ -44,11 +47,13 @@ export const ZonePickerSheet = forwardRef<BottomSheetModal, ZonePickerSheetProps
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
       >
-        <View style={styles.header}>
+        <SheetBackToClose onClose={closeSheet} />
+        <View onAccessibilityEscape={closeSheet} style={styles.header}>
           <SheetHeader title="Study zone" />
         </View>
 
         <BottomSheetFlatList
+          onAccessibilityEscape={closeSheet}
           data={zones}
           keyExtractor={(zone: StudyZoneModel) => zone.id}
           contentContainerStyle={styles.list}

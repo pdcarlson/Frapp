@@ -190,7 +190,8 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
 
   it("opens on that line, with no Message title over the menu", () => {
     // components.md § Chrome weight: an action menu draws no title and no
-    // Cancel. The grabber, the scrim and Android back close it.
+    // Cancel. The grabber, the scrim, Android back and VoiceOver's escape
+    // close it (`SheetBackToClose`, `useSheetClose`).
     const tree = render(OWN);
     expect(
       tree.root.findAll(
@@ -209,6 +210,19 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
       ).length;
     // Reply, Edit and Delete all act here.
     expect(chevrons(render(OWN))).toBe(0);
+    // Block acts here too; only Report opens a sheet of its own.
+    const blockable = render({
+      ...SOMEONE_ELSES,
+      messageId: "m1",
+      blockUserId: BLOCKED,
+      senderName: "Blake",
+      senderInDirectory: true,
+      senderLabel: "Blake",
+      sentAt: SENT_AT,
+      reactedWith: [],
+    });
+    expect(text(blockable)).toContain("Block Blake");
+    expect(chevrons(blockable)).toBe(1);
   });
 
   it("offers Reply, Edit and Delete on your own message, and never Report or Block", () => {

@@ -190,8 +190,18 @@ export function DashboardNotificationDrawer({
               Loading notifications...
             </div>
           ) : notificationsQuery.isError ? (
-            <div className="rounded-md border border-destructive/45 bg-destructive-tint p-3 text-sm text-destructive-text">
-              Couldn&apos;t load notifications. Retry in a moment.
+            // The drawer stays mounted between opens, so closing and
+            // reopening it doesn't refetch: the retry has to live here, now
+            // that the header has no Refresh (components.md § Chrome weight).
+            <div className="grid justify-items-start gap-2 rounded-md border border-destructive/45 bg-destructive-tint p-3 text-sm text-destructive-text">
+              Couldn&apos;t load notifications.
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void notificationsQuery.refetch()}
+              >
+                Try again
+              </Button>
             </div>
           ) : notifications.length === 0 ? (
             <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -200,9 +210,8 @@ export function DashboardNotificationDrawer({
             </div>
           ) : (
             // A flat list: rows divided by hairlines, no card around each.
-            // Unread is a dot and a bolder title, the chat list's neutral
-            // unread (foundations.md, Channel unread), not a gold card and a
-            // badge. Every row is transparent on the sheet's `--popover`, so
+            // Unread is a dot and a bolder title, neutral like the chat list's
+            // unread (foundations.md §5), not a gold card and a badge. Every row is transparent on the sheet's `--popover`, so
             // one hover serves both states: `--card-hover`, the neutral lift
             // above the ladder (`elevation-contrast.spec.ts`).
             <ul className="-mx-3 divide-y divide-border">

@@ -12,6 +12,8 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   SheetGrabber,
   useSheetBackgroundStyle,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import { AnswerCard } from "@/components/ask/answer-card";
 import {
@@ -87,6 +89,7 @@ const ANSWER_DELAY_MS = 450;
 
 export const AskSheet = forwardRef<BottomSheetModal>(
   function AskSheet(_props, ref) {
+    const closeSheet = useSheetClose(ref);
     const { tokens } = useFrappTheme();
     const styles = createStyles(tokens);
     const backgroundStyle = useSheetBackgroundStyle();
@@ -204,7 +207,9 @@ export const AskSheet = forwardRef<BottomSheetModal>(
         backdropComponent={renderBackdrop}
         onDismiss={reset}
       >
+        <SheetBackToClose onClose={closeSheet} />
         <BottomSheetScrollView
+          onAccessibilityEscape={closeSheet}
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"

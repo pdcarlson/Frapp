@@ -1,4 +1,4 @@
-import { useCallback, useRef, type ForwardedRef } from "react";
+import { useCallback, useRef, type ForwardedRef, type RefObject } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   BottomSheetBackdrop,
@@ -6,6 +6,7 @@ import {
   type BottomSheetModal,
 } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
+import { useBackToClose } from "@/lib/overlay";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -31,6 +32,41 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 /** `rgba(0,0,0,.55)` as drawn; the backdrop's own default is 0.5. */
 const SCRIM_OPACITY = 0.55;
 
+/** A sheet's ref, as a component holds it or as `forwardRef` hands it in. */
+type SheetRef =
+  ForwardedRef<BottomSheetModal> | RefObject<BottomSheetModal | null>;
+
+/**
+ * Closes the sheet `sheet` names, for a screen reader's escape: pass it as
+ * `onAccessibilityEscape` on the view that holds the sheet's content, so
+ * VoiceOver's two-finger scrub closes it from anywhere inside, as it closes a
+ * native sheet. gorhom wires no escape of its own.
+ *
+ * It closes like a swipe, so a form keeps its draft. It is held only while the
+ * content is mounted, which is while the sheet is up or closing, and gorhom's
+ * `dismiss()` is safe on a sheet that is still closing.
+ */
+export function useSheetClose(sheet: SheetRef): () => void {
+  return useCallback(() => {
+    if (typeof sheet === "function" || !sheet?.current) return;
+    sheet.current.dismiss();
+  }, [sheet]);
+}
+
+/**
+ * Android's back button closes the sheet, rather than going to the navigator
+ * underneath and leaving the screen the sheet was opened over. Render it as a
+ * child of the `BottomSheetModal`: gorhom mounts a modal's children only while
+ * it is presented, so the handler is held exactly that long, and a sheet
+ * stacked on top registers later and so closes first. gorhom handles no back
+ * press of its own, and `lib/sheet-scrim.spec.ts` fails the build on a sheet
+ * that leaves this out.
+ */
+export function SheetBackToClose({ onClose }: { onClose: () => void }) {
+  useBackToClose(true, onClose);
+  return null;
+}
+
 /**
  * The drawn scrim, for `BottomSheetModal`'s `backdropComponent`
  * (`spec/ui/mobile/patterns.md` § Bottom sheets). It belongs to the presented
@@ -52,9 +88,12 @@ export function SheetScrim(props: BottomSheetBackdropProps) {
       appearsOnIndex={0}
       disappearsOnIndex={-1}
       opacity={SCRIM_OPACITY}
-      // The scrim is a screen reader's way out of a sheet that draws no
-      // Cancel (a picker, the message menu), so it says so plainly rather
-      // than gorhom's default "Bottom sheet backdrop".
+      // Named for what a tap on it does, rather than gorhom's default
+      // "Bottom sheet backdrop". A screen reader's sure way out of a sheet
+      // with no Cancel is Android back or VoiceOver's escape
+      // (`SheetBackToClose`, `useSheetClose`): gorhom closes on a touch
+      // gesture, and activating the scrim taps its centre, which a tall
+      // sheet covers.
       accessibilityLabel="Close"
       accessibilityHint="Closes the sheet."
     />
@@ -77,8 +116,9 @@ export function SheetGrabber() {
  * button: New task, Log service hours, Upload document, Edit profile, Report
  * message), where Cancel says "give the draft up" and differs from a swipe.
  * Leave it out on a **picker or a read-only sheet** (Study zone, Assign to,
- * Blocked members): the pick, the grabber and the scrim already close it, so a
- * Cancel or Done there is a second close button
+ * Blocked members): the pick, the grabber, the scrim, Android back and
+ * VoiceOver's escape (`SheetBackToClose`, `useSheetClose`) already close it,
+ * so a Cancel or Done there is a second close button
  * (`spec/ui/design-system/components.md` § Chrome weight). An action menu
  * (the message long-press) draws no SheetHeader at all.
  */

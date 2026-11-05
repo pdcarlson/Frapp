@@ -159,6 +159,19 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     act(() => tree.unmount());
   });
 
+  it("draws Block with no chevron, since it acts in place", () => {
+    // components.md § Chrome weight: a chevron promises somewhere to go.
+    const tree = render(ADA);
+    const block = tree.root.find(
+      (node) =>
+        typeof node.type === "function" &&
+        typeof node.props.label === "string" &&
+        node.props.label.startsWith("Block "),
+    );
+    expect(block.props.action).toBe(true);
+    act(() => tree.unmount());
+  });
+
   it("does not wait on the channel-list refetch", () => {
     const tree = render(ADA);
     expect(state.dmOptions.at(-1)).toEqual({ awaitRefetch: false });

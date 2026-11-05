@@ -192,6 +192,63 @@ describe("rendering", () => {
     expect(JSON.stringify(image.props.style)).toContain('"maxHeight":240');
   });
 
+  it("draws a photo bare and a file in its frame", () => {
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [
+        attachment({
+          id: "photo",
+          content_type: "image/png",
+          width: 800,
+          height: 400,
+        }),
+        attachment({
+          id: "file",
+          content_type: "application/pdf",
+          filename: "dues.pdf",
+        }),
+      ],
+    };
+
+    const tree = render();
+    const [photo, file] = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button",
+    );
+    expect(JSON.stringify(photo!.props.style)).not.toContain("borderWidth");
+    expect(JSON.stringify(file!.props.style)).toContain('"borderWidth":1');
+  });
+
+  it("draws a portrait photo at the cap and its own width, hugged by its row", () => {
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [
+        attachment({ content_type: "image/png", width: 400, height: 2000 }),
+      ],
+    };
+
+    const tree = render();
+    const image = tree.root.findAllByType(
+      "Image" as unknown as React.ElementType,
+    )[0]!;
+    const style = JSON.stringify(image.props.style);
+    expect(style).toContain('"height":240');
+    expect(style).toContain('"aspectRatio":0.2');
+    // A full-width box would letterbox the photo between empty sides.
+    expect(style).not.toContain('"width":"100%"');
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button",
+    );
+    expect(JSON.stringify(row.props.style)).toContain(
+      '"alignSelf":"flex-start"',
+    );
+  });
+
   it("falls back to a fixed height when the dimensions are null", () => {
     // `chat_message_attachments` allows both to be null, so an aspect ratio
     // computed from nothing would be NaN.
@@ -236,7 +293,7 @@ describe("the loading tiles", () => {
         node.props.testID === "attachment-loading-tile",
     );
 
-  it("reserves a preview's frame and an unsized preview's height per file", () => {
+  it("reserves a bare preview's room and an unsized preview's height per file", () => {
     hookState.result = { isPending: true, isError: false, data: undefined };
     const tree = render({ count: 2 });
 
@@ -252,9 +309,10 @@ describe("the loading tiles", () => {
     expect(frame).toContain(
       `"borderRadius":${signetDarkTokens.radius.control}`,
     );
-    expect(frame).toContain(
-      `"backgroundColor":"${signetDarkTokens.color.surface.surface1}"`,
-    );
+    // Bare like the photo it becomes (components.md § Chrome weight): no
+    // file-row frame to drop when the photo lands.
+    expect(frame).not.toContain("borderWidth");
+    expect(frame).not.toContain(signetDarkTokens.color.surface.surface1);
     expect(block).toContain('"height":180');
     expect(block).toContain(
       `"borderRadius":${signetDarkTokens.radius.control}`,

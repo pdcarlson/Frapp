@@ -30,6 +30,8 @@ import {
   SheetHeader,
   SheetScrim,
   useSheetBackgroundStyle,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import {
   EmptyState,
@@ -65,6 +67,7 @@ export const BLOCKED_MEMBERS_EMPTY_BODY =
 
 export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
   function BlockedMembersSheet(_props, ref) {
+    const closeSheet = useSheetClose(ref);
     const { tokens } = useFrappTheme();
     const brand = useChapterBranding();
     const styles = createStyles(tokens, brand);
@@ -182,7 +185,11 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
       >
-        <BottomSheetScrollView contentContainerStyle={styles.body}>
+        <SheetBackToClose onClose={closeSheet} />
+        <BottomSheetScrollView
+          onAccessibilityEscape={closeSheet}
+          contentContainerStyle={styles.body}
+        >
           <SheetHeader title={BLOCKED_MEMBERS_TITLE} />
           {body}
         </BottomSheetScrollView>

@@ -27,6 +27,8 @@ import {
   SheetGrabber,
   SheetScrim,
   useSheetBackgroundStyle,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import {
   resolveCustomRoleNames,
@@ -87,6 +89,7 @@ export const MemberDetailSheet = forwardRef<
   BottomSheetModal,
   MemberDetailSheetProps
 >(function MemberDetailSheet({ userId, onDismiss }, ref) {
+  const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
@@ -203,13 +206,15 @@ export const MemberDetailSheet = forwardRef<
       backdropComponent={SheetScrim}
       onDismiss={onDismiss}
     >
+      <SheetBackToClose onClose={closeSheet} />
       <BottomSheetScrollView
+        onAccessibilityEscape={closeSheet}
         style={styles.scroll}
         contentContainerStyle={styles.body}
       >
         {/* No "Member" title and no Done: the member's name heads the sheet,
-            and the grabber, scrim and Android back close it (components.md
-            § Chrome weight). */}
+            and the grabber, scrim, Android back and VoiceOver's escape close
+            it (components.md § Chrome weight). */}
 
         {memberQuery.isPending ? (
           <SkeletonLines lines={4} showTile tone="list" />

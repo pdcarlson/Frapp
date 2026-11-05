@@ -31,7 +31,7 @@ import { useOpenImageViewer, viewerImages } from "./image-viewer";
  * remembers seeing the file.
  *
  * **Loading reserves a photo's room.** While the files are read, each one
- * draws a tile in the frame a preview takes, as tall as an unsized preview
+ * draws a bare tile where a preview goes, as tall as an unsized preview
  * (`PREVIEW_FALLBACK_HEIGHT`), rather than a one-line caption that a photo up
  * to 240pt tall then replaced, pushing the thread with every one that landed
  * (components.md §10: the skeleton mirrors the layout it becomes).
@@ -89,7 +89,11 @@ export function MessageAttachments({
         style={styles.list}
       >
         {Array.from({ length: count }, (_, index) => (
-          <View key={index} testID="attachment-loading-tile" style={styles.row}>
+          <View
+            key={index}
+            testID="attachment-loading-tile"
+            style={styles.imageRow}
+          >
             <View style={styles.loadingTile} />
           </View>
         ))}
@@ -128,6 +132,14 @@ export function MessageAttachments({
     <View style={styles.list}>
       {query.data.map((attachment) => {
         const isImage = imageIds.has(attachment.id);
+        const aspect =
+          attachment.width && attachment.height
+            ? attachment.width / attachment.height
+            : null;
+        // A portrait photo takes the height cap and its own width, and the
+        // row hugs it, so the rounded corners land on the photo rather than
+        // on the empty sides `contain` would leave across the full width.
+        const portrait = isImage && aspect !== null && aspect < 1;
         return (
           <Pressable
             key={attachment.id}
@@ -147,7 +159,11 @@ export function MessageAttachments({
             onLongPress={onLongPress}
             // A photo draws bare at the media radius; the framed row is for
             // files (components.md § Chrome weight).
-            style={isImage ? styles.imageRow : styles.row}
+            style={
+              isImage
+                ? [styles.imageRow, portrait ? styles.imageRowHug : null]
+                : styles.row
+            }
           >
             {isImage ? (
               <Image
@@ -159,12 +175,23 @@ export function MessageAttachments({
                 // both to be null, so a fixed height is the fallback rather than
                 // an aspect ratio computed from nothing.
                 style={
-                  attachment.width && attachment.height
+                  aspect === null
                     ? [
                         styles.preview,
-                        { aspectRatio: attachment.width / attachment.height },
+                        styles.previewFull,
+                        styles.previewUnsized,
                       ]
-                    : [styles.preview, styles.previewUnsized]
+                    : portrait
+                      ? [
+                          styles.preview,
+                          styles.previewPortrait,
+                          { aspectRatio: aspect },
+                        ]
+                      : [
+                          styles.preview,
+                          styles.previewFull,
+                          { aspectRatio: aspect },
+                        ]
                 }
               />
             ) : (
@@ -197,6 +224,9 @@ export function MessageAttachments({
  */
 const PREVIEW_FALLBACK_HEIGHT = 180;
 
+/** The tallest a preview draws, matching web's `max-h-64`. */
+const PREVIEW_MAX_HEIGHT = 240;
+
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     list: {
@@ -216,6 +246,9 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       overflow: "hidden",
     },
+    imageRowHug: {
+      alignSelf: "flex-start",
+    },
     fileRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -232,20 +265,28 @@ function createStyles(tokens: SignetTokens) {
       flexShrink: 0,
     },
     preview: {
-      width: "100%",
       // Capped, matching web's `max-h-64`. Without it a tall screenshot — a
       // 400x2000 phone capture is the ordinary case — derives its height from
       // the aspect ratio and renders many times the column's width, pushing the
       // rest of the thread off screen. `contain` letterboxes inside the cap
       // rather than distorting.
-      maxHeight: 240,
+      maxHeight: PREVIEW_MAX_HEIGHT,
       borderRadius: tokens.radius.control,
+    },
+    // Width follows from the cap and the aspect ratio, so a portrait photo is
+    // never letterboxed.
+    previewPortrait: {
+      height: PREVIEW_MAX_HEIGHT,
+      maxWidth: "100%",
+    },
+    previewFull: {
+      width: "100%",
     },
     previewUnsized: {
       height: PREVIEW_FALLBACK_HEIGHT,
     },
-    // A preview's block, inside the same row frame, in the skeleton's neutral
-    // elevated fill (components.md §10: neutral only).
+    // A preview's block, bare like the photo it stands in for, in the
+    // skeleton's neutral elevated fill (components.md §10: neutral only).
     loadingTile: {
       height: PREVIEW_FALLBACK_HEIGHT,
       borderRadius: tokens.radius.control,

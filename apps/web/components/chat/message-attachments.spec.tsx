@@ -117,7 +117,11 @@ describe("the attachment list", () => {
     show(photo(1));
 
     const preview = screen.getByRole("button", { name: "View photo-1.png" });
-    expect(preview).not.toHaveClass("border-border", "bg-surface-1", "px-2");
+    // One class per assertion: a negated multi-class `toHaveClass` passes as
+    // soon as any one of them is missing.
+    for (const frame of ["border-border", "bg-surface-1", "px-2", "py-1.5"]) {
+      expect(preview).not.toHaveClass(frame);
+    }
     expect(preview).toHaveClass("rounded-md", "overflow-hidden");
   });
 

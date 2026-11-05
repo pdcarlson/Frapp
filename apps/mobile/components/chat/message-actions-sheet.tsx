@@ -36,6 +36,8 @@ import {
   SheetPrimaryButton,
   SheetScrim,
   useSheetBackgroundStyle,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -200,6 +202,8 @@ export const MessageActionsSheet = forwardRef<
   const backgroundStyle = useSheetBackgroundStyle();
   const menuRef = useRef<BottomSheetModal>(null);
   const reportRef = useRef<BottomSheetModal>(null);
+  const closeMenu = useSheetClose(menuRef);
+  const closeReport = useSheetClose(reportRef);
 
   useImperativeHandle(
     ref,
@@ -347,11 +351,13 @@ export const MessageActionsSheet = forwardRef<
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
       >
-        <BottomSheetView style={styles.body}>
+        <SheetBackToClose onClose={closeMenu} />
+        <BottomSheetView onAccessibilityEscape={closeMenu} style={styles.body}>
           {/* No title and no Cancel: this is a menu of actions, not a form.
               The line naming the message is its heading, and the grabber,
-              the scrim and Android back close it (components.md § Chrome
-              weight). Its rows act in place, so they carry no chevron. */}
+              the scrim, Android back and VoiceOver's escape close it
+              (components.md § Chrome weight). Its rows act in place, so they
+              carry no chevron. */}
           {target ? (
             <Text style={styles.sentLine} numberOfLines={1}>
               {`${target.senderLabel} · ${sentAtLabel(target.sentAt)}`}
@@ -443,7 +449,9 @@ export const MessageActionsSheet = forwardRef<
         backdropComponent={SheetScrim}
         onDismiss={resetReport}
       >
+        <SheetBackToClose onClose={closeReport} />
         <BottomSheetScrollView
+          onAccessibilityEscape={closeReport}
           contentContainerStyle={styles.body}
           keyboardShouldPersistTaps="handled"
         >

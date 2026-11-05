@@ -375,8 +375,9 @@ glyphs: the nav set (§1.1) for the re-exports and `InviteGlyph`, the §1 stroke
 recipe for the points glyphs and search. The glyphs live in
 [`apps/web/components/members/directory-glyphs.tsx`](../../../apps/web/components/members/directory-glyphs.tsx)
 and [`apps/web/components/points/points-glyphs.tsx`](../../../apps/web/components/points/points-glyphs.tsx),
-both re-exporting the shell's silhouettes rather than redrawing them. Rendered at 20px in card, dialog and
-sheet titles, 16px in table cells, and 14–16px as a badge companion (§2).
+both re-exporting the shell's silhouettes rather than redrawing them. Rendered at 20px in card titles,
+16px in table cells, and 14–16px as a badge companion (§2). Never before a dialog or sheet title,
+which is text alone ([`components.md`](components.md#chrome-weight) § Chrome weight, 2026-11-05).
 Inside a `Button` they render at 16 whatever the call site asks for, because
 `buttonVariants` pins `[&_svg]:size-4` — which is also what keeps the required
 375px floor gate unaffected by a glyph swap.
@@ -392,7 +393,6 @@ where an import points.
 | Semantic intent | Glyph | Home |
 | --- | --- | --- |
 | Invite a member | `InviteGlyph` (the nav set's `invite`, Phosphor `user-plus`, §1.1) | `directory-glyphs.tsx` |
-| Member record (detail sheet) | `DirectoryGlyph` | re-export, shell |
 | Role access | `RolesGlyph` | re-export, shell |
 | Directory / ledger search | `SearchGlyph` | re-export, shell |
 | Adjust points | `AdjustGlyph` | `points-glyphs.tsx` |
@@ -450,17 +450,15 @@ a running session's zone and a zone row alike.
 
 | Semantic intent | Glyph |
 |---|---|
-| An event, and the create/edit dialog that names one | `EventsGlyph` (re-export) |
+| An event | `EventsGlyph` (re-export) |
 | An event's schedule row | `ScheduleGlyph` |
 | A location, a study zone, a session's zone | `StudyZonesGlyph` (re-export) |
 | Role targeting on an event | `RolesGlyph` (re-export) |
 | The attendance roster | `DirectoryGlyph` (re-export) |
 | An event's point value | `PointsGlyph` (re-export) |
 | Search, in the events toolbar | `SearchGlyph` (re-export) |
-| A task, and the dialog that creates one | `TasksGlyph` (re-export) |
-| A service entry, and the dialog that logs one | `ServiceGlyph` (re-export) |
 
-Eight of the nine are re-exports from
+Six of the seven are re-exports from
 [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
 which is the rule §1 rule 1 already sets and the Directory family already
 follows: a second copy of the same path data is the drift the rule exists to

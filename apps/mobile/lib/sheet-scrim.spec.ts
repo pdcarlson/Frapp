@@ -12,6 +12,12 @@ import { describe, expect, it } from "vitest";
  * read through at full brightness and a tap outside them did nothing. A
  * `BottomSheetModal` renders fine with no backdrop, so nothing else notices a
  * new sheet that leaves it out. A static read, like `keyboard-screens.spec.ts`.
+ *
+ * The same read holds the other half of a sheet's way out: its first child is
+ * `<SheetBackToClose …/>`, so Android's back button closes the sheet rather
+ * than the screen under it. gorhom handles no back press, and a picker or menu
+ * with no Cancel (components.md § Chrome weight) would otherwise have no
+ * button-press way out at all.
  */
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -34,11 +40,12 @@ function sources(dir: string): string[] {
  * it early, and a one-line tag doesn't run on into later JSX and borrow
  * another sheet's `backdropComponent`. The whitespace after the name skips
  * `BottomSheetModalProvider` and type arguments (`useRef<BottomSheetModal>`,
- * `forwardRef<BottomSheetModal, …>`).
+ * `forwardRef<BottomSheetModal, …>`), and a prop name, spread or `>` must
+ * follow, which skips a union (`RefObject<BottomSheetModal | null>`).
  */
 function openingTags(source: string): { index: number; tag: string }[] {
   const tags: { index: number; tag: string }[] = [];
-  for (const match of source.matchAll(/<BottomSheetModal\s/g)) {
+  for (const match of source.matchAll(/<BottomSheetModal\s+(?=[A-Za-z{>/])/g)) {
     let depth = 0;
     let end = -1;
     for (let at = match.index + match[0].length; at < source.length; at++) {
@@ -56,14 +63,18 @@ function openingTags(source: string): { index: number; tag: string }[] {
   return tags;
 }
 
-/** Each `<BottomSheetModal …>` opening tag in the app, by file and line. */
-function sheetTags(): { at: string; tag: string }[] {
+/**
+ * Each `<BottomSheetModal …>` opening tag in the app, by file and line, with
+ * the source that follows it.
+ */
+function sheetTags(): { at: string; tag: string; after: string }[] {
   return ["app", "components"].flatMap((dir) =>
     sources(join(ROOT, dir)).flatMap((file) => {
       const source = readFileSync(file, "utf8");
       return openingTags(source).map(({ index, tag }) => ({
         at: `${relative(ROOT, file)}:${source.slice(0, index).split("\n").length}`,
         tag,
+        after: source.slice(index + tag.length),
       }));
     }),
   );
@@ -88,6 +99,14 @@ describe("openingTags", () => {
     expect(second?.tag).toMatch(SCRIM);
   });
 
+  it("skips a type union that names the modal", () => {
+    const source =
+      "type Ref = RefObject<BottomSheetModal | null>;\n<BottomSheetModal ref={a}>";
+    expect(openingTags(source).map(({ tag }) => tag)).toEqual([
+      "<BottomSheetModal ref={a}>",
+    ]);
+  });
+
   it("reads past a `>` inside a prop's expression", () => {
     const source =
       "<BottomSheetModal onChange={(i) => i > 0} backdropComponent={SheetScrim}>";
@@ -108,6 +127,17 @@ describe("every bottom sheet draws the scrim", () => {
     "%s passes a backdropComponent",
     (_at, tag) => {
       expect(tag).toMatch(SCRIM);
+    },
+  );
+});
+
+describe("every bottom sheet closes on Android back", () => {
+  const tags = sheetTags();
+
+  it.each(tags.map(({ at, after }) => [at, after]))(
+    "%s renders SheetBackToClose first",
+    (_at, after) => {
+      expect(after.trimStart()).toMatch(/^<SheetBackToClose\s/);
     },
   );
 });

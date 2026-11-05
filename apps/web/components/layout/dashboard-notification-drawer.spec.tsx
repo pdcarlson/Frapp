@@ -33,24 +33,30 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-const { notifications, mockInvalidateReports, mockMarkRead } = vi.hoisted(
-  () => ({
-    notifications: { value: [] as unknown[] },
-    mockInvalidateReports: vi.fn(),
-    mockMarkRead: vi.fn(),
-  }),
-);
+const {
+  notifications,
+  queryFailed,
+  mockInvalidateReports,
+  mockMarkRead,
+  mockRefetch,
+} = vi.hoisted(() => ({
+  notifications: { value: [] as unknown[] },
+  queryFailed: { value: false },
+  mockInvalidateReports: vi.fn(),
+  mockMarkRead: vi.fn(),
+  mockRefetch: vi.fn(),
+}));
 
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
   return {
     CHAT_REPORTS_NOTIFICATION_SCREEN: actual.CHAT_REPORTS_NOTIFICATION_SCREEN,
     useNotifications: () => ({
-      data: notifications.value,
+      data: queryFailed.value ? undefined : notifications.value,
       isPending: false,
-      isError: false,
+      isError: queryFailed.value,
       isFetching: false,
-      refetch: vi.fn(),
+      refetch: mockRefetch,
     }),
     useMarkNotificationRead: () => ({
       mutateAsync: mockMarkRead,
@@ -104,6 +110,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockMarkRead.mockResolvedValue({});
   notifications.value = [EVENT];
+  queryFailed.value = false;
 });
 
 describe("DashboardNotificationDrawer — report queue freshness", () => {
@@ -197,7 +204,25 @@ describe("DashboardNotificationDrawer — chrome (components.md § Chrome weight
   it("lists rows flat, with no card around each", () => {
     renderDrawer();
     const row = screen.getByRole("link", { name: /Notice/ });
-    expect(row).not.toHaveClass("bg-card", "bg-accent-subtle", "border-border");
+    // One class per assertion: a negated multi-class `toHaveClass` passes as
+    // soon as any one of them is missing.
+    for (const frame of [
+      "border-border",
+      "border-accent-border",
+      "bg-card",
+      "bg-accent-subtle",
+      "bg-surface-1",
+    ]) {
+      expect(row).not.toHaveClass(frame);
+    }
     expect(row.closest("ul")).toHaveClass("divide-y");
+  });
+
+  it("offers Try again on a failed load, since the header has no Refresh", async () => {
+    queryFailed.value = true;
+    renderDrawer();
+    expect(screen.getByText(/Couldn.t load notifications/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
   });
 });

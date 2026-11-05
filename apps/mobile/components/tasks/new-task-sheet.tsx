@@ -25,6 +25,8 @@ import {
   sheetFieldStyles,
   useSheetBackgroundStyle,
   useSheetVisit,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import { CalendarGlyph } from "@/components/tasks/task-glyphs";
 import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
@@ -148,6 +150,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
     const pickerRef = useRef<BottomSheetModal>(null);
+    const closeSheet = useSheetClose(ref);
+    const closePicker = useSheetClose(pickerRef);
     const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
       useSheetVisit(ref);
 
@@ -345,7 +349,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         onAnimate={onAnimate}
         onDismiss={closed}
       >
-        <BottomSheetView style={styles.body}>
+        <SheetBackToClose onClose={closeSheet} />
+        <BottomSheetView onAccessibilityEscape={closeSheet} style={styles.body}>
           <SheetHeader
             title="New task"
             onCancel={cancel}
@@ -473,7 +478,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
       >
+        <SheetBackToClose onClose={closePicker} />
         <BottomSheetFlatList
+          onAccessibilityEscape={closePicker}
           data={filteredRoster}
           keyExtractor={(row: RosterMember) => row.userId}
           contentContainerStyle={styles.pickerContent}
