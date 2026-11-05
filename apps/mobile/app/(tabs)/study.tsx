@@ -48,8 +48,8 @@ import {
 } from "@/lib/study/errors";
 import { startOfWeek } from "@/lib/study/format";
 import {
-  BROWSER_LOCATION_STEP,
   locationSettingsPath,
+  turnOnLocationStep,
 } from "@/lib/study/location-settings-path";
 import {
   creditedSeconds,
@@ -125,8 +125,7 @@ const MIRROR_RETRY_MS = 15 * 1000;
  * browser, so the line says that instead.
  */
 function locationRequiredCopy(): string {
-  const path = locationSettingsPath();
-  const step = path ? `Turn it on in ${path}` : BROWSER_LOCATION_STEP;
+  const step = turnOnLocationStep(locationSettingsPath());
   return `Frapp confirms you're in the study zone, so it needs location while you study. ${step}.`;
 }
 

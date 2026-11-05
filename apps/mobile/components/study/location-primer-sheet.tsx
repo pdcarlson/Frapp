@@ -1,12 +1,12 @@
 import { forwardRef } from "react";
-import { Linking, Platform, StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
-  BROWSER_LOCATION_STEP,
   locationSettingsPath,
+  turnOnLocationStep,
 } from "@/lib/study/location-settings-path";
 import {
   SheetGrabber,
@@ -32,9 +32,10 @@ import {
  * back to it later. The path is `locationSettingsPath`'s, the one the Start
  * card's failure line uses too: it differs by OS and by iOS version. The web
  * build has neither a path nor a settings page to open (react-native-web's
- * `Linking` has no `openSettings`, so calling it throws), so there the line
- * says to allow location for the site in the browser and there is no button;
- * the header's "Not now" closes the sheet.
+ * `Linking` has no `openSettings`, so calling it throws). The helper says so
+ * with `null`, and on that answer the line says to allow location for the
+ * site in the browser and there is no button; the header's "Not now" closes
+ * the sheet.
  */
 export interface LocationPrimerSheetProps {
   /** False once the OS will no longer prompt — the copy and CTA both change. */
@@ -52,10 +53,10 @@ export const LocationPrimerSheet = forwardRef<
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
   const settingsPath = locationSettingsPath();
-  const turnOnStep = settingsPath
-    ? `Turn it on in ${settingsPath}`
-    : BROWSER_LOCATION_STEP;
-  const canOpenSettings = Platform.OS !== "web";
+  const turnOnStep = turnOnLocationStep(settingsPath);
+  // The helper's `null` is the one "no Settings here" answer, so the button
+  // and the line can't disagree about it.
+  const canOpenSettings = settingsPath !== null;
 
   return (
     <BottomSheetModal

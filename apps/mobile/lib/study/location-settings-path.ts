@@ -17,8 +17,10 @@ import { Platform } from "react-native";
  * - Android puts the switch on the app's Permissions page.
  * - The web build (`expo start --web`, used for demos and store captures) has
  *   no Settings path at all: location there is the site's permission, held by
- *   the browser. So this returns `null`, and each caller says
- *   {@link BROWSER_LOCATION_STEP} instead.
+ *   the browser. So this returns `null`, and that `null` is the one answer
+ *   to "is there a Settings path": {@link turnOnLocationStep} says
+ *   {@link BROWSER_LOCATION_STEP} for it, and the primer draws no Open
+ *   Settings button for it.
  *
  * Every form names the app as Settings lists it, `expo.name`.
  * `scripts/ci/__tests__/frapp-naming.test.mjs` pins each of the three forms to
@@ -52,3 +54,14 @@ function iosMajorVersion(): number {
  */
 export const BROWSER_LOCATION_STEP =
   "Allow location for this site in your browser";
+
+/**
+ * The step that turns location back on, from {@link locationSettingsPath}'s
+ * answer: the Settings path, or the browser's step when there is none. Both
+ * callers word it through here, so "Turn it on in" is written once. It takes
+ * the path rather than reading it, so a caller that also needs to know
+ * whether there is a path (the primer's button) asks the helper once.
+ */
+export function turnOnLocationStep(path: string | null): string {
+  return path === null ? BROWSER_LOCATION_STEP : `Turn it on in ${path}`;
+}

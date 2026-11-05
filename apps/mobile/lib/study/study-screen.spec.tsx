@@ -843,6 +843,37 @@ describe("Study's default zone", () => {
     }
   });
 
+  it("keeps the choice it had when the ended session's zone is gone", async () => {
+    // An officer deactivated Annex while the session ran in it. Offering
+    // Annex would name a zone the list no longer has, and Start would post
+    // its id.
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-09-27T12:01:00Z"));
+      const annex = { id: "zone-3", name: "Annex", is_active: true };
+      zones = [...TWO_ZONES, annex];
+      const running = { ...LIVE_SESSION[0]!, geofence_id: "zone-3" };
+      const library = finished("s-lib", "zone-1", "2026-09-26T10:00:00Z");
+      sessions = [running, library];
+      api.heartbeat.mockRejectedValue({ statusCode: 404, error: "Not Found" });
+      const tree = render();
+
+      zones = TWO_ZONES;
+      rerender(tree);
+      sessions = [{ ...running, status: "COMPLETED" }, library];
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+      rerender(tree);
+
+      expect(selectedZoneLabel(tree)).toBe("Study zone: Library");
+      expect(startButton(tree).props.disabled).toBe(false);
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps the member's own pick", () => {
     zones = TWO_ZONES;
     const tree = render();
@@ -919,7 +950,7 @@ describe("Study when location can't be read", () => {
   });
 
   it("points at the browser on the web build, which has no Settings path", async () => {
-    // react-native-web's Platform.Version is "0.0.0", which read as iOS 16.
+    // react-native-web's Platform.Version is "0.0.0", which read as iOS 0.
     const line = await failedLocationLine("web", "0.0.0");
     expect(line).toContain(
       "so it needs location while you study. Allow location for this site in your browser.",

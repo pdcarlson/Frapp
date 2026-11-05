@@ -27,8 +27,8 @@ const ROW_TITLE_WIDTHS = ["55%", "40%", "48%", "62%"] as const;
  * Static and neutral, like every skeleton here until the shimmer lands (the
  * gradient dependency `state-block.tsx` documents). This is the second mobile
  * skeleton beside `SkeletonLines`, and components.md §10 names both, so the
- * shimmer has to land in both until #3453 moves these blocks onto the shared
- * `SkeletonBlock`, so that it lands once.
+ * shimmer has to land in both until #3453 moves these blocks onto the
+ * `SkeletonBlock` #3447 adds, so that it lands once.
  *
  * TODO-DESIGN: shimmer sweep per components.md §10 (elevated at 25%/75%,
  * highlight `#332E26` at 50%, 260px background-size, 1.4s linear, phase-shared
@@ -100,7 +100,8 @@ export function CardListSkeleton({
 
 /**
  * One neutral placeholder block, at a text line's radius unless told otherwise.
- * A copy of the shared `SkeletonBlock`'s job until #3453 moves onto it.
+ * The job of the `SkeletonBlock` #3447 adds, done here until #3453 moves this
+ * file onto it.
  */
 function Block({
   width,

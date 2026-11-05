@@ -23,6 +23,25 @@ vi.mock("react-native", async () => {
   return { ...reactNativeStub, Linking: { openSettings } };
 });
 
+/**
+ * The real helper unless a test sets `settingsPath.answer`, so one test can
+ * give a native OS no Settings path and see what the sheet decides on.
+ */
+const settingsPath = vi.hoisted(() => ({
+  answer: undefined as string | null | undefined,
+}));
+vi.mock("@/lib/study/location-settings-path", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/study/location-settings-path")>();
+  return {
+    ...actual,
+    locationSettingsPath: () =>
+      settingsPath.answer === undefined
+        ? actual.locationSettingsPath()
+        : settingsPath.answer,
+  };
+});
+
 import { Platform } from "react-native";
 import { LocationPrimerSheet } from "./location-primer-sheet";
 
@@ -79,6 +98,7 @@ describe("LocationPrimerSheet", () => {
     afterEach(() => {
       platform.OS = os;
       platform.Version = version;
+      settingsPath.answer = undefined;
     });
 
     const blocked = () =>
@@ -129,6 +149,25 @@ describe("LocationPrimerSheet", () => {
         `Location is turned off for ${APP_NAME}. Allow location for this site in your browser, then start your session.`,
       );
       expect(copy).not.toContain("Settings →");
+      expect(texts(tree)).not.toContain("Open Settings");
+    });
+
+    it("takes the helper's word that there is no Settings path, whatever the OS", () => {
+      // One answer to "is there a Settings path": the line and the button
+      // both follow the helper's null, not a Platform check of their own.
+      platform.OS = "ios";
+      platform.Version = "18.2";
+      settingsPath.answer = null;
+      const tree = render(
+        <LocationPrimerSheet
+          canAskAgain={false}
+          onAllow={() => {}}
+          onDismiss={() => {}}
+        />,
+      );
+      expect(texts(tree).join("")).toContain(
+        "Allow location for this site in your browser, then start your session.",
+      );
       expect(texts(tree)).not.toContain("Open Settings");
     });
 

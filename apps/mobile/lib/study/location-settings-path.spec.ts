@@ -4,6 +4,7 @@ import appJson from "../../app.json";
 import {
   BROWSER_LOCATION_STEP,
   locationSettingsPath,
+  turnOnLocationStep,
 } from "./location-settings-path";
 
 /**
@@ -64,5 +65,14 @@ describe("locationSettingsPath", () => {
     expect(pathOn("android", 17)).toBe(
       `Settings → Apps → ${APP_NAME} → Permissions → Location`,
     );
+  });
+});
+
+describe("turnOnLocationStep", () => {
+  it("names the Settings path when there is one, and the browser when there isn't", () => {
+    expect(turnOnLocationStep(`Settings → ${APP_NAME} → Location`)).toBe(
+      `Turn it on in Settings → ${APP_NAME} → Location`,
+    );
+    expect(turnOnLocationStep(null)).toBe(BROWSER_LOCATION_STEP);
   });
 });

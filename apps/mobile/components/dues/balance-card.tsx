@@ -53,8 +53,13 @@ export interface BalanceCardProps {
   /**
    * The card's invoice has a captured payment the invoice list doesn't read as
    * settled yet (`spec/behavior/billing.md`: the webhook is the source of
-   * truth). The CTA stays disabled as "Confirming payment…" and the chip reads
-   * Pending until it does; the screen keeps the card on this invoice meanwhile.
+   * truth), so the chip reads Pending until it does; the screen keeps the card
+   * on this invoice meanwhile. The CTA stays live.
+   */
+  isPending?: boolean;
+  /**
+   * Pending, and the screen is still polling for the settlement right after
+   * the sheet: the CTA is disabled as "Confirming payment…" too.
    */
   isConfirming?: boolean;
   /**
@@ -80,6 +85,7 @@ export function BalanceCard({
   payLabel,
   disabledReason,
   footnote,
+  isPending = false,
   isConfirming = false,
   status = null,
   receipt = null,
@@ -107,7 +113,7 @@ export function BalanceCard({
     <View style={styles.card}>
       <View style={styles.metaRow}>
         <Text style={styles.label}>{label}</Text>
-        {isConfirming ? (
+        {isPending || isConfirming ? (
           <StatusChip
             label="Pending"
             hue={dueChipHue("pending", tokens.color.semantic)}
