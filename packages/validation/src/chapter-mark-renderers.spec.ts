@@ -63,9 +63,9 @@ const ALLOWED: Record<string, string> = {
 function printsTheField(source: string): boolean {
   const field = "(?:greek_letters|greekLetters)";
   return [
-    // JSX child: `{…}` on one line, not an attribute value (`={`) and not a
-    // template interpolation (`${`).
-    new RegExp(`(?<![=$\\w])\\{[^{}\\n]*\\b${field}\\b[^{}\\n]*\\}`),
+    // JSX child: `{…}` on one line, not an attribute value (`={`), not a
+    // template interpolation (`${`) and not a spread of props (`{...`).
+    new RegExp(`(?<![=$\\w])\\{(?!\\.\\.\\.)[^{}\\n]*\\b${field}\\b[^{}\\n]*\\}`),
     // Template interpolation: `${…}`
     new RegExp(`\\$\\{[^}\\n]*\\b${field}\\b[^}\\n]*\\}`),
     // Concatenation: `"…" + x.greek_letters` or `x.greek_letters + "…"`
@@ -140,6 +140,7 @@ describe("greek_letters readers (#2876)", () => {
       "setGreekLetters(branding.greek_letters ?? \"\");",
       "if (letters !== undefined) brandingDiff.greek_letters = letters;",
       "greek_letters: identity.greekLetters.trim() || undefined,",
+      '<TextInput {...chain("greekLetters")} />',
     ];
     expect(printed.filter((line) => !printsTheField(line))).toEqual([]);
     expect(bound.filter(printsTheField)).toEqual([]);

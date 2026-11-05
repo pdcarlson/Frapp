@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Redirect, useRouter } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   termsPromptErrorCopy,
@@ -11,6 +11,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { TERMS_PROMPT_COPY } from "@repo/validation";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-primary-button";
+import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -112,13 +113,14 @@ export default function TermsPrompt() {
             }}
           />
 
-          <Pressable
+          <OnboardingPressable
             accessibilityRole="button"
             accessibilityState={{ disabled: submitting }}
             disabled={submitting}
             onPress={() => {
               void handleSignOut();
             }}
+            quiet
             style={styles.secondaryButton}
           >
             <Text
@@ -129,14 +131,15 @@ export default function TermsPrompt() {
             >
               Sign out
             </Text>
-          </Pressable>
+          </OnboardingPressable>
 
-          <Pressable
+          <OnboardingPressable
             accessibilityRole="button"
             accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
             accessibilityState={{ disabled: submitting, busy: deleting }}
             disabled={submitting}
             onPress={handleDeleteAccount}
+            quiet
             style={styles.secondaryButton}
           >
             <Text
@@ -147,7 +150,7 @@ export default function TermsPrompt() {
             >
               {deleting ? "Deleting account…" : "Delete account"}
             </Text>
-          </Pressable>
+          </OnboardingPressable>
         </View>
       </ScrollView>
     </SafeAreaView>

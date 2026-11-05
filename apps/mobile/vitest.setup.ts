@@ -114,6 +114,9 @@ vi.mock("expo-router", () => {
     replace: vi.fn(),
     navigate: vi.fn(),
     back: vi.fn(),
+    // Nothing behind the screen unless a spec says otherwise
+    // (`mockReturnValue(true)`, as the chapter picker's does).
+    canGoBack: vi.fn(() => false),
   };
   // Every mounted focus effect, re-runnable as one "the member came back"
   // event. A tab screen is never unmounted, so state that must not outlive a
@@ -278,47 +281,57 @@ vi.mock("react-native-gesture-handler", () => {
 // way the UI thread does, so a spec that runs a gesture callback can read the
 // result. An animation resolves to its target at once, so a pulse reads as its
 // low point; `useReducedMotion` is a mock a spec can flip.
-vi.mock("react-native-reanimated", () => ({
-  default: { Image: "Animated.Image", View: "Animated.View" },
-  useSharedValue: <T>(initial: T) =>
-    React.useRef(
-      (() => {
-        let value = initial;
-        return {
-          get: () => value,
-          set: (next: T) => {
-            value = next;
-          },
-        };
-      })(),
-    ).current,
-  useAnimatedStyle: <T extends object>(updater: () => T) =>
-    new Proxy({} as T, {
-      get: (_target, key) => updater()[key as keyof T],
-      ownKeys: () => Reflect.ownKeys(updater()),
-      getOwnPropertyDescriptor: (_target, key) => ({
-        configurable: true,
-        enumerable: true,
-        value: updater()[key as keyof T],
+vi.mock("react-native-reanimated", () => {
+  // Entering animations are builders: each modifier returns a new builder
+  // that keeps what it was given, so a spec can read which animation a view
+  // was handed (`entering.animation`, "ZoomIn" or "FadeIn") and its
+  // reduced-motion setting (`entering.reduceMotionMode`). One builder for
+  // every entering animation the app uses, so a modifier a screen starts
+  // calling is added once.
+  const entering = (config: object): object => ({
+    ...config,
+    duration: (ms: number) => entering({ ...config, durationMs: ms }),
+    reduceMotion: (mode: string) =>
+      entering({ ...config, reduceMotionMode: mode }),
+  });
+  return {
+    default: { Image: "Animated.Image", View: "Animated.View" },
+    useSharedValue: <T>(initial: T) =>
+      React.useRef(
+        (() => {
+          let value = initial;
+          return {
+            get: () => value,
+            set: (next: T) => {
+              value = next;
+            },
+          };
+        })(),
+      ).current,
+    useAnimatedStyle: <T extends object>(updater: () => T) =>
+      new Proxy({} as T, {
+        get: (_target, key) => updater()[key as keyof T],
+        ownKeys: () => Reflect.ownKeys(updater()),
+        getOwnPropertyDescriptor: (_target, key) => ({
+          configurable: true,
+          enumerable: true,
+          value: updater()[key as keyof T],
+        }),
       }),
-    }),
-  withTiming: <T>(value: T) => value,
-  withRepeat: vi.fn(<T>(value: T) => value),
-  cancelAnimation: vi.fn(),
-  useReducedMotion: vi.fn(() => false),
-  Easing: {
-    ease: (t: number) => t,
-    inOut: (easing: (t: number) => number) => easing,
-  },
-  // Entering animations are builders: each modifier returns the builder.
-  ZoomIn: (() => {
-    const builder: Record<string, unknown> = {};
-    builder.duration = () => builder;
-    builder.reduceMotion = () => builder;
-    return builder;
-  })(),
-  ReduceMotion: { System: "system", Always: "always", Never: "never" },
-}));
+    withTiming: <T>(value: T) => value,
+    withRepeat: vi.fn(<T>(value: T) => value),
+    cancelAnimation: vi.fn(),
+    useReducedMotion: vi.fn(() => false),
+    Easing: {
+      ease: (t: number) => t,
+      inOut: (easing: (t: number) => number) => easing,
+    },
+    // Setup's live mark zooms in; join's views and setup's steps fade in.
+    ZoomIn: entering({ animation: "ZoomIn" }),
+    FadeIn: entering({ animation: "FadeIn" }),
+    ReduceMotion: { System: "system", Always: "always", Never: "never" },
+  };
+});
 
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaProvider: "SafeAreaProvider",

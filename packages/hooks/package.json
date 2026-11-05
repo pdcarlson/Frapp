@@ -16,6 +16,7 @@
   "dependencies": {
     "@repo/api-sdk": "*",
     "@repo/color": "*",
+    "@repo/org-archetypes": "*",
     "@repo/theme": "*",
     "@repo/validation": "*",
     "@tanstack/react-query": "^5.105.0",
