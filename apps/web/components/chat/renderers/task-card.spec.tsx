@@ -27,8 +27,13 @@ vi.mock("@/lib/providers/network-provider", async () => {
   return networkMock(mockOffline);
 });
 
-vi.mock("@repo/hooks", () => ({
-  useTask: (id: string) => mockUseTask(id),
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  // The shared card rules (`taskCardControls`, `readLiveTask`, the labels) stay
+  // real, so these cases test the rules the mobile card applies too.
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // The real hook is disabled on an empty id, so an empty id reads nothing and
+  // never reaches `mockUseTask`: a case can assert the card didn't ask.
+  useTask: (id: string) => (id ? mockUseTask(id) : { data: undefined }),
   useUpdateTaskStatus: () => ({ mutate: updateStatus, isPending: false }),
   useConfirmTask: () => ({ mutate: confirmTask, isPending: false }),
   useRejectTask: () => ({ mutate: rejectTask, isPending: false }),
@@ -63,6 +68,19 @@ vi.mock("@/components/shared/can", () => ({
 
 const ASSIGNEE = "assignee-1";
 
+/** `GET /v1/tasks/{id}` for the card's task, freshly assigned. */
+function liveTask(overrides: Record<string, unknown> = {}) {
+  return {
+    data: {
+      id: "task-1",
+      status: "TODO",
+      stored_status: "TODO",
+      points_awarded: false,
+      ...overrides,
+    },
+  };
+}
+
 function makeMessage(overrides: Record<string, unknown> = {}): ChatMessage {
   return {
     id: "msg-1",
@@ -94,7 +112,7 @@ describe("TaskCard", () => {
     vi.clearAllMocks();
     mockOffline.value = false;
     canManage = false;
-    mockUseTask.mockReturnValue({ data: undefined });
+    mockUseTask.mockReturnValue(liveTask());
     chapter.active();
   });
 
@@ -131,6 +149,49 @@ describe("TaskCard", () => {
     expect(
       screen.queryByRole("button", { name: /start/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("offers no action and no badge until the live task is read (#2065)", () => {
+    // The payload says TODO forever. Drawing Start off it offered the move on
+    // tasks already in progress or done, which the server then refused.
+    mockUseTask.mockReturnValue({ data: undefined });
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(screen.queryByText("To do")).not.toBeInTheDocument();
+    expect(updateStatus).not.toHaveBeenCalled();
+  });
+
+  it("doesn't ask for a task the viewer can't read, and shows no status", () => {
+    // `GET /v1/tasks/{id}` answers only the assignee and a tasks:manage holder,
+    // so for anyone else the request is a guaranteed 403.
+    render(<TaskCard message={makeMessage()} viewerId="other" isConfirmed />);
+    expect(mockUseTask).not.toHaveBeenCalled();
+    expect(screen.queryByText("To do")).not.toBeInTheDocument();
+  });
+
+  it("badges a confirmed completion as Confirmed, not still awaiting it", () => {
+    mockUseTask.mockReturnValue(
+      liveTask({
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        points_awarded: true,
+      }),
+    );
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(screen.getByText("Confirmed")).toBeInTheDocument();
+    expect(screen.queryByText("Awaiting confirmation")).not.toBeInTheDocument();
+  });
+
+  it("badges the live status for a viewer who can read it", () => {
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(mockUseTask).toHaveBeenCalledWith("task-1");
+    expect(screen.getByText("To do")).toBeInTheDocument();
   });
 
   it("reflects the live status over the snapshot (IN_PROGRESS → Mark complete)", () => {
@@ -301,7 +362,7 @@ describe("TaskCard subscription gating", () => {
     vi.clearAllMocks();
     mockOffline.value = false;
     canManage = false;
-    mockUseTask.mockReturnValue({ data: undefined });
+    mockUseTask.mockReturnValue(liveTask());
   });
 
   it("disables the assignee's action and explains why on a lapsed chapter", () => {

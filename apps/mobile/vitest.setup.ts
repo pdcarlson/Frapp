@@ -46,6 +46,21 @@ vi.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: vi.fn().mockResolvedValue({ canceled: true }),
 }));
 
+// The chat event card (#3185) imports `lib/location.ts`, so every spec that
+// renders a chat thread loads it, and the native module can't. Default-denied
+// on purpose, as the image picker above is: a spec that wants a fix mocks
+// `lib/location` (or this module) with the path it means to exercise.
+vi.mock("expo-location", () => ({
+  getForegroundPermissionsAsync: vi
+    .fn()
+    .mockResolvedValue({ granted: false, canAskAgain: true }),
+  requestForegroundPermissionsAsync: vi
+    .fn()
+    .mockResolvedValue({ granted: false, canAskAgain: true }),
+  getCurrentPositionAsync: vi.fn(),
+  Accuracy: { Balanced: 3, High: 4 },
+}));
+
 // Chapter setup marks the chapter going live with a tap (#3351).
 vi.mock("expo-haptics", () => ({
   notificationAsync: vi.fn().mockResolvedValue(undefined),

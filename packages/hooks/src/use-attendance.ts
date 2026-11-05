@@ -20,6 +20,25 @@ export function useAttendance(eventId: string) {
   });
 }
 
+/**
+ * How many rows of an attendance roster (`useAttendance`'s data) are a member
+ * who is there: `PRESENT` or `LATE`. A member marked LATE did attend, so
+ * leaving them out would contradict the roster the same officer can open.
+ *
+ * `null` when the data isn't a roster (loading, or a failed read), so a caller
+ * draws no count rather than a "0 checked in" that isn't true yet. The chat
+ * event card on web and mobile and mobile's host check-in screen all count
+ * through here.
+ */
+export function countCheckedIn(data: unknown): number | null {
+  if (!Array.isArray(data)) return null;
+  return data.reduce((count: number, row: unknown) => {
+    if (!row || typeof row !== "object") return count;
+    const status = (row as Record<string, unknown>).status;
+    return status === "PRESENT" || status === "LATE" ? count + 1 : count;
+  }, 0);
+}
+
 export interface CheckInVariables {
   eventId: string;
   /** Rotating token read from the host QR (s18). */

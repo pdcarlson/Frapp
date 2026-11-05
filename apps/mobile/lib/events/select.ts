@@ -125,21 +125,6 @@ export function selectMintedToken(data: unknown): MintedCheckInToken | null {
   return { qrPayload, manualCode, expiresAt };
 }
 
-/**
- * Count members marked present on the attendance roster (s22's "23 checked in").
- *
- * `PRESENT` and `LATE` both count, matching `countCheckedIn` in the web event
- * card — a member marked LATE did attend, and showing them as absent on the
- * host screen would contradict the roster the same officer can open.
- */
-export function countCheckedIn(data: unknown): number | null {
-  if (!Array.isArray(data)) return null;
-  return data.filter((row) => {
-    if (!isRecord(row)) return false;
-    return row.status === "PRESENT" || row.status === "LATE";
-  }).length;
-}
-
 export function selectEventDetail(data: unknown): EventDetail | null {
   if (!isRecord(data)) return null;
   const row = toRow(data);

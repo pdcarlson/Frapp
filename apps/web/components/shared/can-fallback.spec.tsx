@@ -399,6 +399,13 @@ const SURFACE_GATES: readonly { file: string; match: string }[] = [
  * because a count is satisfied by any fifteen files: the review of this change
  * renamed one import to `Can as Gate`, added an unrelated consumer to restore
  * the tally, and watched a `offlineFallback={null}` sail through green.
+ *
+ * **`components/chat/renderers/task-card.tsx` left this list in #3185** by no
+ * longer mounting the gate. Its controls now come from `taskCardControls` in
+ * `@repo/hooks`, the rule the mobile card applies too, which takes the
+ * `tasks:manage` check as a plain `can()` result. While permissions can't be
+ * read, the card offers no admin control, the safe direction, instead of
+ * drawing the offline access state inside a chat row.
  */
 const CONSUMERS: readonly string[] = [
   "components/backwork/backwork-page.tsx",
@@ -406,7 +413,6 @@ const CONSUMERS: readonly string[] = [
   "components/billing/plan-panel.tsx",
   "components/chat-admin/chat-admin-page.tsx",
   "components/chat-admin/chat-reports-card.tsx",
-  "components/chat/renderers/task-card.tsx",
   "components/discord-import/discord-import-page.tsx",
   "components/documents/document-row.tsx",
   "components/documents/documents-page.tsx",

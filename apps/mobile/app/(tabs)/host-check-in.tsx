@@ -10,6 +10,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import QRCode from "react-native-qrcode-svg";
 import {
+  countCheckedIn,
   useAttendance,
   useEvent,
   useMintCheckInToken,
@@ -19,11 +20,7 @@ import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import { formatCountdown } from "@/lib/events/format";
-import {
-  countCheckedIn,
-  selectEventDetail,
-  selectMintedToken,
-} from "@/lib/events/select";
+import { selectEventDetail, selectMintedToken } from "@/lib/events/select";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**

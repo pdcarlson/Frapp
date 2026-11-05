@@ -18,12 +18,11 @@ import {
   parseCheckInCode,
 } from "@/lib/events/check-in-code";
 import { createScanLatch } from "@/lib/events/scan-latch";
-import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import {
-  SUBSCRIPTION_REFUSAL_COPY,
-  subscriptionRefusalOf,
-} from "@/lib/subscription-refusal";
-import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
+  CHECK_IN_LOCATION_DENIED_COPY,
+  checkInFailure,
+  checkInSuccess,
+} from "@/lib/events/check-in-outcome";
 import { latLngOf, requireForegroundFix } from "@/lib/location";
 import { selectEventDetail } from "@/lib/events/select";
 import { useConnection } from "@/lib/connection/use-connection";
@@ -60,34 +59,17 @@ type Status =
    */
   | { kind: "blocked"; message: string };
 
-function errorMessage(error: unknown, fallback: string): string {
-  if (statusOf(error) === 409) {
-    return "You're already checked in for this event.";
-  }
-  return serverMessageOf(error) ?? fallback;
-}
-
 /**
- * Which terminal state a failed check-in lands in.
- *
- * Neither gate refusal may fall through to `errorMessage`, which relays the
- * server string verbatim. For an `incomplete` chapter that reads "…complete
- * checkout to use this feature.", a purchase instruction rendered inside the
- * iOS app, which the store declaration forbids. With `events` switched off it
- * reads "Re-enable it in Settings → Modules", an instruction a member can't
- * follow.
+ * Which terminal state a failed check-in lands in. The copy, gate refusals
+ * included, is `checkInFailure`'s, shared with the chat event card. "Already
+ * checked in" stays an `error` here, as it always was: it leaves the scanner
+ * armed for the member's next event, where `blocked` would disarm it.
  */
 function failureStatus(error: unknown): Status {
-  if (subscriptionRefusalOf(error)) {
-    return { kind: "blocked", message: SUBSCRIPTION_REFUSAL_COPY.checkIn };
-  }
-  if (moduleRefusalOf(error)) {
-    return { kind: "blocked", message: MODULE_REFUSAL_COPY.checkIn };
-  }
-  return {
-    kind: "error",
-    message: errorMessage(error, "Couldn't check you in."),
-  };
+  const failure = checkInFailure(error);
+  return failure.kind === "already"
+    ? { kind: "error", message: failure.message }
+    : failure;
 }
 
 export default function CheckInScreen() {
@@ -178,9 +160,7 @@ export default function CheckInScreen() {
   const resolveLocation = useCallback(async () => {
     if (!needsLocation) return {};
 
-    const fix = await requireForegroundFix(
-      "This event checks you in by location. Allow location access to check in.",
-    );
+    const fix = await requireForegroundFix(CHECK_IN_LOCATION_DENIED_COPY);
     // Check-in DTO is lat/lng only — spreading accuracy_meters 400s.
     return latLngOf(fix);
   }, [needsLocation]);
@@ -191,12 +171,7 @@ export default function CheckInScreen() {
       try {
         const fix = await resolveLocation();
         await checkIn.mutateAsync({ eventId, ...payload, ...fix });
-        setStatus({
-          kind: "success",
-          message: event?.point_value
-            ? `You're checked in. +${event.point_value} pts`
-            : "You're checked in.",
-        });
+        setStatus(checkInSuccess(event?.point_value));
       } catch (error) {
         setStatus(failureStatus(error));
       } finally {
