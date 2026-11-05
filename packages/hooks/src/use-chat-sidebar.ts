@@ -42,6 +42,16 @@ export function useChatSidebar() {
   });
 }
 
+/**
+ * The arrangement's read as a pull-to-refresh needs it: its `refetch`, and
+ * whether it may run. The query itself stays private, so a surface still
+ * reads the arrangement only through {@link useSidebarPreferences}.
+ */
+export function useSidebarPreferencesRefetch() {
+  const { refetch, isEnabled } = useChatSidebar();
+  return useMemo(() => ({ refetch, isEnabled }), [refetch, isEnabled]);
+}
+
 /** The arrangement in the shape `arrangeChannelSidebar` reads. */
 export interface SidebarPreferences {
   pinnedIds: ReadonlySet<string>;

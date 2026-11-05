@@ -98,6 +98,28 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 **Quiet is a row's secondary action** (added 2026-11-05): transparent, `--muted-foreground` text at 600, `--card-hover` fill and `--foreground` text on hover. It is the recipe the dialog and sheet close buttons already used. Edit, Delete, Remove and icon actions on a list row take it, because Ghost paints `accent-11`, and a column of accent "Delete" links read as the most important thing on the page. A destructive action still confirms in a dialog, where Destructive paints the commit.
 
+### Icon-only actions
+
+> **Owner decision, 2026-11-05 (Paul, UI audit).** A button whose icon already says what it does draws the icon alone, on web and mobile. "Download" beside a download arrow, "Dismiss" beside an ×, and "Muted" beside a muted speaker said the same thing twice and made secondary controls louder than the content they act on.
+
+**Which buttons lose their words.** Secondary and row actions with a glyph everyone reads: download, dismiss or close, copy, edit, delete or remove, enable or disable, mark all read. A bare word with no icon counts too when such a glyph exists (mobile Profile's "Edit" is a pencil now, in the back-row slot where Documents already drew its upload glyph).
+
+**Which keep them.**
+
+- A form's primary action (Save changes, Create event, Send invite) and a sheet's commit.
+- A choice between outcomes, where the word is the decision: a moderation queue's Mark reviewed / Dismiss / Mark actioned, a dialog's Cancel beside its commit.
+- An error state's Retry: it is that state's one action, and it sits on text the eye is already reading.
+- A verb with no glyph that says it alone ("Change photo", "Enable Dues"). Don't invent an icon to drop a word.
+
+**What the word becomes.** It never disappears; it moves.
+
+- Web: `aria-label` plus a native `title` tooltip, both from one `label`. `apps/web/components/ui/icon-button.tsx` (`IconButton`) requires the label and sets both. A caller's own `title` (the subscription gate's "Reconnect to make changes.") is added after the label, never in place of it, and a disabled icon button still takes the pointer so its tooltip shows (the shared button recipe turns pointer events off when disabled, which hid both). Use it rather than `Button size="icon"` with hand-written attributes: a `title=` placed before `{...gate.controlProps()}` is wiped by the gate's `title: undefined`.
+- Mobile: `accessibilityLabel`, plus `accessibilityHint` for what the label can't say. `apps/mobile/components/icon-button.tsx` (`IconButton`) requires the label.
+- Touch has no hover, on the app or on the web dashboard in a phone's browser, so a finger never sees the tooltip. That is why the list above is short: the glyph has to be one a member already knows. If it isn't, the button keeps its word.
+- A label names its object when a screen has several of the same control: "Download Bylaws", "Delete North Library", "Revoke the Member invite", never a column of bare "Delete".
+
+**What it looks like.** An icon button is Quiet (above) and takes the Small step of [foundations.md](foundations.md) §9's control size scale, 36px to a mouse and 44 to a finger, in a row or standing alone (`IconButton` sets it). On mobile the glyph is 20pt in a box its own size with 12pt of slop on each side, which reaches the 44pt floor (§2) without taking layout height, so a one-line banner doesn't grow. Every dismiss is the same ×: Lucide `X` on web, `CloseGlyph` on mobile ([iconography.md](iconography.md) §6.1.5). A control that was busy says so in the glyph's place (a spinner) instead of swapping in a word like "Marking…".
+
 ## 4. Inputs and selection
 
 **Dashboard filter toolbars take the toolbar height, not the default field height (40 to a mouse, 44 to a finger).** The toolbar height is 36 to a mouse and 44 to a finger (§3, corrected 2026-11-05; it was the Inline 44 on both, and the paragraph below is the reasoning for matching the row, which still holds). That is a carve-out for filter chrome specifically, and reading it as "the height for a native `<select>`" reproduces the same defect one context over — the event editor put two filter-height selects in a `sm:grid-cols-2` beside 48px `Input`s, so a *form* row rendered at two heights. `apps/web/components/shared/table-controls.ts` therefore writes the paint once and exports two heights, `dashboardFilterSelectClassName` (the toolbar height) and `dashboardFormSelectClassName` (the field height). A filter row is secondary chrome sitting above the thing it filters, and mixing §4's 48px field with §3's 44px Inline button in one row renders two visibly different heights — which is what `/members`, `/events`, `/polls` and `/roles` all did. On a coarse pointer the row is 44, the touch floor (§2), so nothing a finger hits goes under it; a select in a dialog or form is a field and takes `dashboardFormSelectClassName`. This settles the second half of #1187 once rather than per family: the Directory & Finance slice applies it to its own screens, and each remaining #920 slice applies it to theirs.
@@ -112,6 +134,8 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 | Disabled | surface `#1A1A1A` | 1px `rgba(255,255,255,.08)` | `#57534C` |
 
 The Field step: 40px to a fine pointer and 44px on touch, padding-x 12 at both, radius 12 (corrected 2026-11-05 from 48px and padding-x 14 everywhere, with §3's button heights, for the same reason). A multi-line field (`Textarea`) takes the same padding and grows. A web sheet's fields sit one step down, at Small. The value stays 16px at either height, the body floor ([foundations.md](foundations.md) §7). The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#131211` inside the surface-level app bar). The web top bar's Find field is the named exception: it shares the bar's surface (§7). *(Exception added 2026-11-05.)*
+
+**Floating label (web sign-in and sign-up).** The pre-auth forms put the label inside the field, where it reads at body size and moves up to caption size on focus, input or autofill, and they draw no placeholder (`apps/web/components/auth/floating-field.tsx`). The field is 52px rather than 48 so the floated 12px label and the 16px value both clear the edge on the grid. It exists so those two forms fit a laptop window without scrolling (`spec/ui/web-dashboard/README.md` § Responsive contract); every other form keeps the label above a 48px field. *(Exception added 2026-11-05.)*
 
 In the Error state the caption MUST be wired to the field, not merely placed under it: `aria-describedby` on the input references the caption's id, and `aria-invalid` marks the input while the error stands.
 
@@ -180,7 +204,7 @@ Container: height 48px (was 58), surface `#1A1A1A`, 1px hairline, no radius — 
 | ------- | ---- |
 | Page title | Left cell, the route's `<h1>`: `label` / 700, `--foreground`, truncating. A page under Settings prefixes its parent as a link at `label` / 500 `--muted-foreground` and a 14px `ChevronRight`. Below `sm` the whole title is visually hidden (still the `h1`). Added 2026-11-05, reversing #2141; rules in [`../web-dashboard/README.md` § Top bar](../web-dashboard/README.md#top-bar) |
 | Mark | 30px "S" rounded square (radius 9), house gold — never retints ([brand-identity.md](../brand-identity.md)). **Not in the web top bar**: the chapter identity lives in the nav's 40px chapter row instead, whose 28px tile draws the chapter mark ([`branding.md` § Chapter mark](../../behavior/branding.md#chapter-mark)) |
-| Find | field-shaped button, height 34, radius 10, max width 520, fill `--surface-1` (the bar's own surface, so it reads as part of the bar rather than a raised card), 1px `--input`, no keyboard hint. It opens the Find dialog: up to 640 wide, 12vh from the top, `--popover` at radius 20 (the §9 dialog radius) over the §9 scrim, a 56px input row, filter chips, then grouped 40px result rows with the date or term trailing in caption `--muted-foreground` |
+| Find | field-shaped button, height 34, radius 10, max width 520, fill `--surface-1` (the bar's own surface, so it reads as part of the bar rather than a raised card), 1px `--input`, no keyboard hint. It opens the Find dialog: up to 640 wide, 12vh from the top, `--popover` at radius 20 (the §9 dialog radius) over the §9 scrim, a 56px input row, filter chips, then grouped result rows on the Row step ([foundations.md](foundations.md) §9: 32 on a mouse, 44 on touch) with the date or term trailing in caption `--muted-foreground` |
 | Ask entry | Tinted **geometry**, house-gold **paint**: height 34, radius 10, ✦ glyph + "Ask", 700 — rounded rect, not a capsule. Fill `gold.askFill`, 1px `gold.askBorder`, text `gold.askText` (§11), never `accent-3/7/11`. The board draws Ask in the same values as the chapter accent tints **because its demo tenant is the house tenant** — they coincide there and nowhere else, so merging the two families is the house-tenant trap, not a simplification |
 | Notification badge | Fixed `--gold-house` on the bell, never `--primary`. A count is not direct address, so it takes neither the chapter accent nor the mention red (§5) |
 | Avatar | 30px circle, elevated `--popover` fill, 1px `--border`, initials 11px / 600 |

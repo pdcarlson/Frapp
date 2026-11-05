@@ -544,7 +544,11 @@ function FindPanel({
                 onPointerEnter={() => setActiveIndex(index)}
                 onClick={() => openResult(result)}
                 className={cn(
-                  "flex min-h-10 w-full items-center gap-3 rounded-[10px] px-2.5 py-1.5 text-left text-sm transition",
+                  // The Row step (foundations.md §9, #3515): 32 with a 14px
+                  // label on a mouse, 44 with a 16px one on touch. A floor, not
+                  // a height, so a row that ever wraps grows; today's labels
+                  // and hints are one line because they `truncate`.
+                  "flex min-h-8 w-full items-center gap-3 rounded-[10px] px-2.5 py-1.5 text-left text-sm transition pointer-coarse:min-h-11 pointer-coarse:text-base",
                   active
                     ? "bg-accent-subtle text-accent-text"
                     : "text-foreground hover:bg-card",

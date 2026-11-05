@@ -5,6 +5,7 @@ export * from "./document-download";
 export * from "./put-signed-upload";
 export * from "./chapter-query-keys";
 export * from "./use-members";
+export * from "./setup-checklist";
 export * from "./use-events";
 export * from "./use-activity-feed";
 export * from "./use-attendance";
@@ -49,6 +50,7 @@ export * from "./channel-sidebar";
 // the arrangement through `useSidebarPreferences`.
 export {
   useSidebarPreferences,
+  useSidebarPreferencesRefetch,
   useSetSidebarFilter,
   useSetSidebarSectionCollapsed,
   useSetChannelPinned,

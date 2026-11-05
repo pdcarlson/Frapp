@@ -251,6 +251,35 @@ describe("mappingIssues", () => {
     ).toEqual(["1", "2"]);
   });
 
+  it("flags a shared new name whose channels go into different kept categories, and only then", () => {
+    const sorted = [
+      open("1", "general", "Actives"),
+      open("2", "general", "Alumni"),
+      open("3", "general", " actives "),
+    ];
+    const choices = defaultChoices(sorted);
+    const keep = { keep: true, dropped: new Set<string>() };
+
+    // Off: one channel, as before.
+    expect(mappingIssues(sorted, choices, [])).toEqual([]);
+    // On: Actives and Alumni would be two channels named general.
+    const issues = mappingIssues(sorted, choices, [], undefined, keep);
+    expect(issues.map((issue) => issue.channelId)).toEqual(["1", "2", "3"]);
+    expect(issues[0]!.message).toContain("which category they go into");
+    // Alumni dropped and renamed: the two Actives rows, spelled apart, share one.
+    const renamed = {
+      ...choices,
+      "2": { ...choices["2"]!, newName: "alumni" },
+    };
+    expect(mappingIssues(sorted, renamed, [], undefined, keep)).toEqual([]);
+    expect(newChannelGroups(sorted, renamed, undefined, keep).together).toEqual(
+      new Map([
+        ["1", 2],
+        ["3", 2],
+      ]),
+    );
+  });
+
   it("judges a shared name only once every channel in it has readers", () => {
     const choices = defaultChoices(channels);
     choices["2"] = {

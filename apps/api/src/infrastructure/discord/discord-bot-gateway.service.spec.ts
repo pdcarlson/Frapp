@@ -214,7 +214,7 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
     calls = [];
     const routes: Record<string, unknown> = {
       [`/guilds/${GUILD}/channels`]: [
-        { id: '10', type: 4, name: 'Brothers' },
+        { id: '10', type: 4, name: 'Brothers', position: 7 },
         // Open to everyone.
         { id: '11', type: 0, name: 'anyone', parent_id: null },
         // @everyone denied, Brother allowed: the Tau Nu shape.
@@ -321,12 +321,19 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
       readable: false,
       privateInDiscord: true,
       categoryName: 'Brothers',
+      // The category's place in Discord, so groups made from it keep order.
+      categoryPosition: 7,
       // Brother by its allow, Exec by Administrator. Worked out from the
       // overwrites even though the bot itself cannot read the channel.
       readerRoleIds: [EXEC, BROTHER],
     });
     // A public channel has no audience to copy.
     expect(byId.get('11')).toMatchObject({ readerRoleIds: null });
+    // A channel in no category has no category position.
+    expect(byId.get('11')).toMatchObject({
+      categoryName: null,
+      categoryPosition: null,
+    });
     // A thread carries its parent's answers...
     expect(byId.get('21')).toMatchObject({
       readable: true,
