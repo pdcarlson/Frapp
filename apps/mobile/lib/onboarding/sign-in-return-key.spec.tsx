@@ -92,13 +92,19 @@ function hasField(root: Node, contentType: "username" | "password"): boolean {
   );
 }
 
+/**
+ * By the text drawn, or by the screen-reader label a busy button keeps while
+ * a spinner stands in for its text.
+ */
 function pressableLabelled(root: Node, label: string): Node {
   const found = root
     .findAll((node) => isHost(node, "Pressable"))
-    .find((pressable) =>
-      pressable
-        .findAll((node) => isHost(node, "Text"))
-        .some((text) => text.props.children === label),
+    .find(
+      (pressable) =>
+        pressable.props.accessibilityLabel === label ||
+        pressable
+          .findAll((node) => isHost(node, "Text"))
+          .some((text) => text.props.children === label),
     );
   if (!found) throw new Error(`no pressable labelled ${label}`);
   return found;
@@ -186,7 +192,7 @@ describe("sign-in return key, password mode", () => {
     expect(auth.signInWithPassword).toHaveBeenCalledTimes(1);
 
     // The button is disabled now; return must be held to the same guard.
-    expect(pressableLabelled(tree.root, "Signing in...").props.disabled).toBe(
+    expect(pressableLabelled(tree.root, "Signing in…").props.disabled).toBe(
       true,
     );
     pressReturn(field(tree.root, "password"));
@@ -200,7 +206,7 @@ describe("sign-in return key, magic-link mode", () => {
     const tree = render();
 
     act(() => {
-      pressableLabelled(tree.root, "Magic Link").props.onPress();
+      pressableLabelled(tree.root, "Magic link").props.onPress();
     });
     expect(hasField(tree.root, "password")).toBe(false);
 

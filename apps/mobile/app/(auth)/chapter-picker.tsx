@@ -13,6 +13,7 @@ import { useListChapters } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { useAuthSession } from "@/lib/auth-session";
 import { ChoiceRow } from "@/components/auth/choice-row";
+import { BackRow } from "@/components/back-row";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -39,8 +40,24 @@ export default function ChapterPicker() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  const { status, signOut } = useAuthSession();
+  const { status, signOut, chapterId: currentChapterId } = useAuthSession();
   const selectChapter = useSelectChapter();
+  // Opened from More, with the tabs underneath to go back to. A deep link
+  // opens it with nothing behind it, and keeps the centred layout and no row.
+  const canGoBack = router.canGoBack();
+
+  /** Back to the tabs this was opened over, or into them from a link. */
+  function leave() {
+    // Back, not a navigate: arriving from More means `(tabs)` is already on
+    // the stack underneath, and opening it again would leave a second copy
+    // on top of the first. Replace is the fallback for arriving by deep link,
+    // where there is nothing to go back to.
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)");
+    }
+  }
 
   const { data, isPending, isError, refetch } = useListChapters();
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -82,16 +99,7 @@ export default function ChapterPicker() {
       // gate exempts this route so a member can open it deliberately from More,
       // which also means it will not push them back out when the switch lands.
       // An earlier version waited for that redirect and spun forever.
-      //
-      // Prefer going back over replacing: arriving from More means `(tabs)` is
-      // already on the stack underneath, and replacing would leave a second
-      // copy on top of the first. Replace is the fallback for arriving by deep
-      // link, where there is nothing to go back to.
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace("/(tabs)");
-      }
+      leave();
     } finally {
       // Always clear. The screen usually unmounts before this matters, but
       // "usually" is what stranded members on a dead list of disabled rows.
@@ -112,13 +120,23 @@ export default function ChapterPicker() {
     >
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[
+          styles.container,
+          canGoBack ? styles.containerTop : null,
+        ]}
         keyboardShouldPersistTaps="handled"
       >
+        {/*
+          `‹ More`, as every screen opened from a More row draws
+          (navigation.md § Back rows), in house gold like the rest of this
+          group. It goes back rather than navigating to More, for the reason
+          `leave` gives.
+        */}
+        {canGoBack ? (
+          <BackRow house label="More" onPress={() => router.back()} />
+        ) : null}
+        {/* No line under the title: the list says the rest. */}
         <Text style={styles.title}>Choose your chapter</Text>
-        {/* Reachable from More by any member, so the copy cannot assert that
-          they belong to more than one chapter. */}
-        <Text style={styles.subtitle}>Pick the chapter you want to open.</Text>
 
         <View style={styles.body}>
           {isPending ? (
@@ -136,7 +154,10 @@ export default function ChapterPicker() {
                 onPress={() => {
                   void refetch();
                 }}
-                style={styles.primaryButton}
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  pressed ? styles.primaryButtonPressed : null,
+                ]}
               >
                 <Text style={styles.primaryButtonText}>Try again</Text>
               </Pressable>
@@ -156,7 +177,10 @@ export default function ChapterPicker() {
                 onPress={() => {
                   router.push("/join");
                 }}
-                style={styles.primaryButton}
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  pressed ? styles.primaryButtonPressed : null,
+                ]}
               >
                 <Text style={styles.primaryButtonText}>
                   Join or start a chapter
@@ -167,22 +191,32 @@ export default function ChapterPicker() {
             <View style={styles.list}>
               {data.map((membership) => {
                 const isPendingRow = pendingId === membership.chapter_id;
+                // The chapter open now says so, and tapping it just goes
+                // back: switching to the chapter you're in has nothing to do.
+                const isCurrent = membership.chapter_id === currentChapterId;
                 return (
                   <ChoiceRow
                     key={membership.chapter_id}
                     title={membership.chapter.name}
                     body={membership.chapter.university}
-                    accessibilityHint={`Open ${membership.chapter.name}.`}
+                    accessibilityHint={
+                      isCurrent
+                        ? "The chapter you have open."
+                        : `Open ${membership.chapter.name}.`
+                    }
                     disabled={pendingId !== null}
                     dimmed={pendingId !== null && !isPendingRow}
                     busy={isPendingRow}
                     trailing={
                       isPendingRow ? (
                         <ActivityIndicator color={tokens.color.gold.house} />
+                      ) : isCurrent ? (
+                        <Text style={styles.currentText}>Current</Text>
                       ) : undefined
                     }
                     onPress={() => {
-                      void handleSelect(membership.chapter_id);
+                      if (isCurrent) leave();
+                      else void handleSelect(membership.chapter_id);
                     }}
                   />
                 );
@@ -203,7 +237,10 @@ export default function ChapterPicker() {
             onPress={() => {
               void handleSignOut();
             }}
-            style={styles.secondaryButton}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              pressed ? styles.textPressed : null,
+            ]}
           >
             <Text style={styles.secondaryButtonText}>Sign out</Text>
           </Pressable>
@@ -234,19 +271,24 @@ function createStyles(tokens: SignetTokens) {
       padding: tokens.spacing.xl,
       backgroundColor: tokens.color.surface.background,
     },
+    // Under a back row the column starts at the top, where every screen
+    // opened from More puts its row and title.
+    containerTop: {
+      justifyContent: "flex-start",
+      paddingTop: tokens.spacing.sm,
+    },
     title: {
       ...typeRole(tokens.typography.role.headline),
       letterSpacing: -0.3,
       color: tokens.color.text.foreground,
     },
-    subtitle: {
-      marginTop: tokens.spacing.xs,
-      marginBottom: tokens.spacing.lg,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
-    },
     body: {
+      marginTop: tokens.spacing.lg,
       gap: tokens.spacing.md,
+    },
+    currentText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
     },
     stateBlock: {
       gap: tokens.spacing.md,
@@ -276,6 +318,10 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "center",
     },
+    // components.md § Buttons: Tinted presses one step up its own tint.
+    primaryButtonPressed: {
+      backgroundColor: tint(tokens.color.gold.house, 0.2),
+    },
     primaryButtonText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.gold.house,
@@ -284,6 +330,9 @@ function createStyles(tokens: SignetTokens) {
       minHeight: tokens.touch.button,
       alignItems: "center",
       justifyContent: "center",
+    },
+    textPressed: {
+      opacity: 0.6,
     },
     secondaryButtonText: {
       ...typeRole(tokens.typography.role.label),

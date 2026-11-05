@@ -154,6 +154,7 @@ function AccentSheetForm({
         orgColors={orgColorsFor(chapter.name)}
         disabled={updateChapter.isPending}
         inputComponent={BottomSheetTextInput}
+        focusColor={accent}
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <SheetPrimaryButton

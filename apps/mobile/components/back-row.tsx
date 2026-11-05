@@ -22,6 +22,29 @@ export const BACK_TO_EVENTS: BackTarget = { label: "Events", href: "/events" };
  */
 export const BACK_TO_CHAT: BackTarget = { label: "Chat", href: "/" };
 
+type BackRowProps = {
+  label: string;
+  /**
+   * A control at the row's far end, where the board draws s15's Edit
+   * (`‹ More` … `Edit`) and s12's upload glyph, and setup its progress ticks.
+   * Optional; every other screen draws the row alone.
+   */
+  trailing?: ReactNode;
+  /** House gold instead of the chapter accent, for a row in `(auth)`. */
+  house?: boolean;
+  /** Dims the row and ignores taps, as while a sign-in or a join is in flight. */
+  disabled?: boolean;
+  /** Defaults to `Back to <label>`; a step-back row names where it steps to. */
+  accessibilityLabel?: string;
+} & (
+  | { href: Href; onPress?: never }
+  | {
+      /** A step back the screen owns, in place of navigating to `href`. */
+      onPress: () => void;
+      href?: never;
+    }
+);
+
 /**
  * The `‹ More` / `‹ Events` row the Canvas board draws above the title on a
  * screen reached from another one (s07, s10–s16, `canvas-screens.dc.html`).
@@ -39,34 +62,64 @@ export const BACK_TO_CHAT: BackTarget = { label: "Chat", href: "/" };
  * bakes house gold here because its mock chapter is gold; the owner's rule
  * (2026-11-04, `spec/behavior/branding.md`) puts the accent on every back
  * arrow inside a chapter, and keeps house gold for places with no chapter.
+ *
+ * Sign-in, join, setup and the chapter picker draw the same row (`‹ Back`,
+ * `‹ More`), as the board's s02 does. They pass `house`, because `(auth)` has
+ * no chapter to take an accent from, and `onPress`, because their way back is
+ * a step inside one route (the email form to the providers, the confirm step
+ * to the field) or the picker's own `router.back()`, not a tab to open.
  */
-export function BackRow({
+export function BackRow(props: BackRowProps) {
+  // Two components rather than a branch inside one: a house row never reads
+  // the chapter, so sign-in doesn't ask for a current chapter it can't have.
+  return props.house ? (
+    <HouseBackRow {...props} />
+  ) : (
+    <ChapterBackRow {...props} />
+  );
+}
+
+function ChapterBackRow(props: BackRowProps) {
+  const { accent } = useChapterBranding();
+  return <BackRowView {...props} color={accent} />;
+}
+
+function HouseBackRow(props: BackRowProps) {
+  const { tokens } = useFrappTheme();
+  // `askText` is the gold the board draws its `‹` rows in (s02's `‹ Back`).
+  return <BackRowView {...props} color={tokens.color.gold.askText} />;
+}
+
+function BackRowView({
   label,
   href,
+  onPress,
   trailing,
-}: BackTarget & {
-  /**
-   * A control at the row's far end, where the board draws s15's Edit
-   * (`‹ More` … `Edit`) and s12's upload glyph. Optional; every other screen
-   * draws the row alone.
-   */
-  trailing?: ReactNode;
-}) {
+  disabled = false,
+  accessibilityLabel,
+  color,
+}: BackRowProps & { color: string }) {
   const router = useRouter();
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
-  const styles = createStyles(tokens, accent);
+  const styles = createStyles(tokens, color);
 
   return (
     <View style={styles.row}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Back to ${label}`}
+        accessibilityLabel={accessibilityLabel ?? `Back to ${label}`}
+        accessibilityState={disabled ? { disabled } : undefined}
+        disabled={disabled}
         // The drawn row is a 16pt line of text; the slop brings the target to
         // the 44pt minimum without moving the title down.
         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        onPress={() => router.navigate(href)}
-        style={({ pressed }) => (pressed ? styles.pressed : null)}
+        onPress={() => {
+          if (onPress) onPress();
+          else if (href) router.navigate(href);
+        }}
+        style={({ pressed }) =>
+          disabled ? styles.disabled : pressed ? styles.pressed : null
+        }
       >
         <Text style={styles.text}>{`‹ ${label}`}</Text>
       </Pressable>
@@ -75,7 +128,7 @@ export function BackRow({
   );
 }
 
-function createStyles(tokens: SignetTokens, accent: string) {
+function createStyles(tokens: SignetTokens, color: string) {
   return StyleSheet.create({
     row: {
       flexDirection: "row",
@@ -86,10 +139,14 @@ function createStyles(tokens: SignetTokens, accent: string) {
     pressed: {
       opacity: 0.6,
     },
+    // ListRow's disabled treatment: a control that can't respond looks it.
+    disabled: {
+      opacity: 0.5,
+    },
     text: {
       // The board's 16pt regular line, which is the body role.
       ...typeRole(tokens.typography.role.body),
-      color: accent,
+      color,
     },
   });
 }

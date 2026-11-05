@@ -5,7 +5,9 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { useRouter } from "expo-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Share } from "react-native";
 import type { ChapterDirectoryResult } from "@repo/hooks";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 
 /**
@@ -570,5 +572,213 @@ describe("chapter setup — push primer for the founder", () => {
     await createFromMatch(root);
     await press(root, "Continue");
     expect(title(root)).toBe(SETUP_TITLES.invite);
+  });
+
+  it("draws no line over the card, which makes its own case", async () => {
+    pushAvailable = true;
+    permission = { granted: false };
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.primer);
+    expect(allText(root)).not.toContain("start posting");
+  });
+});
+
+/** A Pressable's resting fill, resolving a `({ pressed }) => style`. */
+function fillOf(pressable: Node | undefined): unknown {
+  const style: unknown = pressable?.props.style;
+  const resolved =
+    typeof style === "function" ? style({ pressed: false }) : style;
+  const parts = (Array.isArray(resolved) ? resolved : [resolved]) as (Record<
+    string,
+    unknown
+  > | null)[];
+  return Object.assign({}, ...parts.filter(Boolean)).backgroundColor;
+}
+
+/**
+ * The invite step's one gold button is the invite: `Create invite link`,
+ * then `Share invite`. Leaving is the quiet line under it. The copy says what
+ * a link is, one person within a day, not a link for the whole chapter.
+ */
+describe("chapter setup — invite", () => {
+  async function toInvite(): Promise<Node> {
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.invite);
+    return root;
+  }
+
+  it("leads with Create invite link in gold, with Skip for now quiet under it", async () => {
+    const root = await toInvite();
+
+    expect(fillOf(control(root, "Create invite link"))).toBe(
+      signetDarkTokens.color.gold.house,
+    );
+    expect(fillOf(control(root, "Skip for now"))).toBeUndefined();
+    expect(allText(root)).toContain(
+      "Each link lets one person join and expires after 24 hours.",
+    );
+    expect(allText(root)).not.toContain("Anyone with this link");
+    expect(allText(root)).not.toContain("land in #general");
+
+    await press(root, "Skip for now");
+    expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
+  });
+
+  it("turns the gold button into Share invite once a link exists", async () => {
+    const root = await toInvite();
+    await press(root, "Create invite link");
+
+    expect(allText(root)).toContain("tok123");
+    expect(fillOf(control(root, "Share invite"))).toBe(
+      signetDarkTokens.color.gold.house,
+    );
+    await press(root, "Share invite");
+    expect(Share.share).toHaveBeenCalledWith({
+      message: expect.stringContaining("tok123"),
+    });
+    expect(control(root, "Go to chat")).toBeDefined();
+  });
+
+  it("makes another link without leaving, since each one lets one person in", async () => {
+    const root = await toInvite();
+    await press(root, "Create invite link");
+    createInvite.mockResolvedValueOnce({ token: "tok456" });
+
+    await press(root, "Create another link");
+    expect(createInvite).toHaveBeenCalledTimes(2);
+    expect(allText(root)).toContain("tok456");
+  });
+});
+
+/**
+ * The identity form moves down itself on Return instead of dropping the
+ * keyboard after every field, and capitalizes names as names.
+ */
+describe("chapter setup — identity fields", () => {
+  const focused: string[] = [];
+
+  async function renderWithFocus(): Promise<Node> {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <QueryClientProvider client={queryClient}>
+          <FrappThemeProvider>
+            <CreateChapter />
+          </FrappThemeProvider>
+        </QueryClientProvider>,
+        {
+          // A field's ref, so moving focus can be seen.
+          createNodeMock: (element) => ({
+            focus: () =>
+              focused.push(
+                String(
+                  (element.props as { accessibilityLabel?: string })
+                    .accessibilityLabel,
+                ),
+              ),
+          }),
+        },
+      );
+    });
+    await settle();
+    return tree.root;
+  }
+
+  function field(root: Node, label: string): Node {
+    const input = root
+      .findAllByType("TextInput" as never, { deep: true })
+      .find((i) => i.props.accessibilityLabel === label);
+    if (!input) throw new Error(`No field "${label}"`);
+    return input;
+  }
+
+  beforeEach(() => {
+    focused.length = 0;
+  });
+
+  it("chains Return through every field drawn, and ends on Done", async () => {
+    const root = await renderWithFocus();
+    await pickRow(root, "Sigma Phi Epsilon");
+    await press(root, "Edit details");
+
+    const order = [
+      "Organization",
+      "School",
+      "Chapter",
+      "Short name",
+      "Greek letters",
+      "School short name",
+    ];
+    for (const [index, label] of order.entries()) {
+      const input = field(root, label);
+      expect(input.props.returnKeyType).toBe("next");
+      act(() => {
+        input.props.onSubmitEditing();
+      });
+      expect(focused[index]).toBe(
+        index + 1 < order.length ? order[index + 1] : "Founded",
+      );
+    }
+    const last = field(root, "Founded");
+    expect(last.props.returnKeyType).toBe("done");
+    expect(last.props.maxLength).toBe(4);
+  });
+
+  it("skips a field the step hides: by hand with details closed, School is last", async () => {
+    const root = await renderWithFocus();
+    await press(root, "Not in our directory?");
+
+    expect(field(root, "Organization").props.returnKeyType).toBe("next");
+    expect(field(root, "School").props.returnKeyType).toBe("done");
+    // No line between the title and the fields.
+    expect(allText(root)).not.toContain("next officer finds it");
+  });
+
+  it("capitalizes names as names", async () => {
+    const root = await renderWithFocus();
+    await press(root, "Not in our directory?");
+    await press(root, "More details");
+
+    for (const label of ["Organization", "School", "Chapter"]) {
+      expect(field(root, label).props.autoCapitalize).toBe("words");
+    }
+    expect(field(root, "Short name").props.autoCapitalize).toBe("characters");
+  });
+
+  it("edges the field being typed in, in house gold", async () => {
+    const root = await renderWithFocus();
+    await press(root, "Not in our directory?");
+    const borderOf = () =>
+      Object.assign(
+        {},
+        ...(
+          field(root, "Organization").props.style as (Record<
+            string,
+            unknown
+          > | null)[]
+        ).filter(Boolean),
+      ).borderColor;
+
+    expect(borderOf()).toBe(signetDarkTokens.color.border.input);
+    act(() => {
+      field(root, "Organization").props.onFocus();
+    });
+    expect(borderOf()).toBe(signetDarkTokens.color.gold.askText);
+  });
+
+  it("opens the find step on the field, with no line restating its placeholder", async () => {
+    const root = await renderWithFocus();
+
+    expect(allText(root)).not.toContain("fill in the rest");
+    expect(field(root, "Search the chapter directory").props.placeholder).toBe(
+      "Organization or school",
+    );
   });
 });

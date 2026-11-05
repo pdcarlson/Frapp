@@ -55,6 +55,13 @@ export type AccentPickerProps = {
    * `BottomSheetTextInput`, which keeps the field above the keyboard.
    */
   inputComponent?: ComponentType<TextInputProps>;
+  /**
+   * The custom field's border while it has focus (components.md § Text
+   * input): house gold in setup, where there is no chapter yet, and the
+   * chapter accent in Settings. Required, so no caller paints the wrong one
+   * by leaving it out.
+   */
+  focusColor: string;
 };
 
 const HEX_PATTERN = /^#?(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -77,9 +84,11 @@ export function AccentPicker({
   orgColors = [],
   disabled = false,
   inputComponent: Input = TextInput,
+  focusColor,
 }: AccentPickerProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const [hexFocused, setHexFocused] = useState(false);
 
   // A preset the organization already offers is shown once, under the
   // organization, so one color is never two radios in the same group.
@@ -211,7 +220,16 @@ export function AccentPicker({
               maxLength={7}
               editable={!disabled}
               accessibilityLabel="Custom color hex"
-              style={[styles.input, styles.inputFlex]}
+              // The field mounts when "Custom color…" is tapped, so focusing
+              // it then saves the second tap that tap was asking for.
+              autoFocus
+              onFocus={() => setHexFocused(true)}
+              onBlur={() => setHexFocused(false)}
+              style={[
+                styles.input,
+                styles.inputFlex,
+                hexFocused ? { borderColor: focusColor } : null,
+              ]}
             />
           </View>
           {draftInvalid ? (

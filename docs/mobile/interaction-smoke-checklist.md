@@ -18,11 +18,11 @@ came with #2302 (PR #2611).
 |---|---|---|
 | Sign in (`/(auth)/sign-in`) | First view | The phone's own account leads as the one filled button: Continue with Apple then Continue with Google on iOS; Continue with Google on Android, then Continue with email, then Other ways to sign in. No Apple button on Android until Other ways to sign in is tapped |
 | Sign in (`/(auth)/sign-in`) | Other ways to sign in (Android) | Reveals Continue with Apple and the Hide My Email hint; an account made with Apple on an iPhone signs in through Apple's web page |
-| Sign in (`/(auth)/sign-in`) | Continue with email, then back | Opens the email form titled "Sign in with email"; the back chevron, and on Android the system back button, return to the first view without leaving the app |
-| Sign in (`/(auth)/sign-in`) | Password / Magic Link mode chips (after Continue with email) | Toggles selected mode styling; password field shows in Password mode only |
+| Sign in (`/(auth)/sign-in`) | Continue with email, then back | Opens the email form titled "Sign in with email"; the gold ‹ Back row, and on Android the system back button, return to the first view without leaving the app |
+| Sign in (`/(auth)/sign-in`) | Password / Magic link mode chips (after Continue with email) | Toggles the gold selected-mode styling; password field shows in Password mode only |
 | Sign in (`/(auth)/sign-in`) | Sign in (Password mode) | Authenticates against Supabase; the auth gate then routes to join (zero memberships), the Terms prompt (a member who hasn't accepted the current Terms, which every seeded account is after a reseed), welcome (`has_completed_onboarding === false`), or `/(tabs)` |
 | Sign in (`/(auth)/sign-in`) | Sign in, wrong password | Shows the Supabase error inline; stays on the screen |
-| Sign in (`/(auth)/sign-in`) | Email me a link (Magic Link mode) | Confirms "Link sent to …"; tapping the emailed link on this device signs in and the auth gate picks join / Terms / welcome / tabs |
+| Sign in (`/(auth)/sign-in`) | Email me a link (Magic link mode) | Confirms "Link sent to …"; tapping the emailed link on this device signs in and the auth gate picks join / Terms / welcome / tabs |
 | Sign in (`/(auth)/sign-in`) | Tap an already-used or expired magic link | Opens the app and shows the reason inline — never a silent return to a blank sign-in form |
 | Settings (`/(tabs)/preferences`) | Sign out | Clears the session + routes to sign-in; relaunching the app does not restore it |
 | Join (`/(auth)/join`) | First view | Asks "How are you getting in?" with I have an invite and I'm starting our chapter; no invite field, and no Sign out or Delete account until Account is tapped |

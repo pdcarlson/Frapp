@@ -879,7 +879,7 @@ The Preferences card is a **second query** on the same screen (`GET /v1/settings
 | Magic link sent | `Magic link sent` | `Check your inbox to continue signing in.` |
 | Magic link, no email | `Email required` | `Enter your email address to request a magic link.` |
 | Continue with Apple / Google | — | Button labels. Each carries the official brand mark at 20px (Apple silhouette in `currentColor`, Google four-color G) beside the label. Web: equal Secondary size, Apple first. Mobile s01 (#3349): the phone's own account leads as the one filled button (Apple on iOS with Google beside it, Google elsewhere), and off iOS Apple sits behind `Other ways to sign in`. The board's equal-size, Apple-first pair is superseded on mobile, not drift. |
-| Continue with email (mobile s01) | — | Button label that opens the email form (password or magic link), titled `Sign in with email`, with a back chevron to the providers (#3349). |
+| Continue with email (mobile s01) | — | Button label that opens the email form (password or magic link), titled `Sign in with email`, with a `‹ Back` row to the providers (#3349). |
 | Identity collision | `Unable to sign in` | `An account with this email already exists. Sign in with your password or a magic link. Google or Apple can attach to that same account on later visits.` Mobile s01, where the form sits behind a button (#3349): `An account with this email already exists. Tap Continue with email and sign in with your password or a magic link. Google or Apple can attach to that same account on later visits.` |
 | Provider not enabled | `Unable to sign in` | `This sign-in method isn't available yet. Use your password or a magic link.` Mobile s01: `This sign-in method isn't available yet. Tap Continue with email to use your password or a magic link.` |
 | Membership hint | — | `Invited at a university address? Open that link after you sign in. Membership follows this account, including Apple Hide My Email.` On mobile s01 it sits under the buttons whenever a Continue with Apple button is showing (always on iOS; off iOS once `Other ways to sign in` is opened). |
@@ -904,8 +904,8 @@ The Preferences card is a **second query** on the same screen (`GET /v1/settings
 | Checking the session | — | `Verifying your session…` (announced, not drawn) |
 | Session check failed, offline | `Can't check your session` | `Reconnect to confirm you're signed in, then redeem the invite.` |
 | Session check failed, error | `Couldn't check your session` | `We couldn't reach the API to confirm you're signed in. Retry in a moment.` |
-| Redeemed | `Chapter joined` | `You're in. Opening chat.` Mobile goes to s03, `You're in.` over `<chapter> · <school>`, with one pinned `Go to chat` (`Opening chat…` while it runs). |
-| Mobile s02, the question (#3350) | `How are you getting in?` | `Members join with an invite from an officer. The first officer sets the chapter up.` The rows above are web `/join`'s, except Unparseable paste, which mobile shares word for word; mobile s02 asks this first and offers two answers instead of a field. |
+| Redeemed | `Chapter joined` | `You're in. Opening chat.` Mobile goes to s03, `You're in.` over `<chapter> · <school>`, with one pinned `Go to chat`, which spins under the same label while it runs. |
+| Mobile s02, the question (#3350) | `How are you getting in?` | No line under the title: the two answers say it. The rows above are web `/join`'s, except Unparseable paste, which mobile shares word for word; mobile s02 asks this first and offers two answers instead of a field. |
 | Mobile s02 answers | — | `I have an invite` + `Use the link your officer sent.`, then `I'm starting our chapter` + `Set it up, then invite everyone.` |
 | Mobile s02 invite step | `Join with an invite` | `Paste the invite link or code your officer sent. Invites work once and expire after 24 hours.` The membership hint ([§ Sign in (pre-auth)](#sign-in-pre-auth)) sits under the field, and the pinned button is `Continue`, which opens the confirm step. |
 | Mobile s02 confirm step (#3352) | `Join <chapter name>?` | One card: the chapter mark, the chapter name over its school, then `Invited by <name>` (left out when the inviter can't be read) and `Joining as <role>` (left out when joining would grant no role). Then the Terms checkbox when it's needed, and the pinned `Join chapter`. An opened invite link lands here. While the preview loads, or when it can't be read, the title is `Join with this invite?` over a card reading `Chapter invite` and `Ending in <last four> · Works once`, and Join still works. A dead invite, found by the preview or by the redeem, shows the **410** row below, hides the Terms checkbox and disables `Join chapter`. |
@@ -971,12 +971,12 @@ Mobile's first-officer setup, `(auth)/create-chapter.tsx` (#3351). Titles are `S
 
 | State | Title | Description |
 |---|---|---|
-| Find | `Find your chapter` | `Search by organization or school. We'll fill in the rest.` Field placeholder `Organization or school`. A result reads `<letters> · <organization>`, without the letters for an organization that doesn't display them. |
+| Find | `Find your chapter` | No line under the title. Field placeholder `Organization or school`. A result reads `<letters> · <organization>`, without the letters for an organization that doesn't display them. |
 | Find, no match | — | `No match for "<query>". Add your chapter by hand below.` |
 | Find, directory error | — | `We couldn't reach the directory.` with `Retry` |
 | Find, by hand | — | `Not in our directory?` + `New colony or a smaller group. Add it by hand.` |
 | Confirm, a match | `Is this your chapter?` | The match as a card. `Edit details` / `Hide details` opens the fields. |
-| Confirm, by hand | `Tell us about your chapter` | `We'll add it to our directory so the next officer finds it.` `More details (optional)` / `Hide more details` opens the rest. |
+| Confirm, by hand | `Tell us about your chapter` | No line under the title. `More details (optional)` / `Hide more details` opens the rest. |
 | Confirm, archetype | — | `What kind of organization?`, asked only by hand or when the match's kind is unknown, with nothing preselected. |
 | Letters switch | — | `Show Greek letters` + `Turn off if your organization doesn't display its letters. Your short name or logo stands in for them.` For an organization that hides its letters, neither the switch nor the letters field is drawn; in their place: `<organization> doesn't display its Greek letters, so your short name stands in for them.` |
 | Color | `Pick your color` | `Your color tints buttons, badges and your chapter mark. You can change it later in Settings.` Then the Terms checkbox (the Join chapter row) and `Create <name>`. |
@@ -984,8 +984,8 @@ Mobile's first-officer setup, `(auth)/create-chapter.tsx` (#3351). Titles are `S
 | Live | `<name> is live` | `Your channels are ready. Invite your members next.` Then the seeded public channels, each marked `ready`. |
 | Live, chapter not made active | `<name> is live` | `Your chapter is ready. Open chat to see its channels and invite your members.` No channel list, no invite step: both act on the active chapter. |
 | Live, logo | — | `Add your chapter's logo` (`Change logo` once set) + `Optional. A logo stands in for your letter mark everywhere.` A refusal shows `uploadFailureReason`'s sentence, or `Logos can be JPEG, PNG, GIF or WebP.` / `Logos can be up to <limit>.` When the new chapter couldn't be made active: `You can add a logo later from the web dashboard's Settings.` |
-| Primer | `Stay in the loop` | `Members will start posting soon. Hear about it when they do.` Then the push primer card. Only when this build can push. |
-| Invite | `Invite your chapter` | `Share a link and your members land in #general. You can invite more people later.` `Create invite link`, then the link, `Anyone with this link can join as a member. It works once and expires after 24 hours.` and `Share invite`. The primary reads `Skip for now`, then `Go to chat` once a link exists. |
+| Primer | `Stay in the loop` | No line under the title; the push primer card says it. Only when this build can push. |
+| Invite | `Invite your chapter` | `Each link lets one person join and expires after 24 hours.` The gold primary reads `Create invite link`, then `Share invite` once a link exists, with the link on a card above it and `Create another link` under the link. Leaving is the quiet line under the primary: `Skip for now`, then `Go to chat`. |
 | Invite failed | — | The server's message, else `Couldn't create an invite. You can invite members from the web dashboard.` |
 
 ### App error boundary (`global-error`)

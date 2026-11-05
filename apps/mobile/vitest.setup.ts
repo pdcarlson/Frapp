@@ -112,6 +112,10 @@ vi.mock("expo-router", () => {
     replace: vi.fn(),
     navigate: vi.fn(),
     back: vi.fn(),
+    // Nothing behind the screen, as when a link opens it, unless a spec
+    // says otherwise (`mockReturnValue(true)`, as the chapter picker's does
+    // for "opened from More").
+    canGoBack: vi.fn(() => false),
   };
   // Every mounted focus effect, re-runnable as one "the member came back"
   // event. A tab screen is never unmounted, so state that must not outlive a
@@ -281,6 +285,13 @@ vi.mock("react-native-reanimated", () => ({
   withTiming: <T>(value: T) => value,
   // Entering animations are builders: each modifier returns the builder.
   ZoomIn: (() => {
+    const builder: Record<string, unknown> = {};
+    builder.duration = () => builder;
+    builder.reduceMotion = () => builder;
+    return builder;
+  })(),
+  // Join's views and setup's steps fade in.
+  FadeIn: (() => {
     const builder: Record<string, unknown> = {};
     builder.duration = () => builder;
     builder.reduceMotion = () => builder;

@@ -11,6 +11,7 @@ import {
   ONBOARDING_COLUMN_WIDTH,
   OnboardingPrimaryButton,
 } from "@/components/onboarding/onboarding-primary-button";
+import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { useAuthSession } from "@/lib/auth-session";
 import { selectOnboardingMembership } from "@/lib/onboarding/membership";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
@@ -29,7 +30,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * It follows the #3348 screen rules: one surface, with a card only for the
  * channel list and the primer, and one button pinned above the inset. It used
- * to carry a Skip under Go to chat that did the same thing.
+ * to carry a Skip under Go to chat that did the same thing. That button is
+ * outlined while the primer shows, so the primer's "Turn on" is the one gold
+ * action on screen.
  */
 export default function Welcome() {
   const { tokens } = useFrappTheme();
@@ -105,14 +108,33 @@ export default function Welcome() {
         ) : null}
       </ScrollView>
 
+      {/*
+        One gold button on the screen. While the primer asks, its "Turn on" is
+        that button, so "Go to chat" is the outlined one under it, as the
+        board draws s03; once the primer is answered (or never shown), "Go to
+        chat" is the step forward and takes the gold. Leaving shows the
+        spinner every onboarding button uses, under the same label.
+      */}
       <View style={styles.footer}>
-        <OnboardingPrimaryButton
-          label={leaving ? "Opening chat…" : "Go to chat"}
-          disabled={leaving}
-          onPress={() => {
-            void finish();
-          }}
-        />
+        {primer.showPrimer ? (
+          <OnboardingSecondaryButton
+            label="Go to chat"
+            disabled={leaving}
+            busy={leaving}
+            onPress={() => {
+              void finish();
+            }}
+          />
+        ) : (
+          <OnboardingPrimaryButton
+            label="Go to chat"
+            disabled={leaving}
+            busy={leaving}
+            onPress={() => {
+              void finish();
+            }}
+          />
+        )}
       </View>
     </SafeAreaView>
   );

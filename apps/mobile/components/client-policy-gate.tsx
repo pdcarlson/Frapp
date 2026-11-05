@@ -115,7 +115,10 @@ function UpdateRequiredScreen({ updateUrl }: { updateUrl: string | null }) {
           onPress={() => {
             void openUpdate(updateUrl);
           }}
-          style={styles.primaryButton}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            pressed ? styles.primaryButtonPressed : null,
+          ]}
         >
           <Text style={styles.primaryButtonText}>{UPDATE_REQUIRED_COPY.cta}</Text>
         </Pressable>
@@ -164,6 +167,11 @@ function createStyles(tokens: SignetTokens) {
       minHeight: tokens.touch.button,
       alignItems: "center",
       justifyContent: "center",
+    },
+    // The onboarding primary's held value: the gate's one button shows the
+    // press landed.
+    primaryButtonPressed: {
+      opacity: 0.85,
     },
     primaryButtonText: {
       ...typeRole(tokens.typography.role.label),

@@ -119,7 +119,10 @@ export default function TermsPrompt() {
             onPress={() => {
               void handleSignOut();
             }}
-            style={styles.secondaryButton}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              pressed && !submitting ? styles.pressed : null,
+            ]}
           >
             <Text
               style={[
@@ -137,7 +140,10 @@ export default function TermsPrompt() {
             accessibilityState={{ disabled: submitting, busy: deleting }}
             disabled={submitting}
             onPress={handleDeleteAccount}
-            style={styles.secondaryButton}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              pressed && !submitting ? styles.pressed : null,
+            ]}
           >
             <Text
               style={[
@@ -199,6 +205,9 @@ function createStyles(tokens: SignetTokens) {
       minHeight: tokens.touch.button,
       alignItems: "center",
       justifyContent: "center",
+    },
+    pressed: {
+      opacity: 0.6,
     },
     secondaryButtonText: {
       ...typeRole(tokens.typography.role.label),

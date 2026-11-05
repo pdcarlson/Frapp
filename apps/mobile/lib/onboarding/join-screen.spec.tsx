@@ -6,6 +6,7 @@ import { AccessibilityInfo, Alert, BackHandler } from "react-native";
 import * as expoRouter from "expo-router";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Linking from "expo-linking";
+import * as Haptics from "expo-haptics";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import {
@@ -231,7 +232,7 @@ function continueToConfirm(root: Node): void {
   });
 }
 
-/** The pressable with this accessibility label (the back chevron's). */
+/** The pressable with this accessibility label (the `‹ Back` row's). */
 function labelled(root: Node, label: string) {
   return root
     .findAllByType("Pressable" as never, { deep: true })
@@ -1306,5 +1307,76 @@ describe("join screen — the confirm card's chapter (#3352)", () => {
     } finally {
       authStatus = "authenticated";
     }
+  });
+});
+
+/**
+ * The onboarding polish pass: s02 draws the board's `‹ Back` row in house
+ * gold (the shared `BackRow`, not a bare chevron), the question carries no
+ * line narrating its own two choices, and a join that lands marks it with
+ * the same success tap a chapter going live gets.
+ */
+describe("join screen — polish", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isPending = false;
+    isSuccess = false;
+    legalRequired = false;
+    redeemPending = false;
+    redeemSuccess = false;
+    previewAnswer = null;
+  });
+
+  it("asks the question with no line under it narrating the choices", () => {
+    const tree = render();
+
+    expect(allText(tree.root)).toContain(JOIN_CHOICE_TITLE);
+    expect(allText(tree.root)).not.toContain("Members join with an invite");
+    // Nothing to step back to from the question, so no back row.
+    expect(labelled(tree.root, "Back to the choices")).toBeUndefined();
+  });
+
+  it("steps back with a house-gold ‹ Back row, under the label each step had", () => {
+    const tree = render();
+    openInvite(tree.root);
+
+    const back = labelled(tree.root, "Back to the choices");
+    const text = back?.findByType("Text" as never);
+    expect(text?.props.children).toBe("‹ Back");
+    // `gold.askText`: `(auth)` has no chapter accent to follow.
+    expect(text?.props.style).toEqual(
+      expect.objectContaining({ color: "#F4CB63" }),
+    );
+
+    typeToken(tree.root, "invite-token-9");
+    continueToConfirm(tree.root);
+    expect(labelled(tree.root, "Back to the invite")).toBeDefined();
+  });
+
+  it("taps once when the join lands, and not when it fails", async () => {
+    const tree = render();
+    openInvite(tree.root);
+    typeToken(tree.root, "invite-token-7");
+    continueToConfirm(tree.root);
+    await settle();
+
+    redeemMutateAsync.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
+
+    redeemMutateAsync.mockResolvedValueOnce({
+      chapterId: "ch-1",
+      memberId: "m-1",
+    });
+    await act(async () => {
+      await control(tree.root, "Join chapter")?.props.onPress();
+    });
+    expect(Haptics.notificationAsync).toHaveBeenCalledTimes(1);
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Success,
+    );
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/welcome");
   });
 });

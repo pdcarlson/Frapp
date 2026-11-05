@@ -4,6 +4,7 @@ import { act } from "react";
 import { BackHandler, Platform } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import {
   OAUTH_MEMBERSHIP_HINT,
@@ -74,21 +75,29 @@ function pressableLabelled(root: Node, label: string): Node {
   return found;
 }
 
-/** Flattens the style arrays the screen passes, which the mock leaves alone. */
+/**
+ * Flattens the style arrays the screen passes, which the mock leaves alone,
+ * resolving a `({ pressed }) => style` at rest.
+ */
 function flat(style: unknown): Record<string, unknown> {
+  if (typeof style === "function") return flat(style({ pressed: false }));
   if (Array.isArray(style)) {
     return Object.assign({}, ...style.map(flat));
   }
   return (style ?? {}) as Record<string, unknown>;
 }
 
-/** Buttons drawn with a fill: the one the screen leads with. */
+/**
+ * Buttons drawn in the light fill: the one the screen leads with. The others
+ * are Secondary buttons on the card fill (components.md § Buttons).
+ */
 function filledLabels(root: Node): string[] {
   return root
     .findAll(
       (node) =>
         isHost(node, "Pressable") &&
-        flat(node.props.style).backgroundColor !== undefined,
+        flat(node.props.style).backgroundColor ===
+          signetDarkTokens.color.text.foreground,
     )
     .flatMap((pressable) =>
       pressable
@@ -297,7 +306,16 @@ describe("Android back on the email form", () => {
     act(() => {
       latestBackHandler()();
     });
-    expect(buttonLabels(tree.root)).toContain("Signing in...");
+    // Still the form: its button spins, named for what is running.
+    const primary = tree.root.find(
+      (node) =>
+        isHost(node, "Pressable") &&
+        node.props.accessibilityLabel === "Signing in…",
+    );
+    expect(primary.props.accessibilityState).toEqual({
+      disabled: true,
+      busy: true,
+    });
     expect(buttonLabels(tree.root)).not.toContain("Continue with email");
   });
 });
