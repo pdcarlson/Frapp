@@ -89,6 +89,7 @@ export class ChapterPointsConfigService {
     try {
       row = await this.configRepo.findPointsConfig(chapterId);
     } catch (err) {
+      // caught-failure-exempt: rethrown; AllExceptionsFilter reports the 5xx
       logThrowable(
         this.logger,
         'error',

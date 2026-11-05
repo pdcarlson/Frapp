@@ -4,7 +4,7 @@ import {
   CHAPTER_CONFIG_REPOSITORY,
   type IChapterConfigRepository,
 } from '#domain/repositories/chapter-config.repository.interface';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /**
  * Used when a chapter has no `chapter_service_config` row yet. Mirrors the
@@ -55,12 +55,12 @@ export class ChapterServiceConfigService {
       // that entry rather than 500ing approval during a transient blip.
       // `ChapterPointsConfigService` models the same split explicitly as
       // `getConfig` / `getConfigOrThrow`. Do not make either side match the other.
-      logThrowable(
-        this.logger,
-        'warn',
-        `chapter_service_config read failed for chapter ${chapterId}; applying default rate (${SERVICE_CONFIG_DEFAULTS.minutes_per_point} min/point)`,
-        err,
-      );
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'service-config-read-default-rate',
+        message: `chapter_service_config read failed for chapter ${chapterId}; applying default rate (${SERVICE_CONFIG_DEFAULTS.minutes_per_point} min/point)`,
+        error: err,
+      });
       return { ...SERVICE_CONFIG_DEFAULTS };
     }
 

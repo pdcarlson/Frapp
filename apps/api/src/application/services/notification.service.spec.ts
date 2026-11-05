@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { NotificationService } from './notification.service';
 import { ChatBlockService } from './chat-block.service';
 import {
@@ -32,6 +33,13 @@ import {
 } from '#domain/constants/list-query-limits';
 import { memberFixture } from '#test/helpers/entity-fixtures';
 
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
+
 describe('NotificationService', () => {
   let service: NotificationService;
   let mockNotificationRepo: jest.Mocked<INotificationRepository>;
@@ -43,6 +51,7 @@ describe('NotificationService', () => {
   let listBlockedUserIds: jest.Mock;
 
   beforeEach(async () => {
+    captureException.mockClear();
     mockNotificationRepo = {
       create: jest.fn(),
       createMany: jest.fn(),
@@ -752,8 +761,11 @@ describe('NotificationService', () => {
       jest.useRealTimers();
     });
 
-    it('logs aggregate insert failures and still delivers the surviving chunk', async () => {
+    it('reports a failed insert chunk once and still delivers the surviving chunk', async () => {
       const warn = spyWarn();
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
       const users = roster(150);
       stubChapterNotify({
         userIds: users,
@@ -771,12 +783,35 @@ describe('NotificationService', () => {
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining('insert failed for 100 of 150'),
       );
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Chapter notify insert failed for 100 recipients in ch-1',
+        ),
+        expect.any(String),
+      );
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'insert failed' }),
+        expect.objectContaining({
+          level: 'error',
+          tags: { caught_at: 'chapter-notify-insert-failed' },
+          fingerprint: [
+            'caught-failure',
+            'chapter-notify-insert-failed',
+            'Error',
+          ],
+        }),
+      );
 
       warn.mockRestore();
+      error.mockRestore();
     });
 
     it('skips a failed preference chunk and still delivers the rest', async () => {
       const warn = spyWarn();
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
       const users = roster(150);
       stubChapterNotify({
         userIds: users,
@@ -802,8 +837,25 @@ describe('NotificationService', () => {
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining('preference lookup failed for 100 of 150'),
       );
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'prefs failed' }),
+        expect.objectContaining({
+          level: 'error',
+          tags: {
+            lookup: 'preference lookup',
+            caught_at: 'chapter-notify-chunk-lookup-failed',
+          },
+          fingerprint: [
+            'caught-failure',
+            'chapter-notify-chunk-lookup-failed',
+            'Error',
+          ],
+        }),
+      );
 
       warn.mockRestore();
+      error.mockRestore();
     });
 
     it('keeps query count bounded for a 200-member chapter', async () => {

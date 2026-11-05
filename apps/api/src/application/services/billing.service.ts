@@ -44,6 +44,7 @@ import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import { pseudonymizeChapterId } from '../../infrastructure/observability/pseudonyms';
 import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 export interface CreateCheckoutInput {
   chapterId: string;
@@ -250,6 +251,7 @@ export class BillingService {
         }
       }
     } catch (error) {
+      // caught-failure-exempt: rethrown as a 503 with cause; AllExceptionsFilter reports the 5xx
       logThrowable(
         this.logger,
         'error',
@@ -316,6 +318,7 @@ export class BillingService {
         returnUrl: input.returnUrl,
       });
     } catch (error) {
+      // caught-failure-exempt: rethrown as a 503 with cause; AllExceptionsFilter reports the 5xx
       logThrowable(
         this.logger,
         'error',
@@ -399,10 +402,13 @@ export class BillingService {
           break;
         default:
           // Unreachable while the switch and HANDLED_WEBHOOK_EVENT_TYPES agree.
-          this.logger.error(
-            `Claimed ${event.id} but no handler for type ${event.type} — ` +
+          reportCaughtFailure(this.logger, {
+            level: 'error',
+            site: 'billing-webhook-unhandled-claimed-type',
+            message:
+              `Claimed ${event.id} but no handler for type ${event.type} — ` +
               'HANDLED_WEBHOOK_EVENT_TYPES is out of sync with the switch',
-          );
+          });
       }
     } catch (error) {
       await this.releaseFailedClaim(event, error);
@@ -426,13 +432,14 @@ export class BillingService {
     try {
       await this.webhookEventRepo.markFailed(event.id, message);
     } catch (markError) {
-      logThrowable(
-        this.logger,
-        'error',
-        `Failed to record webhook failure for ${event.id}; the claim will be ` +
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'billing-webhook-mark-failed',
+        message:
+          `Failed to record webhook failure for ${event.id}; the claim will be ` +
           `retried after its lease expires`,
-        markError,
-      );
+        error: markError,
+      });
     }
   }
 
@@ -487,13 +494,16 @@ export class BillingService {
       chapter.subscription_id &&
       subscriptionId !== chapter.subscription_id
     ) {
-      this.logger.error(
-        `Chapter ${chapterId} completed checkout for subscription ` +
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'billing-checkout-replaced-subscription',
+        message:
+          `Chapter ${chapterId} completed checkout for subscription ` +
           `${subscriptionId} while still referencing ${chapter.subscription_id}. ` +
           'Replacing the stored reference — verify in Stripe that ' +
           `${chapter.subscription_id} is not still live and billing, and cancel ` +
           'it there if it is.',
-      );
+      });
     }
 
     // The same signal for the customer. After #929 the session's customer is
@@ -505,11 +515,14 @@ export class BillingService {
       chapter.stripe_customer_id &&
       sessionCustomerId !== chapter.stripe_customer_id
     ) {
-      this.logger.error(
-        `Chapter ${chapterId} completed checkout under customer ` +
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'billing-checkout-second-customer',
+        message:
+          `Chapter ${chapterId} completed checkout under customer ` +
           `${sessionCustomerId} while referencing ${chapter.stripe_customer_id}. ` +
           'A second customer record exists for this chapter; reconcile in Stripe.',
-      );
+      });
     }
 
     // Sparse identity: omit a key rather than send JSON null. The RPC treats
@@ -666,6 +679,7 @@ export class BillingService {
     // Sentry alert is rate-limited. "marked processed" rather than "Stripe will
     // not redeliver": `markProcessed` runs after this returns and can itself
     // fail, in which case Stripe does retry.
+    // caught-failure-exempt: reported by reportSwallowed below, with a per-ref cooldown
     this.logger.error(
       `${event.type} names a chapter this database does not have: ${detail} ` +
         `(event ${event.id}). The event is marked processed, so Stripe will ` +

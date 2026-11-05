@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { AttendanceService } from '../services/attendance.service';
 import { NotificationService } from '../services/notification.service';
 import { ChapterWorkflowsService } from '../services/chapter-workflows.service';
@@ -11,6 +12,15 @@ import { ScheduledJobsService } from './scheduled-jobs.service';
 import { SCHEDULED_JOBS_REPOSITORY } from '#domain/repositories/scheduled-jobs.repository.interface';
 import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
 import { buildChapterPalette } from '../services/chapter-palette';
+
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<object>('@sentry/nestjs'),
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
+const captureMessage = jest.mocked(Sentry.captureMessage);
 
 /**
  * Fixed clock for every sweep. The sweeps take `now` as a parameter precisely
@@ -60,6 +70,8 @@ describe('ScheduledJobsService', () => {
   };
 
   beforeEach(async () => {
+    captureException.mockClear();
+    captureMessage.mockClear();
     markAutoAbsent = jest.fn().mockResolvedValue({ marked: 0 });
     notifyUser = jest.fn().mockResolvedValue(undefined);
     getDuesGraceDays = jest.fn().mockResolvedValue(0);
@@ -204,15 +216,15 @@ describe('ScheduledJobsService', () => {
         details,
         hint: 'Use a different email.',
       });
-      const errorSpy = jest
-        .spyOn(Logger.prototype, 'error')
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
         .mockImplementation(() => undefined);
 
       try {
         const result = await service.sweepAutoAbsent(NOW);
         expect(result).toEqual({ events: 0 });
         expect(releaseDispatch).toHaveBeenCalled();
-        const printed = errorSpy.mock.calls
+        const printed = warnSpy.mock.calls
           .map((args) =>
             args.map((arg) =>
               typeof arg === 'string' ? arg : JSON.stringify(arg),
@@ -224,7 +236,7 @@ describe('ScheduledJobsService', () => {
         expect(printed).toContain('23505');
         expect(printed).not.toContain('alice@example.com');
         expect(
-          errorSpy.mock.calls
+          warnSpy.mock.calls
             .filter((args) =>
               String(args[0]).includes(
                 'auto-absent sweep: event evt-bad failed',
@@ -233,7 +245,7 @@ describe('ScheduledJobsService', () => {
             .every((args) => args.length === 1),
         ).toBe(true);
       } finally {
-        errorSpy.mockRestore();
+        warnSpy.mockRestore();
       }
     });
   });
@@ -415,6 +427,59 @@ describe('ScheduledJobsService', () => {
       expect(releaseDispatch).not.toHaveBeenCalled();
     });
 
+    it('reports a partial delivery under its sweep, as the drop it is', async () => {
+      findEventsStartingBetween.mockResolvedValue([UPCOMING]);
+      resolveRequiredMembers.mockResolvedValue([
+        { user_id: 'user-1', role_ids: [] },
+        { user_id: 'user-2', role_ids: [] },
+        { user_id: 'user-3', role_ids: [] },
+      ]);
+      notifyUser
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('unreachable'))
+        .mockRejectedValueOnce(new Error('unreachable'));
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      try {
+        await expect(service.sweepEventReminders(NOW)).resolves.toEqual({
+          sent: 1,
+        });
+
+        expect(captureMessage).toHaveBeenCalledTimes(1);
+        expect(captureMessage).toHaveBeenCalledWith(
+          'caught failure: scheduled-reminder-partial-delivery:event.event-reminder',
+          expect.objectContaining({
+            level: 'error',
+            fingerprint: [
+              'caught-failure',
+              'scheduled-reminder-partial-delivery:event.event-reminder',
+            ],
+          }),
+        );
+        // Each failed recipient is a warning, and the per-site throttle keeps
+        // a fan-out from becoming one event per member.
+        expect(captureException).toHaveBeenCalledTimes(1);
+        expect(captureException).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ level: 'warning' }),
+        );
+        expect(JSON.stringify(captureMessage.mock.calls)).not.toContain(
+          'user-2',
+        );
+        expect(errorSpy).toHaveBeenCalledWith(
+          'EVENT evt-1 (EVENT_REMINDER): delivered to 1/3 recipients; not retrying',
+        );
+      } finally {
+        errorSpy.mockRestore();
+        warnSpy.mockRestore();
+      }
+    });
+
     it('sends at the default NORMAL priority so quiet hours and the events preference still apply', async () => {
       findEventsStartingBetween.mockResolvedValue([UPCOMING]);
 
@@ -442,8 +507,8 @@ describe('ScheduledJobsService', () => {
     });
 
     // The per-event catch is the reason handleEventReminderSweep needs no
-    // try/catch of its own, and an unhandled rejection out of a @Cron takes
-    // the API process down under Node's --unhandled-rejections=throw. Pinned
+    // try/catch of its own: a rejection out of a @Cron would reach only
+    // Nest's raw logger.error, which no alert sees, and drop the rest. Pinned
     // against the one call the lazy-recipients path does NOT absorb.
     it('isolates a per-event failure rather than rejecting out of the sweep', async () => {
       findEventsStartingBetween.mockResolvedValue([
@@ -785,6 +850,37 @@ describe('ScheduledJobsService', () => {
       expect(announceExpiry).not.toHaveBeenCalled();
     });
 
+    it('reports an unparseable expires_at without sending the member-supplied value', async () => {
+      findExpiredPollsPendingNotice.mockResolvedValue([
+        { ...POLL, expires_at: 'next tuesday-ish' },
+      ]);
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      try {
+        await expect(service.sweepExpiredPolls(NOW)).resolves.toEqual({
+          announced: 0,
+        });
+        expect(captureMessage).toHaveBeenCalledTimes(1);
+        expect(captureMessage).toHaveBeenCalledWith(
+          'caught failure: poll-expiry-sweep-unparseable-expires-at',
+          expect.objectContaining({
+            level: 'error',
+            fingerprint: [
+              'caught-failure',
+              'poll-expiry-sweep-unparseable-expires-at',
+            ],
+          }),
+        );
+        expect(JSON.stringify(captureMessage.mock.calls)).not.toContain(
+          'next tuesday-ish',
+        );
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
     it('skips a poll another tick or replica already claimed', async () => {
       findExpiredPollsPendingNotice.mockResolvedValue([POLL]);
       claimDispatch.mockResolvedValue(false);
@@ -847,14 +943,47 @@ describe('ScheduledJobsService', () => {
     });
 
     it('does not let a storage failure escape the cron handler', async () => {
-      // An unhandled rejection out of a @Cron handler is fatal under Node's
-      // default --unhandled-rejections=throw: this sweep reaches storage
-      // directly, so an outage would otherwise restart the API every hour.
+      // @nestjs/schedule would catch a rejection, but log the raw object and
+      // report nothing: this sweep reaches storage directly, so it catches
+      // its own.
       sweepExpiredReports.mockRejectedValue(new Error('storage down'));
 
       await expect(
         service.handleReportRetentionSweep(),
       ).resolves.toBeUndefined();
+    });
+
+    it('a caught failure that drops work reports to Sentry', async () => {
+      sweepExpiredReports.mockRejectedValue(new TypeError('fetch failed'));
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      try {
+        await expect(
+          service.handleReportRetentionSweep(),
+        ).resolves.toBeUndefined();
+
+        expect(captureException).toHaveBeenCalledTimes(1);
+        const [reported, context] = captureException.mock.calls[0] as [
+          Error,
+          { level: string; fingerprint: string[] },
+        ];
+        expect(reported.message).toBe('fetch failed');
+        expect(context.level).toBe('error');
+        expect(context.fingerprint).toEqual([
+          'caught-failure',
+          'report-retention-sweep-enumerate',
+          'TypeError',
+        ]);
+        expect(captureMessage).not.toHaveBeenCalled();
+        expect(errorSpy).toHaveBeenCalledWith(
+          'report retention sweep: could not enumerate the reports bucket; skipping this tick: fetch failed',
+          expect.any(String),
+        );
+      } finally {
+        errorSpy.mockRestore();
+      }
     });
   });
 
@@ -871,8 +1000,8 @@ describe('ScheduledJobsService', () => {
     });
 
     it('does not let a failed candidate read escape the cron handler', async () => {
-      // The candidate read throws on a query error; out of a @Cron handler
-      // that would take the API process down every hour.
+      // The candidate read throws on a query error; @nestjs/schedule would
+      // log that raw object and report nothing.
       sweepPendingEvidenceReleases.mockRejectedValue({
         code: 'XX000',
         message: 'boom',
@@ -881,6 +1010,17 @@ describe('ScheduledJobsService', () => {
       await expect(
         service.handleChatReportEvidenceSweep(),
       ).resolves.toBeUndefined();
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          level: 'error',
+          fingerprint: expect.arrayContaining([
+            'caught-failure',
+            'chat-report-evidence-sweep-read',
+          ]) as unknown,
+        }),
+      );
     });
   });
 
@@ -937,8 +1077,8 @@ describe('ScheduledJobsService', () => {
     });
 
     it("does not let one chapter's failed write stop the rest", async () => {
-      const error = jest
-        .spyOn(Logger.prototype, 'error')
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
         .mockImplementation(() => undefined);
       findChaptersWithStalePalette.mockResolvedValue([
         { id: 'chap-1', seed: '#8B0000' },
@@ -951,11 +1091,10 @@ describe('ScheduledJobsService', () => {
       const result = await service.sweepStalePalettes();
 
       expect(result).toEqual({ recomputed: 1, superseded: 0, failed: 1 });
-      expect(error).toHaveBeenCalledWith(
+      expect(warn).toHaveBeenCalledWith(
         expect.stringContaining('palette sweep: chapter chap-1'),
-        expect.anything(),
       );
-      error.mockRestore();
+      warn.mockRestore();
     });
 
     it('logs a bad seed once and still writes, so the row is not retried forever', async () => {
@@ -989,8 +1128,8 @@ describe('ScheduledJobsService', () => {
     });
 
     it('runs through the cron wrapper without rejecting when a write fails', async () => {
-      const error = jest
-        .spyOn(Logger.prototype, 'error')
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
         .mockImplementation(() => undefined);
       findChaptersWithStalePalette.mockResolvedValue([
         { id: 'chap-1', seed: '#8B0000' },
@@ -999,7 +1138,7 @@ describe('ScheduledJobsService', () => {
 
       await expect(service.handleStalePaletteSweep()).resolves.toBeUndefined();
       expect(writeRecomputedPalette).toHaveBeenCalled();
-      error.mockRestore();
+      warn.mockRestore();
     });
   });
 });

@@ -374,6 +374,7 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
         );
         return;
       case 'misconfigured':
+        // caught-failure-exempt: reported by reportSwallowed below
         this.logger.error(`Connect Discord withdrawn. ${check.reason}`);
         // Reporting must not change the verdict: the flow is withdrawn either
         // way. The reason rides on the log line above, not the event: the
@@ -598,6 +599,7 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
         // every state id; the logged cause plus the request id already identify
         // the event, and the id would only distinguish handshakes in an
         // outage that by construction affects all of them.
+        // caught-failure-exempt: reported by reportSwallowedCallback below
         logThrowable(
           this.logger,
           'error',
@@ -718,6 +720,7 @@ export class DiscordOAuthService implements OnApplicationBootstrap {
         );
         return finish('failed', error.message);
       }
+      // caught-failure-exempt: reported by reportSwallowedCallback below
       logThrowable(
         this.logger,
         'error',

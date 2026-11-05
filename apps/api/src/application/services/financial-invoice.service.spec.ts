@@ -6,6 +6,7 @@ import {
   ConflictException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { FinancialInvoiceService } from './financial-invoice.service';
 import { FINANCIAL_INVOICE_REPOSITORY } from '#domain/repositories/financial-invoice.repository.interface';
 import type { IFinancialInvoiceRepository } from '#domain/repositories/financial-invoice.repository.interface';
@@ -16,6 +17,12 @@ import type { IBillingProvider } from '#domain/adapters/billing.interface';
 import type { FinancialInvoice } from '#domain/entities/financial-invoice.entity';
 import { NotificationService } from './notification.service';
 import { ChapterWorkflowsService } from './chapter-workflows.service';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
+const captureException = jest.mocked(Sentry.captureException);
 
 describe('FinancialInvoiceService', () => {
   let service: FinancialInvoiceService;
@@ -411,6 +418,40 @@ describe('FinancialInvoiceService', () => {
       const result = await service.transitionStatus('inv-1', 'ch-1', 'PAID');
 
       expect(result.status).toBe('PAID');
+    });
+
+    it('reports a failed PaymentIntent cancel to Sentry once, by site', async () => {
+      captureException.mockClear();
+      const openInvoice = {
+        ...baseInvoice,
+        status: 'OPEN' as const,
+        stripe_payment_intent_id: 'pi_outstanding',
+      };
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockInvoiceRepo.update.mockResolvedValue({
+        ...openInvoice,
+        status: 'VOID',
+      });
+      mockBillingProvider.cancelPaymentIntent.mockRejectedValue(
+        new Error('stripe is down'),
+      );
+
+      const result = await service.transitionStatus('inv-1', 'ch-1', 'VOID');
+
+      expect(result.status).toBe('VOID');
+      expect(captureException).toHaveBeenCalledTimes(1);
+      const [, context] = captureException.mock.calls[0] as [
+        unknown,
+        { level: string; fingerprint: string[]; tags: Record<string, string> },
+      ];
+      expect(context.level).toBe('error');
+      expect(context.fingerprint.slice(0, 2)).toEqual([
+        'caught-failure',
+        'invoice-payment-intent-cancel-failed',
+      ]);
+      expect(context.tags.caught_at).toBe(
+        'invoice-payment-intent-cancel-failed',
+      );
     });
 
     it('should not call the provider on a manual PAID with no stored intent', async () => {
