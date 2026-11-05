@@ -71,11 +71,11 @@ import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import {
   ChannelFilters,
   ChannelList,
-  ChannelListSkeleton,
   type ChannelSidebarControls,
   type ChannelCategory,
   type ChatChannel,
 } from "./channel-list";
+import { ChannelListSkeleton } from "./channel-list-skeleton";
 import {
   MessageTimeline,
   MessageTimelineSkeleton,
@@ -98,7 +98,11 @@ import { ReconnectPill } from "./reconnect-pill";
 import { BlockListNotice } from "./block-list-notice";
 import { useUnblockFlow } from "./use-unblock-flow";
 import { compactControlClassName } from "@/components/shared/table-controls";
-import { useIsDesktopShell, useNavFace } from "@/components/layout/nav-face";
+import {
+  NavBackButton,
+  useIsDesktopShell,
+  useNavFace,
+} from "@/components/layout/nav-face";
 import type { SlashCommand } from "@repo/chat-core/integrations";
 import type { ChatNotificationLevel } from "@repo/hooks";
 
@@ -1455,17 +1459,7 @@ export function ChatShell({
           */}
       <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
         {channelsInNav && navFace ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn(compactControlClassName, "-ml-1.5 shrink-0")}
-            onClick={navFace.showModules}
-            aria-label="Back to menu"
-            title="Back to menu"
-            data-nav-back=""
-          >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          </Button>
+          <NavBackButton onClick={navFace.showModules} />
         ) : null}
         <h2 className="text-sm font-semibold text-foreground">Channels</h2>
         <ChannelFilters

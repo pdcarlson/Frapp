@@ -1,6 +1,10 @@
 "use client";
 
 import { createContext, useContext, useSyncExternalStore } from "react";
+import { ChevronLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { compactControlClassName } from "@/components/shared/table-controls";
+import { cn } from "@/lib/utils";
 
 /**
  * The left column's two faces on `/chat` (owner, 2026-11-05).
@@ -73,4 +77,26 @@ function getSnapshot(): boolean {
  */
 export function useIsDesktopShell(): boolean {
   return useSyncExternalStore(subscribe, getSnapshot, () => false);
+}
+
+/**
+ * The back arrow beside the Channels heading: 32px ghost icon button, named
+ * "Back to menu" (`spec/ui/design-system/components.md` § 7). One component
+ * because two places draw it, chat's channels header and the column's own
+ * placeholder, and the column moves focus to it by `data-nav-back`.
+ */
+export function NavBackButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className={cn(compactControlClassName, "-ml-1.5 shrink-0")}
+      onClick={onClick}
+      aria-label="Back to menu"
+      title="Back to menu"
+      data-nav-back=""
+    >
+      <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+    </Button>
+  );
 }

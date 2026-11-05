@@ -6,16 +6,17 @@ import { cn } from "@/lib/utils";
  *
  * The board's first-paint contract (`1s`) puts the channel column's chrome at
  * 0ms and fills it from cache on the first chunk; what it never does is replace
- * the route with a loading card. These blocks are the row geometry above — 32px
- * tall at radius 8, the same 2px gaps, an indent for the mark — so the real rows
- * land in the space the placeholders already held rather than pushing anything.
+ * the route with a loading card. These blocks are the row geometry of
+ * `channel-list.tsx` — 32px tall at radius 8, the same 2px gaps, an indent for
+ * the mark — so the real rows land in the space the placeholders already held
+ * rather than pushing anything.
  *
  * **Since the first-chunk cache shipped this is the cold-cache path, not the
  * usual one.** A warm load seeds `["channels"]` from IndexedDB before the rail
  * renders, so `channelsPaneState` never reaches `"loading"` and neither this
- * nor the `sr-only` announcer below is reached. It is still the path for a
- * first-ever visit, a wiped or expired cache, and a browser where IndexedDB
- * throws — which is why it stays, and why its geometry still has to match.
+ * nor the `sr-only` announcer in `chat-shell.tsx` is reached. It is still the
+ * path for a first-ever visit, a wiped or expired cache, and a browser where
+ * IndexedDB throws — which is why it stays, and why its geometry still has to match.
  *
  * Deliberately not a count derived from anything. A cached count is available
  * now, but the skeleton renders precisely when it is *not* — and a number that

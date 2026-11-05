@@ -49,9 +49,8 @@ vi.mock("next/navigation", () => ({
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
   return {
-    // The real rules for which counts and levels mean "unread" and "muted".
+    // The real rules for which counts mean "unread" and which get past a mute.
     sidebarUnreadCounts: actual.sidebarUnreadCounts,
-    sidebarMutedChannelIds: actual.sidebarMutedChannelIds,
     countsAddressMember: actual.countsAddressMember,
     useChannelUnreadCounts: () => ({ data: mockUnread.value, isError: false }),
     useChannelNotificationPreferences: () => ({
@@ -504,6 +503,7 @@ describe("DashboardShell", () => {
       // No chat pane in the slot (loading, or a failed segment): the column's
       // own placeholder still offers the back arrow.
       const back = screen.getByRole("button", { name: "Back to menu" });
+      back.focus();
       fireEvent.click(back);
       const nav = screen.getByRole("navigation", { name: "Primary" });
       const chatRow = within(nav).getByRole("button", { name: /^Chat/ });
@@ -511,6 +511,34 @@ describe("DashboardShell", () => {
 
       fireEvent.click(chatRow);
       expect(document.activeElement).toBe(back);
+    });
+
+    it("leaves focus alone when the channels come back from outside the column", () => {
+      mockPathname.value = "/chat";
+      // What chat does when a link lands: bring the channels back from the
+      // route, with focus somewhere in the page rather than in the column.
+      function LinkLands() {
+        const navFace = useNavFace();
+        return (
+          <button type="button" onClick={() => navFace?.showChannels()}>
+            Open a link
+          </button>
+        );
+      }
+      render(
+        <DashboardShell>
+          <LinkLands />
+        </DashboardShell>,
+      );
+      const back = screen.getByRole("button", { name: "Back to menu" });
+      back.focus();
+      fireEvent.click(back);
+
+      const outside = screen.getByRole("button", { name: "Open a link" });
+      outside.focus();
+      fireEvent.click(outside);
+      expect(document.activeElement).toBe(outside);
+      expect(back.closest("[inert]")).toBeNull();
     });
 
     it("keeps the chapter switcher pinned above the channels", () => {

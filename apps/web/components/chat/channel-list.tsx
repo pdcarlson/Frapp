@@ -624,10 +624,6 @@ function ChannelMark({
   );
 }
 
-// Its own module so the dashboard shell can draw it in `/chat`'s left column
-// without pulling the whole channel list into every route's shell chunk.
-export { ChannelListSkeleton } from "./channel-list-skeleton";
-
 /**
  * The rail's two filters (#2877), behind one control in the Channels header.
  *

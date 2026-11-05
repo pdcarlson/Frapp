@@ -409,8 +409,10 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 // Heavy children (real timeline/composer need Virtuoso/tiptap DOM APIs jsdom
 // doesn't provide) are stubbed — this test is about ChatShell's own
 // deep-link wiring, not their internals.
-vi.mock("./channel-list", () => ({
+vi.mock("./channel-list-skeleton", () => ({
   ChannelListSkeleton: () => <div data-testid="channel-list-skeleton" />,
+}));
+vi.mock("./channel-list", () => ({
   ChannelFilters: ({
     onChange,
   }: {

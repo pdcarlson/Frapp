@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
-import { ChevronLeft } from "lucide-react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import {
   countsAddressMember,
   sidebarUnreadCounts,
@@ -10,12 +9,11 @@ import {
   useChannels,
 } from "@repo/hooks";
 import { signetDarkTokens } from "@repo/theme/signet";
+import { isDirectChannel } from "@repo/validation";
 import { AppNav } from "@/components/layout/app-nav";
 import { ChapterNavHeader } from "@/components/layout/chapter-nav-header";
-import type { NavFace } from "@/components/layout/nav-face";
+import { NavBackButton, type NavFace } from "@/components/layout/nav-face";
 import { ChannelListSkeleton } from "@/components/chat/channel-list-skeleton";
-import { Button } from "@/components/ui/button";
-import { compactControlClassName } from "@/components/shared/table-controls";
 import { asArray, cn } from "@/lib/utils";
 
 /**
@@ -85,8 +83,8 @@ function useChatHasUnread(): boolean {
     });
     if (!counts) return false;
     const directIds = new Set(
-      asArray<{ id: string; type?: string }>(channelsQuery.data)
-        .filter((c) => c.type === "DM" || c.type === "GROUP_DM")
+      asArray<{ id: string; type: string }>(channelsQuery.data)
+        .filter(isDirectChannel)
         .map((c) => c.id),
     );
     const levels = prefsQuery.data
@@ -122,10 +120,19 @@ export function ChatNavColumn({
   const previousFace = useRef(face);
 
   // Focus follows the slide, so a keyboard user is never left on a control
-  // that just went inert. Only on a change, never on mount.
-  useEffect(() => {
+  // that just went inert. Only on a change, never on mount, and only when
+  // focus was in the face going out: chat also brings the channels back when
+  // a link lands (a Find result, a notification), and that must not pull focus
+  // out of wherever the member was. A layout effect, because it has to read
+  // focus before the browser moves it off the now-inert face.
+  useLayoutEffect(() => {
     if (previousFace.current === face) return;
+    const outgoing =
+      previousFace.current === "modules"
+        ? modulesRef.current
+        : channelsRef.current;
     previousFace.current = face;
+    if (!outgoing?.contains(document.activeElement)) return;
     const target =
       face === "modules"
         ? modulesRef.current?.querySelector<HTMLElement>(
@@ -159,17 +166,7 @@ export function ChatNavColumn({
           />
           <div className="hidden min-h-0 flex-1 flex-col peer-empty:flex">
             <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(compactControlClassName, "-ml-1.5 shrink-0")}
-                onClick={onShowModules}
-                aria-label="Back to menu"
-                title="Back to menu"
-                data-nav-back=""
-              >
-                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-              </Button>
+              <NavBackButton onClick={onShowModules} />
               <span className="text-sm font-semibold text-foreground">
                 Channels
               </span>
