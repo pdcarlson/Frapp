@@ -369,7 +369,7 @@ export default function PointsPage() {
       <PageActions>
         {/*
             A segmented choice, not three primaries: the selected window is
-            the outlined Secondary and the others are Quiet, so the row's
+            the outlined Secondary and the others are Ghost, so the row's
             filled control is never a filter. `aria-pressed` carries the
             selection, which the fill alone used to.
           */}
@@ -653,7 +653,7 @@ export default function PointsPage() {
                       className={cn(
                         "flex min-h-11 items-center gap-2 py-1.5",
                         // Fill means state, never striping.
-                        selected && "bg-card-hover",
+                        selected && "bg-popover",
                       )}
                     >
                       <label

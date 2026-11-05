@@ -119,15 +119,17 @@ The accent is a signal, so it goes only where a member has to act or notice. The
 **Everything else is neutral**, from the text ladder (§4) and the surface ladder (§2):
 
 - Names (your own included), labels, eyebrows, card kind labels and metadata: `--foreground`, `--muted-foreground` or `--muted`.
-- Icons that label a row, a card or a field, and icon-only controls: `--muted-foreground`, `--foreground` on hover.
+- Icons that label a row, a card or a field, and icon-only controls: `--muted-foreground` (`--muted` for a glyph that sits beside its own text label, as on mobile's More hub and Up next strip), `--foreground` on hover.
 - Hover, pressed and keyboard-highlight fills, in menus, tables, lists and rails alike: `--card-hover`, never an accent tint. It is the one step above the whole surface ladder, so it reads on `--popover` (1.199:1) where the ladder's own ~1.1:1 steps do not ([`components.md`](components.md) §2).
 - Numbers and stats (points, hours, counts, timers): `--foreground`.
-- Spinners: `--muted-foreground`.
+- Spinners: a neutral text step, `--muted` on mobile as every mobile spinner already is.
 - Done states (a completed task, a past event): a muted fill or check, never the accent; finished work is the quietest thing on a list.
-- Selection that is not a control the member switched on: a selected table or list row takes `--card-hover` with `--foreground` text, its checked checkbox carrying the selection; the "N selected" bar above it is `--popover` with `--foreground` text.
+- Selection that is not a control the member switched on: a selected table or list row takes `--popover` with `--foreground` text, a step under the `--card-hover` hover so a control inside it still lifts, and its checked checkbox carries the selection; the "N selected" bar above it is `--popover` with `--foreground` text.
 - People's avatars, borders, dividers and decorative frames.
 
-Unread and mentions keep their own rule above (§5): neutral for unread, red for direct address. Where the accent's own text step (`--accent-text`) is used, it is for items 1 to 6, never to make a label stand out.
+Unread and mentions keep their own rule above (§5): neutral for unread, red for direct address.
+
+**Still accent, waiting on the owner's call.** Four uses that other docs sanction predate this rule and were left as they are: the `+N pts` reward chip and the meter fill ([`components.md`](components.md) §5, §12), the PRO chip ([`web-dashboard/README.md`](../web-dashboard/README.md)), the empty-state icon tile (§10 of `components.md`, which the empty-states redesign owns) and mobile's back arrow and inline text actions ([`navigation.md`](../mobile/navigation.md)). Each is either an item above or the next thing to take neutral; until the owner decides, they stay. Where the accent's own text step (`--accent-text`) is used, it is for items 1 to 6, never to make a label stand out.
 
 ---
 

@@ -142,7 +142,7 @@ describe("Event card", () => {
     const block = formatEventDateBlock(START.toISOString(), MOUNTED_AT);
     const color = styleOf(tree, block!.label).color;
     expect(color).toBe(
-      block!.label === "Today"
+      block!.isToday
         ? signetDarkTokens.color.text.foreground
         : signetDarkTokens.color.text.mutedForeground,
     );

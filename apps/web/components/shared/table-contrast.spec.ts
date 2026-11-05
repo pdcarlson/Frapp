@@ -1,5 +1,7 @@
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyAlpha } from "@repo/color";
+import { codeWithoutComments, REPO } from "@/tests/source-scan";
 import {
   AA_NON_TEXT,
   AA_TEXT,
@@ -12,11 +14,13 @@ import {
 } from "@/tests/signet-contrast";
 
 /**
- * Contrast for the row states `components/ui/table.tsx` paints.
+ * Contrast for the row states `components/ui/table.tsx` paints, and the
+ * selectable lists on `/members`, `/points`, `/billing` and `/events` that
+ * paint the same recipe by hand.
  *
- * This lives in `shared/` rather than in one family because four routes
- * composite the same `TableRow` (`/members`, `/points`, `/billing` and
- * `/events`) and the defect it exists for was invisible in all four at once.
+ * This lives in `shared/` rather than in one family because those routes all
+ * drew the same row states, and the defect it exists for was invisible in all
+ * of them at once.
  *
  * The defect: `hover:bg-accent` composited to **1.085:1** on a row inside a
  * `<Card>`, because `--accent` held the same value as `--popover` (deleted,
@@ -24,11 +28,14 @@ import {
  *
  * The accent tint that fixed it is gone too (2026-11-05, `foundations.md` §6,
  * "Where the accent goes"): it painted every hovered row in the chapter color.
- * Both row states are now `--card-hover`, the step above the whole ladder, and
- * selection is carried by the row's checkbox and the "N selected" bar, not by
- * the fill. The assertions below pin that the neutral fill is a visible step,
- * that the text on it reads, and that it is still under the non-text floor, so
- * a later change that leans on the fill alone for selection fails loudly.
+ * Hover is now `--card-hover`, the step above the whole ladder; a selected row
+ * rests on `--popover` a step under it, so a button inside a selected row still
+ * lifts on hover. Selection is carried by the row's checkbox and the
+ * "N selected" bar, not by the fill. The assertions below pin that hover is a
+ * visible step over both, that the text on the fills reads, that neither fill
+ * clears the non-text floor,
+ * and they pin the call sites to that recipe, so a row that drifts back to the
+ * accent tint fails here.
  *
  * Seed corpus and the shared helpers: `tests/signet-contrast.ts`.
  */
@@ -55,14 +62,23 @@ describe("row hover and selection", () => {
     }
   });
 
-  it("keeps both text tones legible on the fill", () => {
+  it("lifts a hovered control above a selected row", () => {
+    // A ghost or secondary button inside a selected row hovers to
+    // `--card-hover`; on a `--card-hover` row it would hover to its own
+    // surface, the defect `elevation-call-sites.spec.ts` names.
+    expect(ratio(CARD_HOVER, SURFACE.popover)).toBeGreaterThan(
+      INDISTINGUISHABLE,
+    );
+  });
+
+  it("keeps both text tones legible on either fill", () => {
     // A selected row keeps `--foreground`; a sub-line that sets
     // `text-muted-foreground` (the member's email, an invoice's due date)
     // keeps its own tone and lands on the same fill.
-    expect(ratio(TEXT.foreground, CARD_HOVER)).toBeGreaterThanOrEqual(AA_TEXT);
-    expect(ratio(TEXT.mutedForeground, CARD_HOVER)).toBeGreaterThanOrEqual(
-      AA_TEXT,
-    );
+    for (const fill of [CARD_HOVER, SURFACE.popover]) {
+      expect(ratio(TEXT.foreground, fill)).toBeGreaterThanOrEqual(AA_TEXT);
+      expect(ratio(TEXT.mutedForeground, fill)).toBeGreaterThanOrEqual(AA_TEXT);
+    }
   });
 
   it("records that the fill does not clear the non-text floor", () => {
@@ -73,6 +89,7 @@ describe("row hover and selection", () => {
     // change makes a fill clear 3:1 on its own, this assertion is what says
     // that redundancy can be reconsidered.
     expect(ratio(CARD_HOVER, SURFACE.card)).toBeLessThan(AA_NON_TEXT);
+    expect(ratio(SURFACE.popover, SURFACE.card)).toBeLessThan(AA_NON_TEXT);
   });
 });
 
@@ -92,6 +109,35 @@ describe("the hairline", () => {
       expect(full, `full hairline over ${name}`).toBeLessThan(AA_NON_TEXT);
     }
   });
+});
+
+describe("the call sites", () => {
+  const WEB = join(REPO, "apps", "web");
+  const SELECTABLE = [
+    "components/members/members-directory.tsx",
+    "components/events/events-page.tsx",
+    "app/(dashboard)/points/page.tsx",
+    "components/billing/invoice-list.tsx",
+  ];
+
+  it("paints TableRow's hover and selection neutral, hover winning a tie", () => {
+    const table = codeWithoutComments(join(WEB, "components/ui/table.tsx"));
+    expect(table).toContain('"hover:bg-card-hover"');
+    expect(table).toContain("data-[state=selected]:bg-popover");
+    expect(table).toContain("data-[state=selected]:hover:bg-card-hover");
+    expect(table).not.toMatch(/accent-subtle/);
+  });
+
+  it.each(SELECTABLE)(
+    "keeps the accent tint off %s's rows and selection bar",
+    (path) => {
+      // The accent stays on these lists only in the row checkboxes, which are
+      // the shared checkbox control and not spelled here.
+      const code = codeWithoutComments(join(WEB, path));
+      expect(code).toMatch(/[sS]elected && "bg-popover"/);
+      expect(code).not.toMatch(/accent-subtle|text-accent-text/);
+    },
+  );
 });
 
 describe("the bulk-action bar", () => {

@@ -756,6 +756,12 @@ describe("MessageItem edited marker", () => {
     expect(
       container.querySelector('[data-slot="message-body"]'),
     ).toContainElement(pinned);
+    // A marker, not an action: the trailing captions' muted tone, never the
+    // chapter accent (`foundations.md` §6).
+    expect(pinned.closest("span")!.className).not.toContain("accent");
+    expect(
+      container.querySelector('[data-slot="message-trailing"]')!.className,
+    ).toContain("text-muted-foreground");
   });
 
   it("marks a photo-only message on a line of its own under the photo", () => {

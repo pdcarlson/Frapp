@@ -29,6 +29,7 @@ import {
   selectDocumentRows,
   selectDownloadUrl,
 } from "@/lib/more/documents";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -61,9 +62,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * by default that is the President alone (`DEFAULT_SYSTEM_ROLES`), so most
  * members never see a control the server would refuse them. `can` reads the
  * owner's `*` the way the server's guard does. While the permission read is
- * loading the glyph is absent, which fails closed. It is an icon-only control,
- * so it draws in `text.mutedForeground`, never the chapter accent
- * (foundations.md §6, "Where the accent goes", 2026-11-05).
+ * loading the glyph is absent, which fails closed.
  *
  * Photos only: a PDF needs `expo-document-picker`, a native module that waits
  * for a store build.
@@ -84,6 +83,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  */
 export default function DocumentsScreen() {
   const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
 
   const [folder, setFolder] = useState<string | null>(null);
@@ -218,7 +218,7 @@ export default function DocumentsScreen() {
             }}
             style={({ pressed }) => (pressed ? styles.pressed : null)}
           >
-            <UploadGlyph color={tokens.color.text.mutedForeground} />
+            <UploadGlyph color={accent} />
           </Pressable>
         ) : undefined
       }

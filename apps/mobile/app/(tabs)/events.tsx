@@ -169,7 +169,7 @@ function EventRowCard({
           <Text
             style={[
               styles.dateLabel,
-              date.label === "Today" ? styles.dateLabelToday : null,
+              date.isToday ? styles.dateLabelToday : null,
             ]}
           >
             {date.label}

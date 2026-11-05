@@ -605,7 +605,7 @@ export function EventsPage() {
                     className={cn(
                       "flex items-center gap-1",
                       // Fill means state, never striping.
-                      isSelected && "bg-card-hover",
+                      isSelected && "bg-popover",
                     )}
                   >
                     {canMarkAttendance ? (

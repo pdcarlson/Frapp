@@ -218,7 +218,7 @@ export function EventsCalendar({
                     FOCUS_RING,
                     "hover:bg-card-hover disabled:pointer-events-none disabled:text-disabled",
                     isToday
-                      ? "bg-primary text-primary-foreground hover:bg-primary-hover"
+                      ? "bg-popover font-bold text-foreground ring-1 ring-inset ring-input"
                       : isCurrentMonth
                         ? "text-foreground"
                         : "text-muted-foreground",

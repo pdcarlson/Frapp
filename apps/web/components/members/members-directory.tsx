@@ -878,11 +878,13 @@ export function MembersDirectory() {
                   key={id}
                   className={cn(
                     "flex min-h-9 items-center gap-1 pointer-coarse:min-h-11",
-                    // Fill means state, never striping. `--card-hover` is what
+                    // Fill means state, never striping. `--popover` is what
                     // `TableRow` paints for `data-state="selected"`: neutral
-                    // since 2026-11-05 (`foundations.md` §6), with the checked
-                    // box and the "N selected" bar carrying the selection.
-                    selected && "bg-card-hover",
+                    // since 2026-11-05 (`foundations.md` §6), a step under the
+                    // `--card-hover` hover so a control inside the row still
+                    // lifts, with the checked box and the "N selected" bar
+                    // carrying the selection.
+                    selected && "bg-popover",
                   )}
                 >
                   <label
@@ -939,8 +941,9 @@ export function MembersDirectory() {
                       /*
                         Hover only while NOT selected. The selected fill lives
                         on the `<li>` and this button is `flex-1`, so a hover
-                        here would only repaint the same `--card-hover` over
-                        it; skipping it keeps the selected row one flat fill.
+                        here would paint across everything right of the
+                        checkbox and the selected row would stop reading as
+                        one row.
                       */
                       !selected && "hover:bg-card-hover hover:text-foreground",
                       FOCUS_RING_OFFSET,

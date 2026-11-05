@@ -106,10 +106,11 @@ function Row({ children, ...rest }: EmojiPickerListRowProps) {
  *    cite one.)
  * 2. `bg-secondary` and `bg-accent` were the *card* and *popover* values (both
  *    aliases are deleted, #3036), and this panel is `bg-popover` — so "active"
- *    was painting the cell in its own background. Hover takes `--card-hover`,
- *    the step above the whole ladder (neutral since 2026-11-05,
- *    `foundations.md` §6); the active cell, the one the keyboard is on, keeps
- *    the accent tint and border because it is where the member is.
+ *    was painting the cell in its own background. Both take `--card-hover`,
+ *    the step above the whole ladder, neutral since 2026-11-05
+ *    (`foundations.md` §6): frimousse marks a cell active on pointer enter as
+ *    well as on the arrow keys, so the active cell is the menu highlight every
+ *    other menu draws neutral, not a place the member is.
  *
  * 38px is the §3 Compact size — pointer-only, which an emoji grid in a popover
  * is. A 44px cell would make the picker a third wider than the panel it lives
@@ -124,7 +125,7 @@ function EmojiButton({ emoji, ...rest }: EmojiPickerListEmojiProps) {
       className={cn(
         "flex h-[38px] w-[38px] items-center justify-center rounded-sm border border-transparent text-base transition-colors",
         "hover:bg-card-hover",
-        "data-[active]:border-accent-border data-[active]:bg-accent-subtle",
+        "data-[active]:bg-card-hover",
         FOCUS_RING,
       )}
     >
