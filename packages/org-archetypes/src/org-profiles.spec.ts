@@ -27,6 +27,9 @@ describe("orgHidingGreekLettersIn", () => {
     "Phi Gamma",
     "Gamma Delta",
     "Fijian Student Association",
+    // The short name counts only as FIJI's chapters write it.
+    "Fiji Student Association",
+    "fiji at RPI",
   ])("finds none in %j", (name) => {
     expect(orgHidingGreekLettersIn(name)).toBeUndefined();
   });

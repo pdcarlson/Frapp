@@ -613,8 +613,9 @@ export function GeofencesAdminPage() {
 
           The nested family with `sole` (README § Page grammar): the
           whole-screen states paint `--card` and would redraw the card this
-          route deleted. The two gate fallbacks above keep theirs, a recorded
-          decision there (§ Chat Admin and Discord Import).
+          route deleted. The gate fallbacks above are the denied and checking
+          lines, plus the shared offline state (§ Chat Admin and Discord
+          Import).
         */}
         <div className="mt-4 space-y-4">
           {/*

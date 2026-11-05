@@ -388,20 +388,32 @@ function containsRun(
   return false;
 }
 
-/** Organizations that hide their letters, with the word runs that name them. */
-const LETTER_HIDING_ORGS: readonly { name: string; runs: string[][] }[] =
-  Object.entries(ORG_PROFILES)
-    .filter(([, p]) => p.displaysGreekLetters === false)
-    .map(([name, p]) => ({
-      name,
-      runs: [words(name), ...(p.shortName ? [words(p.shortName)] : [])],
-    }));
+/**
+ * Organizations that hide their letters, with what names them inside a longer
+ * chapter name: the organization's own name, matched in any case, and its
+ * short name, matched only as the profile writes it. "FIJI" is how a Phi Gamma
+ * Delta chapter writes itself; "Fiji" in "Fiji Student Association" is the
+ * country, and must not hide that chapter's letters or fill in FIJI's short
+ * name.
+ */
+const LETTER_HIDING_ORGS: readonly {
+  name: string;
+  nameRun: string[];
+  shortName?: string;
+}[] = Object.entries(ORG_PROFILES)
+  .filter(([, p]) => p.displaysGreekLetters === false)
+  .map(([name, p]) => ({
+    name,
+    nameRun: words(name),
+    shortName: p.shortName,
+  }));
 
 /**
  * The organization whose letters a chapter of this name must not show: one
- * that hides its letters (Phi Gamma Delta) and whose name or short name the
- * chapter's name contains as whole words ("Phi Gamma Delta", "Phi Gamma Delta
- * Tau Nu", "FIJI at RPI"). Returns that organization's name, or `undefined`.
+ * that hides its letters (Phi Gamma Delta) and whose name the chapter's name
+ * contains as whole words, in any case ("Phi Gamma Delta Tau Nu"), or whose
+ * short name it contains as written ("FIJI at RPI", not "Fiji Student
+ * Association"). Returns that organization's name, or `undefined`.
  *
  * `orgHidesGreekLetters` matches an organization's name exactly, which is
  * right for a directory row's `org_name`. A chapter's own name is often its
@@ -414,8 +426,11 @@ export function orgHidingGreekLettersIn(
 ): string | undefined {
   if (!chapterName) return undefined;
   const name = words(chapterName);
-  return LETTER_HIDING_ORGS.find((org) =>
-    org.runs.some((run) => containsRun(name, run)),
+  const asWritten = chapterName.split(/[^\p{L}\p{N}]+/u);
+  return LETTER_HIDING_ORGS.find(
+    (org) =>
+      containsRun(name, org.nameRun) ||
+      (org.shortName !== undefined && asWritten.includes(org.shortName)),
   )?.name;
 }
 

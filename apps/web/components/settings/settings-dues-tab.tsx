@@ -41,12 +41,14 @@ type Props = {
   pledgeTerm: string;
 };
 
-const CADENCE_OPTIONS: ReadonlyArray<{ value: OrgDues["cadence"]; label: string }> =
-  [
-    { value: "monthly", label: "Monthly" },
-    { value: "per_semester", label: "Per semester" },
-    { value: "per_quarter", label: "Per quarter" },
-  ];
+const CADENCE_OPTIONS: ReadonlyArray<{
+  value: OrgDues["cadence"];
+  label: string;
+}> = [
+  { value: "monthly", label: "Monthly" },
+  { value: "per_semester", label: "Per semester" },
+  { value: "per_quarter", label: "Per quarter" },
+];
 
 /** Cents-valued fields shown as plain integer inputs (amounts are stored in cents). */
 function centsFieldsFor(
@@ -128,11 +130,14 @@ function toDraft(dues: OrgDues): DuesDraft {
  * fee, and scholarship pool. Edits are held locally and committed with one save,
  * which writes a `chapter_audit_log` row (mirrored to `#chapter-audit`).
  *
- * Every numeric input holds a text draft (`guardIntDraft`): a negative or a
- * decimal keeps the previous text, while a field can be emptied mid-edit and
- * keeps the transient "0" left by deleting a leading digit. Each floor (cents
- * and days `>= 0`, installment count `>= 1`) is checked at save, which refuses
- * an empty or under-floor field by name rather than sending it (#3050).
+ * Every numeric input holds a text draft, and a field can be emptied mid-edit.
+ * Amounts are typed in dollars with up to two decimals (`DOLLAR_DRAFT`): a
+ * keystroke that can't become an amount ("-", "1.234") keeps the previous
+ * text, and save stores whole cents (`parseDollars`). Counts (`guardIntDraft`)
+ * refuse a negative or a decimal the same way, and keep the transient "0" left
+ * by deleting a leading digit. Save refuses an empty amount, and an empty or
+ * under-floor count (days `>= 0`, installment count `>= 1`), by name rather
+ * than sending it (#3050).
  */
 export function SettingsDuesTab({
   dues,

@@ -179,10 +179,13 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
     setDirectoryId(null);
     setMatchedOrgName(null);
     setArchetype("ifc");
+    // Seed the chapter name from whatever the officer was searching for, and
+    // let a name that names FIJI fill its short name as typing it would.
+    const seeded = rawQuery.trim();
     setIdentity({
       ...EMPTY_CHAPTER_IDENTITY,
-      // Seed the chapter name from whatever the officer was searching for.
-      name: rawQuery.trim(),
+      name: seeded,
+      ...orgMarkFieldsFor(seeded, "", EMPTY_CHAPTER_IDENTITY),
     });
     setAcceptedLegal(false);
     setStep("archetype");
@@ -520,15 +523,19 @@ function directoryRowTitle(row: ChapterDirectoryResult): string {
 }
 
 /**
- * The identity after the organization's name is typed. The short name and the
- * letters switch follow `orgMarkFieldsFor`: a profile applies when the name
- * comes to name its organization and is undone when the name leaves it, and a
- * short name the founder typed is never replaced.
+ * The identity after the organization's name is typed. On manual entry the
+ * short name and the letters switch follow `orgMarkFieldsFor`: a profile
+ * applies when the name comes to name its organization and is undone when the
+ * name leaves it, and a short name the founder typed is never replaced. After
+ * a directory pick the row decides the organization, so renaming the chapter
+ * ("Tau Nu Chapter") changes the name alone.
  */
 function withOrgName(
   identity: ChapterIdentityForm,
   name: string,
+  fromDirectory: boolean,
 ): ChapterIdentityForm {
+  if (fromDirectory) return { ...identity, name };
   return {
     ...identity,
     name,
@@ -792,7 +799,9 @@ function IdentityStep({
           <Input
             id="wiz-name"
             value={identity.name}
-            onChange={(e) => onChange(withOrgName(identity, e.target.value))}
+            onChange={(e) =>
+              onChange(withOrgName(identity, e.target.value, !isManual))
+            }
             placeholder="Sigma Phi Epsilon"
             required
           />

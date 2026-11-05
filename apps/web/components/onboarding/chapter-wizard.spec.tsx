@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 // Capture the onboard mutation args. `vi.hoisted` runs before the hoisted
@@ -509,6 +509,94 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     expect(
       screen.getByRole("switch", { name: /show greek letters/i }),
     ).toBeChecked();
+  });
+
+  describe("FIJI's row and the fields it fills", () => {
+    const fijiRow = {
+      id: "dir-fiji",
+      org_letters: "ΦΓΔ",
+      org_name: "Phi Gamma Delta",
+      archetype: "ifc",
+      chapter_designation: "Tau Nu",
+      university: "Rensselaer Polytechnic Institute",
+      university_short: "RPI",
+      founded_year: 1893,
+      default_colors: { accent: "#C9A56F" },
+    };
+    const sigmaNuRow = {
+      id: "dir-sn",
+      org_letters: "ΣΝ",
+      org_name: "Sigma Nu",
+      archetype: "ifc",
+      chapter_designation: "Delta Delta",
+      university: "Rensselaer Polytechnic Institute",
+      university_short: "RPI",
+      founded_year: 1921,
+      default_colors: { accent: "#C9A56F" },
+    };
+    afterEach(() => {
+      directoryRows.current = [];
+    });
+
+    function pick(name: RegExp) {
+      fireEvent.change(screen.getByLabelText("Search the chapter directory"), {
+        target: { value: "RPI" },
+      });
+      return screen.findByText(name).then((row) => {
+        fireEvent.click(row);
+        fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      });
+    }
+
+    it("undoes FIJI's short name and switch when the founder picks another row", async () => {
+      directoryRows.current = [fijiRow, sigmaNuRow];
+      render(<ChapterWizard onComplete={() => {}} />);
+      await pick(/Phi Gamma Delta/);
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+        "FIJI",
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      await pick(/Sigma Nu/);
+
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue("");
+      expect(
+        screen.getByRole("switch", { name: /show greek letters/i }),
+      ).toBeChecked();
+    });
+
+    it("keeps FIJI's short name when the founder renames a picked chapter", async () => {
+      directoryRows.current = [fijiRow];
+      render(<ChapterWizard onComplete={() => {}} />);
+      await pick(/Phi Gamma Delta/);
+      fireEvent.change(screen.getByLabelText("Chapter / organization name"), {
+        target: { value: "Tau Nu Chapter" },
+      });
+
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+        "FIJI",
+      );
+      expect(
+        screen.queryByRole("switch", { name: /show greek letters/i }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("fills FIJI's short name when manual entry starts from a search for it", () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    fireEvent.change(screen.getByLabelText("Search the chapter directory"), {
+      target: { value: "Phi Gamma Delta" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Manual entry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(screen.getByLabelText("Chapter / organization name")).toHaveValue(
+      "Phi Gamma Delta",
+    );
+    expect(screen.getByLabelText("Short name (optional)")).toHaveValue("FIJI");
+    expect(
+      screen.queryByRole("switch", { name: /show greek letters/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps a typed short name when the founder then picks FIJI's row", async () => {

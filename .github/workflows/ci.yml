@@ -161,7 +161,6 @@ jobs:
         run: npm run test -w @repo/formatting
 
       # Which organizations hide their Greek letters, and what setup fills in for them.
-      # Uses the hoisted workspace vitest, like api-sdk below.
       - name: Shared org-archetypes package tests
         run: npm run test -w @repo/org-archetypes
 
