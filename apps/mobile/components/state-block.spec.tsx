@@ -16,6 +16,8 @@ vi.mock("@/lib/chapter-branding", () => ({
     accent: "#F4CB63",
     accentPrimary: "#F4CB63",
     accentOnPrimary: "#2B2009",
+    accentSubtle: "#3A2F14",
+    accentBorder: "#6E5523",
     logoUrl: null,
     chapterName: null,
   }),
@@ -23,8 +25,10 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import {
   EmptyState,
+  EmptyStateAction,
   ErrorState,
   NoChapterState,
+  SkeletonBlock,
   SkeletonLines,
 } from "./state-block";
 
@@ -152,6 +156,110 @@ describe("EmptyState", () => {
       ]),
     );
   });
+
+  // writing.md gives some empty states no title (Chat home's filtered-to-
+  // nothing state). The card then draws tile glyph, body and action, with no
+  // empty title line holding a gap open between them.
+  it("draws no title line when given no title", () => {
+    const tree = render(
+      <EmptyState
+        glyph="⌕"
+        body="No channels match."
+        action={<Text>Show all</Text>}
+      />,
+    );
+    expect(texts(tree)).toEqual(["⌕", "No channels match.", "Show all"]);
+    // An empty `Text` would still take a slot in the card's gap.
+    expect(
+      tree.root.findAllByType("Text" as unknown as React.ComponentType),
+    ).toHaveLength(3);
+  });
+});
+
+describe("the glyph tiles", () => {
+  // The tile's character stands in for a drawn glyph, so a screen reader
+  // skips it and starts at the words ("plus", "exclamation mark" otherwise).
+  it("hides the empty and error tiles from screen readers", () => {
+    for (const tree of [
+      render(<EmptyState glyph="⌕" body="No channels match." />),
+      render(<ErrorState title="Couldn't load" body="Try again." />),
+    ]) {
+      const glyph = tree.root
+        .findAllByType("Text" as unknown as React.ComponentType)
+        .find((node) => ["⌕", "!"].includes(String(node.props.children)));
+      const tile = glyph?.parent;
+      expect(tile?.props.accessibilityElementsHidden).toBe(true);
+      expect(tile?.props.importantForAccessibility).toBe(
+        "no-hide-descendants",
+      );
+    }
+  });
+});
+
+describe("the state buttons", () => {
+  // §10 gives empty and error the same anatomy, so the CTA and the retry share
+  // one geometry and differ only in colour.
+  it("draws the empty CTA and the error retry on one geometry", () => {
+    const pressableStyle = (tree: ReactTestRenderer) => {
+      const button = tree.root.find(
+        (node) => (node.type as unknown) === "Pressable",
+      );
+      return flatten(button.props.style({ pressed: false }));
+    };
+    const geometry = (style: Record<string, unknown>) => ({
+      marginTop: style.marginTop,
+      minHeight: style.minHeight,
+      justifyContent: style.justifyContent,
+      borderRadius: style.borderRadius,
+      borderWidth: style.borderWidth,
+      paddingHorizontal: style.paddingHorizontal,
+    });
+    const cta = pressableStyle(
+      render(<EmptyStateAction label="Show all" onPress={vi.fn()} />),
+    );
+    const retry = pressableStyle(
+      render(
+        <ErrorState title="Couldn't load" body="Gone." onRetry={vi.fn()} />,
+      ),
+    );
+
+    expect(geometry(cta)).toEqual(geometry(retry));
+    expect(geometry(retry)).toEqual({
+      marginTop: signetDarkTokens.spacing.xs,
+      minHeight: signetDarkTokens.touch.minimum,
+      justifyContent: "center",
+      borderRadius: signetDarkTokens.radius.control,
+      borderWidth: 1,
+      paddingHorizontal: signetDarkTokens.spacing.lg,
+    });
+    expect(cta.borderColor).not.toBe(retry.borderColor);
+  });
+});
+
+describe("EmptyStateAction", () => {
+  // §10's CTA is the Tinted button: the chapter accent's soft fill, border and
+  // text, at the 44pt floor. A neutral outlined button there reads as the
+  // error card's retry.
+  it("draws the Tinted button at 44pt and calls back on press", () => {
+    const onPress = vi.fn();
+    const tree = render(<EmptyStateAction label="Show all" onPress={onPress} />);
+    const button = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    const style = flatten(button.props.style({ pressed: false }));
+
+    expect(style.minHeight).toBe(signetDarkTokens.touch.minimum);
+    expect(style.backgroundColor).toBe("#3A2F14");
+    expect(style.borderColor).toBe("#6E5523");
+    const label = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        node.props.children === "Show all",
+    );
+    expect(flatten(label.props.style).color).toBe("#F4CB63");
+    act(() => button.props.onPress());
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("NoChapterState", () => {
@@ -193,5 +301,40 @@ describe("SkeletonLines", () => {
     );
     expect(card.props.accessibilityRole).toBe("progressbar");
     expect(card.props.accessibilityLabel).toBe("Loading");
+    // Without `accessible`, VoiceOver skips a View with no text in it, so the
+    // role and label are never read and the screen sounds blank.
+    expect(card.props.accessible).toBe(true);
+  });
+
+  it("draws every shape as a SkeletonBlock, so the shimmer lands once", () => {
+    const tree = render(<SkeletonLines lines={3} showTile />);
+    const blocks = tree.root.findAllByType(SkeletonBlock);
+
+    expect(blocks).toHaveLength(4);
+    // What each block draws, not what it was passed: §10's control-sized tile
+    // takes the control radius, text lines the chip radius (TODO-DESIGN: 6).
+    const drawn = blocks.map((block) =>
+      flatten(
+        block.findByType("View" as unknown as React.ComponentType).props.style,
+      ),
+    );
+    expect(drawn[0]!.borderRadius).toBe(signetDarkTokens.radius.control);
+    expect(drawn[0]!.width).toBe(signetDarkTokens.touch.minimum);
+    for (const line of drawn.slice(1)) {
+      expect(line.borderRadius).toBe(signetDarkTokens.radius.chip);
+    }
+  });
+
+  // The card centres its contents (the empty and error stacks), but a
+  // skeleton stands in for rows, which start at the left edge.
+  it("left-aligns its blocks inside the centred card", () => {
+    const tree = render(<SkeletonLines lines={2} showTile />);
+    const [, stack] = tree.root.findAllByType(
+      "View" as unknown as React.ComponentType,
+    );
+    const style = flatten(stack!.props.style);
+
+    expect(style.alignItems).toBe("flex-start");
+    expect(style.alignSelf).toBe("stretch");
   });
 });

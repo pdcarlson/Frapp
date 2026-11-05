@@ -1,16 +1,10 @@
 import { useEffect, useState } from "react";
-import {
-  Image,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Image, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { onlineManager } from "@tanstack/react-query";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { PressableRow } from "@/components/list-section";
 
 const AVATAR_SIZE = 48;
 
@@ -69,17 +63,15 @@ export function ProfileCard({
   const name = displayName ?? "Your profile";
 
   return (
-    <Pressable
+    <PressableRow
+      // The card sits on the card step, so its iOS lift is to the popover.
+      onCard
       accessibilityRole="button"
       accessibilityLabel={name}
       accessibilityValue={pointsLabel ? { text: pointsLabel } : undefined}
       accessibilityHint="Opens your profile."
-      android_ripple={{ color: styles.ripple.color }}
       onPress={() => router.push("/profile")}
-      style={({ pressed }) => [
-        styles.card,
-        pressed && Platform.OS !== "android" ? styles.pressed : null,
-      ]}
+      style={styles.card}
     >
       {showPhoto ? (
         <Image
@@ -109,7 +101,7 @@ export function ProfileCard({
         {pointsLabel ? <Text style={styles.meta}>{pointsLabel}</Text> : null}
       </View>
       <Text style={styles.chevron}>›</Text>
-    </Pressable>
+    </PressableRow>
   );
 }
 
@@ -124,14 +116,6 @@ function createStyles(tokens: SignetTokens) {
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
-      // Bounds the Android ripple to the card's rounded corners.
-      overflow: "hidden",
-    },
-    pressed: {
-      backgroundColor: tokens.color.surface.popover,
-    },
-    ripple: {
-      color: tint(tokens.color.text.foreground, 0.12),
     },
     avatar: {
       width: AVATAR_SIZE,

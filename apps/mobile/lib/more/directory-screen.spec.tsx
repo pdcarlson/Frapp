@@ -3,7 +3,8 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FrappThemeProvider } from "@/lib/theme";
+import { getSignetTokens } from "@repo/theme/signet";
+import { FrappThemeProvider, typeRole } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 import type { DirectoryRow } from "@/lib/more/directory";
@@ -90,7 +91,8 @@ vi.mock("@/components/directory/member-detail-sheet", () => ({
   MemberDetailSheet: () => null,
 }));
 
-import DirectoryScreen from "@/app/(tabs)/directory";
+import DirectoryScreen, { MemberRow } from "@/app/(tabs)/directory";
+import { signetDarkTokens } from "@repo/theme/signet";
 import {
   FilterChips as FilterChipsStandIn,
   SearchField as SearchFieldStandIn,
@@ -219,6 +221,66 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
   });
 });
 
+describe("s13's member rows", () => {
+  const ROW: DirectoryRow = {
+    userId: "u-1",
+    displayName: "Marcus Reid",
+    initials: "MR",
+    meta: null,
+    avatarUrl: null,
+  };
+
+  function pressableOf(onPress?: () => void) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MemberRow row={ROW} onPress={onPress} />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree.root.find((node) => (node.type as unknown) === "Pressable");
+  }
+
+  // Every list row answers a press the same way (`usePressFeedback`); these
+  // rows used to give none at all.
+  it("ripples on Android and lifts on iOS while held, never fading", () => {
+    const row = pressableOf(vi.fn());
+    const held = Object.assign(
+      {},
+      ...[row.props.style({ pressed: true })].flat(Infinity),
+    ) as Record<string, unknown>;
+
+    expect(row.props.android_ripple?.color).toMatch(/^rgba\(/);
+    // The suite's react-native stub runs as iOS.
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(held).not.toHaveProperty("opacity");
+  });
+
+  // The row pads itself by `sm` and bleeds that same `sm` into the screen
+  // gutter, as Chat home's channel rows do: without the padding the ripple
+  // and lift stop flush at the avatar and text, and without the bleed the
+  // content moves off the gutter line.
+  it("bleeds its own padding into the screen gutter", () => {
+    const row = pressableOf(vi.fn());
+    const resting = Object.assign(
+      {},
+      ...[row.props.style({ pressed: false })].flat(Infinity),
+    ) as Record<string, unknown>;
+
+    expect(resting.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
+    expect(resting.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
+  });
+
+  it("gives a row with nothing to open no feedback", () => {
+    const row = pressableOf(undefined);
+    expect(row.props.android_ripple).toBeUndefined();
+    expect(
+      JSON.stringify(row.props.style({ pressed: true })),
+    ).not.toContain(signetDarkTokens.color.surface.card);
+  });
+});
+
 describe("s13's frame (#2485)", () => {
   it("takes the top safe-area inset itself, since no navigator header does", () => {
     // s13 opts out of ScreenShell for its FlatList, so it can't inherit the
@@ -239,6 +301,14 @@ describe("s13's frame (#2485)", () => {
     );
 
     expect(title.children).toBe("Directory");
+    // The same headline as every ScreenShell title: s13's own header spreads
+    // the shell's screenTitleStyle because its body is a FlatList.
+    expect(title.style).toEqual(
+      expect.objectContaining({
+        ...typeRole(getSignetTokens().typography.role.headline),
+        letterSpacing: -0.3,
+      }),
+    );
   });
 });
 

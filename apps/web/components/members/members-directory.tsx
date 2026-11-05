@@ -61,7 +61,7 @@ import {
   presenceLabel,
   type PresenceStatus,
 } from "@/lib/realtime/presence-status";
-import { vocab } from "@/lib/vocabulary";
+import { vocab } from "@repo/org-archetypes";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { asArray, cn, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";

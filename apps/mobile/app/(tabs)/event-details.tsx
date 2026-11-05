@@ -1,25 +1,28 @@
 import { useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEvent, useNowDate } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_EVENTS } from "@/components/back-row";
+import { PressableRow } from "@/components/list-section";
+import { SheetPrimaryButton } from "@/components/sheet-scaffold";
+import {
+  EmptyState,
+  ErrorState,
+  SkeletonLines,
+} from "@/components/state-block";
+import { AccentChip, StatusChip } from "@/components/status-chip";
 import { exportEventToCalendar } from "@/lib/calendar-export";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   formatEventClock,
   formatEventWindow,
   resolveCheckInWindow,
+  type CheckInWindow,
 } from "@/lib/events/format";
-import { selectEventDetail } from "@/lib/events/select";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { selectEventDetail, type EventDetail } from "@/lib/events/select";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s07 — Event detail (`canvas-screens.dc.html:246`).
@@ -38,18 +41,24 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * The reference draws a "Going ✓ / Can't make it" row and a "GOING · 31" count.
  * Neither has a server behind it: `spec/behavior/events.md` records that
  * "pre-event RSVP intent (going / maybe / not-going, ahead of the window) is
- * not yet modelled". Both are omitted, and while check-in is still possible
- * one plain line says what does count — checking in. The row used to render
- * disabled in its drawn position; a control that can never be enabled is the
- * "coming soon" shape App Review Guideline 2.1 rejects (#2300), so it comes
- * back only with the endpoint (#1035).
+ * not yet modelled". Both are omitted. The row used to render disabled in its
+ * drawn position; a control that can never be enabled is the "coming soon"
+ * shape App Review Guideline 2.1 rejects (#2300), so it comes back only with
+ * the endpoint (#1035). A line that used to stand in for it ("Check in at the
+ * event to be counted.") is gone too: the check-in card above already says it.
+ *
+ * ## Where the chips sit
+ *
+ * The board draws Mandatory and `+N pts` above the title and the place in the
+ * line under it ("Tonight · 6:00 – 7:00 PM · Great Hall"). The place is in that
+ * line here too. The chips sit under it, because `ScreenShell` draws the title
+ * first and is frozen; they used to share a row with the place, which wrapped
+ * a long location beside them.
  */
 
 export default function EventDetailsScreen() {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
-  const styles = createStyles(tokens, accent);
-  const router = useRouter();
+  const styles = createStyles(tokens);
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const eventId = Array.isArray(params.id) ? params.id[0] : (params.id ?? "");
 
@@ -67,7 +76,7 @@ export default function EventDetailsScreen() {
     A ticking clock, not one frozen at mount: this screen is often opened
     *before* check-in opens — a member arriving early taps through from UP
     NEXT — and a `new Date()` captured once would leave "Check-in hasn't opened
-    / Opens at 6:00" on screen through 6:00, 6:15 and past the close, with no
+    / opens 6:00" on screen through 6:00, 6:15 and past the close, with no
     way to reach the scanner but to back out and re-enter.
 
     It is the shared `@repo/hooks` clock the Events list and web's event card
@@ -76,10 +85,6 @@ export default function EventDetailsScreen() {
     server enforces the real window regardless — this is UX only.
   */
   const now = useNowDate();
-
-  const window = event
-    ? resolveCheckInWindow(event.start_time, event.end_time, now)
-    : null;
 
   async function handleCalendarExport() {
     if (!event) return;
@@ -109,12 +114,11 @@ export default function EventDetailsScreen() {
   if (!eventId) {
     return (
       <ScreenShell back={BACK_TO_EVENTS} title="Event">
-        <View style={styles.stateBlock}>
-          <Text style={styles.stateTitle}>Nothing to show</Text>
-          <Text style={styles.stateBody}>
-            Open an event from the Events tab to see its details.
-          </Text>
-        </View>
+        <EmptyState
+          glyph="◷"
+          title="Nothing to show"
+          body="Open an event from the Events tab."
+        />
       </ScreenShell>
     );
   }
@@ -122,10 +126,7 @@ export default function EventDetailsScreen() {
   if (eventQuery.isPending) {
     return (
       <ScreenShell back={BACK_TO_EVENTS} title="Event">
-        <View style={styles.stateBlock}>
-          <ActivityIndicator color={tokens.color.text.muted} />
-          <Text style={styles.stateBody}>Loading event…</Text>
-        </View>
+        <SkeletonLines lines={3} />
       </ScreenShell>
     );
   }
@@ -133,116 +134,44 @@ export default function EventDetailsScreen() {
   if (eventQuery.isError || !event) {
     return (
       <ScreenShell back={BACK_TO_EVENTS} title="Event">
-        <View style={styles.stateBlock}>
-          <Text style={styles.stateTitle}>Couldn&apos;t load this event</Text>
-          <Text style={styles.stateBody}>
-            It may have been cancelled, or the server is unreachable.
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Try loading this event again"
-            disabled={eventQuery.isFetching}
-            onPress={() => void eventQuery.refetch()}
-            style={({ pressed }) => [
-              styles.retryButton,
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={styles.retryText}>
-              {eventQuery.isFetching ? "Retrying…" : "Try again"}
-            </Text>
-          </Pressable>
-        </View>
+        <ErrorState
+          title="Couldn't load this event"
+          body="It may have been cancelled, or the server is unreachable."
+          onRetry={() => void eventQuery.refetch()}
+          isRetrying={eventQuery.isFetching}
+        />
       </ScreenShell>
     );
   }
+
+  const window = resolveCheckInWindow(event.start_time, event.end_time, now);
 
   return (
     <ScreenShell
       back={BACK_TO_EVENTS}
       title={event.name}
-      subtitle={formatEventWindow(event.start_time, event.end_time, now)}
+      subtitle={[
+        formatEventWindow(event.start_time, event.end_time, now),
+        event.location,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
     >
-      <View style={styles.badgeRow}>
-        {event.is_mandatory ? (
-          <View style={styles.mandatoryBadge}>
-            <Text style={styles.mandatoryText}>Mandatory</Text>
-          </View>
-        ) : null}
-        {event.point_value ? (
-          <View style={styles.pointsBadge}>
-            <Text style={styles.pointsText}>+{event.point_value} pts</Text>
-          </View>
-        ) : null}
-        {event.location ? (
-          <Text style={styles.location}>{event.location}</Text>
-        ) : null}
-      </View>
-
-      {/* Check-in card — the drawn "Check-in is open · closes 6:15". */}
-      <View style={styles.checkInCard}>
-        {window?.state === "open" ? (
-          <>
-            <View style={styles.checkInHeader}>
-              <Text style={styles.checkInTitle}>Check-in is open</Text>
-              <Text style={styles.checkInMeta}>
-                closes {formatEventClock(window.closesAt)}
-              </Text>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Scan the check-in code"
-              onPress={() =>
-                router.push({
-                  pathname: "/check-in",
-                  params: { eventId: event.id },
-                })
-              }
-              style={({ pressed }) => [
-                styles.primaryButton,
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={styles.primaryButtonText}>Scan QR to check in</Text>
-            </Pressable>
-          </>
-        ) : window?.state === "upcoming" ? (
-          <>
-            <Text style={styles.checkInTitle}>Check-in hasn&apos;t opened</Text>
-            <Text style={styles.checkInMeta}>
-              Opens at {formatEventClock(window.opensAt)}.
-            </Text>
-          </>
-        ) : (
-          <>
-            <Text style={styles.checkInTitle}>Check-in is closed</Text>
-            <Text style={styles.checkInMeta}>
-              {window?.state === "closed"
-                ? "This event's check-in window has ended."
-                : "This event's times are unavailable."}
-            </Text>
-          </>
-        )}
-      </View>
-
-      {/* No RSVP control — see the file header. Only while checking in is
-          still possible: under a closed or unreadable window it would
-          contradict the card above. */}
-      {window?.state === "open" || window?.state === "upcoming" ? (
-        <Text style={styles.attendanceNote}>
-          Check in at the event to be counted.
-        </Text>
-      ) : null}
-
-      {event.hasCheckInZone ? (
-        <View style={styles.zoneNote}>
-          <Text style={styles.zoneText}>
-            {event.check_in_zone_name
-              ? `Check-in requires you to be inside the ${event.check_in_zone_name} zone.`
-              : "Check-in requires you to be at the event location."}
-          </Text>
+      {event.is_mandatory || event.point_value ? (
+        <View style={styles.badgeRow}>
+          {event.is_mandatory ? (
+            <StatusChip
+              label="Mandatory"
+              hue={tokens.color.semantic.destructive}
+            />
+          ) : null}
+          {event.point_value ? (
+            <AccentChip label={`+${event.point_value} pts`} />
+          ) : null}
         </View>
       ) : null}
+
+      <CheckInCard event={event} window={window} />
 
       {event.description ? (
         <DetailSection
@@ -260,15 +189,17 @@ export default function EventDetailsScreen() {
         />
       ) : null}
 
-      <Pressable
+      <PressableRow
         accessibilityRole="button"
         accessibilityLabel="Add this event to your calendar"
+        accessibilityState={{ disabled: calendarState === "exporting" }}
         disabled={calendarState === "exporting"}
         onPress={() => void handleCalendarExport()}
-        style={({ pressed }) => [
-          styles.secondaryButton,
-          pressed ? styles.pressed : null,
-        ]}
+        // The press feedback the s06 cards use: a ripple on Android, rounded
+        // to the button's corners by `PressableRow`'s clip and dropped while
+        // exporting, and a lift from the card fill to `surface.popover` on iOS.
+        onCard
+        style={styles.secondaryButton}
       >
         <Text style={styles.secondaryButtonText}>
           {calendarState === "exporting"
@@ -279,8 +210,104 @@ export default function EventDetailsScreen() {
                 ? "Couldn't add — try again"
                 : "Add to calendar"}
         </Text>
-      </Pressable>
+      </PressableRow>
     </ScreenShell>
+  );
+}
+
+/**
+ * The drawn "● Check-in is open · closes 6:15" card. Open, it takes the
+ * chapter's accent-tinted fill and border with the green status dot and the
+ * scan button, as drawn. Before and after the window it is one neutral line
+ * with a muted dot, since there is nothing to do yet or any more.
+ *
+ * A check-in zone is said here, on the card it constrains, as one muted line
+ * while checking in is still possible. It used to be its own box painted in
+ * info blue, a semantic hue the board never draws on this screen, and inside
+ * a chapter the blue read as an alert rather than a condition.
+ */
+function CheckInCard({
+  event,
+  window,
+}: {
+  event: EventDetail;
+  window: CheckInWindow;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accent, accentSubtle, accentBorder } = useChapterBranding();
+  const styles = createStyles(tokens);
+  const router = useRouter();
+  const isOpen = window.state === "open";
+
+  const title = isOpen
+    ? "Check-in is open"
+    : window.state === "upcoming"
+      ? "Check-in hasn't opened"
+      : window.state === "closed"
+        ? "Check-in is closed"
+        : "Check-in is unavailable";
+  const trailing = isOpen
+    ? `closes ${formatEventClock(window.closesAt)}`
+    : window.state === "upcoming"
+      ? `opens ${formatEventClock(window.opensAt)}`
+      : null;
+  const zone =
+    event.hasCheckInZone && (isOpen || window.state === "upcoming")
+      ? event.check_in_zone_name
+        ? `Check in from inside the ${event.check_in_zone_name} zone.`
+        : "Check in from the event location."
+      : null;
+
+  return (
+    <View
+      style={[
+        styles.checkInCard,
+        isOpen
+          ? { backgroundColor: accentSubtle, borderColor: accentBorder }
+          : null,
+      ]}
+    >
+      <View style={styles.checkInHeader}>
+        <View
+          style={[
+            styles.dot,
+            {
+              backgroundColor: isOpen
+                ? tokens.color.semantic.success
+                : tokens.color.text.muted,
+            },
+          ]}
+        />
+        <Text
+          style={[
+            styles.checkInTitle,
+            isOpen ? { color: accent } : null,
+          ]}
+        >
+          {title}
+        </Text>
+        {trailing ? <Text style={styles.checkInMeta}>{trailing}</Text> : null}
+      </View>
+
+      {zone ? <Text style={styles.zoneText}>{zone}</Text> : null}
+
+      {isOpen ? (
+        // The app's one primary button (`sheet-scaffold.tsx`): 50pt, the
+        // control radius, the chapter accent under `gold.onHouse` ink, as the
+        // dues Pay button and every sheet's CTA draw it.
+        <SheetPrimaryButton
+          label="Scan QR to check in"
+          accent={accent}
+          onAccent={tokens.color.gold.onHouse}
+          onPress={() =>
+            router.push({
+              pathname: "/check-in",
+              params: { eventId: event.id },
+            })
+          }
+        />
+      ) : null}
+    </View>
   );
 }
 
@@ -302,38 +329,13 @@ function DetailSection({
   );
 }
 
-function createStyles(tokens: SignetTokens, accent: string) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     badgeRow: {
       flexDirection: "row",
       alignItems: "center",
       flexWrap: "wrap",
-      gap: tokens.spacing.xs,
-    },
-    mandatoryBadge: {
-      borderRadius: tokens.radius.chip,
-      backgroundColor: tint(tokens.color.semantic.warning),
-      paddingHorizontal: tokens.spacing.sm,
-      paddingVertical: tokens.spacing.xs,
-    },
-    mandatoryText: {
-      color: tokens.color.semantic.warning,
-      ...typeRole(tokens.typography.role.caption),
-    },
-    pointsBadge: {
-      borderRadius: tokens.radius.chip,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      paddingHorizontal: tokens.spacing.sm,
-      paddingVertical: tokens.spacing.xs,
-    },
-    pointsText: {
-      color: tokens.color.text.mutedForeground,
-      ...typeRole(tokens.typography.role.caption),
-    },
-    location: {
-      color: tokens.color.text.mutedForeground,
-      ...typeRole(tokens.typography.role.body),
+      gap: tokens.spacing.sm,
     },
     checkInCard: {
       borderRadius: tokens.radius.card,
@@ -346,10 +348,17 @@ function createStyles(tokens: SignetTokens, accent: string) {
     checkInHeader: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
       gap: tokens.spacing.sm,
     },
+    dot: {
+      // The board draws 9; the 8pt spacing step is the nearest token, and
+      // half of it rounds the square into a dot.
+      width: tokens.spacing.sm,
+      height: tokens.spacing.sm,
+      borderRadius: tokens.spacing.xs,
+    },
     checkInTitle: {
+      flex: 1,
       color: tokens.color.text.foreground,
       ...typeRole(tokens.typography.role.label),
     },
@@ -357,28 +366,8 @@ function createStyles(tokens: SignetTokens, accent: string) {
       color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.caption),
     },
-    primaryButton: {
-      borderRadius: tokens.radius.chip,
-      backgroundColor: accent,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-      alignItems: "center",
-    },
-    primaryButtonText: {
-      color: tokens.color.surface.background,
-      ...typeRole(tokens.typography.role.label),
-    },
-    attendanceNote: {
-      color: tokens.color.text.muted,
-      ...typeRole(tokens.typography.role.caption),
-    },
-    zoneNote: {
-      borderRadius: tokens.radius.card,
-      backgroundColor: tint(tokens.color.semantic.info),
-      padding: tokens.spacing.md,
-    },
     zoneText: {
-      color: tokens.color.semantic.info,
+      color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.caption),
     },
     section: {
@@ -395,46 +384,17 @@ function createStyles(tokens: SignetTokens, accent: string) {
       ...typeRole(tokens.typography.role.body),
     },
     secondaryButton: {
-      borderRadius: tokens.radius.chip,
+      // The primary button's geometry (`SheetPrimaryButton`: 50pt, control
+      // radius), outlined as the board draws its secondary buttons.
+      height: 50,
+      borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.card,
       alignItems: "center",
+      justifyContent: "center",
     },
     secondaryButtonText: {
-      color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.label),
-    },
-    pressed: {
-      opacity: 0.7,
-    },
-    stateBlock: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.lg,
-      gap: tokens.spacing.sm,
-      alignItems: "flex-start",
-    },
-    stateTitle: {
-      color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.label),
-    },
-    stateBody: {
-      color: tokens.color.text.mutedForeground,
-      ...typeRole(tokens.typography.role.body),
-    },
-    retryButton: {
-      marginTop: tokens.spacing.xs,
-      borderRadius: tokens.radius.chip,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-    },
-    retryText: {
       color: tokens.color.text.foreground,
       ...typeRole(tokens.typography.role.label),
     },

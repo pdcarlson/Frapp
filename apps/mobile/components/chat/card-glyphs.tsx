@@ -63,6 +63,30 @@ export function AnnouncementGlyph(props: TabGlyphProps) {
   );
 }
 
+/** Rush — the funnel (the module catalog's `funnel` icon), its inner line stroke-only. */
+export function RushGlyph(props: TabGlyphProps) {
+  const { stroke, fill } = glyphPaint(props);
+  return (
+    <GlyphFrame size={props.size}>
+      <Path
+        d="M4.5 4.5h15l-4.2 7.2v6.3l-6.6 1.5V11.7z"
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M7.4 8.8h9.2"
+        fill="none"
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </GlyphFrame>
+  );
+}
+
 /** `#chapter-audit` — a shield with two record lines. */
 export function AuditGlyph(props: TabGlyphProps) {
   const { stroke, fill } = glyphPaint(props);

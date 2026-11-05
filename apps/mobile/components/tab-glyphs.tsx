@@ -70,7 +70,8 @@ export type TabGlyphProps = {
    * Drawn size in points; the 24-unit grid scales with it. The tab bar uses
    * the default {@link TAB_GLYPH_SIZE}. A chat card's eyebrow draws the same
    * glyph at 16, as web's card eyebrow does, so the card and the tab it
-   * belongs to share one silhouette.
+   * belongs to share one silhouette. Chat home's UP NEXT rows draw it at 20,
+   * the list-row icon size (spec/ui/design-system/iconography.md § 6.1).
    */
   size?: number;
 };

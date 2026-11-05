@@ -1,3 +1,6 @@
+import React from "react";
+import { act } from "react";
+import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@gorhom/bottom-sheet", () => ({
@@ -6,8 +9,32 @@ vi.mock("@gorhom/bottom-sheet", () => ({
   BottomSheetView: "View",
 }));
 
+const state = vi.hoisted(() => ({
+  chapter: undefined as
+    | { name: string; accent_color: string; branding: Record<string, unknown> }
+    | undefined,
+}));
+
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useCurrentChapter: () => ({ data: state.chapter, isError: false }),
+  useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({
+    accent: "#CB9FFF",
+    accentPrimary: "#8E4EC6",
+    accentOnPrimary: "#FFFFFF",
+    logoUrl: null,
+    chapterName: null,
+  }),
+}));
+
 import { DEFAULT_CHAPTER_ACCENT } from "@repo/hooks/chapter-identity";
-import { storedAccentOf } from "./accent-sheet";
+import { FrappThemeProvider } from "@/lib/theme";
+import { screenText } from "@/test/screen-text";
+import { AccentSheet, storedAccentOf } from "./accent-sheet";
 
 describe("storedAccentOf", () => {
   it("reads branding.colors.accent first, since it is authoritative (#795)", () => {
@@ -34,5 +61,30 @@ describe("storedAccentOf", () => {
         branding: { colors: { accent: 42 } },
       }),
     ).toBe("#8B0000");
+  });
+});
+
+describe("AccentSheet", () => {
+  it("says the color changes the app for everyone in the chapter", () => {
+    // Settings is otherwise personal preferences, and this save repaints
+    // every member's app; the picker alone can't say that.
+    state.chapter = {
+      name: "Beta Chapter",
+      accent_color: "#4F2683",
+      branding: {},
+    };
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <AccentSheet />
+        </FrappThemeProvider>,
+      );
+    });
+
+    expect(screenText(tree)).toContain(
+      "Changes the color for everyone in the chapter.",
+    );
+    act(() => tree.unmount());
   });
 });
