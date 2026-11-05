@@ -290,7 +290,7 @@ describe("unticked, a run is what it was", () => {
       assert.equal(j.keys.has("environment"), false, `deploy-production.yml job "${j.jobId}" names an environment`);
     }
     const jobs = workflowJobs(CALLED);
-    assert.deepEqual(jobs.map((j) => j.jobId), ["snapshot", "build", "record"]);
+    assert.deepEqual(jobs.map((j) => j.jobId), ["snapshot", "build", "record", "confirm"]);
     for (const j of jobs) {
       const env = j.keys.get("environment");
       assert.ok(env instanceof Map, `${j.jobId} must name its environment in block form`);
@@ -328,7 +328,7 @@ describe("the migration snapshot is published as the store build starts", () => 
       ["contents", "read"],
       ["actions", "write"],
     ]);
-    for (const id of ["build", "record"]) {
+    for (const id of ["build", "record", "confirm"]) {
       assert.deepEqual([...jobOf(CALLED, id).keys.get("permissions")], [["contents", "read"]], id);
     }
   });
@@ -341,15 +341,21 @@ const TAG_STEPS = {
 };
 const START_STEPS = { ios: "Start the iOS build on EAS", android: "Start the Android build on EAS" };
 const WAIT = "Wait for the EAS builds";
+const CONFIRM_POLL = "Wait for each submission to finish on EAS";
 const UPLOAD_STEPS = {
   ios: "Upload iOS to TestFlight (not submitted for review)",
   android: "Upload Android to the Play internal track (not promoted)",
 };
 const RUN_URL_EXPR = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}";
 
-/** Runs a step's script under the runner's own `bash -eo pipefail`. */
-function runStep(step, { cwd, env }) {
-  return spawnSync("bash", ["-eo", "pipefail", "-c", scriptOf(step)], {
+/**
+ * Runs a step's script under `bash -eo pipefail`, what the runner uses for
+ * `shell: bash`. `flags: ["-e"]` gives the runner's default when a step names
+ * no shell, as this file's upload steps don't, so a test of a step's own
+ * `set -o pipefail` can see it go missing.
+ */
+function runStep(step, { cwd, env, flags = ["-eo", "pipefail"] }) {
+  return spawnSync("bash", [...flags, "-c", scriptOf(step)], {
     cwd,
     env: { ...process.env, ...env },
     encoding: "utf8",
@@ -644,7 +650,7 @@ describe("the latest-tag check, before the builds and again before the uploads",
 });
 
 describe("EXPO_TOKEN reaches only the steps that run eas", () => {
-  it("is in the env of the two starts, the wait and the two uploads, and nowhere else", () => {
+  it("is in the env of the two starts, the wait, the two uploads and the confirm poll, and nowhere else", () => {
     const holders = workflowSteps(CALLED)
       .filter((s) => [...s.env.values()].some((v) => /secrets\.EXPO_TOKEN\b/.test(v) && !/!=\s*''/.test(v)))
       .map((s) => `${s.jobId}: ${s.name}`);
@@ -654,7 +660,13 @@ describe("EXPO_TOKEN reaches only the steps that run eas", () => {
       `build: ${WAIT}`,
       `build: ${UPLOAD_STEPS.ios}`,
       `build: ${UPLOAD_STEPS.android}`,
+      `confirm: ${CONFIRM_POLL}`,
     ]);
+    // The confirm poll reads EAS's API itself (eas-cli 24.8 can't show one
+    // submission), from the trusted ref with nothing installed.
+    const poll = stepNamed(CALLED, "confirm", CONFIRM_POLL);
+    assert.equal(poll.stepEnv.get("EXPO_TOKEN"), "${{ secrets.EXPO_TOKEN }}");
+    assert.equal(scriptOf(poll), "node scripts/ci/confirm-store-submissions.mjs");
     for (const step of stepsOf(CALLED, "build")) {
       if (step.env.has("EXPO_TOKEN")) {
         assert.equal(step.stepEnv.get("EXPO_TOKEN"), "${{ secrets.EXPO_TOKEN }}", step.name);
@@ -677,6 +689,7 @@ describe("EXPO_TOKEN reaches only the steps that run eas", () => {
   it("each job holds only its own credential", () => {
     const text = (jobId) => stepsOf(CALLED, jobId).map((s) => s.body).join("\n");
     assert.doesNotMatch(text("record"), /EXPO_TOKEN/);
+    assert.doesNotMatch(text("confirm"), /PR_BASE_SYNC_APP_/);
     assert.doesNotMatch(text("build"), /PR_BASE_SYNC_APP_/);
     assert.doesNotMatch(text("snapshot"), /secrets\./);
   });
@@ -721,7 +734,7 @@ describe("the eas commands", () => {
     assert.doesNotMatch(command, /--auto-submit|--local|\s--wait/);
   });
 
-  it("uploads each finished build by id, and submits nothing for review", () => {
+  it("submits each finished build by id without waiting, and submits nothing for review", () => {
     for (const store of ["ios", "android"]) {
       const step = stepNamed(CALLED, "build", UPLOAD_STEPS[store]);
       assert.deepEqual(Object.fromEntries(step.stepEnv), {
@@ -729,7 +742,9 @@ describe("the eas commands", () => {
         BUILD_ID: `\${{ steps.wait.outputs.${store}_id }}`,
       });
       const command = scriptOf(step);
-      assert.match(command, new RegExp(`^eas submit --platform ${store} --profile production --id "\\$BUILD_ID" --non-interactive --wait`));
+      const submit = command.split("\n").find((l) => /^eas submit /.test(l));
+      assert.match(submit, new RegExp(`^eas submit --platform ${store} --profile production --id "\\$BUILD_ID" --non-interactive --no-wait`));
+      assert.doesNotMatch(submit, /\s--wait\b/);
       if (store === "ios") assert.match(command, /--no-auto-testflight-setup/);
     }
   });
@@ -928,6 +943,84 @@ describe("the eas commands", () => {
   });
 });
 
+describe("the upload steps, against a stand-in eas", () => {
+  const SUBMISSION = "3f1c2b4a-1111-4a2b-9c3d-0123456789ab";
+  function run({ printed, exit = 0, store = "ios" }) {
+    const { dir, output, path } = withStub("eas", `echo "$*" > "$RUNNER_TEMP/argv"\n${printed === undefined ? "" : `printf '%s\\n' '${printed}'`}\nexit ${exit}`);
+    // The runner's default `bash -e`: the steps name no shell, so only their
+    // own `set -o pipefail` lets a failed `eas submit | tee` fail the step.
+    const result = runStep(stepNamed(CALLED, "build", UPLOAD_STEPS[store]), {
+      cwd: dir,
+      env: { PATH: path, RUNNER_TEMP: dir, GITHUB_OUTPUT: output, BUILD_ID: "b1" },
+      flags: ["-e"],
+    });
+    const outputs = readOutputs(output);
+    const argv = readFileSync(join(dir, "argv"), "utf8");
+    rmSync(dir, { recursive: true, force: true });
+    return { status: result.status, stdout: result.stdout, outputs, argv };
+  }
+
+  it("hands on the submission id from the details link, colored or not", () => {
+    for (const store of ["ios", "android"]) {
+      const plain = run({ store, printed: `Submission details: https://expo.dev/accounts/pdcarlson/projects/frapp/submissions/${SUBMISSION}` });
+      assert.equal(plain.status, 0, plain.stdout);
+      assert.equal(plain.outputs.submission, SUBMISSION);
+      assert.match(plain.argv, new RegExp(`^submit --platform ${store} --profile production --id b1 --non-interactive --no-wait`));
+      const colored = run({ store, printed: `\x1b[2mSubmission details: \x1b[4mhttps://expo.dev/accounts/pdcarlson/projects/frapp/submissions/${SUBMISSION}\x1b[24m\x1b[22m` });
+      assert.equal(colored.outputs.submission, SUBMISSION);
+    }
+  });
+
+  it("passes when eas printed no link, with an empty id and a warning", () => {
+    const quiet = run({ printed: "Scheduled." });
+    assert.equal(quiet.status, 0);
+    assert.equal(quiet.outputs.submission, "");
+    assert.match(quiet.stdout, /::warning::eas submit printed no submission link/);
+  });
+
+  it("fails when eas refuses the submission, so record never lists it", () => {
+    for (const store of ["ios", "android"]) {
+      const refused = run({ store, printed: "Error: build not found", exit: 1 });
+      assert.equal(refused.status, 1);
+      assert.equal(refused.outputs.submission, undefined);
+    }
+  });
+});
+
+describe("the confirm job", () => {
+  it("runs beside record once an upload succeeded, from the trusted ref, with nothing installed", () => {
+    const job = jobOf(CALLED, "confirm");
+    assert.equal(job.keys.get("needs"), "build");
+    assert.equal(
+      job.if,
+      "${{ !cancelled() && (needs.build.outputs.ios-upload == 'success' || needs.build.outputs.android-upload == 'success') }}",
+    );
+    const steps = stepsOf(CALLED, "confirm");
+    const checkout = steps.find((s) => /uses:\s*actions\/checkout@/.test(s.body));
+    assert.doesNotMatch(checkout.body, /^\s+ref:/m, "the confirm job must run the trusted ref, not the built commit");
+    const setup = steps.find((s) => /uses:\s*\.\/\.github\/actions\/node-setup/.test(s.body));
+    assert.match(setup.body, /^\s+install: none\s*$/m);
+    for (const step of steps) {
+      if (/^\s+run:/m.test(step.body)) assert.ok(!scriptOf(step).split("\n").some((l) => runsInstall(l)), step.name);
+    }
+  });
+
+  it("feeds the script each upload's outcome, submission and build, and stops polling before its step and job are killed", () => {
+    const poll = stepNamed(CALLED, "confirm", CONFIRM_POLL);
+    for (const store of ["ios", "android"]) {
+      const KEY = store.toUpperCase();
+      assert.equal(poll.stepEnv.get(`${KEY}_UPLOAD`), `\${{ needs.build.outputs.${store}-upload }}`);
+      assert.equal(poll.stepEnv.get(`${KEY}_SUBMISSION`), `\${{ needs.build.outputs.${store}-submission }}`);
+      assert.equal(poll.stepEnv.get(`${KEY}_BUILD`), `\${{ needs.build.outputs.${store}-started }}`);
+    }
+    const step = Number(poll.body.match(/^\s+timeout-minutes:\s*(\d+)/m)[1]);
+    const job = Number(jobOf(CALLED, "confirm").keys.get("timeout-minutes"));
+    assert.ok(Number(poll.stepEnv.get("DEADLINE_MINUTES")) < step, "the poll's deadline must end before its step's ceiling");
+    assert.ok(step + 5 <= job, "the step's ceiling, plus checkout and setup, must fit the job's");
+    assert.ok(job <= 360, "a hosted job runs at most 360 minutes");
+  });
+});
+
 describe("the record job", () => {
   it("runs after a failed build too, from the trusted ref, and only mints a token when something uploaded", () => {
     const job = jobOf(CALLED, "record");
@@ -973,6 +1066,8 @@ describe("the record job", () => {
       "android-started": "${{ steps.start-android.outputs.id }}",
       "ios-upload": "${{ steps.upload-ios.outcome }}",
       "android-upload": "${{ steps.upload-android.outcome }}",
+      "ios-submission": "${{ steps.upload-ios.outputs.submission }}",
+      "android-submission": "${{ steps.upload-android.outputs.submission }}",
       "tag-moved": "${{ steps.tag-before-build.outputs.moved || steps.tag-before-upload.outputs.moved }}",
       "tag-before-build": "${{ steps.tag-before-build.outcome }}",
       "tag-before-upload": "${{ steps.tag-before-upload.outcome }}",
