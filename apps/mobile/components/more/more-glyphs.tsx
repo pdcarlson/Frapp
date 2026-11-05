@@ -51,7 +51,13 @@ export type MoreGlyphProps = {
   size?: number;
 };
 
-function paint({ color, neutral = false }: MoreGlyphProps) {
+/**
+ * The recipe's strokes and fills: `body` for the primary silhouette, `detail`
+ * for a secondary stroke. Exported, with {@link Frame}, so a glyph drawn in
+ * this recipe outside the hub (`components/search-glyph.tsx`) uses this one
+ * definition rather than a copy.
+ */
+export function paint({ color, neutral = false }: MoreGlyphProps) {
   const fill = neutral ? NEUTRAL_FILL : tint(color, EMPHASIS_FILL_ALPHA);
   return {
     body: {
@@ -70,7 +76,8 @@ function paint({ color, neutral = false }: MoreGlyphProps) {
   };
 }
 
-function Frame({
+/** The 24 grid at a §2 size, hidden from screen readers. */
+export function Frame({
   children,
   size = MORE_GLYPH_SIZE,
 }: {
