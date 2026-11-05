@@ -66,11 +66,12 @@ vi.mock("@/components/settings/blocked-members-sheet", () => ({
   BlockedMembersSheet: "BlockedMembersSheet",
 }));
 
+// A purple chapter, so a control painted house gold fails.
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
-    accent: "#F4CB63",
-    accentPrimary: "#EFB63B",
-    accentOnPrimary: "#131211",
+    accent: "#CB9FFF",
+    accentPrimary: "#8E4EC6",
+    accentOnPrimary: "#FFFFFF",
     logoUrl: null,
     chapterName: null,
   }),
@@ -106,5 +107,27 @@ describe("Settings back row (#3022)", () => {
 
     expect(screenText(tree).startsWith("‹ More\nSettings")).toBe(true);
     expectBackRow(tree, "More", "/more");
+  });
+});
+
+/**
+ * Inside a chapter every control takes the chapter's accent
+ * (`spec/behavior/branding.md`, owner rule 2026-11-04), so Settings' switches
+ * are the shared Toggle in the accent, never the platform's default or house
+ * gold (components/toggle.tsx).
+ */
+describe("Settings switches", () => {
+  it("paints every switch in the chapter's accent", () => {
+    const tree = render();
+    const switches = tree.root.findAll(
+      (node) => (node.type as unknown) === "Switch",
+    );
+
+    // Quiet hours, then one per notification category.
+    expect(switches.length).toBeGreaterThan(1);
+    for (const node of switches) {
+      expect(node.props.trackColor.true).toBe("#8E4EC6");
+      expect(node.props.activeThumbColor).toBe("#FFFFFF");
+    }
   });
 });

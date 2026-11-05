@@ -40,10 +40,12 @@ describe("Toggle (components.md § Toggle)", () => {
 
     expect(props.trackColor.true).toBe("#8E4EC6");
     expect(props.thumbColor).toBe("#FFFFFF");
+    // react-native-web paints an on thumb its fixed teal without this.
+    expect(props.activeThumbColor).toBe("#FFFFFF");
     expect(props.accessibilityLabel).toBe("Chat");
   });
 
-  it("paints an off toggle on the elevated surface under a muted thumb", () => {
+  it("paints an off toggle on the elevated surface, edged, under a muted thumb", () => {
     const props = switchProps(
       renderToggle(
         <Toggle
@@ -54,7 +56,9 @@ describe("Toggle (components.md § Toggle)", () => {
       ),
     );
 
-    expect(props.trackColor.false).toBe(tokens.color.surface.popover);
+    // The border's 14% white is the off track, so it stays visible on a
+    // card; the elevated surface is iOS's fill behind it.
+    expect(props.trackColor.false).toBe(tokens.color.border.input);
     expect(props.ios_backgroundColor).toBe(tokens.color.surface.popover);
     expect(props.thumbColor).toBe(tokens.color.text.muted);
   });
@@ -73,6 +77,7 @@ describe("Toggle (components.md § Toggle)", () => {
 
     expect(props.trackColor.true).toBe(tokens.color.gold.house);
     expect(props.thumbColor).toBe(tokens.color.gold.onHouse);
+    expect(props.activeThumbColor).toBe(tokens.color.gold.onHouse);
   });
 
   it("hands every change to its owner", () => {
