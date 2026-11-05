@@ -118,6 +118,28 @@ describe("TaskRow — the overdue colour", () => {
   });
 });
 
+// A task row is a list row, so it answers a press as every list row does
+// (`usePressFeedback`): a ripple on Android and, because the row is itself a
+// card, a lift to the popover step on iOS. Never the fade it used to give.
+describe("TaskRow — press feedback", () => {
+  it("ripples on Android and lifts card to popover on iOS, never fading", () => {
+    const tree = render(
+      <TaskRow row={row()} now={NOW} onToggle={() => {}} />,
+    );
+    const pressable = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    // The suite's react-native stub runs as iOS.
+    const held = flatten(pressable.props.style({ pressed: true }));
+
+    expect(pressable.props.android_ripple?.color).toMatch(/^rgba\(/);
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(held).not.toHaveProperty("opacity");
+    // Clips the ripple to the card's rounded corners.
+    expect(held.overflow).toBe("hidden");
+  });
+});
+
 describe("TaskRow — the completed row", () => {
   const done = row({
     storedStatus: "COMPLETED",

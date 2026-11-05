@@ -171,6 +171,8 @@ const branding = vi.hoisted(() => {
     accent: "#F4CB63",
     accentPrimary: "#EFB63B",
     accentOnPrimary: "#131211",
+    accentSubtle: "#3A2F14",
+    accentBorder: "#6E5523",
     logoUrl: null as string | null,
     chapterName: null as string | null,
     textMark: null as string | null,
@@ -184,7 +186,11 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import ChatHomeScreen from "@/app/(tabs)/index";
 import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
-import { ErrorState } from "@/components/state-block";
+import {
+  EmptyState,
+  EmptyStateAction,
+  ErrorState,
+} from "@/components/state-block";
 
 const general = { id: "c-general", name: "general", type: "PUBLIC" };
 const dmAlice = {
@@ -594,6 +600,9 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     };
     const tree = render();
 
+    // The state family's empty card, with its CTA, not a hand-rolled block.
+    const empty = tree.root.findByType(EmptyState);
+    expect(empty.findAllByType(EmptyStateAction)).toHaveLength(1);
     expect(
       tree.root.findAll(
         (node) =>
@@ -948,6 +957,28 @@ describe("Chat home press feedback", () => {
         backgroundColor: signetDarkTokens.color.surface.card,
       });
       expect(JSON.stringify(held)).not.toContain("opacity");
+    }
+  });
+
+  // Like the channel rows, the fold headers and the Hidden toggle pad by `sm`
+  // and bleed it into the gutter, so their captions line up with the rows'
+  // sigils.
+  it("bleeds section headers and the Hidden toggle into the gutter", () => {
+    const tree = render();
+    const headers = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "header",
+    );
+    expect(headers.length).toBeGreaterThan(0);
+
+    for (const control of [...headers, hiddenToggle(tree)]) {
+      const resting = Object.assign(
+        {},
+        ...[control.props.style({ pressed: false })].flat(Infinity),
+      ) as Record<string, unknown>;
+      expect(resting.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
+      expect(resting.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
     }
   });
 });

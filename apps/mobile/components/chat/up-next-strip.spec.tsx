@@ -400,4 +400,18 @@ describe("UpNextStrip rows", () => {
       expect(row.props.style({ pressed: false })).toContain(null);
     }
   });
+
+  // Each row pads itself by `sm` and bleeds it into the screen gutter, as
+  // Chat home's channel rows do, so the glyph stays on the gutter line and the
+  // press lift clears it.
+  it("bleeds each row's padding into the screen gutter", () => {
+    for (const row of rows(renderStrip())) {
+      const resting = Object.assign(
+        {},
+        ...[row.props.style({ pressed: false })].flat(Infinity),
+      ) as Record<string, unknown>;
+      expect(resting.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
+      expect(resting.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
+    }
+  });
 });

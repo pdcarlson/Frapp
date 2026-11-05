@@ -46,7 +46,11 @@ import {
   UnreadBadge,
 } from "@/components/chat/channel-row";
 import { usePressFeedback } from "@/components/list-section";
-import { EmptyState, ErrorState } from "@/components/state-block";
+import {
+  EmptyState,
+  EmptyStateAction,
+  ErrorState,
+} from "@/components/state-block";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
 import { isAskAvailable } from "@/lib/ask/flag";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -404,23 +408,19 @@ export default function ChatHomeScreen() {
           ))}
 
           {arranged.emptiedByFilters ? (
-            <View style={styles.stateBlock}>
-              <Text style={styles.stateBody}>{NO_MATCHING_CHANNELS}</Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() =>
-                  setSidebarFilter({ unread_only: false, hide_muted: false })
-                }
-                style={({ pressed }) => [
-                  styles.showAllButton,
-                  pressed ? styles.pressed : null,
-                ]}
-              >
-                <Text style={styles.showAllText}>
-                  {SHOW_ALL_CHANNELS_LABEL}
-                </Text>
-              </Pressable>
-            </View>
+            <EmptyState
+              glyph="⌕"
+              title="No matches"
+              body={NO_MATCHING_CHANNELS}
+              action={
+                <EmptyStateAction
+                  label={SHOW_ALL_CHANNELS_LABEL}
+                  onPress={() =>
+                    setSidebarFilter({ unread_only: false, hide_muted: false })
+                  }
+                />
+              }
+            />
           ) : null}
 
           {hidden.length > 0 ? (
@@ -502,26 +502,6 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
     },
-    showAllButton: {
-      marginTop: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
-      justifyContent: "center",
-      paddingHorizontal: tokens.spacing.lg,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.card,
-    },
-    showAllText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
-    // The Show all channels button's only. It is a button, not a list row, so
-    // it keeps the fade rather than `usePressFeedback`: mobile carries no
-    // `--card-hover` token for components.md §3's Secondary pressed fill.
-    pressed: {
-      opacity: 0.7,
-    },
     hiddenToggle: {
       minHeight: tokens.touch.minimum,
       justifyContent: "center",
@@ -532,16 +512,6 @@ function createStyles(tokens: SignetTokens) {
     unreadWarning: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.warning,
-    },
-    stateBlock: {
-      gap: tokens.spacing.sm,
-      paddingVertical: tokens.spacing.xl,
-      alignItems: "center",
-    },
-    stateBody: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
-      textAlign: "center",
     },
   });
 }

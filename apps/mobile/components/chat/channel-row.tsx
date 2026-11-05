@@ -257,7 +257,10 @@ export function ChannelListSkeleton({ rows = 5 }: { rows?: number }) {
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
   return (
+    // `accessible` makes the list one node, so VoiceOver reads the role and
+    // label; without it iOS skips a View that has no text in it.
     <View
+      accessible
       accessibilityRole="progressbar"
       accessibilityLabel="Loading channels"
       style={styles.skeletonList}

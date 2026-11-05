@@ -1,16 +1,10 @@
 import { useEffect, useState } from "react";
-import {
-  Image,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { onlineManager } from "@tanstack/react-query";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { usePressFeedback } from "@/components/list-section";
 
 const AVATAR_SIZE = 48;
 
@@ -48,6 +42,8 @@ export function ProfileCard({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
+  // The card sits on the card step, so its iOS lift is to the popover.
+  const feedback = usePressFeedback({ onCard: true });
   // A photo that fails to load (an expired signed URL, no network) falls back
   // to initials rather than an empty circle. The failure is remembered per
   // read, not per URL, for the reason `components/profile/profile-photo.tsx`
@@ -74,12 +70,9 @@ export function ProfileCard({
       accessibilityLabel={name}
       accessibilityValue={pointsLabel ? { text: pointsLabel } : undefined}
       accessibilityHint="Opens your profile."
-      android_ripple={{ color: styles.ripple.color }}
+      android_ripple={feedback.ripple}
       onPress={() => router.push("/profile")}
-      style={({ pressed }) => [
-        styles.card,
-        pressed && Platform.OS !== "android" ? styles.pressed : null,
-      ]}
+      style={({ pressed }) => [styles.card, feedback.lift(pressed)]}
     >
       {showPhoto ? (
         <Image
@@ -126,12 +119,6 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.card,
       // Bounds the Android ripple to the card's rounded corners.
       overflow: "hidden",
-    },
-    pressed: {
-      backgroundColor: tokens.color.surface.popover,
-    },
-    ripple: {
-      color: tint(tokens.color.text.foreground, 0.12),
     },
     avatar: {
       width: AVATAR_SIZE,

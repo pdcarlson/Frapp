@@ -78,38 +78,44 @@ export function listRowHint(
 }
 
 /**
- * The one press feedback a list row gives, on every screen: Android ripples,
- * iOS lifts the row to `surface.card` while it is held. Never an opacity fade.
+ * A list row's press feedback. The rule, and which rows follow it, is
+ * `spec/ui/mobile/README.md` § Native-feel rules; this is only the mechanism.
  *
- * Each platform gets its own convention because that is what reads as native.
- * Android's ripple is the tab bar's own feedback (react-navigation's
- * `PlatformPressable`), the one the owner singled out on the first Android
- * test. iOS has no ripple; a held table cell highlights instead. Before this
- * was shared, More's rows rippled while every row on Chat home and the inbox
- * faded to 60–70%, so the same gesture answered differently a tab apart.
+ * `ripple` goes to `android_ripple` (iOS ignores it). The ripple is bounded by
+ * the row, so a row that wants its feedback to clear the text pads itself
+ * rather than relying on a parent, and a rounded row clips it with
+ * `overflow: "hidden"`. `lift(pressed)` goes into the `style` callback: on iOS
+ * it raises the row one step up the surface ladder while it is held, and on
+ * Android it returns nothing, since the ripple is already the signal.
  *
- * `ripple` goes to `android_ripple` (iOS ignores it); `lift(pressed)` goes into
- * the `style` callback and returns nothing on Android, where the ripple is
- * already the signal. The ripple is bounded by the row, so a row that wants
- * its feedback to clear the text pads itself rather than relying on a parent.
+ * A row on the screen background or a grouped list lifts to `surface.card`.
+ * A row that is itself a card (a task, the profile card) passes `onCard` and
+ * lifts to `surface.popover` instead: a card lifted to its own colour shows
+ * nothing.
  */
 export type PressFeedback = {
   ripple: PressableAndroidRippleConfig;
   lift: (pressed: boolean) => ViewStyle | null;
 };
 
-export function usePressFeedback(): PressFeedback {
+export function usePressFeedback({
+  onCard = false,
+}: { onCard?: boolean } = {}): PressFeedback {
   const { tokens } = useFrappTheme();
   return useMemo(() => {
     const lifted: ViewStyle | null =
       Platform.OS === "android"
         ? null
-        : { backgroundColor: tokens.color.surface.card };
+        : {
+            backgroundColor: onCard
+              ? tokens.color.surface.popover
+              : tokens.color.surface.card,
+          };
     return {
       ripple: { color: tint(tokens.color.text.foreground, 0.12) },
       lift: (pressed: boolean) => (pressed ? lifted : null),
     };
-  }, [tokens]);
+  }, [tokens, onCard]);
 }
 
 export type ListRowProps = {

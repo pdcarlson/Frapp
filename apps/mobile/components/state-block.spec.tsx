@@ -16,6 +16,8 @@ vi.mock("@/lib/chapter-branding", () => ({
     accent: "#F4CB63",
     accentPrimary: "#F4CB63",
     accentOnPrimary: "#2B2009",
+    accentSubtle: "#3A2F14",
+    accentBorder: "#6E5523",
     logoUrl: null,
     chapterName: null,
   }),
@@ -23,8 +25,10 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import {
   EmptyState,
+  EmptyStateAction,
   ErrorState,
   NoChapterState,
+  SkeletonBlock,
   SkeletonLines,
 } from "./state-block";
 
@@ -154,6 +158,32 @@ describe("EmptyState", () => {
   });
 });
 
+describe("EmptyStateAction", () => {
+  // §10's CTA is the Tinted button: the chapter accent's soft fill, border and
+  // text, at the 44pt floor. A neutral outlined button there reads as the
+  // error card's retry.
+  it("draws the Tinted button at 44pt and calls back on press", () => {
+    const onPress = vi.fn();
+    const tree = render(<EmptyStateAction label="Show all" onPress={onPress} />);
+    const button = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    const style = flatten(button.props.style({ pressed: false }));
+
+    expect(style.minHeight).toBe(signetDarkTokens.touch.minimum);
+    expect(style.backgroundColor).toBe("#3A2F14");
+    expect(style.borderColor).toBe("#6E5523");
+    const label = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        node.props.children === "Show all",
+    );
+    expect(flatten(label.props.style).color).toBe("#F4CB63");
+    act(() => button.props.onPress());
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("NoChapterState", () => {
   // Not an edge case: a missing `active_chapter_id` claim (no membership yet,
   // or a hook-off incident) leaves every chapter-scoped query disabled, and
@@ -193,5 +223,16 @@ describe("SkeletonLines", () => {
     );
     expect(card.props.accessibilityRole).toBe("progressbar");
     expect(card.props.accessibilityLabel).toBe("Loading");
+    // Without `accessible`, VoiceOver skips a View with no text in it, so the
+    // role and label are never read and the screen sounds blank.
+    expect(card.props.accessible).toBe(true);
+  });
+
+  it("draws every shape as a SkeletonBlock, so the shimmer lands once", () => {
+    const tree = render(<SkeletonLines lines={3} showTile />);
+    const blocks = tree.root.findAllByType(SkeletonBlock);
+
+    expect(blocks).toHaveLength(4);
+    expect(blocks[0]!.props.radius).toBe(signetDarkTokens.radius.control);
   });
 });

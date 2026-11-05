@@ -186,4 +186,28 @@ describe("Notification row press feedback", () => {
       expect(JSON.stringify(held)).not.toContain("opacity");
     }
   });
+
+  // s14 draws a read notification receding, not gone: its text block dims,
+  // and only the text block, so the press lift behind it stays full strength.
+  it("dims a read row's text, and only an unread row's stays full", () => {
+    function textBlockOpacity(isUnread: boolean) {
+      const row = renderRow(isUnread);
+      const title = row.find(
+        (node) =>
+          (node.type as unknown as string) === "Text" &&
+          node.props.children === "Dues reminder",
+      );
+      const block = Object.assign(
+        {},
+        ...[title.parent!.props.style].flat(Infinity),
+      ) as Record<string, unknown>;
+      return block.opacity;
+    }
+
+    expect(textBlockOpacity(true)).toBeUndefined();
+    expect(Number(textBlockOpacity(false))).toBeLessThan(1);
+    expect(
+      JSON.stringify(renderRow(false).props.style({ pressed: false })),
+    ).not.toContain("opacity");
+  });
 });

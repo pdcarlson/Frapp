@@ -3,6 +3,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
+import { usePressFeedback } from "@/components/list-section";
 import {
   formatDoneSubtitle,
   formatDueSubtitle,
@@ -45,6 +46,8 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
+  // The row is a card, so its iOS lift is to the popover step.
+  const feedback = usePressFeedback({ onCard: true });
 
   const chip = formatPointsChip(row.pointReward, row.pointsAwarded);
   const started = row.storedStatus === "IN_PROGRESS";
@@ -134,9 +137,10 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
       // no reject affordance — only an officer could undo it.
       accessibilityHint="Mark this task done."
       onPress={onToggle}
+      android_ripple={feedback.ripple}
       style={({ pressed }) => [
         styles.row,
-        pressed ? styles.rowPressed : null,
+        feedback.lift(pressed),
         isPending ? styles.rowPending : null,
       ]}
     >
@@ -158,14 +162,13 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       paddingVertical: tokens.spacing.md,
       paddingHorizontal: tokens.spacing.lg,
       minHeight: tokens.touch.minimum,
+      // Clips the Android ripple to the rounded corners.
+      overflow: "hidden",
     },
     rowDone: {
       // The drawn `opacity:.62`. A raw number because no token carries a
-      // de-emphasis ramp — the same call the existing `pressed` blocks make.
+      // de-emphasis ramp.
       opacity: 0.62,
-    },
-    rowPressed: {
-      opacity: 0.7,
     },
     rowPending: {
       opacity: 0.8,

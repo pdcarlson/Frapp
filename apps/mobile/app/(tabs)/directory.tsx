@@ -17,6 +17,7 @@ import {
 } from "@/components/state-block";
 import { BACK_TO_MORE, BackRow } from "@/components/back-row";
 import { FilterChips, SearchField } from "@/components/filter-chips";
+import { usePressFeedback } from "@/components/list-section";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import {
   type DirectoryRow,
@@ -294,6 +295,7 @@ export function MemberRow({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const feedback = usePressFeedback();
 
   return (
     <Pressable
@@ -309,7 +311,11 @@ export function MemberRow({
           : undefined
       }
       onPress={onPress}
-      style={styles.row}
+      android_ripple={onPress ? feedback.ripple : undefined}
+      style={({ pressed }) => [
+        styles.row,
+        onPress ? feedback.lift(pressed) : null,
+      ]}
     >
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>{row.initials}</Text>

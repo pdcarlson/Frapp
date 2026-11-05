@@ -349,6 +349,17 @@ describe("ChannelRow unread emphasis and press feedback", () => {
     expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
     expect(held).not.toHaveProperty("opacity");
   });
+
+  // The row pads itself by `sm` and bleeds that same `sm` into the screen
+  // gutter, so the sigil lines up with the section captions and the press
+  // lift still clears the text. Dropping either half breaks one of the two.
+  it("bleeds its own padding into the screen gutter", () => {
+    const row = pressable(renderRow({}));
+    const resting = flatten(row.props.style({ pressed: false }));
+
+    expect(resting.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
+    expect(resting.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
+  });
 });
 
 describe("ChannelListSkeleton", () => {
@@ -365,6 +376,9 @@ describe("ChannelListSkeleton", () => {
       (node) => node.props.accessibilityRole === "progressbar",
     );
     expect(list.props.accessibilityLabel).toBe("Loading channels");
+    // Without `accessible`, VoiceOver skips a View with no text in it, so
+    // Chat home would sound blank while it loads.
+    expect(list.props.accessible).toBe(true);
 
     // A skeleton row is a `ChannelRow` row: same padding, same direction.
     const rows = tree.root.findAll(

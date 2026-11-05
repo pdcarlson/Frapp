@@ -87,13 +87,16 @@ describe("ListRow — press feedback", () => {
 });
 
 describe("usePressFeedback", () => {
-  function feedbackOn(os: string): PressFeedback {
+  function feedbackOn(
+    os: string,
+    options?: Parameters<typeof usePressFeedback>[0],
+  ): PressFeedback {
     const platform = Platform as { OS: string };
     const previous = platform.OS;
     platform.OS = os;
     let captured!: PressFeedback;
     function Probe() {
-      captured = usePressFeedback();
+      captured = usePressFeedback(options);
       return null;
     }
     try {
@@ -117,6 +120,12 @@ describe("usePressFeedback", () => {
     });
     expect(feedback.lift(true)).not.toHaveProperty("opacity");
     expect(feedback.lift(false)).toBeNull();
+  });
+
+  it("lifts a row that is itself a card to the popover step", () => {
+    expect(feedbackOn("ios", { onCard: true }).lift(true)).toEqual({
+      backgroundColor: signetDarkTokens.color.surface.popover,
+    });
   });
 
   it("leaves Android to its ripple, with no lift on top", () => {

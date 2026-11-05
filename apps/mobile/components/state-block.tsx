@@ -22,9 +22,10 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * semantic error border) and why the retry button drifted below the 44pt
  * minimum in the newest copies.
  *
- * The six More-hub screens and Chat home use these. The existing copies in the
- * events and check-in screens are left alone deliberately — migrating them is
- * a mechanical change with its own review surface, tracked separately.
+ * Which screens use these is found by searching for the exports, not listed
+ * here, because the list changes with every migration. Some screens still
+ * draw their own copies; moving them over is a mechanical change with its own
+ * review surface, and is not yet tracked.
  *
  * ## Why there is no pull-to-refresh anywhere here
  *
@@ -75,41 +76,63 @@ export function SkeletonLines({
   const widths = ["70%", "45%", "60%", "52%"] as const;
 
   return (
+    // `accessible` makes the card one node, so VoiceOver reads the role and
+    // label; without it iOS skips a View that has no text and the screen
+    // sounds blank while it loads.
     <View
+      accessible
       accessibilityRole="progressbar"
       accessibilityLabel="Loading"
       style={styles.card}
     >
-      {showTile ? <View style={styles.skeletonTile} /> : null}
-      {Array.from({ length: lines }, (_, index) => (
-        <View
-          key={index}
-          style={[
-            styles.skeletonLine,
-            { width: widths[index % widths.length] },
-          ]}
-        />
-      ))}
+      {/* Left-aligned inside the centred card, as the rows they stand for. */}
+      <View style={styles.skeletonStack}>
+        {showTile ? (
+          <SkeletonBlock
+            width={tokens.touch.minimum}
+            height={tokens.touch.minimum}
+            radius={tokens.radius.control}
+          />
+        ) : null}
+        {Array.from({ length: lines }, (_, index) => (
+          <SkeletonBlock
+            key={index}
+            width={widths[index % widths.length]}
+            height={tokens.spacing.md}
+          />
+        ))}
+      </View>
     </View>
   );
 }
 
 /**
- * One skeleton block, unframed, for a list whose loading shape is its own rows
- * rather than {@link SkeletonLines}' card: Chat home draws channel-row
- * skeletons with it (`ChannelListSkeleton`). Same fill and radius as the lines
- * above, so when the shimmer lands it lands here once for both.
+ * One skeleton block, unframed. {@link SkeletonLines} draws its tile and lines
+ * with it, and a list whose loading shape is its own rows (Chat home's
+ * `ChannelListSkeleton`) places them directly, so when the shimmer lands it
+ * lands here once for both.
  */
 export function SkeletonBlock({
   width,
   height,
+  radius,
 }: {
   width: DimensionValue;
   height: number;
+  /** Defaults to a text line's radius; a control-sized block passes `radius.control`. */
+  radius?: number;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  return <View style={[styles.skeletonBlock, { width, height }]} />;
+  return (
+    <View
+      style={[
+        styles.skeletonBlock,
+        { width, height },
+        radius === undefined ? null : { borderRadius: radius },
+      ]}
+    />
+  );
 }
 
 /**
@@ -131,6 +154,7 @@ export function EmptyState({
    * code. Nearest pattern used: the accent-tinted tile with a text glyph.
    */
   glyph?: string;
+  /** The optional CTA, drawn below the body: an {@link EmptyStateAction}. */
   action?: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
@@ -146,6 +170,40 @@ export function EmptyState({
       <Text style={styles.body}>{body}</Text>
       {action}
     </View>
+  );
+}
+
+/**
+ * The empty card's CTA: §10's Tinted button (§3), `accent-3` fill, `accent-7`
+ * border and `accent-11` label at 44pt. Tinted's pressed fill is `accent-4`,
+ * which `ChapterBranding` doesn't carry, so it fades while held like the error
+ * card's retry.
+ */
+export function EmptyStateAction({
+  label,
+  onPress,
+}: {
+  label: string;
+  onPress: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accent, accentSubtle, accentBorder } = useChapterBranding();
+  const styles = createStyles(tokens);
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={tokens.spacing.sm}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.action,
+        { backgroundColor: accentSubtle, borderColor: accentBorder },
+        pressed ? styles.pressed : null,
+      ]}
+    >
+      <Text style={[styles.actionText, { color: accent }]}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -281,26 +339,34 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
     },
+    // §10 sets the CTA 14px below the body. The card's 8pt gap plus `xs`
+    // makes 12, the nearest the spacing scale reaches.
+    action: {
+      marginTop: tokens.spacing.xs,
+      minHeight: tokens.touch.minimum,
+      justifyContent: "center",
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      paddingHorizontal: tokens.spacing.lg,
+    },
+    actionText: {
+      ...typeRole({
+        ...tokens.typography.role.label,
+        weight: tokens.typography.weight.bold,
+      }),
+    },
     pressed: {
       opacity: 0.7,
     },
-    skeletonTile: {
-      alignSelf: "flex-start",
-      width: tokens.touch.minimum,
-      height: tokens.touch.minimum,
-      borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.surface.popover,
+    skeletonStack: {
+      alignSelf: "stretch",
+      alignItems: "flex-start",
+      gap: tokens.spacing.sm,
     },
-    skeletonLine: {
-      alignSelf: "flex-start",
-      height: tokens.spacing.md,
+    skeletonBlock: {
       // TODO-DESIGN: §10 specifies radius 6 for skeleton text lines. `chip` (8)
       // is the nearest token; a raw 6 would be a hard-coded value, which
       // foundations.md bans.
-      borderRadius: tokens.radius.chip,
-      backgroundColor: tokens.color.surface.popover,
-    },
-    skeletonBlock: {
       borderRadius: tokens.radius.chip,
       backgroundColor: tokens.color.surface.popover,
     },

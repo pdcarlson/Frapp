@@ -176,6 +176,7 @@ The same file's `NotificationsGlyph` (bell, clapper stroke-only; s09 and web
 `NotificationsGlyph`) is drawn by Chat home's inbox bell
 (`components/chat/notifications-bell.tsx`), in `text.foreground` with the
 neutral fill, since the More row it was drawn for moved there (#3362).
+Chat home's UP NEXT rows (`components/chat/up-next-strip.tsx`) reuse the tab bar's `EventsGlyph` (focused, in the chapter accent) and `TasksGlyph` (unfocused, `text.muted`) from §6.1 at 20px, to tell the event from the task.
 
 ### 6.2 Web Dashboard shell (Signet duotone)
 
