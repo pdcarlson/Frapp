@@ -21,6 +21,10 @@ import { gutterBleed, usePressFeedback } from "@/components/list-section";
 import { DirectoryGlyph } from "@/components/more/more-glyphs";
 import { SearchGlyph } from "@/components/search-glyph";
 import { screenTitleStyle } from "@/components/screen-shell";
+import {
+  ThemedRefreshControl,
+  useRefetchAll,
+} from "@/components/pull-to-refresh";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import {
   type DirectoryRow,
@@ -119,6 +123,15 @@ export default function DirectoryScreen() {
     : tab === "actives"
       ? membersQuery
       : alumniQuery;
+  // The pull refetches what the screen shows: the search results while
+  // searching (that query is also gated on a non-empty term), otherwise both
+  // lists, since the tab chips count each.
+  const refresh = useRefetchAll(
+    isSearching
+      ? [searchQuery.refetch]
+      : [membersQuery.refetch, alumniQuery.refetch],
+    !!chapterId,
+  );
 
   // `GET /v1/members` is the whole chapter; the Actives tab is the part of it
   // that isn't on the Alumni tab (#2484). Search stays directory-wide: it hides
@@ -304,6 +317,9 @@ export default function DirectoryScreen() {
         )}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          refresh ? <ThemedRefreshControl refresh={refresh} /> : undefined
+        }
       />
       <MemberDetailSheet
         ref={detailSheetRef}

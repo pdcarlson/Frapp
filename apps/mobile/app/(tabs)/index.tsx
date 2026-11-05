@@ -23,6 +23,7 @@ import {
   useChannelUnreadCounts,
   useGetOrCreateDm,
   useChannels,
+  useActiveChapterId,
   useEvents,
   useLeaveChannel,
   useMemberDisplayNames,
@@ -35,6 +36,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
+import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
@@ -106,6 +108,17 @@ export default function ChatHomeScreen() {
   const unreadQuery = useChannelUnreadCounts();
   const eventsQuery = useEvents();
   const tasksQuery = useTasks();
+  const chapterId = useActiveChapterId();
+  const refresh = useRefetchAll(
+    [
+      channelsQuery.refetch,
+      categoriesQuery.refetch,
+      unreadQuery.refetch,
+      eventsQuery.refetch,
+      tasksQuery.refetch,
+    ],
+    !!chapterId,
+  );
   // A DM row's title is the *other* participant, so the list needs the viewer's
   // `users.id` to subtract. Deliberately not `useChatRuntime()`, which would
   // reconfigure the realtime manager and boot the outbox flush from this screen.
@@ -261,6 +274,7 @@ export default function ChatHomeScreen() {
     <ScreenShell
       title={chapterName ?? "Frapp"}
       titleMark={<ChapterMark />}
+      refresh={refresh}
       headerAction={
         <View style={styles.headerActions}>
           {/* No pill at all in a build without Ask (#2259): `AskSheet`
@@ -295,9 +309,9 @@ export default function ChatHomeScreen() {
       {channelsQuery.isPending ? (
         <ChannelListSkeleton />
       ) : channelsQuery.isError ? (
-        // An explicit retry, because nothing else here recovers from a server
-        // error: this tab stays mounted for the session and `ScreenShell`'s
-        // ScrollView has no RefreshControl to pull. A *connectivity* blip
+        // An explicit retry as well as the pull (#3385): this tab stays
+        // mounted for the session, and a button is the recovery a member
+        // sees without knowing the gesture. A *connectivity* blip
         // recovers on its own since C8 (#998) wired `onlineManager` and
         // `focusManager` (`lib/connection/query-connectivity.ts`).
         <ErrorState

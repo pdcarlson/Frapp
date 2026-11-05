@@ -113,6 +113,7 @@ let sessions: unknown[] = NO_SESSIONS;
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useActiveChapterId: () => "chapter-1",
   useCurrentChapter: () => ({ data: chapter, refetch: refetchChapter }),
   useGeofences: () => ({
     data: isLoading ? undefined : zones,

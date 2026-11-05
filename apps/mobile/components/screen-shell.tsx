@@ -3,6 +3,10 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { BackRow, type BackTarget } from "@/components/back-row";
+import {
+  ThemedRefreshControl,
+  type ScreenRefresh,
+} from "@/components/pull-to-refresh";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 type ScreenShellProps = {
@@ -46,6 +50,12 @@ type ScreenShellProps = {
    * Optional, so every existing call site is unaffected.
    */
   headerAction?: ReactNode;
+  /**
+   * Pull-to-refresh on the shell's scroll view (#3385): the screen's queries'
+   * `refetch`, awaited together. The spinner stays up until it settles. A
+   * screen with nothing to refetch passes none, and draws no control.
+   */
+  refresh?: ScreenRefresh;
   children: ReactNode;
 };
 
@@ -81,6 +91,7 @@ export function ScreenShell({
   titleMark,
   subtitle,
   headerAction,
+  refresh,
   children,
 }: ScreenShellProps) {
   const { tokens } = useFrappTheme();
@@ -91,7 +102,12 @@ export function ScreenShell({
       style={styles.safeArea}
       edges={["top", "left", "right", "bottom"]}
     >
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          refresh ? <ThemedRefreshControl refresh={refresh} /> : undefined
+        }
+      >
         <View style={styles.header}>
           {back ? (
             <BackRow

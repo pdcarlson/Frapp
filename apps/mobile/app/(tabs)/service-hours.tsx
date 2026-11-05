@@ -10,6 +10,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { useRefetchAll } from "@/components/pull-to-refresh";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { HeaderAddButton } from "@/components/header-add-button";
 import { HistoryRow } from "@/components/history-row";
@@ -56,14 +57,20 @@ export default function ServiceHoursScreen() {
   // The query behind `useViewerUserId`, for its error state: the helper reports a
   // failed `/v1/users/me` as `null`, the same value it means by "pending", and
   // the read below is gated on that id — so without this the screen shimmers
-  // forever on a dead call, with no pull-to-refresh to escape by
-  // (`ScreenShell` is a bare ScrollView). The C3 ruling, as dues and tasks
-  // already apply it.
+  // forever on a dead call, with no retry to escape by. The C3 ruling, as dues
+  // and tasks already apply it.
   const viewerQuery = useCurrentUser();
   const chapterId = useActiveChapterId();
   const entriesQuery = useServiceEntries(viewerUserId ?? undefined, undefined, {
     enabled: !!viewerUserId,
   });
+  // The pull refetches the entries only once the id is known: `refetch`
+  // ignores `enabled`, and an unscoped read is the chapter-wide list above.
+  const refresh = useRefetchAll(
+    viewerUserId
+      ? [viewerQuery.refetch, entriesQuery.refetch]
+      : [viewerQuery.refetch],
+  );
 
   const rows = useMemo(
     () => selectServiceEntryRows(entriesQuery.data),
@@ -149,6 +156,7 @@ export default function ServiceHoursScreen() {
     <ScreenShell
       back={BACK_TO_MORE}
       title="Service hours"
+      refresh={refresh}
       headerAction={
         <HeaderAddButton label="Log service hours" onPress={openSheet} />
       }

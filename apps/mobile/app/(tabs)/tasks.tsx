@@ -14,6 +14,7 @@ import {
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
+import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { HeaderAddButton } from "@/components/header-add-button";
 import { SectionHeader } from "@/components/list-section";
@@ -80,6 +81,15 @@ export default function TasksScreen() {
   const tasksQuery = useTasks();
   const pointsQuery = useMyPoints("semester");
   const leaderboardQuery = useLeaderboard("semester");
+  const refresh = useRefetchAll(
+    [
+      viewerQuery.refetch,
+      tasksQuery.refetch,
+      pointsQuery.refetch,
+      leaderboardQuery.refetch,
+    ],
+    !!chapterId,
+  );
   const updateStatus = useUpdateTaskStatus();
 
   // `can` from @repo/validation, not a bare `includes` — an owner's grant is the
@@ -230,8 +240,8 @@ export default function TasksScreen() {
     // failed `/v1/users/me` as `null` too. Without this branch a 500 there
     // leaves the board shimmering forever with no retry — the exact "blip at
     // launch leaves a screen dead until a force-quit" case `state-block.tsx`
-    // says `onRetry` exists to prevent, and `ScreenShell` is frozen so there is
-    // no pull-to-refresh escape.
+    // says `onRetry` exists to prevent. A pull refetches it too (#3385), but
+    // nothing on screen says so.
     if (viewerQuery.isError) {
       return (
         <ErrorState
@@ -297,6 +307,7 @@ export default function TasksScreen() {
   return (
     <ScreenShell
       title="Tasks"
+      refresh={refresh}
       headerAction={
         canManageTasks ? (
           <HeaderAddButton

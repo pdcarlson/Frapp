@@ -129,6 +129,7 @@ vi.mock("@repo/hooks", async () => {
     SIDEBAR_SAVE_FAILED_TITLE: actual.SIDEBAR_SAVE_FAILED_TITLE,
     UNPIN_FROM_TOP_LABEL: actual.UNPIN_FROM_TOP_LABEL,
     UNREAD_ONLY_LABEL: actual.UNREAD_ONLY_LABEL,
+    useActiveChapterId: () => "chapter-1",
     useSidebarPreferences: () => sidebarPrefs.value,
     useSetChannelPinned: (options?: { onError?: () => void }) => {
       writeOptions.pin = options;

@@ -12,6 +12,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
+import { useRefetchAll } from "@/components/pull-to-refresh";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { UploadGlyph } from "@/components/documents/document-glyphs";
 import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
@@ -106,6 +107,10 @@ export default function DocumentsScreen() {
     search: deferredSearch || undefined,
   });
   const openDocument = useDocumentDownloadUrl();
+  const refresh = useRefetchAll(
+    [foldersQuery.refetch, documentsQuery.refetch],
+    !!chapterId,
+  );
 
   const folders = useMemo(
     () => selectDocumentFolders(foldersQuery.data),
@@ -205,6 +210,7 @@ export default function DocumentsScreen() {
   return (
     <ScreenShell
       back={BACK_TO_MORE}
+      refresh={refresh}
       backAction={
         canUpload ? (
           <Pressable
