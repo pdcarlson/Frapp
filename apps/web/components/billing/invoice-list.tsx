@@ -13,7 +13,7 @@ import {
 } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { can } from "@repo/validation";
-import { formatBareDate } from "@repo/formatting";
+import { formatDay } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,8 +52,11 @@ import {
   dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
+  dashboardToolbarSearchClassName,
+  dashboardToolbarSearchGlyphClassName,
   denseListClassName,
 } from "@/components/shared/table-controls";
+import { SearchGlyph } from "@/components/layout/nav-glyphs";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -63,7 +66,13 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { isStripeConfigured } from "@/lib/stripe";
 import { formatCurrency } from "@/lib/currency";
-import { asArray, cn, downloadCsv, getErrorMessage } from "@/lib/utils";
+import {
+  asArray,
+  cn,
+  downloadCsv,
+  getErrorMessage,
+  labelled,
+} from "@/lib/utils";
 
 /**
  * The chapter's invoices, as **one** list.
@@ -300,7 +309,8 @@ export function InvoiceList({ id }: { id?: string }) {
         Title: invoice.title,
         Amount: formatCurrency(invoice.amount),
         Status: invoice.status,
-        "Due Date": formatBareDate(invoice.due_date),
+        // ISO, so a spreadsheet sorts it; the screen takes the house shape.
+        "Due Date": invoice.due_date ?? "",
         "Member ID": invoice.user_id,
       }));
     downloadCsv(rows, "invoices");
@@ -349,7 +359,7 @@ export function InvoiceList({ id }: { id?: string }) {
     } catch (error) {
       toast({
         title: "Couldn't create invoice",
-        description: getErrorMessage(error, "Retry or confirm billing:manage."),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -370,7 +380,7 @@ export function InvoiceList({ id }: { id?: string }) {
         title: "Couldn't update invoice",
         description: getErrorMessage(
           error,
-          "The status transition was rejected by the API.",
+          "The status didn't change. Try again in a moment.",
         ),
         variant: "destructive",
       });
@@ -431,13 +441,16 @@ export function InvoiceList({ id }: { id?: string }) {
           Invoices
         </SectionLabel>
         <div className="flex flex-wrap items-center gap-2">
-          <Input
-            aria-label="Search invoices or members"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search invoice or member"
-            className="h-11 w-full sm:w-56"
-          />
+          <div className="relative w-full sm:w-64">
+            <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
+            <Input
+              aria-label="Search invoices or members"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search invoice or member"
+              className={dashboardToolbarSearchClassName}
+            />
+          </div>
           <select
             aria-label="Invoice status filter"
             value={statusFilter}
@@ -477,7 +490,11 @@ export function InvoiceList({ id }: { id?: string }) {
           <Can permission="billing:manage">
             <Dialog {...createDialog.dialogProps}>
               <DialogTrigger asChild>
-                <Button size="sm" className="gap-2" {...gate.controlProps()}>
+                <Button
+                  size="toolbar"
+                  className="gap-2"
+                  {...gate.controlProps()}
+                >
                   <Plus className="h-4 w-4" />
                   Create invoice
                 </Button>
@@ -652,10 +669,7 @@ export function InvoiceList({ id }: { id?: string }) {
       ) : null}
 
       {canManage ? (
-        <OverdueSummary
-          failed={overdueReadFailed}
-          count={overdue.length}
-        />
+        <OverdueSummary failed={overdueReadFailed} count={overdue.length} />
       ) : null}
 
       {selectedIds.length > 0 ? (
@@ -669,7 +683,11 @@ export function InvoiceList({ id }: { id?: string }) {
             already get an automatic notification, and there is no
             manual-remind endpoint to call.
           */}
-          <Button size="sm" variant="secondary" onClick={exportSelectedCsv}>
+          <Button
+            size="toolbar"
+            variant="secondary"
+            onClick={exportSelectedCsv}
+          >
             Export CSV
           </Button>
         </div>
@@ -690,7 +708,7 @@ export function InvoiceList({ id }: { id?: string }) {
         <NestedError
           sole
           title="Couldn't load invoices"
-          description="Verify your chapter access and API health, then retry."
+          description="Confirm your chapter access and retry."
           onRetry={() => void invoicesQuery.refetch()}
         />
       ) : filtered.length === 0 ? (
@@ -799,7 +817,7 @@ export function InvoiceList({ id }: { id?: string }) {
                     <p className="truncate text-caption text-muted-foreground">
                       {[
                         memberName,
-                        `Due ${formatBareDate(invoice.due_date)}`,
+                        labelled("Due", formatDay(invoice.due_date)),
                         invoice.description || null,
                       ]
                         .filter(Boolean)
@@ -818,7 +836,7 @@ export function InvoiceList({ id }: { id?: string }) {
                     ) : null}
                     {canPay(invoice) ? (
                       <Button
-                        size="sm"
+                        size="toolbar"
                         onClick={() =>
                           setPayingInvoice({
                             id: invoice.id,
@@ -838,26 +856,33 @@ export function InvoiceList({ id }: { id?: string }) {
                     */}
                     {canManage && invoice.status === "DRAFT" ? (
                       <Button
-                        size="sm"
+                        size="toolbar"
                         variant="secondary"
                         {...gate.controlProps(transitioningId === invoice.id)}
                         onClick={() => void transition(invoice, "OPEN")}
                       >
-                        Send (mark OPEN)
+                        Send
                       </Button>
                     ) : null}
                     {canManage && invoice.status === "OPEN" ? (
                       <>
+                        {/*
+                          Secondary, not primary: a list of open invoices is
+                          one Mark paid per row, and a column of filled
+                          buttons is louder than the rows they act on. Void
+                          is quiet beside it, the way Delete is on Tasks.
+                        */}
                         <Button
-                          size="sm"
+                          size="toolbar"
+                          variant="secondary"
                           {...gate.controlProps(transitioningId === invoice.id)}
                           onClick={() => void transition(invoice, "PAID")}
                         >
                           Mark paid
                         </Button>
                         <Button
-                          size="sm"
-                          variant="secondary"
+                          size="toolbar"
+                          variant="quiet"
                           {...gate.controlProps(transitioningId === invoice.id)}
                           onClick={() => void transition(invoice, "VOID")}
                         >
@@ -894,13 +919,7 @@ export function InvoiceList({ id }: { id?: string }) {
  * surface with the hairline that `components.md` §2 makes the load-bearing
  * edge.
  */
-function OverdueSummary({
-  failed,
-  count,
-}: {
-  failed: boolean;
-  count: number;
-}) {
+function OverdueSummary({ failed, count }: { failed: boolean; count: number }) {
   if (!failed && count === 0) return null;
 
   /*
