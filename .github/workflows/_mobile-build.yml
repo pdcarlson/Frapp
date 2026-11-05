@@ -23,6 +23,17 @@ name: Mobile build
 #      which arms the required `api-contract-check` gate. The `record` job
 #      opens that PR (`scripts/ci/record-shipped-builds.mjs`).
 #
+# ── Submit, record, then confirm (#3483) ────────────────────────────────────
+# Expo's free plan queues each submission for about 47 minutes before it
+# uploads anything (2026-11-05). `eas submit --wait` held the upload step for
+# all of it, hit the step's ceiling, and turned an upload that worked into a
+# red run with no record PR. So each upload step submits with `--no-wait`:
+# it ends once EAS accepts the submission, and hands the submission id on.
+# The `record` job records a build once its submission is accepted. The
+# `confirm` job then waits out the queue beside it, polling each submission
+# (`scripts/ci/confirm-store-submissions.mjs`), and goes red with what to do
+# when one errors, is cancelled, or is still queued at its deadline.
+#
 # ── Upload, never release ───────────────────────────────────────────────────
 # iOS goes to TestFlight and Android to the Play `internal` track
 # (`submit.production` in `apps/mobile/eas.json`). Submitting for App Review
@@ -127,7 +138,7 @@ jobs:
       deployment: false
     # The ceilings below: two starts of 15, the wait of 240 (its own deadline
     # ends the poll at 230, so the step reports before it can be killed), two
-    # uploads of 25, and the installs, under the 360 a hosted job allows.
+    # submits of 10, and the installs, under the 360 a hosted job allows.
     timeout-minutes: 340
     permissions:
       contents: read
@@ -139,6 +150,8 @@ jobs:
       android-started: ${{ steps.start-android.outputs.id }}
       ios-upload: ${{ steps.upload-ios.outcome }}
       android-upload: ${{ steps.upload-android.outcome }}
+      ios-submission: ${{ steps.upload-ios.outputs.submission }}
+      android-submission: ${{ steps.upload-android.outputs.submission }}
       # `true` when either tag check found production on another commit;
       # each check's outcome says whether it ran and passed.
       tag-moved: ${{ steps.tag-before-build.outputs.moved || steps.tag-before-upload.outputs.moved }}
@@ -548,22 +561,37 @@ jobs:
       - name: Upload iOS to TestFlight (not submitted for review)
         id: upload-ios
         if: ${{ !cancelled() && steps.tag-before-upload.outcome == 'success' && steps.wait.outputs.ios_id != '' }}
-        timeout-minutes: 25
+        timeout-minutes: 10
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           BUILD_ID: ${{ steps.wait.outputs.ios_id }}
-        run: eas submit --platform ios --profile production --id "$BUILD_ID" --non-interactive --wait --no-auto-testflight-setup
+        # `--no-wait`: the step ends once EAS accepts the submission, and the
+        # `confirm` job waits out Expo's queue (this file's header, #3483).
+        # The id comes from the details link eas prints; a missing one only
+        # leaves `confirm` nothing to check, which it reports.
+        run: |
+          set -euo pipefail
+          eas submit --platform ios --profile production --id "$BUILD_ID" --non-interactive --no-wait --no-auto-testflight-setup | tee "$RUNNER_TEMP/submit.log"
+          ID="$(grep -oE 'submissions/[0-9a-f-]{36}' "$RUNNER_TEMP/submit.log" | head -n 1 | cut -d/ -f2 || true)"
+          [ -n "$ID" ] || echo "::warning::eas submit printed no submission link, so the confirm job can't check this upload. Check it on expo.dev."
+          echo "submission=$ID" >> "$GITHUB_OUTPUT"
 
       - name: Upload Android to the Play internal track (not promoted)
         id: upload-android
         if: ${{ !cancelled() && steps.tag-before-upload.outcome == 'success' && steps.wait.outputs.android_id != '' }}
-        timeout-minutes: 25
+        timeout-minutes: 10
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           BUILD_ID: ${{ steps.wait.outputs.android_id }}
-        run: eas submit --platform android --profile production --id "$BUILD_ID" --non-interactive --wait
+        # The same as the iOS upload above.
+        run: |
+          set -euo pipefail
+          eas submit --platform android --profile production --id "$BUILD_ID" --non-interactive --no-wait | tee "$RUNNER_TEMP/submit.log"
+          ID="$(grep -oE 'submissions/[0-9a-f-]{36}' "$RUNNER_TEMP/submit.log" | head -n 1 | cut -d/ -f2 || true)"
+          [ -n "$ID" ] || echo "::warning::eas submit printed no submission link, so the confirm job can't check this upload. Check it on expo.dev."
+          echo "submission=$ID" >> "$GITHUB_OUTPUT"
 
   record:
     name: Record the uploads in shipped-builds.json (opens a PR)
@@ -630,3 +658,44 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: node scripts/ci/record-shipped-builds.mjs
+
+  confirm:
+    name: Confirm the store uploads finished (waits out Expo's queue)
+    needs: build
+    # Beside `record`, after a failed build too: one platform may have been
+    # submitted. Only when a submission id came back, so a run that submitted
+    # nothing has nothing to wait for.
+    if: ${{ !cancelled() && (needs.build.outputs.ios-submission != '' || needs.build.outputs.android-submission != '') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    environment:
+      name: automation
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      # The dispatched `main`, as in `record`: the script holds EXPO_TOKEN, so
+      # it must not come from the tree that was built.
+      - name: Checkout (trusted ref)
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Node only, no install: the script uses fetch and Node built-ins, so
+      # no installed package runs with the token.
+      - name: Setup Node
+        uses: ./.github/actions/node-setup
+        with:
+          install: none
+
+      # Its own deadline ends the poll at 280, so it reports before the step
+      # is killed at 290.
+      - name: Wait for each submission to finish on EAS
+        timeout-minutes: 290
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          IOS_SUBMISSION: ${{ needs.build.outputs.ios-submission }}
+          ANDROID_SUBMISSION: ${{ needs.build.outputs.android-submission }}
+          DEADLINE_MINUTES: "280"
+          POLL_SECONDS: "60"
+        run: node scripts/ci/confirm-store-submissions.mjs

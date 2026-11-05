@@ -21,7 +21,11 @@
 //
 // ── What gets recorded ──────────────────────────────────────────────────────
 // A build is recorded when EAS reports it `FINISHED` and its upload step
-// succeeded. Anything else is reported and left out:
+// succeeded. Since #3483 that step submits with `--no-wait`, so "succeeded"
+// means EAS accepted the submission, which may still sit in Expo's queue; the
+// run's `confirm` job reports whether each upload then finished, and an extra
+// entry for one that failed only makes the contract gate stricter. Anything
+// else is reported and left out:
 //   * a build that didn't finish, or whose upload failed or never ran: it is
 //     on no store track, and the README's rule is to record a build when it is
 //     first uploaded. The build job is already red for it, and the summary
@@ -209,7 +213,7 @@ export function prTitle(entries) {
 export function prBody({ entries, rows, sha, runUrl, repo }) {
   const byStore = new Map(rows.map((r) => [r.store, r]));
   return [
-    `[Deploy production](${runUrl}) shipped \`${sha}\`, built it on EAS, and uploaded these builds without releasing them:`,
+    `[Deploy production](${runUrl}) shipped \`${sha}\`, built it on EAS, and submitted these builds to the stores without releasing them:`,
     "",
     "| Platform | Version | Build | Uploaded to | EAS build |",
     "| --- | --- | --- | --- | --- |",
@@ -218,6 +222,8 @@ export function prBody({ entries, rows, sha, runUrl, repo }) {
     ),
     "",
     `This adds one \`${REGISTRY_PATH}\` entry per uploaded build, so this PR's \`api-contract-check\` holds the API to the contract at \`${sha}\` ([\`apps/mobile/store/README.md\` § Shipped builds and the API contract](https://github.com/${repo}/blob/main/apps/mobile/store/README.md#shipped-builds-and-the-api-contract)). Merge it before any tester installs one of these builds: until then the gate doesn't protect them.`,
+    "",
+    `EAS accepted each submission, and Expo may still be uploading it. [The run](${runUrl})'s \`confirm\` job says whether each upload finished. If one failed, drop its entry before merging.`,
     "",
     `**If \`api-contract-check\` fails here,** \`main\` has already changed the API in a way these builds can't take (it is ahead of \`${sha}\`). Fix that on \`main\` before the next production ship, or waive a route no shipped binary calls as the README says, then re-run the check. Don't merge around it.`,
     "",

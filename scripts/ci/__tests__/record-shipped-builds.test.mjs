@@ -11,6 +11,7 @@ import {
   mergeRegistry,
   parseBuilds,
   planRecord,
+  prBody,
   prTitle,
   recordShippedBuilds,
   summary,
@@ -190,6 +191,18 @@ describe("the PR", () => {
       "chore(mobile): record iOS 0.9.0 (12) and Android 0.9.0 (7) in shipped-builds.json",
     );
     assert.equal(branchName({ runId: "123", runAttempt: "2" }), "shipped-builds/run-123-2");
+  });
+
+  // #3483: the upload step now submits with --no-wait, so its success means
+  // EAS accepted the submission while Expo's free queue may hold it for most
+  // of an hour. The build is recorded then, and the body points at the job
+  // that says whether the upload finished.
+  it("records a build whose submission is accepted but still queued, and says where to see it finish", () => {
+    const { entries, rows } = plan({ builds: [iosBuild()], platform: "ios", uploads: { ios: "success" } });
+    assert.equal(entries.length, 1);
+    const body = prBody({ entries, rows, sha: SHA, runUrl: "https://x/runs/9", repo: "pdcarlson/Frapp" });
+    assert.match(body, /submitted these builds to the stores without releasing them/);
+    assert.match(body, /EAS accepted each submission, and Expo may still be uploading it\. \[The run\]\(https:\/\/x\/runs\/9\)'s `confirm` job says whether each upload finished\. If one failed, drop its entry before merging\./);
   });
 });
 
