@@ -263,7 +263,7 @@ describe("Event details layout", () => {
     expect(flat(textNode(tree, "+10 pts")!).color).toBe(ACCENT);
   });
 
-  it("draws the open card in the accent with the 50pt accent scan button", () => {
+  it("draws the open card in the accent with the 48pt accent scan button", () => {
     const tree = render();
 
     expect(flat(textNode(tree, "Check-in is open")!).color).toBe(ACCENT);
@@ -282,7 +282,7 @@ describe("Event details layout", () => {
     );
     const style = StyleSheet.flatten(scan.props.style({ pressed: false }));
     expect(style).toMatchObject({
-      height: 50,
+      height: signetDarkTokens.touch.buttonLarge,
       borderRadius: signetDarkTokens.radius.control,
       backgroundColor: ACCENT,
     });
@@ -325,7 +325,7 @@ describe("Event details layout", () => {
     const held = StyleSheet.flatten(button.props.style({ pressed: true }));
 
     expect(rest).toMatchObject({
-      height: 50,
+      height: signetDarkTokens.touch.buttonLarge,
       borderRadius: signetDarkTokens.radius.control,
     });
     // Press feedback is a lift up the surface ladder (the stub is iOS) and a
@@ -359,7 +359,11 @@ describe("Event details layout", () => {
   });
 
   it("says no more than the card does", () => {
-    event = { ...EVENT, check_in_zone: [[0, 0]], check_in_zone_name: "Great Room" };
+    event = {
+      ...EVENT,
+      check_in_zone: [[0, 0]],
+      check_in_zone_name: "Great Room",
+    };
     const tree = render();
 
     expect(screenText(tree)).not.toContain("to be counted");

@@ -55,7 +55,7 @@ export function AccentSwatches({
         disabled={disabled}
         onClick={() => onPick(swatch.hex)}
         className={cn(
-          "group flex min-h-11 items-center gap-2 rounded-full disabled:cursor-not-allowed disabled:opacity-60",
+          "group flex min-h-9 items-center gap-2 rounded-full pointer-coarse:min-h-11 disabled:cursor-not-allowed disabled:opacity-60",
           labelled ? "pr-3" : "",
           FOCUS_RING,
         )}

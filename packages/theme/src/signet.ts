@@ -191,7 +191,7 @@ const SIGNET_DARK: SignetTokens = {
     avatar: "50%",
   },
   spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, "2xl": 32, "3xl": 48 },
-  touch: { minimum: 44, button: 46, buttonLarge: 48, tabBar: 56 },
+  touch: { minimum: 44, button: 44, buttonLarge: 48, tabBar: 56 },
   focus: { ringWidth: 3, ringOpacity: 0.25 },
   scrollbar: {
     width: 6,
@@ -289,8 +289,9 @@ export function getSignetCssVars(
     "--space-2xl": `${t.spacing["2xl"]}px`,
     "--space-3xl": `${t.spacing["3xl"]}px`,
 
-    // Touch floors (foundations.md §9). Web honors the same 44px minimum;
-    // pointer input does not make a small target acceptable.
+    // Touch floors (foundations.md §9). Web honors the same 44px minimum
+    // wherever a finger lands (`pointer: coarse`); a mouse gets the denser
+    // steps of the control size scale.
     "--touch-min": `${t.touch.minimum}px`,
     "--touch-button": `${t.touch.button}px`,
 
