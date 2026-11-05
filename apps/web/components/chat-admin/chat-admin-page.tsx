@@ -386,7 +386,7 @@ function ChatAdminBody({
     // The description goes out only when the officer changed it. Sending the
     // blank draft on every save turned a never-set description (null) into
     // `''`, which reads the same on screen but is what a deliberate clear
-    // looks like to the default-description backfill (20261105200000).
+    // looks like to the default-description backfill (20261105210000).
     const description = descriptionDraft.trim();
     const descriptionChanged =
       description !== (selectedChannel.description ?? "").trim();

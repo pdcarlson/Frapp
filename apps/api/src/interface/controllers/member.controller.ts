@@ -83,7 +83,8 @@ export class MemberController {
   // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('roster')
   @ApiOperation({
-    summary: 'Display roster for the chapter — id, name and avatar only',
+    summary:
+      'Display roster for the chapter — id, name, avatar and role color only',
   })
   @ApiOkResponse({ type: MemberRosterEntryDto, isArray: true })
   async roster(@CurrentChapterId() chapterId: string) {

@@ -377,7 +377,14 @@ function openImageViewer(tree: ReactTestRenderer, messageId = "m1") {
     }),
   );
   expect(viewerOpen(tree)).toBe(true);
-  expect(screenText(tree)).toContain(IMAGE.filename);
+  // The filename is the shown image's accessible name, never drawn text.
+  expect(
+    tree.root.findAll(
+      (node) =>
+        node.type === ("Animated.Image" as never) &&
+        node.props.accessibilityLabel === IMAGE.filename,
+    ).length,
+  ).toBeGreaterThan(0);
 }
 
 /** The last child React renders into `node`, composite or host. */

@@ -218,7 +218,7 @@ export default function ChatThreadScreen() {
   // over the live `postgres_changes` echo as well as one from the REST page — a
   // join on the message payload could only ever have covered the latter.
   const roster = useMemberDisplayNames();
-  const { nameFor, refetch: refetchRoster } = roster;
+  const { nameFor, roleColorFor, refetch: refetchRoster } = roster;
 
   // `#name` for a channel, the other member for a DM (#2775).
   // The cached list is read, not subscribed to: the fallback must not start
@@ -727,6 +727,7 @@ export default function ChatThreadScreen() {
           startsDay={placement?.startsDay ?? false}
           viewerId={viewerId}
           nameFor={nameFor}
+          roleColorFor={roleColorFor}
           replyParent={replyParent}
           blockState={blockState}
           onVote={(id, actionType, payload) =>
@@ -746,10 +747,11 @@ export default function ChatThreadScreen() {
     },
     // `nameFor` belongs here: it changes identity when the roster resolves, and
     // omitting it leaves a stale closure rendering truncated ids until some
-    // other dep happens to change.
+    // other dep happens to change. `roleColorFor` resolves off the same read.
     [
       viewerId,
       nameFor,
+      roleColorFor,
       retry,
       discard,
       handleReact,

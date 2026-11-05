@@ -5,7 +5,7 @@ import { db, miss } from "../harness.mjs";
 
 // ─── Functional: starting descriptions for the default channels ─────────────
 //
-// 20261105200000 writes a starting `description` into the four channels every
+// 20261105210000 writes a starting `description` into the four channels every
 // chapter is seeded with. Replay runs it against an empty table, so replay
 // alone proves nothing about it; this tier re-runs the same SQL against rows
 // it seeds and checks the three things the migration promises:
@@ -18,7 +18,7 @@ import { db, miss } from "../harness.mjs";
 //
 // Everything runs inside one transaction and is rolled back.
 console.log(
-  "\n=== Functional: default channel descriptions (20261105200000) ===",
+  "\n=== Functional: default channel descriptions (20261105210000) ===",
 );
 {
   const A = "a3489000-0000-4000-8000-00000000000a";
@@ -28,7 +28,7 @@ console.log(
   const sql = readFileSync(
     join(
       process.cwd(),
-      "supabase/migrations/20261105200000_default_channel_descriptions.sql",
+      "supabase/migrations/20261105210000_default_channel_descriptions.sql",
     ),
     "utf8",
   );

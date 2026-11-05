@@ -170,11 +170,35 @@ describe("the image viewer", () => {
     expect(dialog).toHaveAttribute("aria-modal", "true");
     // The dialog itself, so a screen reader reads its name and how to step.
     expect(dialog).toHaveFocus();
-    expect(within(dialog).getByText("photo-1.png")).toBeInTheDocument();
     expect(shownImage(dialog)).toHaveAttribute(
       "src",
       "https://storage.test/signed/photo-1.png",
     );
+  });
+
+  it("names itself after the file without drawing the filename", async () => {
+    // A filename is whatever the sender's device called the file, so it is
+    // the dialog's accessible name and the image's alt text, never a caption.
+    show(photo(1));
+    const { dialog } = await openViewerOn("photo-1.png");
+
+    expect(dialog).toHaveAccessibleName("photo-1.png");
+    expect(within(dialog).getByText("photo-1.png")).toHaveClass("sr-only");
+  });
+
+  it("draws its controls as icons, with no visible words", async () => {
+    show(photo(1), photo(2));
+    const { dialog } = await openViewerOn("photo-1.png");
+
+    for (const control of [
+      within(dialog).getByRole("link", { name: "Download" }),
+      within(dialog).getByRole("button", { name: "Close" }),
+      within(dialog).getByRole("button", { name: "Previous image" }),
+      within(dialog).getByRole("button", { name: "Next image" }),
+    ]) {
+      expect(control).toHaveTextContent("");
+      expect(control.querySelector("svg")).not.toBeNull();
+    }
   });
 
   it("downloads through the same forced-download link a file row uses", async () => {
@@ -217,10 +241,46 @@ describe("the image viewer", () => {
     show(photo(1));
     const { user } = await openViewerOn("photo-1.png");
 
-    // The overlay is the dialog's sibling in the portal, outside the content.
-    await user.click(document.querySelector(".fixed.inset-0")!);
+    // The viewer covers the window, so the backdrop around the image is the
+    // dialog element itself.
+    await user.click(screen.getByRole("dialog"));
 
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("covers the whole window over a dim backdrop, with no card around the image", async () => {
+    show(photo(1));
+    const { dialog } = await openViewerOn("photo-1.png");
+
+    expect(dialog).toHaveClass("fixed", "inset-0");
+    expect(dialog).not.toHaveClass("border");
+    // The backdrop is the overlay behind it, the dialog's sibling in the portal.
+    const overlay = dialog.previousElementSibling;
+    expect(overlay).toHaveClass("fixed", "inset-0", "bg-black/85");
+  });
+
+  it("stays open when a press on a control slips off onto the backdrop", async () => {
+    // The browser fires `click` on the common ancestor, which is the backdrop.
+    show(photo(1), photo(2));
+    const { user, dialog } = await openViewerOn("photo-1.png");
+    const next = within(dialog).getByRole("button", { name: "Next image" });
+
+    await user.pointer([
+      { keys: "[MouseLeft>]", target: next },
+      { target: dialog },
+      { keys: "[/MouseLeft]", target: dialog },
+    ]);
+
+    expect(screen.queryByRole("dialog")).not.toBeNull();
+  });
+
+  it("stays open on a click on the image", async () => {
+    show(photo(1));
+    const { user, dialog } = await openViewerOn("photo-1.png");
+
+    await user.click(shownImage(dialog));
+
+    expect(screen.queryByRole("dialog")).not.toBeNull();
   });
 
   it("is modal: the page behind it takes no pointer input", async () => {

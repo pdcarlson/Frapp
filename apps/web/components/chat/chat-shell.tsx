@@ -239,7 +239,12 @@ export function ChatShell({
   const categoriesQuery = useCategories();
   // Names for message authors and DM titles. Shares its query key with the
   // roster read below, so react-query serves both from one fetch.
-  const { byId: memberNames, nameFor, avatarFor } = useMemberDisplayNames();
+  const {
+    byId: memberNames,
+    nameFor,
+    avatarFor,
+    roleColorFor,
+  } = useMemberDisplayNames();
   // Per-channel notification levels, from their own endpoint rather than the
   // channel payload — the same split unread counts use, and for the same
   // recorded reason (see `channel-list.tsx`, which explains how a `muted` field
@@ -1955,6 +1960,7 @@ export function ChatShell({
                 ref={timeline}
                 channelId={activeChannel?.id}
                 nameFor={nameFor}
+                roleColorFor={roleColorFor}
                 avatarFor={avatarFor}
                 messages={channel.messages}
                 blockList={{ blockState, thread }}
