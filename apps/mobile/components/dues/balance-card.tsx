@@ -232,11 +232,10 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
     },
     payButton: {
-      // 50px as drawn, following `components/sheet-scaffold.tsx` — the
-      // reference wins over components.md §9's 46–48px band per
-      // `spec/ui/README.md`'s precedence rule, and diverging from the sheet CTA
-      // would put two different primary heights in one app.
-      height: 50,
+      // The Primary step (foundations.md §9), the same as the sheet CTA in
+      // `components/sheet-scaffold.tsx`: two primary heights in one app would
+      // read as two kinds of button.
+      height: tokens.touch.buttonLarge,
       borderRadius: tokens.radius.control,
       alignItems: "center",
       justifyContent: "center",
