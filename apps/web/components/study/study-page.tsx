@@ -606,9 +606,11 @@ export function StudyPage() {
           {/*
             foundations §7's `display` role. No mono: §7's own callout retired
             it for this numeral, and the Canvas reference (s10) draws the
-            running timer in Figtree 700 with tabular-nums in `accent-text`.
+            running timer in Figtree 700 with tabular-nums in `accent-text`,
+            which became `--foreground` on 2026-11-05: a number is read, not
+            acted on (`foundations.md` §6).
           */}
-          <div className="text-display font-bold tabular-nums tracking-tight text-accent-text">
+          <div className="text-display font-bold tabular-nums tracking-tight text-foreground">
             {formatDuration(elapsedSeconds)}
           </div>
           <div className="flex flex-wrap items-center gap-2">

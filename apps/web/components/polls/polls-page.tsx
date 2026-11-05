@@ -227,7 +227,7 @@ function Poll({
               className={`w-full rounded-md border p-3 text-left transition ${FOCUS_RING} ${
                 isSelected
                   ? "border-accent-border bg-accent-subtle-hover text-accent-text"
-                  : "border-border enabled:hover:bg-accent-subtle"
+                  : "border-border enabled:hover:bg-card-hover"
               } disabled:cursor-not-allowed disabled:opacity-70`}
             >
               <div className="flex items-center justify-between gap-3 text-sm">

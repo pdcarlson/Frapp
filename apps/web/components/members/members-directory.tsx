@@ -725,9 +725,10 @@ export function MembersDirectory() {
 
       {/*
         The selection bar `1f` pin 4 names, in place of the accent-tinted
-        `<Card>` that used to stack above the results card. It is a flush tinted
-        row rather than a card because the page has no cards left for it to sit
-        beside.
+        `<Card>` that used to stack above the results card. It is a flush
+        neutral strip (`--popover`, since 2026-11-05: a count is not an action,
+        `foundations.md` §6) rather than a card because the page has no cards
+        left for it to sit beside.
 
         **The select-all is NOT in here**, and an earlier draft of this lane put
         it here on the reasoning that the toolbar should not carry a permanently
@@ -743,8 +744,8 @@ export function MembersDirectory() {
         only the *count* and the bulk action are conditional.
       */}
       {selectedCount > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-accent-border bg-accent-subtle px-2 py-1.5">
-          <p className="text-caption font-semibold text-accent-text">
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-popover px-2 py-1.5">
+          <p className="text-caption font-semibold text-foreground">
             {selectedCount} selected
           </p>
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
@@ -877,11 +878,11 @@ export function MembersDirectory() {
                   key={id}
                   className={cn(
                     "flex min-h-9 items-center gap-1 pointer-coarse:min-h-11",
-                    // Fill means state, never striping. `accent-subtle-hover`
-                    // is what the deleted `TableRow` painted for
-                    // `data-state="selected"`, kept so selection still reads a
-                    // step above the row hover below it.
-                    selected && "bg-accent-subtle-hover text-accent-text",
+                    // Fill means state, never striping. `--card-hover` is what
+                    // `TableRow` paints for `data-state="selected"`: neutral
+                    // since 2026-11-05 (`foundations.md` §6), with the checked
+                    // box and the "N selected" bar carrying the selection.
+                    selected && "bg-card-hover",
                   )}
                 >
                   <label
@@ -937,16 +938,11 @@ export function MembersDirectory() {
                       "pointer-coarse:min-h-11",
                       /*
                         Hover only while NOT selected. The selected fill lives
-                        on the `<li>` and this button is `flex-1`, so an
-                        unconditional hover paints `accent-3` over the row's
-                        `accent-4` across everything right of the checkbox, and
-                        `hover:text-foreground` overrides `text-accent-text` —
-                        a hovered selected row would be pixel-identical to a
-                        hovered unselected one, leaving the checkbox as the only
-                        cue and contradicting the note on the `<li>` above.
+                        on the `<li>` and this button is `flex-1`, so a hover
+                        here would only repaint the same `--card-hover` over
+                        it; skipping it keeps the selected row one flat fill.
                       */
-                      !selected &&
-                        "hover:bg-accent-subtle hover:text-foreground",
+                      !selected && "hover:bg-card-hover hover:text-foreground",
                       FOCUS_RING_OFFSET,
                     )}
                   >

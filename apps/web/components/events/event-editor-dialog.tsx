@@ -646,7 +646,7 @@ export function EventEditorDialog({
                 {displayedRoles.map((role) => (
                   <label
                     key={role.id}
-                    className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition hover:bg-accent-subtle"
+                    className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition hover:bg-card-hover"
                   >
                     <span className="font-semibold">{role.name}</span>
                     <input

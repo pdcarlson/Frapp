@@ -1,6 +1,6 @@
-import * as React from "react"
+import * as React from "react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 /*
  * Tables are not drawn in the reference, so this composes from the tokens
@@ -19,46 +19,32 @@ import { cn } from "@/lib/utils"
  * both corrections rather than paste shadcn's stock `<tfoot className="border-t
  * bg-muted/50 font-medium">`, which reships exactly the two defects above.
  *
- * ── Row states, and why they are three classes rather than one ──────────────
+ * ── Row states ────────────────────────────────────────────────────────────
  *
  * The full `hover:bg-accent` that replaced that half-mix had the same defect at
  * full strength: `--accent` held the same value as `--popover` (the alias is
- * deleted, #3036), so a row on a `--card` surface hovered at **1.085:1** — no
- * feedback at all. §2's remedy is
- * the accent tint, and the trap is that the tint does not fix it *by luminance*:
- * `--accent-subtle` measures 1.032–1.143:1 on `--card` across the 19 seeded
- * chapter colours, which straddles the neutral step it replaces rather than
- * beating it — **13 of the 19 seeds land at or below 1.085**, the four dark reds
- * worst at 1.032, and the best of them reaches only 1.143. So luminance
- * separation is not something the tint can be relied on to provide at all. What
- * it does buy is **hue** — its channel spread from `--card` is 7–86 against the
- * neutral step's 3, and that holds for every seed including the achromatic
- * three.
+ * deleted, #3036), so a row on a `--card` surface hovered at **1.085:1**, no
+ * feedback at all. The accent tint that replaced it separated by hue, not
+ * luminance, and painted every hovered row in the chapter color.
  *
- * So the two states are separated from each other, and from the base row, by
- * three different mechanisms rather than one:
+ * Since 2026-11-05 both states are neutral (`foundations.md` §6, "Where the
+ * accent goes"): a row is not a control the member switched on, so it does not
+ * take the accent.
  *
- *   hover      accent-3 — the hue shift §2 specifies
- *   selected   accent-4 (`--accent-subtle-hover`), which is a real step: 1.178–
- *              1.358:1 on `--card` and 1.108–1.193:1 above the hover fill, for
- *              every seed. §3's own state table takes the same one-step lift.
- *   selected   `--accent-text` on that fill measures 6.33–8.68:1 for every seed
- *              — the load-bearing half, the way focus.ts documents the border
- *              swap as the load-bearing half of the focus ring.
+ *   hover      `--card-hover`, the step above the whole ladder: 1.324:1 on
+ *              `--card`, where the ladder's own next step is 1.105:1.
+ *   selected   the same `--card-hover`, held, with `--foreground` text.
  *
- * `data-[state=selected]:hover:` is not redundant with the two rules above it.
- * `hover:` and `data-[state=selected]:` are both one condition at the same
- * specificity, so Tailwind breaks the tie by its own variant sort order, not by
- * the order they appear here — the trap focus.ts documents and slice 2 hit four
- * times. Two conditions win it deterministically, so a hovered selected row
- * keeps its selected fill.
- *
- * The honest limitation: none of these fills clears README.md §6's 3:1 non-text
- * floor, and at this ladder none can — §2 concedes as much. Hover is a
- * pointer-only convenience already redundant with the cursor. **Selection
- * carries information**, so it is deliberately redundant three ways: this fill,
- * the accent text tone, and — on every table that offers selection — the
- * checked checkbox in the row and the bulk-action bar above it. Pinned in
+ * Hover and selection share a fill on purpose. Hover is a pointer-only
+ * convenience already redundant with the cursor, and no neutral fill clears
+ * README.md §6's 3:1 non-text floor, so a fill was never what told a member a
+ * row is selected. **Selection carries information**, and every table that
+ * offers it says so twice without a fill: the checked checkbox in the row (the
+ * accent, because it is a control the member switched on) and the "N selected"
+ * bar above the table. `data-[state=selected]:hover:` keeps a hovered selected
+ * row on its fill: `hover:` and `data-[state=selected]:` are one condition each
+ * at the same specificity, so Tailwind breaks the tie by its own variant sort
+ * order, and two conditions win it deterministically. Pinned in
  * `components/shared/table-contrast.spec.ts`.
  *
  * Cell text is `body` (16). A table on the 375px floor scrolls inside its own
@@ -75,8 +61,8 @@ const Table = React.forwardRef<
       {...props}
     />
   </div>
-))
-Table.displayName = "Table"
+));
+Table.displayName = "Table";
 
 const TableHeader = React.forwardRef<
   HTMLTableSectionElement,
@@ -87,8 +73,8 @@ const TableHeader = React.forwardRef<
     className={cn("[&_tr]:border-b [&_tr]:border-border", className)}
     {...props}
   />
-))
-TableHeader.displayName = "TableHeader"
+));
+TableHeader.displayName = "TableHeader";
 
 const TableBody = React.forwardRef<
   HTMLTableSectionElement,
@@ -99,8 +85,8 @@ const TableBody = React.forwardRef<
     className={cn("[&_tr:last-child]:border-0", className)}
     {...props}
   />
-))
-TableBody.displayName = "TableBody"
+));
+TableBody.displayName = "TableBody";
 
 const TableRow = React.forwardRef<
   HTMLTableRowElement,
@@ -110,15 +96,15 @@ const TableRow = React.forwardRef<
     ref={ref}
     className={cn(
       "border-b border-border transition-colors",
-      "hover:bg-accent-subtle",
-      "data-[state=selected]:bg-accent-subtle-hover data-[state=selected]:text-accent-text",
-      "data-[state=selected]:hover:bg-accent-subtle-hover",
-      className
+      "hover:bg-card-hover",
+      "data-[state=selected]:bg-card-hover data-[state=selected]:text-foreground",
+      "data-[state=selected]:hover:bg-card-hover",
+      className,
     )}
     {...props}
   />
-))
-TableRow.displayName = "TableRow"
+));
+TableRow.displayName = "TableRow";
 
 const TableHead = React.forwardRef<
   HTMLTableCellElement,
@@ -128,12 +114,12 @@ const TableHead = React.forwardRef<
     ref={ref}
     className={cn(
       "h-11 px-2 text-left align-middle text-sm font-semibold text-muted-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
-      className
+      className,
     )}
     {...props}
   />
-))
-TableHead.displayName = "TableHead"
+));
+TableHead.displayName = "TableHead";
 
 const TableCell = React.forwardRef<
   HTMLTableCellElement,
@@ -143,18 +129,11 @@ const TableCell = React.forwardRef<
     ref={ref}
     className={cn(
       "p-2 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
-      className
+      className,
     )}
     {...props}
   />
-))
-TableCell.displayName = "TableCell"
+));
+TableCell.displayName = "TableCell";
 
-export {
-  Table,
-  TableHeader,
-  TableBody,
-  TableHead,
-  TableRow,
-  TableCell,
-}
+export { Table, TableHeader, TableBody, TableHead, TableRow, TableCell };

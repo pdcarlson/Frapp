@@ -216,7 +216,7 @@ export function EventsCalendar({
                   className={cn(
                     "flex h-7 w-7 items-center justify-center self-start rounded-full border border-transparent text-xs font-semibold transition-colors",
                     FOCUS_RING,
-                    "hover:bg-accent-subtle disabled:pointer-events-none disabled:text-disabled",
+                    "hover:bg-card-hover disabled:pointer-events-none disabled:text-disabled",
                     isToday
                       ? "bg-primary text-primary-foreground hover:bg-primary-hover"
                       : isCurrentMonth
@@ -261,7 +261,7 @@ export function EventsCalendar({
                         className={cn(
                           "flex items-center gap-1 truncate rounded-xs border-l-2 bg-surface-1 px-1.5 py-1 text-left text-[11px] font-semibold text-foreground transition-colors",
                           FOCUS_RING,
-                          "hover:bg-accent-subtle",
+                          "hover:bg-card-hover",
                           isMandatory ? "border-l-primary" : "border-l-border",
                         )}
                         onClick={() => onSelectEvent(event)}
@@ -285,7 +285,7 @@ export function EventsCalendar({
                       className={cn(
                         "rounded-xs px-1.5 py-0.5 text-left text-[11px] font-semibold text-muted-foreground transition-colors",
                         FOCUS_RING,
-                        "hover:bg-accent-subtle hover:text-foreground",
+                        "hover:bg-card-hover hover:text-foreground",
                       )}
                       aria-label={`Show ${overflowCount} more event${overflowCount > 1 ? "s" : ""} on ${dayLabel}`}
                       onClick={() =>

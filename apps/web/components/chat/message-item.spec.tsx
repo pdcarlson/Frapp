@@ -203,7 +203,9 @@ describe("MessageItem compact layout (#2873)", () => {
         "rounded-[18px]",
         "px-4",
       ]) {
-        expect(className, `${sender} ${bubbleClass}`).not.toContain(bubbleClass);
+        expect(className, `${sender} ${bubbleClass}`).not.toContain(
+          bubbleClass,
+        );
       }
       expect(className, sender).toContain("text-foreground");
       unmount();
@@ -220,9 +222,11 @@ describe("MessageItem compact layout (#2873)", () => {
     expect(screen.getByText("11")).toBeInTheDocument();
   });
 
-  it("marks only the viewer's own name in the chapter accent", () => {
+  it("draws no name in the chapter accent, the viewer's own included", () => {
     const own = renderItem(message({ sender_id: VIEWER }));
-    expect(screen.getByText("You").className).toContain("text-accent-text");
+    const you = screen.getByText("You");
+    expect(you.className).toContain("text-foreground");
+    expect(you.className).not.toContain("text-accent-text");
     own.unmount();
 
     renderItem(message({ sender_id: OTHER }));
@@ -231,7 +235,7 @@ describe("MessageItem compact layout (#2873)", () => {
     expect(name.className).not.toContain("text-accent-text");
   });
 
-  it("paints someone else's name in their role color, never the viewer's (#3485)", () => {
+  it("paints every author's name in their role color, the viewer's too (#3485)", () => {
     const other = renderItemWithProps({
       message: message({ sender_id: OTHER }),
       authorColor: "#6FD08C",
@@ -243,9 +247,7 @@ describe("MessageItem compact layout (#2873)", () => {
       message: message({ sender_id: VIEWER }),
       authorColor: "#6FD08C",
     });
-    const you = screen.getByText("You");
-    expect(you.className).toContain("text-accent-text");
-    expect(you.getAttribute("style")).toBeNull();
+    expect(screen.getByText("You")).toHaveStyle({ color: "#6FD08C" });
   });
 
   it("puts the time of day on the author line, never the date", () => {
@@ -440,9 +442,9 @@ describe("MessageItem action bar", () => {
       expect(button, name).toHaveAttribute("title");
       expect(button.textContent?.trim(), name).toBe("");
     }
-    expect(screen.getByRole("button", { name: "Open emoji picker" })).toHaveAttribute(
-      "title",
-    );
+    expect(
+      screen.getByRole("button", { name: "Open emoji picker" }),
+    ).toHaveAttribute("title");
   });
 });
 
@@ -547,7 +549,8 @@ describe("MessageItem tap-to-reveal (#1193)", () => {
     // is genuinely true — the scoped check this guards against a false
     // suppress from a *different* row's leftover selection (below).
     const anchorNode = row.querySelector("p, span") ?? row.firstElementChild;
-    if (!anchorNode) throw new Error("row has no child to anchor a selection on");
+    if (!anchorNode)
+      throw new Error("row has no child to anchor a selection on");
     const getSelectionSpy = vi.spyOn(window, "getSelection").mockReturnValue({
       toString: () => "hello",
       anchorNode,
@@ -641,7 +644,11 @@ describe("MessageItem reply-with-quote (#489)", () => {
 
   it("renders the parent's author and body above a reply", () => {
     renderItemWithProps({
-      message: message({ id: "child-1", reply_to_id: "parent-1", content: "agreed" }),
+      message: message({
+        id: "child-1",
+        reply_to_id: "parent-1",
+        content: "agreed",
+      }),
       replyParent: PARENT,
     });
     expect(screen.getByText("the original")).toBeInTheDocument();
@@ -686,7 +693,11 @@ describe("MessageItem reply-with-quote (#489)", () => {
     // A tombstone is not something anyone said, so it must not keep asserting
     // what it was answering.
     renderItemWithProps({
-      message: message({ id: "child-1", reply_to_id: "parent-1", is_deleted: true }),
+      message: message({
+        id: "child-1",
+        reply_to_id: "parent-1",
+        is_deleted: true,
+      }),
       replyParent: PARENT,
     });
     expect(screen.queryByText("the original")).not.toBeInTheDocument();
@@ -761,9 +772,8 @@ describe("MessageItem edited marker", () => {
     const markers = container.querySelector('[data-slot="message-trailing"]')!;
     expect(markers).toHaveTextContent("(edited)Pinned");
     expect(
-      screen
-        .getByTestId("attachments")
-        .compareDocumentPosition(markers) & Node.DOCUMENT_POSITION_FOLLOWING,
+      screen.getByTestId("attachments").compareDocumentPosition(markers) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     // Flush with the column, not indented as if it trailed text.
     expect(markers.parentElement).toHaveClass("[&>span]:ml-0");
@@ -793,10 +803,7 @@ describe("MessageItem edited marker", () => {
     renderItem(message({ kind: "announcement", content: "Formal is Friday" }));
     expect(
       screen.getByText("Formal is Friday").closest(".rounded-lg"),
-    ).toHaveClass(
-      "w-fit",
-      "max-w-full",
-    );
+    ).toHaveClass("w-fit", "max-w-full");
     renderItem(message({ id: "dues-1", kind: "dues", content: "Pay up" }));
     expect(
       screen.getByText(/not built yet/).closest(".rounded-lg"),
@@ -805,7 +812,11 @@ describe("MessageItem edited marker", () => {
 
   it("marks an edited card under the card, not inside it", () => {
     const { container } = renderItem(
-      message({ ...edited, kind: "announcement", payload: { title: "Formal" } }),
+      message({
+        ...edited,
+        kind: "announcement",
+        payload: { title: "Formal" },
+      }),
     );
     const marker = screen.getByText("(edited)");
     expect(container.querySelector('[data-slot="message-body"]')).toBeNull();
@@ -874,9 +885,7 @@ describe("MessageItem edit and delete", () => {
       onDelete: vi.fn(),
     });
 
-    expect(
-      screen.getByRole("button", { name: /delete/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete/i })).toBeInTheDocument();
   });
 
   it("offers Delete on someone else's message only with channels:manage", () => {
@@ -980,7 +989,11 @@ describe("MessageItem edit and delete", () => {
       <div role="list">
         <MessageItem
           blockState={NOBODY_BLOCKED}
-          message={message({ id: "msg-1", sender_id: VIEWER, content: "hello v2" })}
+          message={message({
+            id: "msg-1",
+            sender_id: VIEWER,
+            content: "hello v2",
+          })}
           viewerId={VIEWER}
           showHeader
           nameFor={nameFor}
@@ -1011,7 +1024,11 @@ describe("MessageItem edit and delete", () => {
       <div role="list">
         <MessageItem
           blockState={NOBODY_BLOCKED}
-          message={message({ id: "msg-1", sender_id: VIEWER, content: "hello v2" })}
+          message={message({
+            id: "msg-1",
+            sender_id: VIEWER,
+            content: "hello v2",
+          })}
           viewerId={VIEWER}
           showHeader
           nameFor={nameFor}
@@ -1042,7 +1059,11 @@ describe("MessageItem edit and delete", () => {
       <div role="list">
         <MessageItem
           blockState={NOBODY_BLOCKED}
-          message={message({ id: "msg-1", sender_id: VIEWER, content: "hello" })}
+          message={message({
+            id: "msg-1",
+            sender_id: VIEWER,
+            content: "hello",
+          })}
           viewerId={VIEWER}
           showHeader
           nameFor={nameFor}
@@ -1107,7 +1128,9 @@ describe("MessageItem edit and delete", () => {
       screen.getByLabelText(/🔥 reaction, 4\. From the imported archive/),
     ).toBeInTheDocument();
     expect(
-      screen.getByLabelText(/:party_blob: reaction, 2\. From the imported archive/),
+      screen.getByLabelText(
+        /:party_blob: reaction, 2\. From the imported archive/,
+      ),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /from the imported archive/i }),
@@ -1326,7 +1349,9 @@ describe("MessageItem unconfirmed rows (#1733)", () => {
       onRetryUnconfirmed: vi.fn(),
     });
 
-    expect(screen.getByText(/may or may not have been recorded/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/may or may not have been recorded/i),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/send failed/i)).not.toBeInTheDocument();
   });
 
@@ -1487,7 +1512,9 @@ describe("MessageItem recorded rows (#1789)", () => {
       onRetryUnconfirmed: vi.fn(),
     });
 
-    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /retry/i }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /discard/i }),
     ).not.toBeInTheDocument();
@@ -1520,7 +1547,9 @@ describe("MessageItem recorded rows (#1789)", () => {
       onDiscard: vi.fn(),
     });
 
-    expect(screen.getByText(/don't run this command again/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/don't run this command again/i),
+    ).toBeInTheDocument();
 
     // MessageItem does not subscribe to toast state — that independence is
     // the architecture (#1789). This half pins the eviction path itself:
@@ -1551,8 +1580,12 @@ describe("MessageItem recorded rows (#1789)", () => {
     expect(after.toasts[0]?.id).toBe("next");
     expect(after.toasts.some((t) => t.id === "warning")).toBe(false);
 
-    expect(screen.getByText(/don't run this command again/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/don't run this command again/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /retry/i }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -1626,7 +1659,9 @@ describe("MessageItem inline editor", () => {
 
     await user.click(screen.getByRole("button", { name: /cancel/i }));
 
-    expect(container.querySelector('[data-slot="message-body"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-slot="message-body"]'),
+    ).not.toBeNull();
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
@@ -1768,7 +1803,10 @@ describe("MessageItem inline editor keyboard", () => {
   it("saves on Enter and keeps Shift+Enter for a newline", async () => {
     const { user, onEdit } = await openEditor();
 
-    await user.type(screen.getByRole("textbox"), " one{Shift>}{Enter}{/Shift}two");
+    await user.type(
+      screen.getByRole("textbox"),
+      " one{Shift>}{Enter}{/Shift}two",
+    );
     expect(onEdit).not.toHaveBeenCalled();
     expect(screen.getByRole("textbox")).toHaveValue("hello one\ntwo");
 
@@ -1821,7 +1859,9 @@ describe("MessageItem reaction chip ownership (#2243)", () => {
       onUnreact,
     });
 
-    const chip = screen.getByRole("button", { name: /reaction, 1\. Click to react/i });
+    const chip = screen.getByRole("button", {
+      name: /reaction, 1\. Click to react/i,
+    });
     expect(chip).toHaveAttribute("aria-pressed", "false");
 
     await userEvent.click(chip);

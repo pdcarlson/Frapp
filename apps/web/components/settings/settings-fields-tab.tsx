@@ -134,36 +134,36 @@ export function SettingsFieldsTab({ canManage }: Props) {
   } else {
     body = (
       <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Custom member fields</CardTitle>
-          <CardDescription>
-            Sensitive fields are shown only to authorized viewers. Saving
-            writes an entry to the chapter audit log.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {fields.length === 0 ? (
-            <EmptyState
-              title="No custom fields yet"
-              description="Add one below to start collecting it from members."
-            />
-          ) : (
-            <ul className="space-y-3">
-              {fields.map((field) => (
-                <FieldRow
-                  key={field.id}
-                  field={field}
-                  canManage={canManage}
-                  confirm={confirm}
-                />
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Custom member fields</CardTitle>
+            <CardDescription>
+              Sensitive fields are shown only to authorized viewers. Saving
+              writes an entry to the chapter audit log.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {fields.length === 0 ? (
+              <EmptyState
+                title="No custom fields yet"
+                description="Add one below to start collecting it from members."
+              />
+            ) : (
+              <ul className="space-y-3">
+                {fields.map((field) => (
+                  <FieldRow
+                    key={field.id}
+                    field={field}
+                    canManage={canManage}
+                    confirm={confirm}
+                  />
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
 
-      <AddFieldForm canManage={canManage} />
+        <AddFieldForm canManage={canManage} />
       </>
     );
   }
@@ -506,7 +506,7 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
                         tint separates by hue instead of by a ladder step that
                         is not there.
                       */
-                      className={`rounded-sm hover:bg-accent-subtle ${FOCUS_RING_OFFSET}`}
+                      className={`rounded-sm hover:bg-card-hover ${FOCUS_RING_OFFSET}`}
                     >
                       <X className="h-3 w-3" />
                     </button>

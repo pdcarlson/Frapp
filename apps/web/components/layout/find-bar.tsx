@@ -489,11 +489,13 @@ export function FindBar({ className }: { className?: string }) {
                   className={cn(
                     "flex h-9 w-full items-center gap-2 rounded-[10px] px-2.5 text-left text-sm transition",
                     index === activeIndex
-                      ? "bg-accent-subtle text-accent-text"
+                      ? "bg-card-hover text-foreground"
                       : "text-foreground hover:bg-card",
                   )}
                 >
-                  <span className="min-w-0 flex-1 truncate">{result.label}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {result.label}
+                  </span>
                   {result.hint ? (
                     <span className="shrink-0 truncate text-caption text-muted-foreground">
                       {result.hint}

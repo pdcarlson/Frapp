@@ -34,8 +34,9 @@ import { compactControlClassName } from "@/components/shared/table-controls";
  * sat *on* a card — and is still the wrong pick now that the card is gone and
  * the rail sits on `--background`, because §7's fallback would paint the rail
  * a step lighter than the list beside it and rebuild the panel this lane
- * deleted. Hover takes `accent-3`, active `accent-4` plus `accent-11` text —
- * the table recipe `components/shared/table-contrast.spec.ts` pins.
+ * deleted. Hover takes the neutral `--card-hover`; the active folder takes
+ * `accent-4` plus `accent-11` text, because it is where the member is
+ * (`foundations.md` §6, "Where the accent goes").
  * `FOCUS_RING_OFFSET`, not `FOCUS_RING`: these rows carry no border, and
  * `FOCUS_RING`'s indicator is the border swap.
  */
@@ -46,7 +47,7 @@ function folderRowClassName(isActive: boolean): string {
     FOCUS_RING_OFFSET,
     isActive
       ? "bg-accent-subtle-hover text-accent-text"
-      : "text-muted-foreground hover:bg-accent-subtle hover:text-foreground",
+      : "text-muted-foreground hover:bg-card-hover hover:text-foreground",
   ].join(" ");
 }
 

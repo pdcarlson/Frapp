@@ -590,8 +590,8 @@ export default function PointsPage() {
             manual override to call.
           */}
           {selectedCount > 0 ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-accent-border bg-accent-subtle px-2 py-1.5">
-              <p className="text-caption font-semibold text-accent-text">
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-popover px-2 py-1.5">
+              <p className="text-caption font-semibold text-foreground">
                 {`${selectedCount} transaction${selectedCount > 1 ? "s" : ""} selected`}
               </p>
               <Button
@@ -653,7 +653,7 @@ export default function PointsPage() {
                       className={cn(
                         "flex min-h-11 items-center gap-2 py-1.5",
                         // Fill means state, never striping.
-                        selected && "bg-accent-subtle-hover",
+                        selected && "bg-card-hover",
                       )}
                     >
                       <label

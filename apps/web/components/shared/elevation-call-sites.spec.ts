@@ -361,10 +361,10 @@ describe("the notification drawer's row hovers (#1208)", () => {
   });
 });
 
-describe("a tinted row hover stays inside its rounded list", () => {
+describe("a filled row hover stays inside its rounded list", () => {
   /*
    * Settings' officer-tools list is a rounded card of link rows. Its row hover
-   * is a visible tint, so the end rows take the list's inner radius rather than
+   * is a visible fill (`--card-hover`), so the end rows take the list's inner radius rather than
    * painting square corners past the card's curve. The list doesn't clip with
    * `overflow-hidden`, which would clip the rows' focus ring too.
    */
@@ -374,7 +374,7 @@ describe("a tinted row hover stays inside its rounded list", () => {
   const tools = /function SettingsToolsOnly[\s\S]*?\n}\n/.exec(settings)?.[0] ?? "";
 
   it("finds the tools list", () => {
-    expect(tools).toMatch(/hover:bg-accent-subtle/);
+    expect(tools).toMatch(/hover:bg-card-hover/);
   });
 
   it("rounds the first and last rows to the list's inner radius", () => {

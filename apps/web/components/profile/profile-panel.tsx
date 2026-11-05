@@ -502,12 +502,12 @@ export function ProfilePanel() {
       */}
       <div className="max-w-2xl space-y-10">
         {/*
-          s15's identity header, as far as the data goes.
-          `--accent-subtle` / `--accent-border` / `--accent-text` is the token
-          transcription of the board's `#251E0E` / `#6B5619` / `#F4CB63` — the
-          board draws one seed (its header says the demo tenant runs house gold)
-          and the engine ships nineteen, so the accent roles are what generalise.
-          Measured across all of them in `profile-contrast.spec.ts`.
+          s15's identity header, as far as the data goes. The avatar is the
+          same neutral circle as everywhere else a member's face appears
+          (`--popover` fill, initials in `--muted-foreground`). s15 drew it in
+          the house-gold family and this transcribed that as the chapter accent
+          until 2026-11-05, when the accent came off people's avatars
+          (`foundations.md` §6). Measured in `profile-contrast.spec.ts`.
 
           s15's role badge and its three stat cards (points / service hrs /
           attendance) are deliberately NOT here: `GET /v1/users/me` carries none
@@ -515,7 +515,7 @@ export function ProfilePanel() {
           them is new feature work rather than a repaint. Filed, not smuggled in.
         */}
         <header className="flex items-center gap-4">
-          <Avatar className="h-[84px] w-[84px] border border-accent-border bg-accent-subtle">
+          <Avatar className="h-[84px] w-[84px] border border-border bg-popover">
             {profile.avatar_url ? (
               <AvatarImage src={profile.avatar_url} alt="" />
             ) : null}
@@ -524,7 +524,7 @@ export function ProfilePanel() {
               for `signet-mark.tsx`'s reason: initials in an avatar are a drawn
               mark, not a run of text. s15 draws them at 28 in an 84px circle.
             */}
-            <AvatarFallback className="bg-accent-subtle text-[26px] font-bold text-accent-text">
+            <AvatarFallback className="bg-popover text-[26px] font-bold text-muted-foreground">
               {initials(storedName || profile.email || "")}
             </AvatarFallback>
           </Avatar>

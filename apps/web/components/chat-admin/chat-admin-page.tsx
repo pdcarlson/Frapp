@@ -771,7 +771,7 @@ function ChatAdminBody() {
                       FOCUS_RING_OFFSET,
                       selectedChannelId === channel.id
                         ? "bg-accent-subtle-hover text-accent-text"
-                        : "hover:bg-accent-subtle",
+                        : "hover:bg-card-hover",
                     )}
                     aria-pressed={selectedChannelId === channel.id}
                     onClick={() => selectChannel(channel)}
