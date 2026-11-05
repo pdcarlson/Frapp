@@ -16,10 +16,9 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * semantic error border) and why the retry button drifted below the 44pt
  * minimum in the newest copies.
  *
- * The six More-hub screens use these, and so do s18 and s22, the two
- * check-in screens. The existing copies in the chat and events screens are
- * left alone deliberately — migrating them is a mechanical change with its own
- * review surface, tracked separately.
+ * The six More-hub screens use these. The existing copies in the chat, events
+ * and check-in screens are left alone deliberately — migrating them is a
+ * mechanical change with its own review surface, tracked separately.
  *
  * ## Why there is no pull-to-refresh anywhere here
  *

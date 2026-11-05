@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import QRCode from "react-native-qrcode-svg";
 import {
   countCheckedIn,
@@ -47,9 +47,10 @@ import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
  * The board's count reads "23 / 31 checked in" over a progress bar. Nothing
  * here knows how many are expected (the roster is only who has a row), so the
  * denominator and the bar are left out rather than invented. Its "Manual
- * override" is drawn as an accent link, and the officer override it names
- * (marking a member present by hand) isn't on mobile, so the bottom row keeps
- * only the code members type in s18's sheet.
+ * override" is drawn as an accent link to the officer override (marking a
+ * member present by hand). `spec/ui/mobile/patterns.md` § QR check-in lists
+ * that override among mobile's fallbacks, but no mobile screen builds it yet,
+ * so the bottom row keeps only the code members type in s18's sheet.
  *
  * ## Live only while it is on screen
  *
@@ -57,6 +58,13 @@ import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
  * leaves. The code and the count poll only while this screen has focus, so a
  * screen nobody is looking at doesn't mint a code every 10 seconds for the
  * rest of the session.
+ *
+ * That leaves a cached code behind, and an officer who comes back minutes
+ * later would see it drawn at once, live dot and all, while the fresh one is
+ * still on its way; a member who scanned it would be refused. So a code is
+ * drawn only while it is young enough to still redeem
+ * ({@link TOKEN_SURE_AGE_MS}), and the blank card stands in until the new one
+ * lands.
  */
 
 /** Until the body has measured itself: the size the screen always drew. */
@@ -76,24 +84,42 @@ const LIVE_DOT_SIZE = 8;
  */
 const ATTENDANCE_POLL_MS = 10_000;
 
-/** Ticks the countdown between refetches. The token itself comes from the
- * server — this only animates the gap. */
-function useCountdown(expiresAt: string | undefined): number {
-  const [remaining, setRemaining] = useState(0);
+/**
+ * How long after it arrived a code can be drawn as live.
+ *
+ * The server accepts the current window's code and the previous one's, so a
+ * code redeems for at least one full window (30s) after it was minted,
+ * wherever in its window that was. Past that it may be dead. The age is
+ * measured on this device's clock from when the response landed
+ * (`dataUpdatedAt`), which is a round trip after the mint, rather than
+ * against the server's `expiresAt`, so a phone whose clock is off can't blank
+ * a good code or draw one minutes dead. While the screen is up the 10s poll
+ * keeps every code well inside this; only a code left over from an earlier
+ * visit runs past it.
+ *
+ * Must match `CHECK_IN_TOKEN_WINDOW_MS` in
+ * `apps/api/src/domain/utils/check-in-token.ts`.
+ */
+const TOKEN_SURE_AGE_MS = 30_000;
 
-  useEffect(() => {
-    if (!expiresAt) return;
-    const expiry = parseInstant(expiresAt);
-    if (!expiry) return;
-    const deadline = expiry.getTime();
+/**
+ * The time, re-read every half second while `active`. The token itself comes
+ * from the server; this only animates the countdown and ages the cached code.
+ * It is re-read before paint when the screen comes back, so the first frame
+ * of a return is never judged against the time the officer left.
+ */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
 
-    const tick = () => setRemaining(deadline - Date.now());
+  useLayoutEffect(() => {
+    if (!active) return;
+    const tick = () => setNow(Date.now());
     tick();
     const id = setInterval(tick, 500);
     return () => clearInterval(id);
-  }, [expiresAt]);
+  }, [active]);
 
-  return remaining;
+  return now;
 }
 
 export default function HostCheckInScreen() {
@@ -107,13 +133,9 @@ export default function HostCheckInScreen() {
     ? params.eventId[0]
     : (params.eventId ?? "");
 
-  const [focused, setFocused] = useState(false);
-  useFocusEffect(
-    useCallback(() => {
-      setFocused(true);
-      return () => setFocused(false);
-    }, []),
-  );
+  // True on a focused screen's first render, so the code is asked for at once
+  // rather than a commit later.
+  const focused = useIsFocused();
 
   // `can` from @repo/validation, not a local `includes` — an owner's grant is
   // the wildcard `*`, so a bare membership test would lock out exactly the
@@ -134,11 +156,20 @@ export default function HostCheckInScreen() {
     refetchInterval: focused ? ATTENDANCE_POLL_MS : false,
   });
 
-  const minted = useMemo(
+  const now = useNow(focused);
+  const cached = useMemo(
     () => selectMintedToken(tokenQuery.data),
     [tokenQuery.data],
   );
-  const remaining = useCountdown(focused ? minted?.expiresAt : undefined);
+  // The code to draw: the cached one only while it surely still redeems (see
+  // `TOKEN_SURE_AGE_MS`). Past that the screen shows the blank card it shows
+  // while loading, and the refetch focus started replaces it.
+  const minted =
+    cached && now - tokenQuery.dataUpdatedAt < TOKEN_SURE_AGE_MS
+      ? cached
+      : null;
+  const expiry = minted ? parseInstant(minted.expiresAt) : null;
+  const remaining = expiry ? expiry.getTime() - now : 0;
   const checkedIn = countCheckedIn(attendance);
 
   const [bodyWidth, setBodyWidth] = useState<number | null>(null);
@@ -177,7 +208,12 @@ export default function HostCheckInScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="End hosting and go back"
-          onPress={() => router.back()}
+          // A fixed destination, by the rule `components/back-row.tsx` states:
+          // this is a hidden tab, so `router.back()` follows the tab
+          // navigator's default `backBehavior` ("firstRoute") to Chat home.
+          // More, because its Host check-in row is the one way in; "End"
+          // names no place, so it goes back where the officer started.
+          onPress={() => router.navigate("/more")}
           style={({ pressed }) => [styles.end, pressed ? styles.pressed : null]}
         >
           <Text style={styles.endText}>✕ End</Text>
@@ -208,7 +244,7 @@ export default function HostCheckInScreen() {
             body="Hosting check-in needs the events permission."
           />
         </View>
-      ) : tokenQuery.isError || (!tokenQuery.isPending && !minted) ? (
+      ) : tokenQuery.isError || (!tokenQuery.isPending && !cached) ? (
         <View style={styles.stateWrap}>
           {/*
             Two genuinely different causes, and the screen must not assert the

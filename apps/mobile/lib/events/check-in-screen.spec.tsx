@@ -4,7 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
-import { AccessibilityInfo } from "react-native";
+import { AccessibilityInfo, Platform } from "react-native";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText, textHeadings } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
@@ -57,13 +57,28 @@ const EVENT = {
   check_in_zone: [],
 };
 
+/** The event the reused tab instance can move to mid check-in. */
+const OTHER_EVENT = { ...EVENT, id: "evt-2", name: "Formal", point_value: 5 };
+
 const checkIn = vi.fn();
+
+const state = vi.hoisted(() => ({
+  writeBlockedReason: null as string | null,
+  successHaptic: vi.fn(),
+}));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useEvent: () => ({ data: EVENT }),
+  useEvent: (id: string) => ({
+    data: id === OTHER_EVENT.id ? OTHER_EVENT : EVENT,
+  }),
   useCheckIn: () => ({ mutateAsync: checkIn, isPending: false }),
 }));
+
+vi.mock("@/lib/haptics", () => ({
+  successHaptic: () => state.successHaptic(),
+}));
+const { successHaptic } = state;
 
 vi.mock("expo-camera", () => ({
   CameraView: "CameraView",
@@ -81,7 +96,7 @@ vi.mock("@/lib/location", () => ({
 }));
 
 vi.mock("@/lib/connection/use-connection", () => ({
-  useConnection: () => ({ writeBlockedReason: null }),
+  useConnection: () => ({ writeBlockedReason: state.writeBlockedReason }),
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -96,6 +111,14 @@ const refocus = (expoRouter as unknown as { __refocus: () => void })
 /** "The member left this screen": the other half of `__refocus`. */
 const blur = (expoRouter as unknown as { __blur: () => void }).__blur;
 
+/**
+ * What the screen's `sheetRef` holds. The bottom-sheet mock is a host string,
+ * whose ref react-test-renderer leaves null unless a node mock stands in, and
+ * with a null ref `useSheetVisit`'s dismiss does nothing, so a spec could not
+ * tell a dismiss from none.
+ */
+const sheetHandle = { present: vi.fn(), dismiss: vi.fn() };
+
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -103,9 +126,27 @@ function render(): ReactTestRenderer {
       <FrappThemeProvider>
         <CheckInScreen />
       </FrappThemeProvider>,
+      {
+        createNodeMock: (element) =>
+          element.type === "BottomSheetModal" ? sheetHandle : null,
+      },
     );
   });
   return tree;
+}
+
+/** The manual code field in the sheet. */
+const manualInput = (tree: ReactTestRenderer) =>
+  tree.root.find(
+    (node) => node.props.accessibilityLabel === "Manual check-in code",
+  );
+
+/** Opens the manual sheet the way the member does, and lets it finish rising. */
+function openSheet(tree: ReactTestRenderer) {
+  act(() => pressableDrawing(tree, "Enter code manually").props.onPress());
+  act(() =>
+    tree.root.findByType("BottomSheetModal" as never).props.onAnimate(-1, 0),
+  );
 }
 
 const camera = (tree: ReactTestRenderer) =>
@@ -121,12 +162,16 @@ const manualSubmit = (tree: ReactTestRenderer) =>
         drawnText(node) === "Check in",
     );
 
+/** A control found by what it draws. */
+const pressableDrawing = (tree: ReactTestRenderer, label: string) =>
+  tree.root.find(
+    (node) =>
+      node.type === ("Pressable" as never) && drawnText(node) === label,
+  );
+
 /** Types a plausible code and submits it, settling the async submit. */
 async function submitManualCode(tree: ReactTestRenderer) {
-  const input = tree.root.find(
-    (node) => node.props.accessibilityLabel === "Manual check-in code",
-  );
-  act(() => input.props.onChangeText("4KQ88"));
+  act(() => manualInput(tree).props.onChangeText("4KQ88"));
   await act(async () => {
     manualSubmit(tree).props.onPress();
   });
@@ -252,12 +297,17 @@ describe("Check-in's title (#2485)", () => {
   });
 });
 
-/** A control found by what it draws. */
-const pressableDrawing = (tree: ReactTestRenderer, label: string) =>
-  tree.root.find(
-    (node) =>
-      node.type === ("Pressable" as never) && drawnText(node) === label,
-  );
+/** A scanned QR for `eventId`, as s22 draws it (`lib/events/check-in-code.ts`). */
+const qrFor = (eventId: string) => `frapp-checkin:v1:${eventId}:signed`;
+
+/** The camera reads a code. */
+async function scan(tree: ReactTestRenderer, data: string) {
+  await act(async () => {
+    camera(tree).props.onBarcodeScanned({ data });
+  });
+}
+
+const router = () => vi.mocked(expoRouter.useRouter)();
 
 describe("Check-in's success moment", () => {
   beforeEach(() => {
@@ -265,8 +315,10 @@ describe("Check-in's success moment", () => {
       eventId: "evt-1",
     });
     checkIn.mockReset();
-    vi.mocked(vi.mocked(expoRouter.useRouter)().back).mockClear();
+    vi.mocked(router().navigate).mockClear();
     vi.mocked(AccessibilityInfo.announceForAccessibility).mockClear();
+    successHaptic.mockClear();
+    sheetHandle.dismiss.mockClear();
   });
 
   it("replaces the scanner with a confirmation: the points, the event, and a way back", async () => {
@@ -286,8 +338,129 @@ describe("Check-in's success moment", () => {
       "You're checked in. +10 pts",
     );
 
+    // To the event it confirmed, not `back()`: a hidden tab's history lands
+    // on Chat home.
     act(() => pressableDrawing(tree, "Back to event").props.onPress());
-    expect(vi.mocked(expoRouter.useRouter)().back).toHaveBeenCalledTimes(1);
+    expect(router().navigate).toHaveBeenCalledWith({
+      pathname: "/event-details",
+      params: { id: "evt-1" },
+    });
+    act(() => tree.unmount());
+  });
+
+  it("taps once per check-in, not once per render", async () => {
+    checkIn.mockResolvedValue({});
+    const tree = render();
+    await submitManualCode(tree);
+    expect(successHaptic).toHaveBeenCalledTimes(1);
+
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <CheckInScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+    expect(successHaptic).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("leaves Android's announcement to the panel's live region", async () => {
+    // TalkBack reads `accessibilityLiveRegion` itself; announcing as well
+    // would say it twice.
+    checkIn.mockResolvedValue({});
+    const platform = Platform as { OS: string };
+    const os = platform.OS;
+    platform.OS = "android";
+    try {
+      const tree = render();
+      await submitManualCode(tree);
+      expect(screenText(tree)).toContain("You're checked in");
+      expect(AccessibilityInfo.announceForAccessibility).not.toHaveBeenCalled();
+      act(() => tree.unmount());
+    } finally {
+      platform.OS = os;
+    }
+  });
+
+  it("closes the manual sheet when a typed code lands", async () => {
+    checkIn.mockResolvedValue({});
+    const tree = render();
+    openSheet(tree);
+    await submitManualCode(tree);
+    expect(screenText(tree)).toContain("You're checked in");
+    expect(sheetHandle.dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("drops a check-in that lands after the screen moved to another event", async () => {
+    // The tab instance is reused, so the member can be on the next event's
+    // scanner by the time a slow check-in for the last one answers.
+    let land!: () => void;
+    checkIn.mockReturnValue(
+      new Promise<void>((resolve) => {
+        land = resolve;
+      }),
+    );
+    const tree = render();
+    await submitManualCode(tree);
+    expect(checkIn).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: "evt-1" }),
+    );
+
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      eventId: OTHER_EVENT.id,
+    });
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <CheckInScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+    await act(async () => land());
+
+    const text = screenText(tree);
+    expect(text).not.toContain("You're checked in");
+    expect(text).not.toContain(OTHER_EVENT.name);
+    expect(successHaptic).not.toHaveBeenCalled();
+    // And the scanner for the event on screen is live again.
+    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
+    act(() => tree.unmount());
+  });
+});
+
+describe("Check-in's way out", () => {
+  beforeEach(() => {
+    vi.mocked(router().navigate).mockClear();
+  });
+
+  const close = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        node.props.accessibilityLabel === "Close check-in",
+    );
+
+  it("goes to the event's detail, where Scan QR opened it", () => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      eventId: "evt-1",
+    });
+    const tree = render();
+    act(() => close(tree).props.onPress());
+    expect(router().navigate).toHaveBeenCalledWith({
+      pathname: "/event-details",
+      params: { id: "evt-1" },
+    });
+    expect(router().back).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("goes to Events when there is no event to go back to", () => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+    const tree = render();
+    act(() => close(tree).props.onPress());
+    expect(router().navigate).toHaveBeenCalledWith("/events");
     act(() => tree.unmount());
   });
 });
@@ -298,6 +471,7 @@ describe("Check-in's manual code", () => {
       eventId: "evt-1",
     });
     checkIn.mockReset();
+    state.writeBlockedReason = null;
   });
 
   it("is typed in a sheet field, which rises with the keyboard", () => {
@@ -336,6 +510,90 @@ describe("Check-in's manual code", () => {
     expect(drawnText(sheet)).toContain(FAILED.message);
     act(() => tree.unmount());
   });
+
+  it("keeps a scan's refusal when the sheet opens: it is still true of a typed code", async () => {
+    const OUTSIDE = {
+      statusCode: 400,
+      error: "Bad Request",
+      message: "You're outside the check-in zone.",
+    };
+    checkIn.mockRejectedValue(OUTSIDE);
+    const tree = render();
+    await scan(tree, qrFor("evt-1"));
+    expect(screenText(tree)).toContain(OUTSIDE.message);
+
+    openSheet(tree);
+    const sheet = tree.root.findByType("BottomSheetModal" as never);
+    expect(drawnText(sheet)).toContain(OUTSIDE.message);
+    act(() => tree.unmount());
+  });
+
+  it("drops the wrong-event line when the sheet opens, and reports that code again after", async () => {
+    const tree = render();
+    await scan(tree, qrFor("evt-other"));
+    expect(screenText(tree)).toContain("That code is for a different event.");
+
+    openSheet(tree);
+    expect(screenText(tree)).not.toContain(
+      "That code is for a different event.",
+    );
+
+    act(() =>
+      tree.root.findByType("BottomSheetModal" as never).props.onDismiss(),
+    );
+    // The same wrong code, held up again once the sheet is gone.
+    await scan(tree, qrFor("evt-other"));
+    expect(screenText(tree)).toContain("That code is for a different event.");
+    expect(checkIn).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  describe("the keyboard's Go key", () => {
+    /** The member presses Go with the code typed so far. */
+    async function pressGo(tree: ReactTestRenderer) {
+      await act(async () => {
+        manualInput(tree).props.onSubmitEditing?.();
+      });
+    }
+
+    it("sends a plausible code", async () => {
+      checkIn.mockResolvedValue({});
+      const tree = render();
+      act(() => manualInput(tree).props.onChangeText("4KQ88"));
+      await pressGo(tree);
+      expect(checkIn).toHaveBeenCalledTimes(1);
+      act(() => tree.unmount());
+    });
+
+    it("sends nothing for a code that can't be one", async () => {
+      const tree = render();
+      act(() => manualInput(tree).props.onChangeText("4KQ"));
+      await pressGo(tree);
+      expect(checkIn).not.toHaveBeenCalled();
+      act(() => tree.unmount());
+    });
+
+    it("sends nothing while offline", async () => {
+      // Check-in has no outbox, so a send with no network is lost.
+      state.writeBlockedReason = "Reconnect to make changes";
+      const tree = render();
+      act(() => manualInput(tree).props.onChangeText("4KQ88"));
+      await pressGo(tree);
+      expect(checkIn).not.toHaveBeenCalled();
+      act(() => tree.unmount());
+    });
+
+    it("sends nothing while a check-in is already on its way", async () => {
+      checkIn.mockReturnValue(new Promise(() => undefined));
+      const tree = render();
+      await submitManualCode(tree);
+      expect(checkIn).toHaveBeenCalledTimes(1);
+
+      await pressGo(tree);
+      expect(checkIn).toHaveBeenCalledTimes(1);
+      act(() => tree.unmount());
+    });
+  });
 });
 
 describe("Check-in's camera and torch", () => {
@@ -366,7 +624,7 @@ describe("Check-in's camera and torch", () => {
   });
 
   it("lets the camera, and the torch, go when the member leaves", () => {
-    // The tab screen stays mounted after `router.back()`; a camera left
+    // The tab screen stays mounted after the member leaves; a camera left
     // mounted would keep running, torch and all, behind the next screen.
     const tree = render();
     act(() => torch(tree).props.onPress());
@@ -377,6 +635,19 @@ describe("Check-in's camera and torch", () => {
 
     act(() => refocus());
     expect(camera(tree).props.enableTorch).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("closes the manual sheet when the member leaves", () => {
+    // It is portalled above the navigator, so it would float over the event.
+    sheetHandle.dismiss.mockClear();
+    const tree = render();
+    openSheet(tree);
+
+    act(() => blur());
+    expect(sheetHandle.dismiss).toHaveBeenCalledTimes(1);
+
+    act(() => refocus());
     act(() => tree.unmount());
   });
 });

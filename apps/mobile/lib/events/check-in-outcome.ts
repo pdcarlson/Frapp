@@ -12,7 +12,18 @@ import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
  * telling the same member two different things about the same refusal.
  */
 export type CheckInOutcome =
-  | { kind: "success"; message: string }
+  /**
+   * `message` is the one sentence a card line or a screen reader carries.
+   * `title` and `pointsLabel` are the same words split into the lines s18's
+   * success panel draws, so the panel can't restate them differently.
+   */
+  | {
+      kind: "success";
+      message: string;
+      title: string;
+      /** "+10 pts", or `null` for an event that awards none. */
+      pointsLabel: string | null;
+    }
   /** A 409: the member was already on the list. They are checked in. */
   | { kind: "already"; message: string }
   /**
@@ -29,14 +40,19 @@ export const CHECK_IN_LOCATION_DENIED_COPY =
 export const ALREADY_CHECKED_IN_COPY =
   "You're already checked in for this event.";
 
+const CHECKED_IN_TITLE = "You're checked in";
+
 export function checkInSuccess(
   pointValue: number | null | undefined,
 ): Extract<CheckInOutcome, { kind: "success" }> {
+  const pointsLabel = pointValue ? `+${pointValue} pts` : null;
   return {
     kind: "success",
-    message: pointValue
-      ? `You're checked in. +${pointValue} pts`
-      : "You're checked in.",
+    message: pointsLabel
+      ? `${CHECKED_IN_TITLE}. ${pointsLabel}`
+      : `${CHECKED_IN_TITLE}.`,
+    title: CHECKED_IN_TITLE,
+    pointsLabel,
   };
 }
 

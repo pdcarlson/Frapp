@@ -7,10 +7,12 @@ export interface AttendanceOptions {
   /**
    * Re-read the roster on a timer, in ms, or `false` for no timer (the
    * default). For a screen that shows a count while members arrive, such as
-   * mobile's host check-in (s22): nothing pushes a roster change to the
-   * client, and only this client's own check-in and status writes invalidate
-   * it, so another member's check-in otherwise never shows until a refetch.
-   * The caller turns it off while the screen is out of sight.
+   * mobile's host check-in (s22). A roster change is pushed: web's attendance
+   * panel subscribes to the `attendance:<eventId>` realtime ping and
+   * invalidates this query. Mobile doesn't subscribe, and there only this
+   * client's own check-in and status writes invalidate it, so the timer is
+   * how mobile shows another member's check-in for now. The caller turns it
+   * off while the screen is out of sight.
    */
   refetchInterval?: number | false;
 }

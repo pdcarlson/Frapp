@@ -10,13 +10,19 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Keyboard,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import {
+  useFocusEffect,
+  useIsFocused,
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import Svg, { Path } from "react-native-svg";
@@ -39,6 +45,7 @@ import {
 import { latLngOf, requireForegroundFix } from "@/lib/location";
 import { selectEventDetail } from "@/lib/events/select";
 import { useConnection } from "@/lib/connection/use-connection";
+import { successHaptic } from "@/lib/haptics";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -71,7 +78,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## The camera runs only while the screen is focused
  *
- * `check-in` is a `Tabs.Screen`, which stays mounted after `router.back()`.
+ * `check-in` is a `Tabs.Screen`, which stays mounted after the member leaves.
  * A `CameraView` left mounted keeps the camera session (and the torch) on
  * behind whatever screen the member went to, so it is drawn only while this
  * screen has focus.
@@ -81,11 +88,20 @@ type Status =
   | { kind: "idle" }
   | { kind: "submitting" }
   /**
-   * `message` is the shared sentence (`checkInSuccess`) a screen reader hears;
-   * `points` is what the success panel draws on its own line.
+   * `checkInSuccess`'s words, and the event they are about, both fixed when
+   * the check-in was sent. The panel draws these rather than whatever event
+   * the screen holds when it renders: the tab instance is reused, so the
+   * screen's event can change while a check-in is in flight.
    */
-  | { kind: "success"; message: string; points: number | null }
-  | { kind: "error"; message: string }
+  | (ReturnType<typeof checkInSuccess> & {
+      eventId: string;
+      eventName: string | null;
+    })
+  /**
+   * `foreign` marks the scanner's "different event" line, the one error that
+   * is about the camera rather than the member's check-in (see `openManual`).
+   */
+  | { kind: "error"; message: string; foreign?: true }
   /**
    * The subscription gate (#2297) or the module gate (#2393) refused the
    * write. Terminal until an officer acts, so — unlike `error` — it re-arms neither the
@@ -114,6 +130,12 @@ const BRACKET_STROKE = 3;
 const VIEWPORT_INSET = 22;
 /** The board's torch glyph, at its drawn 19pt. */
 const TORCH_GLYPH_SIZE = 19;
+/**
+ * iconography.md §1's neutral fill, "white at 6%", for the torch while it is
+ * off. A literal, as `components/tab-glyphs.tsx` and
+ * `components/more/more-glyphs.tsx` keep it: no token carries it.
+ */
+const TORCH_OFF_FILL = "rgba(255,255,255,0.06)";
 /** The success mark: a circle big enough to read from arm's length. */
 const SUCCESS_MARK_SIZE = 72;
 
@@ -138,7 +160,9 @@ export default function CheckInScreen() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   const [status, setStatus] = useState<Status>({ kind: "idle" });
-  const [focused, setFocused] = useState(false);
+  // True on a focused screen's first render, so the camera mounts without
+  // waiting a commit for an effect to say so.
+  const focused = useIsFocused();
   const [torchOn, setTorchOn] = useState(false);
   const [manualCode, setManualCode] = useState("");
 
@@ -154,7 +178,7 @@ export default function CheckInScreen() {
    * A refusal must not outlive the visit that produced it.
    *
    * `check-in` is a `Tabs.Screen` with `href: null`, pushed with an `eventId`
-   * param — so it stays mounted after `router.back()` and the same instance is
+   * param — so it stays mounted after the member leaves and the same instance is
    * reused for the next event. Unlike `error`, `blocked` disarms both the
    * camera decoder and the manual field, so without this reset a member
    * refused at one event would find the scanner silently dead at the next one,
@@ -173,14 +197,12 @@ export default function CheckInScreen() {
    */
   useFocusEffect(
     useCallback(() => {
-      setFocused(true);
       setStatus((current) =>
         current.kind === "blocked" || current.kind === "success"
           ? { kind: "idle" }
           : current,
       );
       return () => {
-        setFocused(false);
         setTorchOn(false);
         dismissSheet();
       };
@@ -194,6 +216,24 @@ export default function CheckInScreen() {
   const latchRef = useRef(createScanLatch());
   // Last foreign-event code already reported — see `handleBarcode`.
   const reportedForeignRef = useRef<string | null>(null);
+  // Forgotten as soon as its line leaves the screen, by whatever path (the
+  // sheet opening, a check-in starting), so the same wrong code held up again
+  // is reported again rather than dropped in silence.
+  useEffect(() => {
+    if (status.kind !== "error" || !status.foreign) {
+      reportedForeignRef.current = null;
+    }
+  }, [status]);
+
+  /**
+   * The event this screen is showing now, for a check-in that was sent for
+   * another one. `submit` closes over the event it started with; reading this
+   * after the request lands tells it whether the screen has moved on.
+   */
+  const eventIdRef = useRef(eventId);
+  useLayoutEffect(() => {
+    eventIdRef.current = eventId;
+  }, [eventId]);
 
   /**
    * Check-in has **no outbox** — a submit with no network is lost, and a member
@@ -232,28 +272,45 @@ export default function CheckInScreen() {
   /**
    * The one path a check-in takes, scanned or typed, so its confirmation is
    * made in one place: the success branch below is where the screen marks the
-   * moment, for the member who sees it and the one who hears it.
+   * moment, for the member who sees it, feels it, and hears it.
+   *
+   * A result that lands after the screen has moved to another event is
+   * dropped, success or failure: it is about an event the member is no longer
+   * looking at, and drawing it would confirm (or refuse) the wrong one.
    */
   const submit = useCallback(
     async (payload: { token?: string; manualCode?: string }) => {
+      const submittedFor = eventId;
+      const eventName = event?.name ?? null;
+      const outcome = checkInSuccess(event?.point_value);
       setStatus({ kind: "submitting" });
       try {
         const fix = await resolveLocation();
-        await checkIn.mutateAsync({ eventId, ...payload, ...fix });
-        const outcome = checkInSuccess(event?.point_value);
-        setStatus({
-          ...outcome,
-          points: event?.point_value ? event.point_value : null,
-        });
+        await checkIn.mutateAsync({ eventId: submittedFor, ...payload, ...fix });
+        if (eventIdRef.current !== submittedFor) {
+          setStatus({ kind: "idle" });
+          return;
+        }
+        setStatus({ ...outcome, eventId: submittedFor, eventName });
         setManualCode("");
         // A typed code succeeds with the sheet up; the panel replaces the
         // scanner underneath it, so the sheet goes too, and the keyboard with
         // it (Android can leave it up when its focused field unmounts).
         Keyboard.dismiss();
         dismissSheet();
-        // `accessibilityLiveRegion` is Android-only; VoiceOver hears it here.
-        AccessibilityInfo.announceForAccessibility(outcome.message);
+        // Once per check-in, here rather than on the panel's render
+        // (spec/ui/mobile/README.md, Native-feel rules).
+        successHaptic();
+        // `accessibilityLiveRegion` on the panel is Android-only, and Android
+        // reads it out; announcing there as well would say it twice.
+        if (Platform.OS === "ios") {
+          AccessibilityInfo.announceForAccessibility(outcome.message);
+        }
       } catch (error) {
+        if (eventIdRef.current !== submittedFor) {
+          setStatus({ kind: "idle" });
+          return;
+        }
         setStatus(failureStatus(error));
       } finally {
         // Released on both paths so a failed scan can be retried. A latch that
@@ -285,6 +342,7 @@ export default function CheckInScreen() {
           setStatus({
             kind: "error",
             message: "That code is for a different event.",
+            foreign: true,
           });
         }
         return;
@@ -322,10 +380,12 @@ export default function CheckInScreen() {
 
   const openManual = () => {
     // A scan's "different event" line is about the camera, not the code the
-    // member is about to type, so it doesn't follow them into the sheet. A
-    // refusal stays: it is why the sheet's button is off.
+    // member is about to type, so it doesn't follow them into the sheet. Every
+    // other line stays: a refusal is why the sheet's button is off, and a zone,
+    // location or "already checked in" answer is still true of the code they
+    // are about to type.
     setStatus((current) =>
-      current.kind === "error" ? { kind: "idle" } : current,
+      current.kind === "error" && current.foreign ? { kind: "idle" } : current,
     );
     setManualOpen(true);
     sheetRef.current?.present();
@@ -340,6 +400,26 @@ export default function CheckInScreen() {
 
   const cameraGranted = cameraPermission?.granted ?? false;
 
+  /**
+   * Where ✕ and "Back to event" go: the event's detail, whose Scan QR button
+   * is the one way into this screen in the app, or Events when there is no
+   * event. A fixed destination rather than `router.back()`, by the rule
+   * `components/back-row.tsx` states: this is a hidden tab, so `back()` follows
+   * the tab navigator's default `backBehavior` ("firstRoute") to Chat home,
+   * and a `frapp://` link can open it with nothing behind it. Android's back
+   * button keeps the history behaviour.
+   */
+  const leaveTo = (toEventId: string) => {
+    if (toEventId) {
+      router.navigate({
+        pathname: "/event-details",
+        params: { id: toEventId },
+      });
+    } else {
+      router.navigate("/events");
+    }
+  };
+
   return (
     <SafeAreaView
       style={styles.safeArea}
@@ -349,7 +429,7 @@ export default function CheckInScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Close check-in"
-          onPress={() => router.back()}
+          onPress={() => leaveTo(eventId)}
           style={({ pressed }) => [
             styles.close,
             pressed ? styles.pressed : null,
@@ -376,7 +456,9 @@ export default function CheckInScreen() {
           <View
             accessible
             accessibilityLabel={
-              event?.name ? `${status.message} ${event.name}` : status.message
+              status.eventName
+                ? `${status.message} ${status.eventName}`
+                : status.message
             }
             accessibilityLiveRegion="polite"
             style={styles.successBody}
@@ -384,19 +466,19 @@ export default function CheckInScreen() {
             <View style={styles.successMark}>
               <Text style={styles.successGlyph}>✓</Text>
             </View>
-            <Text style={styles.successTitle}>You&apos;re checked in</Text>
-            {status.points ? (
-              <Text style={styles.successPoints}>+{status.points} pts</Text>
+            <Text style={styles.successTitle}>{status.title}</Text>
+            {status.pointsLabel ? (
+              <Text style={styles.successPoints}>{status.pointsLabel}</Text>
             ) : null}
-            {event?.name ? (
+            {status.eventName ? (
               <Text numberOfLines={2} style={styles.successEvent}>
-                {event.name}
+                {status.eventName}
               </Text>
             ) : null}
           </View>
           <Pressable
             accessibilityRole="button"
-            onPress={() => router.back()}
+            onPress={() => leaveTo(status.eventId)}
             style={({ pressed }) => [
               styles.doneButton,
               { backgroundColor: accentPrimary },
@@ -503,7 +585,9 @@ export default function CheckInScreen() {
                 ]}
               >
                 {/* One shape in both states: the state recolours it
-                    (iconography.md §1), it never swaps to a filled variant. */}
+                    (iconography.md §1), it never swaps to a filled variant.
+                    Off is the neutral row (white at 6% under the muted
+                    stroke), on is the accent at 16%. */}
                 <Svg
                   width={TORCH_GLYPH_SIZE}
                   height={TORCH_GLYPH_SIZE}
@@ -511,7 +595,7 @@ export default function CheckInScreen() {
                 >
                   <Path
                     d="M13 3L5 13h5l-1 8 8-10h-5z"
-                    fill={torchOn ? tint(accent, 0.16) : "none"}
+                    fill={torchOn ? tint(accent, 0.16) : TORCH_OFF_FILL}
                     stroke={torchOn ? accent : tokens.color.text.mutedForeground}
                     strokeWidth={1.6}
                     strokeLinejoin="round"

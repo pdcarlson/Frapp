@@ -69,6 +69,8 @@ const MINTED = {
     manualCode: "4KQ-88",
     expiresAt: "2099-01-01T00:00:00Z",
   },
+  // Just landed. Set per test, since how long ago decides whether it draws.
+  dataUpdatedAt: 0,
   error: null,
   isPending: false,
   isError: false,
@@ -117,7 +119,7 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
       eventId: "evt-1",
     });
     hooks.event = EVENT;
-    hooks.token = MINTED;
+    hooks.token = { ...MINTED, dataUpdatedAt: Date.now() };
     hooks.attendance = [
       { status: "PRESENT" },
       { status: "LATE" },
@@ -182,6 +184,86 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
     // A tablet: past the cap the code only gets coarser.
     layout(1024);
     expect(qr().props.size).toBe(340);
+    act(() => tree.unmount());
+  });
+
+  it("draws a code left from an earlier visit as loading, not live, until the new one lands", () => {
+    // The poll stops while the screen is out of sight, so a code cached then
+    // can be minutes old on the way back. Drawn at once with its live dot, a
+    // member scanning it would be refused.
+    hooks.token = {
+      ...MINTED,
+      dataUpdatedAt: Date.now() - 5 * 60_000,
+      isFetching: true,
+    };
+    const tree = render();
+    expect(tree.root.findAllByType("QRCode" as never)).toHaveLength(0);
+    const text = screenText(tree);
+    expect(text).not.toContain("Rotates in");
+    expect(text).not.toContain("4KQ-88");
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.type === ("View" as never) &&
+          node.props.accessibilityRole === "progressbar",
+      ),
+    ).toHaveLength(1);
+
+    // The refetch focus started lands.
+    hooks.token = { ...MINTED, dataUpdatedAt: Date.now() };
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <HostCheckInScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+    expect(tree.root.findAllByType("QRCode" as never)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("judges the cached code against the time the officer came back, not when they left", () => {
+    const tree = render();
+    expect(tree.root.findAllByType("QRCode" as never)).toHaveLength(1);
+
+    act(() => blur());
+    const later = Date.now() + 2 * 60_000;
+    const clock = vi.spyOn(Date, "now").mockReturnValue(later);
+    try {
+      act(() => refocus());
+      expect(tree.root.findAllByType("QRCode" as never)).toHaveLength(0);
+    } finally {
+      clock.mockRestore();
+    }
+    act(() => tree.unmount());
+  });
+
+  it("keeps drawing a code the poll just replaced, which still redeems", () => {
+    // A code past its countdown redeems for one more window, and the 10s poll
+    // lands inside it, so the screen must not blank between rotations.
+    hooks.token = {
+      ...MINTED,
+      data: { ...MINTED.data, expiresAt: "2000-01-01T00:00:00Z" },
+      dataUpdatedAt: Date.now() - 9_000,
+    };
+    const tree = render();
+    expect(tree.root.findAllByType("QRCode" as never)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("ends to More, where its one row opened it", () => {
+    vi.mocked(vi.mocked(expoRouter.useRouter)().navigate).mockClear();
+    const tree = render();
+    const end = tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        node.props.accessibilityLabel === "End hosting and go back",
+    );
+    act(() => end.props.onPress());
+    // Not `back()`: a hidden tab's history lands on Chat home.
+    expect(vi.mocked(expoRouter.useRouter)().navigate).toHaveBeenCalledWith(
+      "/more",
+    );
     act(() => tree.unmount());
   });
 

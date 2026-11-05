@@ -27,6 +27,15 @@ describe("checkInSuccess", () => {
     expect(checkInSuccess(0).message).toBe("You're checked in.");
     expect(checkInSuccess(null).message).toBe("You're checked in.");
   });
+
+  it("splits the same words into the lines s18's panel draws", () => {
+    expect(checkInSuccess(10)).toMatchObject({
+      title: "You're checked in",
+      pointsLabel: "+10 pts",
+    });
+    expect(checkInSuccess(0).pointsLabel).toBeNull();
+    expect(checkInSuccess(undefined).pointsLabel).toBeNull();
+  });
 });
 
 describe("checkInFailure", () => {
