@@ -230,11 +230,11 @@ describe("HoursCard", () => {
     );
   });
 
-  it("draws a rejection in the destructive hue", () => {
+  it("draws a rejection in the destructive hue, its text AA-lifted", () => {
     state.live = { id: "entry-1", status: "REJECTED" };
     const tree = render(OWNER);
     expect(flatStyle(textNode(tree, "Rejected").props.style).color).toBe(
-      tokens.color.semantic.destructive,
+      tokens.color.semantic.destructiveText,
     );
   });
 

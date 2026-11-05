@@ -97,7 +97,11 @@ export default function TabLayout() {
           height: TAB_BAR_HEIGHT + bottomInset,
           paddingTop: TAB_BAR_PADDING,
           paddingBottom: TAB_BAR_PADDING + bottomInset,
-          backgroundColor: tokens.color.surface.card,
+          // `surface-1` is the ladder's nav step (foundations.md §2), the
+          // same fill as web's top bar and sidebar, so the chrome reads as
+          // one product on both clients. It sat on `card` until 2026-11-05,
+          // a warmer, lighter step than any web chrome.
+          backgroundColor: tokens.color.surface.surface1,
           borderTopColor: tokens.color.border.hairline,
         },
         // iconography.md §1 rule 2: the active tab pairs the accent duotone
