@@ -12,10 +12,8 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
-import { IconButton } from "@/components/icon-button";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { BACK_TO_MORE } from "@/components/back-row";
-import { UploadGlyph } from "@/components/documents/document-glyphs";
 import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
 import { FilterChips, SearchField } from "@/components/filter-chips";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
@@ -31,7 +29,6 @@ import {
   selectDocumentRows,
   selectDownloadUrl,
 } from "@/lib/more/documents";
-import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -85,7 +82,6 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  */
 export default function DocumentsScreen() {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
 
   const [folder, setFolder] = useState<string | null>(null);
@@ -209,19 +205,17 @@ export default function DocumentsScreen() {
     <ScreenShell
       back={BACK_TO_MORE}
       refresh={refresh}
-      backAction={
-        canUpload ? (
-          <IconButton
-            label="Upload document"
-            hint="Opens a sheet to upload a photo to the library."
-            onPress={() => {
-              setUploadedTitle(null);
-              uploadSheetRef.current?.present();
-            }}
-          >
-            <UploadGlyph color={accent} />
-          </IconButton>
-        ) : undefined
+      createAction={
+        canUpload
+          ? {
+              label: "Upload document",
+              hint: "Opens a sheet to upload a photo to the library.",
+              onPress: () => {
+                setUploadedTitle(null);
+                uploadSheetRef.current?.present();
+              },
+            }
+          : undefined
       }
       title="Documents"
     >

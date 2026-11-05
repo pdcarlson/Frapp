@@ -2,7 +2,17 @@ import { ReactNode } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
-import { BackRow, type BackTarget } from "@/components/back-row";
+import {
+  type BackTarget,
+  PinnedBackRow,
+  pinnedBackClearance,
+} from "@/components/back-row";
+import {
+  CREATE_BUTTON_SIZE,
+  type CreateAction,
+  FloatingCreateButton,
+} from "@/components/floating-create-button";
+import { FLOATING_TAB_BAR, useTabBarClearance } from "@/lib/floating-chrome";
 import {
   ThemedRefreshControl,
   type ScreenRefresh,
@@ -20,9 +30,14 @@ type ScreenShellProps = {
   back?: BackTarget;
   /**
    * A control at the far end of the back row, where the board draws s15's
-   * Edit (#3387) and s12's upload (#3399). Drawn only with `back`.
+   * Edit (#3387). Drawn only with `back`, pinned with it.
    */
   backAction?: ReactNode;
+  /**
+   * The screen's one create action, drawn as the floating glass "+" above the
+   * tab bar (`FloatingCreateButton`): Tasks, Service hours, Documents.
+   */
+  createAction?: CreateAction;
   /**
    * Drawn before the title on the title row. Chat home passes the chapter mark
    * (`ChapterMark`), which is the one mobile surface of the chapter's logo
@@ -43,10 +58,9 @@ type ScreenShellProps = {
    * Trailing control rendered on the title row, right-aligned and vertically
    * centred against the title.
    *
-   * Added in S2 because this file freezes afterwards (#937's hotspot protocol)
-   * and three drawn screens need it: the ✦ Ask pill on s04 and s06, and the `+`
-   * on s08, as the Canvas board draws them (the pill's rule is
-   * `spec/ui/mobile/navigation.md` § Global entries outside the tab bar).
+   * The ✦ Ask pill on s04 and s06 (`spec/ui/mobile/navigation.md` § Global
+   * entries outside the tab bar). A create action is not one of these: it
+   * floats bottom right (`createAction`).
    * Optional, so every existing call site is unaffected.
    */
   headerAction?: ReactNode;
@@ -89,6 +103,7 @@ export function ScreenShell({
   title,
   back,
   backAction,
+  createAction,
   titleMark,
   subtitle,
   headerAction,
@@ -97,40 +112,46 @@ export function ScreenShell({
 }: ScreenShellProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  // Room under the last row for the floating bar, and for the create button
+  // above it when there is one, so nothing scrolls out of reach beneath them.
+  const clearance =
+    useTabBarClearance() +
+    (createAction ? CREATE_BUTTON_SIZE + FLOATING_TAB_BAR.gap : 0);
 
   return (
-    <SafeAreaView
-      style={styles.safeArea}
-      edges={["top", "left", "right", "bottom"]}
-    >
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={
-          refresh ? <ThemedRefreshControl refresh={refresh} /> : undefined
-        }
+    <View style={styles.frame}>
+      <SafeAreaView
+        style={styles.safeArea}
+        edges={["top", "left", "right", "bottom"]}
       >
-        <View style={styles.header}>
-          {back ? (
-            <BackRow
-              label={back.label}
-              href={back.href}
-              trailing={backAction}
-            />
-          ) : null}
-          <View style={styles.headerRow}>
-            {titleMark}
-            <Text accessibilityRole="header" style={styles.title}>
-              {title}
-            </Text>
-            {headerAction ? (
-              <View style={styles.headerAction}>{headerAction}</View>
-            ) : null}
+        {back ? <PinnedBackRow back={back} trailing={backAction} /> : null}
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            back ? { paddingTop: pinnedBackClearance(tokens) } : null,
+            { paddingBottom: tokens.spacing.lg + clearance },
+          ]}
+          refreshControl={
+            refresh ? <ThemedRefreshControl refresh={refresh} /> : undefined
+          }
+        >
+          <View style={styles.header}>
+            <View style={styles.headerRow}>
+              {titleMark}
+              <Text accessibilityRole="header" style={styles.title}>
+                {title}
+              </Text>
+              {headerAction ? (
+                <View style={styles.headerAction}>{headerAction}</View>
+              ) : null}
+            </View>
+            {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
           </View>
-          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-        </View>
-        {children}
-      </ScrollView>
-    </SafeAreaView>
+          {children}
+        </ScrollView>
+      </SafeAreaView>
+      {createAction ? <FloatingCreateButton {...createAction} /> : null}
+    </View>
   );
 }
 
@@ -161,9 +182,12 @@ export function InfoCard({
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    safeArea: {
+    frame: {
       flex: 1,
       backgroundColor: tokens.color.surface.background,
+    },
+    safeArea: {
+      flex: 1,
     },
     content: {
       width: "100%",

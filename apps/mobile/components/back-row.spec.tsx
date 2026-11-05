@@ -4,6 +4,8 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useRouter } from "expo-router";
+import { signetDarkTokens } from "@repo/theme/signet";
+import { GlassSurface } from "@/components/glass-surface";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 // A purple stand-in, so a row painted house gold fails instead of passing.
@@ -36,6 +38,15 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+const labelText = (tree: ReactTestRenderer) =>
+  tree.root.findByType("Text" as unknown as React.ElementType);
+
+/** The `‹` is drawn, not typed: its stroke is the arrow's colour. */
+const arrowColor = (tree: ReactTestRenderer) =>
+  tree.root
+    .findByType("Path" as unknown as React.ElementType)
+    .parent!.props.stroke;
+
 describe("BackRow (#3022)", () => {
   it.each([
     ["More", BACK_TO_MORE, "/more"],
@@ -47,15 +58,27 @@ describe("BackRow (#3022)", () => {
     expectBackRow(tree, label, href);
   });
 
-  it("draws in the chapter accent, not house gold", () => {
+  it("draws its arrow in the chapter accent, not house gold", () => {
     const tree = render(<BackRow {...BACK_TO_MORE} />);
-    const text = tree.root.findByType("Text" as unknown as React.ElementType);
 
     // The purple stand-in the mock returns: inside a chapter every back arrow
     // follows the accent (spec/behavior/branding.md, owner rule 2026-11-04).
-    expect(text.props.style).toEqual(
-      expect.objectContaining({ color: "#CB9FFF" }),
+    expect(arrowColor(tree)).toBe("#CB9FFF");
+    // The name reads in foreground, on the glass.
+    expect(labelText(tree).props.style).toEqual(
+      expect.objectContaining({
+        color: signetDarkTokens.color.text.foreground,
+      }),
     );
+  });
+
+  it("sits in a glass capsule, 36pt tall and fully round", () => {
+    const tree = render(<BackRow {...BACK_TO_MORE} />);
+    const capsule = tree.root.findByType(GlassSurface);
+    const style = Object.assign({}, ...[capsule.props.style].flat(Infinity));
+
+    expect(style.height).toBe(36);
+    expect(style.borderRadius).toBe(18);
   });
 });
 
@@ -70,13 +93,10 @@ describe("BackRow in (auth)", () => {
 
   it("draws in house gold when asked, whatever the chapter's accent", () => {
     const tree = render(<BackRow house label="Back" onPress={vi.fn()} />);
-    const text = tree.root.findByType("Text" as unknown as React.ElementType);
 
     // `gold.askText`, the board's `‹ Back` gold on s02, not the purple mock.
-    expect(text.props.children).toBe("‹ Back");
-    expect(text.props.style).toEqual(
-      expect.objectContaining({ color: "#F4CB63" }),
-    );
+    expect(labelText(tree).props.children).toBe("Back");
+    expect(arrowColor(tree)).toBe("#F4CB63");
   });
 
   it("runs its own step back instead of navigating, under the label it's given", () => {
@@ -107,16 +127,22 @@ describe("BackRow in (auth)", () => {
 
     expect(row.props.disabled).toBe(true);
     expect(row.props.accessibilityState).toEqual({ disabled: true });
-    expect(row.props.style({ pressed: false })).toEqual(
-      expect.objectContaining({ opacity: 0.5 }),
-    );
+    const capsule = tree.root.findByType(GlassSurface);
+    expect(
+      Object.assign({}, ...[capsule.props.style].flat(Infinity)),
+    ).toEqual(expect.objectContaining({ opacity: 0.5 }));
   });
 
   it("shows a press", () => {
     const tree = render(<BackRow {...BACK_TO_MORE} />);
 
-    expect(pressable(tree).props.style({ pressed: true })).toEqual(
-      expect.objectContaining({ opacity: 0.6 }),
+    // A lift to `popover` while held, never an opacity fade
+    // (`spec/ui/mobile/README.md` § Pressing a list row).
+    const held = Object.assign(
+      {},
+      ...[pressable(tree).props.style({ pressed: true })].flat(Infinity),
     );
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(held).not.toHaveProperty("opacity");
   });
 });

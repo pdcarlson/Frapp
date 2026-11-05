@@ -15,7 +15,11 @@ import {
   NoChapterState,
   SkeletonLines,
 } from "@/components/state-block";
-import { BACK_TO_MORE, BackRow } from "@/components/back-row";
+import {
+  BACK_TO_MORE,
+  PinnedBackRow,
+  pinnedBackClearance,
+} from "@/components/back-row";
 import { Chip, FilterChips, SearchField } from "@/components/filter-chips";
 import { gutterBleed, usePressFeedback } from "@/components/list-section";
 import { DirectoryGlyph } from "@/components/more/more-glyphs";
@@ -32,6 +36,7 @@ import {
   selectDirectoryRows,
 } from "@/lib/more/directory";
 import { records, str } from "@/lib/more/narrow";
+import { useTabBarClearance } from "@/lib/floating-chrome";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -69,6 +74,7 @@ type Tab = "actives" | "alumni";
 export default function DirectoryScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const tabBarClearance = useTabBarClearance();
   const chapterId = useActiveChapterId();
   const detailSheetRef = useRef<BottomSheetModal>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -160,15 +166,12 @@ export default function DirectoryScreen() {
   );
 
   const header = (
-    <View style={styles.header}>
-      {/* One block, so the header's gap doesn't widen the space under the
-          back row past the shell's (`components/screen-shell.tsx`). */}
-      <View>
-        <BackRow {...BACK_TO_MORE} />
-        <Text accessibilityRole="header" style={styles.title}>
-          Directory
-        </Text>
-      </View>
+    <View
+      style={[styles.header, { paddingTop: pinnedBackClearance(tokens) }]}
+    >
+      <Text accessibilityRole="header" style={styles.title}>
+        Directory
+      </Text>
 
       <SearchField
         value={query}
@@ -293,6 +296,8 @@ export default function DirectoryScreen() {
       style={styles.safeArea}
       edges={["top", "left", "right", "bottom"]}
     >
+      {/* Pinned, as every screen's back capsule is (`ScreenShell`). */}
+      <PinnedBackRow back={BACK_TO_MORE} />
       <FlatList
         data={rows}
         keyExtractor={(row) => row.userId}
@@ -309,7 +314,11 @@ export default function DirectoryScreen() {
             }}
           />
         )}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          // Clear of the floating tab bar (`lib/floating-chrome.tsx`).
+          { paddingBottom: tokens.spacing.xl + tabBarClearance },
+        ]}
         keyboardShouldPersistTaps="handled"
         refreshControl={<ThemedRefreshControl refresh={refresh} />}
       />

@@ -8,18 +8,33 @@ import {
   TasksGlyph,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
-import { AppErrorScreen, screenErrorLayout } from "@/components/route-error";
+import { StyleSheet } from "react-native";
+import { AppErrorScreen } from "@/components/route-error";
+import { GlassSurface } from "@/components/glass-surface";
 import { resolveAuthGate } from "@/lib/auth-gate";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import {
+  FLOATING_TAB_BAR,
+  floatingScreenLayout,
+  floatingTabBarBottom,
+} from "@/lib/floating-chrome";
 import { useFrappTheme } from "@/lib/theme";
 
-/**
- * The bar as drawn, above the bottom inset: a 62pt row with 6pt of padding
- * above and below its content (#3344).
- */
-const TAB_BAR_HEIGHT = 62;
+/** 6pt of padding above and below the bar's content (#3344). */
 const TAB_BAR_PADDING = 6;
+
+/** The capsule's own radius: half its height, so the ends are round. */
+const TAB_BAR_RADIUS = FLOATING_TAB_BAR.height / 2;
+
+/** The glass under the floating bar. Module-level so the bar doesn't remount it. */
+function TabBarGlass() {
+  return (
+    <GlassSurface
+      style={[StyleSheet.absoluteFill, { borderRadius: TAB_BAR_RADIUS }]}
+    />
+  );
+}
 
 /**
  * Options for a screen that takes the whole window, with no tab bar: the chat
@@ -57,9 +72,8 @@ export default function TabLayout() {
   // safe to read here — the auth stack sits outside and stays Frapp-branded.
   const { accent } = useChapterBranding();
   // Android draws the app edge to edge, so the swipe bar (and the iPhone home
-  // indicator) sits over the bottom of the window. A fixed `height` here
-  // replaces the inset React Navigation would otherwise add, so the bar has to
-  // add it back itself or its labels sit under the swipe bar (#3344).
+  // indicator) sits over the bottom of the window. The floating bar clears it
+  // by its own `bottom` offset rather than by padding (#3344).
   const { bottom: bottomInset } = useSafeAreaInsets();
 
   const destination = resolveAuthGate({ status, chapterId, isChapterResolving });
@@ -88,22 +102,33 @@ export default function TabLayout() {
       backBehavior="history"
       // Each screen in its own error boundary, so one that fails to render
       // leaves the tab bar and the other tabs working (#3378).
-      screenLayout={screenErrorLayout}
+      // It also tells each screen whether the floating bar sits over it, so
+      // its content can scroll clear of it (`lib/floating-chrome.tsx`).
+      screenLayout={floatingScreenLayout}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: accent,
         tabBarInactiveTintColor: tokens.color.text.muted,
+        // A glass capsule floating over the content (owner pick 2026-11-05,
+        // "Floating bar, no glow"; `spec/ui/mobile/navigation.md` § Tab bar).
+        // The glass is `surface-1`, the ladder's nav step and web's chrome
+        // fill, over a blur where the device has one (`GlassSurface`). No
+        // shadow and no glow: elevation is the edge and the sheen.
         tabBarStyle: {
-          height: TAB_BAR_HEIGHT + bottomInset,
+          position: "absolute",
+          left: FLOATING_TAB_BAR.side,
+          right: FLOATING_TAB_BAR.side,
+          bottom: floatingTabBarBottom(bottomInset),
+          height: FLOATING_TAB_BAR.height,
           paddingTop: TAB_BAR_PADDING,
-          paddingBottom: TAB_BAR_PADDING + bottomInset,
-          // `surface-1` is the ladder's nav step (foundations.md §2), the
-          // same fill as web's top bar and sidebar, so the chrome reads as
-          // one product on both clients. It sat on `card` until 2026-11-05,
-          // a warmer, lighter step than any web chrome.
-          backgroundColor: tokens.color.surface.surface1,
-          borderTopColor: tokens.color.border.hairline,
+          paddingBottom: TAB_BAR_PADDING,
+          borderRadius: TAB_BAR_RADIUS,
+          borderTopWidth: 0,
+          backgroundColor: "transparent",
+          elevation: 0,
+          shadowOpacity: 0,
         },
+        tabBarBackground: TabBarGlass,
         // iconography.md §1 rule 2: the active tab pairs the accent duotone
         // glyph with a 700-weight label, and takes no pill or container shape.
         // The weight has to come from the label component, not

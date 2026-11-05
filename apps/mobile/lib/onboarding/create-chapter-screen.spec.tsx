@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { backArrowColor } from "@/test/back-row";
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -316,9 +317,7 @@ describe("chapter setup — step order", () => {
 
   it("draws its ‹ Back row in house gold, not the chapter's accent", async () => {
     const { root } = await render();
-    const backInk = () =>
-      flatStyle(control(root, "Back")!.findByType("Text" as never).props.style)
-        .color;
+    const backInk = () => backArrowColor(control(root, "Back")!);
     // `gold.askText` on find, confirm and color: `(auth)` has no chapter.
     expect(backInk()).toBe(signetDarkTokens.color.gold.askText);
     await pickRow(root, "Phi Gamma Delta");

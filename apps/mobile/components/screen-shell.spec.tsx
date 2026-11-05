@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { backRowView } from "@/test/back-row";
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -147,7 +148,7 @@ describe("ScreenShell back row (#3022)", () => {
       </ScreenShell>,
     );
 
-    expect(screenText(tree)).toBe("‹ More\nDues\nBody");
+    expect(screenText(tree)).toBe("More\nDues\nBody");
     expectBackRow(tree, "More", "/more");
   });
 });
@@ -165,16 +166,17 @@ describe("ScreenShell back-row action (#3387)", () => {
       </ScreenShell>,
     );
 
-    expect(screenText(tree)).toBe("‹ More\nEdit\nProfile\nBody");
+    expect(screenText(tree)).toBe("More\nEdit\nProfile\nBody");
     // One view holds `‹ More` and the action side by side: the back row's own.
-    const back = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityLabel === "Back to More",
-    );
+    const row = backRowView(tree);
     const [action] = tree.root.findAllByProps({ testID: "edit" });
-    expect(action!.parent).toBe(back.parent);
-    expect(back.parent!.props.style).toMatchObject({ flexDirection: "row" });
+    expect(row.findAll((node) => node === action)).toHaveLength(1);
+    expect(
+      row.findAll(
+        (node) => node.props.accessibilityLabel === "Back to More",
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(row.props.style).toMatchObject({ flexDirection: "row" });
   });
 });
 

@@ -12,7 +12,6 @@ import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { BACK_TO_MORE } from "@/components/back-row";
-import { HeaderAddButton } from "@/components/header-add-button";
 import { HistoryRow } from "@/components/history-row";
 import { SectionHeader } from "@/components/list-section";
 import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
@@ -153,9 +152,7 @@ export default function ServiceHoursScreen() {
       back={BACK_TO_MORE}
       title="Service hours"
       refresh={refresh}
-      headerAction={
-        <HeaderAddButton label="Log service hours" onPress={openSheet} />
-      }
+      createAction={{ label: "Log service hours", onPress: openSheet }}
     >
       {/* Only stated once the entries are actually in hand. `summary` derives
           from `rows`, which is empty while the query is pending or errored — so

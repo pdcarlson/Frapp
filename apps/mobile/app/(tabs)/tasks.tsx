@@ -16,7 +16,6 @@ import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
-import { HeaderAddButton } from "@/components/header-add-button";
 import { SectionHeader } from "@/components/list-section";
 import {
   EmptyState,
@@ -307,16 +306,16 @@ export default function TasksScreen() {
     <ScreenShell
       title="Tasks"
       refresh={refresh}
-      headerAction={
-        canManageTasks ? (
-          <HeaderAddButton
-            label="New task"
-            onPress={() => {
-              setNotice(null);
-              sheetRef.current?.present();
-            }}
-          />
-        ) : undefined
+      createAction={
+        canManageTasks
+          ? {
+              label: "New task",
+              onPress: () => {
+                setNotice(null);
+                sheetRef.current?.present();
+              },
+            }
+          : undefined
       }
     >
       <PointsSummaryCard summary={summary} rank={rank} />

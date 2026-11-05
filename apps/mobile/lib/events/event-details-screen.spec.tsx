@@ -170,7 +170,7 @@ describe("Event details back row (#3022)", () => {
 
   it("draws ‹ Events over a loaded event", () => {
     const tree = render();
-    expect(screenText(tree).startsWith("‹ Events\nChapter meeting")).toBe(true);
+    expect(screenText(tree).startsWith("Events\nChapter meeting")).toBe(true);
     expectBackRow(tree, "Events", "/events");
   });
 
@@ -209,7 +209,7 @@ describe("Event details back row (#3022)", () => {
 
     const tree = render();
     expect(screenText(tree)).not.toContain("No chapter selected");
-    expect(screenText(tree).startsWith("‹ Events\nChapter meeting")).toBe(true);
+    expect(screenText(tree).startsWith("Events\nChapter meeting")).toBe(true);
     expectBackRow(tree, "Events", "/events");
   });
 });

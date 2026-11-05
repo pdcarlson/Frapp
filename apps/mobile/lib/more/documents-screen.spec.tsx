@@ -4,6 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import * as WebBrowser from "expo-web-browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { FloatingCreateButton } from "@/components/floating-create-button";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
@@ -55,7 +56,6 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import DocumentsScreen from "@/app/(tabs)/documents";
-import { UploadGlyph } from "@/components/documents/document-glyphs";
 import { FilterChips } from "@/components/filter-chips";
 import { ListRow } from "@/components/list-section";
 import { DocumentsGlyph } from "@/components/more/more-glyphs";
@@ -119,20 +119,18 @@ describe("Documents upload (#3399)", () => {
     ["chapter_docs:upload", ["members:view", "chapter_docs:upload"]],
     ["the owner's wildcard", ["*"]],
   ])(
-    "draws the glyph on the back row for %s, and it opens s21",
+    "draws the floating create button for %s, and it opens s21",
     (_who, held) => {
       permissions = held;
       const tree = render();
 
       const [upload] = uploadControls(tree);
       expect(upload).toBeDefined();
-      const backRow = tree.root.find(
-        (node) =>
-          (node.type as unknown) === "Pressable" &&
-          node.props.accessibilityLabel === "Back to More",
-      ).parent!;
-      expect(backRow.findAll((node) => node === upload)).toHaveLength(1);
-      expect(upload!.findByType(UploadGlyph).props.color).toBe("#7A3FC2");
+      // The screen's one create action floats bottom right, in the same spot
+      // as Tasks' and Service hours', not on the back row.
+      expect(
+        tree.root.findAllByType(FloatingCreateButton).map((b) => b.props.label),
+      ).toEqual(["Upload document"]);
 
       act(() => {
         upload!.props.onPress();
