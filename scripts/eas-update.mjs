@@ -13,19 +13,27 @@
 //   3. `runtimeVersion` is the `appVersion` policy: an update reaches every binary whose
 //      `expo.version` matches. If native code changed since that binary was built without a
 //      version bump, the update calls a native module the binary doesn't have and crashes.
-//   4. Nothing stops an update from a dirty tree or an unmerged branch reaching members.
+//   4. Nothing ties the bundle to what production serves: a dirty tree, or main's tip with JS
+//      that calls routes the production API (the latest `v*` tag) doesn't serve yet.
 //
 // WHAT IT DOES. `update` must name `--channel`, which must be the `channel` of exactly one build
 // profile in eas.json; `--environment` is that profile's `environment` (added when absent,
 // refused when different). The child env drops every inherited `EXPO_PUBLIC_*` and `EAS_BUILD_*`
-// variable, adds the profile's eas.json `env`, and sets `FRAPP_EAS_UPDATE_PROFILE`, which
-// app.config.js reads as the profile for its public-value fences, plus `FRAPP_EAS_UPDATE_GIT_SHA`
-// for `extra.gitSha`. EAS variables still win over both for any name they define, so the fences
-// see what the bundle gets. `--branch`, `--auto` and `--skip-bundler` are refused: each would
-// publish somewhere other than the named channel, or a bundle this guard never shaped.
+// variable, adds the profile's eas.json `env`, then that EAS environment's own `EXPO_PUBLIC_*`
+// variables, and sets `FRAPP_EAS_UPDATE_PROFILE`, which app.config.js reads as the profile for
+// its public-value fences, plus `FRAPP_EAS_UPDATE_GIT_SHA` for `extra.gitSha`.
 //
-// For the production channel it also requires a clean tree on a commit already on origin/main,
-// and refuses unless every store build recorded for this runtime (`apps/mobile/store/
+// The EAS variables are pulled first (`eas env:pull`, Plain text and Sensitive only, which is all
+// a local run ever gets) because eas-cli evaluates app.config.js several times before it merges
+// them in (`DynamicProjectConfigContextField`, `ServerSideEnvironmentVariablesContextField`): with
+// the profile set and those values absent, the production Supabase fence would stop every run.
+// They are layered over eas.json's, as eas-cli layers them for the export, so every evaluation sees
+// what the bundle gets. `--branch`, `--auto`, `--skip-bundler` and `--input-dir` are refused: each
+// publishes somewhere other than the named channel, or a bundle this guard never shaped.
+//
+// For the production channel it also requires a clean tree at exactly the commit production
+// serves (the latest `v*` tag, `scripts/ci/lib/release-tag.mjs`, the same rule store builds
+// follow), and refuses unless every store build recorded for this runtime (`apps/mobile/store/
 // shipped-builds.json`) has the same native inputs as HEAD: `app.json`, `app.config.js`, and the
 // lockfile version of every installed package that carries native code. That is how far an
 // update reaches, and a mismatch means bump `expo.version` and ship a store build instead.
@@ -42,6 +50,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseRegistry } from "./check-api-breaking-changes.mjs";
+import { latestReleaseTag } from "./ci/lib/release-tag.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -93,6 +103,12 @@ export function parseUpdateArgs(args) {
 /** The one build profile whose `channel` is `channel`, or an error naming the choices. */
 export function profileForChannel(easJson, channel) {
   const profiles = Object.entries(easJson?.build ?? {});
+  // `extends` would hand a profile env and a channel this lookup can't see. None uses it; resolving
+  // it is #2511's, once there is a profile that needs it.
+  const extending = profiles.filter(([, p]) => p?.extends).map(([n]) => n);
+  if (extending.length) {
+    return { error: `${EAS_JSON} build profiles ${extending.join(", ")} use "extends", which this guard doesn't resolve.` };
+  }
   const matches = profiles.filter(([, p]) => p?.channel === channel);
   const known = profiles.map(([, p]) => p?.channel).filter(Boolean);
   if (matches.length === 1) {
@@ -111,20 +127,34 @@ export function profileForChannel(easJson, channel) {
 /**
  * The env eas-cli runs with: the caller's, minus every `EXPO_PUBLIC_*` (a stray shell value would
  * be inlined into the bundle) and `EAS_BUILD_*` (an update is not a build), plus the profile's
- * eas.json `env` and the two variables app.config.js reads for an update.
+ * eas.json `env`, then the EAS environment's `EXPO_PUBLIC_*` (`easVars`, which win as they do in
+ * eas-cli's export), and the two variables app.config.js reads for an update.
  */
-export function updateEnv(baseEnv, { profileName, profile, gitSha }) {
+export function updateEnv(baseEnv, { profileName, profile, gitSha, easVars = {} }) {
   const stripped = [];
   const env = {};
   for (const [k, v] of Object.entries(baseEnv)) {
     if (k.startsWith("EXPO_PUBLIC_") || k.startsWith("EAS_BUILD_")) stripped.push(k);
     else env[k] = v;
   }
-  Object.assign(env, profile.env ?? {});
+  Object.assign(env, profile.env ?? {}, easVars);
   env[UPDATE_PROFILE_ENV] = profileName;
   if (gitSha) env[UPDATE_GIT_SHA_ENV] = gitSha;
   else delete env[UPDATE_GIT_SHA_ENV];
   return { env, stripped };
+}
+
+/**
+ * The `EXPO_PUBLIC_*` lines of the file `eas env:pull` writes: `NAME=value`, one per line, unquoted
+ * (eas-cli 24.8.0 `commands/env/pull.js`). Secret variables arrive commented out and are skipped.
+ */
+export function parsePulledEnv(text) {
+  const vars = {};
+  for (const line of String(text).split(/\r?\n/)) {
+    const m = /^(EXPO_PUBLIC_[A-Z0-9_]+)=(.*)$/.exec(line);
+    if (m) vars[m[1]] = m[2];
+  }
+  return vars;
 }
 
 /** True when an installed package directory carries iOS or Android code a binary links. */
@@ -215,17 +245,46 @@ export function productionChecks({
   const status = git(["status", "--porcelain"]);
   if (status.status !== 0) return { errors: [`git status failed: ${status.stderr.trim()}`], notes };
   if (status.stdout.trim()) {
-    errors.push("The working tree has uncommitted changes. A production update publishes only a commit on main.");
+    errors.push("The working tree has uncommitted changes. A production update publishes only the commit production serves.");
   }
-  const fetch = git(["fetch", "--quiet", "origin", "main"]);
+  // The bundle calls api.frapp.live, which runs the latest v* tag: JS from anywhere else can call
+  // routes production doesn't serve (newer) or roll members back (older).
+  const fetch = git(["fetch", "--quiet", "--tags", "origin", "main"]);
   if (fetch.status !== 0) {
-    errors.push(`git fetch origin main failed, so the guard can't tell whether HEAD is on main: ${fetch.stderr.trim()}`);
-  } else if (git(["merge-base", "--is-ancestor", "HEAD", "origin/main"]).status !== 0) {
-    errors.push("HEAD is not on origin/main. Publish only merged work: `git switch main && git pull`, then run it again.");
+    errors.push(`git fetch --tags origin main failed, so the guard can't tell what production serves: ${fetch.stderr.trim()}`);
+    return { errors, notes };
+  } else {
+    const latest = latestReleaseTag({
+      git: (a) => {
+        const r = git(a);
+        if (r.status !== 0) throw new Error(r.stderr.trim() || `git ${a.join(" ")} exited ${r.status}`);
+        return r.stdout;
+      },
+    });
+    const tagSha = latest.ok ? git(["rev-parse", `${latest.tag}^{commit}`]) : undefined;
+    const headSha = git(["rev-parse", "HEAD"]);
+    if (!latest.ok) {
+      errors.push(`Can't tell what production serves: ${latest.error}.`);
+    } else if (tagSha.status !== 0 || headSha.status !== 0 || tagSha.stdout.trim() !== headSha.stdout.trim()) {
+      errors.push(
+        `HEAD isn't ${latest.tag}, the commit production serves. Publish from it: ` +
+          `\`git checkout ${latest.tag} && npm ci\`. To ship newer work, run Deploy production first.`,
+      );
+    }
   }
 
   const runtime = JSON.parse(readFile(APP_JSON))?.expo?.version;
-  const builds = (JSON.parse(readFile(SHIPPED_BUILDS))?.builds ?? []).filter((b) => b.version === runtime);
+  // From main, not HEAD: a tag's own builds are recorded by a PR that merges after the tag.
+  let registry;
+  try {
+    const shown = git(["show", `origin/main:${SHIPPED_BUILDS}`]);
+    if (shown.status !== 0) throw new Error(shown.stderr.trim() || "git show failed");
+    registry = parseRegistry(shown.stdout);
+  } catch (error) {
+    errors.push(`${SHIPPED_BUILDS} is malformed: ${error.message}`);
+    return { errors, notes };
+  }
+  const builds = registry.builds.filter((b) => b.version === runtime);
   if (!runtime) {
     errors.push(`${APP_JSON} has no expo.version, so the update has no runtime version.`);
     return { errors, notes };
@@ -233,15 +292,20 @@ export function productionChecks({
   if (builds.length === 0) {
     errors.push(
       `No store build of version ${runtime} is recorded in ${SHIPPED_BUILDS}, so this update would reach no ` +
-        "store binary. If a build of it shipped, record it first (mobile.md § 6.6); otherwise ship a build, not an update.",
+        "store binary. If a build of it shipped, merge the PR that records it first (mobile.md § 6.6); otherwise ship a build, not an update.",
     );
     return { errors, notes };
   }
 
   let headLock;
-  let installed;
   try {
     headLock = JSON.parse(readFile(LOCKFILE));
+  } catch (error) {
+    errors.push(`Couldn't read ${LOCKFILE}: ${error.message}`);
+    return { errors, notes };
+  }
+  let installed;
+  try {
     installed = JSON.parse(readFile("node_modules/.package-lock.json"));
   } catch {
     installed = undefined;
@@ -298,6 +362,7 @@ export function prepareUpdate(
     readFile = (p) => readFileSync(path.join(ROOT, p), "utf8"),
     git = defaultGit,
     production = productionChecks,
+    pullEnv = () => ({ error: "no way to read the EAS environment was given" }),
   } = {},
 ) {
   const parsed = parseUpdateArgs(args);
@@ -331,14 +396,23 @@ export function prepareUpdate(
     );
   }
   if (errors.length) return { ok: false, errors };
+  const pulled = pullEnv(profile.environment);
+  if (pulled.error) {
+    return { ok: false, errors: [`Couldn't read the ${profile.environment} EAS environment's variables: ${pulled.error}`] };
+  }
   const head = git(["rev-parse", "HEAD"]);
   const { env: outEnv, stripped } = updateEnv(env, {
     profileName,
     profile,
     gitSha: head.status === 0 ? head.stdout.trim() : undefined,
+    easVars: pulled.vars,
   });
   if (stripped.length) notes.push(`Dropped from your shell for this run: ${stripped.join(", ")}.`);
-  for (const [k, v] of Object.entries(profile.env ?? {})) notes.push(`${k}=${v} (from ${EAS_JSON} build.${profileName}.env)`);
+  for (const [k, v] of Object.entries(profile.env ?? {})) {
+    if (!(k in pulled.vars)) notes.push(`${k}=${v} (from ${EAS_JSON} build.${profileName}.env)`);
+  }
+  const fromEas = Object.keys(pulled.vars);
+  notes.push(`From the ${profile.environment} EAS environment: ${fromEas.length ? fromEas.join(", ") : "nothing"}.`);
   return { ok: true, args: outArgs, env: outEnv, notes, profileName };
 }
 
@@ -346,13 +420,7 @@ export function prepareUpdate(
  * After a production publish: upload the exported bundle's source maps to Sentry, or say why not.
  * A failed upload doesn't undo the publish, so it only warns.
  */
-export function uploadSourceMaps({
-  env,
-  log,
-  spawn = spawnSync,
-  readFile = (p) => readFileSync(path.join(ROOT, p), "utf8"),
-  mobileDir = path.join(ROOT, "apps", "mobile"),
-}) {
+export function uploadSourceMaps({ env, log, spawn = spawnSync, mobileDir = path.join(ROOT, "apps", "mobile") }) {
   const cmd = "npx sentry-expo-upload-sourcemaps dist";
   if (!env.SENTRY_AUTH_TOKEN) {
     log(
@@ -363,18 +431,9 @@ export function uploadSourceMaps({
     return;
   }
   log("Uploading the update's source maps to Sentry...");
-  // Org and project from app.json's Sentry plugin entry, passed as env so the uploader doesn't
-  // evaluate app.config.js itself: that evaluation would run the production fences without the
-  // EAS variables eas-cli loaded, and stop.
-  const plugin = (JSON.parse(readFile(APP_JSON))?.expo?.plugins ?? []).find(
-    (p) => Array.isArray(p) && p[0] === "@sentry/react-native/expo",
-  )?.[1];
-  const uploadEnv = {
-    ...env,
-    SENTRY_ORG: env.SENTRY_ORG || plugin?.organization,
-    SENTRY_PROJECT: env.SENTRY_PROJECT || plugin?.project,
-    SENTRY_URL: env.SENTRY_URL || plugin?.url || "https://sentry.io/",
-  };
+  // The uploader reads the Sentry org and project from the Expo config. Without the update profile
+  // that evaluation runs no profile fences, the same as the by-hand command printed above.
+  const uploadEnv = { ...env };
   delete uploadEnv[UPDATE_PROFILE_ENV];
   const result = spawn(process.execPath, [path.join(ROOT, "node_modules", "@sentry", "react-native", "scripts", "expo-upload-sourcemaps.js"), DIST], {
     cwd: mobileDir,

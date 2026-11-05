@@ -1007,10 +1007,16 @@ describe("an OTA update through the guard (#3472)", () => {
         existsSync: missing,
       }),
     ).toThrow(PRODUCTION_UPDATE_SENTRY_DSN_ERROR);
-    // Builds keep their own rules: EAS loads Secret variables for them.
+    // Builds keep their own rules: EAS loads Secret variables for them, even
+    // when the shell still carries the update marker from an earlier publish.
     expect(() =>
       applyMobileConfig(androidConfig, {
-        env: { ...productionPublicEnv, EAS_BUILD_PROFILE: "production", EAS_BUILD_PLATFORM: "ios" },
+        env: {
+          ...productionPublicEnv,
+          EAS_BUILD_PROFILE: "production",
+          EAS_BUILD_PLATFORM: "ios",
+          FRAPP_EAS_UPDATE_PROFILE: "production",
+        },
         existsSync: missing,
       }),
     ).not.toThrow();

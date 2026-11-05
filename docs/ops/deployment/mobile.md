@@ -465,13 +465,27 @@ laptop too; after a bump, or when a run disagrees, re-check it against
 
 A JS-only fix can reach installed beta builds as an over-the-air update instead of a store build.
 There is no publishing pipeline yet (#2511 owns CI publishing, a staging app variant and staged
-rollout). Until then, a person publishes from a laptop, and only through the guard:
+rollout). Until then, a person publishes from a laptop, and only through the guard.
+
+An update publishes the commit production serves, the latest `v*` tag, which is the same rule
+store builds follow (§ 6.6). The bundle calls `api.frapp.live`, so JS from main's tip could call
+routes production doesn't serve yet. To ship a fix, merge it, run **Deploy production**, then
+publish from the new tag:
 
 ```bash
-# From the repo root, on main and up to date, after `npm ci`:
-git switch main && git pull && npm ci
+# From the repo root, logged in to eas (`npm run eas -- whoami`):
+git fetch --tags origin
+git checkout "$(git tag --list 'v*' --sort=-version:refname | head -n 1)"
+npm ci
 npm run eas -- update --channel production --message "<what changed, for the EAS dashboard>"
+git switch main   # afterwards
 ```
+
+**Nothing can take an update yet.** As of 2026-11-05, the only store build is Android 0.9.0
+build 2, and `main` is at 0.9.1, because native code changed after that build (#3472). The first
+update becomes possible once a store build of 0.9.1 ships through § 6.6 and the PR that records it
+in `apps/mobile/store/shipped-builds.json` has merged. Until then, the guard refuses with "No store
+build of version 0.9.1 is recorded".
 
 `npm run eas -- update` runs [`scripts/eas-update.mjs`](../../../scripts/eas-update.mjs) before
 eas-cli, and refuses to publish when any check fails. It names what to fix. The checks fix four
@@ -480,9 +494,11 @@ traps a bare `eas update` falls into (eas-cli 24.8.0 source, read 2026-11-05, #3
 - **The build `env` in `eas.json`.** `eas update` reads only EAS environment variables, so
   `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_SENTRY_ENVIRONMENT` would fall back to
   `http://localhost:3001` and `development`. The guard passes `--environment` for the channel's
-  build profile and adds that profile's `env`. It also drops every `EXPO_PUBLIC_*` your shell
-  holds, so nothing local is inlined. An EAS variable still wins over both for any name it
-  defines.
+  build profile and adds that profile's `env`. It then pulls that EAS environment's own
+  `EXPO_PUBLIC_*` variables (`eas env:pull` into a temporary file it deletes), because eas-cli
+  evaluates `app.config.js` before it loads them itself. It also drops every `EXPO_PUBLIC_*` your
+  shell holds, so nothing local is inlined. An EAS variable wins over `eas.json` for any name both
+  define, as it does in eas-cli's own export.
 - **The production fences.** `app.config.js` reads `FRAPP_EAS_UPDATE_PROFILE`, which the guard
   sets, so the API, Supabase, app URL and Ask fences run as they would for a store build. A
   production update also needs `EXPO_PUBLIC_SENTRY_DSN`. A local run loads only EAS variables whose
@@ -497,8 +513,9 @@ traps a bare `eas update` falls into (eas-cli 24.8.0 source, read 2026-11-05, #3
   [`spec/environments/README.md` § Mobile (EAS)](../../../spec/environments/README.md#mobile-eas):
   bump `expo.version` and ship a store build (§ 6.6). The new version starts a runtime that the
   next updates can reach.
-- **What gets published.** For `production`, the tree must be clean and `HEAD` must already be on
-  `origin/main`. `--branch`, `--auto`, `--skip-bundler` and `--input-dir` are refused, because each
+- **What gets published.** For `production`, the tree must be clean and `HEAD` must be the latest
+  `v*` tag. The store-build records are read from `origin/main`, because a tag's own builds are
+  recorded by a PR that merges after the tag. `--branch`, `--auto`, `--skip-bundler` and `--input-dir` are refused, because each
   publishes somewhere other than the channel, or a bundle the guard didn't shape.
 
 **Source maps.** After a production publish, the guard uploads the bundle's source maps to Sentry

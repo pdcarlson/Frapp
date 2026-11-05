@@ -1,7 +1,8 @@
 // The OTA publish guard (`npm run eas -- update`, scripts/eas-update.mjs, #3472).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,7 +13,9 @@ import {
   SHIPPED_BUILDS,
   UPDATE_GIT_SHA_ENV,
   UPDATE_PROFILE_ENV,
+  isNativePackage,
   nativePackageChanges,
+  parsePulledEnv,
   packageNameFromLockPath,
   parseUpdateArgs,
   prepareUpdate,
@@ -22,7 +25,7 @@ import {
   updateEnv,
   uploadSourceMaps,
 } from "../../eas-update.mjs";
-import { main } from "../../eas.mjs";
+import { main, pullEasEnv } from "../../eas.mjs";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const realEasJson = JSON.parse(readFileSync(join(REPO, EAS_JSON), "utf8"));
@@ -36,14 +39,23 @@ const EAS = {
 };
 const SHA = "a".repeat(40);
 const BUILD_SHA = "b".repeat(40);
+const REGISTRY = JSON.stringify({
+  builds: [{ platform: "android", version: "0.9.1", build: "3", sha: BUILD_SHA, recorded: "2026-11-06" }],
+});
+const PULLED = { EXPO_PUBLIC_SUPABASE_URL: "https://prod.supabase.co", EXPO_PUBLIC_SENTRY_DSN: "https://x@o0.ingest.sentry.io/0" };
+const pullEnv = () => ({ vars: PULLED });
 
-/** A git double: `answers` maps a joined command to a result; anything else succeeds empty. */
+/**
+ * A git double: `answers` maps a joined command, or a prefix of one, to a result; the longest
+ * matching prefix wins, and anything else succeeds empty.
+ */
 function fakeGit(answers = {}) {
   const calls = [];
+  const ordered = Object.entries(answers).sort(([a], [b]) => b.length - a.length);
   const git = (args) => {
     const key = args.join(" ");
     calls.push(key);
-    for (const [prefix, result] of Object.entries(answers)) {
+    for (const [prefix, result] of ordered) {
       if (key.startsWith(prefix)) return { status: 0, stdout: "", stderr: "", ...result };
     }
     return { status: 0, stdout: "", stderr: "" };
@@ -55,7 +67,6 @@ const files = (over = {}) => (p) => {
   const all = {
     [EAS_JSON]: JSON.stringify(EAS),
     [APP_JSON]: JSON.stringify({ expo: { version: "0.9.1" } }),
-    [SHIPPED_BUILDS]: JSON.stringify({ builds: [{ platform: "android", version: "0.9.1", build: "3", sha: BUILD_SHA }] }),
     [LOCKFILE]: JSON.stringify(lock({ "expo-haptics": "57.0.3", react: "19.2.3" })),
     "node_modules/.package-lock.json": JSON.stringify(lock({ "expo-haptics": "57.0.3", react: "19.2.3" })),
     ...over,
@@ -139,7 +150,7 @@ test("drops inherited EXPO_PUBLIC_* and EAS_BUILD_*, then adds the profile's env
 const noProduction = () => assert.fail("production checks must not run");
 
 test("refuses a run with no channel, a refused flag, or an environment that doesn't match", () => {
-  const opts = { readFile: files(), git: fakeGit().git, production: noProduction, env: {} };
+  const opts = { readFile: files(), git: fakeGit().git, production: noProduction, env: {}, pullEnv };
   assert.match(prepareUpdate(["--message", "x"], opts).errors[0], /Name the channel/);
   const refused = prepareUpdate(["--channel", "preview", "--branch", "main"], opts);
   assert.equal(refused.ok, false);
@@ -152,18 +163,25 @@ test("refuses a run with no channel, a refused flag, or an environment that does
 
 test("adds the channel's environment, and skips the store-build checks off production", () => {
   const { git } = fakeGit({ "rev-parse HEAD": { stdout: `${SHA}\n` } });
-  const r = prepareUpdate(["--channel", "preview", "--message", "x"], { readFile: files(), git, production: noProduction, env: {} });
+  const r = prepareUpdate(["--channel", "preview", "--message", "x"], {
+    readFile: files(),
+    git,
+    production: noProduction,
+    env: {},
+    pullEnv: (environment) => (assert.equal(environment, "preview"), { vars: { EXPO_PUBLIC_SUPABASE_URL: "https://staging.supabase.co" } }),
+  });
   assert.equal(r.ok, true);
   assert.deepEqual(r.args, ["--channel", "preview", "--message", "x", "--environment", "preview"]);
   assert.equal(r.env.EXPO_PUBLIC_API_URL, "https://api-staging.frapp.live");
   assert.equal(r.env[UPDATE_PROFILE_ENV], "preview");
   assert.equal(r.env[UPDATE_GIT_SHA_ENV], SHA);
+  assert.equal(r.env.EXPO_PUBLIC_SUPABASE_URL, "https://staging.supabase.co", "the EAS environment's values reach every evaluation");
   assert.equal(r.profileName, "preview");
   assert.ok(r.notes.some((n) => /native-compatibility check is skipped/.test(n)));
 });
 
 test("production runs the store-build checks, and any error refuses the publish", () => {
-  const opts = { readFile: files(), git: fakeGit().git, env: {} };
+  const opts = { readFile: files(), git: fakeGit().git, env: {}, pullEnv };
   const refused = prepareUpdate(["--channel", "production"], { ...opts, production: () => ({ errors: ["nope"], notes: [] }) });
   assert.deepEqual(refused, { ok: false, errors: ["nope"] });
   const ok = prepareUpdate(["--channel", "production", "--environment", "production"], {
@@ -173,7 +191,49 @@ test("production runs the store-build checks, and any error refuses the publish"
   assert.equal(ok.ok, true);
   assert.deepEqual(ok.args, ["--channel", "production", "--environment", "production"], "an explicit match isn't repeated");
   assert.equal(ok.env.EXPO_PUBLIC_API_URL, "https://api.frapp.live");
+  assert.equal(ok.env.EXPO_PUBLIC_SENTRY_DSN, PULLED.EXPO_PUBLIC_SENTRY_DSN);
   assert.ok(ok.notes.includes("Reaches x"));
+});
+
+test("an EAS environment that can't be read refuses the publish", () => {
+  const r = prepareUpdate(["--channel", "preview"], {
+    readFile: files(),
+    git: fakeGit().git,
+    production: noProduction,
+    env: {},
+    pullEnv: () => ({ error: "not logged in" }),
+  });
+  assert.equal(r.ok, false);
+  assert.match(r.errors[0], /preview EAS environment's variables: not logged in/);
+});
+
+test("EAS variables win over eas.json's env, as they do in eas-cli's export", () => {
+  const { env } = updateEnv({}, {
+    profileName: "production",
+    profile: EAS.build.production,
+    easVars: { EXPO_PUBLIC_API_URL: "https://elsewhere.example" },
+  });
+  assert.equal(env.EXPO_PUBLIC_API_URL, "https://elsewhere.example", "so app.config.js's fence sees the value the bundle gets");
+});
+
+test("reads only EXPO_PUBLIC_* lines from the file eas env:pull writes", () => {
+  const text = [
+    "# Environment: production",
+    "",
+    "EXPO_PUBLIC_SUPABASE_URL=https://x.supabase.co",
+    "EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_a=b",
+    "# SENTRY_AUTH_TOKEN=***** (secret)",
+    "GOOGLE_SERVICES_JSON=/p/.eas/.env/GOOGLE_SERVICES_JSON",
+  ].join("\n");
+  assert.deepEqual(parsePulledEnv(text), {
+    EXPO_PUBLIC_SUPABASE_URL: "https://x.supabase.co",
+    EXPO_PUBLIC_SUPABASE_ANON_KEY: "sb_publishable_a=b",
+  });
+});
+
+test("refuses an eas.json whose profiles use extends, which the lookup can't resolve", () => {
+  const withExtends = { build: { ...EAS.build, beta: { extends: "preview", channel: "beta" } } };
+  assert.match(profileForChannel(withExtends, "production").error, /beta use "extends"/);
 });
 
 test("--help publishes nothing and passes straight through", () => {
@@ -207,6 +267,9 @@ test("an install that disagrees with the lockfile can't be trusted for the nativ
 function checks({ answers = {}, over = {}, native = isNative } = {}) {
   const { git, calls } = fakeGit({
     [`show ${BUILD_SHA}:${LOCKFILE}`]: { stdout: JSON.stringify(lock({ "expo-haptics": "57.0.3", react: "19.2.2" })) },
+    [`show origin/main:${SHIPPED_BUILDS}`]: { stdout: REGISTRY },
+    "tag --list v*": { stdout: "v0.9.1\nv0.9.0\n" },
+    "rev-parse": { stdout: `${SHA}\n` },
     ...answers,
   });
   return { result: productionChecks({ git, readFile: files(over), isNative: native }), calls };
@@ -216,23 +279,77 @@ test("a clean tree on main, with native inputs matching every build of the runti
   const { result, calls } = checks();
   assert.deepEqual(result.errors, []);
   assert.match(result.notes[0], /Reaches android 0\.9\.1 build 3/);
-  assert.ok(calls.includes("fetch --quiet origin main"));
-  assert.ok(calls.includes("merge-base --is-ancestor HEAD origin/main"));
+  assert.ok(calls.includes("fetch --quiet --tags origin main"));
+  assert.ok(calls.includes("rev-parse v0.9.1^{commit}"), "compares HEAD with the latest release tag");
 });
 
-test("refuses a dirty tree and a HEAD that isn't on origin/main", () => {
+test("refuses a dirty tree and any HEAD but the commit production serves", () => {
   const { result } = checks({
     answers: {
       "status --porcelain": { stdout: " M apps/mobile/app.json\n" },
-      "merge-base --is-ancestor": { status: 1 },
+      "rev-parse HEAD": { stdout: `${"c".repeat(40)}\n` },
     },
   });
   assert.match(result.errors[0], /uncommitted changes/);
-  assert.match(result.errors[1], /not on origin\/main/);
+  assert.match(result.errors[1], /HEAD isn't v0\.9\.1, the commit production serves/);
+});
+
+test("refuses when the latest v* tag isn't a release, or tags can't be fetched", () => {
+  assert.match(checks({ answers: { "tag --list v*": { stdout: "v1.0.0-rc1\nv0.9.1\n" } } }).result.errors[0], /not a vX\.Y\.Z release/);
+  const offline = checks({ answers: { "fetch --quiet --tags": { status: 1, stderr: "no network" } } }).result;
+  assert.match(offline.errors[0], /can't tell what production serves: no network/);
+});
+
+test("reads the store-build records from origin/main and refuses a malformed file", () => {
+  const { result } = checks({
+    answers: { [`show origin/main:${SHIPPED_BUILDS}`]: { stdout: JSON.stringify({ builds: [{ platform: "android", version: "0.9.1" }] }) } },
+  });
+  assert.match(result.errors[0], /shipped-builds\.json is malformed/);
+});
+
+test("an unreadable lockfile is named as such, not as a stale install", () => {
+  const { result } = checks({ over: { [LOCKFILE]: "<<<<<<< HEAD" } });
+  assert.match(result.errors[0], /Couldn't read package-lock\.json/);
+});
+
+test("a changed app.config.js since the build counts as a native change", () => {
+  const { result } = checks({ answers: { [`diff --quiet ${BUILD_SHA} HEAD -- apps/mobile/app.config.js`]: { status: 1 } } });
+  assert.match(result.errors[0], /apps\/mobile\/app\.config\.js/);
+});
+
+test("isNativePackage spots Expo modules, Android projects and podspecs, and nothing else", () => {
+  const root = mkdtempSync(join(tmpdir(), "frapp-native-"));
+  try {
+    const pkg = (name, files) => {
+      const dir = join(root, name);
+      mkdirSync(dir, { recursive: true });
+      for (const f of files) {
+        mkdirSync(dirname(join(dir, f)), { recursive: true });
+        writeFileSync(join(dir, f), "");
+      }
+      return dir;
+    };
+    assert.equal(isNativePackage(pkg("expo-mod", ["expo-module.config.json"])), true);
+    assert.equal(isNativePackage(pkg("rn-android", ["android/build.gradle"])), true);
+    assert.equal(isNativePackage(pkg("rn-kts", ["android/build.gradle.kts"])), true);
+    assert.equal(isNativePackage(pkg("rn-ios", ["RNThing.podspec"])), true);
+    assert.equal(isNativePackage(pkg("js-only", ["index.js", "package.json"])), false);
+    assert.equal(isNativePackage(join(root, "absent")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("isNativePackage finds the native modules in the real install", () => {
+  for (const name of ["react-native", "expo-updates", "@sentry/react-native", "expo-haptics"]) {
+    assert.equal(isNativePackage(join(REPO, "node_modules", name)), true, name);
+  }
+  assert.equal(isNativePackage(join(REPO, "node_modules", "@tanstack", "react-query")), false);
 });
 
 test("refuses when no store build of the runtime is recorded", () => {
   const { result } = checks({ over: { [APP_JSON]: JSON.stringify({ expo: { version: "0.9.2" } }) } });
+  assert.equal(result.errors.length, 1);
   assert.match(result.errors[0], /No store build of version 0\.9\.2/);
 });
 
@@ -256,11 +373,16 @@ test("refuses when node_modules doesn't match the lockfile", () => {
 
 test("fetches a build commit it doesn't have, and refuses when it still can't", () => {
   let fetched = false;
+  const { git: base } = fakeGit({
+    [`show origin/main:${SHIPPED_BUILDS}`]: { stdout: REGISTRY },
+    "tag --list v*": { stdout: "v0.9.1\n" },
+    "rev-parse": { stdout: `${SHA}\n` },
+  });
   const git = (args) => {
     const key = args.join(" ");
     if (key === `fetch --quiet origin ${BUILD_SHA}`) fetched = true;
     if (key.startsWith("cat-file")) return { status: 1, stdout: "", stderr: "" };
-    return { status: 0, stdout: "", stderr: "" };
+    return base(args);
   };
   const result = productionChecks({ git, readFile: files(), isNative });
   assert.ok(fetched);
@@ -269,21 +391,17 @@ test("fetches a build commit it doesn't have, and refuses when it still can't", 
 
 // ── Source maps ─────────────────────────────────────────────────────────────
 
-test("uploads source maps with org and project from app.json, without the update marker", () => {
+test("uploads source maps without the update marker, so the uploader's config read runs no fences", () => {
   const calls = [];
   const logs = [];
-  const readFile = () =>
-    JSON.stringify({ expo: { plugins: [["@sentry/react-native/expo", { organization: "frapp-live", project: "frapp-mobile" }]] } });
   uploadSourceMaps({
     env: { SENTRY_AUTH_TOKEN: "t", [UPDATE_PROFILE_ENV]: "production" },
     log: (m) => logs.push(m),
     spawn: (cmd, args, opts) => (calls.push({ args, opts }), { status: 0 }),
-    readFile,
   });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].args.at(-1), "dist");
-  assert.equal(calls[0].opts.env.SENTRY_ORG, "frapp-live");
-  assert.equal(calls[0].opts.env.SENTRY_PROJECT, "frapp-mobile");
+  assert.equal(calls[0].opts.env.SENTRY_AUTH_TOKEN, "t");
   assert.equal(calls[0].opts.env[UPDATE_PROFILE_ENV], undefined, "the uploader must not run the production fences");
 });
 
@@ -351,4 +469,31 @@ test("no source-map upload after a failed publish or off production, and other c
     guardUpdate: () => ((guarded = true), { ok: false, errors: [] }),
   });
   assert.equal(guarded, false);
+});
+
+test("pullEasEnv runs eas env:pull into a temporary file, parses it, and deletes it", () => {
+  let seenPath;
+  const spawn = (cmd, args, opts) => {
+    seenPath = args[args.indexOf("--path") + 1];
+    assert.deepEqual(args.slice(0, 4), ["/fake/eas", "env:pull", "--environment", "production"]);
+    assert.ok(args.includes("--non-interactive"));
+    assert.deepEqual(opts.stdio, ["inherit", 2, 2], "eas's output stays off stdout");
+    writeFileSync(seenPath, "# Environment: production\n\nEXPO_PUBLIC_SUPABASE_URL=https://p.supabase.co\n");
+    return { status: 0 };
+  };
+  assert.deepEqual(pullEasEnv("/fake/eas", "production", { spawn }), { vars: { EXPO_PUBLIC_SUPABASE_URL: "https://p.supabase.co" } });
+  assert.throws(() => readFileSync(seenPath), /ENOENT/, "the pulled file is deleted");
+  assert.match(pullEasEnv("/fake/eas", "production", { spawn: () => ({ status: 1 }) }).error, /exited 1/);
+});
+
+test("main hands the guard a way to pull the EAS environment", () => {
+  let gotPull;
+  main(["update", "--channel", "preview"], {
+    pin: PIN,
+    installer,
+    cacheRoot: "/nonexistent",
+    spawn: () => ({ status: 0 }),
+    guardUpdate: (args, opts) => ((gotPull = opts.pullEnv), { ok: false, errors: ["stop"] }),
+  });
+  assert.equal(typeof gotPull, "function");
 });

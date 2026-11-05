@@ -37,11 +37,12 @@
 // through cmd.exe on Windows, where `bash -c` can resolve to WSL's bash or to nothing.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
-import { prepareUpdate, uploadSourceMaps } from "./eas-update.mjs";
+import { parsePulledEnv, prepareUpdate, uploadSourceMaps } from "./eas-update.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 export const MOBILE_BUILD_WORKFLOW = path.join(ROOT, ".github", "workflows", "_mobile-build.yml");
@@ -334,11 +335,17 @@ export function main(
     afterUpdate = uploadSourceMaps,
   } = {},
 ) {
+  const bin = easBin(pinDir(pin, cacheRoot), pin.version) ?? installer(pin, { cacheRoot, spawn });
+  if (!bin) return 1;
+  if (!existsSync(MOBILE_DIR)) {
+    log(`ERROR: ${MOBILE_DIR} is missing, so eas has no project to run against.`);
+    return 1;
+  }
   let args = argv;
   let env = process.env;
   let publishedProduction = false;
   if (argv[0] === "update") {
-    const guard = guardUpdate(argv.slice(1));
+    const guard = guardUpdate(argv.slice(1), { pullEnv: (environment) => pullEasEnv(bin, environment, { spawn }) });
     if (!guard.ok) {
       log("ERROR: refusing to publish this update:");
       for (const e of guard.errors) log(`  - ${e}`);
@@ -350,12 +357,6 @@ export function main(
     env = guard.env;
     publishedProduction = guard.profileName === "production";
   }
-  const bin = easBin(pinDir(pin, cacheRoot), pin.version) ?? installer(pin, { cacheRoot, spawn });
-  if (!bin) return 1;
-  if (!existsSync(MOBILE_DIR)) {
-    log(`ERROR: ${MOBILE_DIR} is missing, so eas has no project to run against.`);
-    return 1;
-  }
   const result = spawn(process.execPath, [bin, ...args], { cwd: MOBILE_DIR, stdio: "inherit", env });
   if (result.error) {
     log(`ERROR: could not start eas: ${result.error.message}`);
@@ -363,6 +364,30 @@ export function main(
   }
   if (result.status === 0 && publishedProduction) afterUpdate({ env, log });
   return result.status ?? 1;
+}
+
+/**
+ * The `EXPO_PUBLIC_*` variables of one EAS environment, read with `eas env:pull` into a temporary
+ * file that is deleted at once. `{ vars }`, or `{ error }`. eas's own output goes to stderr.
+ */
+export function pullEasEnv(bin, environment, { spawn = spawnSync, tmp = tmpdir() } = {}) {
+  let dir;
+  try {
+    dir = mkdtempSync(path.join(tmp, "frapp-eas-env-"));
+    const file = path.join(dir, "pulled.env");
+    const result = spawn(
+      process.execPath,
+      [bin, "env:pull", "--environment", environment, "--path", file, "--non-interactive"],
+      { cwd: MOBILE_DIR, stdio: ["inherit", 2, 2] },
+    );
+    if (result.error) return { error: result.error.message };
+    if (result.status !== 0) return { error: `eas env:pull exited ${result.status}; its output above says why` };
+    return { vars: parsePulledEnv(readFileSync(file, "utf8")) };
+  } catch (err) {
+    return { error: err.message };
+  } finally {
+    if (dir) removeQuietly(dir);
+  }
 }
 
 if (isInvokedDirectly(import.meta.url)) {

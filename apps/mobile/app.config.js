@@ -4,7 +4,8 @@
 // fields that cannot be static: Firebase's Android client config path, and
 // the fences on public env that is inlined into the binary (production-only
 // checks, a client-key allowlist on every EAS profile, and a secret-key
-// denylist on every evaluation). `extra.gitSha` is the EAS git SHA (`EAS_BUILD_GIT_COMMIT_HASH`)
+// denylist on every evaluation). `extra.gitSha` is the EAS git SHA (`EAS_BUILD_GIT_COMMIT_HASH`),
+// or for an OTA update the commit `scripts/eas-update.mjs` publishes (`FRAPP_EAS_UPDATE_GIT_SHA`),
 // for Sentry metadata — it is never the Sentry `release` name.
 //
 // Push on Android goes through FCM, and `expo-notifications` reads FCM's
