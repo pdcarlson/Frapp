@@ -1555,7 +1555,10 @@ describe("ChatShell deep-link targets", () => {
     fireEvent.click(screen.getByTestId("search-jump"));
     expect(await screen.findByText(NOT_IN_CHANNEL)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    // An × alone (components.md § Icon-only actions), not a worded button.
+    const dismiss = screen.getByRole("button", { name: "Dismiss" });
+    expect(dismiss.textContent).toBe("");
+    fireEvent.click(dismiss);
     expect(screen.queryByText(NOT_IN_CHANNEL)).toBeNull();
 
     // A new message lands. Dismiss abandons the target, so this must not

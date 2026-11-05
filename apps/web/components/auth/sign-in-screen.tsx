@@ -4,11 +4,11 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { AuthModeToggle } from "@/components/auth/auth-mode-toggle";
 import { AuthDivider, AuthScreen } from "@/components/auth/auth-screen";
+import { FloatingField } from "@/components/auth/floating-field";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { SkeletonText } from "@/components/shared/async-states";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getErrorMessage } from "@/lib/utils";
@@ -40,8 +40,14 @@ import {
  *
  * s01's second method is "Continue with Apple". Web now ships Apple and Google
  * as equal Secondary buttons in that slot (Guideline 4.8 once Google is
- * offered), then the magic link as a third method of the same size. The
- * password form stays the primary.
+ * offered). The password form stays the primary.
+ *
+ * **Compressed on 2026-11-05** after Paul found the column scrolled on his
+ * laptop: the labels float inside the fields (`floating-field.tsx`), the
+ * subtitle and the "New here?" sentence gave way to the mode toggle above the
+ * title (`auth-mode-toggle.tsx`), Apple and Google sit side by side, and the
+ * magic link is a text link under Continue instead of a third full-width
+ * button.
  *
  * The redirect plumbing is a data contract
  * (`spec/ui/web-dashboard/README.md` §Gating & routing semantics):
@@ -53,7 +59,6 @@ import {
  * place that code is read.
  */
 const SIGN_IN_TITLE = "Welcome back";
-const SIGN_IN_SUBTITLE = "Sign in to your chapter.";
 
 function SignInPageContent() {
   const router = useRouter();
@@ -170,37 +175,47 @@ function SignInPageContent() {
   return (
     <AuthScreen
       title={SIGN_IN_TITLE}
-      subtitle={SIGN_IN_SUBTITLE}
-      footer={<SignInFooter redirectTo={redirectTo} />}
+      toggle={<AuthModeToggle current="sign-in" redirectTo={redirectTo} />}
+      footer={<SignInFooter />}
     >
-      <form className="flex flex-col gap-4" onSubmit={handlePasswordSignIn}>
-        <div className="space-y-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="you@university.edu"
-            required
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="Your password"
-            required
-          />
-        </div>
+      <form className="flex flex-col gap-3" onSubmit={handlePasswordSignIn}>
+        <FloatingField
+          id="email"
+          label="Email"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          required
+        />
+        <FloatingField
+          id="password"
+          label="Password"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          required
+        />
         <Button type="submit" className="w-full" disabled={isSubmitting || oauthBusy}>
           {isSubmitting ? <Loader2 className="animate-spin" /> : null}
           Continue
+        </Button>
+        {/*
+          After Continue, so Tab from the password reaches the submit first and
+          a keyboard user can't send a link by accident.
+        */}
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          // 36 to a mouse, 44 to a finger: components.md §2's compact carve-out.
+          className="mx-auto h-9 pointer-coarse:h-11"
+          onClick={handleMagicLink}
+          disabled={isMagicLinkPending || oauthBusy}
+        >
+          {isMagicLinkPending ? <Loader2 className="animate-spin" /> : null}
+          Email me a magic link instead
         </Button>
       </form>
 
@@ -213,47 +228,22 @@ function SignInPageContent() {
         pending={pendingOAuth}
         disabled={isSubmitting || isMagicLinkPending}
       />
-
-      <Button
-        type="button"
-        variant="secondary"
-        className="mt-3 w-full"
-        onClick={handleMagicLink}
-        disabled={isMagicLinkPending || oauthBusy}
-      >
-        {isMagicLinkPending ? <Loader2 className="animate-spin" /> : null}
-        Email me a magic link
-      </Button>
     </AuthScreen>
   );
 }
 
 /**
- * The form's two other exits. A component so the Suspense fallback can draw
- * the same footer, and the column does not grow two lines on hydration.
+ * The form's one other exit (the toggle covers sign-up). A component so the
+ * Suspense fallback draws the same footer and nothing shifts on hydration.
  */
-function SignInFooter({ redirectTo }: { redirectTo: string }) {
+function SignInFooter() {
   return (
-    <>
-      <p>
-        New here?{" "}
-        <Link
-          href={`/sign-up?redirectTo=${encodeURIComponent(redirectTo)}`}
-          className="font-semibold text-accent-text hover:underline"
-        >
-          Create an account
-        </Link>
-      </p>
-      <p>
-        Have an invite?{" "}
-        <Link
-          href="/join"
-          className="font-semibold text-accent-text hover:underline"
-        >
-          Join your chapter
-        </Link>
-      </p>
-    </>
+    <p>
+      Have an invite?{" "}
+      <Link href="/join" className="font-semibold text-accent-text hover:underline">
+        Join your chapter
+      </Link>
+    </p>
   );
 }
 
@@ -271,8 +261,10 @@ export function SignInScreen() {
       fallback={
         <AuthScreen
           title={SIGN_IN_TITLE}
-          subtitle={SIGN_IN_SUBTITLE}
-          footer={<SignInFooter redirectTo={resolveRedirectPath(null)} />}
+          toggle={
+            <AuthModeToggle current="sign-in" redirectTo={resolveRedirectPath(null)} />
+          }
+          footer={<SignInFooter />}
         >
           <div role="status" aria-busy="true" aria-live="polite">
             <span className="sr-only">Loading the sign-in form…</span>
