@@ -126,9 +126,10 @@ run-name: "${{ inputs.dry_run_only == true && 'DRY RUN · ' || '' }}${{ inputs.s
 # one approval, not four. That job is `_deploy.yml`'s, the one staging runs
 # too (epic #2802, #2805): ci-cd.md has the order and the trust split, and
 # production's layers are its steps named `inputs.environment ==
-# 'production'`. The `release`, `mobile` and `deploy-outcome` jobs name no
-# environment and add no clicks; the jobs `release` and `mobile` call name
-# `automation`, which has no reviewers.
+# 'production'`. The `release`, `mobile-plan`, `mobile`, `ota` and
+# `deploy-outcome` jobs name no environment and add no clicks; the jobs
+# `release`, `mobile` and `ota` call name `automation`, which has no
+# reviewers.
 #
 # SHA confirmation, trim, and `validate-deploy-sha.mjs` run in a *prior*
 # unscoped job. Run 34234768094 sat on the reviewer gate for 20 minutes, then
@@ -184,11 +185,15 @@ on:
         # build only what you mean to ship. Android uploads with the Play
         # service-account key EAS has held since 2026-11-05 (#2556) and builds
         # with GOOGLE_SERVICES_JSON (#1826). `none` is the unticked box.
-        description: "After a live 'full' ship and its tag, build this SHA on EAS, upload it to TestFlight / Play internal (not released), and open the shipped-builds.json PR. 'none' builds nothing."
+        # `auto` lets `mobile-plan` choose per platform: an OTA update when
+        # the shipped commit's native inputs match that platform's recorded
+        # store build of the same `expo.version`, a store build otherwise
+        # (`scripts/ci/plan-mobile-release.mjs`).
+        description: "After a live 'full' ship and its tag: 'auto' publishes an OTA update where the native code still matches the store build, and builds for the stores where it doesn't. A platform builds this SHA on EAS and uploads it to TestFlight / Play internal (not released). 'none' does nothing for the app."
         required: false
         default: none
         type: choice
-        options: [none, ios, android, all]
+        options: [none, ios, android, all, auto]
 
 permissions:
   contents: read
@@ -380,27 +385,97 @@ jobs:
       sha: ${{ needs.validate.outputs.sha }}
       bump: ${{ inputs.bump }}
 
-  # The store builds, opt-in through `mobile_build` (#3111): build the SHA that
-  # just went live on EAS, upload it to TestFlight and the Play internal track
-  # without releasing it, and open the `shipped-builds.json` PR.
-  # `_mobile-build.yml`'s header has the rules it enforces and how it fails.
+  # What the app gets from this ship, decided once, from the trusted ref.
+  # Opt-in through `mobile_build` (#3111): a named platform is a store build
+  # of it and no update; `auto` reads the shipped commit and picks, per
+  # platform, an OTA update (`ota`) when its native inputs match the store
+  # build of the same `expo.version` recorded in `shipped-builds.json`, or a
+  # store build (`mobile`) when they don't or none is recorded. The rule and
+  # its edge cases are `scripts/ci/plan-mobile-release.mjs`'s header.
   #
-  # After `release`, so a binary is only ever built from a commit that is live
-  # AND tagged: the manual path's rule is "build from the latest `v*` tag".
-  # Like `release`, it names no environment itself; the called jobs name
-  # `automation`, which has no reviewers, so a ship is still one Approve
-  # click with or without it.
+  # After `release`, so a binary or an update is only ever made from a commit
+  # that is live AND tagged: the manual path's rule is "build or publish from
+  # the latest `v*` tag", and the plan re-checks it.
+  #
+  # The trust split (ci-cd.md § The deploy job's trust split): this job holds
+  # no secret and names no environment. The script and the registry are the
+  # dispatched `main`'s. The shipped commit is a second checkout whose
+  # dependencies install with `--ignore-scripts`; the native check reads that
+  # tree (which packages carry android/ or ios/ code) and runs nothing from
+  # it. Only the jobs below that run `eas` hold `EXPO_TOKEN`.
   #
   # The opposite polarity from the scope conditions above, on purpose. Those
   # are written so an unexpected value still ships. This is an extra that
-  # costs EAS builds and reaches the stores, so only a platform named in full
-  # starts it, and anything else, `none` included, builds nothing. The dry-run
-  # and scope clauses repeat what `release`'s success already implies, so a
-  # change to `release`'s `if:` can't open a path to a build.
+  # costs EAS builds and reaches the stores and installed apps, so only a
+  # value named in full starts it, and anything else, `none` included, does
+  # nothing. The dry-run and scope clauses repeat what `release`'s success
+  # already implies, so a change to `release`'s `if:` can't open a path to a
+  # build or an update.
+  mobile-plan:
+    name: Decide the app release (OTA update or store build)
+    needs: [validate, deploy, release]
+    if: ${{ needs.deploy.result == 'success' && needs.release.result == 'success' && !inputs.dry_run_only && inputs.scope != 'migrations-only' && (inputs.mobile_build == 'ios' || inputs.mobile_build == 'android' || inputs.mobile_build == 'all' || inputs.mobile_build == 'auto') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      update: ${{ steps.plan.outputs.update }}
+    steps:
+      # `auto` reads the shipped tree, so it is the workspace, checked out
+      # first (a later checkout at the root would delete what sits there).
+      # Full history and tags: the plan compares it with each recorded
+      # build's commit, and checks the SHA is still the latest tag.
+      - name: Check out the shipped commit (read, never run)
+        if: ${{ inputs.mobile_build == 'auto' }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The plan script and the registry it reads, from the dispatched `main`.
+      - name: Check out the trusted ref beside it
+        uses: actions/checkout@v7
+        with:
+          path: trusted
+          persist-credentials: false
+
+      # Hand-written, not ./.github/actions/node-setup: the workspace is the
+      # shipped commit, so a local action would load from it. Matches
+      # node-setup's step (`node-setup-action.test.mjs`).
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # Which installed packages carry native code is what the OTA guard
+      # reads too. No install script runs, and this job holds no secret.
+      - name: Install the shipped commit's dependencies (no install scripts)
+        if: ${{ inputs.mobile_build == 'auto' }}
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Plan the store build and the update
+        id: plan
+        env:
+          MOBILE_BUILD: ${{ inputs.mobile_build }}
+          DEPLOY_SHA: ${{ needs.validate.outputs.sha }}
+          DEPLOYED_DIR: ${{ github.workspace }}
+        run: node trusted/scripts/ci/plan-mobile-release.mjs
+
+  # The store builds: build the SHA that just went live on EAS, upload it to
+  # TestFlight and the Play internal track without releasing it, and open the
+  # `shipped-builds.json` PR, for the platforms `mobile-plan` names.
+  # `_mobile-build.yml`'s header has the rules it enforces and how it fails.
+  # Like `release`, it names no environment itself; the called jobs name
+  # `automation`, which has no reviewers, so a ship is still one Approve
+  # click with or without it.
   mobile:
     name: Build the live SHA for the stores (does not roll back a live ship)
-    needs: [validate, deploy, release]
-    if: ${{ needs.deploy.result == 'success' && needs.release.result == 'success' && !inputs.dry_run_only && inputs.scope != 'migrations-only' && (inputs.mobile_build == 'ios' || inputs.mobile_build == 'android' || inputs.mobile_build == 'all') }}
+    needs: [validate, deploy, release, mobile-plan]
+    if: ${{ needs.deploy.result == 'success' && needs.release.result == 'success' && needs.mobile-plan.result == 'success' && !inputs.dry_run_only && inputs.scope != 'migrations-only' && (needs.mobile-plan.outputs.build == 'ios' || needs.mobile-plan.outputs.build == 'android' || needs.mobile-plan.outputs.build == 'all') }}
     uses: ./.github/workflows/_mobile-build.yml
     # A called job gets at most what its caller grants. `actions: write` is
     # for the called `snapshot` job alone, which dispatches the migration
@@ -414,7 +489,24 @@ jobs:
     secrets: inherit
     with:
       sha: ${{ needs.validate.outputs.sha }}
-      platform: ${{ inputs.mobile_build }}
+      platform: ${{ needs.mobile-plan.outputs.build }}
+
+  # The OTA update, `auto` only: publish the SHA that just went live to the
+  # `production` channel through the guard (`npm run eas -- update`), for the
+  # platforms `mobile-plan` names. `_mobile-update.yml`'s header has the rules.
+  # Beside `mobile`: on a run that does both, each covers its own platform.
+  ota:
+    name: Publish the live SHA as an OTA update (does not roll back a live ship)
+    needs: [validate, deploy, release, mobile-plan]
+    if: ${{ needs.deploy.result == 'success' && needs.release.result == 'success' && needs.mobile-plan.result == 'success' && !inputs.dry_run_only && inputs.scope != 'migrations-only' && inputs.mobile_build == 'auto' && (needs.mobile-plan.outputs.update == 'ios' || needs.mobile-plan.outputs.update == 'android' || needs.mobile-plan.outputs.update == 'all') }}
+    uses: ./.github/workflows/_mobile-update.yml
+    permissions:
+      contents: read
+    # EXPO_TOKEN (and SENTRY_AUTH_TOKEN, when set) are `automation` secrets.
+    secrets: inherit
+    with:
+      sha: ${{ needs.validate.outputs.sha }}
+      platform: ${{ needs.mobile-plan.outputs.update }}
 
   # Terminal reporting. A `workflow_dispatch` failure reds one row in the
   # Actions list and emails the actor, which is thin for the only path to
@@ -584,8 +676,8 @@ jobs:
           if [ "$DRY_RUN" != "true" ] && [ "$SCOPE" != "migrations-only" ] && [ "$RELEASE_RESULT" != "success" ]; then
             echo "::error::Deploy succeeded but the release tag did not ($RELEASE_RESULT). Production IS updated. Re-run the 'Release' workflow manually with sha=$SHA to record it."
             case "$MOBILE_BUILD" in
-              ios|android|all)
-                echo "::error::This run also asked for a store build ($MOBILE_BUILD), which starts only after the tag. To keep it, fix the tag's cause, then use Re-run failed jobs on this run instead: that retries the tag without redeploying, then builds. The Release workflow on its own tags and builds nothing. Either retry is safe if the release job already created the tag and a later step failed: it reuses that tag rather than minting another while it is still the newest release (#3126)."
+              ios|android|all|auto)
+                echo "::error::This run also asked for a store build or update ($MOBILE_BUILD), which starts only after the tag. To keep it, fix the tag's cause, then use Re-run failed jobs on this run instead: that retries the tag without redeploying, then builds or publishes. The Release workflow on its own tags and builds nothing. Either retry is safe if the release job already created the tag and a later step failed: it reuses that tag rather than minting another while it is still the newest release (#3126)."
                 ;;
             esac
             exit 1
