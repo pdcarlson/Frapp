@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { type SemesterArchive, type useSemesterRollover } from "@repo/hooks";
+import { formatDayRange } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -296,7 +297,8 @@ export function SettingsSemesterTab({
                 >
                   <span className="font-medium">{archive.label}</span>
                   <span className="text-muted-foreground">
-                    {archive.start_date} – {archive.end_date}
+                    {formatDayRange(archive.start_date, archive.end_date) ??
+                      `${archive.start_date} – ${archive.end_date}`}
                   </span>
                 </li>
               ))}

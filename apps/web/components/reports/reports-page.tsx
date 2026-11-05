@@ -17,7 +17,7 @@ import {
 } from "@repo/hooks";
 import type { MemberProfile } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
-import { formatLocaleDateTime } from "@repo/formatting";
+import { formatWeekdayDay } from "@repo/formatting";
 import { can } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
@@ -103,7 +103,9 @@ function buildEventOptions(data: unknown): PickerOption[] {
       const name = String(event.name ?? "Untitled event");
       return {
         id,
-        label: `${name} (${formatLocaleDateTime(event.start_time)})`,
+        label: [name, formatWeekdayDay(event.start_time)]
+          .filter(Boolean)
+          .join(" · "),
       };
     })
     .filter((option): option is PickerOption => option !== null);
@@ -600,7 +602,7 @@ export function ReportsPage() {
         (#2141). The two `<CardTitle>Reports & Export</CardTitle>` copies and
         the body's `<h2>` were the same title said a second time.
       */}
-      <PageHeader title="Reports & Export" />
+      <PageHeader title="Reports" />
       <Can
         permission="reports:export"
         offlineFallback={(retry) => (
@@ -611,7 +613,7 @@ export function ReportsPage() {
         )}
         fallback={
           <div className="min-h-40">
-            <Card aria-label="Reports & Export permissions check">
+            <Card aria-label="Reports permissions check">
               <CardHeader>
                 <CardDescription>
                   Checking your chapter permissions…

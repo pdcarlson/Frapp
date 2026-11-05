@@ -13,7 +13,7 @@ import {
 } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { can } from "@repo/validation";
-import { formatBareDate } from "@repo/formatting";
+import { formatDay } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -301,7 +301,8 @@ export function InvoiceList({ id }: { id?: string }) {
         Title: invoice.title,
         Amount: formatCurrency(invoice.amount),
         Status: invoice.status,
-        "Due Date": formatBareDate(invoice.due_date),
+        // ISO, so a spreadsheet sorts it; the screen takes the house shape.
+        "Due Date": invoice.due_date ?? "",
         "Member ID": invoice.user_id,
       }));
     downloadCsv(rows, "invoices");
@@ -800,7 +801,9 @@ export function InvoiceList({ id }: { id?: string }) {
                     <p className="truncate text-caption text-muted-foreground">
                       {[
                         memberName,
-                        `Due ${formatBareDate(invoice.due_date)}`,
+                        invoice.due_date
+                          ? `Due ${formatDay(invoice.due_date)}`
+                          : null,
                         invoice.description || null,
                       ]
                         .filter(Boolean)

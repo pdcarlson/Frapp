@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Download, Loader2, Trash2 } from "lucide-react";
 import { selectDownloadUrl, useDocument } from "@repo/hooks";
-import { formatBareDate, formatLocaleDate } from "@repo/formatting";
+import { formatDay } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
 import { DocumentsGlyph } from "@/components/documents/resources-glyphs";
@@ -120,11 +120,11 @@ export function DocumentRow({
       */}
         <p className="truncate text-caption text-muted">
           {[
-            `Uploaded ${formatLocaleDate(doc.created_at)}`,
+            doc.created_at ? `Uploaded ${formatDay(doc.created_at)}` : null,
             doc.folder,
             doc.document_type,
             doc.effective_date
-              ? `Effective ${formatBareDate(doc.effective_date)}`
+              ? `Effective ${formatDay(doc.effective_date)}`
               : null,
             doc.description,
           ]

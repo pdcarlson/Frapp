@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatLocaleDate, formatLocaleDateTime } from "@repo/formatting";
+import { formatDay, formatTimestampFull } from "@repo/formatting";
 import { CHAT_REPORT_QUEUE_PERMISSIONS } from "@repo/validation";
 import {
   CHAT_REPORT_TABS,
@@ -34,7 +34,7 @@ describe("reportAge", () => {
 
   it("falls back to a date past thirty days", () => {
     const old = ago(45 * 24 * 60 * MINUTE);
-    expect(reportAge(old, NOW)).toBe(formatLocaleDate(old));
+    expect(reportAge(old, NOW)).toBe(formatDay(old));
   });
 
   it("renders nothing for an unparseable timestamp rather than 'NaN minutes ago'", () => {
@@ -95,7 +95,7 @@ describe("messageExcerpt", () => {
 
 describe("row accessible names", () => {
   const FILED = "2026-09-22T11:55:00Z";
-  const filed = formatLocaleDateTime(FILED);
+  const filed = formatTimestampFull(FILED);
   const report = reportDistinction({
     reason: "harassment",
     createdAt: FILED,
@@ -150,7 +150,9 @@ describe("row accessible names", () => {
   });
 
   it("uses the absolute filing time, so two reports filed a minute apart differ where their ages would not", () => {
-    // Both read "5 minutes ago" for a stretch of every minute; the time does not.
+    // Both read "5 minutes ago" for a stretch of every minute; the time does
+    // not. It names the minute, without seconds: two reports inside one
+    // minute are numbered by `reportDistinctions` instead.
     const a = reportDistinction({
       reason: "spam",
       createdAt: "2026-09-22T11:55:10Z",
@@ -158,7 +160,7 @@ describe("row accessible names", () => {
     });
     const b = reportDistinction({
       reason: "spam",
-      createdAt: "2026-09-22T11:55:50Z",
+      createdAt: "2026-09-22T11:56:10Z",
       hasNote: false,
     });
     expect(a).not.toBe(b);

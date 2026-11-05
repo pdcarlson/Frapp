@@ -252,7 +252,7 @@ export function DocumentsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Chapter Documents"
+        title="Documents"
         actions={
           <Can permission="chapter_docs:upload">
             <UploadDocumentDialog gate={gate} upload={upload} />

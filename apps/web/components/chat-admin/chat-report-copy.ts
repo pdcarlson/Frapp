@@ -1,7 +1,7 @@
 import type { ChatReportReason, ChatReportStatus } from "@repo/hooks";
 import {
-  formatLocaleDate,
-  formatLocaleDateTime,
+  formatDay,
+  formatTimestampFull,
   parseInstant,
 } from "@repo/formatting";
 
@@ -256,7 +256,7 @@ export function reportedMessageSubject(
  * carry them too.
  *
  * The time is the absolute one the row's "Reported …" text shows on hover
- * (`formatLocaleDateTime`), not the relative age: "5 minutes ago" is shared by
+ * (`formatTimestampFull`), not the relative age: "5 minutes ago" is shared by
  * every report filed that minute, and would rename the controls on every tick.
  * An unparseable timestamp leaves it out rather than reading "reported —".
  * Two reports can still match on all of it; {@link reportDistinctions} numbers
@@ -269,7 +269,7 @@ export function reportDistinction(report: {
 }): string {
   const parts: string[] = [CHAT_REPORT_REASON_LABEL[report.reason]];
   if (parseInstant(report.createdAt)) {
-    parts.push(`reported ${formatLocaleDateTime(report.createdAt)}`);
+    parts.push(`reported ${formatTimestampFull(report.createdAt)}`);
   }
   if (report.hasNote) parts.push("with a reporter's note");
   return parts.join(", ");
@@ -339,7 +339,7 @@ export function reportAge(value: string, now: number): string {
   if (!instant) return "";
   const elapsed = Math.max(0, now - instant.getTime());
   if (elapsed < MINUTE) return "just now";
-  if (elapsed >= RELATIVE_LIMIT) return formatLocaleDate(value);
+  if (elapsed >= RELATIVE_LIMIT) return formatDay(value) ?? "";
   const format = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
   if (elapsed < HOUR)
     return format.format(-Math.floor(elapsed / MINUTE), "minute");

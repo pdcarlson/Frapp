@@ -602,7 +602,7 @@ The import list on `/discord-import`, and deleting an import from it ([#2944](ht
 | Deleted (row) | — | `Deleted. The messages, attachments and archive files it brought in are gone.` |
 | Delete refused (toast) | — | The API's own message (`Cancel the running import before deleting it.`), or `Could not delete the import.` |
 
-The confirmation names the counts and the server because the button reads the same on every row: a delete of five thousand messages and one of a hundred and forty thousand look identical until the dialog says which. The row counts the messages down because a large purge runs for many minutes, and a bare `purging` badge could not tell an admin working from stuck; it stops at 99% and switches to what it is still doing, because the status, not the count, says the deletion is over (the count can finish short of the total).
+The confirmation names the counts and the server because the button reads the same on every row: a delete of five thousand messages and one of a hundred and forty thousand look identical until the dialog says which. The row counts the messages down because a large purge runs for many minutes, and a bare `Deleting` badge (the `purging` state; the badge prints a plain-language label per §5, since no import state has a §5 row) could not tell an admin working from stuck; it stops at 99% and switches to what it is still doing, because the status, not the count, says the deletion is over (the count can finish short of the total).
 
 The channel panel is what Watch and Details open on a bot import's row. Its strings keep the typographic apostrophe and ellipsis they were written with, unlike the list's, and the connect step's loading lines keep the ellipsis; match them exactly when editing any of them.
 

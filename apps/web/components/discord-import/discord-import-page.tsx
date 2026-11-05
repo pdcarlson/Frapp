@@ -10,7 +10,7 @@ import {
   useDiscordImport,
   useDiscordImports,
 } from "@repo/hooks";
-import { formatLocaleDate, formatLocaleDateTime } from "@repo/formatting";
+import { formatDay, formatDayTime } from "@repo/formatting";
 import { isDiscordImportClearable } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Button } from "@/components/ui/button";
@@ -68,6 +68,22 @@ const STATUS_VARIANT: Record<
   cancelled: "outline",
   purged: "outline",
   draft: "outline",
+};
+
+/**
+ * The import's state in words. The API's tokens are lowercase (`completed`)
+ * and none has a writing.md §5 row, so they map to plain language once, here,
+ * rather than printing the token.
+ */
+const STATUS_LABEL: Record<string, string> = {
+  completed: "Completed",
+  running: "Importing",
+  ready: "Ready",
+  purging: "Deleting",
+  failed: "Failed",
+  cancelled: "Cancelled",
+  purged: "Deleted",
+  draft: "Draft",
 };
 
 /**
@@ -177,7 +193,7 @@ export function DiscordImportPage() {
         `<CardTitle>` and the body's were that same title said twice, so both
         are gone; the denied card's `CardHeader` held nothing else.
       */}
-      <PageHeader title="Discord Import" />
+      <PageHeader title="Discord import" />
       <Can
         permission="channels:manage"
         deniedFallback={
@@ -462,15 +478,15 @@ function DiscordImportList({
                       {live.guild_name ?? "Discord server"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {formatLocaleDateTime(live.created_at)}
+                      {formatDayTime(live.created_at)}
                       {/* A partial import says so (#2858). */}
                       {live.messages_after
-                        ? ` · Messages since ${formatLocaleDate(live.messages_after)}`
+                        ? ` · Messages since ${formatDay(live.messages_after)}`
                         : ""}
                     </p>
                   </div>
                   <Badge variant={STATUS_VARIANT[live.status] ?? "outline"}>
-                    {live.status}
+                    {STATUS_LABEL[live.status] ?? live.status}
                   </Badge>
                 </div>
 

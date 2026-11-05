@@ -189,7 +189,7 @@ export function ProfilePanel() {
   if (isOffline && anyReadUncached(userQuery)) {
     return (
       <>
-        <PageHeader title="My Profile" />
+        <PageHeader title="Profile" />
         <OfflineState
           title="Your profile is unavailable offline"
           description="Reconnect to load your directory entry and notification preferences."
@@ -201,7 +201,7 @@ export function ProfilePanel() {
   if (userQuery.isLoading || userPaused) {
     return (
       <>
-        <PageHeader title="My Profile" />
+        <PageHeader title="Profile" />
         <LoadingState message="Loading your profile..." />
       </>
     );
@@ -209,7 +209,7 @@ export function ProfilePanel() {
   if (userQuery.isError && anyReadUncached(userQuery)) {
     return (
       <>
-        <PageHeader title="My Profile" />
+        <PageHeader title="Profile" />
         <ErrorState
           title="Couldn't load your profile"
           description="Sign in succeeded but we couldn't reach the API. Retry in a moment."
@@ -507,7 +507,7 @@ export function ProfilePanel() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="My Profile" />
+      <PageHeader title="Profile" />
       {/*
         s15's identity header, as far as the data goes.
         `--accent-subtle` / `--accent-border` / `--accent-text` is the token
@@ -539,10 +539,12 @@ export function ProfilePanel() {
           <h2 className="truncate text-2xl font-semibold tracking-tight">
             {displayName}
           </h2>
-          <p className="truncate text-sm text-muted-foreground">
-            {profile.email ??
-              "Update how your chapter sees you in the directory."}
-          </p>
+          {/* An absent email is absent, not a sentence standing in for it. */}
+          {profile.email ? (
+            <p className="truncate text-sm text-muted-foreground">
+              {profile.email}
+            </p>
+          ) : null}
           <div className="mt-2">
             <ProfilePhotoControl
               hasPhoto={!!profile.avatar_url}

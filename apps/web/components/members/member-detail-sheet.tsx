@@ -14,7 +14,7 @@ import {
   useUpdateMemberRoles,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
-import { formatLocaleDate as formatDate } from "@repo/formatting";
+import { formatDay } from "@repo/formatting";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/lib/hooks/use-toast";
 import { chatDeepLink } from "@/lib/chat/chat-links";
@@ -470,7 +470,9 @@ export function MemberDetailSheet({
           </div>
           <div className="rounded-md border border-border p-3">
             <p className="text-caption text-muted-foreground">Joined chapter</p>
-            <p className="mt-1 text-sm">{formatDate(resolvedMember?.created_at)}</p>
+            <p className="mt-1 text-sm">
+              {formatDay(resolvedMember?.created_at) ?? "Not recorded"}
+            </p>
           </div>
           <div className="rounded-md border border-border p-3">
             <p className="text-caption text-muted-foreground">Points</p>

@@ -64,11 +64,10 @@ export function SettingsDangerTab({
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-destructive">
           <AlertTriangle className="h-4 w-4" />
-          Billing &amp; danger zone
+          Danger zone
         </CardTitle>
         <CardDescription>
-          Manage payment methods, download invoices, or cancel the subscription
-          from the Stripe-hosted portal.
+          Cancel or change the subscription in Stripe.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

@@ -163,7 +163,7 @@ export function ChatAdminPage() {
         denied card's own `<CardTitle>Chat Admin</CardTitle>`, and the body's
         `<h2>`, were that same title said twice.
       */}
-      <PageHeader title="Chat Admin" />
+      <PageHeader title="Chat admin" />
       <Can
         permission="channels:manage"
         deniedFallback={

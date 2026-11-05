@@ -23,7 +23,7 @@ import {
   subscriptionStatusKind,
   subscriptionStatusLabel,
 } from "@/components/billing/invoice-status";
-import { formatBareDate } from "@repo/formatting";
+import { formatDay } from "@repo/formatting";
 
 /**
  * Stripe confirms the subscription over a webhook, not on the redirect, so the
@@ -519,7 +519,7 @@ function PlanMeta({
 }) {
   const lapsedOn =
     status === "past_due" && pastDueSince
-      ? formatBareDate(pastDueSince)
+      ? formatDay(pastDueSince)
       : null;
   const customerId = billingStatus?.stripe_customer_id ?? null;
   const subscriptionId = billingStatus?.subscription_id ?? null;
