@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type RefObject,
@@ -31,12 +32,39 @@ export interface LatestScrollableList {
  */
 type Zone = "newest" | "near" | "away";
 
+/**
+ * The thread's newest row: its stable key (`client_message_id`) and its
+ * `created_at`, which is what the cache orders rows by.
+ */
+export interface NewestRow {
+  id: string;
+  createdAt: string;
+}
+
 /** Where the reader is, per channel. */
 interface ReadingState {
   channelKey: string | null;
   zone: Zone;
   /** The newest row when they left `newest`, so a later arrival can be noticed. */
-  newestWhenLeft: string | null;
+  newestWhenLeft: NewestRow | null;
+}
+
+/**
+ * Whether `now` is a row that arrived after `before`. A different newest row
+ * is not enough: discarding your own failed newest message takes it out of
+ * the cache, and the row before it becomes the newest without anything having
+ * arrived. The cache keeps rows ascending by `created_at` (ISO strings, which
+ * it compares as strings too), so while `before` is still there a different
+ * newest row is at least as late; once it is gone, the new newest is earlier
+ * (or, rarely, shares its timestamp). `>=` rather than `>`: two rows can share
+ * a timestamp, and the cache puts the later-inserted one after, so an arrival
+ * is never missed for a tie.
+ */
+function arrivedSince(now: NewestRow | null, before: NewestRow | null) {
+  if (now === null) return false;
+  // Nothing was there when they left, so anything now has arrived.
+  if (before === null) return true;
+  return now.id !== before.id && now.createdAt >= before.createdAt;
 }
 
 /**
@@ -62,14 +90,25 @@ interface ReadingState {
  */
 export function useJumpToLatest<L extends LatestScrollableList>({
   listRef,
-  newestId,
+  newest,
   channelKey,
 }: {
   listRef: RefObject<L | null>;
-  /** The newest row's stable key (`client_message_id`), or `null` for none. */
-  newestId: string | null;
+  /** The newest row, or `null` for an empty thread. */
+  newest: NewestRow | null;
   channelKey: string | null;
 }) {
+  // Keyed on primitives, so a fresh object for the same row each render
+  // changes nothing.
+  const newestId = newest?.id ?? null;
+  const newestAt = newest?.createdAt ?? null;
+  const current = useMemo<NewestRow | null>(
+    () =>
+      newestId === null || newestAt === null
+        ? null
+        : { id: newestId, createdAt: newestAt },
+    [newestId, newestAt],
+  );
   const [state, setState] = useState<ReadingState>({
     channelKey,
     zone: "newest",
@@ -86,11 +125,11 @@ export function useJumpToLatest<L extends LatestScrollableList>({
   // Read from the scroll handler, which stays one function for the list's
   // life. Mirrored in effects because refs cannot be written in render.
   const viewportRef = useRef(0);
-  const newestRef = useRef(newestId);
+  const newestRef = useRef(current);
   const zoneRef = useRef(zone);
   useEffect(() => {
-    newestRef.current = newestId;
-  }, [newestId]);
+    newestRef.current = current;
+  }, [current]);
   useEffect(() => {
     zoneRef.current = zone;
   }, [zone]);
@@ -158,7 +197,8 @@ export function useJumpToLatest<L extends LatestScrollableList>({
   );
 
   /** A newer message landed since the reader stopped following arrivals. */
-  const hasNewBelow = zone !== "newest" && newestId !== state.newestWhenLeft;
+  const hasNewBelow =
+    zone !== "newest" && arrivedSince(current, state.newestWhenLeft);
 
   return {
     onLayout,

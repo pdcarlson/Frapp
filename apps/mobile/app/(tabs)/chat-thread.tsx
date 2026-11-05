@@ -100,11 +100,17 @@ const MAINTAIN_POSITION = {
 } as const;
 
 /**
- * The typing line's height, reserved whether or not anyone is typing. A caption
- * has no line height of its own, so the slot fixes one: the line coming and
- * going used to move every row, and the jump control, by a line.
+ * The typing line's line height. A caption has none of its own, so this gives
+ * the caption and the blank that holds its place one line box. The slot takes
+ * its height from that Text, not from this number: React Native scales a
+ * Text's fontSize and lineHeight with the system text size (Dynamic Type,
+ * Android font scale), and a fixed slot height would not, so a large-text
+ * caption spilled onto the composer (iOS) or was cut off (Android).
  */
 const TYPING_LINE_HEIGHT = 16;
+
+/** Holds the typing line's place when nobody types: a line box, no glyphs. */
+const TYPING_LINE_BLANK = "\u00a0";
 
 /**
  * s05 — Chat thread.
@@ -445,7 +451,12 @@ export default function ChatThreadScreen() {
   // and the notice that something new landed there.
   const latest = useJumpToLatest({
     listRef,
-    newestId: inverted[0]?.message.client_message_id ?? null,
+    newest: inverted[0]
+      ? {
+          id: inverted[0].message.client_message_id,
+          createdAt: inverted[0].message.created_at,
+        }
+      : null,
     channelKey: channelId,
   });
   const jumpToLatest = latest.jumpToLatest;
@@ -997,11 +1008,14 @@ export default function ChatThreadScreen() {
           )}
 
           {/*
-          Always mounted at one line's height, so someone starting or stopping
-          typing moves nothing above it. Empty, it is hidden from a screen
-          reader rather than read as a blank element. It is not a live region,
-          as it never was: a line that changes with every keystroke pause would
-          talk over the thread.
+          Always mounted, so someone starting or stopping typing moves nothing
+          above it. The caption Text is always there too: when nobody types it
+          holds a non-breaking space, so the line it reserves is the caption's
+          own line box, scaled with the system text size like the words it
+          stands in for. Empty, it is hidden from a screen reader rather than
+          read as a blank element. It is not a live region, as it never was: a
+          line that changes with every keystroke pause would talk over the
+          thread.
           */}
           <View
             testID="typing-line"
@@ -1011,13 +1025,13 @@ export default function ChatThreadScreen() {
               shownTypingUsers.length === 0 ? "no-hide-descendants" : "auto"
             }
           >
-            {shownTypingUsers.length > 0 ? (
-              <Text style={styles.typing} numberOfLines={1}>
-                {shownTypingUsers.length === 1
+            <Text style={styles.typing} numberOfLines={1}>
+              {shownTypingUsers.length === 0
+                ? TYPING_LINE_BLANK
+                : shownTypingUsers.length === 1
                   ? "Someone is typing…"
                   : `${shownTypingUsers.length} people are typing…`}
-              </Text>
-            ) : null}
+            </Text>
           </View>
 
           {/*
@@ -1212,7 +1226,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       textAlign: "center",
     },
     typingSlot: {
-      height: TYPING_LINE_HEIGHT + tokens.spacing.xs,
       paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xs,
     },

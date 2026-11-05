@@ -34,9 +34,16 @@ import { useOpenImageViewer, viewerImages } from "./image-viewer";
  * draws a tile in the frame a preview takes, as tall as an unsized preview
  * (`PREVIEW_FALLBACK_HEIGHT`), rather than a one-line caption that a photo up
  * to 240pt tall then replaced, pushing the thread with every one that landed
- * (components.md §10: the skeleton mirrors the layout it becomes). The count
- * is all the row knows yet, not which files are photos; mobile only attaches
- * photos, so a tile per file is the likely shape.
+ * (components.md §10: the skeleton mirrors the layout it becomes).
+ *
+ * The count is all the row knows yet, not which files are photos: the message
+ * carries only `metadata.attachment_count`, and type, name and dimensions
+ * arrive with this query. So the tile is a bet, and it is placed on photos.
+ * Mobile's composer attaches only photos; web's attaches photos and documents
+ * (a PDF, say), and a document resolves to a one-line file row, so a web-sent
+ * document shrinks by about 150pt when it lands. A file-row-height placeholder
+ * would only move that jump onto every photo, which is the commoner case, and
+ * grow it, as a photo can be up to 240pt.
  *
  * An image opens the thread's image viewer, stepping through the
  * message's other images (#2874). Any other file, and an image outside a

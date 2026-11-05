@@ -693,22 +693,40 @@ describe("chat thread typing line holds its place", () => {
       unknown
     >;
 
-  it("reserves one fixed line whether or not anyone is typing", () => {
+  it("reserves the caption's own line whether or not anyone is typing", () => {
+    // The reserved height is the caption Text's line box, which React Native
+    // scales with the system text size. A fixed height on the slot would not
+    // scale, and large text would spill onto the composer or be cut off.
+    const caption = (tree: ReactTestRenderer) => {
+      const texts = slot(tree).findAllByType("Text" as never);
+      expect(texts).toHaveLength(1);
+      return texts[0]!;
+    };
+    const slotStyle = (tree: ReactTestRenderer) => flat(slot(tree).props.style);
+
     const idle = render();
-    const idleStyle = flat(slot(idle).props.style);
-    expect(idleStyle.height).toEqual(expect.any(Number));
-    expect(slot(idle).findAllByType("Text" as never)).toHaveLength(0);
+    for (const key of ["height", "maxHeight", "minHeight"]) {
+      expect(slotStyle(idle)).not.toHaveProperty(key);
+    }
+    const blank = caption(idle);
+    // A non-breaking space: one line box, no glyphs, no words.
+    expect(blank.props.children).toBe("\u00a0");
+    expect(blank.props.numberOfLines).toBe(1);
+    expect(blank.props.allowFontScaling).not.toBe(false);
+    expect(blank.props.maxFontSizeMultiplier).toBeUndefined();
+    const idleTextStyle = flat(blank.props.style);
     act(() => idle.unmount());
 
     channel = channelState({ typingUsers: [MEMBER] });
     const typing = render();
-    expect(flat(slot(typing).props.style).height).toBe(idleStyle.height);
-    // The caption's line fits the slot, so the text can't grow it.
-    const [line] = slot(typing).findAllByType("Text" as never);
-    expect(
-      (flat(line!.props.style).lineHeight as number) +
-        ((idleStyle.paddingBottom as number) ?? 0),
-    ).toBeLessThanOrEqual(idleStyle.height as number);
+    for (const key of ["height", "maxHeight", "minHeight"]) {
+      expect(slotStyle(typing)).not.toHaveProperty(key);
+    }
+    const line = caption(typing);
+    expect(line.props.children).toBe("Someone is typing…");
+    expect(line.props.numberOfLines).toBe(1);
+    // Same type and line height as the blank, so the swap moves nothing.
+    expect(flat(line.props.style)).toEqual(idleTextStyle);
     act(() => typing.unmount());
   });
 

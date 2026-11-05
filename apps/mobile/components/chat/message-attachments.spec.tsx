@@ -299,6 +299,42 @@ describe("the loading tiles", () => {
       (JSON.stringify(style).match(/"height":(\d+)/) ?? [])[1];
     expect(height(tileBlock.props.style)).toBe(height(image.props.style));
   });
+
+  // The row knows the count, not the types, until the files are read. The tile
+  // bets on a photo; a web-sent document loses that bet and settles into its
+  // one-line file row (the docblock says why that is still the smaller jump).
+  it("draws a photo tile for a pending file, then settles into its file row", () => {
+    hookState.result = { isPending: true, isError: false, data: undefined };
+    // A fresh element per render: React skips re-rendering an identical one.
+    const element = () => (
+      <FrappThemeProvider>
+        <ImageViewerContext.Provider value={null}>
+          <MessageAttachments channelId="chan-1" messageId="msg-1" count={1} />
+        </ImageViewerContext.Provider>
+      </FrappThemeProvider>
+    );
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(element());
+    });
+    expect(tiles(tree)).toHaveLength(1);
+
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [attachment()],
+    };
+    act(() => tree.update(element()));
+
+    expect(tiles(tree)).toHaveLength(0);
+    expect(
+      tree.root.findAllByType("Image" as unknown as React.ElementType),
+    ).toHaveLength(0);
+    const [row] = tree.root.findAllByProps({ accessibilityRole: "button" });
+    expect(row!.props.accessibilityLabel).toBe("Open minutes.pdf");
+    expect(textOf(tree)).toContain("minutes.pdf");
+    expect(textOf(tree)).not.toMatch(/"height":180/);
+  });
 });
 
 // #2874: an image opens the thread's viewer, not the browser.

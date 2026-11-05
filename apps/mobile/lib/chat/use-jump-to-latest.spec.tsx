@@ -10,6 +10,7 @@ import {
   FOLLOW_ARRIVALS_WITHIN,
   useJumpToLatest,
   type LatestScrollableList,
+  type NewestRow,
 } from "./use-jump-to-latest";
 
 const VIEWPORT = 600;
@@ -23,13 +24,19 @@ const scroll = (y: number) =>
     NativeScrollEvent
   >;
 
-function setup(newestId: string | null = "c-3", channelKey = "chan-1") {
+/** The `n`th message, each a second after the last, as the cache orders them. */
+const row = (n: number): NewestRow => ({
+  id: `c-${n}`,
+  createdAt: `2026-11-05T10:00:${String(n).padStart(2, "0")}.000Z`,
+});
+
+function setup(newest: NewestRow | null = row(3), channelKey = "chan-1") {
   const list = { scrollToOffset: vi.fn<LatestScrollableList["scrollToOffset"]>() };
   const listRef = { current: list };
   const hook = renderHook(
-    (props: { newestId: string | null; channelKey: string | null }) =>
+    (props: { newest: NewestRow | null; channelKey: string | null }) =>
       useJumpToLatest({ listRef, ...props }),
-    { initialProps: { newestId, channelKey } },
+    { initialProps: { newest, channelKey } },
   );
   act(() => hook.result.current.onLayout(layout(VIEWPORT)));
   return { ...hook, list };
@@ -55,11 +62,11 @@ describe("useJumpToLatest", () => {
   // arrival into view, so a reply landing there would be out of sight with
   // nothing to say so.
   it("says so when something lands while the reader is just past the follow threshold", () => {
-    const { result, rerender } = setup("c-3");
+    const { result, rerender } = setup(row(3));
     act(() => result.current.onScroll(scroll(FOLLOW_ARRIVALS_WITHIN + 1)));
     expect(result.current.showsJump).toBe(false);
 
-    rerender({ newestId: "c-4", channelKey: "chan-1" });
+    rerender({ newest: row(4), channelKey: "chan-1" });
     expect(result.current.showsJump).toBe(true);
     expect(result.current.hasNewBelow).toBe(true);
 
@@ -72,11 +79,37 @@ describe("useJumpToLatest", () => {
     expect(result.current.hasNewBelow).toBe(false);
   });
 
+  // Discarding your own failed newest message takes its row out of the cache,
+  // so the row before it becomes the newest. Nothing arrived.
+  it("lights no dot when the newest row goes away, and still notices a later arrival", () => {
+    const { result, rerender } = setup(row(3));
+    act(() => result.current.onScroll(scroll(FOLLOW_ARRIVALS_WITHIN + 1)));
+
+    rerender({ newest: row(2), channelKey: "chan-1" });
+    expect(result.current.showsJump).toBe(false);
+    expect(result.current.hasNewBelow).toBe(false);
+
+    rerender({ newest: row(4), channelKey: "chan-1" });
+    expect(result.current.showsJump).toBe(true);
+    expect(result.current.hasNewBelow).toBe(true);
+  });
+
+  it("counts a newer row that shares the last one's timestamp as an arrival", () => {
+    const { result, rerender } = setup(row(3));
+    act(() => result.current.onScroll(scroll(FOLLOW_ARRIVALS_WITHIN + 1)));
+
+    rerender({
+      newest: { id: "c-3b", createdAt: row(3).createdAt },
+      channelKey: "chan-1",
+    });
+    expect(result.current.hasNewBelow).toBe(true);
+  });
+
   it("says nothing of an arrival within the follow threshold, which scrolls into view", () => {
-    const { result, rerender } = setup("c-3");
+    const { result, rerender } = setup(row(3));
     act(() => result.current.onScroll(scroll(FOLLOW_ARRIVALS_WITHIN)));
 
-    rerender({ newestId: "c-4", channelKey: "chan-1" });
+    rerender({ newest: row(4), channelKey: "chan-1" });
     expect(result.current.showsJump).toBe(false);
     expect(result.current.hasNewBelow).toBe(false);
   });
@@ -86,7 +119,7 @@ describe("useJumpToLatest", () => {
     const { result } = renderHook(() =>
       useJumpToLatest({
         listRef: { current: list },
-        newestId: "c-1",
+        newest: row(1),
         channelKey: "chan-1",
       }),
     );
@@ -95,11 +128,11 @@ describe("useJumpToLatest", () => {
   });
 
   it("notices a newer message landing while away, and forgets it on return", () => {
-    const { result, rerender } = setup("c-3");
+    const { result, rerender } = setup(row(3));
     act(() => result.current.onScroll(scroll(VIEWPORT * 2)));
     expect(result.current.hasNewBelow).toBe(false);
 
-    rerender({ newestId: "c-4", channelKey: "chan-1" });
+    rerender({ newest: row(4), channelKey: "chan-1" });
     expect(result.current.hasNewBelow).toBe(true);
 
     act(() => result.current.onScroll(scroll(0)));
@@ -126,18 +159,18 @@ describe("useJumpToLatest", () => {
   });
 
   it("clears the control at once on an unanimated jump, so the member's own send lights no dot", () => {
-    const { result, rerender } = setup("c-3");
+    const { result, rerender } = setup(row(3));
     act(() => result.current.onScroll(scroll(VIEWPORT * 2)));
     expect(result.current.showsJump).toBe(true);
 
     act(() => result.current.jumpToLatest({ animated: false }));
-    rerender({ newestId: "c-4", channelKey: "chan-1" });
+    rerender({ newest: row(4), channelKey: "chan-1" });
     expect(result.current.showsJump).toBe(false);
     expect(result.current.hasNewBelow).toBe(false);
   });
 
   it("keeps the control through an animated jump until the scroll arrives", () => {
-    const { result } = setup("c-3");
+    const { result } = setup(row(3));
     act(() => result.current.onScroll(scroll(VIEWPORT * 2)));
 
     act(() => result.current.jumpToLatest());
@@ -147,11 +180,14 @@ describe("useJumpToLatest", () => {
   });
 
   it("is not away in the next channel because it was in the last", () => {
-    const { result, rerender } = setup("c-3", "chan-1");
+    const { result, rerender } = setup(row(3), "chan-1");
     act(() => result.current.onScroll(scroll(VIEWPORT * 2)));
     expect(result.current.showsJump).toBe(true);
 
-    rerender({ newestId: "d-9", channelKey: "chan-2" });
+    rerender({
+      newest: { id: "d-9", createdAt: "2026-11-04T09:00:00.000Z" },
+      channelKey: "chan-2",
+    });
     expect(result.current.showsJump).toBe(false);
     expect(result.current.hasNewBelow).toBe(false);
 
