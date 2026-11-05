@@ -229,7 +229,7 @@ and the privacy policy's permissions clause. The owner ruled that policy edit no
 caller, through `pickImage`, the pick half of the same pipeline. It needs no native
 change, so it ships over the air, but the compiled `photosPermission` text can only
 widen in a store build: #3401 does that with `expo-document-picker`, and the store
-records with it. The privacy policy is a web page, so it names the new use in the
+records with it *(superseded 2026-11-05: widened on its own, see below)*. The privacy policy is a web page, so it names the new use in the
 same PR (ruled non-material by the owner, 2026-11-04).
 
 *2026-11-05:* s20's photo proof (`lib/more/service-proof.ts`) is the fifth caller,
@@ -237,10 +237,16 @@ through `pickImage` and the PUT half of the same pipeline, attaching a photo to 
 service entry. Like the fourth it needs no native change and ships over the air, and
 `photosPermission` can only widen in a store build, so
 [#3401](https://github.com/pdcarlson/Frapp/issues/3401) widens it to name service-hour
-proof alongside document uploads, with the store records. The privacy policy's
+proof alongside document uploads, with the store records *(superseded 2026-11-05: widened
+on its own, see below)*. The privacy policy's
 permissions clause names it in the same change, moving only the page's pin on the
 #3395 precedent; whether that edit is material, and what each ruling does, is
 [`legal.md` § Acceptance record](../../behavior/legal.md#acceptance-record)'s.
+
+*2026-11-05, later:* the purpose string was widened on its own, ahead of #3401's Files
+picker, so the 0.9.1 store build carries it. `photosPermission` now names all five
+callers ("send photos in chapter chat, add photos to your chapter's documents, and attach
+photo proof to service hours"). #3401 keeps the picker and #2620.
 
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`
