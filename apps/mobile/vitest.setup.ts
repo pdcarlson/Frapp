@@ -178,6 +178,7 @@ vi.mock("expo-router", () => {
       for (const blur of [...blurrers]) blur();
     },
     useLocalSearchParams: vi.fn(() => ({})),
+    useGlobalSearchParams: vi.fn(() => ({})),
     usePathname: vi.fn(() => "/"),
     Link: "Link",
     Redirect: "Redirect",
@@ -459,6 +460,7 @@ vi.mock("posthog-react-native", () => {
     optIn() {}
     stopSessionRecording() {}
     capture() {}
+    async screen() {}
     getSessionId() {
       return "";
     }

@@ -1,19 +1,33 @@
 import { useContext, useEffect } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import {
+  bindPostHogAdapterForTests,
+  createMemoryPostHogAdapter,
+} from "@repo/observability/identified-posthog";
 
-const { mockPost, mockClient, mockUseCurrentChapter, applyAnalyticsOptOut } =
-  vi.hoisted(() => {
-    const post = vi.fn();
-    return {
-      mockPost: post,
-      // One client object, as `FrappProvider` gives, so `track`'s identity
-      // depends only on what the provider does.
-      mockClient: { POST: post },
-      mockUseCurrentChapter: vi.fn(),
-      applyAnalyticsOptOut: vi.fn(),
-    };
-  });
+const {
+  mockPost,
+  mockClient,
+  mockUseCurrentChapter,
+  applyAnalyticsOptOut,
+  pathname,
+} = vi.hoisted(() => {
+  const post = vi.fn();
+  return {
+    mockPost: post,
+    // One client object, as `FrappProvider` gives, so `track`'s identity
+    // depends only on what the provider does.
+    mockClient: { POST: post },
+    mockUseCurrentChapter: vi.fn(),
+    applyAnalyticsOptOut: vi.fn(),
+    pathname: { current: null as string | null },
+  };
+});
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => pathname.current,
+}));
 
 // The provider only needs a POST-capable client, an active chapter id, and
 // the member view (`GET /v1/chapters/current`). The config read is what every
@@ -33,7 +47,11 @@ vi.mock("@repo/observability/identified-posthog", async (importOriginal) => {
     >();
   return {
     ...actual,
-    applyAnalyticsOptOut: (...args: unknown[]) => applyAnalyticsOptOut(...args),
+    // Recorded, then applied for real, so the route-view gate moves with it.
+    applyAnalyticsOptOut: (next: boolean) => {
+      applyAnalyticsOptOut(next);
+      actual.applyAnalyticsOptOut(next);
+    },
   };
 });
 
@@ -190,5 +208,91 @@ describe("AnalyticsProvider client-side opt-out", () => {
     renderWithOptOut(undefined);
     fireEvent.click(screen.getByText("emit"));
     expect(mockPost).toHaveBeenCalledTimes(1);
+  });
+});
+
+// #3382: one `$pageview` per route, as its template, only once opted in.
+describe("AnalyticsProvider route views", () => {
+  let memory: ReturnType<typeof createMemoryPostHogAdapter>;
+  const routeViews = () =>
+    memory.calls.flatMap((c) => (c.type === "routeView" ? [c.path] : []));
+  const chapter = (optOut: boolean | undefined) =>
+    mockUseCurrentChapter.mockReturnValue(
+      optOut === undefined
+        ? { data: undefined, isError: false }
+        : { data: { id: "chap-1", analytics_opt_out: optOut }, isError: false },
+    );
+
+  beforeEach(() => {
+    mockUseCurrentChapter.mockReset();
+    applyAnalyticsOptOut.mockReset();
+    memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+  });
+
+  afterEach(() => {
+    bindPostHogAdapterForTests(null);
+    pathname.current = null;
+  });
+
+  it("records the first route once the chapter read opts in", () => {
+    pathname.current = "/chat";
+    chapter(undefined);
+    const view = render(tree());
+    expect(routeViews()).toEqual([]);
+
+    chapter(false);
+    view.rerender(tree());
+    expect(routeViews()).toEqual(["/chat"]);
+
+    view.rerender(tree());
+    expect(routeViews()).toEqual(["/chat"]);
+  });
+
+  it("records each route change", () => {
+    pathname.current = "/chat";
+    chapter(false);
+    const view = render(tree());
+    pathname.current = "/events";
+    view.rerender(tree());
+    expect(routeViews()).toEqual(["/chat", "/events"]);
+  });
+
+  it("records a route with an id segment as its template", () => {
+    pathname.current = "/events/3f2a9c1e-4b5d-4e6f-8a7b-9c0d1e2f3a4b";
+    chapter(false);
+    render(tree());
+    expect(routeViews()).toEqual(["/events/[id]"]);
+  });
+
+  it("records nothing for a chapter that opted out", () => {
+    pathname.current = "/chat";
+    chapter(true);
+    const view = render(tree());
+    pathname.current = "/events";
+    view.rerender(tree());
+    expect(routeViews()).toEqual([]);
+  });
+
+  // A chapter switch reloads the chapter read while the member stays put.
+  it("does not record the same visit again when the gate flips", () => {
+    pathname.current = "/chat";
+    chapter(false);
+    const view = render(tree());
+    chapter(undefined);
+    view.rerender(tree());
+    chapter(false);
+    view.rerender(tree());
+    expect(routeViews()).toEqual(["/chat"]);
+  });
+
+  it("stops recording the moment the chapter opts out", () => {
+    pathname.current = "/chat";
+    chapter(false);
+    const view = render(tree());
+    chapter(true);
+    pathname.current = "/events";
+    view.rerender(tree());
+    expect(routeViews()).toEqual(["/chat"]);
   });
 });

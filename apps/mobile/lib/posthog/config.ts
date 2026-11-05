@@ -2,6 +2,7 @@ import {
   POSTHOG_EXCEPTION_AUTOCAPTURE,
   shouldEnablePostHogReplay,
 } from "@repo/observability";
+import { isAnalyticsCaptureOptedOut } from "@repo/observability/identified-posthog";
 import { sanitizeIdentifiedPostHogCapture } from "@repo/observability/next";
 import type { PostHogOptions, PostHogSessionReplayConfig } from "posthog-react-native";
 
@@ -61,10 +62,31 @@ export function mobileSessionReplayConfig(): PostHogSessionReplayConfig {
 }
 
 /**
+ * `before_send` for every SDK event: nothing while the app holds the chapter
+ * opted out, otherwise the identified sanitizer.
+ *
+ * The gate is what keeps app lifecycle events (#3382) inside the opt-out. The
+ * SDK sends `Application Installed` / `Updated` from its storage-load
+ * callback, before the queued `optOut()` from `initMobilePostHog` runs, so
+ * the SDK's own check reads whatever consent the last session persisted. The
+ * app's flag is set synchronously right after construction, and `before_send`
+ * runs at enqueue, so this drops them. The cost is that the cold-start
+ * lifecycle events (Installed, Updated, Opened) usually fire before the
+ * chapter's answer and are not recorded; the first `$screen` marks the open.
+ */
+export function mobilePostHogBeforeSend<
+  T extends { properties?: unknown; $set?: unknown; $set_once?: unknown },
+>(event: T | null): T | null {
+  if (isAnalyticsCaptureOptedOut()) return null;
+  return sanitizeIdentifiedPostHogCapture(event);
+}
+
+/**
  * Options the app actually passes to `new PostHog`. Specs assert against this
  * object rather than a copy of the literals.
  *
- * `before_send` is the identified sanitizer (same helper as web). RN core
+ * `before_send` is the opt-out gate around the identified sanitizer (the
+ * same sanitizer as web). RN core
  * uses the same CaptureEvent envelope as posthog-js; the helper is DOM-free.
  * `$set` / hex `$groups` must survive. URL-shaped SDK properties
  * (`$current_url`, `$pathname`, `$referrer`, `$initial_current_url`,
@@ -83,7 +105,10 @@ export function buildMobilePostHogInitOptions(opts?: {
   return {
     host: mobilePostHogHost(),
     personProfiles: "identified_only",
-    captureAppLifecycleEvents: false,
+    // Installed / Updated / Opened / Became Active / Backgrounded (#3382).
+    // `Application Opened.url` is a deep link, which the sanitizer reduces to
+    // its path, so an invite token never leaves.
+    captureAppLifecycleEvents: true,
     enableSessionReplay: replayOn,
     sessionReplayConfig: mobileSessionReplayConfig(),
     errorTracking: {
@@ -94,6 +119,6 @@ export function buildMobilePostHogInitOptions(opts?: {
     capturePushNotificationSubscriptions: false,
     capturePushNotificationOpened: false,
     disableGeoip: true,
-    before_send: sanitizeIdentifiedPostHogCapture,
+    before_send: mobilePostHogBeforeSend,
   };
 }
