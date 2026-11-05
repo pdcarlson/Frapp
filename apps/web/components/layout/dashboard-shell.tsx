@@ -12,6 +12,13 @@ import {
 } from "@/components/ui/sheet";
 import { SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import { AppNav } from "@/components/layout/app-nav";
+import { ChatNavColumn } from "@/components/layout/chat-nav-column";
+import {
+  isChannelsNavRoute,
+  NavFaceContext,
+  type NavFace,
+  type NavFaceContextValue,
+} from "@/components/layout/nav-face";
 import { TopBar } from "@/components/layout/top-bar";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
 import { AccountMenu } from "@/components/layout/account-menu";
@@ -80,6 +87,33 @@ export function DashboardShell({
   const [navCollapsed, setNavCollapsed] = useState(defaultNavCollapsed);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // `/chat`'s left column is the channel list, with the module nav one back
+  // arrow away (`nav-face.tsx`). The face is remembered per pathname, so every
+  // arrival at Chat opens on the channels, and it is derived rather than reset
+  // in an effect, so there is no frame of the old face after navigating.
+  const channelsNav = isChannelsNavRoute(pathname);
+  const [faceState, setFaceState] = useState<{ face: NavFace; path: string }>({
+    face: "channels",
+    path: pathname,
+  });
+  const face: NavFace =
+    faceState.path === pathname ? faceState.face : "channels";
+  const [channelsSlot, setChannelsSlot] = useState<HTMLElement | null>(null);
+  const navFace = useMemo<NavFaceContextValue | null>(
+    () =>
+      channelsNav
+        ? {
+            face,
+            showModules: () =>
+              setFaceState({ face: "modules", path: pathname }),
+            showChannels: () =>
+              setFaceState({ face: "channels", path: pathname }),
+            channelsSlot,
+          }
+        : null,
+    [channelsNav, face, pathname, channelsSlot],
+  );
 
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const { data: permissionsPayload } = useMyPermissions({
@@ -185,13 +219,24 @@ export function DashboardShell({
       </a>
 
       <div className="hidden lg:flex">
-        <AppNav
-          collapsed={navCollapsed}
-          onToggleCollapsed={toggleNavCollapsed}
-          permissions={permissions}
-          isModuleEnabled={isModuleEnabled}
-          pathname={pathname}
-        />
+        {navFace ? (
+          <ChatNavColumn
+            face={navFace.face}
+            onShowChannels={navFace.showChannels}
+            channelsSlotRef={setChannelsSlot}
+            permissions={permissions}
+            isModuleEnabled={isModuleEnabled}
+            pathname={pathname}
+          />
+        ) : (
+          <AppNav
+            collapsed={navCollapsed}
+            onToggleCollapsed={toggleNavCollapsed}
+            permissions={permissions}
+            isModuleEnabled={isModuleEnabled}
+            pathname={pathname}
+          />
+        )}
       </div>
 
       {/*
@@ -229,7 +274,9 @@ export function DashboardShell({
               : "gap-3 overflow-y-auto px-4 py-4 sm:px-6",
           )}
         >
-          {children}
+          <NavFaceContext.Provider value={navFace}>
+            {children}
+          </NavFaceContext.Provider>
         </main>
       </div>
     </div>

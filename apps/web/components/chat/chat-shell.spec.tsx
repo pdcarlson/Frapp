@@ -799,6 +799,10 @@ vi.mock("./message-timeline", async () => {
 
 import { blockClearance } from "@repo/chat-core/blocks";
 import { ChatShell } from "./chat-shell";
+import {
+  NavFaceContext,
+  type NavFaceContextValue,
+} from "@/components/layout/nav-face";
 
 /**
  * The notice for a jump target the channel's whole history did not hold. The
@@ -1885,7 +1889,9 @@ describe("ChatShell channel description and start", () => {
       .find((found) => found !== null)!;
     expect(header).toBeTruthy();
     // The channel name is the thread's own h2, so the start's h3 sits under it.
-    expect(within(header).getByRole("heading", { level: 2 })).toBeInTheDocument();
+    expect(
+      within(header).getByRole("heading", { level: 2 }),
+    ).toBeInTheDocument();
     expect(
       within(screen.getByTestId("channel-start")).getByRole("heading", {
         level: 3,
@@ -2844,6 +2850,92 @@ describe("ChatShell narrow viewports (#2142)", () => {
     await waitFor(() => {
       expect(columns().thread.className).not.toContain("max-lg:hidden");
     });
+  });
+});
+
+/**
+ * From `lg` up inside the dashboard shell, the channels pane is the shell's
+ * left column, in place of the module nav (owner, 2026-11-05;
+ * `components/layout/nav-face.tsx`).
+ */
+describe("ChatShell inside the shell's left column", () => {
+  let slot: HTMLDivElement;
+  const realMatchMedia = window.matchMedia;
+
+  function stubDesktop(matches: boolean) {
+    window.matchMedia = ((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  }
+
+  function navFace(overrides: Partial<NavFaceContextValue> = {}) {
+    return {
+      face: "channels" as const,
+      showModules: vi.fn(),
+      showChannels: vi.fn(),
+      channelsSlot: slot,
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    slot = document.createElement("div");
+    document.body.appendChild(slot);
+  });
+  afterEach(() => {
+    slot.remove();
+    window.matchMedia = realMatchMedia;
+  });
+
+  it("renders the channels pane into the shell's column, with a back arrow to the menu", () => {
+    stubDesktop(true);
+    const value = navFace();
+    render(
+      <NavFaceContext.Provider value={value}>
+        <ChatShell />
+      </NavFaceContext.Provider>,
+    );
+
+    const channels = screen.getByRole("region", { name: "Channels" });
+    expect(slot.contains(channels)).toBe(true);
+    // Exactly one copy: nothing inline beside the thread.
+    expect(screen.getAllByRole("region", { name: "Channels" })).toHaveLength(1);
+
+    fireEvent.click(
+      within(channels).getByRole("button", { name: "Back to menu" }),
+    );
+    expect(value.showModules).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays inline below lg, hidden from lg up until the column takes it", () => {
+    stubDesktop(false);
+    render(
+      <NavFaceContext.Provider value={navFace()}>
+        <ChatShell />
+      </NavFaceContext.Provider>,
+    );
+
+    const channels = screen.getByRole("region", { name: "Channels" });
+    expect(slot.contains(channels)).toBe(false);
+    expect(channels.classList.contains("lg:hidden")).toBe(true);
+    // The drawer is the way to the modules below lg, so no back arrow here.
+    expect(
+      within(channels).queryByRole("button", { name: "Back to menu" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("stays inline, and visible from lg up, outside the shell", () => {
+    stubDesktop(true);
+    render(<ChatShell />);
+    const channels = screen.getByRole("region", { name: "Channels" });
+    expect(channels.classList.contains("lg:hidden")).toBe(false);
   });
 });
 

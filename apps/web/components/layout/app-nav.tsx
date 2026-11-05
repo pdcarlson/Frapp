@@ -1,6 +1,6 @@
 "use client";
 
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChapterNavHeader } from "@/components/layout/chapter-nav-header";
 import { DASHBOARD_NAV, type NavItem } from "@/components/layout/nav-config";
@@ -42,7 +42,13 @@ type AppNavProps = {
    * ("the drawer is the sidebar"). It supplies its own heading and scroll
    * container, so it suppresses the collapse toggle and the outer chrome.
    */
-  variant?: "sidebar" | "drawer";
+  variant?: "sidebar" | "drawer" | "face";
+  /**
+   * The module face of `/chat`'s left column (`nav-face.tsx`): the Chat row
+   * slides the channel list back instead of linking to the open route, and
+   * carries an unread dot while the channels are out of sight.
+   */
+  chatRow?: { onSelect: () => void; hasUnread: boolean };
   className?: string;
 };
 
@@ -54,7 +60,10 @@ const navIconClassName = "h-[18px] w-[18px]";
  * section when a route it owns is (`activeFor`: the Settings tools, which keep
  * their own pages but sit under the Settings row).
  */
-function currentFor(item: NavItem, pathname: string): "page" | "true" | undefined {
+function currentFor(
+  item: NavItem,
+  pathname: string,
+): "page" | "true" | undefined {
   if (item.href === pathname) return "page";
   if (item.activeFor?.includes(pathname)) return "true";
   return undefined;
@@ -68,9 +77,14 @@ export function AppNav({
   pathname,
   onNavigate,
   variant = "sidebar",
+  chatRow,
   className,
 }: AppNavProps) {
-  const isDrawer = variant === "drawer";
+  // The face shares the drawer's shape: no outer chrome and no collapse
+  // toggle. It also leaves the chapter header out, because the column it sits
+  // in keeps that header pinned above both faces.
+  const isFace = variant === "face";
+  const isDrawer = variant === "drawer" || isFace;
   // The drawer has no room to be a rail and no toggle to leave it, so it is
   // always expanded regardless of the stored preference.
   const isCollapsed = collapsed && !isDrawer;
@@ -118,6 +132,28 @@ export function AppNav({
             focusClassName={FOCUS_RING_SHELL}
             isModuleEnabled={isModuleEnabled}
             collapsed={isCollapsed}
+            {...(chatRow && item.id === "chat"
+              ? {
+                  onSelect: chatRow.onSelect,
+                  trailing: (
+                    <>
+                      {chatRow.hasUnread ? (
+                        <>
+                          <span
+                            aria-hidden="true"
+                            className="h-1.5 w-1.5 rounded-full bg-foreground"
+                          />
+                          <span className="sr-only">, unread messages</span>
+                        </>
+                      ) : null}
+                      <ChevronRight
+                        className="h-3.5 w-3.5 text-muted"
+                        aria-hidden="true"
+                      />
+                    </>
+                  ),
+                }
+              : {})}
           />
         ))}
       </div>
@@ -139,7 +175,9 @@ export function AppNav({
         className,
       )}
     >
-      <ChapterNavHeader collapsed={isCollapsed} onNavigate={onNavigate} />
+      {isFace ? null : (
+        <ChapterNavHeader collapsed={isCollapsed} onNavigate={onNavigate} />
+      )}
       <nav
         aria-label="Primary"
         className={cn(
@@ -159,7 +197,9 @@ export function AppNav({
           <button
             type="button"
             onClick={onToggleCollapsed}
-            aria-label={isCollapsed ? "Expand navigation" : "Collapse navigation"}
+            aria-label={
+              isCollapsed ? "Expand navigation" : "Collapse navigation"
+            }
             aria-expanded={!isCollapsed}
             title={isCollapsed ? "Expand navigation" : "Collapse navigation"}
             className={cn(

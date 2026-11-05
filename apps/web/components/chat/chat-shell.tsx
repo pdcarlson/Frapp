@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { MuteGlyph } from "./chat-glyphs";
 import { channelDescription } from "@repo/hooks/channel-start";
 import { ChannelMark, ChannelStart } from "./channel-start";
@@ -97,6 +98,7 @@ import { ReconnectPill } from "./reconnect-pill";
 import { BlockListNotice } from "./block-list-notice";
 import { useUnblockFlow } from "./use-unblock-flow";
 import { compactControlClassName } from "@/components/shared/table-controls";
+import { useIsDesktopShell, useNavFace } from "@/components/layout/nav-face";
 import type { SlashCommand } from "@repo/chat-core/integrations";
 import type { ChatNotificationLevel } from "@repo/hooks";
 
@@ -426,6 +428,12 @@ export function ChatShell({
    * the message rather than on a list the member then has to navigate out of.
    */
   const [narrowPane, setNarrowPane] = useState<"channels" | "thread">("thread");
+  // Inside the dashboard shell, from `lg` up, the channels pane is the shell's
+  // left column (`components/layout/nav-face.tsx`); everywhere else it is
+  // inline beside the thread.
+  const navFace = useNavFace();
+  const isDesktopShell = useIsDesktopShell();
+  const channelsInNav = Boolean(navFace?.channelsSlot && isDesktopShell);
 
   useEffect(() => {
     if (
@@ -1429,14 +1437,90 @@ export function ChatShell({
     return had;
   }, []);
 
+  // The channels pane's contents, rendered in exactly one place: the shell's
+  // left column from `lg` up, or inline beside the thread (`nav-face.tsx`).
+  const channelsPaneBody = (
+    <>
+      {/*
+            48px, matching the top bar and the channel header beside it, so the
+            three headers line up across the whole route (`3a` geometry: "Top bar,
+            column headers 48"). The "N channels" count that used to sit under the
+            title is deleted (`1t`) - it restated the length of a list already on
+            screen.
+          */}
+      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
+        {channelsInNav && navFace ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn(compactControlClassName, "-ml-1.5 shrink-0")}
+            onClick={navFace.showModules}
+            aria-label="Back to menu"
+            title="Back to menu"
+            data-nav-back=""
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        ) : null}
+        <h2 className="text-sm font-semibold text-foreground">Channels</h2>
+        <ChannelFilters
+          filters={sidebarPreferences.filters}
+          onChange={sidebarControls.onSetFilters}
+        />
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {/*
+              Only `loading` shimmers, and `no-chapter` deliberately does not.
+
+              `loading` is now the state a cold load actually renders — see
+              `channelsPaneState` above — so this is the placeholder that carries
+              the contract's "channel column chrome" clause, and it resolves the
+              moment the list arrives. `no-chapter` is terminal by construction:
+              the query has already settled with nothing, so a placeholder there
+              would have no exit and would shimmer for as long as the tab stayed
+              open. That is the same defect `profile-panel.tsx` rejects
+              `hasHydrated` for, reached from the other side.
+            */}
+        {channelsPaneState === "loading" ? <ChannelListSkeleton /> : null}
+        {channelsPaneState === "ready" ? (
+          <ChannelList
+            viewerId={userId}
+            memberNames={memberNames}
+            channels={channels}
+            categories={categories}
+            unreadByChannelId={unreadByChannelId}
+            activeChannelId={activeChannelId}
+            onHide={hideFromRail}
+            sidebar={sidebarControls}
+            onPick={(ch) => {
+              if (ch.hidden) {
+                const memberId = otherMemberId(ch, userId);
+                if (memberId) reopenDm.mutate({ member_id: memberId });
+              }
+              setSelectedChannelId(ch.id);
+              // Below `lg` the list and the thread are never both on screen,
+              // so picking has to navigate. Inert at `lg` and up.
+              setNarrowPane("thread");
+              // Deliberately leaves any pending jump target alone - it is
+              // gated on its own channel and will resolve if the member
+              // returns. Only the notice is channel-scoped for display.
+              setUnreachableTarget(null);
+            }}
+          />
+        ) : null}
+      </div>
+    </>
+  );
+
   return (
     /*
       Flush columns, 100vh, independent scroll (`1b` — the board counts the app
       nav as the third; this route owns the other two). The route is
       full-bleed (`layout/full-bleed-routes.ts`), so this sits directly in the
-      shell's `<main>` with no inset: the channels column hugs the nav's right
-      border, and `h-full` here is the shell's fixed frame rather than a
-      document that grows.
+      shell's `<main>` with no inset, and `h-full` here is the shell's fixed
+      frame rather than a document that grows. From `lg` up the channels
+      column is the shell's left column instead, in place of the module nav
+      (owner, 2026-11-05).
 
       The panes no longer carry `rounded-xl` card chrome, `gap-4` between them,
       or `md:sticky` rail positioning. They are flush columns divided by
@@ -1490,75 +1574,41 @@ export function ChatShell({
       </div>
       {/*
         Channels: 240px, full height, its own scroll, no search field (`1b`
-        pin 5). `--surface-1` is the same step the app nav takes, so the two
-        columns read as one continuous piece of chrome with a hairline between
-        them rather than as a rail floating beside a page.
+        pin 5). From `lg` up inside the dashboard shell it is the left column
+        itself: the shell owns the column and its chapter header, and this pane
+        is portaled into it, beside a back arrow to the module nav
+        (`components/layout/nav-face.tsx`). Inline, it takes `--surface-1`,
+        the same step as the app nav, so the two read as one piece of chrome.
+        Below `lg`, and outside the shell, it stays inline.
       */}
-      <section
-        aria-label="Channels"
-        className={cn(
-          "flex min-h-0 flex-col border-r border-border bg-surface-1",
-          // Full width below `lg`, where it is the only column on screen.
-          "w-full lg:w-60 lg:shrink-0",
-          narrowPane === "thread" && "max-lg:hidden",
-        )}
-      >
-        {/*
-          48px, matching the top bar and the channel header beside it, so the
-          three headers line up across the whole route (`3a` geometry: "Top bar,
-          column headers 48"). The "N channels" count that used to sit under the
-          title is deleted (`1t`) - it restated the length of a list already on
-          screen.
-        */}
-        <header className="flex h-12 shrink-0 items-center border-b border-border px-3">
-          <h2 className="text-sm font-semibold text-foreground">Channels</h2>
-          <ChannelFilters
-            filters={sidebarPreferences.filters}
-            onChange={sidebarControls.onSetFilters}
-          />
-        </header>
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {/*
-            Only `loading` shimmers, and `no-chapter` deliberately does not.
-
-            `loading` is now the state a cold load actually renders — see
-            `channelsPaneState` above — so this is the placeholder that carries
-            the contract's "channel column chrome" clause, and it resolves the
-            moment the list arrives. `no-chapter` is terminal by construction:
-            the query has already settled with nothing, so a placeholder there
-            would have no exit and would shimmer for as long as the tab stayed
-            open. That is the same defect `profile-panel.tsx` rejects
-            `hasHydrated` for, reached from the other side.
-          */}
-          {channelsPaneState === "loading" ? <ChannelListSkeleton /> : null}
-          {channelsPaneState === "ready" ? (
-            <ChannelList
-              viewerId={userId}
-              memberNames={memberNames}
-              channels={channels}
-              categories={categories}
-              unreadByChannelId={unreadByChannelId}
-              activeChannelId={activeChannelId}
-              onHide={hideFromRail}
-              sidebar={sidebarControls}
-              onPick={(ch) => {
-                if (ch.hidden) {
-                  const memberId = otherMemberId(ch, userId);
-                  if (memberId) reopenDm.mutate({ member_id: memberId });
-                }
-                setSelectedChannelId(ch.id);
-                // Below `lg` the list and the thread are never both on screen,
-                // so picking has to navigate. Inert at `lg` and up.
-                setNarrowPane("thread");
-                // Deliberately leaves any pending jump target alone - it is
-                // gated on its own channel and will resolve if the member
-                // returns. Only the notice is channel-scoped for display.
-                setUnreachableTarget(null);
-              }}
-            />
-          ) : null}
-        </div>
-      </section>
+      {channelsInNav && navFace?.channelsSlot
+        ? createPortal(
+            <section
+              aria-label="Channels"
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              {channelsPaneBody}
+            </section>,
+            navFace.channelsSlot,
+          )
+        : null}
+      {channelsInNav ? null : (
+        <section
+          aria-label="Channels"
+          className={cn(
+            "flex min-h-0 flex-col border-r border-border bg-surface-1",
+            // Full width below `lg`, where it is the only column on screen.
+            "w-full lg:w-60 lg:shrink-0",
+            narrowPane === "thread" && "max-lg:hidden",
+            // Inside the shell the column is the shell's from `lg` up; until
+            // the client knows its width, this copy stays out of the way and
+            // the shell's placeholder holds the column.
+            navFace && "lg:hidden",
+          )}
+        >
+          {channelsPaneBody}
+        </section>
+      )}
 
       {/*
         The thread column is the app floor (s05); the cards posted into it are
