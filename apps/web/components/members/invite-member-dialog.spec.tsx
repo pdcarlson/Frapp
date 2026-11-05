@@ -392,10 +392,17 @@ describe("InviteMemberDialog copy payload", () => {
 
   it("copies a /join?token= URL with role and expiry, not a bare code", async () => {
     await openDialog();
-    const copyButton = screen.getAllByRole("button", { name: /copy link/i })[0];
+    // Icon-only (components.md § Icon-only actions): the label names the
+    // invite by its token's tail, and no word is drawn beside the glyph.
+    const copyButton = screen.getAllByRole("button", {
+      name: /^copy the .* invite link ending C123$/i,
+    })[0];
     if (!copyButton) {
-      throw new Error("expected a Copy link button on an active invite");
+      throw new Error("expected a copy-link button on an active invite");
     }
+    expect(copyButton.textContent).toBe("");
+    expect(revoke().textContent).toBe("");
+    expect(revoke()).toHaveAccessibleName(/ending C123$/);
     await userEvent.click(copyButton);
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
