@@ -2,8 +2,10 @@
  * Signet duotone glyphs for the Profile & pre-auth family — `/profile`, the
  * onboarding wizard and tutorial, and the four pre-auth routes.
  *
- * Recipe and the shared `Svg` / `stroke` / `detail` / `fillProps` primitives:
- * `components/ui/duotone.tsx` (`spec/ui/design-system/iconography.md` §1). The
+ * `ProfileGlyph` and the re-exports draw the shared two-tone set
+ * (`@repo/theme/nav-glyphs`, `spec/ui/design-system/iconography.md` §1.1);
+ * `LinkGlyph` keeps the stroke recipe in `components/ui/duotone.tsx` (§1),
+ * because a filled silhouette breaks a chain link. The
  * intent → glyph map lives in `iconography.md` §6.2.7 and MUST be updated in
  * the same PR as any change here (§6.3).
  *
@@ -40,8 +42,10 @@
  * is literally a welcome to Frapp.
  */
 
-import { Svg, detail, fillProps, stroke } from "@/components/ui/duotone";
+import { Svg, detail } from "@/components/ui/duotone";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
+import { NavGlyph } from "@/components/layout/nav-glyphs";
 
 export {
   BackworkGlyph,
@@ -62,22 +66,13 @@ export type ProfileGlyphProps = DuotoneGlyphProps;
  * tutorial's profile slide both reached for Lucide. The shell has no profile
  * nav intent to re-export because Profile left the sidebar for the account menu
  * in the Wave 0 restructure (`spec/ui/web-dashboard/README.md`), and neither
- * neighbour is this intent: `DirectoryGlyph` is **two** people (the chapter's
- * roster) and `InviteGlyph` is a person **plus a mark** (the act of inviting).
- * One person, no mark, is the third thing.
- *
- * The head shares `DirectoryGlyph`'s radius and the shoulder arc its curvature,
- * so a member reads the directory and their own row as the same person drawn
- * once and counted differently — the same relationship `InviteGlyph` already
- * keeps with it. Head is the silhouette, shoulders are detail.
+ * neighbour is this intent: `DirectoryGlyph` is a group (the chapter's roster)
+ * and `InviteGlyph` is a person **plus a mark** (the act of inviting). One
+ * person, no mark, is the third thing: Phosphor `user`, from the same shared
+ * two-tone set (`@repo/theme/nav-glyphs`) as both neighbours.
  */
-export function ProfileGlyph({ className, active }: ProfileGlyphProps) {
-  return (
-    <Svg className={className}>
-      <circle cx="12" cy="8.8" r="3.4" {...stroke} {...fillProps(active)} />
-      <path d="M5.4 19.2c.9-3.2 3.4-4.8 6.6-4.8s5.7 1.6 6.6 4.8" {...detail} />
-    </Svg>
-  );
+export function ProfileGlyph(props: ProfileGlyphProps) {
+  return <NavGlyph paths={NAV_GLYPHS.profile} {...props} />;
 }
 
 /**

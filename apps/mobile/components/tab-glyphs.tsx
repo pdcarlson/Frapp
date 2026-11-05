@@ -1,6 +1,6 @@
 import { Text, type ColorValue } from "react-native";
 import Svg from "react-native-svg";
-import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
+import { NAV_GLYPHS, type NavGlyphName } from "@repo/theme/nav-glyphs";
 import { NavGlyph } from "@/components/nav-glyph";
 import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -66,7 +66,7 @@ export type TabGlyphProps = {
    */
   muted: string;
   /**
-   * Drawn size in points; the 24-unit grid scales with it. The tab bar uses
+   * Drawn size in points; the glyph's grid scales with it. The tab bar uses
    * the default {@link TAB_GLYPH_SIZE}. A chat card's eyebrow draws the same
    * glyph at 16, as web's card eyebrow does, so the card and the tab it
    * belongs to share one silhouette. Chat home's UP NEXT rows draw it at 20,
@@ -107,17 +107,18 @@ export function GlyphFrame({
 }
 
 /**
- * The four tab glyphs draw the shared nav set (`@repo/theme/nav-glyphs`), the
- * same shapes as the web sidebar and the More hub. `focused` picks the hue and
+ * Any glyph of the shared nav set (`@repo/theme/nav-glyphs`) in the tab bar's
+ * props: the four tabs below, and the chat card eyebrows that are nav-set
+ * shapes (`components/chat/card-glyphs.tsx`). `focused` picks the hue and
  * lifts the silhouette; it never swaps the shape.
  */
-function TabGlyph({
+export function TabGlyph({
   name,
   focused,
   accent,
   muted,
   size = TAB_GLYPH_SIZE,
-}: TabGlyphProps & { name: "chat" | "events" | "tasks" | "more" }) {
+}: TabGlyphProps & { name: NavGlyphName }) {
   return (
     <NavGlyph
       paths={NAV_GLYPHS[name]}

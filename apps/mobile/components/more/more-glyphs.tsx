@@ -19,9 +19,8 @@ import { tint } from "@/lib/theme";
  *
  * `paint`, `Frame` and `STROKE_WIDTH` are the older stroke recipe (a 1.6px
  * stroke on a 24px grid, silhouette at 16% of the hue or 6% white when
- * neutral). The bell and the glyphs built on `paint` elsewhere
- * (`components/search-glyph.tsx`, `documents/document-glyphs.tsx`) still draw
- * in it.
+ * neutral). The bell and `components/search-glyph.tsx` still draw in it, and
+ * `documents/document-glyphs.tsx` borrows its `STROKE_WIDTH`.
  */
 
 export const MORE_GLYPH_SIZE = 20;
@@ -43,9 +42,8 @@ export type MoreGlyphProps = {
   /** `true` draws §1's neutral fill rather than the stroke hue's tint. */
   neutral?: boolean;
   /**
-   * Another §2 size, for a glyph drawn outside the hub. `DocumentsGlyph`
-   * takes one for s21's file card (24), and `ServiceGlyph` for the chat hours
-   * card's eyebrow (16).
+   * Another §2 size, for a stroke-recipe glyph drawn outside the hub, such
+   * as `components/search-glyph.tsx`.
    */
   size?: number;
 };
@@ -121,7 +119,10 @@ export function NotificationsGlyph(props: MoreGlyphProps) {
  */
 export type HubGlyphProps = {
   color: string;
-  /** Another §2 size, for a glyph drawn outside the hub. */
+  /**
+   * Another §2 size, for a glyph drawn outside the hub: `DocumentsGlyph`
+   * takes 24 on s21's file card.
+   */
   size?: number;
 };
 
@@ -137,7 +138,6 @@ export function StudyGlyph(props: HubGlyphProps) {
   return <HubGlyph name="study" {...props} />;
 }
 
-/** Also the chat hours card's eyebrow (16). */
 export function ServiceGlyph(props: HubGlyphProps) {
   return <HubGlyph name="service" {...props} />;
 }

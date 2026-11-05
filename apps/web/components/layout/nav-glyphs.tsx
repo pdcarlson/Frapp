@@ -1,7 +1,7 @@
 /**
  * Glyphs for the dashboard shell: sidebar nav and top-bar controls.
  *
- * The sidebar glyphs (and the Settings rail's Roles, Study zones and Reports)
+ * The sidebar glyphs (and Roles, Study zones and Reports, used in-screen)
  * draw the shared nav set in `@repo/theme/nav-glyphs`, the same shapes the
  * mobile tab bar and More hub draw, so one destination has one silhouette on
  * both surfaces. That set is two-tone: a silhouette at 20% of the glyph's hue
@@ -10,8 +10,11 @@
  * 1.6px-stroke set, whose 6% white fill disappeared on charcoal and left the
  * nav reading as plain outlines.
  *
- * The top-bar controls (search, notifications, menu) still use the stroke
- * recipe in `components/ui/duotone.tsx`, as do the in-screen glyph families.
+ * The in-screen glyph families re-export these components, so a destination
+ * draws this set inside its screens too; the few in-screen glyphs drawn beside
+ * them (folder, schedule, invite, profile) render through {@link NavGlyph}.
+ * The top-bar controls (search, notifications, menu) and the rest of the
+ * in-screen glyphs still use the stroke recipe in `components/ui/duotone.tsx`.
  * The intent → glyph map lives in `iconography.md` §6.2 and MUST be updated in
  * the same PR as any change here.
  */
@@ -43,7 +46,7 @@ export type NavGlyphComponent = DuotoneGlyphComponent;
  * `currentColor`, so the row's text color (muted, or the accent when active)
  * paints the glyph.
  */
-function NavGlyph({
+export function NavGlyph({
   paths,
   className,
   active,

@@ -1,12 +1,9 @@
 import { Path } from "react-native-svg";
-import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
-import { ServiceGlyph } from "@/components/more/more-glyphs";
-import { NavGlyph } from "@/components/nav-glyph";
 import {
   GlyphFrame,
   glyphPaint,
   STROKE_WIDTH,
-  TAB_GLYPH_SIZE,
+  TabGlyph,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
 
@@ -21,23 +18,15 @@ import {
  * `CardEyebrow` draws: the primary silhouette carries the stroke's own hue at
  * low opacity, and the detail strokes stay stroke-only.
  *
- * Points draws the shared nav set's trophy (iconography.md §1.1) like web's
- * card; the others below keep the stroke recipe. The event and task cards draw
- * the Events and Tasks tab glyphs themselves.
- * The hours card's hand-heart is the More hub's `ServiceGlyph`, adapted below
- * rather than drawn a second time.
+ * Points and Service hours draw the shared nav set (iconography.md §1.1)
+ * through `TabGlyph`, like web's cards; the others below keep the stroke
+ * recipe. The event and task cards draw the Events and Tasks tab glyphs
+ * themselves.
  */
 
 /** Points: the nav set's trophy, as the web sidebar and web's card draw it. */
-export function PointsGlyph({ focused, accent, muted, size }: TabGlyphProps) {
-  return (
-    <NavGlyph
-      paths={NAV_GLYPHS.points}
-      color={focused ? accent : muted}
-      active={focused}
-      size={size ?? TAB_GLYPH_SIZE}
-    />
-  );
+export function PointsGlyph(props: TabGlyphProps) {
+  return <TabGlyph name="points" {...props} />;
 }
 
 /** Announcement — the megaphone, its sound arc stroke-only. */
@@ -112,9 +101,7 @@ export function AuditGlyph(props: TabGlyphProps) {
   );
 }
 
-/** Service hours: the More hub's hand-heart, in the eyebrow's props. */
-export function ServiceHoursGlyph({ focused, accent, muted, size }: TabGlyphProps) {
-  return (
-    <ServiceGlyph color={focused ? accent : muted} size={size} />
-  );
+/** Service hours: the nav set's hand-heart, as the More hub draws it. */
+export function ServiceHoursGlyph(props: TabGlyphProps) {
+  return <TabGlyph name="service" {...props} />;
 }
