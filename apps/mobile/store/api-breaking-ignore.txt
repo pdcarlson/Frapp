@@ -6,9 +6,10 @@
 # comment line above the entry. Format, and when an entry may go:
 # apps/mobile/store/README.md, section "Shipped builds and the API contract".
 
-# #3485 limits role `color` to the palette. Only the web Roles page writes roles: at the shipped
-# android 0.9.0+2 SHA, `git grep 'useCreateRole\|useUpdateRole' ea9bc12c -- apps/mobile` finds no
-# caller, so the binary never sends POST /v1/roles or PATCH /v1/roles/{id} (the hooks it bundles
-# from packages/hooks define them, unused).
+# #3485 limits role `color` to the palette. Only the web Roles page writes roles: at both shipped
+# SHAs (android 0.9.0+2 at ea9bc12c; ios 0.9.1+8 and android 0.9.1+3 at cca52dec),
+# `git grep 'useCreateRole\|useUpdateRole' <sha> -- apps/mobile` finds no caller,
+# so the binaries never send POST /v1/roles or PATCH /v1/roles/{id} (the hooks they bundle from
+# packages/hooks define them, unused).
 POST /v1/roles request property 'color' was restricted to a list of enum values
 PATCH /v1/roles/{id} request property 'color' was restricted to a list of enum values
