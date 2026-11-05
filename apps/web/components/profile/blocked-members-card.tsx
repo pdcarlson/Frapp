@@ -23,14 +23,9 @@ import {
   NestedError,
   NestedLoading,
 } from "@/components/shared/nested-states";
+import { ProfileSection } from "@/components/profile/profile-section";
+import { denseListClassName } from "@/components/shared/table-controls";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 
 /**
  * The empty state's body, web's own: web offers no Block, so it says where a
@@ -95,11 +90,16 @@ export function BlockedMembersCard() {
       />
     );
   } else if (rows.length === 0) {
+    // Two lines rather than the nested empty tile: the section label already
+    // names the list, and a tile with a glyph is a lot of furniture for
+    // "nobody". The words are the approved ones, unchanged.
     body = (
-      <NestedEmpty
-        title={BLOCKED_MEMBERS_EMPTY_TITLE}
-        description={BLOCKED_MEMBERS_EMPTY_BODY_WEB}
-      />
+      <div className="space-y-1">
+        <p className="text-sm font-semibold">{BLOCKED_MEMBERS_EMPTY_TITLE}</p>
+        <p className="text-sm text-muted-foreground">
+          {BLOCKED_MEMBERS_EMPTY_BODY_WEB}
+        </p>
+      </div>
     );
   } else {
     body = (
@@ -112,7 +112,7 @@ export function BlockedMembersCard() {
             ) : (
               <Button
                 variant="secondary"
-                size="sm"
+                size="toolbar"
                 aria-label="Retry loading your blocked members"
                 disabled={blockList.isRetrying}
                 onClick={blockList.retry}
@@ -122,18 +122,18 @@ export function BlockedMembersCard() {
             )}
           </div>
         ) : null}
-        <ul className="divide-y divide-border rounded-lg border border-border">
+        <ul className={denseListClassName}>
           {rows.map((row) => (
             <li
               key={row.userId}
-              className="flex items-center justify-between gap-4 px-4 py-3"
+              className="flex items-center justify-between gap-4 py-3"
             >
               <span className="min-w-0 truncate text-sm font-medium">
                 {row.label}
               </span>
               <Button
                 variant="secondary"
-                size="sm"
+                size="toolbar"
                 aria-label={`Unblock ${row.label}`}
                 disabled={isPending}
                 onClick={() => void requestUnblock(row.userId, row.name)}
@@ -148,13 +148,13 @@ export function BlockedMembersCard() {
   }
 
   return (
-    <Card id="blocked-members" className="scroll-mt-16">
-      <CardHeader>
-        <CardTitle>{BLOCKED_MEMBERS_TITLE}</CardTitle>
-        <CardDescription>{BLOCKED_MEMBERS_SCOPE}</CardDescription>
-      </CardHeader>
-      <CardContent>{body}</CardContent>
+    <ProfileSection
+      id="blocked-members"
+      title={BLOCKED_MEMBERS_TITLE}
+      hint={BLOCKED_MEMBERS_SCOPE}
+    >
+      {body}
       {confirmDialog}
-    </Card>
+    </ProfileSection>
   );
 }

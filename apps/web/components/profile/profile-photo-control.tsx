@@ -136,7 +136,7 @@ export function ProfilePhotoControl({
       <Button
         type="button"
         variant="secondary"
-        size="sm"
+        size="toolbar"
         disabled={uploadBlocked}
         onClick={() => inputRef.current?.click()}
       >
@@ -148,8 +148,8 @@ export function ProfilePhotoControl({
       {hasPhoto ? (
         <Button
           type="button"
-          variant="ghost"
-          size="sm"
+          variant="quiet"
+          size="toolbar"
           disabled={disabled || busy !== null}
           onClick={() => void handleRemove()}
         >

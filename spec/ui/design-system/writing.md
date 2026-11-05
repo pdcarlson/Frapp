@@ -861,13 +861,13 @@ Rewritten by the same lane and on the same rule as the Members table above; the 
 | Loading | — | `Loading your profile...` |
 | Error | `Couldn't load your profile` | `Sign in succeeded but we couldn't reach the API. Retry in a moment.` |
 | Offline | `Your profile is unavailable offline` | `Reconnect to load your directory entry and notification preferences.` |
-| Preferences card — loading | — | `Loading your preferences...` |
-| Preferences card — error | `Couldn't load your preferences` | `Quiet hours couldn't be read, so saving them would overwrite what's stored. Retry in a moment.` |
-| Preferences card — offline | `Quiet hours unavailable offline` | `Reconnect to load and change when notifications are silenced.` |
+| Quiet hours section — loading | — | `Loading your preferences...` |
+| Quiet hours section — error | `Couldn't load your preferences` | `Quiet hours couldn't be read, so saving them would overwrite what's stored. Retry in a moment.` |
+| Quiet hours section — offline | `Quiet hours unavailable offline` | `Reconnect to load and change when notifications are silenced.` |
 
 **There is deliberately no Empty row**, and saying so is the point of the line: the viewer always exists, so `/profile` has no empty branch to write. The Resources & Reporting slice's rule is about states that exist and were never written down, not a mandate to invent one — without this sentence the next reader "completes" the table with copy no code can reach.
 
-The Preferences card is a **second query** on the same screen (`GET /v1/settings` beside `GET /v1/users/me`), which is why it has its own three rows rather than borrowing the screen's. It had no states at all until the Profile & pre-auth slice, so a failed fetch rendered empty fields beside a live Save button that then reported success.
+The Quiet hours section (the Preferences card until 2026-11-05) is a **second query** on the same screen (`GET /v1/settings` beside `GET /v1/users/me`), which is why it has its own three rows rather than borrowing the screen's. It had no states at all until the Profile & pre-auth slice, so a failed fetch rendered empty fields beside a live Save button that then reported success.
 
 ### Sign in (pre-auth)
 
