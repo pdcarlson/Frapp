@@ -567,10 +567,13 @@ describe('InviteService', () => {
       created_at: '2024-01-01',
       ...overrides,
     });
-    const chapter = (branding: Record<string, unknown>): Chapter =>
+    const chapter = (
+      branding: Record<string, unknown>,
+      name = 'FIJI Tau Nu',
+    ): Chapter =>
       ({
         id: 'ch-1',
-        name: 'FIJI Tau Nu',
+        name,
         university: 'Rensselaer Polytechnic Institute',
         accent_color: '#5b2c83',
         branding,
@@ -611,12 +614,41 @@ describe('InviteService', () => {
     });
 
     it('never sends letters a chapter hides', async () => {
+      // A name no letter-hiding organization matches, so only the chapter's
+      // own stored switch can keep the letters off (the default name is a
+      // FIJI chapter, which the org override would hide anyway).
       mockChapterRepo.findById.mockResolvedValue(
-        chapter({ greek_letters: 'ΦΓΔ', show_greek_letters: false }),
+        chapter({ greek_letters: 'ΦΓΔ', show_greek_letters: false }, 'Tau Nu'),
       );
       const preview = await service.preview('preview-token');
       expect(preview.mark_text).toBeNull();
       expect(JSON.stringify(preview)).not.toContain('ΦΓΔ');
+    });
+
+    // Any character in the Greek and Coptic block or Greek Extended.
+    const GREEK = /[\u0370-\u03FF\u1F00-\u1FFF]/u;
+
+    it.each(['Phi Gamma Delta Tau Nu', 'Phi Gamma Delta', 'FIJI'])(
+      'never sends the letters of an organization that hides them, with no switch stored (%s, #3421)',
+      async (name) => {
+        // A chapter created before FIJI's profile turned letters off stores
+        // them with no switch, which on its own means shown.
+        mockChapterRepo.findById.mockResolvedValue(
+          chapter({ greek_letters: 'ΦΓΔ' }, name),
+        );
+        const preview = await service.preview('preview-token');
+        expect(preview.mark_text).toBeNull();
+        expect(JSON.stringify(preview)).not.toMatch(GREEK);
+      },
+    );
+
+    it('still sends the letters of an organization that shows them', async () => {
+      mockChapterRepo.findById.mockResolvedValue(
+        chapter({ greek_letters: 'ΣΦΕ' }, 'Sigma Phi Epsilon California Eta'),
+      );
+      const preview = await service.preview('preview-token');
+      expect(preview.mark_text).toBe('ΣΦΕ');
+      expect(preview.mark_text).toMatch(GREEK);
     });
 
     it('names no role when the redeem would grant none', async () => {
