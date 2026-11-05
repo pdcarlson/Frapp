@@ -754,10 +754,10 @@ function createStyles(tokens: SignetTokens) {
       paddingRight: tokens.spacing.md,
     },
     quietHoursCard: {
-      borderRadius: tokens.radius.cardLarge,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
       gap: tokens.spacing.md,
     },

@@ -650,7 +650,11 @@ export function EventsPage() {
                       </span>
                       {isMandatory || cadence || isTargeted ? (
                         <span className="flex shrink-0 flex-wrap items-center gap-1.5">
-                          {isMandatory ? <Badge>Mandatory</Badge> : null}
+                          {isMandatory ? (
+                            // Danger, as the board draws s06/s07 and mobile
+                            // renders it: a status is never the accent (§5).
+                            <Badge variant="destructive">Mandatory</Badge>
+                          ) : null}
                           {cadence ? (
                             <Badge variant="outline" className="gap-1">
                               <EventsGlyph className="h-3.5 w-3.5" />

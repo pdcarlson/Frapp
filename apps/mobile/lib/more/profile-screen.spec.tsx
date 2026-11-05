@@ -223,7 +223,7 @@ describe("Profile stat cards and Details", () => {
         (node.type as unknown) === "Text" && node.props.children === "points",
     );
     const card = Object.assign({}, ...[label.parent!.props.style].flat());
-    expect(card.backgroundColor).toBe(signetDarkTokens.color.surface.surface1);
+    expect(card.backgroundColor).toBe(signetDarkTokens.color.surface.card);
     tree.unmount();
   });
 

@@ -399,11 +399,11 @@ describe("getSignetCssVars", () => {
    * `apps/mobile` reads — 63 files import it — and shipping one there would
    * claim a mobile treatment that no mobile screen implements.
    *
-   * The first two are AA text lifts of a semantic hue (§5), not semantics of
-   * their own: the solid token stays the fill and the border, and only the
-   * *text* tone moves. `--destructive-text` predates this list and was already
-   * CSS-only for the same reason; `--info-text` joined it when the greenfield
-   * ladder pushed solid `--info` under the gate.
+   * `--info-text` is an AA text lift of a semantic hue (§5), not a semantic
+   * of its own: the solid token stays the fill and the border, and only the
+   * *text* tone moves. `--destructive-text` sat here too until 2026-11-05, when
+   * mobile's StatusChip started drawing danger text in it, so it now ships in
+   * `signetDarkTokens` and is emitted like any other semantic.
    *
    * The mention-chip pair is here for the mobile half of that reason only — it
    * is **not** a lift. It is a second fixed semantic family (§5's table, and
@@ -414,7 +414,6 @@ describe("getSignetCssVars", () => {
    * list for tokens that were forgotten.
    */
   const CSS_ONLY = [
-    "--destructive-text",
     "--info-text",
     "--mention-chip",
     "--mention-chip-text",

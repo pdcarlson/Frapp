@@ -13,9 +13,9 @@ import { tint } from "@/lib/theme";
  * the web sidebar (`spec/ui/design-system/iconography.md` §6.2). They render at
  * 20px, §2's size for a list row's leading icon.
  *
- * Color is a prop, never baked. Member rows are painted in the chapter accent,
- * which is house gold only for a chapter without a served palette; Admin rows
- * in `text.muted`.
+ * Color is a prop, never baked. Every hub row passes `text.mutedForeground`,
+ * the rest hue the web sidebar's glyphs take (iconography.md §1: the accent is
+ * the active state, and a hub row is never active).
  *
  * `paint`, `Frame` and `STROKE_WIDTH` are the older stroke recipe (a 1.6px
  * stroke on a 24px grid, silhouette at 16% of the hue or 6% white when

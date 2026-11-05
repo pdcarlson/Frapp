@@ -45,9 +45,17 @@ export interface TaskRowProps {
    * it dims and reads busy whichever branch it takes.
    */
   isPending?: boolean;
+  /** The first row of its group draws no hairline above it. */
+  isFirst?: boolean;
 }
 
-export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps) {
+export function TaskRow({
+  row,
+  now,
+  onToggle,
+  isPending = false,
+  isFirst = false,
+}: TaskRowProps) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
@@ -113,6 +121,7 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
   // second so it wins if the optimistic write lands mid-sequence.
   const rowStyle = [
     styles.row,
+    isFirst ? null : styles.rowDivider,
     isPending ? styles.rowPending : null,
     row.isDone ? styles.rowDone : null,
   ];
@@ -137,10 +146,8 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
     );
   }
 
-  // The row is a card, so its iOS lift is to the popover step (`onCard`).
   return (
     <PressableRow
-      onCard
       accessibilityRole="checkbox"
       accessibilityState={{ checked: row.isDone, busy: isPending }}
       accessibilityLabel={`${row.title}${subtitle ? `, ${subtitle}` : ""}`}
@@ -164,13 +171,14 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.md,
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      // Flush on the floor, as web lists sit (owner pick 2026-11-05). It was a
+      // bordered card per task, which stacked eight boxes down the tab.
       paddingVertical: tokens.spacing.md,
-      paddingHorizontal: tokens.spacing.lg,
       minHeight: tokens.touch.minimum,
+    },
+    rowDivider: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: tokens.color.border.hairline,
     },
     rowDone: {
       // The drawn `opacity:.62`. A raw number because no token carries a

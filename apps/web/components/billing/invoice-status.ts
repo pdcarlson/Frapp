@@ -42,7 +42,9 @@ export function invoiceStatusKind(
     case "OPEN":
       return "warning";
     case "VOID":
-      return "destructive";
+      // Cancelled, not failed: nothing is owed, so it reads as quiet metadata
+      // rather than danger, as mobile's dues history draws it.
+      return "outline";
     default:
       return "outline";
   }

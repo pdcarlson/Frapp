@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useActiveChapterId, useEvents, useNowDate } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { PressableRow } from "@/components/list-section";
+import { PressableRow, SectionHeader } from "@/components/list-section";
 import { ScreenShell } from "@/components/screen-shell";
 import {
   EmptyState,
@@ -99,14 +99,38 @@ export default function EventsScreen() {
       );
     }
 
-    return events.map((event) => (
-      <EventRowCard
-        key={event.id}
-        event={event}
-        now={now}
-        onPress={() => openEvent(event.id)}
-      />
-    ));
+    // The next event is the one card on the page; everything after it is a
+    // flush row, grouped into this week and later, as web's Events list draws
+    // its rows (owner pick 2026-11-05, `spec/ui/mobile/screens.md` s06).
+    const [next, ...rest] = events;
+    const { thisWeek, later } = groupByWeek(rest, now);
+
+    return (
+      <>
+        <EventRowCard
+          key={next.id}
+          event={next}
+          now={now}
+          onPress={() => openEvent(next.id)}
+        />
+        {thisWeek.length > 0 ? (
+          <EventGroup
+            label="This week"
+            events={thisWeek}
+            now={now}
+            onOpen={openEvent}
+          />
+        ) : null}
+        {later.length > 0 ? (
+          <EventGroup
+            label="Later"
+            events={later}
+            now={now}
+            onOpen={openEvent}
+          />
+        ) : null}
+      </>
+    );
   }
 
   return (
@@ -196,6 +220,113 @@ function EventRowCard({
   );
 }
 
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Splits the rows after the card into the coming seven days and the rest. */
+export function groupByWeek(
+  events: EventRow[],
+  now: Date,
+): { thisWeek: EventRow[]; later: EventRow[] } {
+  const horizon = now.getTime() + WEEK_MS;
+  const thisWeek: EventRow[] = [];
+  const later: EventRow[] = [];
+  for (const event of events) {
+    (Date.parse(event.start_time) < horizon ? thisWeek : later).push(event);
+  }
+  return { thisWeek, later };
+}
+
+function EventGroup({
+  label,
+  events,
+  now,
+  onOpen,
+}: {
+  label: string;
+  events: EventRow[];
+  now: Date;
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <View>
+      <SectionHeader>{label}</SectionHeader>
+      {events.map((event, index) => (
+        <EventRowFlat
+          key={event.id}
+          event={event}
+          now={now}
+          isFirst={index === 0}
+          onPress={() => onOpen(event.id)}
+        />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * An event after the first: the same date block and name as the card, on the
+ * floor with a hairline between rows. Points move into the meta line, as web
+ * writes them ("7:00 PM · Great Room · 10 pts"), and Mandatory sits at the
+ * row's end, so a row is one line of chips at most.
+ */
+function EventRowFlat({
+  event,
+  now,
+  isFirst,
+  onPress,
+}: {
+  event: EventRow;
+  now: Date;
+  isFirst: boolean;
+  onPress: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens, accent);
+  const date = formatEventDateBlock(event.start_time, now);
+  const meta = [
+    date?.clock,
+    event.location,
+    event.point_value ? `${event.point_value} pts` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const isOpen =
+    resolveCheckInWindow(event.start_time, event.end_time, now).state ===
+    "open";
+
+  return (
+    <PressableRow
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${event.name}`}
+      accessibilityHint="View event details and check in."
+      onPress={onPress}
+      style={[styles.flatRow, isFirst ? null : styles.flatDivider]}
+    >
+      {date ? (
+        <View style={styles.dateBlock}>
+          <Text style={styles.dateLabel}>{date.label}</Text>
+          <Text style={styles.flatDay}>{date.day}</Text>
+        </View>
+      ) : null}
+      <View style={styles.body}>
+        <Text numberOfLines={1} style={styles.flatTitle}>
+          {event.name}
+        </Text>
+        {meta ? (
+          <Text numberOfLines={1} style={styles.meta}>
+            {meta}
+          </Text>
+        ) : null}
+        {isOpen ? <Text style={styles.openNow}>Check-in is open</Text> : null}
+      </View>
+      {event.is_mandatory ? (
+        <StatusChip label="Mandatory" hue={tokens.color.semantic.destructive} />
+      ) : null}
+    </PressableRow>
+  );
+}
+
 function createStyles(tokens: SignetTokens, accent: string) {
   return StyleSheet.create({
     card: {
@@ -206,6 +337,29 @@ function createStyles(tokens: SignetTokens, accent: string) {
       borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
+    },
+    flatRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
+      paddingVertical: tokens.spacing.md,
+    },
+    flatDivider: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: tokens.color.border.hairline,
+    },
+    flatDay: {
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.foreground,
+    },
+    flatTitle: {
+      ...typeRole(tokens.typography.role.body),
+      fontFamily: typeRole({
+        ...tokens.typography.role.body,
+        weight: tokens.typography.weight.semibold,
+      }).fontFamily,
+      color: tokens.color.text.foreground,
     },
     dateBlock: {
       // 52 as drawn. No spacing token sits near it, and the column has to

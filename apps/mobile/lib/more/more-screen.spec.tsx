@@ -231,16 +231,14 @@ describe("More hub anatomy (#1048)", () => {
       ...[card.props.style({ pressed: false })].flat(Infinity),
     ) as Record<string, unknown>;
 
-    expect(resting.backgroundColor).toBe(
-      signetDarkTokens.color.surface.surface1,
-    );
+    expect(resting.backgroundColor).toBe(signetDarkTokens.color.surface.card);
     expect(card.props.android_ripple?.color).toMatch(/^rgba\(/);
     // The suite's react-native stub runs as iOS.
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
     expect(held).not.toHaveProperty("opacity");
     // The ripple is rounded by a parent clip with the card's radius
     // (`PressableRow`); the card's own `overflow` would leave it square.
-    expectRoundedRipple(card, signetDarkTokens.radius.cardLarge);
+    expectRoundedRipple(card, signetDarkTokens.radius.card);
     // The chevron is `ListRow`'s, at the label role's size.
     const chevron = card.find(
       (node) =>
@@ -287,7 +285,9 @@ describe("More hub anatomy (#1048)", () => {
     ]);
   });
 
-  it("draws a leading glyph on every row: the chapter accent for members, neutral for Admin", () => {
+  it("draws a leading glyph on every row in the rest hue, never the accent", () => {
+    // iconography.md §1: the accent is the active state, and a hub row is
+    // never active, so every row takes the hue the web sidebar's glyphs rest in.
     permissions = ["events:update"];
     const rows = render().root.findAllByType(ListRow);
     for (const row of rows) {
@@ -295,11 +295,9 @@ describe("More hub anatomy (#1048)", () => {
         color: string;
       }>;
       expect(glyph, row.props.label).toBeTruthy();
-      if (row.props.label === "Host check-in") {
-        expect(glyph.props.color).not.toBe("#7FB2FF");
-      } else {
-        expect(glyph.props.color, row.props.label).toBe("#7FB2FF");
-      }
+      expect(glyph.props.color, row.props.label).toBe(
+        signetDarkTokens.color.text.mutedForeground,
+      );
     }
   });
 

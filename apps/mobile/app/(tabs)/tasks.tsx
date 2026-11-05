@@ -199,7 +199,7 @@ export default function TasksScreen() {
 
   const renderRows = useCallback(
     (rows: TaskRowModel[]) =>
-      rows.map((row) => {
+      rows.map((row, index) => {
         const busy = pendingId === row.id;
         const pressable =
           !busy &&
@@ -211,6 +211,7 @@ export default function TasksScreen() {
             row={row}
             now={now}
             isPending={busy}
+            isFirst={index === 0}
             // Dropped, not disabled-in-place, while the sequence runs: the row
             // is mid-ladder, so a second tap would race the compare-and-set.
             onToggle={pressable ? () => void toggle(row) : undefined}
@@ -280,14 +281,14 @@ export default function TasksScreen() {
         {board.dueThisWeek.length > 0 ? (
           <>
             <SectionHeader>DUE THIS WEEK</SectionHeader>
-            <View style={styles.rows}>{renderRows(board.dueThisWeek)}</View>
+            <View>{renderRows(board.dueThisWeek)}</View>
           </>
         ) : null}
 
         {board.later.length > 0 ? (
           <>
             <SectionHeader>LATER</SectionHeader>
-            <View style={styles.rows}>{renderRows(board.later)}</View>
+            <View>{renderRows(board.later)}</View>
           </>
         ) : null}
       </>
@@ -338,9 +339,6 @@ export default function TasksScreen() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    rows: {
-      gap: tokens.spacing.sm,
-    },
     notice: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,

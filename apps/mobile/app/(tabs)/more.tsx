@@ -95,6 +95,11 @@ export default function MoreScreen() {
   const { tokens } = useFrappTheme();
   const { accent, chapterName } = useChapterBranding();
   const styles = createStyles(tokens);
+  // Hub row glyphs take the rest hue, as the web sidebar's do: the accent is
+  // the active state (iconography.md §1), and seven accent glyphs down one
+  // column were the loudest thing on the screen. Admin rows used `text.muted`
+  // and member rows the accent until 2026-11-05; both now read alike.
+  const rowGlyph = tokens.color.text.mutedForeground;
 
   // Both reads are shared with s15 (Profile), so opening More warms them.
   const userQuery = useCurrentUser();
@@ -175,20 +180,20 @@ export default function MoreScreen() {
       <ListSection>
         <ListRow
           label="Study hours"
-          leading={<StudyGlyph color={accent} />}
+          leading={<StudyGlyph color={rowGlyph} />}
           value={studyThisWeek}
           accessibilityHint="Opens study hours and session tracking."
           onPress={() => router.push("/study")}
         />
         <ListRow
           label="Service hours"
-          leading={<ServiceGlyph color={accent} />}
+          leading={<ServiceGlyph color={rowGlyph} />}
           accessibilityHint="Opens your logged service hours."
           onPress={() => router.push("/service-hours")}
         />
         <ListRow
           label="Dues"
-          leading={<DuesGlyph color={accent} />}
+          leading={<DuesGlyph color={rowGlyph} />}
           accessibilityHint="Opens your dues and payment history."
           accessibilityValue={duesDue?.label}
           trailing={
@@ -210,13 +215,13 @@ export default function MoreScreen() {
         />
         <ListRow
           label="Documents"
-          leading={<DocumentsGlyph color={accent} />}
+          leading={<DocumentsGlyph color={rowGlyph} />}
           accessibilityHint="Opens the chapter's documents."
           onPress={() => router.push("/documents")}
         />
         <ListRow
           label="Directory"
-          leading={<DirectoryGlyph color={accent} />}
+          leading={<DirectoryGlyph color={rowGlyph} />}
           accessibilityHint="Opens the member directory."
           onPress={() => router.push("/directory")}
         />
@@ -225,21 +230,21 @@ export default function MoreScreen() {
       <ListSection>
         <ListRow
           label="Settings"
-          leading={<SettingsGlyph color={accent} />}
+          leading={<SettingsGlyph color={rowGlyph} />}
           accessibilityHint="Opens notifications, quiet hours and your account."
           onPress={() => router.push("/preferences")}
         />
         {hasNoChapters ? (
           <ListRow
             label="Create a chapter"
-            leading={<ChapterGlyph color={accent} />}
+            leading={<ChapterGlyph color={rowGlyph} />}
             accessibilityHint="Opens the chapter setup wizard."
             onPress={() => router.push("/(auth)/create-chapter")}
           />
         ) : (
           <ListRow
             label="Switch chapter"
-            leading={<ChapterGlyph color={accent} />}
+            leading={<ChapterGlyph color={rowGlyph} />}
             value={chapterName}
             accessibilityHint="Opens the list of chapters you belong to."
             onPress={() =>
@@ -263,7 +268,7 @@ export default function MoreScreen() {
             <ListRow
               label="Host check-in"
               leading={
-                <HostCheckInGlyph color={tokens.color.text.muted} />
+                <HostCheckInGlyph color={rowGlyph} />
               }
               accessibilityValue={
                 nextEvent ? nextEvent.name : "No upcoming event"
