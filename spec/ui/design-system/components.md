@@ -148,6 +148,8 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 The Field step: 40px to a fine pointer and 44px on touch, padding-x 12 at both, radius 12 (corrected 2026-11-05 from 48px and padding-x 14 everywhere, with §3's button heights, for the same reason). A multi-line field (`Textarea`) takes the same padding and grows. A web sheet's fields sit one step down, at Small. The value stays 16px at either height, the body floor ([foundations.md](foundations.md) §7). The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#131211` inside the surface-level app bar). The web top bar's Find field is the named exception: it shares the bar's surface (§7). *(Exception added 2026-11-05.)*
 
+**Floating label (web sign-in and sign-up).** The pre-auth forms put the label inside the field, where it reads at body size and moves up to caption size on focus, input or autofill, and they draw no placeholder (`apps/web/components/auth/floating-field.tsx`). The field is 52px rather than 48 so the floated 12px label and the 16px value both clear the edge on the grid. It exists so those two forms fit a laptop window without scrolling (`spec/ui/web-dashboard/README.md` § Responsive contract); every other form keeps the label above a 48px field. *(Exception added 2026-11-05.)*
+
 In the Error state the caption MUST be wired to the field, not merely placed under it: `aria-describedby` on the input references the caption's id, and `aria-invalid` marks the input while the error stands.
 
 ### Checkbox
