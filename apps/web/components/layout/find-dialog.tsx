@@ -1,0 +1,490 @@
+"use client";
+
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useRouter } from "next/navigation";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import {
+  BookOpen,
+  CalendarDays,
+  Hash,
+  MessageSquareText,
+  Search,
+  User,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  useChannels,
+  useDepartments,
+  useSearch,
+  SEARCH_MIN_QUERY_LENGTH,
+  SEARCH_COMPLETED_EVENT,
+} from "@repo/hooks";
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
+import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
+import { asArray, cn } from "@/lib/utils";
+import { AnalyticsContext } from "@/lib/providers/analytics-provider";
+import { FOCUS_RING } from "@/components/ui/focus";
+import { EYEBROW } from "@/components/ui/typography";
+import {
+  FIND_GROUPS,
+  buildFindResults,
+  type FindFilter,
+  type FindGroup,
+  type FindResult,
+} from "@/components/layout/find-results";
+
+/**
+ * The Find dialog: a centered search over channels, members, messages, events
+ * and backwork, opened by Cmd/Ctrl+F or the top-bar field (`find-bar.tsx`).
+ *
+ * **Why a dialog again.** #2141 replaced the ⌘K palette with a field that
+ * dropped its results under itself, 520px wide. Paul picked a centered dialog
+ * instead on 2026-11-05 (option A of the Find and Ask proposal): results get
+ * the room for full message previews, dates, and two more groups, and filter
+ * chips narrow it without retyping. The top-bar field stays as the visible way
+ * in, so the shortcut is still a convenience rather than the only door.
+ *
+ * **Find is not Ask.** Find lists places to go, from everything the member
+ * can read, chat included. Ask (the ✦ pill) answers a question from the
+ * chapter's official sources only (`spec/behavior/ai.md`) and paints in house
+ * gold. This dialog never uses the `gold-ask-*` tokens and never mentions Ask
+ * until Ask can answer on web. (Its highlight is the chapter accent, which is
+ * gold only on a chapter that has not picked one.)
+ *
+ * Focus never leaves the input while arrowing: the list is an
+ * `aria-activedescendant` listbox, as the field's dropdown was.
+ */
+
+export const FIND_PLACEHOLDER = "Find channels, members, messages and more";
+
+const GROUP_ICON: Record<FindGroup, LucideIcon> = {
+  Channels: Hash,
+  Members: User,
+  Messages: MessageSquareText,
+  Events: CalendarDays,
+  Backwork: BookOpen,
+};
+
+const MODULE_FOR_GROUP: Partial<Record<FindGroup, string>> = {
+  Events: "events",
+  Backwork: "backwork",
+};
+
+type FindDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Owned by the trigger so a closed dialog keeps what was typed. */
+  query: string;
+  onQueryChange: (query: string) => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  /** Puts focus back where it was before the dialog opened. */
+  onCloseFocus: () => void;
+};
+
+export function FindDialog({
+  open,
+  onOpenChange,
+  query,
+  onQueryChange,
+  inputRef,
+  onCloseFocus,
+}: FindDialogProps) {
+  return (
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/55 data-[state=open]:animate-in data-[state=open]:fade-in-0 motion-reduce:animate-none" />
+        <DialogPrimitive.Content
+          aria-modal="true"
+          // Select what was typed last time, so typing replaces it and Enter
+          // or the arrows still work on it.
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            inputRef.current?.focus();
+            inputRef.current?.select();
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            onCloseFocus();
+          }}
+          className="fixed left-1/2 top-[12vh] z-50 flex max-h-[76vh] w-[min(640px,calc(100vw-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98] motion-reduce:animate-none"
+        >
+          <DialogPrimitive.Title className="sr-only">Find</DialogPrimitive.Title>
+          <DialogPrimitive.Description className="sr-only">
+            Search channels, members, messages, events and backwork. Use the
+            arrow keys to move through results and Enter to open one.
+          </DialogPrimitive.Description>
+          <FindPanel
+            query={query}
+            onQueryChange={onQueryChange}
+            inputRef={inputRef}
+            onDone={() => onOpenChange(false)}
+          />
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
+  );
+}
+
+/**
+ * The dialog's body. Radix mounts `Content` only while open, so these queries
+ * (search, channels, departments) run only while the dialog is up: the
+ * department list in particular is read for nothing else in the shell.
+ */
+function FindPanel({
+  query,
+  onQueryChange,
+  inputRef,
+  onDone,
+}: {
+  query: string;
+  onQueryChange: (query: string) => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onDone: () => void;
+}) {
+  const router = useRouter();
+  const [filter, setFilter] = useState<FindFilter>("All");
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  // The server search is debounced; the channel match is not, in effect,
+  // because it reads the same debounced query and the channel list is cached.
+  const debouncedQuery = useDebouncedValue(query, 200);
+  /*
+   * Everything below reads the DEBOUNCED query, deliberately. `useSearch` keys
+   * on it, so gating on the raw `query` would render a confident "No matches."
+   * for the first 200ms of every search, and re-typing over an old query would
+   * list the old hits under the new text with the first preselected, so Enter
+   * opened a result for a search the member had already replaced.
+   */
+  const hasMinQuery = debouncedQuery.trim().length >= SEARCH_MIN_QUERY_LENGTH;
+  const isDebouncing = query !== debouncedQuery;
+  const search = useSearch(debouncedQuery);
+  const channels = useChannels();
+  const departments = useDepartments();
+  const isModuleEnabled = useChapterModuleGate();
+  // `null` outside `AnalyticsProvider` (tests, or an opted-out member).
+  const track = useContext(AnalyticsContext);
+
+  // A group whose module the chapter switched off is never listed or offered.
+  // While the gate is still loading it fails open, like the nav does.
+  const hiddenGroups = useMemo(() => {
+    const hidden = new Set<FindGroup>();
+    if (!isModuleEnabled) return hidden;
+    for (const group of FIND_GROUPS) {
+      const key = MODULE_FOR_GROUP[group];
+      if (key && !isModuleEnabled(key)) hidden.add(group);
+    }
+    return hidden;
+  }, [isModuleEnabled]);
+  const chips: FindFilter[] = [
+    "All",
+    ...FIND_GROUPS.filter((g) => !hiddenGroups.has(g)),
+  ];
+  // A chip that vanished (its module just went off) must not keep filtering.
+  const effectiveFilter: FindFilter =
+    filter !== "All" && hiddenGroups.has(filter) ? "All" : filter;
+
+  const results = useMemo<FindResult[]>(
+    () =>
+      hasMinQuery
+        ? buildFindResults({
+            query: debouncedQuery,
+            filter: effectiveFilter,
+            channels: channels.data,
+            payload: search.data?.payload,
+            departments: departments.data,
+            hiddenGroups,
+          })
+        : [],
+    [
+      hasMinQuery,
+      debouncedQuery,
+      effectiveFilter,
+      channels.data,
+      search.data,
+      departments.data,
+      hiddenGroups,
+    ],
+  );
+
+  // A new query or filter means a new list, so the preselection goes back to
+  // the top. Adjusted during render rather than in an effect, so the reset
+  // lands in the same paint as the new results: an effect would render one
+  // frame with a stale highlight, and that frame is the one an Enter can hit.
+  const listKey = `${query}\u0000${effectiveFilter}`;
+  const [keyForIndex, setKeyForIndex] = useState(listKey);
+  if (keyForIndex !== listKey) {
+    setKeyForIndex(listKey);
+    setActiveIndex(0);
+  }
+
+  /*
+   * Search telemetry (`spec/behavior/observability.md` § Search Telemetry).
+   * `surface` stays `"find-bar"`: it names the top-bar entry point, which this
+   * dialog still is, so the series does not split at the redesign.
+   *
+   * Never the query text: `assertContentFreeProperties` does not forbid a key
+   * named `query`, so sending length and word count instead is a discipline
+   * the shared gate would not catch.
+   */
+  const searchStartRef = useRef(0);
+  useEffect(() => {
+    searchStartRef.current = Date.now();
+  }, [debouncedQuery]);
+  // `dataUpdatedAt` (not the query string) dedupes: `useSearch` sets
+  // `staleTime: 0`, so re-running an identical query later still refetches and
+  // must still be tracked.
+  const trackedAtRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!hasMinQuery) return;
+    if (search.isFetching) return;
+    if (!search.data) return;
+    if (search.dataUpdatedAt === trackedAtRef.current) return;
+    trackedAtRef.current = search.dataUpdatedAt;
+
+    const bag =
+      search.data.payload && typeof search.data.payload === "object"
+        ? (search.data.payload as Record<string, unknown>)
+        : {};
+    const counts = {
+      backwork: asArray(bag.backwork).length,
+      events: asArray(bag.events).length,
+      members: asArray(bag.members).length,
+      messages: asArray(bag.messages).length,
+    };
+    const total =
+      counts.backwork + counts.events + counts.members + counts.messages;
+
+    track?.(SEARCH_COMPLETED_EVENT, {
+      surface: "find-bar",
+      query_length: debouncedQuery.length,
+      query_word_count: debouncedQuery.split(/\s+/).filter(Boolean).length,
+      backwork_count: counts.backwork,
+      events_count: counts.events,
+      members_count: counts.members,
+      messages_count: counts.messages,
+      total_count: total,
+      zero_result: total === 0,
+      timed_out: search.data.timedOut,
+      latency_ms: Date.now() - searchStartRef.current,
+    });
+  }, [
+    hasMinQuery,
+    search.isFetching,
+    search.data,
+    search.dataUpdatedAt,
+    debouncedQuery,
+    track,
+  ]);
+
+  // Deliberately touches no ref: closing and clearing is the whole job, and a
+  // ref read in a closure handed to `onClick` is the pattern that gets a
+  // component stale-rendered.
+  const openResult = useCallback(
+    (result: FindResult | undefined) => {
+      if (!result) return;
+      onDone();
+      onQueryChange("");
+      router.push(result.href);
+    },
+    [router, onDone, onQueryChange],
+  );
+
+  function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (results.length === 0) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveIndex((i) => (i + 1) % results.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveIndex((i) => (i - 1 + results.length) % results.length);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      openResult(results[activeIndex]);
+    }
+  }
+
+  const showResults = hasMinQuery || isDebouncing;
+  const isLoading = search.isFetching || isDebouncing;
+  const timedOut = search.data?.timedOut ?? false;
+  const timedOutSources = search.data?.timedOutSources ?? [];
+
+  /*
+   * "We stopped looking here" must read differently from "we found nothing"
+   * (spec/behavior/search.md). The budget is per SOURCE, so a slow message
+   * scan degrades alone, which means a partial timeout has to be announced
+   * even when the list is showing hits.
+   */
+  const partialTimeout = timedOut && results.length > 0;
+  let statusMessage: string | null = null;
+  if (!showResults) {
+    statusMessage = null;
+  } else if (isLoading) {
+    statusMessage = "Searching...";
+  } else if (search.isError) {
+    statusMessage = "Search is unavailable right now. Try again in a moment.";
+  } else if (results.length === 0) {
+    statusMessage = timedOut
+      ? "Search took too long. Try a narrower term."
+      : "No matches.";
+  }
+
+  const activeId =
+    showResults && results[activeIndex]
+      ? `find-option-${results[activeIndex]!.id}`
+      : undefined;
+
+  return (
+    <>
+      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
+        <Search
+          className="h-[18px] w-[18px] shrink-0 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <input
+          ref={inputRef}
+          type="text"
+          role="combobox"
+          aria-expanded={showResults}
+          aria-controls="find-results"
+          aria-autocomplete="list"
+          aria-activedescendant={activeId}
+          aria-label={FIND_PLACEHOLDER}
+          placeholder={FIND_PLACEHOLDER}
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          onKeyDown={onInputKeyDown}
+          className="min-w-0 flex-1 bg-transparent text-body text-foreground outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+
+      <div
+        role="group"
+        aria-label="Show"
+        className="flex shrink-0 flex-wrap gap-1.5 px-4 pb-1 pt-3"
+      >
+        {chips.map((chip) => (
+          <button
+            key={chip}
+            type="button"
+            aria-pressed={effectiveFilter === chip}
+            onClick={() => {
+              setFilter(chip);
+              inputRef.current?.focus();
+            }}
+            className={cn(
+              "h-7 rounded-full border px-3 text-caption transition",
+              effectiveFilter === chip
+                ? "border-transparent bg-card text-foreground"
+                : "border-border text-muted-foreground hover:text-foreground",
+              FOCUS_RING,
+            )}
+          >
+            {chip}
+          </button>
+        ))}
+      </div>
+
+      {/*
+        A live region outside the list, so a screen reader hears "Searching...",
+        a timeout, or the count rather than silence.
+      */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {showResults
+          ? (statusMessage ??
+            `${results.length} result${results.length === 1 ? "" : "s"}.`)
+          : ""}
+      </p>
+
+      <div
+        id="find-results"
+        role="listbox"
+        aria-label={FIND_PLACEHOLDER}
+        className="min-h-0 flex-1 overflow-y-auto p-2"
+      >
+        {!showResults ? (
+          <p className="px-2.5 py-3 text-sm text-muted-foreground">
+            Type at least {SEARCH_MIN_QUERY_LENGTH} characters.
+          </p>
+        ) : null}
+
+        {statusMessage ? (
+          <p className="px-2.5 py-3 text-sm text-muted-foreground">
+            {statusMessage}
+          </p>
+        ) : null}
+
+        {partialTimeout ? (
+          <p className="px-2.5 pb-1 pt-2 text-caption text-muted-foreground">
+            {timedOutSources.length > 0
+              ? `Stopped looking in ${timedOutSources.join(", ")}. Results may be incomplete.`
+              : "Some sources timed out. Results may be incomplete."}
+          </p>
+        ) : null}
+
+        {results.map((result, index) => {
+          const isNewGroup =
+            index === 0 || results[index - 1]!.group !== result.group;
+          const Icon = GROUP_ICON[result.group];
+          const active = index === activeIndex;
+          return (
+            /*
+              `role="group"`, not a bare <div>: a listbox may own groups, but a
+              plain div between listbox and option breaks the relationship.
+            */
+            <div
+              key={result.id}
+              role="group"
+              aria-label={isNewGroup ? result.group : undefined}
+            >
+              {isNewGroup ? (
+                <p
+                  aria-hidden="true"
+                  className={cn("px-2.5 pb-1 pt-3 text-muted", EYEBROW)}
+                >
+                  {result.group}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                role="option"
+                id={`find-option-${result.id}`}
+                aria-selected={active}
+                // Focus stays in the input, so options are not tab stops.
+                tabIndex={-1}
+                onPointerEnter={() => setActiveIndex(index)}
+                onClick={() => openResult(result)}
+                className={cn(
+                  "flex min-h-10 w-full items-center gap-3 rounded-[10px] px-2.5 py-1.5 text-left text-sm transition",
+                  active
+                    ? "bg-accent-subtle text-accent-text"
+                    : "text-foreground hover:bg-card",
+                )}
+              >
+                <Icon
+                  className={cn(
+                    "h-4 w-4 shrink-0",
+                    active ? "text-accent-text" : "text-muted-foreground",
+                  )}
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1 truncate">{result.label}</span>
+                {result.hint ? (
+                  <span className="max-w-[45%] shrink-0 truncate text-caption text-muted-foreground">
+                    {result.hint}
+                  </span>
+                ) : null}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
