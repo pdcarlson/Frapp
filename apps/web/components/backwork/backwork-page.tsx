@@ -40,7 +40,6 @@ import { denseListClassName } from "@/components/shared/table-controls";
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { BackworkGlyph } from "@/components/documents/resources-glyphs";
@@ -70,6 +69,7 @@ import {
   inspectUploadFile,
   readSignedUpload,
 } from "@repo/validation";
+import { BackworkRowsSkeleton } from "@/components/backwork/backwork-skeleton";
 
 type Department = { id: string; code: string; name: string | null };
 type Professor = { id: string; name: string };
@@ -928,7 +928,14 @@ export function BackworkPage() {
           <BackworkGlyph className="h-4 w-4 shrink-0 text-muted" />
           <SectionLabel
             id="bw-list-label"
-            count={`${resources.length} result${resources.length === 1 ? "" : "s"}`}
+            count={
+              // No count before the read answers: "0 results" over the
+              // loading rows is a claim about the archive, as `/documents`
+              // already says of its own count.
+              resourcesQuery.data === undefined
+                ? null
+                : `${resources.length} result${resources.length === 1 ? "" : "s"}`
+            }
           >
             Resources
           </SectionLabel>
@@ -972,7 +979,7 @@ export function BackworkPage() {
           ) : resourcesQuery.isLoading ||
             (resourcesQuery.isPending &&
               resourcesQuery.fetchStatus === "paused") ? (
-            <NestedLoading message="Loading backwork..." sole />
+            <BackworkRowsSkeleton />
           ) : resourcesQuery.isError ? (
             <NestedError
               sole

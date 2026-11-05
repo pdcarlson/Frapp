@@ -48,7 +48,7 @@ function isAuthRoute(pathname: string) {
  * two places. The sign-in page does not read `token`, but Vercel logs,
  * Referer headers, and any future auth-token parser would. The invite belongs
  * only inside `redirectTo`, which is how the join page itself builds this
- * hop (`app/join/page.tsx`).
+ * hop (`app/(auth)/join/page.tsx`).
  */
 export function buildSignInRedirectUrl(requestUrl: URL): URL {
   const destination = new URL(requestUrl.href);

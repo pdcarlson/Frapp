@@ -56,7 +56,6 @@ import {
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import {
@@ -75,6 +74,10 @@ import {
   type PermissionCatalogEntry,
 } from "@/components/shared/permission-checkbox-grid";
 import { useGateCatalog } from "@/components/shared/use-gate-catalog";
+import {
+  ChannelsSkeleton,
+  ChatAdminBodySkeleton,
+} from "@/components/chat-admin/chat-admin-skeleton";
 
 type ChannelType = "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
 
@@ -161,6 +164,7 @@ export function ChatAdminPage() {
       */}
       <Can
         permission="channels:manage"
+        fallback={<ChatAdminBodySkeleton />}
         deniedFallback={
           <p className="text-sm text-muted-foreground">
             Your role can&apos;t manage channels. Ask your chapter president for
@@ -512,7 +516,7 @@ function ChatAdminBody() {
     );
   }
   if (channelsQuery.isLoading || categoriesQuery.isLoading || paused) {
-    return <NestedLoading sole message="Loading channels..." />;
+    return <ChannelsSkeleton />;
   }
   // `data === undefined`, not `isError` alone: a failed background refetch
   // keeps the rows TanStack already holds, and an officer part-way through an
