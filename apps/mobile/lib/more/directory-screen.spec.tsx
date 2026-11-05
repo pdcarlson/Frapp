@@ -79,8 +79,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMembers: () => read(MEMBERS, refetches.members),
   useAlumni: (filters?: { company?: string }) =>
     read(filters?.company === "Acme" ? [CHARLES] : ALUMNI, refetches.alumni),
-  useMemberSearch: (q: string) =>
-    read(q ? state.search : undefined, refetches.search),
+  // Off without a term, as the real query is, so a pull skips it then.
+  useMemberSearch: (q: string) => ({
+    ...read(q ? state.search : undefined, refetches.search),
+    isEnabled: q.length > 0,
+  }),
 }));
 
 // The back row paints the chapter accent; its value is back-row.spec.tsx's.
@@ -293,19 +296,36 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
     });
   });
 
-  it("refreshes the members, alumni and search reads on a pull (#3385)", async () => {
-    const tree = render();
+  async function pull(tree: ReturnType<typeof render>) {
     const control = list(tree).props.refreshControl as React.ReactElement<{
       refresh: () => Promise<unknown>;
     }>;
-
     await act(async () => {
       await control.props.refresh();
     });
+  }
 
-    for (const refetch of Object.values(refetches)) {
-      expect(refetch).toHaveBeenCalledWith({ cancelRefetch: false });
-    }
+  it("refreshes both lists on a pull, and skips the search with no term (#3385)", async () => {
+    await pull(render());
+
+    expect(refetches.members).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(refetches.alumni).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(refetches.search).not.toHaveBeenCalled();
+  });
+
+  it("refreshes the search results too while a term is typed (#3385)", async () => {
+    state.search = [CHARLES];
+    const tree = render();
+    const field = inHeader(
+      tree,
+      (element) =>
+        (element.type as unknown) === SearchFieldStandIn &&
+        element.props.accessibilityLabel === "Search the directory",
+    ) as { onChangeText: (text: string) => void };
+    act(() => field.onChangeText("r"));
+
+    await pull(tree);
+    expect(refetches.search).toHaveBeenCalledWith({ cancelRefetch: true });
   });
 
   it("searches across both lists", () => {

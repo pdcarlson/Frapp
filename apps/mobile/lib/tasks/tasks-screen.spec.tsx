@@ -96,7 +96,7 @@ const mutateAsync = vi.fn(async () => {
   throw failure;
 });
 
-let chapterId = "chapter-1";
+let chapterId: string | null = "chapter-1";
 
 /** Each query's `refetch`, kept across renders so a pull can be asserted on. */
 const refetch = vi.hoisted(() => ({
@@ -437,8 +437,28 @@ describe("Tasks board pull-to-refresh", () => {
 
     for (const each of Object.values(refetch)) {
       expect(each).toHaveBeenCalledTimes(1);
-      expect(each).toHaveBeenCalledWith({ cancelRefetch: false });
+      expect(each).toHaveBeenCalledWith({ cancelRefetch: true });
     }
+    act(() => tree.unmount());
+  });
+
+  it("leaves the board out of a pull with no chapter, since its read has no gate (#3385)", async () => {
+    for (const each of Object.values(refetch)) each.mockClear();
+    chapterId = null;
+    const tree = render();
+    const control = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "ScrollView" && node.props.refreshControl,
+    ).props.refreshControl as React.ReactElement<{
+      refresh: () => Promise<unknown>;
+    }>;
+
+    await act(async () => {
+      await control.props.refresh();
+    });
+
+    expect(refetch.tasks).not.toHaveBeenCalled();
+    expect(refetch.viewer).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 });

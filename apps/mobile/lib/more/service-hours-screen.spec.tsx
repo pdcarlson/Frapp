@@ -427,8 +427,8 @@ describe("Service hours pull to refresh (#3385)", () => {
   it("refreshes the viewer and their service entries on a pull (#3385)", async () => {
     const tree = render();
     await pull(tree);
-    expect(viewerRefetch).toHaveBeenCalledWith({ cancelRefetch: false });
-    expect(entriesRefetch).toHaveBeenCalledWith({ cancelRefetch: false });
+    expect(viewerRefetch).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(entriesRefetch).toHaveBeenCalledWith({ cancelRefetch: true });
     act(() => tree.unmount());
   });
 

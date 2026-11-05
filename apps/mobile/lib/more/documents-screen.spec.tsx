@@ -458,7 +458,7 @@ describe("Documents pull-to-refresh (#3385)", () => {
     await act(async () => {
       await control.props.refresh();
     });
-    expect(refetchFolders).toHaveBeenCalledWith({ cancelRefetch: false });
-    expect(refetchDocuments).toHaveBeenCalledWith({ cancelRefetch: false });
+    expect(refetchFolders).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(refetchDocuments).toHaveBeenCalledWith({ cancelRefetch: true });
   });
 });

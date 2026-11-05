@@ -144,8 +144,8 @@ describe("Notifications back row (#3022)", () => {
 });
 
 /**
- * #3385. A pull on the inbox refetches the notifications it lists, joining a
- * refetch already in flight rather than cancelling it.
+ * #3385. A pull on the inbox refetches the notifications it lists, replacing a
+ * refetch already in flight.
  */
 describe("Notifications pull to refresh (#3385)", () => {
   afterEach(() => {
@@ -170,7 +170,7 @@ describe("Notifications pull to refresh (#3385)", () => {
     });
 
     expect(refetchInbox).toHaveBeenCalledTimes(1);
-    expect(refetchInbox).toHaveBeenCalledWith({ cancelRefetch: false });
+    expect(refetchInbox).toHaveBeenCalledWith({ cancelRefetch: true });
   });
 });
 

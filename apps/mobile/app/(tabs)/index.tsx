@@ -24,6 +24,8 @@ import {
   useGetOrCreateDm,
   useChannels,
   useChapterRoster,
+  useCurrentUser,
+  useNotifications,
   useEvents,
   useLeaveChannel,
   useMemberDisplayNames,
@@ -160,11 +162,16 @@ export default function ChatHomeScreen() {
     useSetSidebarSectionCollapsed(sidebarWriteOptions);
   const { mutate: setSidebarFilter } = useSetSidebarFilter(sidebarWriteOptions);
   const notificationPrefsQuery = useChannelNotificationPreferences();
-  // Everything the list draws: rows, categories, badges, the agenda, mute
-  // state, the arrangement, and the names a DM row is titled with.
+  // Everything the screen draws: rows, categories, badges, the agenda, mute
+  // state, the arrangement, the names a DM row is titled with, the viewer a
+  // DM title subtracts, and the header bell's inbox.
   const sidebarRefetch = useSidebarPreferencesRefetch();
   const rosterQuery = useChapterRoster();
+  const viewerQuery = useCurrentUser();
+  const inboxQuery = useNotifications();
   const refresh = useRefetchAll([
+    viewerQuery,
+    inboxQuery,
     channelsQuery,
     categoriesQuery,
     unreadQuery,

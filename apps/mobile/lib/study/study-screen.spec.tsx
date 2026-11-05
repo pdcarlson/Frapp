@@ -727,7 +727,6 @@ describe("Study with hours switched off (#2718)", () => {
   });
 });
 
-/** #3022. s10 opens from More's Study hours row and draws `‹ More`. */
 describe("Study pull-to-refresh (#3385)", () => {
   it("refreshes the chapter, its zones and the member's sessions on a pull (#3385)", async () => {
     const tree = render();
@@ -745,13 +744,14 @@ describe("Study pull-to-refresh (#3385)", () => {
       await scroll.props.refreshControl.props.refresh();
     });
 
-    expect(refetchChapter).toHaveBeenCalledWith({ cancelRefetch: false });
-    expect(refetchZones).toHaveBeenCalledWith({ cancelRefetch: false });
-    expect(refetchSessions).toHaveBeenCalledWith({ cancelRefetch: false });
+    expect(refetchChapter).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(refetchZones).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(refetchSessions).toHaveBeenCalledWith({ cancelRefetch: true });
     act(() => tree.unmount());
   });
 });
 
+/** #3022. s10 opens from More's Study hours row and draws `‹ More`. */
 describe("Study back row (#3022)", () => {
   it("draws ‹ More above the title", () => {
     const tree = render();

@@ -99,6 +99,8 @@ const {
     levels: vi.fn(),
     sidebar: vi.fn(),
     roster: vi.fn(),
+    viewer: vi.fn(),
+    inbox: vi.fn(),
   },
 }));
 
@@ -171,7 +173,8 @@ vi.mock("@repo/hooks", async () => {
       isError: queryErrors.unread,
     }),
     useEvents: () => query([], refetches.events),
-    useNotifications: () => query(notificationsData.value),
+    useNotifications: () => query(notificationsData.value, refetches.inbox),
+    useCurrentUser: () => query({ id: VIEWER }, refetches.viewer),
     useTasks: () => query([], refetches.tasks),
     useViewerUserId: () => VIEWER,
     useMemberDisplayNames: () => ({
@@ -974,7 +977,7 @@ describe("Chat home loading and error states", () => {
 });
 
 describe("Chat home pull-to-refresh (#3385)", () => {
-  it("refreshes everything the list draws on a pull (#3385)", async () => {
+  it("refreshes everything the screen draws on a pull (#3385)", async () => {
     const tree = render();
 
     // The scroll view is a host stand-in, so its control is never mounted;
@@ -992,7 +995,7 @@ describe("Chat home pull-to-refresh (#3385)", () => {
       channelsState.value.refetch,
       ...Object.values(refetches),
     ]) {
-      expect(refetch).toHaveBeenCalledWith({ cancelRefetch: false });
+      expect(refetch).toHaveBeenCalledWith({ cancelRefetch: true });
     }
   });
 });

@@ -81,9 +81,9 @@ The outbox carries `chapterId` and drafts do not, which is not an oversight eith
 | User adjusts points | `['points', chapterId]` (the leaderboard lives under it) |
 | User changes roles | `['members', chapterId]`, `['roles', chapterId]` |
 | Supabase Realtime event | Relevant query key (auto-updated) |
+| Member pulls a mobile list | The screen's enabled queries, fresh or not; one already in flight is cancelled and sent again, since the pull is how a member gets past a hung request. A disabled query is skipped, because `refetch` ignores `enabled` ([`pull-to-refresh.tsx`](../../../apps/mobile/components/pull-to-refresh.tsx)) |
 | Window focus (tab switch) | All stale queries (TanStack built-in) |
 | Network reconnect | Mounted, enabled queries. Web forces even fresh ones (`refetchOnReconnect: "always"`); mobile leaves the default, so only stale ones refetch. Separately, a fetch the drop left paused resumes regardless of observers |
-| Member pulls a mobile list | The screen's enabled queries, fresh or not; one already in flight is joined, not restarted. A disabled query is skipped, because `refetch` ignores `enabled` ([`pull-to-refresh.tsx`](../../../apps/mobile/components/pull-to-refresh.tsx)) |
 
 **Those last two rows are delivered on mobile, not merely specified.** They depend on
 TanStack's `onlineManager` and `focusManager`, which nothing wired until

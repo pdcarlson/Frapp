@@ -124,7 +124,7 @@ describe("useRefetchAll (#3385)", () => {
     ...(isEnabled === undefined ? {} : { isEnabled }),
   });
 
-  it("refetches every enabled query together, joining one already in flight", async () => {
+  it("refetches every enabled query together, replacing one already in flight", async () => {
     const a = query(true);
     const b = query();
     let refresh!: ScreenRefresh;
@@ -133,8 +133,8 @@ describe("useRefetchAll (#3385)", () => {
     await act(async () => {
       await refresh();
     });
-    expect(a.refetch).toHaveBeenCalledExactlyOnceWith({ cancelRefetch: false });
-    expect(b.refetch).toHaveBeenCalledExactlyOnceWith({ cancelRefetch: false });
+    expect(a.refetch).toHaveBeenCalledExactlyOnceWith({ cancelRefetch: true });
+    expect(b.refetch).toHaveBeenCalledExactlyOnceWith({ cancelRefetch: true });
   });
 
   it("skips a disabled query, since refetch ignores enabled", async () => {

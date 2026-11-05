@@ -81,9 +81,11 @@ export default function TasksScreen() {
   const tasksQuery = useTasks();
   const pointsQuery = useMyPoints("semester");
   const leaderboardQuery = useLeaderboard("semester");
+  // `useTasks` has no chapter gate (see the no-chapter branch below), so the
+  // pull leaves the board out until there is a chapter to scope it to.
   const refresh = useRefetchAll([
     viewerQuery,
-    tasksQuery,
+    chapterId ? tasksQuery : null,
     pointsQuery,
     leaderboardQuery,
   ]);

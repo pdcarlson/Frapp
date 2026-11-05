@@ -284,8 +284,8 @@ describe("Dues pull-to-refresh (#3385)", () => {
     const tree = mount();
     await pull(tree);
 
-    expect(refetchViewer).toHaveBeenCalledWith({ cancelRefetch: false });
-    expect(refetchInvoices).toHaveBeenCalledWith({ cancelRefetch: false });
+    expect(refetchViewer).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(refetchInvoices).toHaveBeenCalledWith({ cancelRefetch: true });
   });
 
   it("leaves the invoice read alone on a pull while the viewer's id is unknown", async () => {

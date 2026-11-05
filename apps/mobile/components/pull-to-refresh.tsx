@@ -22,21 +22,24 @@ export type RefreshableQuery = {
  * A screen's refresh: every query it reads, refetched together.
  *
  * Only the queries that are enabled right now are refetched, because a
- * query's `refetch` ignores `enabled` and runs its fetch anyway. Each hook's
- * own gate (an active chapter, the viewer's id, a non-empty search) therefore
- * holds for the pull too, with no gate restated per screen: a viewer-scoped
- * read waiting on `/v1/users/me` would otherwise go out unscoped and fetch
- * the whole chapter's rows.
+ * query's `refetch` ignores `enabled` and runs its fetch anyway. A hook's own
+ * `enabled` gate (an active chapter, the viewer's id, a non-empty search)
+ * therefore holds for the pull too: a viewer-scoped read waiting on
+ * `/v1/users/me` would otherwise go out unscoped and fetch the whole
+ * chapter's rows. A read whose hook has no gate but that the screen does not
+ * show in some state (Tasks' board with no chapter) goes in as `null` there.
  *
- * A pull that lands on a focus or reconnect refetch already in flight joins
- * it (`cancelRefetch: false`, as TanStack's own focus and reconnect paths
- * do) rather than cancelling it and asking again.
+ * A pull replaces a fetch already in flight (`cancelRefetch: true`, what a
+ * plain `refetch()` does) rather than joining it. The pull is the member
+ * saying the screen looks stuck, and nothing else bounds a hung request:
+ * neither the API client nor the SDK sets a timeout, so a joined fetch on a
+ * dead socket would hold the spinner until the OS gives up on it.
  *
  * Returns a stable callback that reads the latest results, so a screen passes
  * `[query, …]` inline.
  */
 export function useRefetchAll(
-  queries: readonly RefreshableQuery[],
+  queries: readonly (RefreshableQuery | null)[],
 ): ScreenRefresh {
   const latest = useRef(queries);
   // After commit, not during render: a pull always comes after one.
@@ -47,8 +50,11 @@ export function useRefetchAll(
     () =>
       Promise.all(
         latest.current
-          .filter((query) => query.isEnabled !== false)
-          .map((query) => query.refetch({ cancelRefetch: false })),
+          .filter(
+            (query): query is RefreshableQuery =>
+              query !== null && query.isEnabled !== false,
+          )
+          .map((query) => query.refetch({ cancelRefetch: true })),
       ),
     [],
   );
