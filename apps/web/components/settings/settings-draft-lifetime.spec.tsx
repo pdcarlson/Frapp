@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
@@ -84,6 +84,43 @@ describe("the Settings page keeps unsaved drafts across tab switches", () => {
 
     expect(screen.getByLabelText(/accent color hex value/i)).toHaveValue(
       "#5AA9E6",
+    );
+  });
+
+  it("keeps a picked organization swatch as the draft", async () => {
+    // The page passes the chapter's name so its organization's colors lead
+    // the swatches, and a pick writes the same draft the hex field edits.
+    // Dropping either prop compiles and leaves every swatch spec passing.
+    mockCurrentChapter.mockReturnValue({
+      data: {
+        subscription_status: "active",
+        past_due_since: null,
+        name: "Phi Gamma Delta",
+        accent_color: "#1D2F6F",
+      },
+      isPending: false,
+      isError: false,
+    });
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+
+    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    const org = screen.getByRole("group", {
+      name: "Your organization's colors",
+    });
+    const purple = within(org).getByRole("button", { name: "Royal Purple" });
+    expect(purple).toHaveAttribute("aria-pressed", "false");
+    await user.click(purple);
+
+    expect(screen.getByLabelText(/accent color hex value/i)).toHaveValue(
+      "#4F2683",
+    );
+    expect(purple).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("tab", { name: /^modules$/i }));
+    await user.click(screen.getByRole("tab", { name: /accent/i }));
+    expect(screen.getByLabelText(/accent color hex value/i)).toHaveValue(
+      "#4F2683",
     );
   });
 

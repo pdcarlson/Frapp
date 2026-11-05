@@ -11,17 +11,13 @@ import {
   useUpdateGeofence,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
-import { geofenceStatusKind } from "@/components/geofences/geofence-status";
+import {
+  geofenceStatusKind,
+  geofenceStatusLabel,
+  studyZoneRulesLine,
+} from "@/components/geofences/geofence-status";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -35,13 +31,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  EmptyState,
-  ErrorState,
   anyReadUncached,
-  LoadingState,
-  OfflineState,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
+import {
+  NestedEmpty,
+  NestedError,
+  NestedLoading,
+  NestedOffline,
+} from "@/components/shared/nested-states";
+import { denseListClassName } from "@/components/shared/table-controls";
 import { PageHeader } from "@/components/layout/page-header";
 import { StudyZonesSettingsDrawer } from "@/components/geofences/study-zones-settings-drawer";
 import { can } from "@repo/validation";
@@ -175,7 +174,10 @@ export function GeofencesAdminPage() {
   // because a second `<Can>` on the same permission in one file makes
   // `can-fallback.spec.tsx`'s per-surface lookup ambiguous.
   const { data: permissionsPayload } = useMyPermissions();
-  const canManageZones = can("geofences:manage", permissionsPayload?.permissions);
+  const canManageZones = can(
+    "geofences:manage",
+    permissionsPayload?.permissions,
+  );
   const { confirm, confirmDialog } = useConfirmDialog();
   const geofencesQuery = useGeofences();
   const createGeofence = useCreateGeofence();
@@ -307,10 +309,7 @@ export function GeofencesAdminPage() {
     } catch (error) {
       toast({
         title: "Couldn't create study zone",
-        description: getErrorMessage(
-          error,
-          "Retry or confirm geofences:manage.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -403,55 +402,195 @@ export function GeofencesAdminPage() {
     }
   }
 
+  /*
+   * `4c` pin 1: the gear sits beside the page title and "shows only for roles
+   * that hold that page's manage permission". "New study zone" sits beside it,
+   * so the route has one toolbar row, on the same boolean.
+   *
+   * **Read through `can()` rather than a second `<Can>`.** The screen-level
+   * gate below already carries `permission="geofences:manage"` in this file,
+   * and `can-fallback.spec.tsx` finds a surface's gate by exactly that string,
+   * so a second one would shadow it in the ledger's lookup and the screen
+   * gate's offline copy would stop being checked. Neither control is the right
+   * shape for that gate's contract either: each is a control slot with nothing
+   * to recover to, so it has no `offlineFallback` to give, and it simply does
+   * not render until the permission read resolves. The create trigger needs no
+   * offline branch of its own: `gate.controlProps()` folds OFFLINE in.
+   */
+  const createZone = (
+    <Dialog {...createDialog.dialogProps}>
+      <DialogTrigger asChild>
+        <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
+          <Plus className="h-4 w-4" />
+          New study zone
+        </Button>
+      </DialogTrigger>
+      <DialogContent
+        className="max-h-[80vh] overflow-y-auto sm:max-w-lg"
+        // No description: the vertex format is field help beside the field
+        // it describes. Explicitly undefined, or Radix logs a missing
+        // `Description` warning.
+        aria-describedby={undefined}
+        {...createDialog.contentProps}
+      >
+        <DialogHeader>
+          <DialogTitle>New study zone</DialogTitle>
+        </DialogHeader>
+        <form
+          id="geofence-create-form"
+          className="space-y-4"
+          onSubmit={submitCreate}
+        >
+          <div className="grid gap-1">
+            <Label htmlFor="gf-name">Name</Label>
+            <Input
+              id="gf-name"
+              value={createDraft.name}
+              onChange={(event) =>
+                setCreateDraft((prev) => ({
+                  ...prev,
+                  name: event.target.value,
+                }))
+              }
+              placeholder="Main library"
+              required
+            />
+          </div>
+          <div className="grid gap-1">
+            <Label htmlFor="gf-coords">Vertices</Label>
+            <Textarea
+              id="gf-coords"
+              aria-describedby="gf-coords-help"
+              value={createDraft.coordinates}
+              onChange={(event) =>
+                setCreateDraft((prev) => ({
+                  ...prev,
+                  coordinates: event.target.value,
+                }))
+              }
+              rows={6}
+              placeholder={`30.286, -97.740\n30.287, -97.740\n30.287, -97.739`}
+              required
+            />
+            <p
+              id="gf-coords-help"
+              className="text-caption text-muted-foreground"
+            >
+              At least three, one lat, lng pair per line. The shape closes on
+              its own.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-1">
+              <Label htmlFor="gf-minutes-per-point">Minutes per point</Label>
+              <Input
+                id="gf-minutes-per-point"
+                type="number"
+                min={1}
+                value={createDraft.minutes_per_point}
+                onChange={(event) =>
+                  setCreateRule("minutes_per_point", event.target.value)
+                }
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="gf-points-per-interval">
+                Points per interval
+              </Label>
+              <Input
+                id="gf-points-per-interval"
+                type="number"
+                min={1}
+                value={createDraft.points_per_interval}
+                onChange={(event) =>
+                  setCreateRule("points_per_interval", event.target.value)
+                }
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="gf-min-session">Min session (min)</Label>
+              <Input
+                id="gf-min-session"
+                type="number"
+                min={0}
+                value={createDraft.min_session_minutes}
+                onChange={(event) =>
+                  setCreateRule("min_session_minutes", event.target.value)
+                }
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="gf-pause-grace">Pause grace (min)</Label>
+              <Input
+                id="gf-pause-grace"
+                type="number"
+                min={1}
+                value={createDraft.pause_grace_minutes}
+                onChange={(event) =>
+                  setCreateRule("pause_grace_minutes", event.target.value)
+                }
+              />
+              <p className="text-caption text-muted-foreground">
+                How long a backgrounded session may stay paused before it
+                expires, counting only the minutes studied before the pause.
+              </p>
+            </div>
+          </div>
+        </form>
+        <DialogFooter>
+          {/* Cancel only closes the dialog — not a write, so not gated. */}
+          <Button
+            variant="secondary"
+            onClick={() => createDialog.setOpen(false)}
+            disabled={createGeofence.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            form="geofence-create-form"
+            type="submit"
+            {...gate.controlProps(createGeofence.isPending)}
+          >
+            {createGeofence.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : null}
+            Create study zone
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   return (
     <>
       {/*
         Outside the `<Can>` so the permission-denied, permission-pending and
         offline branches keep the route's heading — the shell no longer supplies
-        one (#2141). The two `<CardTitle>Study zones</CardTitle>` copies below
-        were that same title said twice.
-      */}
-      {/*
-        `4c` pin 1: the gear sits beside the page title and "shows only for
-        roles that hold that page's manage permission".
-
-        **Read through `can()` rather than a second `<Can>`.** The screen-level
-        gate below already carries `permission="geofences:manage"` in this file,
-        and `can-fallback.spec.tsx` finds a surface's gate by exactly that
-        string — a second one would shadow it in the ledger's lookup and the
-        screen gate's offline copy would stop being checked. The gear is also
-        the wrong shape for that gate's contract: it is a 30px control slot with
-        nothing to recover to, so it has no `offlineFallback` to give, and it
-        simply does not render until the permission read resolves.
+        one (#2141).
       */}
       <PageHeader
-        title="Study Zones"
-        actions={canManageZones ? <StudyZonesSettingsDrawer /> : null}
+        title="Study zones"
+        actions={
+          canManageZones ? (
+            <>
+              <StudyZonesSettingsDrawer />
+              {createZone}
+            </>
+          ) : null
+        }
       />
       <Can
         permission="geofences:manage"
         deniedFallback={
-          <div className="min-h-40">
-            <Card>
-              <CardHeader>
-                <CardDescription>
-                  Managing study zones requires the <code>geofences:manage</code>{" "}
-                  permission. Ask your chapter president to grant access.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Your role can&apos;t manage study zones. Ask your chapter president
+            for access.
+          </p>
         }
         fallback={
-          <div className="min-h-40">
-            <Card>
-              <CardHeader>
-                <CardDescription>
-                  Checking your chapter permissions…
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Checking your chapter permissions…
+          </p>
         }
         offlineFallback={(retry) => (
           <PermissionsOfflineSurface
@@ -471,409 +610,251 @@ export function GeofencesAdminPage() {
           README §4 item 4: this screen shipped no offline state at all, so a
           disconnected member sat on the loading skeleton until the query gave
           up. Copy is writing.md §7's row.
-        */}
-        {isOffline && anyReadUncached(geofencesQuery) ? (
-          <OfflineState
-            title="Study zones unavailable offline"
-            description="Reconnect to draw a zone or change its reward rate."
-            onRetry={() => {
-              void geofencesQuery.refetch();
-            }}
-          />
-        ) : geofencesQuery.isPending ? (
-          <LoadingState message="Loading study zones..." />
-        ) : geofencesQuery.isError ? (
-          <ErrorState
-            title="Couldn't load study zones"
-            description="Confirm your chapter access and retry."
-            onRetry={() => void geofencesQuery.refetch()}
-          />
-        ) : (
-          <div className="space-y-6">
-            {/*
-              No description paragraph. "Draw a polygon from GPS coordinates,
-              set the reward rate, and members can start tracked study sessions
-              when they're inside the zone" narrated the page to the one member
-              who had already proved they know what it is by holding
-              `geofences:manage` and navigating here. `1f` pin 2 gives a
-              route's body one toolbar row, "no wrapper card, no description
-              paragraph".
-            */}
-            <header className="flex flex-wrap items-center justify-end gap-2">
-              <Dialog {...createDialog.dialogProps}>
-                <DialogTrigger asChild>
-                  <Button className="gap-2" {...gate.controlProps()}>
-                    <Plus className="h-4 w-4" />
-                    New study zone
-                  </Button>
-                </DialogTrigger>
-                <DialogContent
-                  className="max-h-[80vh] overflow-y-auto sm:max-w-lg"
-                  {...createDialog.contentProps}
-                >
-                  <DialogHeader>
-                    <DialogTitle>Create a study zone</DialogTitle>
-                    <DialogDescription>
-                      Paste at least three lat/lng vertices (one per line).
-                      Polygons close automatically on the server.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <form
-                    id="geofence-create-form"
-                    className="space-y-4"
-                    onSubmit={submitCreate}
-                  >
-                    <div className="grid gap-1">
-                      <Label htmlFor="gf-name">Name</Label>
-                      <Input
-                        id="gf-name"
-                        value={createDraft.name}
-                        onChange={(event) =>
-                          setCreateDraft((prev) => ({
-                            ...prev,
-                            name: event.target.value,
-                          }))
-                        }
-                        placeholder="Main library"
-                        required
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="gf-coords">Vertices (one per line)</Label>
-                      <Textarea
-                        id="gf-coords"
-                        value={createDraft.coordinates}
-                        onChange={(event) =>
-                          setCreateDraft((prev) => ({
-                            ...prev,
-                            coordinates: event.target.value,
-                          }))
-                        }
-                        rows={6}
-                        placeholder={`30.286, -97.740\n30.287, -97.740\n30.287, -97.739`}
-                        required
-                      />
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="grid gap-1">
-                        <Label htmlFor="gf-minutes-per-point">
-                          Minutes per point
-                        </Label>
-                        <Input
-                          id="gf-minutes-per-point"
-                          type="number"
-                          min={1}
-                          value={createDraft.minutes_per_point}
-                          onChange={(event) =>
-                            setCreateRule(
-                              "minutes_per_point",
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="gf-points-per-interval">
-                          Points per interval
-                        </Label>
-                        <Input
-                          id="gf-points-per-interval"
-                          type="number"
-                          min={1}
-                          value={createDraft.points_per_interval}
-                          onChange={(event) =>
-                            setCreateRule(
-                              "points_per_interval",
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="gf-min-session">Min session (min)</Label>
-                        <Input
-                          id="gf-min-session"
-                          type="number"
-                          min={0}
-                          value={createDraft.min_session_minutes}
-                          onChange={(event) =>
-                            setCreateRule(
-                              "min_session_minutes",
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="gf-pause-grace">Pause grace (min)</Label>
-                        <Input
-                          id="gf-pause-grace"
-                          type="number"
-                          min={1}
-                          value={createDraft.pause_grace_minutes}
-                          onChange={(event) =>
-                            setCreateRule(
-                              "pause_grace_minutes",
-                              event.target.value,
-                            )
-                          }
-                        />
-                        <p className="text-caption text-muted-foreground">
-                          How long a backgrounded session may stay paused before
-                          it expires, counting only the minutes studied before the
-                          pause.
-                        </p>
-                      </div>
-                    </div>
-                  </form>
-                  <DialogFooter>
-                    {/* Cancel only closes the dialog — not a write, so not gated. */}
-                    <Button
-                      variant="secondary"
-                      onClick={() => createDialog.setOpen(false)}
-                      disabled={createGeofence.isPending}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      form="geofence-create-form"
-                      type="submit"
-                      {...gate.controlProps(createGeofence.isPending)}
-                    >
-                      {createGeofence.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : null}
-                      Create study zone
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </header>
 
-            {/*
+          The nested family with `sole` (README § Page grammar): the
+          whole-screen states paint `--card` and would redraw the card this
+          route deleted. The gate fallbacks above are the denied and checking
+          lines, plus the shared offline state (§ Chat Admin and Discord
+          Import).
+        */}
+        <div className="mt-4 space-y-4">
+          {/*
             Disable, don't hide (§5 rule 4): the zones themselves stay readable
             and every write control stays visible, pointing at this one sentence.
           */}
-            <SubscriptionNotice gate={gate} feature="managing geofences" />
+          <SubscriptionNotice gate={gate} feature="managing geofences" />
 
-            {geofences.length === 0 ? (
-              <EmptyState
-                title="No study zones yet"
-                description="Create your first zone to let members start tracked study sessions for points."
-              />
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                {geofences.map((zone) => (
-                  <Card key={zone.id} className="border-border">
-                    <CardHeader className="flex flex-row items-start justify-between gap-2">
-                      <div>
-                        <CardTitle className="flex items-center gap-2 text-lg">
-                          <StudyZonesGlyph className="h-4 w-4 text-muted-foreground" />
-                          {zone.name}
-                        </CardTitle>
-                        <CardDescription>
-                          {zone.points_per_interval} pt every{" "}
-                          {zone.minutes_per_point} min · min{" "}
-                          {zone.min_session_minutes} min session ·{" "}
-                          {zone.pause_grace_minutes ?? 5} min pause grace
-                        </CardDescription>
-                      </div>
-                      <Badge variant={geofenceStatusKind(zone.is_active)}>
-                        {zone.is_active ? "Active" : "Disabled"}
-                      </Badge>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="max-h-40 overflow-y-auto rounded-lg border border-border p-2 font-mono text-caption text-muted-foreground">
-                        {zone.coordinates && zone.coordinates.length > 0 ? (
-                          <ul>
-                            {zone.coordinates.map((c, idx) => (
-                              <li key={idx}>
-                                {c.lat.toFixed(6)}, {c.lng.toFixed(6)}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p>No coordinates recorded.</p>
-                        )}
-                      </div>
-                    </CardContent>
-                    <CardFooter className="flex flex-wrap gap-2">
-                      {/*
-                      PATCH and DELETE /v1/geofences/:id sit behind the same guard
-                      as the create route, so the row actions mirror the same
-                      gate — gating only "New study zone" would have the page
-                      claim writes are blocked while still offering three.
-                    */}
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        {...gate.controlProps()}
-                        onClick={() => openEditor(zone)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        {...gate.controlProps()}
-                        onClick={() => void toggleActive(zone)}
-                      >
-                        {zone.is_active ? (
-                          <PowerOff className="h-4 w-4" />
-                        ) : (
-                          <Power className="h-4 w-4" />
-                        )}
-                        {zone.is_active ? "Disable" : "Enable"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        {...gate.controlProps()}
-                        onClick={() => void handleDelete(zone)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Delete
-                      </Button>
-                    </CardFooter>
-                  </Card>
-                ))}
-              </div>
-            )}
+          {isOffline && anyReadUncached(geofencesQuery) ? (
+            <NestedOffline
+              sole
+              title="Study zones unavailable offline"
+              description="Reconnect to draw a zone or change its reward rate."
+              onRetry={() => {
+                void geofencesQuery.refetch();
+              }}
+            />
+          ) : geofencesQuery.isPending ? (
+            <NestedLoading sole message="Loading study zones..." />
+          ) : geofencesQuery.isError ? (
+            <NestedError
+              sole
+              title="Couldn't load study zones"
+              description="Confirm your chapter access and retry."
+              onRetry={() => void geofencesQuery.refetch()}
+            />
+          ) : geofences.length === 0 ? (
+            <NestedEmpty
+              sole
+              title="No study zones yet"
+              description="Create your first zone to let members start tracked study sessions for points."
+            />
+          ) : (
+            /*
+              A flush list, one row per zone. The polygon's vertices used to
+              sit in a mono box on every card; they are an input, not
+              something an officer reads at a glance, so they live behind Edit.
+            */
+            <ul aria-label="Study zones" className={denseListClassName}>
+              {geofences.map((zone) => (
+                <li
+                  key={zone.id}
+                  className="flex min-h-11 flex-col gap-2 py-2.5 sm:flex-row sm:items-center sm:gap-3"
+                >
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <StudyZonesGlyph
+                      aria-hidden="true"
+                      className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        {zone.name}
+                      </p>
+                      <p className="text-caption text-muted-foreground">
+                        {studyZoneRulesLine(zone)}
+                      </p>
+                    </div>
+                    <Badge
+                      className="shrink-0"
+                      variant={geofenceStatusKind(zone.is_active)}
+                    >
+                      {geofenceStatusLabel(zone.is_active)}
+                    </Badge>
+                  </div>
+                  {/*
+                    PATCH and DELETE /v1/geofences/:id sit behind the same guard
+                    as the create route, so the row actions mirror the same
+                    gate — gating only "New study zone" would have the page
+                    claim writes are blocked while still offering three.
+                  */}
+                  <div className="flex shrink-0 flex-wrap items-center gap-1 pl-7 sm:pl-0">
+                    <Button
+                      size="toolbar"
+                      variant="quiet"
+                      {...gate.controlProps()}
+                      onClick={() => openEditor(zone)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="toolbar"
+                      variant="quiet"
+                      {...gate.controlProps()}
+                      onClick={() => void toggleActive(zone)}
+                    >
+                      {zone.is_active ? (
+                        <PowerOff className="h-4 w-4" />
+                      ) : (
+                        <Power className="h-4 w-4" />
+                      )}
+                      {zone.is_active ? "Disable" : "Enable"}
+                    </Button>
+                    <Button
+                      size="toolbar"
+                      variant="quiet"
+                      {...gate.controlProps()}
+                      onClick={() => void handleDelete(zone)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
 
-            <Dialog {...editDialog.dialogProps}>
-              <DialogContent
-                className="max-h-[80vh] overflow-y-auto sm:max-w-lg"
-                {...editDialog.contentProps}
-              >
-                <DialogHeader>
-                  <DialogTitle>Edit study zone</DialogTitle>
-                  <DialogDescription>
-                    Coordinates replace the full polygon on save.
-                  </DialogDescription>
-                </DialogHeader>
-                {editTarget ? (
-                  <form
-                    id="geofence-edit-form"
-                    className="space-y-4"
-                    onSubmit={submitEdit}
-                  >
+          <Dialog {...editDialog.dialogProps}>
+            <DialogContent
+              className="max-h-[80vh] overflow-y-auto sm:max-w-lg"
+              {...editDialog.contentProps}
+            >
+              <DialogHeader>
+                <DialogTitle>Edit study zone</DialogTitle>
+                <DialogDescription>
+                  Coordinates replace the full polygon on save.
+                </DialogDescription>
+              </DialogHeader>
+              {editTarget ? (
+                <form
+                  id="geofence-edit-form"
+                  className="space-y-4"
+                  onSubmit={submitEdit}
+                >
+                  <div className="grid gap-1">
+                    <Label htmlFor="gf-edit-name">Name</Label>
+                    <Input
+                      id="gf-edit-name"
+                      value={editDraft.name}
+                      onChange={(event) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          name: event.target.value,
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="gf-edit-coords">Vertices</Label>
+                    <Textarea
+                      id="gf-edit-coords"
+                      aria-describedby="gf-edit-coords-help"
+                      className="font-mono text-sm"
+                      value={editDraft.coordinates}
+                      onChange={(event) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          coordinates: event.target.value,
+                        }))
+                      }
+                      rows={6}
+                      required
+                    />
+                    <p
+                      id="gf-edit-coords-help"
+                      className="text-caption text-muted-foreground"
+                    >
+                      One lat, lng pair per line.
+                    </p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
                     <div className="grid gap-1">
-                      <Label htmlFor="gf-edit-name">Name</Label>
+                      <Label htmlFor="gf-edit-mpp">Minutes per point</Label>
                       <Input
-                        id="gf-edit-name"
-                        value={editDraft.name}
+                        id="gf-edit-mpp"
+                        type="number"
+                        min={1}
+                        value={editDraft.minutes_per_point}
                         onChange={(event) =>
-                          setEditDraft((prev) => ({
-                            ...prev,
-                            name: event.target.value,
-                          }))
+                          setEditRule("minutes_per_point", event.target.value)
                         }
-                        required
                       />
                     </div>
                     <div className="grid gap-1">
-                      <Label htmlFor="gf-edit-coords">Vertices</Label>
-                      <Textarea
-                        id="gf-edit-coords"
-                        value={editDraft.coordinates}
+                      <Label htmlFor="gf-edit-ppi">Points per interval</Label>
+                      <Input
+                        id="gf-edit-ppi"
+                        type="number"
+                        min={1}
+                        value={editDraft.points_per_interval}
                         onChange={(event) =>
-                          setEditDraft((prev) => ({
-                            ...prev,
-                            coordinates: event.target.value,
-                          }))
+                          setEditRule("points_per_interval", event.target.value)
                         }
-                        rows={6}
-                        required
                       />
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="grid gap-1">
-                        <Label htmlFor="gf-edit-mpp">Minutes per point</Label>
-                        <Input
-                          id="gf-edit-mpp"
-                          type="number"
-                          min={1}
-                          value={editDraft.minutes_per_point}
-                          onChange={(event) =>
-                            setEditRule("minutes_per_point", event.target.value)
-                          }
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="gf-edit-ppi">Points per interval</Label>
-                        <Input
-                          id="gf-edit-ppi"
-                          type="number"
-                          min={1}
-                          value={editDraft.points_per_interval}
-                          onChange={(event) =>
-                            setEditRule(
-                              "points_per_interval",
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="gf-edit-min">Min session (min)</Label>
-                        <Input
-                          id="gf-edit-min"
-                          type="number"
-                          min={0}
-                          value={editDraft.min_session_minutes}
-                          onChange={(event) =>
-                            setEditRule(
-                              "min_session_minutes",
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="gf-edit-pause-grace">
-                          Pause grace (min)
-                        </Label>
-                        <Input
-                          id="gf-edit-pause-grace"
-                          type="number"
-                          min={1}
-                          value={editDraft.pause_grace_minutes}
-                          onChange={(event) =>
-                            setEditRule(
-                              "pause_grace_minutes",
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </div>
+                    <div className="grid gap-1">
+                      <Label htmlFor="gf-edit-min">Min session (min)</Label>
+                      <Input
+                        id="gf-edit-min"
+                        type="number"
+                        min={0}
+                        value={editDraft.min_session_minutes}
+                        onChange={(event) =>
+                          setEditRule("min_session_minutes", event.target.value)
+                        }
+                      />
                     </div>
-                  </form>
-                ) : null}
-                <DialogFooter>
-                  {/* Cancel only closes the dialog — not a write, so not gated. */}
-                  <Button
-                    variant="secondary"
-                    onClick={() => editDialog.setOpen(false)}
-                    disabled={updateGeofence.isPending}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    form="geofence-edit-form"
-                    type="submit"
-                    {...gate.controlProps(updateGeofence.isPending)}
-                  >
-                    {updateGeofence.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : null}
-                    Save changes
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-            {confirmDialog}
-          </div>
-        )}
+                    <div className="grid gap-1">
+                      <Label htmlFor="gf-edit-pause-grace">
+                        Pause grace (min)
+                      </Label>
+                      <Input
+                        id="gf-edit-pause-grace"
+                        type="number"
+                        min={1}
+                        value={editDraft.pause_grace_minutes}
+                        onChange={(event) =>
+                          setEditRule("pause_grace_minutes", event.target.value)
+                        }
+                      />
+                    </div>
+                  </div>
+                </form>
+              ) : null}
+              <DialogFooter>
+                {/* Cancel only closes the dialog — not a write, so not gated. */}
+                <Button
+                  variant="secondary"
+                  onClick={() => editDialog.setOpen(false)}
+                  disabled={updateGeofence.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  form="geofence-edit-form"
+                  type="submit"
+                  {...gate.controlProps(updateGeofence.isPending)}
+                >
+                  {updateGeofence.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  Save changes
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          {confirmDialog}
+        </div>
       </Can>
     </>
   );

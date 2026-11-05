@@ -138,8 +138,7 @@ export function SettingsFieldsTab({ canManage }: Props) {
         <CardHeader>
           <CardTitle>Custom member fields</CardTitle>
           <CardDescription>
-            Extra fields collected per member, each with a visibility tier.
-            Sensitive fields are only returned to authorized viewers. Saving
+            Sensitive fields are shown only to authorized viewers. Saving
             writes an entry to the chapter audit log.
           </CardDescription>
         </CardHeader>
@@ -248,7 +247,7 @@ function FieldRow({
         </div>
         <Button
           type="button"
-          variant="ghost"
+          variant="quiet"
           size="sm"
           disabled={!canManage || busy}
           onClick={() => void handleDelete()}

@@ -43,8 +43,7 @@ export function SettingsPrivacyTab({
       <CardHeader>
         <CardTitle>Privacy</CardTitle>
         <CardDescription>
-          Control how your chapter&apos;s data is used. Changes here are written
-          to the chapter audit log.
+          Changes are written to the chapter audit log.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -70,7 +69,7 @@ export function SettingsPrivacyTab({
         </div>
         {!canManage ? (
           <p className="mt-3 text-xs text-muted-foreground">
-            Only users with <code>chapter-config:manage</code> can change this.
+            Your role can&apos;t change this.
           </p>
         ) : null}
       </CardContent>

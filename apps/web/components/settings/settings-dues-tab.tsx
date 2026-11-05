@@ -41,27 +41,47 @@ type Props = {
   pledgeTerm: string;
 };
 
-const CADENCE_OPTIONS: ReadonlyArray<{ value: OrgDues["cadence"]; label: string }> =
-  [
-    { value: "monthly", label: "Monthly" },
-    { value: "per_semester", label: "Per semester" },
-    { value: "per_quarter", label: "Per quarter" },
-  ];
+const CADENCE_OPTIONS: ReadonlyArray<{
+  value: OrgDues["cadence"];
+  label: string;
+}> = [
+  { value: "monthly", label: "Monthly" },
+  { value: "per_semester", label: "Per semester" },
+  { value: "per_quarter", label: "Per quarter" },
+];
 
 /** Cents-valued fields shown as plain integer inputs (amounts are stored in cents). */
 function centsFieldsFor(
   pledgeTerm: string,
 ): ReadonlyArray<{ key: CentsKey; label: string }> {
   return [
-    { key: "active_amount_cents", label: "Active member dues (cents)" },
-    {
-      key: "new_member_amount_cents",
-      label: `${pledgeTerm} dues (cents)`,
-    },
-    { key: "alumni_amount_cents", label: "Alumni dues (cents)" },
-    { key: "late_fee_cents", label: "Late fee (cents)" },
-    { key: "scholarship_pool_cents", label: "Scholarship pool (cents)" },
+    { key: "active_amount_cents", label: "Active member dues" },
+    { key: "new_member_amount_cents", label: `${pledgeTerm} dues` },
+    { key: "alumni_amount_cents", label: "Alumni dues" },
+    { key: "late_fee_cents", label: "Late fee" },
+    { key: "scholarship_pool_cents", label: "Scholarship pool" },
   ];
+}
+
+/*
+ * Amounts are typed in dollars and stored in cents, as the invoice form
+ * already took them. They used to be typed in cents ("85000" for $850), which
+ * asked an officer to do the conversion the screen should.
+ */
+const DOLLAR_DRAFT = /^\d*(?:\.\d{0,2})?$/;
+
+/** `"850"` for 85000, `"42.50"` for 4250. */
+function dollarsDraft(cents: number): string {
+  return cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2);
+}
+
+/** Whole cents for a dollar draft, or `undefined` when it isn't an amount yet. */
+function parseDollars(draft: string): number | undefined {
+  const trimmed = draft.trim();
+  if (trimmed === "" || trimmed === "." || !DOLLAR_DRAFT.test(trimmed)) {
+    return undefined;
+  }
+  return Math.round(Number(trimmed) * 100);
 }
 
 type CentsKey =
@@ -70,7 +90,8 @@ type CentsKey =
   | "alumni_amount_cents"
   | "late_fee_cents"
   | "scholarship_pool_cents";
-type NumberKey = CentsKey | "grace_days" | "installment_count";
+type CountKey = "grace_days" | "installment_count";
+type NumberKey = CentsKey | CountKey;
 
 /** The dues config with every numeric field held as the text the input shows. */
 type DuesDraft = Omit<OrgDues, NumberKey> & Record<NumberKey, string>;
@@ -85,9 +106,21 @@ const NUMBER_KEYS: readonly NumberKey[] = [
   "installment_count",
 ];
 
+const CENTS_KEYS: readonly CentsKey[] = [
+  "active_amount_cents",
+  "new_member_amount_cents",
+  "alumni_amount_cents",
+  "late_fee_cents",
+  "scholarship_pool_cents",
+];
+
 function toDraft(dues: OrgDues): DuesDraft {
   const draft = { ...dues } as unknown as DuesDraft;
-  for (const key of NUMBER_KEYS) draft[key] = String(dues[key]);
+  for (const key of NUMBER_KEYS) {
+    draft[key] = (CENTS_KEYS as readonly string[]).includes(key)
+      ? dollarsDraft(dues[key])
+      : String(dues[key]);
+  }
   return draft;
 }
 
@@ -97,11 +130,14 @@ function toDraft(dues: OrgDues): DuesDraft {
  * fee, and scholarship pool. Edits are held locally and committed with one save,
  * which writes a `chapter_audit_log` row (mirrored to `#chapter-audit`).
  *
- * Every numeric input holds a text draft (`guardIntDraft`): a negative or a
- * decimal keeps the previous text, while a field can be emptied mid-edit and
- * keeps the transient "0" left by deleting a leading digit. Each floor (cents
- * and days `>= 0`, installment count `>= 1`) is checked at save, which refuses
- * an empty or under-floor field by name rather than sending it (#3050).
+ * Every numeric input holds a text draft, and a field can be emptied mid-edit.
+ * Amounts are typed in dollars with up to two decimals (`DOLLAR_DRAFT`): a
+ * keystroke that can't become an amount ("-", "1.234") keeps the previous
+ * text, and save stores whole cents (`parseDollars`). Counts (`guardIntDraft`)
+ * refuse a negative or a decimal the same way, and keep the transient "0" left
+ * by deleting a leading digit. Save refuses an empty amount, and an empty or
+ * under-floor count (days `>= 0`, installment count `>= 1`), by name rather
+ * than sending it (#3050).
  */
 export function SettingsDuesTab({
   dues,
@@ -122,16 +158,32 @@ export function SettingsDuesTab({
 
   const disabled = !canManage || isSaving;
 
-  function setNumber(key: NumberKey, raw: string) {
+  function setNumber(key: CountKey, raw: string) {
     const next = guardIntDraft(raw);
     if (next === undefined) return;
     setDraft((prev) => ({ ...prev, [key]: next }));
   }
 
+  /** Keeps the last amount through anything that can't become one ("-", "1.234", "abc"). */
+  function setDollars(key: CentsKey, raw: string) {
+    const next = raw.replace(/^\$/, "").trim();
+    if (!DOLLAR_DRAFT.test(next)) return;
+    setDraft((prev) => ({ ...prev, [key]: next }));
+  }
+
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const checked: Array<{ key: NumberKey; label: string; min: number }> = [
-      ...centsFields.map((field) => ({ ...field, min: 0 })),
+    for (const field of centsFields) {
+      if (parseDollars(draft[field.key]) === undefined) {
+        toast({
+          title: `${field.label} needs an amount`,
+          description: "Enter an amount in dollars, like 425 or 42.50.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+    const checked: Array<{ key: CountKey; label: string; min: number }> = [
       { key: "grace_days", label: "Grace period (days)", min: 0 },
     ];
     // A hidden count isn't the officer's to fix: with installments off it
@@ -150,15 +202,16 @@ export function SettingsDuesTab({
         return;
       }
     }
-    const read = (key: NumberKey, min: number) =>
+    const read = (key: CountKey, min: number) =>
       parseGuardedInt(draft[key], min) ?? dues[key];
+    const cents = (key: CentsKey) => parseDollars(draft[key]) ?? dues[key];
     onSave({
       ...draft,
-      active_amount_cents: read("active_amount_cents", 0),
-      new_member_amount_cents: read("new_member_amount_cents", 0),
-      alumni_amount_cents: read("alumni_amount_cents", 0),
-      late_fee_cents: read("late_fee_cents", 0),
-      scholarship_pool_cents: read("scholarship_pool_cents", 0),
+      active_amount_cents: cents("active_amount_cents"),
+      new_member_amount_cents: cents("new_member_amount_cents"),
+      alumni_amount_cents: cents("alumni_amount_cents"),
+      late_fee_cents: cents("late_fee_cents"),
+      scholarship_pool_cents: cents("scholarship_pool_cents"),
       grace_days: read("grace_days", 0),
       installment_count: read("installment_count", 1),
     });
@@ -169,9 +222,7 @@ export function SettingsDuesTab({
       <CardHeader>
         <CardTitle>Dues</CardTitle>
         <CardDescription>
-          Set how often dues are billed, the amount each member class owes, and
-          optional payment plans. Amounts are in cents. Saving writes an entry to
-          the chapter audit log.
+          Saving writes an entry to the chapter audit log.
         </CardDescription>
       </CardHeader>
       {/* noValidate: the browser's own `min` bubble would stop the submit
@@ -207,16 +258,26 @@ export function SettingsDuesTab({
             {centsFields.map((field) => (
               <div key={field.key} className="grid gap-1.5">
                 <Label htmlFor={`dues-${field.key}`}>{field.label}</Label>
-                <Input
-                  id={`dues-${field.key}`}
-                  type="number"
-                  min={0}
-                  step={1}
-                  inputMode="numeric"
-                  value={draft[field.key]}
-                  disabled={disabled}
-                  onChange={(event) => setNumber(field.key, event.target.value)}
-                />
+                <div className="relative">
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  >
+                    $
+                  </span>
+                  <Input
+                    id={`dues-${field.key}`}
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={draft[field.key]}
+                    disabled={disabled}
+                    className="pl-7 tabular-nums"
+                    onChange={(event) =>
+                      setDollars(field.key, event.target.value)
+                    }
+                  />
+                </div>
               </div>
             ))}
             <div className="grid gap-1.5">

@@ -88,7 +88,7 @@ A screen reached from another one draws a back row above its title, as the board
 - **s12 draws its upload glyph in the same slot**, for a viewer holding `chapter_docs:upload` only, opening s21 ([#3399](https://github.com/pdcarlson/Frapp/issues/3399)).
 - **Every state of a screen draws it**, the loading and error states included: a link to an event that's gone lands on s07's error state, and that state still needs a way out.
 - **s14 draws `‹ Chat`, not the board's `‹ More`**, because its entry moved to the bell on Chat home ([§ Global entries outside the tab bar](#global-entries-outside-the-tab-bar), [#3362](https://github.com/pdcarlson/Frapp/issues/3362)). Service hours, which the board never drew, opens from a More row and draws `‹ More` like its neighbours.
-- It is drawn in the board's back-row gold (`gold.askText`, `#F4CB63`), the token s05's `‹` uses, not the chapter accent: it is navigation chrome, like the tab bar.
+- It is drawn in the chapter accent (`useChapterBranding().accent`), as s05's `‹` is. The board draws it gold because its chapter is gold; inside a chapter every back arrow and inline action takes the chapter's accent ([`branding.md` § Accent Color](../../behavior/branding.md#accent-color), owner rule 2026-11-04). It was fixed `gold.askText` until 2026-11-05, which read as a stray gold control beside a purple or red chapter.
 - Pinned by `components/back-row.spec.tsx` and `components/screen-shell.spec.tsx`, and per screen by the screen specs (`lib/events/event-details-screen.spec.tsx`, `lib/more/back-rows.spec.tsx` and the other `lib/**/*-screen.spec.tsx` files, s07's and s15's loading and error states included), through `test/back-row.ts`.
 
 ## Deep links

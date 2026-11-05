@@ -598,8 +598,7 @@ export function slashModuleRefusal(
   }
   if (isModuleEnabled(moduleKey)) return null;
   const label =
-    MODULE_CATALOG.find((entry) => entry.key === moduleKey)?.label ??
-    moduleKey;
+    MODULE_CATALOG.find((entry) => entry.key === moduleKey)?.label ?? moduleKey;
   return {
     title: `/${token} is turned off`,
     description: `Your chapter has switched off ${label}. An officer can turn it back on in Settings → Modules.`,
@@ -1418,10 +1417,7 @@ export function Composer({
     return (
       <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
         {isReadOnly ? (
-          <>
-            This channel is read-only. Posting requires the{" "}
-            <code className="font-mono">announcements:post</code> permission.
-          </>
+          <>This channel is read-only for your role.</>
         ) : (
           <>
             Alumni can read this channel but not post. Alumni may post in{" "}
@@ -1446,9 +1442,7 @@ export function Composer({
         `focus:outline-none` and, before this, nothing replaced it, so the
         composer had no visible focus indicator at all.
       */}
-      <div
-        className={cn(COMPOSER_WELL_CLASS, FOCUS_RING_WITHIN)}
-      >
+      <div className={cn(COMPOSER_WELL_CLASS, FOCUS_RING_WITHIN)}>
         {/*
           The staged reply, above the input and above the attachment chips —
           it is context for everything below it, not another attachment. Same

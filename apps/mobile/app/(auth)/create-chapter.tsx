@@ -6,7 +6,6 @@ import {
   ScrollView,
   Share,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
@@ -50,6 +49,7 @@ import {
   OnboardingPrimaryButton,
 } from "@/components/onboarding/onboarding-primary-button";
 import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
+import { Toggle } from "@/components/toggle";
 import {
   EMPTY_CHAPTER_IDENTITY,
   chapterIdentityBranding,
@@ -964,19 +964,11 @@ function ConfirmStep({
                 Your short name or logo stands in for them.
               </Text>
             </View>
-            <Switch
+            <Toggle
+              house
               value={identity.showGreekLetters}
               onValueChange={(value) => set("showGreekLetters", value)}
               accessibilityLabel="Show Greek letters"
-              trackColor={{
-                false: tokens.color.border.input,
-                true: tint(tokens.color.gold.house, 0.3),
-              }}
-              thumbColor={
-                identity.showGreekLetters
-                  ? tokens.color.gold.house
-                  : tokens.color.surface.card
-              }
             />
           </View>
         </>

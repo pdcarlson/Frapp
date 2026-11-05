@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import type { ChapterLogoUpload } from "@repo/hooks";
+import { orgHidingGreekLettersIn } from "@repo/org-archetypes";
 import {
   CHAPTER_SHORT_NAME_MAX_LENGTH,
   acceptAttribute,
@@ -81,6 +82,10 @@ export function SettingsChapterMarkCard({
   manageHint,
   profileHint,
 }: Props) {
+  // An organization that never displays its letters (FIJI) gets no switch:
+  // its letters stay off, and the next save writes that down even for a
+  // chapter created before the profile turned them off.
+  const lettersHidden = orgHidingGreekLettersIn(name) !== undefined;
   const [shortName, setShortName] = useState(branding.short_name ?? "");
   const [showLetters, setShowLetters] = useState(greekLettersShown(branding));
   const [logoError, setLogoError] = useState<string | null>(null);
@@ -101,7 +106,7 @@ export function SettingsChapterMarkCard({
   const draft = {
     short_name: shortName,
     greek_letters: branding.greek_letters,
-    show_greek_letters: showLetters,
+    show_greek_letters: showLetters && !lettersHidden,
   };
   const mark = resolveChapterMark({ logoUrl, branding: draft, name });
 
@@ -123,7 +128,7 @@ export function SettingsChapterMarkCard({
     event.preventDefault();
     const trimmed = shortName.trim();
     const brandingDiff: ChapterMarkBrandingDraft = {
-      show_greek_letters: showLetters,
+      show_greek_letters: showLetters && !lettersHidden,
     };
     // The config PATCH deep-merges, so leaving the key out keeps a stored
     // short name. An empty string is how a cleared field is removed.
@@ -138,10 +143,9 @@ export function SettingsChapterMarkCard({
       <CardHeader>
         <CardTitle>Chapter mark</CardTitle>
         <CardDescription>
-          What stands for your chapter in the nav and at the top of the mobile
-          app&apos;s Chat home: your logo if you upload one, otherwise your short name, otherwise your
-          Greek letters. Some organizations don&apos;t display their letters;
-          turn them off and they appear nowhere.
+          {lettersHidden
+            ? "Shown in the nav and on mobile's Chat home: your logo, or else your short name."
+            : "Shown in the nav and on mobile's Chat home: your logo, or else your short name, or else your Greek letters."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -212,21 +216,23 @@ export function SettingsChapterMarkCard({
               placeholder="FIJI"
             />
           </div>
-          <div className="flex items-center justify-between gap-3">
-            <Label htmlFor="chapter-show-letters" className="font-normal">
-              Show Greek letters
-              <span className="block text-xs text-muted-foreground">
-                Off hides them wherever Frapp would show them. The letters
-                stay saved under Identity &amp; founding.
-              </span>
-            </Label>
-            <Switch
-              id="chapter-show-letters"
-              checked={showLetters}
-              onCheckedChange={setShowLetters}
-              disabled={!canManage}
-            />
-          </div>
+          {lettersHidden ? null : (
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="chapter-show-letters" className="font-normal">
+                Show Greek letters
+                <span className="block text-xs text-muted-foreground">
+                  Off hides them wherever Frapp would show them. The letters
+                  stay saved under Identity &amp; founding.
+                </span>
+              </Label>
+              <Switch
+                id="chapter-show-letters"
+                checked={showLetters}
+                onCheckedChange={setShowLetters}
+                disabled={!canManage}
+              />
+            </div>
+          )}
           <div className="flex items-center justify-between gap-3">
             {manageHint ?? <span />}
             <Button type="submit" disabled={!canManage || savingConfig}>

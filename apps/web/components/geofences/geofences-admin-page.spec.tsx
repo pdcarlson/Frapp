@@ -1,6 +1,13 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import {
   expectClearingEntriesEmpty,
@@ -228,6 +235,51 @@ describe("GeofencesAdminPage subscription gating", () => {
     await userEvent.click(editButton());
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /save changes/i })).toBeEnabled();
+  });
+});
+
+describe("GeofencesAdminPage layout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+  });
+
+  it("lists zones flush, with no --card panel", () => {
+    const { container } = render(<GeofencesAdminPage />);
+
+    expect(cardFilledContainers(container)).toEqual([]);
+    const rows = within(
+      screen.getByRole("list", { name: "Study zones" }),
+    ).getAllByRole("listitem");
+    expect(rows).toHaveLength(1);
+    expect(
+      within(rows[0]!).getByText(
+        "1 pt every 30 min · min 15 min session · 5 min pause grace",
+      ),
+    ).toBeInTheDocument();
+    expect(within(rows[0]!).getByText("Active")).toBeInTheDocument();
+  });
+
+  it("keeps the polygon behind Edit rather than on the row", async () => {
+    render(<GeofencesAdminPage />);
+
+    expect(document.body.textContent).not.toContain("30.286");
+    await userEvent.click(editButton());
+    expect(screen.getByLabelText(/vertices/i)).toHaveValue(
+      "30.286, -97.74\n30.287, -97.74\n30.287, -97.739",
+    );
+  });
+
+  it("puts New study zone in the title row, titled in sentence case", () => {
+    render(<GeofencesAdminPage />);
+
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading).toHaveTextContent("Study zones");
+    expect(
+      within(heading.parentElement!).getByRole("button", {
+        name: /new study zone/i,
+      }),
+    ).toBeInTheDocument();
   });
 });
 

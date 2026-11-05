@@ -23,7 +23,7 @@ import {
   subscriptionStatusKind,
   subscriptionStatusLabel,
 } from "@/components/billing/invoice-status";
-import { formatBareDate } from "@repo/formatting";
+import { formatDay } from "@repo/formatting";
 
 /**
  * Stripe confirms the subscription over a webhook, not on the redirect, so the
@@ -71,7 +71,8 @@ function readOutcome(value: string | null): CheckoutOutcome {
  */
 function planName(status: string | null): string {
   if (status === "active" || status === "past_due") return "Pro";
-  if (status === "incomplete" || status === "canceled") return "No subscription";
+  if (status === "incomplete" || status === "canceled")
+    return "No subscription";
   return "Subscription";
 }
 
@@ -299,10 +300,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
     } catch (error) {
       toast({
         title: "Couldn't start checkout",
-        description: getErrorMessage(
-          error,
-          "Confirm billing:manage permission and retry.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -322,10 +320,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
     } catch (error) {
       toast({
         title: "Couldn't open billing portal",
-        description: getErrorMessage(
-          error,
-          "Confirm billing:manage permission and an active Stripe customer.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -425,8 +420,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
               void queryClient.invalidateQueries({ queryKey: ["billing"] });
             }}
           />
-        ) : status === null ? (
-          /*
+        ) : status === null ? /*
             Fail open, matching `useSubscriptionWriteState`. An unresolved
             status is most likely a paying chapter behind a slow or failed
             fetch, and offering it a checkout button that 400s with "already has
@@ -436,8 +430,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
             `isError` while retaining that data, and blanking the control there
             would remove the only thing that unlocks the chapter (§5 rule 3).
           */
-          null
-        ) : status === "active" ? (
+        null : status === "active" ? (
           <>
             {outcome === "success" ||
             (outcome === "returned" && sawActivation) ? (
@@ -478,7 +471,11 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
           />
         ) : (
           <StripeAction
-            label={status === "canceled" ? "Restart subscription" : "Complete checkout"}
+            label={
+              status === "canceled"
+                ? "Restart subscription"
+                : "Complete checkout"
+            }
             variant="default"
             pending={createCheckout.isPending}
             onRun={startCheckout}
@@ -518,9 +515,7 @@ function PlanMeta({
   invoicesHref?: string;
 }) {
   const lapsedOn =
-    status === "past_due" && pastDueSince
-      ? formatBareDate(pastDueSince)
-      : null;
+    status === "past_due" && pastDueSince ? formatDay(pastDueSince) : null;
   const customerId = billingStatus?.stripe_customer_id ?? null;
   const subscriptionId = billingStatus?.subscription_id ?? null;
 

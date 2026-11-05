@@ -327,6 +327,18 @@
   * {
     border-color: var(--border);
   }
+  /*
+   * Tell the browser the page is dark, so the controls it draws itself render
+   * dark too: checkboxes and radios, the date and time pickers' glyphs, native
+   * <select> popups, file inputs, number spinners and autofill. Without it they
+   * kept their light-scheme chrome, which on this ladder is a white box per row
+   * on every list with a checkbox column and an invisible black calendar glyph
+   * in every date field. Signet has one appearance, so this is `dark` alone,
+   * never `light dark`.
+   */
+  :root {
+    color-scheme: dark;
+  }
   body {
     background-color: var(--background);
     color: var(--foreground);

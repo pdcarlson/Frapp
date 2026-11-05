@@ -43,6 +43,8 @@ const ALLOWED: Record<string, string> = {
     "reads the stored field into the Settings form",
   "apps/web/components/settings/settings-chapter-mark-card.tsx":
     "the Settings preview, which feeds resolveChapterMark",
+  "apps/web/components/layout/chapter-nav-header.tsx":
+    "turns show_greek_letters off for an organization that hides its letters (FIJI) before the crest goes through resolveChapterMark",
   "apps/mobile/app/(auth)/create-chapter.tsx":
     "the mobile wizard's input for the field",
 };
