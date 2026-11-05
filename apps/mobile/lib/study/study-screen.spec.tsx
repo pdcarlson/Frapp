@@ -110,6 +110,9 @@ const api = {
   stop: vi.fn(),
 };
 let sessions: unknown[] = NO_SESSIONS;
+/** The zones and sessions queries' `refetch`, hoisted so a pull can be asserted on. */
+const refetchZones = vi.fn();
+const refetchSessions = vi.fn();
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -119,14 +122,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: isLoading,
     isError: false,
     isFetching: false,
-    refetch: vi.fn(),
+    refetch: refetchZones,
   }),
   useStudySessions: () => ({
     data: isLoading || sessionsLoading || sessionsFailed ? undefined : sessions,
     isPending: isLoading || sessionsLoading,
     isError: sessionsFailed,
     isFetching: false,
-    refetch: vi.fn().mockResolvedValue({ data: sessions }),
+    refetch: refetchSessions,
   }),
   useStartStudySession: () => ({ mutateAsync: api.start }),
   useStudyHeartbeat: () => ({ mutateAsync: api.heartbeat }),
@@ -161,8 +164,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import StudyScreen from "@/app/(tabs)/study";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
-const refocus = (expoRouter as unknown as { __refocus: () => void })
-  .__refocus;
+const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -204,6 +206,10 @@ beforeEach(() => {
   sessionsFailed = false;
   chapter = HOURS_ON;
   refetchChapter.mockReset().mockResolvedValue(undefined);
+  refetchZones.mockReset().mockResolvedValue(undefined);
+  refetchSessions
+    .mockReset()
+    .mockImplementation(async () => ({ data: sessions }));
 });
 
 /** Re-render, as the query does when a refetch lands. */
@@ -721,6 +727,30 @@ describe("Study with hours switched off (#2718)", () => {
   });
 });
 
+describe("Study pull-to-refresh (#3385)", () => {
+  it("refreshes the chapter, its zones and the member's sessions on a pull (#3385)", async () => {
+    const tree = render();
+    // The stand-in ScrollView doesn't draw its `refreshControl`, so this calls
+    // the `refresh` that element was handed.
+    const scroll = tree.root.find(
+      (node) =>
+        node.type === ("ScrollView" as never) &&
+        node.props.refreshControl != null,
+    );
+    refetchChapter.mockClear();
+    refetchZones.mockClear();
+    refetchSessions.mockClear();
+    await act(async () => {
+      await scroll.props.refreshControl.props.refresh();
+    });
+
+    expect(refetchChapter).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(refetchZones).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(refetchSessions).toHaveBeenCalledWith({ cancelRefetch: true });
+    act(() => tree.unmount());
+  });
+});
+
 /** #3022. s10 opens from More's Study hours row and draws `‹ More`. */
 describe("Study back row (#3022)", () => {
   it("draws ‹ More above the title", () => {
@@ -902,7 +932,9 @@ describe("Study loading and empty states", () => {
     const tree = render();
 
     expect(screenText(tree)).toContain("No study zones yet");
-    expect(screenText(tree)).toContain("Ask an officer who manages study zones to add one.");
+    expect(screenText(tree)).toContain(
+      "Ask an officer who manages study zones to add one.",
+    );
     expect(screenText(tree)).not.toContain("geofences:manage");
     act(() => tree.unmount());
   });

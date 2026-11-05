@@ -17,10 +17,10 @@
  * With both managers wired, `refetchOnReconnect` (a TanStack default) starts
  * firing and `spec/ui/resilience/caching.md`'s invalidation rows — "Network
  * reconnect → All queries" and "Window focus → All stale queries" — are
- * delivered rather than merely specified. The explicit retry controls stay:
- * they are still the only recovery for a *server* error, which no amount of
- * connectivity signalling fixes. Their comments have been corrected so they no
- * longer assert something untrue.
+ * delivered rather than merely specified. A *server* error is a different
+ * case, which no amount of connectivity signalling fixes: a list recovers from
+ * one by a pull (#3385), and the explicit retry controls stay as the way out a
+ * member can see.
  *
  * ## Why `focusManager` is driven by `AppState`, not window focus
  *

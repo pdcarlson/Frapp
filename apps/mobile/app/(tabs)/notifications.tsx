@@ -9,6 +9,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { useRefetchAll } from "@/components/pull-to-refresh";
 import { BACK_TO_CHAT } from "@/components/back-row";
 import {
   listRowHint,
@@ -81,6 +82,7 @@ export default function NotificationsScreen() {
   const chapterId = useActiveChapterId();
 
   const notificationsQuery = useNotifications();
+  const refresh = useRefetchAll([notificationsQuery]);
   const markRead = useMarkNotificationRead();
   const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [markAllNote, setMarkAllNote] = useState<string | null>(null);
@@ -170,6 +172,7 @@ export default function NotificationsScreen() {
     <ScreenShell
       back={BACK_TO_CHAT}
       title="Notifications"
+      refresh={refresh}
       headerAction={
         unreadIds.length > 0 ? (
           <Pressable
