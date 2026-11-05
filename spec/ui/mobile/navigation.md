@@ -346,7 +346,7 @@ the same change. The lines that only said what a screen is for ("What you owe th
 chapter, and what it has earned you.") were deleted (owner decision, 2026-11-04), and so
 was the same kind of line in s13's own header, Directory's "Actives and alumni.". The board
 draws neither. Event details is the one screen that still passes a subtitle, the event's
-time, because s07 is the one screen the board draws one on. Its loading, empty and error
+time (and its place, since 2026-11-05), because s07 is the one screen the board draws one on. Its loading, empty and error
 states pass none. The rule itself lives in [`patterns.md` § Screen headers](patterns.md#screen-headers).
 
 **#3022 touched `components/screen-shell.tsx`, as an integrator change.** The shell gained an optional `back` prop that draws `BackRow` above the title, and every screen the board draws a back row on passes one in the same change, each of their state screens included. It also edited `app/(tabs)/_layout.tsx`, comment only: the header comment that said the rows weren't drawn yet now points at the rule, which lives in [§ Back rows](#back-rows).
