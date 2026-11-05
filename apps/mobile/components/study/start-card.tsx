@@ -4,6 +4,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import type { StudyZoneModel } from "@/lib/study/zones";
 import { zoneRewardCopy } from "@/lib/study/zones";
+import { CardMessages } from "@/components/card-messages";
 
 /**
  * The idle half of s10 — pick a zone, start a session.
@@ -29,6 +30,13 @@ export interface StartCardProps {
    */
   isBlocked?: boolean;
   graceCopy: string;
+  /**
+   * The screen's notice (a session that just ended) and failure lines, drawn
+   * under Start rather than above the card, so the card and the list below it
+   * don't jump when one arrives.
+   */
+  notice?: string | null;
+  failure?: string | null;
   onChooseZone: () => void;
   onStart: () => void;
 }
@@ -39,6 +47,8 @@ export function StartCard({
   isStarting,
   isBlocked = false,
   graceCopy,
+  notice = null,
+  failure = null,
   onChooseZone,
   onStart,
 }: StartCardProps) {
@@ -65,9 +75,12 @@ export function StartCard({
       >
         <View style={styles.zoneText}>
           <Text style={styles.zoneName}>{zone?.name ?? "Pick a zone"}</Text>
-          <Text style={styles.zoneMeta}>
-            {zone ? zoneRewardCopy(zone) : "Your chapter has study zones set up."}
-          </Text>
+          {/* No meta without a zone. The screen picks one by default, so this
+              is a moment between loads, and the old line only narrated that
+              zones exist. */}
+          {zone ? (
+            <Text style={styles.zoneMeta}>{zoneRewardCopy(zone)}</Text>
+          ) : null}
         </View>
         {canChooseZone ? <Text style={styles.chevron}>›</Text> : null}
       </Pressable>
@@ -97,6 +110,8 @@ export function StartCard({
           {isStarting ? "Starting…" : "Start session"}
         </Text>
       </Pressable>
+
+      <CardMessages notice={notice} failure={failure} align="left" />
 
       <Text style={styles.grace}>{graceCopy}</Text>
     </View>

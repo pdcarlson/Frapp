@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, StyleSheet, Text, View } from "react-native";
+import { Alert, AppState, StyleSheet, View } from "react-native";
 import type { AppStateStatus } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
@@ -17,11 +17,9 @@ import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
-import {
-  EmptyState,
-  ErrorState,
-  SkeletonLines,
-} from "@/components/state-block";
+import { EmptyState, ErrorState } from "@/components/state-block";
+import { CardListSkeleton } from "@/components/card-list-skeleton";
+import { CardMessages } from "@/components/card-messages";
 import { SessionCard } from "@/components/study/session-card";
 import { SessionRow } from "@/components/study/session-row";
 import { StartCard } from "@/components/study/start-card";
@@ -50,6 +48,10 @@ import {
 } from "@/lib/study/errors";
 import { startOfWeek } from "@/lib/study/format";
 import {
+  locationSettingsPath,
+  turnOnLocationStep,
+} from "@/lib/study/location-settings-path";
+import {
   creditedSeconds,
   isReportingStale,
   isPaused as sessionIsPaused,
@@ -65,7 +67,7 @@ import {
   selectActiveZones,
   type StudyZoneModel,
 } from "@/lib/study/zones";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useFrappTheme } from "@/lib/theme";
 
 /**
  * s10 — Study hours (`canvas-screens.dc.html`, `id="s10"`).
@@ -113,8 +115,19 @@ const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
  */
 const MIRROR_RETRY_MS = 15 * 1000;
 
-const LOCATION_REQUIRED_COPY =
-  "Frapp confirms you're in the study zone, so it needs location while you study. Turn it on in Settings → Frapp → Location.";
+/**
+ * The line for a member who said no to location. It spells out the path to the
+ * switch, since this line has no button to get them there (the primer's
+ * blocked branch does). The path is {@link locationSettingsPath}'s, the one the
+ * primer uses too: it differs by OS and by iOS version, and naming the wrong
+ * one sends the member looking for a row that isn't there. The web build has
+ * no Settings path, since location there is the site's permission in the
+ * browser, so the line says that instead.
+ */
+function locationRequiredCopy(): string {
+  const step = turnOnLocationStep(locationSettingsPath());
+  return `Frapp confirms you're in the study zone, so it needs location while you study. ${step}.`;
+}
 
 export default function StudyScreen() {
   const { tokens } = useFrappTheme();
@@ -190,7 +203,7 @@ export default function StudyScreen() {
       setWriteRefused(false);
       // The copy goes with the latch, but ONLY the start-path copy. Clearing
       // that one without the latch would leave an enabled Start button sitting
-      // directly under a sentence saying study sessions cannot be recorded —
+      // directly over a sentence saying study sessions cannot be recorded —
       // the screen offering and denying the same action at once.
       //
       // `studySession` is deliberately NOT cleared. It explains a refused
@@ -308,14 +321,55 @@ export default function StudyScreen() {
     );
   }, [serverActive]);
 
-  /** Default to the only zone; otherwise wait for a choice. */
+  /**
+   * Default to a zone, so Start works on arrival.
+   *
+   * The only zone if there is one; otherwise the zone of the member's most
+   * recent session, since most members study in the same place every time;
+   * otherwise the first. Waiting for a choice instead opened the screen on a
+   * "Pick a zone" card with its one action disabled, for every member of a
+   * chapter with two zones. The zone row stays tappable to change it.
+   *
+   * With several zones it waits for the history, or the first zone would win
+   * and then never give way: a valid selection is kept, which is also what
+   * keeps a member's own pick. "Loaded" means the history has arrived at
+   * least once, not that the read stopped pending: a failed read isn't
+   * pending either, and choosing then would put the first zone in place before
+   * the member's Retry brought the last one. The error state stands in for
+   * the card meanwhile, so the open choice is never seen.
+   */
+  const historyLoaded = sessionsQuery.data !== undefined;
+  const lastZoneId = history[0]?.geofenceId ?? null;
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- pick the sole zone, or drop a selection that no longer exists
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- pick a default zone, or drop a selection that no longer exists
     setSelectedZoneId((current) => {
       if (current && zones.some((zone) => zone.id === current)) return current;
-      return zones.length === 1 ? (zones[0]?.id ?? null) : null;
+      if (zones.length === 1) return zones[0]?.id ?? null;
+      if (zones.length === 0 || !historyLoaded) return null;
+      return findZone(zones, lastZoneId)?.id ?? zones[0]?.id ?? null;
     });
-  }, [zones]);
+  }, [zones, historyLoaded, lastZoneId]);
+
+  /**
+   * When the session on screen ends, here or elsewhere, the Start card that
+   * replaces it offers that session's zone, which is now the member's most
+   * recent. The effect above can't see it: the history holds finished
+   * sessions only, so a session picked up on launch was never its last zone,
+   * and a still-valid earlier choice is kept. A zone gone since is left to
+   * that effect.
+   */
+  const shownZoneIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (session) {
+      shownZoneIdRef.current = session.geofenceId;
+      return;
+    }
+    const endedZoneId = shownZoneIdRef.current;
+    shownZoneIdRef.current = null;
+    if (endedZoneId && zones.some((zone) => zone.id === endedZoneId)) {
+      setSelectedZoneId(endedZoneId);
+    }
+  }, [session, zones]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", setAppState);
@@ -365,7 +419,7 @@ export default function StudyScreen() {
   const applyResponse = useCallback((response: unknown, seq: number) => {
     // Nothing held, nothing to apply. Without this an in-flight heartbeat that
     // answers `ACTIVE` moments after the member taps End would put the ended
-    // session back on screen, ticking, under the notice saying it ended.
+    // session back on screen, ticking, beside the notice saying it ended.
     if (sessionIdRef.current === null) return;
     // A response older than one already applied says nothing new and can only
     // undo it.
@@ -385,7 +439,7 @@ export default function StudyScreen() {
       setNotice(settled.notice);
       // The in-session refusal copy describes THIS session; once it is gone
       // the sentence is stale, and leaving it would render "that didn't save
-      // … may not be credited" directly under a re-enabled Start button —
+      // … may not be credited" right beside a re-enabled Start button —
       // the screen offering and denying the same action at once.
       clearRefusalState();
       // A session that ended while paused would otherwise leave its "return to
@@ -692,7 +746,7 @@ export default function StudyScreen() {
         setCanAskForLocation(permission.canAskAgain);
         primerSheetRef.current?.present();
       } catch {
-        setFailure(LOCATION_REQUIRED_COPY);
+        setFailure(locationRequiredCopy());
       }
     })();
   }, [beginSession, isStarting]);
@@ -704,12 +758,12 @@ export default function StudyScreen() {
       try {
         const permission = await requestForegroundPermission();
         if (!permission.granted) {
-          setFailure(LOCATION_REQUIRED_COPY);
+          setFailure(locationRequiredCopy());
           return;
         }
         await beginSession();
       } catch {
-        setFailure(LOCATION_REQUIRED_COPY);
+        setFailure(locationRequiredCopy());
       }
     })();
   }, [beginSession, isStarting]);
@@ -751,6 +805,24 @@ export default function StudyScreen() {
     );
   }, [endSession]);
 
+  /**
+   * The notice and failure lines, for a body with no card to carry them.
+   *
+   * With a card on screen they go inside it, under its button (`StartCard`,
+   * `SessionCard`): inserted above the card, they pushed the card, the button
+   * the member had just tapped and the whole list down. A body without a card
+   * (an error, no zones) has nothing below the line to jump, and a notice
+   * that a session ended must still reach the member there.
+   */
+  const standaloneMessages = (
+    <CardMessages
+      notice={notice}
+      failure={failure}
+      align="left"
+      placement="screen"
+    />
+  );
+
   function renderBody() {
     // No `NoChapterState` branch. `GET /v1/study-sessions` resolves a sole
     // membership server-side, so it works without an `active_chapter_id` claim —
@@ -775,49 +847,69 @@ export default function StudyScreen() {
     // the ended notice.
     if (!hoursEnabled) {
       return (
-        <EmptyState
-          glyph="◷"
-          title="Study hours are turned off"
-          body={
-            session ? MODULE_OFF_COPY.runningSession : MODULE_OFF_COPY.start
-          }
-        />
+        <>
+          {/* The notice only. No failure line applies here: each one is about
+              a card, an End or a Start this screen has replaced, and its body
+              already says why nothing here works (#2718). */}
+          <CardMessages
+            notice={notice}
+            failure={null}
+            align="left"
+            placement="screen"
+          />
+          <EmptyState
+            glyph="◷"
+            title="Study hours are turned off"
+            body={
+              session ? MODULE_OFF_COPY.runningSession : MODULE_OFF_COPY.start
+            }
+          />
+        </>
       );
     }
 
     if (sessionsQuery.isPending || zonesQuery.isPending) {
-      return <SkeletonLines lines={4} showTile />;
+      return <CardListSkeleton summary rows={3} />;
     }
 
     if (sessionsQuery.isError) {
       return (
-        <ErrorState
-          title="Couldn't load study hours"
-          body="Your sessions are still recorded — this was a problem fetching them."
-          onRetry={() => void sessionsQuery.refetch()}
-          isRetrying={sessionsQuery.isFetching}
-        />
+        <>
+          {standaloneMessages}
+          <ErrorState
+            title="Couldn't load study hours"
+            body="Your sessions are still recorded — this was a problem fetching them."
+            onRetry={() => void sessionsQuery.refetch()}
+            isRetrying={sessionsQuery.isFetching}
+          />
+        </>
       );
     }
 
     if (zonesQuery.isError) {
       return (
-        <ErrorState
-          title="Couldn't load study zones"
-          body="A session has to start inside a zone, so this has to load first."
-          onRetry={() => void zonesQuery.refetch()}
-          isRetrying={zonesQuery.isFetching}
-        />
+        <>
+          {standaloneMessages}
+          <ErrorState
+            title="Couldn't load study zones"
+            body="A session has to start inside a zone, so this has to load first."
+            onRetry={() => void zonesQuery.refetch()}
+            isRetrying={zonesQuery.isFetching}
+          />
+        </>
       );
     }
 
     if (!session && zones.length === 0) {
       return (
-        <EmptyState
-          glyph="◷"
-          title="No study zones yet"
-          body="Sessions are tracked inside a zone. An officer with geofences:manage can add one."
-        />
+        <>
+          {standaloneMessages}
+          <EmptyState
+            glyph="◷"
+            title="No study zones yet"
+            body="Ask an officer who manages study zones to add one."
+          />
+        </>
       );
     }
 
@@ -831,6 +923,8 @@ export default function StudyScreen() {
             isReportingStale={reportingStale}
             graceCopy={graceWindowCopy(activeZone)}
             isEnding={isEnding}
+            notice={notice}
+            failure={failure}
             onEnd={confirmEnd}
           />
         ) : (
@@ -840,6 +934,8 @@ export default function StudyScreen() {
             isStarting={isStarting}
             isBlocked={writeRefused}
             graceCopy={graceWindowCopy(selectedZone)}
+            notice={notice}
+            failure={failure}
             onChooseZone={() => zoneSheetRef.current?.present()}
             onStart={handleStartPress}
           />
@@ -871,14 +967,6 @@ export default function StudyScreen() {
 
   return (
     <ScreenShell back={BACK_TO_MORE} title="Study hours">
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-      {/* Under the module-off screen no failure line applies: each one is about
-          a card, an End or a Start that screen has replaced, and its body
-          already says why nothing here works (#2718). */}
-      {failure && hoursEnabled ? (
-        <Text style={styles.failure}>{failure}</Text>
-      ) : null}
-
       {renderBody()}
 
       <ZonePickerSheet
@@ -905,14 +993,6 @@ function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     rows: {
       marginTop: tokens.spacing.xs,
-    },
-    notice: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    failure: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.destructive,
     },
   });
 }

@@ -4,7 +4,8 @@
 // fields that cannot be static: Firebase's Android client config path, and
 // the fences on public env that is inlined into the binary (production-only
 // checks, a client-key allowlist on every EAS profile, and a secret-key
-// denylist on every evaluation). `extra.gitSha` is the EAS git SHA (`EAS_BUILD_GIT_COMMIT_HASH`)
+// denylist on every evaluation). `extra.gitSha` is the EAS git SHA (`EAS_BUILD_GIT_COMMIT_HASH`),
+// or for an OTA update the commit `scripts/eas-update.mjs` publishes (`FRAPP_EAS_UPDATE_GIT_SHA`),
 // for Sentry metadata — it is never the Sentry `release` name.
 //
 // Push on Android goes through FCM, and `expo-notifications` reads FCM's
@@ -68,8 +69,11 @@
 // wrong field (the legacy JWT secret) have no shape the secret check could
 // refuse. Unset still builds on preview and development (nothing is inlined;
 // production's presence check refuses it), and a run with no EAS profile keeps
-// only the secret check, so local placeholders work; `eas update` is such a run
-// too (spec/environments/README.md § Mobile (EAS)).
+// only the secret check, so local placeholders work. A bare `eas update` is such
+// a run too; `npm run eas -- update` goes through scripts/eas-update.mjs, which
+// sets FRAPP_EAS_UPDATE_PROFILE so every fence on public values runs for the
+// channel's profile (publicValueProfile below, #3472). The google-services fence
+// stays build-only: an update carries no native config.
 //
 // Every EAS **production** build also refuses when `EXPO_PUBLIC_ASK_ENABLED`
 // switches Ask on (#2259). Ask answers from a synthetic corpus
@@ -296,8 +300,8 @@ function jwtClaims(key) {
 // or a user's `authenticated` access token). It is a denylist, so placeholder
 // values keep working locally; an EAS build also has to pass
 // assertEasSupabaseClientKey, the allowlist. This is the only key check on the
-// one path with no EAS profile whose bundle leaves the machine, the export
-// `eas update` publishes, and the only one that sees a credential pasted onto
+// one path with no profile whose bundle leaves the machine, the export a bare
+// `eas update` publishes (outside scripts/eas-update.mjs), and the only one that sees a credential pasted onto
 // the end of a real key (the allowlist patterns accept key characters to the
 // end), so a prefix anywhere in the value counts, and so does any JWT in it. A
 // real key's random part can contain `sbp_` by chance, in fewer than one key
@@ -409,22 +413,50 @@ function assertProductionAskDisabled({ easBuildProfile, askEnabled } = {}) {
   throw new Error(PRODUCTION_ASK_ENABLED_ERROR);
 }
 
+// The profile whose public-value fences apply: an EAS build's, or the one
+// `npm run eas -- update` publishes for (`scripts/eas-update.mjs` sets
+// `FRAPP_EAS_UPDATE_PROFILE` from the channel's build profile in eas.json, #3472).
+// `eas update` itself sets no profile, so a run outside that guard still gets
+// only the secret-key check. A build's own profile wins when both are set.
+function publicValueProfile(env) {
+  return env.EAS_BUILD_PROFILE || env.FRAPP_EAS_UPDATE_PROFILE || undefined;
+}
+
+const PRODUCTION_UPDATE_SENTRY_DSN_ERROR = [
+  "A production OTA update requires EXPO_PUBLIC_SENTRY_DSN, or no error from",
+  "the updated bundle reaches Sentry. A local `eas update` loads only the EAS",
+  'variables whose visibility is "Plain text" or "Sensitive"; a "Secret" one',
+  "never reaches it. Set it on the EAS production environment as plain text",
+  "(docs/ops/deployment/mobile.md § 6.3).",
+].join(" ");
+
+// Update-only on purpose: an EAS build loads Secret variables too, and its
+// DSN check is the store build's to add, not this guard's (#3472).
+function assertProductionUpdateSentryDsn({ updateProfile, sentryDsn } = {}) {
+  if (updateProfile !== "production") return;
+  if (String(sentryDsn || "").trim()) return;
+  throw new Error(PRODUCTION_UPDATE_SENTRY_DSN_ERROR);
+}
+
 function applyMobileConfig(
   config,
   { env = process.env, existsSync = fs.existsSync } = {},
 ) {
   const googleServicesFile = resolveGoogleServicesFile({ env, existsSync });
+  const profile = publicValueProfile(env);
+  // Native-only: an update never carries google-services.json, so this one
+  // keys on the build profile alone.
   assertProductionAndroidGoogleServices({
     easBuildProfile: env.EAS_BUILD_PROFILE,
     easBuildPlatform: env.EAS_BUILD_PLATFORM,
     googleServicesFile,
   });
   assertProductionApiUrl({
-    easBuildProfile: env.EAS_BUILD_PROFILE,
+    easBuildProfile: profile,
     apiUrl: env.EXPO_PUBLIC_API_URL,
   });
   assertProductionSupabasePublic({
-    easBuildProfile: env.EAS_BUILD_PROFILE,
+    easBuildProfile: profile,
     supabaseUrl: env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   });
@@ -433,22 +465,27 @@ function applyMobileConfig(
   });
   // After the presence check above, so an empty key reports as missing.
   assertProductionSupabasePublishableKey({
-    easBuildProfile: env.EAS_BUILD_PROFILE,
+    easBuildProfile: profile,
     supabaseAnonKey: env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   });
   assertEasSupabaseClientKey({
-    easBuildProfile: env.EAS_BUILD_PROFILE,
+    easBuildProfile: profile,
     supabaseAnonKey: env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   });
   assertProductionAppUrl({
-    easBuildProfile: env.EAS_BUILD_PROFILE,
+    easBuildProfile: profile,
     appUrl: env.EXPO_PUBLIC_APP_URL,
   });
   assertProductionAskDisabled({
-    easBuildProfile: env.EAS_BUILD_PROFILE,
+    easBuildProfile: profile,
     askEnabled: env.EXPO_PUBLIC_ASK_ENABLED,
   });
-  const gitSha = env.EAS_BUILD_GIT_COMMIT_HASH;
+  assertProductionUpdateSentryDsn({
+    updateProfile: env.EAS_BUILD_PROFILE ? undefined : env.FRAPP_EAS_UPDATE_PROFILE,
+    sentryDsn: env.EXPO_PUBLIC_SENTRY_DSN,
+  });
+  // A build's commit, or the one the update guard publishes from.
+  const gitSha = env.EAS_BUILD_GIT_COMMIT_HASH || env.FRAPP_EAS_UPDATE_GIT_SHA;
   return {
     ...config,
     extra: {
@@ -480,6 +517,8 @@ applyExpoConfig.assertEasSupabaseClientKey = assertEasSupabaseClientKey;
 applyExpoConfig.assertProductionAppUrl = assertProductionAppUrl;
 applyExpoConfig.assertProductionAskDisabled = assertProductionAskDisabled;
 applyExpoConfig.isAskEnabledValue = isAskEnabledValue;
+applyExpoConfig.publicValueProfile = publicValueProfile;
+applyExpoConfig.assertProductionUpdateSentryDsn = assertProductionUpdateSentryDsn;
 applyExpoConfig.applyMobileConfig = applyMobileConfig;
 applyExpoConfig.PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR =
   PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR;
@@ -493,6 +532,8 @@ applyExpoConfig.PUBLIC_SUPABASE_SECRET_KEY_ERROR =
 applyExpoConfig.EAS_SUPABASE_CLIENT_KEY_ERROR = EAS_SUPABASE_CLIENT_KEY_ERROR;
 applyExpoConfig.PRODUCTION_APP_URL_ERROR = PRODUCTION_APP_URL_ERROR;
 applyExpoConfig.PRODUCTION_ASK_ENABLED_ERROR = PRODUCTION_ASK_ENABLED_ERROR;
+applyExpoConfig.PRODUCTION_UPDATE_SENTRY_DSN_ERROR =
+  PRODUCTION_UPDATE_SENTRY_DSN_ERROR;
 applyExpoConfig.PRODUCTION_API_ORIGIN = PRODUCTION_API_ORIGIN;
 applyExpoConfig.PRODUCTION_SUPABASE_ORIGIN = PRODUCTION_SUPABASE_ORIGIN;
 applyExpoConfig.PRODUCTION_APP_ORIGIN = PRODUCTION_APP_ORIGIN;
