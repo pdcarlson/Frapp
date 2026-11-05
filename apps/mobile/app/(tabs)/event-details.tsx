@@ -315,17 +315,18 @@ function CheckInCard({
 
 /**
  * The screen's loading state, on the loaded screen's own styles: the check-in
- * card's frame and header line, a DETAILS section's caption and body lines,
- * and the Add to calendar button's frame. The optional badge row is left out,
- * since most events carry no badge and a placeholder for one would leave a gap
- * when it doesn't land.
+ * card's frame and header line, and the Add to calendar button, whose label is
+ * fixed and so renders as itself (components.md §10). The badge row and the
+ * DETAILS and INTERNAL NOTES sections are left out: each draws only when the
+ * event carries one, and a placeholder for one would leave a gap, and move the
+ * button, when it doesn't land.
  *
  * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
  */
 export function EventDetailSkeleton() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const { body, caption, label } = tokens.typography.role;
+  const { caption, label } = tokens.typography.role;
 
   return (
     <SkeletonRegion label="Loading event" style={styles.skeletonStack}>
@@ -346,15 +347,8 @@ export function EventDetailSkeleton() {
         </View>
       </View>
 
-      <View style={styles.section}>
-        <SkeletonText role={caption} width="18%" />
-        <SkeletonText role={body} width="92%" />
-        <SkeletonText role={body} width="84%" />
-        <SkeletonText role={body} width="46%" />
-      </View>
-
       <View style={styles.secondaryButton}>
-        <SkeletonText role={label} width="32%" />
+        <Text style={styles.secondaryButtonText}>Add to calendar</Text>
       </View>
     </SkeletonRegion>
   );

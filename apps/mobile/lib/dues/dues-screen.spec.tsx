@@ -263,6 +263,14 @@ describe("Dues loading", () => {
     expect(tree.root.findAllByType(SkeletonLines)).toHaveLength(0);
     // The balance card's own skeleton, so the card doesn't grow in on load.
     expect(tree.root.findAllByType(BalanceCardSkeleton)).toHaveLength(1);
+    // Its writing.md row, without the ellipsis, as the region's name.
+    expect(
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          node.props.accessibilityRole === "progressbar",
+      ).props.accessibilityLabel,
+    ).toBe("Loading your dues");
   });
 });
 

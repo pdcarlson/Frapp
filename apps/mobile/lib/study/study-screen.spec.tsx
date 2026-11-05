@@ -896,6 +896,14 @@ describe("Study loading and empty states", () => {
     expect(tree.root.findAllByType(SkeletonLines)).toHaveLength(0);
     // The start card's own skeleton, so the card doesn't grow in on load.
     expect(tree.root.findAllByType(StartCardSkeleton)).toHaveLength(1);
+    // Its writing.md row, without the ellipsis, as the region's name.
+    expect(
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          node.props.accessibilityRole === "progressbar",
+      ).props.accessibilityLabel,
+    ).toBe("Loading study zones");
     act(() => tree.unmount());
   });
 

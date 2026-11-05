@@ -201,7 +201,7 @@ describe("Events list states", () => {
     expect(skeletons(tree)[0]!.props.accessibilityLabel).toBe(
       "Loading chapter events",
     );
-    expect(screenText(tree)).not.toContain("Loading events");
+    expect(screenText(tree)).not.toMatch(/Loading/);
   });
 
   it("offers a retry on error", () => {

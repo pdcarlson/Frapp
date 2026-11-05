@@ -297,9 +297,13 @@ export default function DirectoryScreen() {
           !!chapterId && activeQuery.isPending ? (
             <MemberListSkeleton
               label={
-                tab === "alumni"
-                  ? "Loading alumni directory"
-                  : "Loading chapter members"
+                // A search looks across both lists and hides the tabs, so it
+                // names neither tab's list.
+                isSearching
+                  ? "Searching chapter members"
+                  : tab === "alumni"
+                    ? "Loading alumni directory"
+                    : "Loading chapter members"
               }
             />
           ) : (

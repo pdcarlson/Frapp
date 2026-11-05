@@ -54,6 +54,16 @@ const MEMBERS = [MARCUS, CHARLES, ANDRE, DANIEL];
 const ALUMNI = [CHARLES, DANIEL];
 
 function read(data: unknown) {
+  if (state.pending) {
+    return {
+      data: undefined,
+      isPending: true,
+      isError: false,
+      isSuccess: false,
+      isFetching: true,
+      refetch: vi.fn(),
+    };
+  }
   return {
     data,
     isPending: false,
@@ -64,7 +74,7 @@ function read(data: unknown) {
   };
 }
 
-const state = vi.hoisted(() => ({ search: [] as unknown[] }));
+const state = vi.hoisted(() => ({ search: [] as unknown[], pending: false }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -191,6 +201,7 @@ function countOf(tree: ReactTestRenderer, value: string) {
 
 beforeEach(() => {
   state.search = [];
+  state.pending = false;
 });
 
 describe("s13 Directory on a chapter with alumni (#2484)", () => {
@@ -412,6 +423,35 @@ describe("s13's loading state", () => {
     const [avatar] = skeleton.root.findAllByType("Animated.View" as never);
     expect(flat(avatar!.props.style).width).toBe(40);
     expect(flat(avatar!.props.style).borderRadius).toBe(20);
+  });
+});
+
+describe("s13's loading label", () => {
+  // writing.md §7: the skeleton is named for the list that loads. A search
+  // looks across both lists, so it names neither tab's.
+  const label = (tree: ReactTestRenderer) =>
+    (
+      list(tree).props.ListEmptyComponent as React.ReactElement<{
+        label: string;
+      }>
+    ).props.label;
+
+  it("names the tab's list, or the search", () => {
+    state.pending = true;
+    const tree = render();
+    expect(label(tree)).toBe("Loading chapter members");
+
+    act(() => chips(tree).onSelect("alumni"));
+    expect(label(tree)).toBe("Loading alumni directory");
+
+    const field = inHeader(
+      tree,
+      (element) =>
+        (element.type as unknown) === SearchFieldStandIn &&
+        element.props.accessibilityLabel === "Search the directory",
+    ) as { onChangeText: (text: string) => void };
+    act(() => field.onChangeText("r"));
+    expect(label(tree)).toBe("Searching chapter members");
   });
 });
 

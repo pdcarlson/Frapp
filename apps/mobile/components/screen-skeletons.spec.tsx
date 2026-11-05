@@ -7,6 +7,7 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { screenText } from "@/test/screen-text";
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
@@ -233,7 +234,13 @@ describe("Every skeleton draws its shapes with SkeletonBlock", () => {
         summary
       />,
     ],
-    ["StartCardSkeleton", <StartCardSkeleton key="s" />],
+    // A card part: it sits inside its screen's region (`CardListSkeleton`).
+    [
+      "StartCardSkeleton",
+      <SkeletonRegion key="s" label="Loading">
+        <StartCardSkeleton />
+      </SkeletonRegion>,
+    ],
     ["ThreadSkeleton", <ThreadSkeleton key="t" />],
     ["ChannelListSkeleton", <ChannelListSkeleton key="ch" />],
     ["JoinedChannelsSkeleton", <JoinedChannelsSkeleton key="j" />],
@@ -254,6 +261,16 @@ describe("Every skeleton draws its shapes with SkeletonBlock", () => {
       );
     expect(handDrawn).toHaveLength(0);
     expect(tree.root.findAllByType(SkeletonBlock).length).toBeGreaterThan(0);
+    // Inside one region: one busy node, and one pulse for all its blocks. A
+    // block outside a region brings a pulse (and its listeners) of its own.
+    expect(tree.root.findAllByType(SkeletonPulse)).toHaveLength(1);
+    expect(
+      tree.root.findAll(
+        (view) =>
+          (view.type as unknown) === "View" &&
+          view.props.accessibilityRole === "progressbar",
+      ),
+    ).toHaveLength(1);
   });
 });
 
@@ -277,8 +294,11 @@ describe("Screen skeletons sit on their screen's frames", () => {
     expect(views(tree).filter((style) => style.width === 52)).toHaveLength(2);
   });
 
-  it("Event details: the check-in card's frame and the calendar button's", () => {
+  it("Event details: the check-in card's frame and the calendar button, as itself", () => {
     const tree = render(<EventDetailSkeleton />);
+    // The button's label is fixed, so it is text, not a bar; the sections an
+    // event may not carry are not drawn at all.
+    expect(screenText(tree)).toBe("Add to calendar");
     expect(
       views(tree).filter(
         (style) =>
@@ -450,6 +470,8 @@ describe("CardListSkeleton", () => {
       (node) => node.props.accessibilityRole === "progressbar",
     );
     expect(progress).toHaveLength(1);
+    // Named for what loads (writing.md §7), from the caller's label.
+    expect(progress[0]!.props.accessibilityLabel).toBe("Loading study zones");
     expect(tree.root.findAllByType(SkeletonPulse)).toHaveLength(1);
   });
 
@@ -499,6 +521,7 @@ describe("Loading states stay shaped like their screens", () => {
    */
   const GENERIC_ALLOWED = new Set([
     "components/ask/answer-card.tsx",
+    // List-shaped, so these two are owed their own skeletons (#3522).
     "components/directory/member-detail-sheet.tsx",
     "components/settings/blocked-members-sheet.tsx",
     "components/state-block.tsx",

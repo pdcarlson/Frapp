@@ -429,18 +429,20 @@ export function ListRow({
 }
 
 function createStyles(tokens: SignetTokens) {
+  // Shared so the caption's placeholder can't drift from the caption.
+  const sectionHeaderMarginTop = tokens.spacing.sm;
   return StyleSheet.create({
     sectionHeader: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
       textTransform: "uppercase",
       letterSpacing: 0.6,
-      marginTop: tokens.spacing.sm,
+      marginTop: sectionHeaderMarginTop,
     },
     // The caption's line box with its top margin; the uppercase tracking
     // doesn't change its height.
     sectionHeaderSkeleton: {
-      marginTop: tokens.spacing.sm,
+      marginTop: sectionHeaderMarginTop,
     },
     section: {
       borderRadius: tokens.radius.cardLarge,
