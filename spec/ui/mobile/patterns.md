@@ -10,7 +10,7 @@ A shell screen (`components/screen-shell.tsx`) opens on its title and goes strai
 
 ## Bottom sheets
 
-Creation flows are sheets (s19 new task, s20 log service hours, s21 upload document, s23 adjust points, and the s17 Ask presentation). One-tap actions never are — see [`README.md`](README.md).
+Creation flows are sheets (s19 new task, s20 log service hours, s21 upload document, s23 adjust points, and the s17 Ask presentation). One-tap actions never are — see [`README.md`](README.md). A reaction's one tap is toggling a chip already under the message; a new reaction starts from s05's long-press actions sheet, which is a menu of actions, not a creation flow (changed 2026-11-05, per the s05 board).
 
 - Library: `@gorhom/bottom-sheet` **v5**. Sheets are components hosted by their parent screen, not routes.
 - Detents: snap to content height (`enableDynamicSizing`) for a sheet whose body is bounded. **A sheet with a scrollable body takes a fixed detent instead** — dynamic sizing plus `maxDynamicContentSize` is exactly the combination that breaks a nested scrollable (see the bullet on sheet-aware scrollables below, and the note at the second modal in `apps/mobile/components/tasks/new-task-sheet.tsx`). s17 is the worked case: its body grows without bound as answers land, so it ships the drawn cap as a fixed `["78%"]` snap point rather than a dynamic sheet that would resize under every answer. **The 78% is the cap the reference draws** (`max-height:78%` on s17, `canvas-screens.dc.html`); this bullet used to read "snap to content height; tall sheets (s17, s20) cap at roughly 78%", which taken literally prescribes the one combination that cannot work here.

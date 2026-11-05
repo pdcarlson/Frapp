@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
 import { FrappThemeProvider } from "@/lib/theme";
+import { Keyboard } from "react-native";
 import { drawnText } from "@/test/screen-text";
 
 const attachmentHook = vi.hoisted(() => ({
@@ -51,7 +52,11 @@ import {
 import { EDITED_MARKER } from "@repo/chat-core/message-actions";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
-import { groupReactions, MessageItem } from "./message-item";
+import {
+  ADD_REACTION_A11Y_LABEL,
+  groupReactions,
+  MessageItem,
+} from "./message-item";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
@@ -363,6 +368,114 @@ describe("the viewer's own reaction takes the chapter accent", () => {
   });
 });
 
+// The `👍 +` chip under every unreacted message made the thread loose and
+// busy; the first reaction starts from the long-press sheet instead (s05).
+describe("the reaction row", () => {
+  const pressables = (tree: ReactTestRenderer) =>
+    tree.root.findAll((node) => (node.type as unknown) === "Pressable");
+  const addChip = (tree: ReactTestRenderer) =>
+    pressables(tree).filter(
+      (node) => node.props.accessibilityLabel === ADD_REACTION_A11Y_LABEL,
+    );
+
+  it("draws nothing, not even an add chip, under a message nobody reacted to", () => {
+    const tree = renderItem(message(), undefined, { onOpenActions: vi.fn() });
+    expect(addChip(tree)).toHaveLength(0);
+    expect(drawnText(tree.root)).not.toContain("+");
+  });
+
+  it("follows existing reactions with a + chip that opens the actions sheet", () => {
+    const onOpenActions = vi.fn();
+    const tree = renderItem(
+      message({ reactions: { [reactionActionType("🔥")]: [OTHER] } }),
+      undefined,
+      { onOpenActions },
+    );
+    const [add] = addChip(tree);
+    expect(add).toBeDefined();
+    expect(drawnText(add!)).toBe("+");
+    // After the reaction chips, as the board draws `5` then `+`.
+    const labels = pressables(tree).map((node) => node.props.accessibilityLabel);
+    expect(labels.indexOf(ADD_REACTION_A11Y_LABEL)).toBeGreaterThan(
+      labels.indexOf("🔥, 1"),
+    );
+    act(() => add!.props.onPress());
+    expect(onOpenActions).toHaveBeenCalledTimes(1);
+    // Reach grows up and down only (components.md §11): chips sit 6pt apart,
+    // so a sideways overhang would hand the + the reaction chip's right edge.
+    const chips = pressables(tree).filter((node) =>
+      ["🔥, 1", ADD_REACTION_A11Y_LABEL].includes(node.props.accessibilityLabel),
+    );
+    expect(chips).toHaveLength(2);
+    for (const node of chips) {
+      expect(node.props.hitSlop).toEqual({ top: 9, bottom: 9 });
+    }
+  });
+
+  it("forwards a long press on + to the row's actions, as every chip does", () => {
+    // The + is its own Pressable and claims the touch: without the forward, a
+    // long press on it would end as a tap.
+    const onOpenActions = vi.fn();
+    const tree = renderItem(
+      message({ reactions: { [reactionActionType("🔥")]: [OTHER] } }),
+      undefined,
+      { onOpenActions },
+    );
+    const [add] = addChip(tree);
+    expect(add!.props.accessibilityRole).toBe("button");
+
+    act(() => add!.props.onLongPress());
+    expect(onOpenActions).toHaveBeenCalledTimes(1);
+    act(() => add!.props.onPress());
+    expect(onOpenActions).toHaveBeenCalledTimes(2);
+  });
+
+  it("still offers + after the viewer's own reaction", () => {
+    const tree = renderItem(
+      message({ reactions: { [reactionActionType("👍")]: [VIEWER] } }),
+      undefined,
+      { onOpenActions: vi.fn() },
+    );
+    expect(addChip(tree)).toHaveLength(1);
+  });
+
+  it("draws no + where the sheet can't open, or before the message is confirmed", () => {
+    const reacted = { reactions: { [reactionActionType("🔥")]: [OTHER] } };
+    // No actions on the row: the chips still toggle, but + has nowhere to go.
+    const noActions = renderItem(message(reacted));
+    expect(drawnText(noActions.root)).toContain("🔥 1");
+    expect(addChip(noActions)).toHaveLength(0);
+
+    const pending = renderItem(
+      message({ ...reacted, _status: "pending" }),
+      undefined,
+      { onOpenActions: vi.fn() },
+    );
+    expect(addChip(pending)).toHaveLength(0);
+  });
+});
+
+describe("a tap on the row", () => {
+  // The thread's list keeps taps for its controls while the keyboard is up
+  // (`keyboardShouldPersistTaps="handled"`), and the row's frame claims a tap
+  // for its long press, so the frame is what has to put the keyboard away.
+  it("puts the keyboard away, as a tap on the thread did before", () => {
+    vi.mocked(Keyboard.dismiss).mockClear();
+    const onOpenActions = vi.fn();
+    const tree = renderItem(message(), undefined, { onOpenActions });
+    const frame = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.onLongPress === onOpenActions &&
+        node.props.accessible === false,
+    );
+
+    act(() => frame.props.onPress());
+    expect(Keyboard.dismiss).toHaveBeenCalledTimes(1);
+    expect(onOpenActions).not.toHaveBeenCalled();
+  });
+});
+
 /** The rows' own layout (components.md §11, #2873). */
 describe("compact layout (#2873)", () => {
   /** Accessible containers carrying the long-press action. */
@@ -522,11 +635,13 @@ describe("compact layout (#2873)", () => {
           is_deleted: true,
           reactions: { [reactionActionType("🔥")]: [OTHER] },
         }),
+        undefined,
+        { onOpenActions: vi.fn() },
       ).toJSON(),
     );
     expect(flat).toContain(DELETED_MESSAGE_PLACEHOLDER);
     expect(flat).not.toContain("🔥");
-    expect(flat).not.toContain("👍 +");
+    expect(flat).not.toContain(ADD_REACTION_A11Y_LABEL);
   });
 
   it("mutes the text of a send still in flight", () => {
@@ -678,8 +793,6 @@ describe("delivery status (#1910)", () => {
     expect(flat).not.toContain("Send failed");
     expect(flat).not.toContain("Discard this message");
     expect(flat).not.toContain("Retry sending this message");
-    // Delivered rows offer the first-reaction chip; a placeholder must not.
-    expect(flat).not.toContain("👍 +");
     // Not a known failure — red is what makes an officer re-type the command.
     expect(flat).not.toContain(DESTRUCTIVE);
   });
@@ -732,7 +845,6 @@ describe("delivery status (#1910)", () => {
     expect(flat).not.toContain("Not confirmed");
     expect(flat).not.toContain("Send failed");
     expect(flat).not.toContain("Sending");
-    expect(flat).toContain("👍 +");
   });
 
   it("says Sending… under a pending message", () => {

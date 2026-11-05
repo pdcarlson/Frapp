@@ -166,6 +166,13 @@ export interface UseChatChannelResult {
    */
   send: (content: string, options?: SendOptions) => Promise<boolean>;
   /**
+   * Whether `send` would refuse a message right now because an earlier one is
+   * still in flight. Read at the moment of a tap rather than rendered: `send`
+   * claims its re-entry guard synchronously, before its first await, so this
+   * is already true for a second tap landing inside the same render.
+   */
+  sendInFlight: () => boolean;
+  /**
    * Saves an edit of the viewer's own message. Not optimistic: the server row
    * is merged on success, and the Realtime echo of the same edit is a no-op.
    * Rejects with a member-facing message on failure, and changes nothing.
@@ -633,6 +640,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     },
     [attachments, cancelDraftTimer, channelId, ctx, drafts],
   );
+  const sendInFlight = useCallback(() => sendingRef.current, []);
 
   const edit = useCallback(
     async (messageId: string, content: string) => {
@@ -754,6 +762,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     viewerId,
     canSend: !!ctx && !!channelId,
     send,
+    sendInFlight,
     edit,
     remove,
     react,
