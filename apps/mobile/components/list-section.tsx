@@ -103,11 +103,11 @@ export function listRowHint(
  * which adds that parent; `ListRow` gets it from `ListSection`. A square row
  * can take the hook directly.
  *
- * The default lift is `surface.card`: a row on the screen background rises two
- * steps to it, and a `ListRow` on its `surface1` group, or the More profile
- * card, one. A row that is itself a `surface.card` card (a task) passes
- * `onCard` and lifts to `surface.popover` instead: a card lifted to its own
- * colour shows nothing.
+ * The default lift is `surface.card`: a row on the screen background rises to
+ * it. A row that sits on a `surface.card` fill (a `ListRow` in its
+ * `ListSection`, the More profile card, or an event card) passes `onCard` and
+ * lifts to `surface.popover` instead: a card lifted to its
+ * own colour shows nothing.
  */
 export type PressFeedback = {
   ripple: PressableAndroidRippleConfig;
@@ -298,7 +298,7 @@ export function ListRow({
 }: ListRowProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const feedback = usePressFeedback();
+  const feedback = usePressFeedback({ onCard: true });
   const detail = variant === "detail";
 
   const content = (
@@ -376,10 +376,14 @@ function createStyles(tokens: SignetTokens) {
       marginTop: tokens.spacing.sm,
     },
     section: {
-      borderRadius: tokens.radius.cardLarge,
+      // `card` at radius 14, the fill and radius web's grouped lists take
+      // (`rounded-[14px] border bg-card`), and foundations §2's step for
+      // "cards and list rows". It was `surface1` at 16 until 2026-11-05;
+      // `surface1` is the nav and input step.
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: tokens.color.surface.card,
       overflow: "hidden",
     },
     divider: {

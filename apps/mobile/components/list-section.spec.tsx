@@ -59,9 +59,11 @@ describe("ListRow — press feedback", () => {
   it("ripples on Android and lifts its surface on iOS while held", () => {
     const row = pressable({ label: "Documents", onPress: vi.fn() });
     expect(row.props.android_ripple?.color).toMatch(/^rgba\(/);
-    // The suite's react-native stub runs as iOS.
+    // The suite's react-native stub runs as iOS. A ListRow sits on its
+    // ListSection's `card` fill, so it lifts a step above that, to `popover`:
+    // a lift to `card` would paint the row its own colour and show nothing.
     expect(row.props.style({ pressed: true })).toMatchObject({
-      backgroundColor: expect.any(String),
+      backgroundColor: signetDarkTokens.color.surface.popover,
     });
     expect(row.props.style({ pressed: false })).toBeNull();
   });

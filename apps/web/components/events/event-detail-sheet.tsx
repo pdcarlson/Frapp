@@ -326,7 +326,7 @@ export function EventDetailSheet({
               Attendance policy
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={isMandatory ? "default" : "secondary"}>
+              <Badge variant={isMandatory ? "destructive" : "secondary"}>
                 {isMandatory ? "Mandatory" : "Optional"}
               </Badge>
               {cadence ? <Badge variant="outline">{cadence}</Badge> : null}
