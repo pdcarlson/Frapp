@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -35,11 +36,17 @@ export function ThreadHistoryEdge({
   isLoadingOlder,
   olderError,
   onLoadOlder,
+  start,
 }: {
   hasOlder: boolean;
   isLoadingOlder: boolean;
   olderError: boolean;
   onLoadOlder: () => void;
+  /**
+   * The channel's start (`channel-start.tsx`), drawn in place of the bare
+   * start-of-history caption once nothing earlier is left to load.
+   */
+  start?: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -83,6 +90,7 @@ export function ThreadHistoryEdge({
       </View>
     );
   }
+  if (start) return <>{start}</>;
   return (
     <View style={styles.edge}>
       <Text style={styles.caption}>{HISTORY_START_COPY}</Text>

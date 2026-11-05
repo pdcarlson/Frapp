@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { DiscordImportPage } from "@/components/discord-import/discord-import-page";
+import Loading from "./loading";
 
 export const metadata = { title: "Discord import" };
 
@@ -10,7 +11,7 @@ export default function DiscordImport() {
   // `sign-up` and `join`. Without it the route bails out of prerendering and
   // takes the whole web build down with it, and CI does not build apps/web.
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<Loading />}>
       <DiscordImportPage />
     </Suspense>
   );

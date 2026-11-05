@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -74,9 +75,12 @@ import { useThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import {
   postRefusalHint,
   selectPostCapability,
+  isDirectChannel,
   THREAD_HEADER_FALLBACK,
-  threadHeaderTitle,
+  threadChannel,
+  threadTitleFor,
 } from "@/lib/chat/channel-list";
+import { ChannelStart } from "@/components/chat/channel-start";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
 import {
@@ -220,16 +224,21 @@ export default function ChatThreadScreen() {
   // The cached list is read, not subscribed to: the fallback must not start
   // a list fetch of its own from inside a thread.
   const queryClient = useQueryClient();
-  const headerTitle = useMemo(
+  // The open channel's row: the header title, its description, and the
+  // channel start (`components/chat/channel-start.tsx`) all read it.
+  // `isFetching` is a dependency although the resolver doesn't take it: the
+  // list cache is read, not subscribed to, so a read settling is the cue to
+  // look at a list that filled in meanwhile.
+  const openChannel = useMemo(
     () =>
-      threadHeaderTitle({
+      threadChannel({
         row: channelQuery.data,
         list: queryClient.getQueryData(CHANNEL_LIST_KEY),
         channelId,
         viewerId,
         names: roster.byId,
-        isFetching: channelQuery.isFetching,
       }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
     [
       channelQuery.data,
       channelQuery.isFetching,
@@ -239,6 +248,23 @@ export default function ChatThreadScreen() {
       roster.byId,
     ],
   );
+  const headerTitle = threadTitleFor(openChannel, channelQuery.isFetching);
+  const channelStart = useMemo(
+    () =>
+      openChannel ? (
+        <ChannelStart
+          type={openChannel.channel.type}
+          channelName={openChannel.channel.name}
+          displayName={openChannel.name}
+          description={openChannel.channel.description}
+        />
+      ) : undefined,
+    [openChannel],
+  );
+  const headerDescription =
+    openChannel && !isDirectChannel(openChannel.channel)
+      ? openChannel.channel.description
+      : undefined;
   // `Message #general`, `Message Casey`, as s05 draws it. Plain `Message`
   // while the title is still blank or fell back, rather than `Message Thread`.
   const composerPlaceholder =
@@ -488,9 +514,10 @@ export default function ChatThreadScreen() {
         isLoadingOlder={isLoadingOlder}
         olderError={olderError}
         onLoadOlder={handleLoadOlder}
+        start={channelStart}
       />
     ),
-    [hasOlder, isLoadingOlder, olderError, handleLoadOlder],
+    [hasOlder, isLoadingOlder, olderError, handleLoadOlder, channelStart],
   );
 
   // Parent lookup for reply quotes (#1727), built once per window rather
@@ -888,13 +915,24 @@ export default function ChatThreadScreen() {
             >
               <Text style={styles.backChevron}>‹</Text>
             </Pressable>
-            <Text
-              accessibilityRole="header"
-              numberOfLines={1}
-              style={styles.headerTitle}
-            >
-              {headerTitle}
-            </Text>
+            {/*
+              The description sits under the name on a phone: web's one-line
+              "# name • description" has no room at this width.
+            */}
+            <View style={styles.headerText}>
+              <Text
+                accessibilityRole="header"
+                numberOfLines={1}
+                style={styles.headerName}
+              >
+                {headerTitle}
+              </Text>
+              {headerDescription ? (
+                <Text numberOfLines={1} style={styles.headerDescription}>
+                  {headerDescription}
+                </Text>
+              ) : null}
+            </View>
             {channelId ? (
               <NotificationLevelControl
                 menu={muteMenu}
@@ -979,12 +1017,28 @@ export default function ChatThreadScreen() {
             // Counted after the block list, held rows included: a channel whose
             // only messages are being held is not an empty channel, and the
             // notice above is what explains the gap.
-            <View style={styles.stateBlock}>
-              <Text style={styles.stateTitle}>No messages yet</Text>
-              <Text style={styles.stateBody}>
-                Say something to start the conversation.
-              </Text>
-            </View>
+            // Not an empty-state card: the channel's start, at the bottom
+            // where its first message will land (`writing.md` § Chat
+            // (dashboard), Channel start). It scrolls, so a long description
+            // on a short screen (keyboard up) stays reachable. Until the
+            // channel's row is known there is no name to welcome anyone to:
+            // nothing while it is still being read, then the bare
+            // start-of-history caption if the read found nothing.
+            <ScrollView
+              style={styles.flex}
+              contentContainerStyle={styles.channelStartSlot}
+              keyboardShouldPersistTaps="handled"
+            >
+              {channelStart ??
+                (channelQuery.isFetching ? null : (
+                  <ThreadHistoryEdge
+                    hasOlder={false}
+                    isLoadingOlder={false}
+                    olderError={false}
+                    onLoadOlder={handleLoadOlder}
+                  />
+                ))}
+            </ScrollView>
           ) : (
             // The rows reach the image viewer through this, not through a
             // prop threaded down the row and its body.
@@ -1243,10 +1297,21 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       color: brand.accent,
       minWidth: tokens.spacing.md,
     },
-    headerTitle: {
+    headerText: {
       flex: 1,
+      minWidth: 0,
+    },
+    headerName: {
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.foreground,
+    },
+    headerDescription: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    channelStartSlot: {
+      flexGrow: 1,
+      justifyContent: "flex-end",
     },
     saveError: {
       ...typeRole(tokens.typography.role.caption),

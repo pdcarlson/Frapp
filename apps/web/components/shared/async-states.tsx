@@ -16,10 +16,10 @@ import { useNetwork } from "@/lib/providers/network-provider";
  * 1. **"No spinner-in-a-box."** `LoadingState` was a spinning `LoaderCircle`
  *    in a dashed box, which is the one loading treatment §10 rules out. It is
  *    now content-shaped by default and takes a `children` skeleton for the
- *    surfaces that can mirror their own layout. The *caption* stays visible:
- *    §10 bans the spinner, not the label, and ~25 call sites pass a specific
- *    one ("Loading chapter polls…"), which is information a sighted user would
- *    otherwise lose to four anonymous grey bars.
+ *    surfaces that can mirror their own layout. The *caption* stays visible
+ *    here because four anonymous grey bars cannot say what is loading. Pages
+ *    no longer use it: they draw their own shape from `page-skeletons.tsx`,
+ *    and a mirrored skeleton says by its shape what the caption said.
  * 2. **Skeletons are neutral only — never accent.** The deleted
  *    `components/ui/skeleton.tsx` filled with `bg-primary/10`, i.e. the chapter
  *    accent. `Skeleton` below is the elevated neutral with §10's shimmer.
@@ -96,12 +96,13 @@ export function SkeletonText({
 }
 
 /**
- * The default loading state: card chrome with skeleton lines in it.
+ * The generic loading state: card chrome with skeleton lines in it.
  *
- * `children` is the escape hatch §10 actually wants — a surface that knows its
- * own layout passes a skeleton mirroring it ("same blocks, same radii"). The
- * default is the generic fallback for surfaces that have not been trued up
- * yet, and it is still content-shaped rather than a spinner.
+ * Not for a whole screen. A route's loading state is its own skeleton, built
+ * from `page-skeletons.tsx` and shared with its `loading.tsx` (2026-11-05):
+ * this card on a flush page was the colour and shape of nothing it stood in
+ * for. What is left here is panel-level states that have not been given their
+ * own skeleton yet; `children` lets one pass a mirrored skeleton in place.
  *
  * `message` stays visible. The default skeleton is generic rather than a mirror
  * of any particular screen, so the caption is doing real work — it is the only
@@ -438,10 +439,11 @@ export function OfflineState({
  * is the badge-companion carve-out, and this glyph leads the notice rather
  * than trailing a badge.
  *
- * `min-h-11` does **not** make the Retry reach §2's floor — `Button size="sm"`
- * is `h-11` on its own and the row sizes to it. It is for the other branch:
- * with no `onRetry` the row is text-only, and a bare caption standing in for a
- * 44px control would let the layout collapse around it.
+ * The min-height does **not** make the Retry reach §2's floor — `Button
+ * size="sm"` is 36 to a mouse and 44 to a finger on its own, and the row sizes
+ * to it. It is for the other branch: with no `onRetry` the row is text-only,
+ * and a bare caption standing in for the control would let the layout
+ * collapse around it, so it holds the same 36 / 44.
  *
  * Copy names the blocker and the next action (`writing.md` §1). It says
  * "access" rather than "permissions" because the member is not the one who
@@ -490,7 +492,7 @@ export function PermissionsOffline({
   return (
     <div
       className={cn(
-        "inline-flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground",
+        "inline-flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground pointer-coarse:min-h-11",
         className,
       )}
     >

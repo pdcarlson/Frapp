@@ -39,7 +39,7 @@ This document is the canonical statement of Frapp's engineering standard: first 
 
 ## Empty states
 
-- **Every list surface has an explicit empty state.** A channels list with no channels renders a "No channels yet" panel with the next-action CTA, not a blank pane. The same holds for the members directory, events list, tasks board, audit log, message threads ("Be the first to post"), DM lists ("Start a conversation"), and search results. The implementation explicitly checks `length === 0` (or `!active`) and renders the empty component before attempting to render headers, lists, or composers.
+- **Every list surface has an explicit empty state.** A channels list with no channels renders a "No channels yet" panel with the next-action CTA, not a blank pane. The same holds for the members directory, events list, tasks board, audit log, DM lists ("Start a conversation"), and search results. The implementation explicitly checks `length === 0` (or `!active`) and renders the empty component before attempting to render headers, lists, or composers. A message thread is the exception: it keeps its header and composer and draws its channel start where the first message will land, the same block that heads its history once people post ([`writing.md` § Chat (dashboard)](ui/design-system/writing.md#chat-dashboard)).
 
 ## Accessibility on interactive elements
 

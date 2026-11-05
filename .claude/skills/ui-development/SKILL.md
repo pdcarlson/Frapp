@@ -43,6 +43,10 @@ Conventions that are easy to get wrong:
   metadata that must not read as a status.
 - `Table` row hover (`accent-3`) and selection (`accent-4` plus `accent-11` text) are a matched
   pair. Don't re-spell either at a call site or merge them. The reasoning is in the file header.
+- A route's loading state mirrors its loaded layout: compose it from
+  `components/shared/page-skeletons.tsx` in the feature folder (`<feature>-skeleton.tsx`), render
+  it from both the route's `loading.tsx` and the page's first-load branch, and never wrap a flush
+  page in `LoadingState`'s card. A new route without a `loading.tsx` fails `page-skeletons.spec.tsx`.
 - A loading, empty, or error state inside a `<CardContent>` uses
   `components/shared/nested-states.tsx`, not `async-states.tsx`, which paints `--card` and would
   vanish inside a card.

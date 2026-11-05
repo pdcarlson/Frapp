@@ -42,7 +42,6 @@ import { EmptyState } from "@/components/shared/async-states";
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
@@ -55,6 +54,7 @@ import {
 import { BackworkTaxonomyDrawer } from "@/components/backwork/backwork-taxonomy-drawer";
 import { useBackworkTaxonomyActions } from "@/components/backwork/backwork-taxonomy-actions";
 import { BackworkUploadSheet } from "@/components/backwork/backwork-upload-sheet";
+import { BackworkRowsSkeleton } from "@/components/backwork/backwork-skeleton";
 import {
   CopyLabel,
   Highlighted,
@@ -464,9 +464,14 @@ export function BackworkPage() {
   }
 
   const count = results.length;
-  const countLabel = narrowed
-    ? `${count} of ${rows.length} file${rows.length === 1 ? "" : "s"}`
-    : `${count} file${count === 1 ? "" : "s"}`;
+  // No count before the read answers: "0 files" over the loading rows is a
+  // claim about the archive.
+  const countLabel =
+    resourcesQuery.data === undefined
+      ? null
+      : narrowed
+        ? `${count} of ${rows.length} file${rows.length === 1 ? "" : "s"}`
+        : `${count} file${count === 1 ? "" : "s"}`;
 
   return (
     <div className="space-y-3">
@@ -635,7 +640,7 @@ export function BackworkPage() {
         ) : resourcesQuery.isLoading ||
           (resourcesQuery.isPending &&
             resourcesQuery.fetchStatus === "paused") ? (
-          <NestedLoading message="Loading backwork..." sole />
+          <BackworkRowsSkeleton />
         ) : resourcesQuery.isError ? (
           <NestedError
             sole

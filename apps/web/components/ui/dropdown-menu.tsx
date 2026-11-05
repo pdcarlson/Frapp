@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils"
 export const MENU_CONTENT_CLASS =
   "z-50 min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground"
 export const MENU_ITEM_CLASS =
-  "relative flex min-h-11 cursor-default select-none items-center gap-2 rounded-xs px-2 py-1.5 text-base outline-none transition-colors focus:bg-accent-subtle focus:text-accent-text data-[disabled]:pointer-events-none data-[disabled]:text-disabled [&>svg]:size-4 [&>svg]:shrink-0"
+  "relative flex min-h-8 cursor-default select-none items-center gap-2 rounded-xs px-2 py-1.5 text-sm outline-none pointer-coarse:min-h-11 pointer-coarse:text-base transition-colors focus:bg-accent-subtle focus:text-accent-text data-[disabled]:pointer-events-none data-[disabled]:text-disabled [&>svg]:size-4 [&>svg]:shrink-0"
 export const MENU_LABEL_CLASS =
   "px-2 py-1.5 text-sm font-semibold text-muted-foreground"
 export const MENU_SEPARATOR_CLASS = "-mx-1 my-1 h-px bg-border"

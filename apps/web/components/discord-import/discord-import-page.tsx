@@ -23,7 +23,6 @@ import {
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { denseListClassName } from "@/components/shared/table-controls";
@@ -53,6 +52,7 @@ import {
   purgeLine,
 } from "./delete-import-copy";
 import type { ImportSource } from "./source-step";
+import { DiscordImportsSkeleton } from "@/components/discord-import/discord-import-skeleton";
 
 const STATUS_VARIANT: Record<
   string,
@@ -192,6 +192,7 @@ export function DiscordImportPage() {
       */}
       <Can
         permission="channels:manage"
+        fallback={<DiscordImportsSkeleton />}
         deniedFallback={
           <p className="text-sm text-muted-foreground">
             Your role can&apos;t import Discord history. Ask your chapter
@@ -323,7 +324,7 @@ function DiscordImportList({
     );
   }
   if (imports.isLoading || paused) {
-    return <NestedLoading sole message="Loading imports..." />;
+    return <DiscordImportsSkeleton />;
   }
   // `data === undefined`, not `isError` alone: a failed background read keeps
   // the rows TanStack already holds, and while a deletion is being polled an

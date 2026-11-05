@@ -24,6 +24,7 @@ import {
   subscriptionStatusLabel,
 } from "@/components/billing/invoice-status";
 import { formatDay } from "@repo/formatting";
+import { PlanPanelSkeleton } from "@/components/billing/billing-skeleton";
 
 /**
  * Stripe confirms the subscription over a webhook, not on the redirect, so the
@@ -157,7 +158,11 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
   // the chip reads the chapter record — the same source every *gate* reads —
   // and falls back to the billing payload only when the chapter record has not
   // established anything. The fallback is display-only: no gate reads it.
-  const { status, pastDueSince } = useChapterSubscription();
+  const {
+    status,
+    pastDueSince,
+    isPending: subscriptionPending,
+  } = useChapterSubscription();
   const statusQuery = useBillingStatus();
   const billingStatus = statusQuery.data as BillingStatusPreview | undefined;
   const shownStatus = status ?? billingStatus?.subscription_status;
@@ -328,6 +333,24 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
 
   const exhausted = attempt >= ACTIVATION_POLL_ATTEMPTS;
 
+  /*
+    Neither read has answered yet: draw the panel's own skeleton rather than
+    the panel with an "Unknown" chip, which states a fact about the
+    subscription that nobody has read yet. Once either read lands, the panel
+    renders with what it has, as before.
+
+    Not while the read is paused: offline, neither query will answer until the
+    connection returns, and a skeleton then would spin indefinitely in place of
+    the panel's own offline handling.
+  */
+  if (
+    subscriptionPending &&
+    statusQuery.isPending &&
+    statusQuery.fetchStatus !== "paused"
+  ) {
+    return <PlanPanelSkeleton />;
+  }
+
   return (
     /*
       `--surface-1` at radius 16 with a hairline, which is `4d`'s own
@@ -394,7 +417,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
             <Button
               variant="link"
               size="sm"
-              className="h-auto px-0"
+              className="h-auto px-0 pointer-coarse:h-auto"
               onClick={() => void statusQuery.refetch()}
             >
               Retry
@@ -696,11 +719,17 @@ function ActivationWait({
       <Button variant="secondary" onClick={onRecheck}>
         Check again
       </Button>
-      {/* `h-auto px-0` cancels the size's box classes, which `link` does not
-          reset — without them the anchor renders as a 44px padded block beside
-          the button rather than as inline text. Same pairing as
-          `service-page.tsx`'s proof link. */}
-      <Button asChild variant="link" size="sm" className="h-auto px-0">
+      {/* `h-auto px-0 pointer-coarse:h-auto` cancels the size's box classes,
+          which `link` does not reset — without them the anchor renders as a
+          padded block beside the button rather than as inline text. The
+          `pointer-coarse:` half is needed because `cn()` cannot merge a plain
+          class over a variant one. */}
+      <Button
+        asChild
+        variant="link"
+        size="sm"
+        className="h-auto px-0 pointer-coarse:h-auto"
+      >
         <a href="/billing">I haven&apos;t paid yet</a>
       </Button>
     </>

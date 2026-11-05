@@ -143,6 +143,7 @@ The tables below are the canonical strings for high-frequency state messages, so
 
 - Do not rewrite equivalent state text ad hoc per screen unless the workflow intent is materially different.
 - On the web dashboard, the shared subset is implemented in `apps/web/lib/state-microcopy.ts`; the remaining strings live inline at their surface component and MUST match these tables.
+- **Loading rows on web are announcements, not captions** (2026-11-05). Dashboard loading states are skeletons shaped like their page, and a skeleton shows no text; its string is the screen-reader status line, written without the trailing `...` (`Loading chapter tasks`). The rows below keep their visible-caption form for mobile and for the few web panels still on the generic loading state ([`components.md`](components.md) §10).
 - The chat catch-up pulse deliberately does **not** use these states: a section that fails to read is omitted, never rendered as a zero or a generic error row. See [catch-up.md](../../behavior/chat/catch-up.md).
 
 ### Connection banner (global)
@@ -503,15 +504,16 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Loading older messages (above the oldest row, #1571) | — | `Loading earlier messages...` (mobile, #2772: `Loading earlier messages…`, its own ellipsis convention) |
 | Older messages failed | — | `Couldn't load earlier messages.` · `Retry` |
 | Older messages may exist, no read running (mobile, above the oldest row, #2772) | — | `Load earlier messages` (a control: a page the block list holds entirely adds nothing to scroll past) |
-| Start of the channel's history reached (mobile, #2772; web's day divider says it) | — | `This is the start of the conversation.` |
+| Start of the channel's history reached | — | The channel start (below), above the oldest message, on both clients. Mobile's bare caption `This is the start of the conversation.` (#2772) remains only for a thread whose row hasn't loaded |
 | Jump looking for its target (newer rows first, then older pages) | — | `Finding that message...` · `Dismiss` |
 | Jump target past the paging bound | — | `That message is further back than the history loaded here. Scrolling up loads more, and it opens once it loads.` · `Dismiss` |
 | Jump target not in the channel's history | — | `That message isn't in this channel anymore.` · `Dismiss` |
 | Jump could not load a page it needed (newer or older) | — | `Couldn't load the messages needed to reach that message.` · `Dismiss` |
 | Jump into a channel whose messages failed to load | — | `Couldn't load this channel's messages to reach that message.` · `Dismiss` |
 | Jump to latest (mobile: a `↓` over the thread once the reader is back in history; `components/chat/jump-to-latest-button.tsx`, `jumpToLatestLabel`) | — | Read `Jump to latest`, or `New messages. Jump to latest` once something new lands out of sight |
-| No channels | `No channels yet` | `New chapters seed #general, #announcements, and #chapter-audit during onboarding. Ask an admin if none appear.` |
-| Empty timeline | `Nothing in this channel yet` | `Be the first to post — everyone in the channel sees it right away.` |
+| No channels | `No channels yet` | `Onboarding seeds them. Ask an admin.` It names no channel: which ones a new chapter gets is [`chat/README.md` § Channels](../../behavior/chat/README.md#channels). |
+| Channel start (both clients, `@repo/hooks/channel-start`; an empty channel draws it just above the composer, and a channel with history draws it above its oldest message) | `Welcome to #<name>`; a DM's is the other member's name | `This is the start of #<name>.`, or `This is the start of the private #<name> channel.` for a private one (a role-gated channel takes the plain line, since who reads it depends on its permissions and the seeded `#alumni` is open to every member), `This is the start of your conversation with <name>.` for a DM and `This is the start of your group conversation.` for a group DM; then the channel's own description, when it has one. Web officers (`channels:manage`) get `Edit channel`, or `Add a description` when it is blank, opening Chat admin on that channel |
+| Channel header (web: `# <name> • <description>` on one line, the description muted and truncated; mobile: the description on a muted line under the name) | — | The channel's own description. The four default channels start with `The whole chapter. Plans, questions, whatever's going on.` (#general), `News from officers. Everyone gets notified.` (#announcements), `Officer changes to dues, roles and settings, posted automatically.` (#chapter-audit) and `Alumni and actives keeping in touch.` (#alumni), from `DEFAULT_CHANNELS` |
 | Error | `Couldn't load channels` / `Couldn't load messages` | `Confirm your chapter access and retry.` |
 | Read-only channel | — | `This channel is read-only for your role.` (mobile still quotes the permission key, [#3422](https://github.com/pdcarlson/Frapp/issues/3422)) |
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
@@ -524,10 +526,10 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Send refused by the outbox, composer changed since (toast, #1728) | `Message not sent` | `It couldn't be queued for delivery and was discarded. Re-enter it to try again.` |
 | Send throttled (429; web toast and the failed row's error, beside its Retry, #3061) | `Message not sent` | `Too many requests in a short time. Wait a minute, then try again.` |
 
-The empty-timeline line used to end "messages render live with Supabase
-Realtime." It named the vendor and the transport to a member who wants to know
-whether it is safe to type, which §1's plain-language rule rules out — the
-promise worth making is that other people will see it.
+An empty channel had a timeline line until 2026-11-05, when the channel start
+replaced it. Before that it once ended "messages render live with Supabase
+Realtime.", which named the vendor and the transport to a member who wants to
+know whether it is safe to type, and §1's plain-language rule rules that out.
 
 The composer's offline line is a **label, not a warning**: the send path queues
 before it touches the network, so the composer stays usable and says what will
@@ -910,8 +912,8 @@ The Quiet hours section (the Preferences card until 2026-11-05) is a **second qu
 
 | State | Title | Description |
 |---|---|---|
-| Idle (mobile s01) | `Frapp` | `Everything your chapter needs is already in chat.` — s01's wordmark and tagline are the screen's heading and body, not decoration above one. Not the brand tagline "Ask your chapter anything." ([`../brand-identity.md`](../brand-identity.md) §1): Ask is off by default (`EXPO_PUBLIC_ASK_ENABLED`), and this is the first screen App Review opens, so leading with it would advertise a feature the binary does not have (Guidelines 2.1 and 2.3). The line is the landing's closing line, held there for the same reason (landing D8, [`../landing/README.md`](../landing/README.md)). Owner decision 2026-09-22, [#2298](https://github.com/pdcarlson/Frapp/issues/2298). Mobile only: the web pre-auth column keeps the brand tagline, which App Review never sees. It returns to mobile in the slice that ships Ask. |
-| Idle (web `/sign-in`) | `Frapp` | `Ask your chapter anything.` The brand tagline ([`../brand-identity.md`](../brand-identity.md) §1). The wordmark moved from Signet with ADR-25 step 4 ([#2579](https://github.com/pdcarlson/Frapp/issues/2579)), and `scripts/ci/__tests__/frapp-naming.test.mjs` pins it. |
+| Idle (mobile s01) | `Frapp` | `Everything your chapter needs is already in chat.` — s01's wordmark and tagline are the screen's heading and body, not decoration above one. Not the brand tagline "Ask your chapter anything." ([`../brand-identity.md`](../brand-identity.md) §1): Ask is off by default (`EXPO_PUBLIC_ASK_ENABLED`), and this is the first screen App Review opens, so leading with it would advertise a feature the binary does not have (Guidelines 2.1 and 2.3). The line is the landing's closing line, held there for the same reason (landing D8, [`../landing/README.md`](../landing/README.md)). Owner decision 2026-09-22, [#2298](https://github.com/pdcarlson/Frapp/issues/2298). It returns to mobile in the slice that ships Ask. |
+| Idle (web `/sign-in`) | `Welcome back` | `Sign in to your chapter.` Since 2026-11-05 the web form sits in a split frame whose header carries the mark and wordmark (`apps/web/components/auth/auth-frame.tsx`), so the wordmark is chrome and the title is the form's own; Paul asked for the redesign. The brand tagline left with it: the frame's product panel shows the chat instead, and "Ask your chapter anything." waits for Ask like it does on mobile and the landing (D8). `scripts/ci/__tests__/frapp-naming.test.mjs` pins that no web pre-auth title is the bare wordmark. Until 2026-11-05 this row was `Frapp` over the tagline, moved from Signet by ADR-25 step 4 ([#2579](https://github.com/pdcarlson/Frapp/issues/2579)). |
 | Submitting | — | The primary reads `Continue` throughout and disables; no separate copy. |
 | Auth error | `Unable to sign in` | The Supabase message, verbatim. It is deliberately non-enumerating ("Invalid login credentials" whether or not the address exists), so passing it through leaks nothing and says more than a generic line would. |
 | Magic link sent | `Magic link sent` | `Check your inbox to continue signing in.` |

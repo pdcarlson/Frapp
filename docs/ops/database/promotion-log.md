@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-05: Starting descriptions for the default channels
+
+### 20261105210000_default_channel_descriptions.sql
+
+- **Purpose**: Writes a starting `description` into the four channels every chapter is created with (`#general`, `#announcements`, `#chapter-audit`, `#alumni`), only where the description was never set (null). The channel header shows it beside the name and the empty channel's start repeats it. New chapters get the same lines from `DEFAULT_CHANNELS` (`apps/api/src/domain/constants/permissions.ts`). A description an officer typed is never replaced, a description an officer cleared (stored as `''` by Chat admin, which since this change sends the field only when it was edited) stays clear, and only the seeded name and type pairs are touched.
+- **Checks**: Before `db push`, `select name, type, count(*), count(*) filter (where description is null) from chat_channels where name in ('general','announcements','chapter-audit','alumni') group by 1, 2;` gave 8 channels, all 8 null, on `frapp-prod` and 5 channels, all 5 null, on `frapp-staging` on 2026-11-05 (none were `''`). After it, the same query should give a null count of 0 for the seeded name and type pairs; re-run it before `db push` if time has passed, since a channel an officer saved blank meanwhile is skipped on purpose.
+- **Promoter notes**: Data only, no schema change. It rewrites at most a handful of rows per chapter, so the lock is brief. Any API version works against it: the column has always existed and every client already treats it as optional text. Re-applying is a no-op, because the `where` only matches null descriptions. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-default-channel-descriptions-20261105210000) § Rollback default channel descriptions.
+
 ## 2026-11-05: Seeded role colors move onto the role palette (#3485)
 
 ### 20261105200000_role_color_palette_defaults.sql
