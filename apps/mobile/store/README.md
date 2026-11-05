@@ -40,6 +40,22 @@ with a new build
 ([App Store Connect Help, "Add an app icon"](https://developer.apple.com/help/app-store-connect/manage-app-information/add-an-app-icon);
 dark and tinted variants: [`spec/ui/assets.md` § 7](../../../spec/ui/assets.md#7-mobile-expo-rasters)).
 
+**App Store product page images: made by hand, committed, uploaded by the owner.** App Store
+Connect's version page has a *Header and Search Results* panel with one optional asset per
+tab. Both are in [`graphics/app-store/`](graphics/app-store/):
+`app-store-header-5244x2950.png` (Header tab; it also takes 3840 × 1646) and
+`app-store-search-results-3840x2560.png` (Search Results tab; it also takes 5244 × 2950 and
+1920 × 1280). Sizes were read from the console on 2026-11-05. Without a search results asset,
+App Store Connect uses the screenshots instead. Both images were composed on 2026-11-05 from
+the charcoal screenshot set (`scripts/demo/store-frames.mjs`). Nothing renders them, so
+`check:brand-assets` doesn't check them, and they go stale when the screenshots change. The
+owner uploaded the header on 2026-11-05.
+
+**App Store screenshot slot.** The version page's screenshot slot is now *iPhone with Dynamic
+Island (medium display)*. It rejected the 1320 × 2868 set and took **1206 × 2622**
+(2026-11-05). It also lists 1179 × 2556 and both landscape sizes. App Store Connect scales
+that one set down to every other iPhone size.
+
 **The product is Frapp** ([ADR-25](../../../spec/architecture/adr/adr-25.md),
 2026-09-23). The App Store **listing** name is **`Frapp: Chapter Hub`**. The
 owner claimed it in App Store Connect on 2026-09-23, replacing `Signet: Chapter
@@ -283,6 +299,42 @@ the work; the detail lives there, not here.
 > The copy lives in [`spec/ui/design-system/writing.md`](../../../spec/ui/design-system/writing.md)
 > § 7, Sign in. When Ask ships, move the listing subtitle and the sign-in line together.
 
+**Paste this** (App Store Connect and Play Console, entered by the owner on 2026-11-05):
+
+```text
+Frapp is where your chapter runs day to day.
+
+Announcements, channels, events, study hours, points, dues and the member directory all live in one app, so nobody has to dig through six group chats to find out what's going on.
+
+For members:
+- Chat in chapter channels and direct messages
+- See what's coming up and check in at events with a QR code
+- Log study hours inside your chapter's study zones
+- Log service hours and track your points and house rank
+- See your dues and payment history
+- Look up anyone in the member directory
+
+For officers:
+- Take attendance at the door with a QR code
+- Assign a task to any member
+- Post announcements that reach every member
+
+Bigger setup jobs like roles, dues, service hour approvals, channels and points are handled on the web dashboard.
+
+Members join by invite. Your officers send you a link, you open it on your phone, and you're in.
+
+Notifications are yours to control, with quiet hours built in.
+```
+
+> **Rewritten 2026-11-05 at the owner's request** so it reads like a person wrote it, with no
+> em dashes. It makes the same claims as the earlier text below, plus one: "Log service
+> hours", which the member's Service hours log sheet does
+> (`components/service-hours/log-hours-sheet.tsx`). The earlier text and its notes stay
+> because the notes are the evidence that each claim holds in the binary (Guideline 2.3).
+> Check a new claim against them before you add it.
+
+**Before 2026-11-05** the listing read:
+
 Frapp is the app your chapter actually runs on.
 
 Members get one place for the things that used to live in six group chats: chapter announcements and channels, upcoming events with a check-in code at the door, study hours tracked inside your chapter's study zones, points and your house rank, dues and payment history, and the member directory.
@@ -364,7 +416,12 @@ Features
 
 ## Keywords (iOS, 100 chars)
 
-fraternity,sorority,chapter,greek life,dues,attendance,study hours,events,members,officers
+fraternity,sorority,greek life,dues,attendance,study hours,service hours,events,points,officers
+
+> **Changed 2026-11-05** (95 characters). "chapter" was dropped because it's already in the
+> listing name, and Apple indexes name words for search on its own, so repeating it in the
+> keywords wastes characters. "members" made room for "service hours" and "points". Before:
+> `fraternity,sorority,chapter,greek life,dues,attendance,study hours,events,members,officers`.
 
 ## What's new (first release)
 
