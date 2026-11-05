@@ -43,8 +43,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * rounds each chip's ripple takes the slop too, in `PressableRow`).
  */
 
-/** The board's chip height (s13), as a floor. No token carries it; the 44pt floor is `hitSlop`'s. */
-const CHIP_HEIGHT = 34;
+/**
+ * The chip height, as a floor: 32, the mobile filter chip on foundations.md
+ * §9's control size scale (s13 draws 34). No token carries it; the 44pt floor
+ * is `hitSlop`'s.
+ */
+const CHIP_HEIGHT = 32;
 
 export interface FilterChip {
   /** Stable key, and what `onSelect` receives. `null` is the "all" chip. */
@@ -314,7 +318,7 @@ function createStyles(tokens: SignetTokens) {
       width: "100%",
     },
     // A floor, not a fixed height: at a large system text size the label
-    // outgrows 34pt and the chip grows with it rather than cutting it off.
+    // outgrows 32pt and the chip grows with it rather than cutting it off.
     chip: {
       minHeight: CHIP_HEIGHT,
       minWidth: tokens.touch.minimum,

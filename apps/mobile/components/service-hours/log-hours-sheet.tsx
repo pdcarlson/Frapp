@@ -716,13 +716,13 @@ function createStyles(tokens: SignetTokens, accent: string) {
     ringActive: fieldStyles.ringActive,
     field: fieldStyles.field,
     fieldFocused: fieldStyles.fieldFocused,
-    // Drawn like the board's row: 50px, the control radius, surface1, and a
-    // dashed border while empty.
+    // Drawn like the board's row (the control radius, surface1, and a dashed
+    // border while empty) at the touch Field step, 44 (the board draws 50).
     proofRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.sm,
-      minHeight: 50,
+      minHeight: tokens.touch.minimum,
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.input,
