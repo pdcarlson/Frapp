@@ -250,7 +250,7 @@ describe("ChatAdminPage — the channel structure's states", () => {
     });
     const { container } = render(<ChatAdminPage />);
 
-    expect(screen.getByText("Loading channels...")).toBeInTheDocument();
+    expect(screen.getByText("Loading channels")).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
 
