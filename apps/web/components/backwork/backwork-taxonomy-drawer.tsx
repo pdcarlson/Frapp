@@ -1,21 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  Check,
-  Loader2,
-  Merge,
-  Pencil,
-  Settings2,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Check, Loader2, Merge, Pencil, Trash2, X } from "lucide-react";
 import {
   useDeleteDepartment,
   useDeleteProfessor,
   useDepartments,
-  useMergeDepartments,
-  useMergeProfessors,
   useProfessors,
   useUpdateDepartment,
   useUpdateProfessor,
@@ -28,35 +18,24 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from "@/components/ui/sheet";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { useBackworkTaxonomyActions } from "@/components/backwork/backwork-taxonomy-actions";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
 type Department = { id: string; code: string; name: string | null };
 type Professor = { id: string; name: string };
 type Entity = "department" | "professor";
-type MergeTarget = { entity: Entity; id: string; label: string };
 
 /**
- * "Manage taxonomy" drawer (#376) — rename, merge, and delete for Backwork
- * departments/professors, gated on `backwork:admin` by the caller.
+ * The clean-up drawer (#376): rename, merge, and delete for every Backwork
+ * department and professor at once, gated on `backwork:admin` by the caller.
+ *
+ * It has no trigger of its own. Since the 2026-11-05 redesign it opens from
+ * the `/backwork` ⋯ menu ("Clean up professors and departments"); renaming or
+ * merging the one entry a file uses is on that file's row menu instead. Merge
+ * runs through `useBackworkTaxonomyActions`, the same dialog the row uses.
  *
  * Delete is blocked server-side (400) while any resource still references the
  * row; merge is the guided path to clear that — it reassigns every
@@ -64,8 +43,13 @@ type MergeTarget = { entity: Entity; id: string; label: string };
  * error shapes surface via toast rather than a silent no-op, since the 400's
  * message names how many resources are still attached.
  */
-export function BackworkTaxonomyDrawer() {
-  const [open, setOpen] = useState(false);
+export function BackworkTaxonomyDrawer({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const departmentsQuery = useDepartments();
   const professorsQuery = useProfessors();
   const departments = useMemo(
@@ -79,17 +63,12 @@ export function BackworkTaxonomyDrawer() {
 
   const updateDepartment = useUpdateDepartment();
   const deleteDepartment = useDeleteDepartment();
-  const mergeDepartments = useMergeDepartments();
   const updateProfessor = useUpdateProfessor();
   const deleteProfessor = useDeleteProfessor();
-  const mergeProfessors = useMergeProfessors();
 
   const { toast } = useToast();
   const { confirm, confirmDialog } = useConfirmDialog();
-
-  const [mergeTarget, setMergeTarget] = useState<MergeTarget | null>(null);
-  const [mergeSelection, setMergeSelection] = useState("");
-  const [merging, setMerging] = useState(false);
+  const { requestMerge, dialogs } = useBackworkTaxonomyActions();
 
   async function handleRename(
     entity: Entity,
@@ -153,59 +132,12 @@ export function BackworkTaxonomyDrawer() {
   }
 
   function openMerge(entity: Entity, id: string, label: string) {
-    setMergeTarget({ entity, id, label });
-    setMergeSelection("");
+    requestMerge({ entity, id, label });
   }
-
-  async function handleMergeConfirm(): Promise<void> {
-    if (!mergeTarget || !mergeSelection) return;
-    setMerging(true);
-    try {
-      const result =
-        mergeTarget.entity === "department"
-          ? await mergeDepartments.mutateAsync({
-              id: mergeTarget.id,
-              targetId: mergeSelection,
-            })
-          : await mergeProfessors.mutateAsync({
-              id: mergeTarget.id,
-              targetId: mergeSelection,
-            });
-      toast({
-        title: `Merged "${mergeTarget.label}"`,
-        description: `${result.reassigned} resource(s) reassigned.`,
-      });
-      setMergeTarget(null);
-    } catch (error) {
-      toast({
-        title: "Unable to merge",
-        description: getErrorMessage(error, "Something went wrong."),
-        variant: "destructive",
-      });
-    } finally {
-      setMerging(false);
-    }
-  }
-
-  const mergeOptions: { id: string; label: string }[] =
-    mergeTarget?.entity === "department"
-      ? departments
-          .filter((d) => d.id !== mergeTarget.id)
-          .map((d) => ({ id: d.id, label: d.name ?? d.code }))
-      : mergeTarget?.entity === "professor"
-        ? professors
-            .filter((p) => p.id !== mergeTarget.id)
-            .map((p) => ({ id: p.id, label: p.name }))
-        : [];
 
   return (
     <>
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetTrigger asChild>
-          <Button variant="secondary" className="gap-2">
-            <Settings2 className="h-4 w-4" /> Manage taxonomy
-          </Button>
-        </SheetTrigger>
+      <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
           <SheetHeader>
             <SheetTitle>Manage departments &amp; professors</SheetTitle>
@@ -242,52 +174,7 @@ export function BackworkTaxonomyDrawer() {
         </SheetContent>
       </Sheet>
 
-      <Dialog
-        open={!!mergeTarget}
-        onOpenChange={(next) => {
-          if (!next) setMergeTarget(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Merge &quot;{mergeTarget?.label}&quot;</DialogTitle>
-            <DialogDescription>
-              Every resource tagged with this entry moves to the one you pick
-              below, then this entry is deleted. This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <Select value={mergeSelection} onValueChange={setMergeSelection}>
-            <SelectTrigger>
-              <SelectValue placeholder="Merge into…" />
-            </SelectTrigger>
-            <SelectContent>
-              {mergeOptions.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <DialogFooter>
-            <Button
-              variant="secondary"
-              onClick={() => setMergeTarget(null)}
-              disabled={merging}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleMergeConfirm}
-              disabled={!mergeSelection || merging}
-            >
-              {merging ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Merge
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
+      {dialogs}
       {confirmDialog}
     </>
   );

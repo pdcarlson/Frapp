@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -29,20 +30,34 @@ export function useBackworkResources(filters?: {
   });
 }
 
-export function useBackworkResource(id: string) {
+/**
+ * Fetches one resource's detail (with its fresh signed `downloadUrl`) on
+ * demand, for a Download press.
+ *
+ * It replaced `useBackworkResource`, a mounted query: `/backwork` rendered one
+ * per row, so every page load asked the API for a signed URL for every file in
+ * the library, minting links nobody clicked. This fetches only when
+ * called, and never reuses a cached link (`staleTime: 0`), because the signed
+ * URL expires quickly.
+ */
+export function useFetchBackworkResource() {
   const client = useFrappClient();
-  return useQuery({
-    queryKey: ["backwork", id],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/backwork/{id}", {
-        params: { path: { id } },
-      });
-      if (error) throw error;
-      return data;
-    },
-    staleTime: 60_000,
-    enabled: !!id,
-  });
+  const queryClient = useQueryClient();
+  return useCallback(
+    (id: string) =>
+      queryClient.fetchQuery({
+        queryKey: ["backwork", id],
+        queryFn: async () => {
+          const { data, error } = await client.GET("/v1/backwork/{id}", {
+            params: { path: { id } },
+          });
+          if (error) throw error;
+          return data;
+        },
+        staleTime: 0,
+      }),
+    [client, queryClient],
+  );
 }
 
 export function useDepartments() {
@@ -68,6 +83,27 @@ export function useProfessors() {
       return data;
     },
     staleTime: 60_000,
+  });
+}
+
+/**
+ * Deletes one resource (`backwork:admin`). The API removes the row; the
+ * `["backwork"]` prefix invalidation refreshes the library list.
+ */
+export function useDeleteBackworkResource() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await client.DELETE("/v1/backwork/{id}", {
+        params: { path: { id } },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["backwork"] });
+    },
   });
 }
 

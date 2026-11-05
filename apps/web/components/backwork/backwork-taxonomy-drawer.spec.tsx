@@ -56,12 +56,12 @@ beforeEach(() => {
   professorsData.value = [{ id: "prof-1", name: "Dr. Rivera" }];
 });
 
+// The drawer has no trigger of its own: `/backwork`'s ⋯ menu opens it.
+const noop = () => {};
+
 async function openDrawer() {
   const user = userEvent.setup();
-  render(<BackworkTaxonomyDrawer />);
-  await user.click(
-    screen.getByRole("button", { name: /manage taxonomy/i }),
-  );
+  render(<BackworkTaxonomyDrawer open onOpenChange={noop} />);
   return user;
 }
 
@@ -103,9 +103,8 @@ describe("BackworkTaxonomyDrawer", () => {
 
   it("re-opening rename shows the current name, not a stale draft from an earlier abandoned edit", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(<BackworkTaxonomyDrawer />);
-    await user.click(
-      screen.getByRole("button", { name: /manage taxonomy/i }),
+    const { rerender } = render(
+      <BackworkTaxonomyDrawer open onOpenChange={noop} />,
     );
 
     // Open the edit, type something, then cancel without saving — `draft`
@@ -121,7 +120,7 @@ describe("BackworkTaxonomyDrawer", () => {
       { id: "dept-1", code: "CHEM", name: "Chem & Biochem" },
       { id: "dept-2", code: "MATH", name: "Mathematics" },
     ];
-    rerender(<BackworkTaxonomyDrawer />);
+    rerender(<BackworkTaxonomyDrawer open onOpenChange={noop} />);
 
     // Re-opening edit must show the current server name, not "abandoned edit".
     await user.click(
