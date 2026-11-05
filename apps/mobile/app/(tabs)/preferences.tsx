@@ -71,10 +71,13 @@ import {
  *   token (`apps/api/src/domain/entities/invite.entity.ts`). Rendering one of
  *   those as a stable "join code" would tell members something false about how
  *   it behaves. Filed instead.
- * - **`announcements` is not a switch.** The delivery flow checks the member's
- *   preference *before* it checks priority, so the row would let someone
- *   silence URGENT chapter announcements — and the in-app record of them — from
- *   here. See the catalog's docblock in `@repo/validation`.
+ * - **`announcements` is not a switch.** The category has no non-URGENT
+ *   traffic to govern: its one emitter, the chat push worker, sends every
+ *   announcement push URGENT, and URGENT skips the category preference (#1041),
+ *   so the switch would suppress nothing, a dead control. It ships once routine
+ *   announcements can be told apart from emergency ones (#1323). Why in full:
+ *   the catalog's docblock in `@repo/validation` and
+ *   `spec/behavior/notifications.md` § Preference sync.
  * - **Appearance is static text.** The app is dark-only by design
  *   (`lib/theme.tsx`), and Canvas draws this row as a value, not a control.
  * - **"Push notifications" is a switch that reports the device's settings.**
@@ -85,8 +88,12 @@ import {
  *   cannot revoke its own permission, and iOS never re-prompts once asked.
  *   Before this the row always sent the member to the OS settings, even when
  *   the OS had never asked (More → Settings → Notifications → device
- *   settings, the owner's 2026-11-04 complaint). In a build that can't push it
- *   stays a status row that states why (`pushUnavailableReason()`).
+ *   settings, the owner's 2026-11-04 complaint). Unlike the drawing, a line
+ *   under it says so whenever a tap opens the OS settings (`pushRowCaption()`).
+ *   In a build that can't push it stays a status row that states why
+ *   (`pushUnavailableReason()`).
+ * - **Study zones says where zones are changed**, which the drawing doesn't:
+ *   the row is read-only on the phone, and nothing else on it says where to go.
  * - **"Blocked members" is here and is not drawn.** `spec/behavior/chat/README.md`
  *   § Block makes a Settings list the one durable place a block is undone
  *   (#2257), and App Store Guideline 1.2 is why the control exists at all. It
@@ -177,17 +184,32 @@ function pushTapAsks(push: PushState): boolean {
 }
 
 /**
- * The push switch's accessible name, which says what a tap does whenever that
- * isn't the switch flipping: on, and off once no prompt can help, a tap opens
- * the phone's settings instead.
+ * What a tap does when it isn't the switch flipping: on, and off once no
+ * prompt can help, it opens the phone's settings to turn push off or on.
+ * `null` while a tap asks the OS, which the switch moving already shows.
  */
+function pushSettingsAction(push: PushState): "Turn off" | "Turn on" | null {
+  if (pushIsOn(push)) return "Turn off";
+  return pushTapAsks(push) ? null : "Turn on";
+}
+
+/**
+ * The push row's one line, drawn whenever a tap leaves the app for the OS
+ * settings. Nothing else on screen says so: the row is a plain switch, so a
+ * member who taps it to turn push off would otherwise see it snap back and
+ * the Settings app open with no reason given.
+ */
+function pushRowCaption(push: PushState): string | null {
+  const action = pushSettingsAction(push);
+  return action ? `${action} in your phone's settings.` : null;
+}
+
+/** The push switch's accessible name: the label, then the same hand-off. */
 function pushToggleLabel(push: PushState): string {
-  if (pushIsOn(push)) {
-    return "Push notifications, turn off in your phone's settings";
-  }
-  return pushTapAsks(push)
-    ? "Push notifications"
-    : "Push notifications, turn on in your phone's settings";
+  const action = pushSettingsAction(push);
+  return action
+    ? `Push notifications, ${action.toLowerCase()} in your phone's settings`
+    : "Push notifications";
 }
 
 type QuietHoursCardProps = {
@@ -554,11 +576,7 @@ export default function PreferencesScreen() {
         ) : pushState ? (
           <ListRow
             label="Push notifications"
-            description={
-              !pushIsOn(pushState) && !pushTapAsks(pushState)
-                ? "Turn on in your phone's settings."
-                : null
-            }
+            description={pushRowCaption(pushState)}
             trailing={
               <Toggle
                 value={pushIsOn(pushState)}
@@ -609,7 +627,13 @@ export default function PreferencesScreen() {
         ))}
       </ListSection>
 
-      <Text style={styles.footnote}>Chapter announcements always arrive.</Text>
+      {/* Scoped to this grid, never a delivery promise: a member's channel
+          level for #announcements, or a block, still stops an announcement
+          push (`spec/behavior/chat/README.md`). Why there is no switch: the
+          docblock's `announcements` bullet. */}
+      <Text style={styles.footnote}>
+        Chapter announcements can&apos;t be switched off here.
+      </Text>
       {notificationsMeta ? (
         <Text style={styles.footnote}>{notificationsMeta}</Text>
       ) : null}
@@ -652,8 +676,11 @@ export default function PreferencesScreen() {
               }
             />
             {geofencesEnabled ? (
+              // Read-only here (the phone has no zone editor), so it says
+              // where zones are changed: the dashboard's Study zones tool.
               <ListRow
                 label="Study zones"
+                description="Managed on the web dashboard."
                 value={
                   zoneCount === null
                     ? "—"

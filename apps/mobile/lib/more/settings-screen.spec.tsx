@@ -205,14 +205,23 @@ describe("Settings back row (#3022)", () => {
  * gold (components/toggle.tsx).
  */
 describe("Settings switches", () => {
-  it("paints every switch in the chapter's accent", () => {
+  it("paints every switch in the chapter's accent", async () => {
+    // A read permission, so the push switch is drawn too: unread, its row
+    // has no switch at all.
+    state.getPushPermission = async () => ({
+      granted: true,
+      canAskAgain: true,
+      status: "granted",
+    });
     const tree = render();
+    await settle();
     const switches = tree.root.findAll(
       (node) => (node.type as unknown) === "Switch",
     );
 
-    // Quiet hours, then one per notification category.
-    expect(switches.length).toBeGreaterThan(1);
+    // Push, quiet hours, then one per notification category.
+    expect(pushSwitches(tree)).toHaveLength(1);
+    expect(switches).toHaveLength(2 + NOTIFICATION_CATEGORIES.length);
     for (const node of switches) {
       expect(node.props.trackColor.true).toBe("#8E4EC6");
       expect(node.props.activeThumbColor).toBe("#FFFFFF");
@@ -225,7 +234,9 @@ describe("Settings switches", () => {
  * feedback, 2026-11-04). The screen used to carry a two-line hint under every
  * category, a body-size sentence on quiet hours, and standing footnotes even
  * when there was nothing to report, where writing.md §1 asks for "the fewest
- * words that stay clear".
+ * words that stay clear". A line stays only where it says what the control
+ * can't: that a tap leaves the app, that a change reaches the whole chapter,
+ * where a read-only value is changed, or what went wrong.
  */
 describe("Settings copy", () => {
   it("draws the category switches with their labels only", () => {
@@ -241,7 +252,48 @@ describe("Settings copy", () => {
     const text = screenText(render());
 
     expect(text).not.toContain("Synced with your account.");
-    expect(text).toContain("Chapter announcements always arrive.");
+  });
+
+  it("scopes the announcements footnote to this screen, never promising delivery", () => {
+    // A channel level or a block can still stop an announcement push
+    // (spec/behavior/chat/README.md), so "always arrive" claimed too much.
+    const text = screenText(render());
+
+    expect(text).toContain("Chapter announcements can't be switched off here.");
+    expect(text).not.toContain("always arrive");
+  });
+
+  it("says what's wrong with a quiet-hours time that isn't 24-hour HH:mm", () => {
+    const tree = render();
+    expect(screenText(tree)).not.toContain("Use 24-hour HH:mm times");
+
+    const start = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "TextInput" &&
+        node.props.accessibilityLabel === "Quiet hours start time",
+    );
+    act(() => start.props.onChangeText("25:99"));
+
+    expect(screenText(tree)).toContain("Use 24-hour HH:mm times (e.g. 21:00).");
+    expect(screenText(tree)).not.toContain("Enter a timezone name");
+  });
+
+  it("says what's wrong with a quiet-hours timezone that isn't a zone name", () => {
+    const tree = render();
+    expect(screenText(tree)).not.toContain("Enter a timezone name");
+
+    const tz = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "TextInput" &&
+        node.props.accessibilityLabel === "Quiet hours timezone",
+    );
+    // A UTC offset, which every runtime rejects (`isUtcOffset`).
+    act(() => tz.props.onChangeText("-05:00"));
+
+    expect(screenText(tree)).toContain(
+      "Enter a timezone name like America/Chicago.",
+    );
+    expect(screenText(tree)).not.toContain("Use 24-hour HH:mm times");
   });
 
   it("shows the quiet-hours window only while quiet hours are on", () => {
@@ -262,7 +314,37 @@ describe("Settings copy", () => {
 
     expect(text).toContain("Chapter accent");
     expect(text).not.toContain("Your organization's colors");
-    expect(text).not.toContain("web dashboard");
+    expect(text).not.toContain("Set by an officer");
+    expect(text).not.toContain(
+      "Other chapter settings are edited on the web dashboard.",
+    );
+  });
+
+  it("tells a member who can't edit the accent who can", () => {
+    // Chapter config in view, without the manage half of
+    // CHAPTER_PROFILE_PERMISSIONS: the row can't open, so it says why.
+    state.permissions = ["chapter-config:view"];
+    const tree = render();
+
+    expect(screenText(tree)).toContain(
+      "Set by an officer with chapter settings access.",
+    );
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === "Chapter accent",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("says where study zones are changed, on their read-only row", () => {
+    state.permissions = ["*"];
+
+    // Label, its line, then the value: the line sits under this row's label.
+    expect(screenText(render())).toContain(
+      "Study zones\nManaged on the web dashboard.\n0 zones",
+    );
   });
 
   it("fills the quiet-hours fields in the card's own tone", () => {
@@ -305,6 +387,8 @@ describe("Settings push switch", () => {
     expect(pushSwitch(tree).props.accessibilityLabel).toBe(
       "Push notifications",
     );
+    // A tap that asks needs no line: the switch moving says it.
+    expect(screenText(tree)).not.toContain("in your phone's settings.");
 
     act(() => pushSwitch(tree).props.onValueChange(true));
     await settle();
@@ -313,6 +397,7 @@ describe("Settings push switch", () => {
     expect(state.requestPushPermission).toHaveBeenCalledTimes(1);
     expect(state.openSettings).not.toHaveBeenCalled();
     expect(pushSwitch(tree).props.value).toBe(true);
+    expect(screenText(tree)).toContain("Turn off in your phone's settings.");
   });
 
   it("records the primer decision before it shows the OS prompt", async () => {
@@ -587,6 +672,11 @@ describe("Settings push switch", () => {
     expect(pushSwitch(tree).props.value).toBe(true);
     expect(pushSwitch(tree).props.accessibilityLabel).toBe(
       "Push notifications, turn off in your phone's settings",
+    );
+    // A sighted member is told too: the switch snaps back and the phone's
+    // settings open, which nothing else on screen would explain.
+    expect(screenText(tree)).toContain(
+      "Push notifications\nTurn off in your phone's settings.",
     );
     act(() => pushSwitch(tree).props.onValueChange(false));
     await settle();
