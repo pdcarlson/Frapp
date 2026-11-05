@@ -8,7 +8,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
-import { CloseGlyph } from "@/components/chat/viewer-glyphs";
+import { CloseGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
 
 /**
  * The chrome every Signet bottom sheet draws: the grabber, the title/Cancel
@@ -137,10 +138,11 @@ export function useTallSheetTopInset() {
 }
 
 /**
- * The close control a tall sheet's header carries: the image viewer's X glyph,
- * icon only, muted, in a 44pt box (the touch floor, `foundations.md` § 9). A
- * word ("Done", "Cancel") would repeat what the X already says
- * (`components.md` § Surface size: a big surface closes with an X).
+ * The close control a tall sheet's header carries: the app-wide `CloseGlyph`
+ * in the shared `IconButton` (`components.md` § Icon-only actions), muted,
+ * whose slop reaches the 44pt touch floor (`foundations.md` § 9). A word
+ * ("Done", "Cancel") would repeat what the X already says (`components.md`
+ * § Surface size: a big surface closes with an X).
  */
 export function SheetCloseButton({
   onPress,
@@ -150,16 +152,10 @@ export function SheetCloseButton({
   accessibilityLabel?: string;
 }) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      onPress={onPress}
-      style={styles.closeButton}
-    >
+    <IconButton label={accessibilityLabel} onPress={onPress}>
       <CloseGlyph color={tokens.color.text.mutedForeground} />
-    </Pressable>
+    </IconButton>
   );
 }
 
@@ -357,16 +353,6 @@ function createStyles(tokens: SignetTokens) {
     },
     headerRowEnd: {
       justifyContent: "flex-end",
-    },
-    closeButton: {
-      width: tokens.touch.minimum,
-      height: tokens.touch.minimum,
-      // The 24pt glyph sits on the content's right edge and the header row
-      // keeps its height: the box's extra 10pt each side overhangs.
-      marginRight: -(tokens.touch.minimum - 24) / 2,
-      marginVertical: -(tokens.touch.minimum - 24) / 2,
-      alignItems: "center",
-      justifyContent: "center",
     },
     title: {
       // TODO-DESIGN: Canvas draws the sheet title at 19px/700; `title` is 18/600.
