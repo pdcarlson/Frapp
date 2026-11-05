@@ -91,6 +91,7 @@ import {
 } from "@repo/chat-core/message-actions";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
+import { SetupChecklistSection } from "./setup-checklist";
 import { ChannelMenu } from "./channel-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
@@ -1532,6 +1533,11 @@ export function ChatShell({
             `hasHydrated` for, reached from the other side.
           */}
           {channelsPaneState === "loading" ? <ChannelListSkeleton /> : null}
+          {/*
+            The officer setup checklist, above the channels where Discord puts
+            its server guide. Renders `null` for anyone with nothing to set up.
+          */}
+          {channelsPaneState === "ready" ? <SetupChecklistSection /> : null}
           {channelsPaneState === "ready" ? (
             <ChannelList
               viewerId={userId}

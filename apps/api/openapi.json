@@ -11913,9 +11913,10 @@
               "dues",
               "events",
               "tasks",
-              "points"
+              "points",
+              "setup-checklist"
             ],
-            "description": "Module whose ops-setup nudge to dismiss for the caller in the active chapter. Validated against the shared catalog rather than accepted as free text: `members.dismissed_ops_nudges` is an unconstrained `text[]`, so an unchecked value would persist forever and suppress nothing."
+            "description": "Module whose ops-setup nudge to dismiss for the caller in the active chapter, or `setup-checklist` for the officer setup checklist on chat home. Validated against the shared catalog rather than accepted as free text: `members.dismissed_ops_nudges` is an unconstrained `text[]`, so an unchecked value would persist forever and suppress nothing."
           }
         },
         "required": [

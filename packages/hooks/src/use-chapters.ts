@@ -13,7 +13,8 @@ export interface ChapterMembershipSummary {
   has_completed_onboarding: boolean;
   /**
    * `MODULE_CATALOG` keys whose ops-setup nudge this member has dismissed in
-   * this chapter (#492). Optional here for the same reason the rest of this
+   * this chapter (#492), plus `setup-checklist` once they hide the setup
+   * checklist (`MEMBER_DISMISSAL_KEYS`). Optional here for the same reason the rest of this
    * interface warns about: `useListChapters` *asserts* the response into this
    * type, so a server older than the column returns `undefined` at runtime with
    * nothing failing to say so. `selectOpsNudge` defaults it.
