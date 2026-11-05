@@ -89,12 +89,16 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * back doesn't reset it). Re-reads wait for the viewer's id, so none goes out
  * unfiltered.
  *
- * Each re-read joins a read already in flight rather than cancelling it, so a
- * read that never answers keeps the hold: on Android nothing times it out
- * (#3433). Restarting it wouldn't help: cancelling a query here doesn't abort
- * its request, since `useInvoices` passes no `signal`, and it would throw away
- * a read that is only slow. Once #3433 adds a client-side timeout, such a read
- * ends in an error and the next tick sends a fresh one.
+ * The 10s re-reads and the one on return join a read already in flight
+ * rather than cancelling it, so on Android a read that never answers keeps
+ * the hold: nothing there times a request out (#3433). The poll's own re-read
+ * as it ends (`useAwaitInvoicePaid`'s invalidation), like any invoice
+ * invalidation, does cancel the read in flight and send a fresh one. A tick
+ * doesn't restart a stuck read. A fresh request could answer, but cancelling
+ * aborts nothing (`useInvoices` passes no `signal`), so every restart would
+ * leave one more request open on Android's timeout-free networking, and a
+ * read that is only slow would be thrown away. Once #3433 adds a client-side
+ * timeout, a stuck read ends in an error and the next tick sends a fresh one.
  *
  * The hold lives in this screen's state, so a chapter switch, which remounts
  * the screen ({@link DuesScreen}), or the app being closed ends it. If the
