@@ -170,7 +170,14 @@ export function EmptyState({
 
   return (
     <View style={styles.card}>
-      <View style={[styles.tile, { backgroundColor: tint(accent) }]}>
+      {/* The tile is decoration standing in for a drawn glyph: hidden from
+          screen readers, so VoiceOver doesn't read "⌕" or "plus" before the
+          words. */}
+      <View
+        style={[styles.tile, { backgroundColor: tint(accent) }]}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
         <Text style={[styles.glyph, { color: accent }]}>{glyph}</Text>
       </View>
       {title ? <Text style={styles.title}>{title}</Text> : null}
@@ -235,7 +242,13 @@ export function ErrorState({
 
   return (
     <View style={[styles.card, styles.errorCard]}>
-      <View style={styles.errorTile}>
+      {/* Decoration, hidden from screen readers like the empty tile: the
+          title already says what went wrong. */}
+      <View
+        style={styles.errorTile}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
         <Text style={styles.errorGlyph}>!</Text>
       </View>
       <Text style={styles.title}>{title}</Text>

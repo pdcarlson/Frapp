@@ -176,6 +176,26 @@ describe("EmptyState", () => {
   });
 });
 
+describe("the glyph tiles", () => {
+  // The tile's character stands in for a drawn glyph, so a screen reader
+  // skips it and starts at the words ("plus", "exclamation mark" otherwise).
+  it("hides the empty and error tiles from screen readers", () => {
+    for (const tree of [
+      render(<EmptyState glyph="⌕" body="No channels match." />),
+      render(<ErrorState title="Couldn't load" body="Try again." />),
+    ]) {
+      const glyph = tree.root
+        .findAllByType("Text" as unknown as React.ComponentType)
+        .find((node) => ["⌕", "!"].includes(String(node.props.children)));
+      const tile = glyph?.parent;
+      expect(tile?.props.accessibilityElementsHidden).toBe(true);
+      expect(tile?.props.importantForAccessibility).toBe(
+        "no-hide-descendants",
+      );
+    }
+  });
+});
+
 describe("the state buttons", () => {
   // §10 gives empty and error the same anatomy, so the CTA and the retry share
   // one geometry and differ only in colour.
