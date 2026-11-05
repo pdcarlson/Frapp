@@ -10,6 +10,7 @@ import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { formatBytes } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { CloseGlyph } from "@/components/control-glyphs";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 /**
@@ -166,7 +167,7 @@ export function ChatComposer({
               pressed ? styles.pressed : null,
             ]}
           >
-            <Text style={styles.chipRemoveGlyph}>×</Text>
+            <CloseGlyph color={tokens.color.text.muted} size={16} />
           </Pressable>
         </View>
       ) : null}
@@ -193,7 +194,7 @@ export function ChatComposer({
                   pressed ? styles.pressed : null,
                 ]}
               >
-                <Text style={styles.chipRemoveGlyph}>×</Text>
+                <CloseGlyph color={tokens.color.text.muted} size={16} />
               </Pressable>
             </View>
           ))}
@@ -357,10 +358,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: tokens.spacing.xs,
-    },
-    chipRemoveGlyph: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.muted,
     },
     row: {
       flexDirection: "row",

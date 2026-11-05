@@ -354,9 +354,9 @@ describe("InviteMemberDialog copy payload", () => {
 
   it("copies a /join?token= URL with role and expiry, not a bare code", async () => {
     await openDialog();
-    const copyButton = screen.getAllByRole("button", { name: /copy link/i })[0];
+    const copyButton = screen.getAllByRole("button", { name: /^copy .*invite link$/i })[0];
     if (!copyButton) {
-      throw new Error("expected a Copy link button on an active invite");
+      throw new Error("expected a copy-link button on an active invite");
     }
     await userEvent.click(copyButton);
 

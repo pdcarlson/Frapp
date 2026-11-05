@@ -14,6 +14,7 @@ import {
 import { useToast } from "@/lib/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -486,14 +487,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                         .join(" · ")}
                     </p>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="secondary"
+                  <IconButton
+                    label={`Copy the ${invite.role} invite link`}
                     onClick={() => handleCopyInvite(invite)}
                   >
-                    <Copy className="h-3.5 w-3.5" />
-                    Copy link
-                  </Button>
+                    <Copy />
+                  </IconButton>
                 </div>
               ))}
             </div>
@@ -530,25 +529,21 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="secondary"
+                  <IconButton
+                    label={`Copy the ${invite.role} invite link`}
                     onClick={() => handleCopyInvite(invite)}
                   >
-                    <Copy className="h-3.5 w-3.5" />
-                    Copy link
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
+                    <Copy />
+                  </IconButton>
+                  <IconButton
+                    label={`Revoke the ${invite.role} invite`}
                     onClick={() => handleRevokeInvite(invite.id)}
                     {...revokeGate.controlProps(
                       revokeInviteMutation.isPending || hasLiveDataError,
                     )}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Revoke
-                  </Button>
+                    <Trash2 />
+                  </IconButton>
                 </div>
               </div>
             ))

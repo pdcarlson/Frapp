@@ -62,6 +62,8 @@ import { ThreadMessageRow } from "@/components/chat/thread-message-row";
 import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
 import { threadLayout } from "@/lib/chat/thread-layout";
 import { ErrorState } from "@/components/state-block";
+import { CloseGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
 import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
 import {
   confirmUnblockMember,
@@ -1094,15 +1096,12 @@ export default function ChatThreadScreen() {
               <Text style={styles.reactionErrorText}>
                 {reactionError ?? actionError}
               </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Dismiss"
-                hitSlop={8}
+              <IconButton
+                label="Dismiss"
                 onPress={reactionError ? clearReactionError : clearActionError}
-                style={({ pressed }) => (pressed ? styles.pressed : null)}
               >
-                <Text style={styles.reactionErrorDismiss}>Dismiss</Text>
-              </Pressable>
+                <CloseGlyph color={tokens.color.text.mutedForeground} />
+              </IconButton>
             </View>
           ) : null}
 
@@ -1295,10 +1294,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
       flex: 1,
-    },
-    reactionErrorDismiss: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
     },
     stateBlock: {
       flex: 1,

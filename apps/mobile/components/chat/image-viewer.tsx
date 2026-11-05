@@ -38,7 +38,8 @@ import {
   type ZoomState,
 } from "@/lib/chat/image-zoom";
 import { shareAttachment } from "@/lib/chat/share-attachment";
-import { ChevronGlyph, CloseGlyph, ShareGlyph } from "./viewer-glyphs";
+import { CloseGlyph } from "@/components/control-glyphs";
+import { ChevronGlyph, ShareGlyph } from "./viewer-glyphs";
 
 /**
  * The backdrop is black in both themes, so its controls are white rather than
@@ -309,7 +310,7 @@ function ViewerBody({
               pressed ? styles.pressed : null,
             ]}
           >
-            <CloseGlyph color={CONTROL_COLOR} />
+            <CloseGlyph color={CONTROL_COLOR} size={24} />
           </Pressable>
         </View>
 

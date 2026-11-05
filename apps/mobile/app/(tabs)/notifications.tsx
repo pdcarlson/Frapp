@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useRouter } from "expo-router";
 import {
   useActiveChapterId,
@@ -9,6 +15,8 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { CheckAllGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
 import { BACK_TO_CHAT } from "@/components/back-row";
 import {
   listRowHint,
@@ -172,18 +180,20 @@ export default function NotificationsScreen() {
       title="Notifications"
       headerAction={
         unreadIds.length > 0 ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Mark all notifications read"
-            accessibilityState={{ disabled: isMarkingAll }}
+          // The double check, as web's drawer draws it (components.md §
+          // Icon-only actions). A spinner while the write runs, in place of
+          // the "Marking…" word it replaced.
+          <IconButton
+            label="Mark all notifications read"
             disabled={isMarkingAll}
-            hitSlop={tokens.spacing.sm}
             onPress={() => void markAllRead()}
           >
-            <Text style={styles.headerAction}>
-              {isMarkingAll ? "Marking…" : "Mark all read"}
-            </Text>
-          </Pressable>
+            {isMarkingAll ? (
+              <ActivityIndicator size="small" color={brand.accent} />
+            ) : (
+              <CheckAllGlyph color={brand.accent} />
+            )}
+          </IconButton>
         ) : null
       }
     >
@@ -252,10 +262,6 @@ const LINE_HEIGHT = 20;
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   const DOT_SIZE = tokens.spacing.sm;
   return StyleSheet.create({
-    headerAction: {
-      ...typeRole(tokens.typography.role.label),
-      color: brand.accent,
-    },
     group: {
       gap: tokens.spacing.xs,
     },

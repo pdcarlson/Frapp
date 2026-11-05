@@ -101,7 +101,7 @@ const chapter = chapterSubscription(mockCurrentChapter);
 
 const createTrigger = () =>
   screen.getByRole("button", { name: /new study zone/i });
-const editButton = () => screen.getByRole("button", { name: /^edit$/i });
+const editButton = () => screen.getByRole("button", { name: /^edit /i });
 const disableButton = () => screen.getByRole("button", { name: /disable/i });
 const deleteButton = () => screen.getByRole("button", { name: /delete/i });
 
