@@ -104,7 +104,7 @@ Two things the board does **not** settle, recorded so a later change does not ov
   separately, by re-exporting the mark at the spec'd pair; the board's label is now true of the
   pixels for a reason outside the board.
 
-Two things the board draws deliberately no longer ship anywhere on the surface. These are the
+Three things the board draws deliberately no longer ship anywhere on the surface. These are the
 board-wide departures only. The per-route ones are recorded with their reasons in
 [`../README.md`](../README.md) § Surface decisions and § Page grammar: the 404's radius, opacity and buttons, the billing
 fields and settings tabs the board draws for a product this codebase doesn't have, the settings
@@ -122,6 +122,12 @@ drawer's toggles, and the nav's locked rows.
   floor with no headroom (the engine guarantees the floor and nothing more), and it drew nothing on a
   primary button's `accent-9` fill. A board can't lower a WCAG floor, so here its trust rank gives
   way. [`../tokens.md`](../tokens.md) § L-07 has the measurements.
+- **The gold scrollbar** (added 2026-11-05, the owner's decision of the same day). The board paints
+  every scroll region with a `#DDB844` thumb on a `#1A1A1A` track, applied at `:root` and "never
+  hidden" (`:17-18`, `:419`). In use it was the loudest element on the chat screen, and the owner
+  asked for it to blend in. The surface ships a thin neutral thumb on a clear track instead;
+  [`foundations.md`](../../design-system/foundations.md) §12 owns the values and the contrast
+  exception. The board's engine-split finding ([`../tokens.md`](../tokens.md) § L-01) still holds.
 
 ## What goes here
 

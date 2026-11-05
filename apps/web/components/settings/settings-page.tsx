@@ -26,7 +26,6 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   ErrorState,
   anyReadUncached,
-  LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -68,6 +67,10 @@ import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
+import {
+  SettingsBodySkeleton,
+  SettingsTabSkeleton,
+} from "@/components/settings/settings-skeleton";
 
 type Branding = {
   greek_letters?: string;
@@ -236,7 +239,7 @@ function SettingsPageContent() {
       />
     );
   } else if (chapterQuery.isLoading || chapterPaused) {
-    stateBanner = <LoadingState message="Loading chapter settings..." />;
+    stateBanner = <SettingsBodySkeleton />;
   } else if (chapterQuery.isError) {
     stateBanner = (
       <ErrorState
@@ -416,7 +419,7 @@ function SettingsPageContent() {
 
   function renderConfigGated(node: React.ReactNode) {
     if (orgConfigQuery.isPending) {
-      return <LoadingState message="Loading chapter configuration..." />;
+      return <SettingsTabSkeleton />;
     }
     if (orgConfigQuery.isError) {
       return (
@@ -654,9 +657,7 @@ function SettingsPageContent() {
 export function SettingsPage() {
   return (
     <>
-      <Suspense
-        fallback={<LoadingState message="Loading chapter settings..." />}
-      >
+      <Suspense fallback={<SettingsBodySkeleton />}>
         <SettingsPageContent />
       </Suspense>
     </>

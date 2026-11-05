@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import * as Sentry from '@sentry/nestjs';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
@@ -18,6 +19,12 @@ import {
 } from '../services/channel-cache.service';
 import { SYSTEM_SENDER_ID } from '@repo/validation';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
+
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
 
 describe('ChatPushWorkerService', () => {
   let service: ChatPushWorkerService;
@@ -784,6 +791,47 @@ describe('ChatPushWorkerService', () => {
       expect(findByChapter).toHaveBeenCalledTimes(1);
     });
 
+    it('a caught failure that drops a claimed message reports to Sentry', async () => {
+      // Past the claim no other instance will send this message, so the
+      // failure is a dropped fan-out, not a log line.
+      const worker = await compileWorker({ claim: sharedClaimStore() });
+      worker.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      findByChapter.mockRejectedValue(new Error('roster read failed'));
+      jest.mocked(Sentry.captureException).mockClear();
+
+      await expect(worker.handleMessage(MESSAGE)).resolves.toBeUndefined();
+
+      expect(notifyUser).not.toHaveBeenCalled();
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+      expect(
+        jest.mocked(Sentry.captureException).mock.calls[0]?.[1],
+      ).toMatchObject({
+        level: 'error',
+        tags: { caught_at: 'chat-push-fan-out-failed' },
+      });
+    });
+
+    it('reports a failed push to one recipient as a warning, and pushes the rest', async () => {
+      const worker = await compileWorker({ claim: sharedClaimStore() });
+      worker.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      setMembers(['sender', 'a', 'b']);
+      notifyUser.mockImplementation(async (userId: string) => {
+        if (userId === 'a') throw new Error('push provider down');
+      });
+      jest.mocked(Sentry.captureException).mockClear();
+
+      await worker.handleMessage(MESSAGE);
+
+      expect(notifyUser.mock.calls.map((c) => c[0]).sort()).toEqual(['a', 'b']);
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+      expect(
+        jest.mocked(Sentry.captureException).mock.calls[0]?.[1],
+      ).toMatchObject({
+        level: 'warning',
+        tags: { caught_at: 'chat-push-notify-recipient' },
+      });
+    });
+
     it('the instance that loses the claim still joins the channel presence', async () => {
       // Presence is what keeps a push off the screen of someone already
       // reading the channel, and a subscription only knows the roster once it
@@ -882,6 +930,22 @@ describe('ChatPushWorkerService', () => {
       await expect(
         service.purgeDispatchClaims(new Date()),
       ).resolves.toBeUndefined();
+    });
+
+    it('reports a failed purge to Sentry once, as a warning', async () => {
+      jest.mocked(Sentry.captureException).mockClear();
+      purgeBefore.mockRejectedValue(new Error('pg down'));
+
+      await service.purgeDispatchClaims(new Date());
+      await service.purgeDispatchClaims(new Date());
+
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+      expect(
+        jest.mocked(Sentry.captureException).mock.calls[0]?.[1],
+      ).toMatchObject({
+        level: 'warning',
+        tags: { caught_at: 'chat-push-dispatch-claim-purge' },
+      });
     });
   });
 
@@ -1288,20 +1352,43 @@ describe('ChatPushWorkerService', () => {
       );
     }
 
-    it('warns and pushes nothing when the channel read fails', async () => {
+    it('reports and pushes nothing when the channel read fails', async () => {
       findPushRouting.mockRejectedValue(
         new SupabaseQueryError({ message: 'connection reset', code: '08006' }),
       );
-      const warn = warnSpy();
+      const error = jest
+        .spyOn(
+          (
+            service as unknown as {
+              logger: { error: (...args: unknown[]) => void };
+            }
+          ).logger,
+          'error',
+        )
+        .mockImplementation(() => undefined);
+      jest.mocked(Sentry.captureException).mockClear();
 
       await expect(service.handleMessage(MESSAGE)).resolves.toBeUndefined();
 
       expect(findPushRouting).toHaveBeenCalledWith('ch-uncached');
-      // The lookup's own line, not the handler's catch-all.
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(String(warn.mock.calls[0]?.[0])).toContain(
+      // The lookup's own report, not the handler's catch-all: past the claim
+      // the whole message's pushes are dropped, so it is an error.
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(String(error.mock.calls[0]?.[0])).toContain(
         'chat-push: channel lookup failed',
       );
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+      expect(
+        jest.mocked(Sentry.captureException).mock.calls[0]?.[1],
+      ).toMatchObject({
+        level: 'error',
+        fingerprint: [
+          'caught-failure',
+          'chat-push-channel-lookup',
+          'SupabaseQueryError:08006',
+        ],
+      });
+      error.mockRestore();
       expect(findByChapter).not.toHaveBeenCalled();
       expect(notifyUser).not.toHaveBeenCalled();
     });

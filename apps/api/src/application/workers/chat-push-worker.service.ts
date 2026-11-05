@@ -38,6 +38,7 @@ import { ChannelCacheService } from '../services/channel-cache.service';
 import type { CachedChannelRow } from '../services/channel-cache.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import {
   backgroundTimer,
   releaseChannel,
@@ -287,8 +288,9 @@ export class ChatPushWorkerService
    * Drop dispatch claims older than {@link CHAT_PUSH_CLAIM_RETENTION_MS}.
    *
    * Hourly, on every instance: a delete is idempotent, so the instance that
-   * runs second finds nothing. Caught here because an unhandled rejection out
-   * of a `@Cron` takes the process down; a failed purge costs one tick.
+   * runs second finds nothing. Caught here because a rejection out of a
+   * `@Cron` reaches only Nest's raw `logger.error`; a failed purge costs one
+   * tick and reports to Sentry.
    */
   @Cron(CronExpression.EVERY_HOUR)
   async handleDispatchClaimPurge(): Promise<void> {
@@ -305,12 +307,12 @@ export class ChatPushWorkerService
         this.logger.log(`chat-push: purged ${purged} expired dispatch claims`);
       }
     } catch (err) {
-      logThrowable(
-        this.logger,
-        'error',
-        'chat-push: dispatch claim purge failed; retrying next hour',
-        err,
-      );
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-push-dispatch-claim-purge',
+        message: 'chat-push: dispatch claim purge failed; retrying next hour',
+        error: err,
+      });
     }
   }
 
@@ -355,12 +357,14 @@ export class ChatPushWorkerService
 
       await this.traceFanOut(row, () => this.fanOut(row));
     } catch (err) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `chat-push: unexpected error for message ${row.id}`,
-        err,
-      );
+      // Past the claim this drops the message's remaining pushes: the claim
+      // stops every other instance from sending them.
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'chat-push-fan-out-failed',
+        message: `chat-push: unexpected error for message ${row.id}`,
+        error: err,
+      });
     }
   }
 
@@ -525,12 +529,12 @@ export class ChatPushWorkerService
         );
         outcome.sent += 1;
       } catch (err) {
-        logThrowable(
-          this.logger,
-          'warn',
-          `chat-push: notify failed for recipient ${recipientId}`,
-          err,
-        );
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'chat-push-notify-recipient',
+          message: `chat-push: notify failed for recipient ${recipientId}`,
+          error: err,
+        });
       }
     }
     return outcome;
@@ -577,12 +581,12 @@ export class ChatPushWorkerService
             ] as const;
           } catch (err) {
             // Fail closed: an unresolved permission set must not become a push.
-            logThrowable(
-              this.logger,
-              'warn',
-              `chat-push: permission lookup failed for ${userId}; skipping`,
-              err,
-            );
+            reportCaughtFailure(this.logger, {
+              level: 'warning',
+              site: 'chat-push-permission-lookup',
+              message: `chat-push: permission lookup failed for ${userId}; skipping`,
+              error: err,
+            });
             return [userId, null] as const;
           }
         }),
@@ -624,12 +628,12 @@ export class ChatPushWorkerService
     try {
       data = await this.channels.findPushRouting(channelId);
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        'chat-push: channel lookup failed',
-        error,
-      );
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'chat-push-channel-lookup',
+        message: 'chat-push: channel lookup failed',
+        error: error,
+      });
       return null;
     }
     if (!data) return null;

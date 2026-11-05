@@ -52,6 +52,7 @@ import {
   type AuditDiff,
 } from './chapter-audit-log.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /**
  * Paid module keys, read from the catalog rather than a second hand-kept list —
@@ -472,10 +473,11 @@ export class ChapterConfigService {
       // merged object as `getConfig` read it, accent included, so a Settings
       // accent save landing between that read and this write gets its seed
       // replaced under the palette it just stamped current. The recompute
-      // re-derives from the seed stored here; if it fails, which is only
-      // logged, the cleared stamp leaves the row for the stale-palette sweep
-      // instead of stamped current over a palette from another seed. (The
-      // accent save itself is still lost in that race: #2607.)
+      // re-derives from the seed stored here; if it fails, which is reported
+      // and not thrown, the cleared stamp leaves the row for the
+      // stale-palette sweep instead of stamped current over a palette from
+      // another seed. (The accent save itself is still lost in that race:
+      // #2607.)
       update['theme_palette_engine_version'] = null;
 
       const readAccent = (branding: unknown): string | undefined =>
@@ -691,7 +693,12 @@ export class ChapterConfigService {
         );
         if (written) committedThemePalette = build.palette;
       } catch (err) {
-        logThrowable(this.logger, 'warn', 'Failed to recompute palette', err);
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'chapter-config-palette-recompute',
+          message: 'Failed to recompute palette',
+          error: err,
+        });
       }
     }
 
@@ -706,12 +713,12 @@ export class ChapterConfigService {
     try {
       return await this.getConfig(chapterId);
     } catch (err) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `trailing getConfig after committed patch failed for chapter ${chapterId}; returning locally-merged state`,
-        err,
-      );
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chapter-config-trailing-read',
+        message: `trailing getConfig after committed patch failed for chapter ${chapterId}; returning locally-merged state`,
+        error: err,
+      });
       return this.configAfterCommittedPatch(existing, {
         update,
         workflowUpserts,
@@ -919,6 +926,8 @@ export class ChapterConfigService {
     try {
       return await read();
     } catch (err) {
+      // caught-failure-exempt: rethrown; AllExceptionsFilter reports the 5xx,
+      // and patchConfig's trailing-read catch reports the swallowed case
       logThrowable(
         this.logger,
         'error',
@@ -937,6 +946,8 @@ export class ChapterConfigService {
     try {
       return await call();
     } catch (err) {
+      // caught-failure-exempt: rethrown; AllExceptionsFilter reports the 5xx,
+      // and patchConfig's palette-recompute catch reports the swallowed case
       logThrowable(this.logger, 'error', message, err);
       throw err;
     }

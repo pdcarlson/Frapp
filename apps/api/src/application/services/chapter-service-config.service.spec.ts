@@ -1,7 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { ChapterServiceConfigService } from './chapter-service-config.service';
 import { CHAPTER_CONFIG_REPOSITORY } from '#domain/repositories/chapter-config.repository.interface';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
+
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
 
 const CHAPTER_ID = 'ch-1';
 
@@ -53,7 +61,12 @@ describe('ChapterServiceConfigService', () => {
 
     it('falls back to the default rather than throwing when the read fails', async () => {
       // Approval must not 500 because a config read blipped; it awards at the
-      // default rate and the service logs a warning.
+      // default rate and the service reports the failure.
+      const captureException = jest.mocked(Sentry.captureException);
+      captureException.mockClear();
+      const logged = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
       const service = await buildService(
         makeConfigRepo(null, { message: 'connection reset' }),
       );
@@ -61,6 +74,21 @@ describe('ChapterServiceConfigService', () => {
       await expect(service.getConfig(CHAPTER_ID)).resolves.toEqual({
         minutes_per_point: 60,
       });
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining('applying default rate (60 min/point)'),
+        expect.anything(),
+      );
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException.mock.calls[0]?.[1]).toEqual(
+        expect.objectContaining({
+          level: 'error',
+          fingerprint: expect.arrayContaining([
+            'caught-failure',
+            'service-config-read-default-rate',
+          ]),
+        }),
+      );
+      logged.mockRestore();
     });
 
     it('scopes the read to the chapter', async () => {

@@ -32,7 +32,6 @@ import {
   EmptyState,
   ErrorState,
   anyReadUncached,
-  LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -46,6 +45,7 @@ import {
   useUpdateCustomField,
   useDeleteCustomField,
 } from "@repo/hooks";
+import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleton";
 
 type Props = {
   /** Whether the caller holds `chapter-config:manage`. */
@@ -122,7 +122,7 @@ export function SettingsFieldsTab({ canManage }: Props) {
       />
     );
   } else if (fieldsQuery.isLoading || paused) {
-    body = <LoadingState message="Loading custom fields..." />;
+    body = <SettingsListCardSkeleton label="Loading custom fields" />;
   } else if (fieldsQuery.isError) {
     body = (
       <ErrorState

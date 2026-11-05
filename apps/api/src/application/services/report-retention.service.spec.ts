@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nestjs';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   REPORT_RETENTION_HOURS,
@@ -8,6 +9,13 @@ import {
   type IStorageProvider,
   type StorageObject,
 } from '#domain/adapters/storage.interface';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
 
 const NOW = new Date('2026-08-08T12:00:00Z');
 
@@ -216,6 +224,28 @@ describe('ReportRetentionService', () => {
 
       expect(result).toEqual({ deleted: 1, failed: 1 });
     });
+
+    it('reports failing chapters to Sentry as one throttled warning, not one per chapter', async () => {
+      captureException.mockClear();
+      mockStorage.listFolders.mockResolvedValue(['c1', 'c2']);
+      mockStorage.listObjects.mockRejectedValue(
+        new Error('prefix listing 500'),
+      );
+
+      const result = await service.sweepExpiredReports(NOW);
+
+      expect(result).toEqual({ deleted: 0, failed: 2 });
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException.mock.calls[0]?.[1]).toMatchObject({
+        level: 'warning',
+        tags: { caught_at: 'report-retention-sweep-chapter-failed' },
+        fingerprint: [
+          'caught-failure',
+          'report-retention-sweep-chapter-failed',
+          'Error',
+        ],
+      });
+    });
   });
 
   describe('purgeChapterReports', () => {
@@ -295,6 +325,14 @@ describe('ReportRetentionService', () => {
       await expect(service.purgeUserReports(['c1'])).rejects.toThrow(
         'Report purge failed for chapter(s): c1',
       );
+    });
+
+    it('leaves the Sentry report to the caller, which sees the aggregate', async () => {
+      captureException.mockClear();
+      mockStorage.listObjects.mockRejectedValue(new Error('storage down'));
+
+      await expect(service.purgeUserReports(['c1', 'c2'])).rejects.toThrow();
+      expect(captureException).not.toHaveBeenCalled();
     });
 
     it('does nothing for a member with no chapters', async () => {

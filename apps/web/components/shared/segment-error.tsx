@@ -20,8 +20,8 @@ import { isChunkLoadError } from "@/lib/chunk-load-error";
  * 260px raster: dropped into the shell's content column it would paint a second
  * full-viewport takeover inside a viewport that is not gone. `components.md`
  * §10's Error variant is the surface for a region that failed, and
- * `(dashboard)/loading.tsx` already reaches for its sibling `LoadingState` for
- * the same slot. So this renders §10's card and `app/error.tsx` keeps the
+ * `(dashboard)/loading.tsx` fills the same slot with a page skeleton rather
+ * than a takeover. So this renders §10's card and `app/error.tsx` keeps the
  * crest; the two are different objects because they stand in for different
  * amounts of missing product.
  *

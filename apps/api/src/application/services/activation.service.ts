@@ -9,7 +9,7 @@ import {
   type IActivationMilestoneRepository,
 } from '#domain/repositories/activation-milestone.repository.interface';
 import { AnalyticsService } from './analytics.service';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /**
  * The free-to-paid activation funnel (#267).
@@ -77,12 +77,13 @@ export class ActivationService {
       // Includes the content/PII assertion, which is an authoring bug rather
       // than a runtime condition — hence `error` level. It still must not
       // propagate: the caller is mid-checkout or mid-message-send.
-      logThrowable(
-        this.logger,
-        'error',
-        `Failed to record activation milestone "${milestone}" for chapter ${chapterId}`,
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'activation-milestone-record',
+        message: `Failed to record activation milestone "${milestone}" for chapter ${chapterId}`,
         error,
-      );
+        tags: { milestone },
+      });
       return false;
     }
   }

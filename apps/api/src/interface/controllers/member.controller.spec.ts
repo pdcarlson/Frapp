@@ -45,6 +45,7 @@ describe('MemberController', () => {
           user_id: 'user-1',
           display_name: 'Marcus Reid',
           avatar_url: null,
+          role_color: null,
         },
       ];
       memberService.findRosterByChapter.mockResolvedValue(roster);

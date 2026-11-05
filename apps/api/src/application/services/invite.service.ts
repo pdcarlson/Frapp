@@ -33,6 +33,7 @@ import { CHAT_MESSAGE_REPOSITORY } from '#domain/repositories/chat.repository.in
 import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
 import type { ChatMessage } from '#domain/entities/chat.entity';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import {
   resolveAppOrigin,
   buildJoinUrl,
@@ -470,12 +471,12 @@ export class InviteService {
         try {
           await this.inviteRepo.releaseClaim(invite.id, claimedAt);
         } catch (releaseError) {
-          logThrowable(
-            this.logger,
-            'warn',
-            'Failed to release invite after membership insert failed',
-            releaseError,
-          );
+          reportCaughtFailure(this.logger, {
+            level: 'error',
+            site: 'invite-redeem-claim-release-failed',
+            message: 'Failed to release invite after membership insert failed',
+            error: releaseError,
+          });
         }
       }
       throw error;
@@ -498,7 +499,14 @@ export class InviteService {
         category: 'admin',
         data: { target: { screen: 'members' } },
       });
-    } catch {}
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'invite-redeem-new-member-notify-failed',
+        message: `Failed to send the New Member Joined notification (chapter ${invite.chapter_id})`,
+        error,
+      });
+    }
 
     await this.notifyInviterOfAcceptance(invite, userId);
 

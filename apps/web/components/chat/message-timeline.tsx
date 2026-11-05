@@ -333,6 +333,11 @@ export interface MessageTimelineProps {
    * From the same roster read as `nameFor` (#732).
    */
   avatarFor: (userId: string) => string | null;
+  /**
+   * Resolves `users.id` → the member's role color, or `null` (#3485). Same
+   * roster read again. Optional so a caller without a roster paints plain names.
+   */
+  roleColorFor?: (userId: string) => string | null;
   isLoading: boolean;
   loadError: Error | null;
   onRetryLoad?: () => void;
@@ -404,6 +409,7 @@ export const MessageTimeline = forwardRef<
     viewerId,
     nameFor,
     avatarFor,
+    roleColorFor,
     isLoading,
     loadError,
     onRetryLoad,
@@ -881,6 +887,11 @@ export const MessageTimeline = forwardRef<
                 <MessageItem
                   nameFor={nameFor}
                   message={entry.message}
+                  authorColor={
+                    entry.message.sender_id
+                      ? roleColorFor?.(entry.message.sender_id)
+                      : null
+                  }
                   blockState={blockState}
                   avatarUrl={
                     resolveAuthorAvatar(

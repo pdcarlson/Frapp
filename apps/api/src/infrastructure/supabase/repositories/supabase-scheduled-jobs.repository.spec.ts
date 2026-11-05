@@ -1,4 +1,6 @@
 import { Test } from '@nestjs/testing';
+import { Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import { SupabaseScheduledJobsRepository } from './supabase-scheduled-jobs.repository';
 import {
@@ -10,6 +12,21 @@ import {
   inB,
   type TenantHarness,
 } from '#test/helpers/tenant-scope.harness';
+
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<object>('@sentry/nestjs'),
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
+
+/** Reported fingerprints, in call order. */
+function reportedFingerprints(): string[][] {
+  return captureException.mock.calls.map(
+    ([, context]) => (context as { fingerprint: string[] }).fingerprint,
+  );
+}
 
 /** Mirrors `SWEEP_PAGE_SIZE` in the repository under test. */
 const PAGE_SIZE = 500;
@@ -96,6 +113,10 @@ function rows(count: number, base: Record<string, unknown> = {}) {
 }
 
 describe('SupabaseScheduledJobsRepository', () => {
+  beforeEach(() => {
+    captureException.mockClear();
+  });
+
   describe('paging', () => {
     // PostgREST caps responses at max_rows and reports truncation as a plain
     // 200 with a null error, so an unpaged read drops rows silently.
@@ -198,6 +219,37 @@ describe('SupabaseScheduledJobsRepository', () => {
       );
 
       expect(result).toEqual([]);
+    });
+
+    // Six sweeps share this read, so a down database must be one issue per
+    // sweep, not one issue whose events hide which sweeps stopped.
+    it('a caught failure that drops work reports to Sentry, once per sweep', async () => {
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      try {
+        const down = { data: null, error: { message: 'connection reset' } };
+        const { repo } = await buildRepo([down, down]);
+
+        await expect(
+          repo.findOpenInvoicesDueBetween('2026-08-01', '2026-08-06'),
+        ).resolves.toEqual([]);
+        await expect(
+          repo.findIncompleteTasksDueBetween('2026-08-01', '2026-08-06'),
+        ).resolves.toEqual([]);
+
+        expect(captureException).toHaveBeenCalledTimes(2);
+        expect(reportedFingerprints().map((f) => f.slice(0, 2))).toEqual([
+          ['caught-failure', 'scheduled-sweep-candidate-read:invoice'],
+          ['caught-failure', 'scheduled-sweep-candidate-read:task'],
+        ]);
+        expect(error).toHaveBeenCalledWith(
+          'invoice sweep: lookup failed: connection reset',
+          expect.any(String),
+        );
+      } finally {
+        error.mockRestore();
+      }
     });
   });
 
@@ -508,6 +560,10 @@ describe('SupabaseScheduledJobsRepository', () => {
       await expect(
         repo.claimDispatch('chap-1', 'TASK', 'task-1', 'OVERDUE', '2026-08-04'),
       ).resolves.toBe(false);
+      expect(reportedFingerprints()[0]?.slice(0, 2)).toEqual([
+        'caught-failure',
+        'scheduled-dispatch-claim-failed:task.overdue',
+      ]);
     });
   });
 
@@ -530,6 +586,39 @@ describe('SupabaseScheduledJobsRepository', () => {
         threshold: 'AUTO_ABSENT',
         due_date: '2026-08-05',
       });
+    });
+
+    // A failed release strands the claim, so the reminder is never sent.
+    it('reports a failed release, without throwing', async () => {
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      try {
+        const { repo } = await buildRepo([
+          {
+            data: null,
+            error: { code: '08006', message: 'connection failure' },
+          },
+        ]);
+
+        await expect(
+          repo.releaseDispatch(
+            'chap-1',
+            'EVENT',
+            'evt-1',
+            'AUTO_ABSENT',
+            '2026-08-05',
+          ),
+        ).resolves.toBeUndefined();
+
+        expect(captureException).toHaveBeenCalledTimes(1);
+        expect(reportedFingerprints()[0]?.slice(0, 2)).toEqual([
+          'caught-failure',
+          'scheduled-dispatch-release-failed:event.auto-absent',
+        ]);
+      } finally {
+        error.mockRestore();
+      }
     });
   });
 });
