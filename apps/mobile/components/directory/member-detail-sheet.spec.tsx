@@ -150,6 +150,37 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+// components.md § Surface size: a tall sheet, closed with an icon X, headed by
+// the member's own name rather than a "Member" title and a Done button.
+describe("MemberDetailSheet as a tall sheet", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+  });
+
+  it("opens full height, with no Member title or Done, and closes from its X", () => {
+    const tree = render(ADA);
+    const modal = tree.root.findByType("BottomSheetModal" as never);
+    expect(modal.props.snapPoints).toEqual(["100%"]);
+    expect(modal.props.enableDynamicSizing).toBe(false);
+
+    const texts = tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => node.props.children);
+    expect(texts).not.toContain("Member");
+    expect(texts).not.toContain("Done");
+
+    const close = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Close" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => close.props.onPress());
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
 describe("MemberDetailSheet Message action (#2773)", () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -269,10 +269,14 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
    * mounted with the page and cached for a minute, so an invite another
    * officer revoked would otherwise still show here.
    */
+  function refetchLiveData() {
+    void invitesQuery.refetch();
+    void rolesQuery.refetch();
+  }
+
   function handleOpenChange(next: boolean) {
     if (next) {
-      void invitesQuery.refetch();
-      void rolesQuery.refetch();
+      refetchLiveData();
     } else {
       setHasPickedRole(false);
     }
@@ -415,8 +419,22 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
               What did go is the instruction to fix the API, which is not
               something the reader can act on from this dialog.
             */}
-              <div>
-                Invite data could not load, so issuing and revoking are paused.
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+                <span>
+                  Invite data could not load, so issuing and revoking are
+                  paused.
+                </span>
+                {/* The retry the old footer's Refresh gave, where the failure
+                    is said, so the fix sits next to the reason. */}
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0 text-caption font-semibold text-warning"
+                  onClick={refetchLiveData}
+                >
+                  Try again
+                </Button>
               </div>
             </div>
           ) : null}

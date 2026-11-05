@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { cardFilledContainers } from "@/tests/card-surfaces";
@@ -14,7 +20,8 @@ import { networkMock } from "@/tests/network";
  * `can-fallback.spec.tsx` pins.
  */
 
-const { mockOffline, reads } = vi.hoisted(() => ({
+const { mockOffline, reads, mockCreateChannel } = vi.hoisted(() => ({
+  mockCreateChannel: vi.fn(),
   mockOffline: { value: false },
   reads: {
     channels: {} as Record<string, unknown>,
@@ -35,7 +42,10 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     usePermissionsCatalog: () => reads.catalog,
     useRoles: () => ({ data: [] }),
     useMemberDisplayNames: () => ({ nameFor: () => null }),
-    useCreateChannel: mutation,
+    useCreateChannel: () => ({
+      mutateAsync: mockCreateChannel,
+      isPending: false,
+    }),
     useUpdateChannel: mutation,
     useDeleteChannel: mutation,
     useCreateCategory: mutation,
@@ -196,6 +206,39 @@ describe("ChatAdminPage — the create dialog", () => {
       dialog.getByText(/type can.t be changed after it.s created/),
     ).toBeInTheDocument();
     expect(dialog.queryByText(/visible to every member/)).toBeNull();
+  });
+
+  // The footer's Create sits outside the form and submits it through `form=`.
+  it("creates the channel from the footer's Create button", async () => {
+    mockCreateChannel.mockResolvedValue({});
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "rush-planning" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create channel" }));
+
+    await waitFor(() =>
+      expect(mockCreateChannel).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "rush-planning", type: "PUBLIC" }),
+      ),
+    );
+  });
+
+  // Cancel sets state directly, and Radix fires no `onOpenChange` for that, so
+  // it has to drop the draft itself the way the X and Escape do.
+  it("drops the draft on Cancel, so the next New channel starts empty", () => {
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "rush-planning" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+
+    expect(screen.getByLabelText("Name")).toHaveValue("");
   });
 });
 

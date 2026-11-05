@@ -138,9 +138,9 @@ export function useTallSheetTopInset() {
 
 /**
  * The close control a tall sheet's header carries: the image viewer's X glyph,
- * icon only, muted, in a 44pt box (the Small icon button step on touch,
- * `foundations.md` § 9). A word ("Done", "Cancel") repeats
- * what the X already says, which is the audit's worded-icon-button rule.
+ * icon only, muted, in a 44pt box (the touch floor, `foundations.md` § 9). A
+ * word ("Done", "Cancel") would repeat what the X already says
+ * (`components.md` § Surface size: a big surface closes with an X).
  */
 export function SheetCloseButton({
   onPress,

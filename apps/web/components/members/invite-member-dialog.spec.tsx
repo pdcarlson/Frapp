@@ -14,7 +14,11 @@ const {
   mockToast,
   mockBatchCreate,
   mockCreateInvite,
+  mockRefetchRoles,
+  mockRefetchInvites,
 } = vi.hoisted(() => ({
+  mockRefetchRoles: vi.fn(),
+  mockRefetchInvites: vi.fn(),
   mockCurrentChapter: vi.fn(),
   mockBatchCreate: vi.fn(),
   mockCreateInvite: vi.fn(),
@@ -33,9 +37,13 @@ const INVITE = {
 
 vi.mock("@repo/hooks", () => ({
   // `refetch`: opening the panel re-reads invites and roles.
-  useRoles: () => ({ refetch: vi.fn(), ...mockRoles() }),
+  useRoles: () => ({ refetch: mockRefetchRoles, ...mockRoles() }),
   useOrgConfig: () => mockOrgConfig(),
-  useInvites: () => ({ data: [INVITE], isError: false, refetch: vi.fn() }),
+  useInvites: () => ({
+    data: [INVITE],
+    isError: false,
+    refetch: mockRefetchInvites,
+  }),
   useCreateInvite: () => ({
     mutateAsync: mockCreateInvite,
     isPending: false,
@@ -339,6 +347,35 @@ describe("InviteMemberDialog default role", () => {
     await openDialog();
 
     expect(rolePicker().value).toBe("Member");
+  });
+});
+
+// The panel has no Refresh button: opening it re-reads both lists (invites are
+// cached for a minute, so another officer's revoke would otherwise show as
+// live), and a failed read offers its retry beside the reason.
+describe("InviteMemberDialog live data", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    primeHooks();
+    chapter.active();
+  });
+
+  it("re-reads invites and roles each time the panel opens", async () => {
+    await openDialog();
+    expect(mockRefetchInvites).toHaveBeenCalledTimes(1);
+    expect(mockRefetchRoles).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Try again beside a failed read, and it re-reads both lists", async () => {
+    mockRoles.mockReturnValue({ data: undefined, isError: true });
+    await openDialog();
+    vi.clearAllMocks();
+    mockRoles.mockReturnValue({ data: undefined, isError: true });
+
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(mockRefetchInvites).toHaveBeenCalledTimes(1);
+    expect(mockRefetchRoles).toHaveBeenCalledTimes(1);
   });
 });
 

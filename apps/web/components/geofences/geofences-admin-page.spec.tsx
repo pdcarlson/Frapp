@@ -369,7 +369,10 @@ describe("GeofencesAdminPage study-rule guard (#2206)", () => {
     await openCreate();
     fireEvent.change(rate(/minutes per point/i), { target: { value: "45" } });
     fireEvent.change(rate(/minutes per point/i), { target: { value: "1.5" } });
-    submitCreate();
+    // Through the footer's button, which sits outside the form and reaches it
+    // only through `form=`. The refusal cases submit the form directly because
+    // a click runs the browser's own min/required check first.
+    fireEvent.click(screen.getByRole("button", { name: "Create study zone" }));
 
     await waitFor(() => expect(mockCreateMutate).toHaveBeenCalledTimes(1));
     expect(mockCreateMutate.mock.calls[0]![0]).toMatchObject({

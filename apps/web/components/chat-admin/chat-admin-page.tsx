@@ -420,6 +420,12 @@ function ChatAdminBody() {
     setCreatePermissions(new Set());
   }
 
+  /** Every way the create panel closes (X, Escape, scrim, Cancel) drops the draft. */
+  function handleCreateOpenChange(open: boolean) {
+    setCreateDialogOpen(open);
+    if (!open) resetCreateDraft();
+  }
+
   async function handleCreateChannel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = createName.trim();
@@ -588,13 +594,7 @@ function ChatAdminBody() {
           >
             Channels
           </SectionLabel>
-          <Sheet
-            open={createDialogOpen}
-            onOpenChange={(open) => {
-              setCreateDialogOpen(open);
-              if (!open) resetCreateDraft();
-            }}
-          >
+          <Sheet open={createDialogOpen} onOpenChange={handleCreateOpenChange}>
             <SheetTrigger asChild>
               <Button className="gap-2">
                 <Plus className="h-4 w-4" />
@@ -725,7 +725,10 @@ function ChatAdminBody() {
               <PanelFooter>
                 <Button
                   variant="secondary"
-                  onClick={() => setCreateDialogOpen(false)}
+                  // Through the same handler as the X and Escape: Radix fires no
+                  // `onOpenChange` for a close made by setting state, so a bare
+                  // `setCreateDialogOpen(false)` would keep the draft.
+                  onClick={() => handleCreateOpenChange(false)}
                   disabled={createChannel.isPending}
                 >
                   Cancel

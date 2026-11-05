@@ -204,7 +204,7 @@ There is no command menu and no ⌘K. The find field binds Cmd/Ctrl+F without ad
 
 Rules that go with it:
 
-- **A dialog never scrolls.** A dialog that needs a `max-h` and `overflow-y-auto` to fit is a panel. Before this rule five forms scrolled inside dialogs, with five different width and height caps between them (512 to 672 wide, 80vh to 90vh tall).
+- **A dialog never scrolls.** A dialog that needs a `max-h` and `overflow-y-auto` to fit is a panel. Before this rule five forms scrolled inside dialogs, with three different width and height caps between them (512 to 672 wide, 80vh to 90vh tall).
 - **One panel width.** Every panel is 576px, the width the event and member detail sheets already had. A form that opens from a record (Edit event from the event panel) slides in at the same size, so it reads as the record turning into its editor.
 - **Nothing scrolls inside a panel's body.** A list in a panel flows with the body rather than sitting in its own scroll box (`PermissionCheckboxGrid`'s `inPanel`).
 - **The primary action is pinned.** A panel's footer and a sheet's primary button stay on screen however long the body is. The member panel's Save role changes used to sit below the fold.
@@ -213,6 +213,8 @@ Rules that go with it:
 - **Mobile picks match web.** A member's profile is a panel on web and a tall sheet on mobile. Assign to, which lists the whole roster, is a tall sheet with its search pinned above the list.
 
 Not covered here: Find, the centered search palette, takes its own size from the top bar (its thread owns it), and the upload sheet is board `1j`'s drawn dialog.
+
+Not on this yet: the notifications drawer and the backwork category drawer and merge dialog keep their own widths (#3517); four web titles still carry a glyph, and three mobile sheets are still fixed boxes closed with a word (#3519).
 
 ### Bottom sheet (mobile)
 

@@ -222,8 +222,13 @@ export const MemberDetailSheet = forwardRef<
       <BottomSheetScrollView
         style={styles.scroll}
         contentContainerStyle={styles.body}
+        // The X stays pinned while a long profile scrolls under it: at full
+        // height there is no scrim to tap, and the grabber scrolls away too.
+        stickyHeaderIndices={[0]}
       >
-        <TallSheetHeader onClose={dismiss} />
+        <View style={styles.stickyHeader}>
+          <TallSheetHeader onClose={dismiss} />
+        </View>
 
         {memberQuery.isPending ? (
           <SkeletonLines lines={4} showTile tone="list" />
@@ -377,6 +382,10 @@ function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     scroll: {
       flex: 1,
+    },
+    stickyHeader: {
+      // Sticky, so it paints the sheet's own fill over the rows passing under.
+      backgroundColor: tokens.color.surface.popover,
     },
     body: {
       paddingHorizontal: tokens.spacing.lg,

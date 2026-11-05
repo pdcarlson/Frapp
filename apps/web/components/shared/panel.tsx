@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
  * full-height sheet from the right edge, one width everywhere, with a title row
  * and a footer that stay put while the body between them scrolls. The owner
  * called the scrolling max-width dialogs cramped (2026-11-05), and the five
- * surfaces that had drifted into them carried five different width and height
+ * forms that had drifted into them carried three different width and height
  * caps between them.
  *
  * **One width, 576px.** It is the width the event and member detail sheets
@@ -36,8 +36,8 @@ import { cn } from "@/lib/utils";
  * A panel holds content; the drawer holds switches.
  */
 
-/** The panel's width, exported so a spec can pin it rather than re-spell it. */
-export const PANEL_WIDTH_CLASS = "sm:w-[576px] sm:max-w-[576px]";
+/** The panel's one width (§ Surface size). */
+const PANEL_WIDTH_CLASS = "sm:w-[576px] sm:max-w-[576px]";
 
 export const PanelContent = React.forwardRef<
   React.ElementRef<typeof SheetContent>,
@@ -57,36 +57,32 @@ export const PanelContent = React.forwardRef<
 PanelContent.displayName = "PanelContent";
 
 /**
- * The 56px title row. Pinned: it sits outside the scrolling body, so the title
- * and the close button stay on screen however far the body scrolls. Before
- * this, the event and member sheets scrolled as one block and took their close
- * button with them.
+ * The title row: 56px for a one-line title. Pinned: it sits outside the
+ * scrolling body, so the title and the close button stay on screen however far
+ * the body scrolls. Before this, the event and member sheets scrolled as one
+ * block and took their close button with them.
  *
- * `actions` sits between the title and the close button, for a record's own
- * icon actions (edit, delete); `pr-14` still clears the close.
+ * The title wraps rather than truncating: it is often a record's name (an
+ * event can be 255 characters), and the panel shows it nowhere else. `pr-14`
+ * clears the close button.
  */
 export function PanelHeader({
   children,
-  actions,
   className,
 }: {
   children: React.ReactNode;
-  actions?: React.ReactNode;
   className?: string;
 }) {
   return (
     <div
       className={cn(
-        "flex h-14 shrink-0 items-center gap-2 pl-5 pr-14",
+        "flex min-h-14 shrink-0 items-center py-[15px] pl-5 pr-14",
         className,
       )}
     >
-      <SheetTitle className="min-w-0 flex-1 truncate text-lg font-bold">
+      <SheetTitle className="min-w-0 flex-1 break-words text-lg font-bold leading-[26px]">
         {children}
       </SheetTitle>
-      {actions ? (
-        <div className="flex shrink-0 items-center gap-1">{actions}</div>
-      ) : null}
     </div>
   );
 }

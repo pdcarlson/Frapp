@@ -465,9 +465,13 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           same animated `contentHeight`, so a 60-member roster snaps the sheet to
           full screen and then jumps back on the next layout pass. Fixed
           snap points here for the same reason — a list has no natural height to
-          size to. */}
+          size to. Snap points alone don't turn dynamic sizing off in v5: it
+          defaults on and adds a content-height detent below 100%, so a short or
+          filtered roster would open the picker short and shrink it per
+          keystroke. */}
       <BottomSheetModal
         ref={pickerRef}
+        enableDynamicSizing={false}
         // A tall sheet (`components.md` § Surface size): the whole roster,
         // and a search the keyboard would otherwise squeeze into a sliver of
         // the old 70% box.

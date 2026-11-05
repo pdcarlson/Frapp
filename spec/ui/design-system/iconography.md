@@ -375,8 +375,7 @@ glyphs: the nav set (§1.1) for the re-exports and `InviteGlyph`, the §1 stroke
 recipe for the points glyphs and search. The glyphs live in
 [`apps/web/components/members/directory-glyphs.tsx`](../../../apps/web/components/members/directory-glyphs.tsx)
 and [`apps/web/components/points/points-glyphs.tsx`](../../../apps/web/components/points/points-glyphs.tsx),
-both re-exporting the shell's silhouettes rather than redrawing them. Rendered at 20px in card, dialog and
-sheet titles, 16px in table cells, and 14–16px as a badge companion (§2).
+both re-exporting the shell's silhouettes rather than redrawing them. Rendered at 20px in card and dialog titles (never a panel or sheet title, [`components.md` § Surface size](components.md#surface-size)), 16px in table cells, and 14–16px as a badge companion (§2).
 Inside a `Button` they render at 16 whatever the call site asks for, because
 `buttonVariants` pins `[&_svg]:size-4` — which is also what keeps the required
 375px floor gate unaffected by a glyph swap.
@@ -392,7 +391,7 @@ where an import points.
 | Semantic intent | Glyph | Home |
 | --- | --- | --- |
 | Invite a member | `InviteGlyph` (the nav set's `invite`, Phosphor `user-plus`, §1.1) | `directory-glyphs.tsx` |
-| Member record (detail sheet) | `DirectoryGlyph` | re-export, shell |
+| Member record | none: the member panel's title is the member's name ([`components.md` § Surface size](components.md#surface-size)) | |
 | Role access | `RolesGlyph` | re-export, shell |
 | Directory / ledger search | `SearchGlyph` | re-export, shell |
 | Adjust points | `AdjustGlyph` | `points-glyphs.tsx` |
@@ -450,7 +449,7 @@ a running session's zone and a zone row alike.
 
 | Semantic intent | Glyph |
 |---|---|
-| An event, and the create/edit dialog that names one | `EventsGlyph` (re-export) |
+| An event (its panel titles carry none, [`components.md` § Surface size](components.md#surface-size)) | `EventsGlyph` (re-export) |
 | An event's schedule row | `ScheduleGlyph` |
 | A location, a study zone, a session's zone | `StudyZonesGlyph` (re-export) |
 | Role targeting on an event | `RolesGlyph` (re-export) |
