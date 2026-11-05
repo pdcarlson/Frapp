@@ -357,12 +357,15 @@ export function main(
     env = guard.env;
     publishedProduction = guard.profileName === "production";
   }
-  const result = spawn(process.execPath, [bin, ...args], { cwd: MOBILE_DIR, stdio: "inherit", env });
+  // Each credential reaches only the tool that needs it: eas-cli (and the Metro export it runs)
+  // never sees the Sentry token, and the source-map uploader never sees EXPO_TOKEN.
+  const { easEnv, uploadEnv } = splitTokens(env);
+  const result = spawn(process.execPath, [bin, ...args], { cwd: MOBILE_DIR, stdio: "inherit", env: easEnv });
   if (result.error) {
     log(`ERROR: could not start eas: ${result.error.message}`);
     return 1;
   }
-  if (result.status === 0 && publishedProduction) afterUpdate({ env, log });
+  if (result.status === 0 && publishedProduction) afterUpdate({ env: uploadEnv, log });
   return result.status ?? 1;
 }
 
@@ -406,8 +409,20 @@ export function pullEasEnv(
 
 function pullEnvFor(env) {
   return Object.fromEntries(
-    Object.entries(env).filter(([k]) => !/^(EXPO_PUBLIC_|EAS_BUILD_|FRAPP_EAS_UPDATE_)/.test(k)),
+    Object.entries(env).filter(([k]) => !/^(EXPO_PUBLIC_|EAS_BUILD_|FRAPP_EAS_UPDATE_)/.test(k) && k !== SENTRY_TOKEN),
   );
+}
+
+const SENTRY_TOKEN = "SENTRY_AUTH_TOKEN";
+const EXPO_TOKEN = "EXPO_TOKEN";
+
+/** `env` for eas-cli without the Sentry token, and for the source-map upload without EXPO_TOKEN. */
+export function splitTokens(env) {
+  const easEnv = { ...env };
+  delete easEnv[SENTRY_TOKEN];
+  const uploadEnv = { ...env };
+  delete uploadEnv[EXPO_TOKEN];
+  return { easEnv, uploadEnv };
 }
 
 if (isInvokedDirectly(import.meta.url)) {

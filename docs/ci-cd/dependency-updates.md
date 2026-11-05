@@ -162,6 +162,15 @@ a decision this rule has made. The one entry either has is a narrow hold on Stri
 which broke the iOS build one step earlier, at `pod install`
 ([held on Stripe's Swift Package path](#stripestripe-react-native-078-is-held-on-stripes-swift-package-path)).
 
+**A native bump needs a version bump once that version has shipped.** Any update that moves the
+lockfile version of a package with native code (these two, an `expo-*` minor or patch) turns the
+required `mobile-validate` red through `check:mobile-native-version` while a store build of the
+app's current `expo.version` is recorded in `apps/mobile/store/shipped-builds.json`, because an OTA
+update would then reach that build and crash it. Dependabot can't bump `expo.version` itself: push
+the bump (`apps/mobile/app.json`) to the PR's branch, or land it first and rebase. The rule:
+[`spec/environments/README.md` § Mobile (EAS)](../../spec/environments/README.md#mobile-eas),
+**Native changes**.
+
 **For the `expo-*` client packages, apply (b) mechanically, not as a judgement:** *every* `expo-*`
 entry in `apps/mobile/package.json` belongs in the list, whatever the package looks like from the
 JS side. An Expo client package's major version **is** its SDK line — the `58.x` release of any of

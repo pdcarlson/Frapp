@@ -490,7 +490,7 @@ is unavailable in that state and the sign-in screen says so.
 > `npm run eas -- update` sets `FRAPP_EAS_UPDATE_PROFILE` to the channel's profile, so an update
 > through it gets the same fences on public values as a build (not the google-services check,
 > which is native-only), and a production update must carry the Sentry DSN too
-> ([`mobile.md` § 6.7](../../ops/deployment/mobile.md#67-ota-updates-by-hand)).
+> ([`mobile.md` § 6.7](../../ops/deployment/mobile.md#67-ota-updates)).
 
 `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
 CI, a local `expo start`, and every Expo Go session run without it, and none of

@@ -12,9 +12,10 @@ description: >
 #   - Serve a job whose workspace is not the workflow's own commit. A local
 #     action loads from whatever tree is on disk when its step starts, so after
 #     a checkout of another ref it is that commit's copy, or none at all when
-#     the commit predates this file. `_deploy.yml` (checks out `inputs.sha`) and
-#     `release.yml` (checks out the deployed SHA) keep a hand-written
-#     `actions/setup-node` for that reason, pinned to the same action ref,
+#     the commit predates this file. `_deploy.yml` (checks out `inputs.sha`),
+#     `release.yml` (checks out the deployed SHA), and the mobile jobs
+#     (`_mobile-build.yml`, `_mobile-update.yml`, `deploy-production.yml`'s
+#     `mobile-plan`) keep a hand-written `actions/setup-node` for that reason, pinned to the same action ref,
 #     Node version and `package-manager-cache: false` as below by
 #     `scripts/ci/__tests__/node-setup-action.test.mjs`.
 #   - Reach every job. A job that sets up no Node, but runs `node` itself or
