@@ -10,6 +10,7 @@ import {
   NOTIFICATION_CATEGORIES,
 } from "@repo/validation";
 import { PUSH_PRIMER_STORAGE_KEY } from "@/lib/notifications/primer";
+import { reactNativeStub } from "@/test/react-native-stub";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
@@ -425,6 +426,63 @@ describe("Settings push switch", () => {
     await settle();
     expect(state.requestPushPermission).toHaveBeenCalledTimes(1);
     expect(state.openSettings).not.toHaveBeenCalled();
+  });
+
+  it("asks once when a quick double tap lands before the permission read settles", async () => {
+    // Both taps arrive in one frame, while the first tap is still reading the
+    // permission, so the guard has to be taken before that read.
+    state.getPushPermission = async () => ({
+      granted: false,
+      canAskAgain: true,
+      status: "undetermined",
+    });
+    state.requestPushPermission.mockImplementation(
+      () => new Promise<boolean>(() => undefined),
+    );
+    const tree = render();
+    await settle();
+
+    act(() => {
+      pushSwitch(tree).props.onValueChange(true);
+      pushSwitch(tree).props.onValueChange(true);
+    });
+    await settle();
+
+    expect(state.requestPushPermission).toHaveBeenCalledTimes(1);
+    expect(primerWrites()).toEqual(["accepted"]);
+    expect(state.openSettings).not.toHaveBeenCalled();
+  });
+
+  it("re-reads the channel when the app comes back from the OS settings", async () => {
+    // The member switches the app's channel off in the phone's settings and
+    // returns: the foreground re-read is the only thing that sees it.
+    state.getPushPermission = async () => ({
+      granted: true,
+      canAskAgain: true,
+      status: "granted",
+    });
+    // The stub's listener is typed without arguments; the screen passes the
+    // event name and its callback.
+    const calls = vi.mocked(reactNativeStub.AppState.addEventListener).mock
+      .calls as unknown as Array<[string, (next: string) => void]>;
+    const before = calls.length;
+    const tree = render();
+    await settle();
+    expect(pushSwitch(tree).props.value).toBe(true);
+
+    const onChange = calls
+      .slice(before)
+      .find(([event]) => event === "change")?.[1];
+    expect(onChange).toBeDefined();
+
+    state.isPushChannelBlocked = async () => true;
+    act(() => onChange?.("active"));
+    await settle();
+
+    expect(pushSwitch(tree).props.value).toBe(false);
+    expect(pushSwitch(tree).props.accessibilityLabel).toBe(
+      "Push notifications, turn on in your phone's settings",
+    );
   });
 
   it("reads off on Android 13+ when the permission is granted but the app's notifications are blocked", async () => {
