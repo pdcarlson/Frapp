@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -31,8 +30,9 @@ import {
  * reason: the two are one page, and the mode toggle above the title
  * (`auth-mode-toggle.tsx`) is the way across. Compressed with sign-in on
  * 2026-11-05 (floating labels, no subtitle, side-by-side providers) so the
- * column fits a laptop screen; the membership hint stays here, under the
- * providers, because this is where an Apple Hide My Email account is made.
+ * column fits a laptop screen. It has no footer: the toggle covers sign-in,
+ * and sign-in's "Join your chapter" link would drop the `redirectTo` an
+ * invited member arrives with (`/join` is gated and bounces to sign-in).
  *
  * The #920 Profile & pre-auth slice replaced a two-card grid whose eyebrow read
  * "Frapp account setup", whose heading promised "live staging walkthroughs",
@@ -125,7 +125,6 @@ function SignUpPageContent() {
     <AuthScreen
       title="Create your account"
       toggle={<AuthModeToggle current="sign-up" redirectTo={redirectTo} />}
-      footer={SIGN_UP_FOOTER}
     >
       <form className="flex flex-col gap-3" onSubmit={handleSignUp}>
         <FloatingField
@@ -160,21 +159,10 @@ function SignUpPageContent() {
         }}
         pending={pendingOAuth}
         disabled={isSubmitting}
-        hint
       />
     </AuthScreen>
   );
 }
-
-/** Shared with the Suspense fallback, so nothing shifts on hydration. */
-const SIGN_UP_FOOTER = (
-  <p>
-    Have an invite?{" "}
-    <Link href="/join" className="font-semibold text-accent-text hover:underline">
-      Join your chapter
-    </Link>
-  </p>
-);
 
 export default function SignUpPage() {
   return (
@@ -185,7 +173,6 @@ export default function SignUpPage() {
           toggle={
             <AuthModeToggle current="sign-up" redirectTo={resolveRedirectPath(null)} />
           }
-          footer={SIGN_UP_FOOTER}
         >
           <div role="status" aria-busy="true" aria-live="polite">
             <span className="sr-only">Loading the sign-up form…</span>

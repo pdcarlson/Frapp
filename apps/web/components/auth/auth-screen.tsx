@@ -4,8 +4,10 @@
  *
  * `AuthFrame` (`auth-frame.tsx`, mounted by `app/(auth)/layout.tsx`) owns the
  * page: the `<main>`, the lockup and the live product panel. This component is
- * what changes between routes: the screen's one `<h1>`, its subtitle, the form,
- * and a footer pinned to the bottom of the column. It renders a fragment into
+ * what changes between routes: an optional `toggle` above the title (sign-in
+ * and sign-up pass `AuthModeToggle`), the screen's one `<h1>`, an optional
+ * subtitle (`/join` and `/no-access` keep theirs), the form, and a footer
+ * pinned to the bottom of the column. It renders a fragment into
  * the frame's flex column, so the body takes `my-auto` and centres in the
  * space the footer leaves.
  *
@@ -54,12 +56,12 @@ export function AuthScreen({
   children: React.ReactNode;
   footer?: React.ReactNode;
 }) {
-  // Spacing is tight on purpose: the column has to fit a 1280×720 laptop
-  // viewport without scrolling (Paul, 2026-11-05), so every gap is the
-  // smallest step that still separates its groups.
+  // Spacing is tight on purpose: sign-in and sign-up have to fit a 1280×650
+  // window without scrolling (Paul, 2026-11-05; `tests/visual/pre-auth-fit.spec.ts`),
+  // so every gap is the smallest step that still separates its groups.
   return (
     <>
-      <div className="my-auto w-full py-6">
+      <div className="my-auto w-full py-4">
         {toggle ? <div className="mb-6">{toggle}</div> : null}
         <h1 className="text-headline font-bold tracking-tight text-foreground">
           {title}

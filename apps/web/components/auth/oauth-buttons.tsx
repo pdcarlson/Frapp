@@ -24,19 +24,18 @@ const NAMES: Record<OAuthProvider, string> = {
  * so each shows the provider's name and carries the full phrase as its
  * accessible name, which still contains the visible word (WCAG 2.5.3).
  *
- * `hint` is the membership caption; sign-up passes it, sign-in leaves it out
- * so the shorter form fits (Paul: not every note needs to be on screen).
+ * The membership hint stays on both forms, at caption size: invite links send
+ * a signed-out member to sign-in, and Continue with Apple there can create the
+ * Hide My Email account the hint is about.
  */
 export function OAuthButtons({
   onSelect,
   pending = null,
   disabled = false,
-  hint = false,
 }: {
   onSelect: (provider: OAuthProvider) => void;
   pending?: OAuthProvider | null;
   disabled?: boolean;
-  hint?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -66,11 +65,9 @@ export function OAuthButtons({
           );
         })}
       </div>
-      {hint ? (
-        <p className="text-center text-caption text-muted-foreground">
+      <p className="text-center text-caption text-muted-foreground">
           {OAUTH_MEMBERSHIP_HINT}
         </p>
-      ) : null}
     </div>
   );
 }

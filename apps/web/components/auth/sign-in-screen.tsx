@@ -46,8 +46,8 @@ import {
  * laptop: the labels float inside the fields (`floating-field.tsx`), the
  * subtitle and the "New here?" sentence gave way to the mode toggle above the
  * title (`auth-mode-toggle.tsx`), Apple and Google sit side by side, and the
- * magic link is a text link under the password, where someone who has
- * forgotten it looks, instead of a third full-width button.
+ * magic link is a text link under Continue instead of a third full-width
+ * button.
  *
  * The redirect plumbing is a data contract
  * (`spec/ui/web-dashboard/README.md` §Gating & routing semantics):
@@ -197,20 +197,25 @@ function SignInPageContent() {
           onChange={(event) => setPassword(event.target.value)}
           required
         />
-        <div className="-mt-1 flex justify-end">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-sm text-sm font-semibold text-accent-text hover:underline disabled:text-disabled disabled:no-underline"
-            onClick={handleMagicLink}
-            disabled={isMagicLinkPending || oauthBusy}
-          >
-            {isMagicLinkPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Email me a magic link
-          </button>
-        </div>
         <Button type="submit" className="w-full" disabled={isSubmitting || oauthBusy}>
           {isSubmitting ? <Loader2 className="animate-spin" /> : null}
           Continue
+        </Button>
+        {/*
+          After Continue, so Tab from the password reaches the submit first and
+          a keyboard user can't send a link by accident.
+        */}
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          // 36 to a mouse, 44 to a finger: components.md §2's compact carve-out.
+          className="mx-auto h-9 pointer-coarse:h-11"
+          onClick={handleMagicLink}
+          disabled={isMagicLinkPending || oauthBusy}
+        >
+          {isMagicLinkPending ? <Loader2 className="animate-spin" /> : null}
+          Email me a magic link instead
         </Button>
       </form>
 

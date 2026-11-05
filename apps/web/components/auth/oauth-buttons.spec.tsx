@@ -52,10 +52,10 @@ describe("OAuthButtons", () => {
     expect(screen.getByRole("button", { name: "Continue with Google" })).toBeDisabled();
   });
 
-  it("shows the membership hint only where it is asked for (sign-up)", () => {
-    const { rerender } = render(<OAuthButtons onSelect={vi.fn()} />);
-    expect(screen.queryByText(OAUTH_MEMBERSHIP_HINT)).toBeNull();
-    rerender(<OAuthButtons onSelect={vi.fn()} hint />);
+  it("keeps the membership hint under the providers", () => {
+    // Invite links land on sign-in, and Apple there can make a Hide My Email
+    // account, so the hint is not a sign-up-only note.
+    render(<OAuthButtons onSelect={vi.fn()} />);
     expect(screen.getByText(OAUTH_MEMBERSHIP_HINT)).toBeInTheDocument();
   });
 
