@@ -8,7 +8,7 @@ import {
   keepPreviousData,
 } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
-import type { OpsNudgeModuleKey } from "@repo/validation";
+import { roleColorOrNull, type OpsNudgeModuleKey } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { resolveDisplayName, type DisplayNameMap } from "./display-names";
 
@@ -92,6 +92,13 @@ export interface MemberDisplayNames {
    */
   avatarFor: (userId: string) => string | null;
   /**
+   * The palette color of the member's highest-ranked colored role, or `null`
+   * for the plain foreground (#3485). Chat paints a sender's name in it. Same
+   * roster read again, and re-checked against the palette here so a client
+   * never paints a value the contrast guard did not cover.
+   */
+  roleColorFor: (userId: string) => string | null;
+  /**
    * True until the first roster read settles — and, because the read is
    * `enabled: !!chapterId`, true forever while there is no active chapter. A
    * surface that blocks rendering on this never renders for a chapterless
@@ -142,6 +149,21 @@ export function useMemberDisplayNames(): MemberDisplayNames {
     [avatarById],
   );
 
+  const roleColorById = useMemo(
+    () =>
+      new Map(
+        (query.data ?? []).map((row) => [
+          row.user_id,
+          roleColorOrNull(row.role_color),
+        ]),
+      ),
+    [query.data],
+  );
+  const roleColorFor = useCallback(
+    (userId: string) => roleColorById.get(userId) ?? null,
+    [roleColorById],
+  );
+
   // Keyed on `query.refetch`, which TanStack keeps stable, rather than on
   // `query` — the observer hands back a fresh result object every render, so
   // depending on it would make this callback a new identity each time and defeat
@@ -155,6 +177,7 @@ export function useMemberDisplayNames(): MemberDisplayNames {
     byId,
     nameFor,
     avatarFor,
+    roleColorFor,
     isPending: query.isPending,
     isError: query.isError,
     refetch,

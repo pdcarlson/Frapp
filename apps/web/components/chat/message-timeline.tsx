@@ -9,11 +9,7 @@ import {
   useState,
 } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-import {
-  EmptyState,
-  ErrorState,
-  Skeleton,
-} from "@/components/shared/async-states";
+import { ErrorState, Skeleton } from "@/components/shared/async-states";
 import { Button } from "@/components/ui/button";
 import { useTapRevealedMessage } from "@/lib/hooks/use-tap-revealed-message";
 import { cn } from "@/lib/utils";
@@ -230,15 +226,21 @@ function usePrependAwareFirstIndex(keys: readonly string[]): {
 interface TimelineHeaderContext {
   olderStatus: "idle" | "loading" | "error";
   onRetryOlder?: () => void;
+  /**
+   * The channel start, once nothing older is left to load: the oldest loaded
+   * message is the channel's first, so the history begins with it.
+   */
+  start?: React.ReactNode;
 }
 
 /**
  * The row above the oldest loaded message: the older-history read in flight,
- * or its failure with a Retry. Nothing otherwise — the day divider under it
- * already says where the history starts, and it also keeps the first row's
- * action bar (centred on the row's top edge) inside the scroller: the oldest
- * loaded row starts a day, and its divider renders in the same item. (A row
- * whose timestamp cannot be read gets no divider, so there the bar clips.)
+ * or its failure with a Retry. Otherwise the channel start, once no older page
+ * is left (`context.start` is unset while one is), and nothing before that.
+ * The oldest loaded row starts a day and its divider renders in the same item,
+ * which keeps the first row's action bar (centred on the row's top edge)
+ * inside the scroller. (A row whose timestamp cannot be read gets no divider,
+ * so there the bar clips.)
  */
 function TimelineHeader({ context }: { context?: TimelineHeaderContext }) {
   if (context?.olderStatus === "loading") {
@@ -270,7 +272,7 @@ function TimelineHeader({ context }: { context?: TimelineHeaderContext }) {
       </div>
     );
   }
-  return null;
+  return context?.start ?? null;
 }
 
 /**
@@ -333,6 +335,11 @@ export interface MessageTimelineProps {
    * From the same roster read as `nameFor` (#732).
    */
   avatarFor: (userId: string) => string | null;
+  /**
+   * Resolves `users.id` → the member's role color, or `null` (#3485). Same
+   * roster read again. Optional so a caller without a roster paints plain names.
+   */
+  roleColorFor?: (userId: string) => string | null;
   isLoading: boolean;
   loadError: Error | null;
   onRetryLoad?: () => void;
@@ -381,6 +388,13 @@ export interface MessageTimelineProps {
    * scroll a moment after the jump had reported success.
    */
   holdFollow?: boolean;
+  /**
+   * The start of this channel's history (`channel-start.tsx`). It stands in
+   * the timeline's place while the channel has no messages, just above the
+   * composer where the first one will land, and above the oldest message once
+   * `hasOlder` says there is nothing earlier.
+   */
+  channelStart?: React.ReactNode;
 }
 
 /**
@@ -404,6 +418,7 @@ export const MessageTimeline = forwardRef<
     viewerId,
     nameFor,
     avatarFor,
+    roleColorFor,
     isLoading,
     loadError,
     onRetryLoad,
@@ -425,6 +440,7 @@ export const MessageTimeline = forwardRef<
     olderError = false,
     onLoadOlder,
     holdFollow = false,
+    channelStart,
   },
   ref,
 ) {
@@ -665,8 +681,9 @@ export const MessageTimeline = forwardRef<
     () => ({
       olderStatus: isLoadingOlder ? "loading" : olderError ? "error" : "idle",
       onRetryOlder: onLoadOlder,
+      start: hasOlder ? undefined : channelStart,
     }),
-    [isLoadingOlder, olderError, onLoadOlder],
+    [isLoadingOlder, olderError, onLoadOlder, hasOlder, channelStart],
   );
 
   useImperativeHandle(
@@ -807,15 +824,19 @@ export const MessageTimeline = forwardRef<
   }
   if (thread.rows.length === 0) {
     // Counted after the block list, held rows included: a channel whose only
-    // messages are being held is not an empty channel, and saying "Nothing in
-    // this channel yet" over them would be false. `BlockListNotice` above the
-    // timeline says they are held.
+    // messages are being held is not an empty channel, so it gets no channel
+    // start either. `BlockListNotice` above the timeline says they are held.
     if (thread.heldCount > 0) return <div className="h-full" />;
+    // Not an empty-state card: the channel's start, at the bottom where its
+    // first message will land (`writing.md` § Chat (dashboard), Channel start).
+    // The box scrolls and the inner column is at least its height, so a start
+    // taller than a short window is scrolled to, not clipped at the top.
     return (
-      <EmptyState
-        title="Nothing in this channel yet"
-        description="Be the first to post — everyone in the channel sees it right away."
-      />
+      <div className="h-full overflow-y-auto">
+        <div className="flex min-h-full flex-col justify-end">
+          {channelStart}
+        </div>
+      </div>
     );
   }
 
@@ -881,6 +902,11 @@ export const MessageTimeline = forwardRef<
                 <MessageItem
                   nameFor={nameFor}
                   message={entry.message}
+                  authorColor={
+                    entry.message.sender_id
+                      ? roleColorFor?.(entry.message.sender_id)
+                      : null
+                  }
                   blockState={blockState}
                   avatarUrl={
                     resolveAuthorAvatar(

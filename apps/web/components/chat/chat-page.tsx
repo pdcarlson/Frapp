@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChatProvider } from "@/lib/chat/chat-provider";
 import { ChatShell } from "./chat-shell";
-import { LoadingState } from "@/components/shared/async-states";
+import { ChatRouteSkeleton } from "@/components/chat/chat-route-skeleton";
 import { CHAT_CHANNEL_PARAM, CHAT_MESSAGE_PARAM } from "@/lib/chat/chat-links";
 
 /**
@@ -43,7 +43,7 @@ export function ChatPage() {
     payload", and `ComposerShell` (#2176) is only focusable before hydration
     because it really is in that payload. A Suspense boundary around a
     `useSearchParams()` consumer is exactly the thing Next.js resolves to its
-    fallback on a *static* prerender — which would ship `LoadingState` instead
+    fallback on a *static* prerender — which would ship the skeleton instead
     of the shell, and the budget would go quietly back to being hydration-gated
     with every test still green.
 
@@ -55,7 +55,7 @@ export function ChatPage() {
     composer's `<textarea>` before assuming this still holds.
   */
   return (
-    <Suspense fallback={<LoadingState message="Loading chat..." />}>
+    <Suspense fallback={<ChatRouteSkeleton />}>
       <ChatPageContent />
     </Suspense>
   );

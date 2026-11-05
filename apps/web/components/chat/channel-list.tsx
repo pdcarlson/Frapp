@@ -37,6 +37,7 @@ import { Switch } from "@/components/ui/switch";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AuditGlyph, LockGlyph, MuteGlyph, PinGlyph } from "./chat-glyphs";
+import { isSystemChannel } from "./channel-start";
 import { Skeleton } from "@/components/shared/async-states";
 import { cn, initials } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
@@ -145,12 +146,6 @@ export interface ChannelSidebarControls {
   onSetFilters: (change: SidebarFilterChange) => void;
   /** Turn both filters off, from the empty state they caused. */
   onClearFilters: () => void;
-}
-
-const SYSTEM_CHANNEL_NAMES = new Set(["chapter-audit"]);
-
-function isSystem(channel: ChatChannel): boolean {
-  return SYSTEM_CHANNEL_NAMES.has(channel.name);
 }
 
 /** `@repo/validation`'s rule, the one `groupChannelsByCategory` sections by. */
@@ -335,7 +330,7 @@ export function ChannelList({
       if (channel.hidden) pinnedIds.delete(channel.id);
       if (channel.hidden && channel.id !== activeChannelId) {
         hiddenDms.push(channel);
-      } else if (isSystem(channel)) {
+      } else if (isSystemChannel(channel)) {
         system.push(channel);
       } else {
         rest.push(channel);
@@ -610,7 +605,8 @@ function ChannelMark({
   channel: ChatChannel;
   title: string;
 }) {
-  if (isSystem(channel)) return <AuditGlyph className="h-4 w-4 shrink-0" />;
+  if (isSystemChannel(channel))
+    return <AuditGlyph className="h-4 w-4 shrink-0" />;
   if (isDm(channel))
     return (
       // 24px, with the primitive's own caption-role initials — no size

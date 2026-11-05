@@ -87,7 +87,7 @@ Every async view MUST include all relevant states:
 4. Offline/degraded (if network-dependent) — see [`../resilience/`](../resilience/README.md)
 5. Success confirmation (for mutating actions)
 
-Skeleton, empty, and error render as one visual family — the states panel (4f) in [`reference/signet-design-system.dc.html`](reference/signet-design-system.dc.html) is the model. Web dashboards use the shared state modules in `apps/web/components/shared/async-states.tsx` unless there is a strong reason to diverge.
+Skeleton, empty, and error render as one visual family — the states panel (4f) in [`reference/signet-design-system.dc.html`](reference/signet-design-system.dc.html) is the model. Web dashboards use the shared state modules in `apps/web/components/shared/async-states.tsx` and `nested-states.tsx` for empty, error and offline, and draw loading from the page-shaped pieces in `apps/web/components/shared/page-skeletons.tsx` ([`components.md`](components.md) §10).
 
 **A disabled query is not a loading state.** TanStack Query v5 keeps `isPending` true for a query whose `enabled` flag is false — nothing is in flight, and nothing will be (`fetchStatus: "idle"`). Gate spinners on `isLoading` (`isPending && isFetching`) or `fetchStatus === "paused"` (offline, no cached data). Treat `isPending && fetchStatus === "idle"` as the entitlement/empty branch (permission denied, no chapter selected), not as a spinner. Do not use `isPending && !isFetching` for that branch — paused queries share those flags and are not disabled. `/polls` (`polls:view_all`) and `/backwork` (no chapter) are the reference surfaces.
 
@@ -216,7 +216,7 @@ Minimum release requirements:
 - Focus order follows visual order
 - Semantic labels for icon-only buttons
 - 4.5:1 text contrast minimum
-- 3:1 non-text UI contrast minimum
+- 3:1 non-text UI contrast minimum. One recorded exception: the scrollbar thumb ([`foundations.md`](foundations.md) §12), by the owner's decision of 2026-11-05
 - Dialogs move focus to the first input on open (the primary control when there is no input), trap focus while open, and return focus to the trigger on close — Radix only does the last part automatically for a dialog opened via `<DialogTrigger>`. A dialog opened from controlled `open` state with no `DialogTrigger` (the chat slash palette, opened by typing `/`) gets no free trigger-return: `DialogContent`'s `onCloseAutoFocus` calls `context.triggerRef.current?.focus()`, and that ref is only ever populated by `<DialogTrigger>` mounting (`#396`). Such a dialog needs its own explicit refocus on close.
 - A hidden "Skip to main content" link that becomes visible on focus and jumps to the page's main landmark — a route whose main landmark hides real content behind its own sub-navigation (chat's channel rail before the timeline) should carry a second, route-scoped skip link to the content past that sub-navigation (`#396`)
 - Dialogs are announced as modal (`aria-modal="true"`) — Radix's `DialogContent` does not set this itself (verified against `@radix-ui/react-dialog@1.1.23`; only `role="dialog"` comes for free even in its default modal variant), so `apps/web/components/ui/dialog.tsx` sets it explicitly on every consumer (`#396`)

@@ -130,6 +130,19 @@ describe("ChapterNavHeader", () => {
     ).toBeInTheDocument();
   });
 
+  it("draws the crest and name as placeholders while the chapter loads", () => {
+    // Not a "--" crest beside a "Loading..." label, which reads as a chapter
+    // actually named that.
+    currentChapterQuery.current = { data: undefined, isError: false };
+    render(<ChapterNavHeader collapsed={false} />);
+
+    const trigger = screen.getByRole("button", {
+      name: "Chapter menu (currently Loading chapter)",
+    });
+    expect(trigger).not.toHaveTextContent("Loading");
+    expect(trigger.querySelectorAll(".skeleton-shimmer")).toHaveLength(2);
+  });
+
   it("offers join and chapter settings even with one chapter", async () => {
     chaptersQuery.current = {
       data: [membership("chap-1", "Alpha Chapter")],

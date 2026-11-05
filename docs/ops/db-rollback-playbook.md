@@ -2780,6 +2780,50 @@ drop index if exists public.chat_channels_dm_pair_key;
 alter table public.chat_channels drop constraint if exists chat_channels_dm_two_members;
 ```
 
+## Rollback default channel descriptions (20261105210000)
+
+* **Migration**: `20261105210000_default_channel_descriptions.sql`
+
+A data-only `update` that wrote a starting `description` into the four default channels where it was null (never set). No schema changed.
+
+**There is usually nothing to roll back.** Officers can change or clear any description in Chat admin, and the clients treat a blank one as absent. Keep the migration file in the tree whatever else is reverted ([§ 3) Undo one migration](#3-undo-one-migration)). To clear the starting lines anyway, do it in a later forward migration, and match the exact text on the same name and type pairs the migration touched, so an officer's own edit survives:
+
+```sql
+update chat_channels set description = null
+where (name = 'general' and type = 'PUBLIC'
+       and description = 'The whole chapter. Plans, questions, whatever''s going on.')
+   or (name = 'announcements' and type = 'PUBLIC'
+       and description = 'News from officers. Everyone gets notified.')
+   or (name = 'chapter-audit' and type = 'PUBLIC'
+       and description = 'Officer changes to dues, roles and settings, posted automatically.')
+   or (name = 'alumni' and type = 'ROLE_GATED'
+       and description = 'Alumni and actives keeping in touch.');
+```
+
+## Rollback the role palette defaults (20261105200000)
+
+* **Migration**: `20261105200000_role_color_palette_defaults.sql`
+
+Rewrites `roles.color` on untouched seeded system roles onto the role palette (#3485). No schema changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Reverted code writes any hex again and paints names plain, and the palette values it finds are valid hexes, so nothing breaks while the rows keep their new colors. To restore the old seeds anyway, do it in a later forward migration, not by hand, and only for rows still on the new defaults:
+
+```sql
+update public.roles as r
+set color = v.old_color
+from (
+  values
+    ('PRESIDENT', '#F2994A', '#FFD700'),
+    ('TREASURER', '#6FD08C', '#10B981'),
+    ('VICE_PRESIDENT', '#8FA8FF', null),
+    ('SECRETARY', '#F47FA4', null),
+    ('ALUMNI', '#A9B4C2', '#6B7280')
+) as v(system_key, new_color, old_color)
+where r.system_key = v.system_key
+  and r.is_system = true
+  and r.color = v.new_color;
+```
+
 ## Rollback one document row per object (20261104210000)
 
 * **Migration**: `20261104210000_chapter_documents_storage_path_key.sql`

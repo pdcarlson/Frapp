@@ -28,7 +28,6 @@ import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { dashboardToolbarHeightClassName } from "@/components/shared/table-controls";
@@ -42,6 +41,10 @@ import {
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
+import {
+  PollCardsSkeleton,
+  PollsPageSkeleton,
+} from "@/components/polls/polls-skeleton";
 
 type PollResult = {
   optionIndex: number;
@@ -399,13 +402,7 @@ export function PollsPage() {
           />
         </div>
       )}
-      fallback={
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Checking your chapter permissions&hellip;
-          </p>
-        </div>
-      }
+      fallback={<PollsPageSkeleton />}
       deniedFallback={
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
@@ -475,7 +472,7 @@ export function PollsPage() {
           />
         ) : pollsQuery.isLoading ||
           (pollsQuery.isPending && pollsQuery.fetchStatus === "paused") ? (
-          <NestedLoading sole message="Loading chapter polls..." />
+          <PollCardsSkeleton />
         ) : pollsQuery.isError ? (
           <NestedError
             sole
