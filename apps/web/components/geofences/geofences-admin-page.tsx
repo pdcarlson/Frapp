@@ -41,7 +41,7 @@ import {
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { denseListClassName } from "@/components/shared/table-controls";
-import { PageHeader } from "@/components/layout/page-header";
+import { PageActions } from "@/components/layout/page-actions";
 import { StudyZonesSettingsDrawer } from "@/components/geofences/study-zones-settings-drawer";
 import { can } from "@repo/validation";
 import { Can } from "@/components/shared/can";
@@ -563,22 +563,12 @@ export function GeofencesAdminPage() {
 
   return (
     <>
-      {/*
-        Outside the `<Can>` so the permission-denied, permission-pending and
-        offline branches keep the route's heading — the shell no longer supplies
-        one (#2141).
-      */}
-      <PageHeader
-        title="Study zones"
-        actions={
-          canManageZones ? (
-            <>
-              <StudyZonesSettingsDrawer />
-              {createZone}
-            </>
-          ) : null
-        }
-      />
+      {canManageZones ? (
+        <PageActions>
+          <StudyZonesSettingsDrawer />
+          {createZone}
+        </PageActions>
+      ) : null}
       <Can
         permission="geofences:manage"
         deniedFallback={

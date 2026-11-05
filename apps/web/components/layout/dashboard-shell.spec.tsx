@@ -10,6 +10,10 @@ import { render, screen, within } from "@testing-library/react";
  *   1. every dashboard route sits in the new shell
  *   2. ⌘K is gone from the shell
  *   3. titles are not in the top bar
+ *
+ * Criterion 3 was reversed on 2026-11-05: the owner asked for the page title
+ * back in the top bar (`top-bar.tsx`, `page-title.ts`), so those tests now pin
+ * the title there instead.
  */
 
 const { mockPathname, mockChapter, mockPermissions } = vi.hoisted(() => ({
@@ -38,8 +42,12 @@ vi.mock("@repo/hooks", () => ({
   SEARCH_MIN_QUERY_LENGTH: 3,
 }));
 
-vi.mock("@/lib/auth/select-chapter", () => ({ useSelectChapter: () => vi.fn() }));
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/auth/select-chapter", () => ({
+  useSelectChapter: () => vi.fn(),
+}));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 vi.mock("@/lib/hooks/use-chapter-theme", () => ({ useChapterTheme: () => {} }));
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (
@@ -105,31 +113,58 @@ describe("DashboardShell", () => {
     expect(screen.getByText("route content")).toBeInTheDocument();
   });
 
-  it("puts no page title in the top bar", () => {
-    // #2141: "titles not in top bar". The title is the page's job now
-    // (`page-header.tsx`), so the shell must not derive one from the nav map.
+  it("titles the open route in the top bar, as its only h1", () => {
+    // 2026-11-05: the title moved from each page's toolbar row into the top
+    // bar, derived from the route so every path (loading, offline, error) has
+    // it. The words are the nav row's label.
+    mockPathname.value = "/study";
     render(
       <DashboardShell>
         <p>route content</p>
       </DashboardShell>,
     );
     const banner = screen.getByRole("banner");
-    expect(banner).not.toHaveTextContent("Events");
-    expect(banner).not.toHaveTextContent("Dashboard");
+    const headings = screen.getAllByRole("heading", { level: 1 });
+    expect(headings).toHaveLength(1);
+    expect(within(banner).getByRole("heading", { level: 1 })).toHaveTextContent(
+      "Study hours",
+    );
+    // A top-level route has no parent link: no chapter-name prefix.
+    expect(
+      within(banner).queryByRole("link", { name: "Settings" }),
+    ).not.toBeInTheDocument();
+    mockPathname.value = "/events";
   });
 
-  it("renders no heading of its own at all", () => {
-    // The old shell's <h1> was nested inside a Breadcrumb <nav>, and it
-    // duplicated a title most pages already rendered themselves.
+  it("gives a page under Settings its parent as a link back", () => {
+    mockPathname.value = "/geofences";
+    render(
+      <DashboardShell>
+        <p>route content</p>
+      </DashboardShell>,
+    );
+    const banner = screen.getByRole("banner");
+    expect(within(banner).getByRole("heading", { level: 1 })).toHaveTextContent(
+      "Study zones",
+    );
+    expect(
+      within(banner).getByRole("link", { name: "Settings" }),
+    ).toHaveAttribute("href", "/settings");
+    mockPathname.value = "/events";
+  });
+
+  it("leaves the title cell empty on a route it does not know", () => {
+    // No invented title: the old shell called every unmapped route
+    // "Dashboard", which was the defect #2141 retired.
+    mockPathname.value = "/somewhere-new";
     render(
       <DashboardShell>
         <p>route content</p>
       </DashboardShell>,
     );
     expect(screen.queryByRole("heading")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("navigation", { name: /breadcrumb/i }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("banner")).not.toHaveTextContent("Dashboard");
+    mockPathname.value = "/events";
   });
 
   it("advertises no ⌘K affordance", () => {

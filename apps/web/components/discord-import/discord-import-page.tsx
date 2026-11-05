@@ -16,7 +16,6 @@ import { Can } from "@/components/shared/can";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SectionLabel } from "@/components/shared/section-label";
-import { PageHeader } from "@/components/layout/page-header";
 import {
   anyReadUncached,
   PermissionsOfflineSurface,
@@ -187,12 +186,10 @@ export function DiscordImportPage() {
   return (
     <>
       {/*
-        Outside the `<Can>` so the permission-denied branch keeps the route's
-        heading — the shell no longer supplies one (#2141). The denied card's
-        `<CardTitle>` and the body's were that same title said twice, so both
-        are gone, and so is the card that framed the one denied sentence.
+        The route's heading is the top bar's (`top-bar.tsx`). The denied
+        card's `<CardTitle>` and the body's were that same title said again, so
+        both are gone, and so is the card that framed the one denied sentence.
       */}
-      <PageHeader title="Discord import" />
       <Can
         permission="channels:manage"
         deniedFallback={

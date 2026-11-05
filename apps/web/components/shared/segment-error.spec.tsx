@@ -155,13 +155,13 @@ describe("SegmentError", () => {
 });
 
 describe("the (dashboard) segment boundary", () => {
-  it("renders the route's h1, which it takes over from PageHeader", () => {
-    // It renders instead of the page, and PageHeader owns the route's only h1
-    // now that the shell's was deleted. Left at ErrorState's default h2, the
-    // document would have no level-1 heading at all.
+  it("renders an h2, under the top bar's h1 that the shell keeps around it", () => {
+    // The shell renders the route's h1 (the top bar's page title) around this
+    // boundary too, so a second h1 here would give the document two.
     render(<DashboardSegmentError error={new Error("boom")} retry={vi.fn()} />);
 
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
       "Couldn't load this page",
     );
   });
@@ -182,8 +182,12 @@ describe("the (dashboard) segment boundary", () => {
     const padded = render(
       <DashboardSegmentError error={new Error("boom")} retry={vi.fn()} />,
     );
-    expect(padded.container.firstElementChild?.className).not.toMatch(/\bp-4\b/);
-    expect(padded.container.firstElementChild?.className).toMatch(/\bmax-w-md\b/);
+    expect(padded.container.firstElementChild?.className).not.toMatch(
+      /\bp-4\b/,
+    );
+    expect(padded.container.firstElementChild?.className).toMatch(
+      /\bmax-w-md\b/,
+    );
   });
 
   it("degrades to §10's card rather than a second full-page crest", () => {
