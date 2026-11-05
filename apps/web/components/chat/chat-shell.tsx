@@ -41,8 +41,9 @@ import {
   useSidebarPreferences,
 } from "@repo/hooks";
 import { can, isAnnouncementChannel } from "@repo/validation";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
@@ -1770,10 +1771,8 @@ export function ChatShell({
                       ? UNREACHABLE_COPY[unreachableTarget.reason]
                       : "Finding that message..."}
                 </p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="h-8"
+                <IconButton
+                  label="Dismiss"
                   onClick={() => {
                     // Abandons the target, not just the notice. Clearing only
                     // the message would leave it pending, so the effect would
@@ -1785,8 +1784,8 @@ export function ChatShell({
                     setPendingJumpChannelId(null);
                   }}
                 >
-                  Dismiss
-                </Button>
+                  <X />
+                </IconButton>
               </div>
             ) : null}
           </div>
