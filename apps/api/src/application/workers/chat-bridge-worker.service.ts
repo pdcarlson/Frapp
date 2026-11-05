@@ -18,7 +18,7 @@ import type {
   IChatChannelRepository,
   IChatMessageRepository,
 } from '#domain/repositories/chat.repository.interface';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { WorkerSubscription } from './worker-subscription';
 
 /**
@@ -61,9 +61,9 @@ interface AuditLogRow {
  * "already mirrored". No claim table is needed: the message row is its own
  * claim.
  *
- * Failure modes are non-fatal: the bridge logs and continues. A missing
- * `#chapter-audit` channel for a chapter is a configuration bug, not a
- * runtime failure — the audit row itself is the source of truth.
+ * Failure modes are non-fatal: the bridge logs, reports, and continues. A
+ * missing `#chapter-audit` channel for a chapter is a configuration bug, not
+ * a runtime failure — the audit row itself is the source of truth.
  *
  * Sandbox note: the realtime subscription is opened on
  * `OnApplicationBootstrap`, so unit tests can exercise the row→message
@@ -132,12 +132,12 @@ export class ChatBridgeWorkerService
           (await this.channels.findByName(row.chapter_id, 'chapter-audit'))
             ?.id ?? null;
       } catch (channelError) {
-        logThrowable(
-          this.logger,
-          'warn',
-          `chat-bridge: chapter-audit channel lookup failed for chapter ${row.chapter_id}`,
-          channelError,
-        );
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'chat-bridge-audit-channel-lookup-failed',
+          message: `chat-bridge: chapter-audit channel lookup failed for chapter ${row.chapter_id}`,
+          error: channelError,
+        });
         return;
       }
       if (!channelId) {
@@ -165,12 +165,12 @@ export class ChatBridgeWorkerService
       try {
         outcome = await this.messages.insertIdempotent(message);
       } catch (insertError) {
-        logThrowable(
-          this.logger,
-          'warn',
-          `chat-bridge: system_audit insert failed for audit ${row.id}`,
-          insertError,
-        );
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'chat-bridge-audit-insert-failed',
+          message: `chat-bridge: system_audit insert failed for audit ${row.id}`,
+          error: insertError,
+        });
         return;
       }
       if (outcome === 'duplicate') {
@@ -178,12 +178,12 @@ export class ChatBridgeWorkerService
         this.logger.debug(`chat-bridge: audit ${row.id} already mirrored`);
       }
     } catch (err) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `chat-bridge: unexpected error mirroring audit ${row.id}`,
-        err,
-      );
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'chat-bridge-audit-mirror-unexpected',
+        message: `chat-bridge: unexpected error mirroring audit ${row.id}`,
+        error: err,
+      });
     }
   }
 

@@ -167,7 +167,11 @@ describe("groupReactions", () => {
 function renderItem(
   message: ChatMessage,
   replyParent?: ChatMessage | null,
-  extra: { startsRun?: boolean; onOpenActions?: () => void } = {},
+  extra: {
+    startsRun?: boolean;
+    onOpenActions?: () => void;
+    roleColorFor?: (userId: string) => string | null;
+  } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -177,6 +181,7 @@ function renderItem(
           message={message}
           viewerId={VIEWER}
           nameFor={(id) => (id === OTHER ? "Casey" : null)}
+          roleColorFor={extra.roleColorFor}
           startsRun={extra.startsRun ?? true}
           replyParent={replyParent}
           onRetry={vi.fn()}
@@ -335,6 +340,36 @@ describe("the viewer's own name takes the chapter accent", () => {
     expect(flat).not.toContain("#C49A3A");
     expect(flat).not.toContain("#2B2009");
     expect(flat).toContain("Casey");
+  });
+});
+
+// #3485: everyone else's name wears their top role's palette color.
+describe("an author's name takes their role color", () => {
+  const roleColorFor = (id: string) => (id === OTHER ? "#6FD08C" : "#F2994A");
+
+  it("paints someone else's name in their role color", () => {
+    const tree = renderItem(
+      message({ sender_id: OTHER, content: "hi" }),
+      undefined,
+      {
+        roleColorFor,
+      },
+    );
+    const name = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "Casey",
+    );
+    expect(JSON.stringify(name.props.style)).toContain('"color":"#6FD08C"');
+  });
+
+  it("keeps the viewer's own name in the chapter accent", () => {
+    const flat = JSON.stringify(
+      renderItem(message({ sender_id: VIEWER, content: "hi" }), undefined, {
+        roleColorFor,
+      }).toJSON(),
+    );
+    expect(flat).toContain("#C49A3A");
+    expect(flat).not.toContain("#F2994A");
   });
 });
 

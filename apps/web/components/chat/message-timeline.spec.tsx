@@ -1206,6 +1206,22 @@ describe("MessageTimeline older history (#1571)", () => {
   });
 });
 
+describe("MessageTimeline — role colors (#3485)", () => {
+  it("paints a member's name in the role color the roster resolves", () => {
+    renderTimeline([message({ id: "m-1", sender_id: ALICE })], {
+      roleColorFor: (id: string) => (id === ALICE ? "#B392F0" : null),
+    });
+
+    expect(screen.getByText("Alice Chen")).toHaveStyle({ color: "#B392F0" });
+  });
+
+  it("leaves the name plain without a resolver", () => {
+    renderTimeline([message({ id: "m-1", sender_id: ALICE })]);
+
+    expect(screen.getByText("Alice Chen").getAttribute("style")).toBeNull();
+  });
+});
+
 describe("MessageTimeline — member photos (#732)", () => {
   it("draws a member's photo from the roster beside their message", () => {
     renderTimeline([message({ id: "m-1", sender_id: ALICE })], {

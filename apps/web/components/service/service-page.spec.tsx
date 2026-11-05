@@ -58,6 +58,8 @@ const APPROVED_ENTRY = {
   points_awarded: true,
 };
 
+const entriesPending = vi.hoisted(() => ({ current: false }));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   // The real PUT, so the specs below assert on the request it actually sends.
   putSignedUpload: (await importOriginal<typeof import("@repo/hooks")>())
@@ -65,11 +67,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentChapter: () => mockCurrentChapter(),
   useServiceEntries: (...args: unknown[]) => {
     mockServiceEntries(...args);
-    return {
-      data: [PENDING_ENTRY, APPROVED_ENTRY],
-      isPending: false,
-      isError: false,
-    };
+    return entriesPending.current
+      ? { data: undefined, isPending: true, isError: false }
+      : {
+          data: [PENDING_ENTRY, APPROVED_ENTRY],
+          isPending: false,
+          isError: false,
+        };
   },
   useMembers: () => ({ data: [] }),
   useCreateServiceEntry: () => ({ mutateAsync: mockCreateEntry }),
@@ -119,6 +123,27 @@ const expectNoWithdraw = () =>
   ).not.toBeInTheDocument();
 const viewProofButton = () =>
   screen.getByRole("button", { name: /view proof/i });
+
+describe("ServiceHoursPage first load", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+    mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
+    entriesPending.current = true;
+  });
+  afterEach(() => {
+    entriesPending.current = false;
+  });
+
+  it("draws the page's own flush skeleton, not a card", () => {
+    const { container } = render(<ServiceHoursPage />);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading service hours",
+    );
+    expect(container.querySelector(".bg-card")).toBeNull();
+  });
+});
 
 describe("ServiceHoursPage subscription gating", () => {
   beforeEach(() => {

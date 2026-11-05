@@ -57,6 +57,14 @@ jest.mock('@repo/chapter-theme', () => ({
   ).SIGNET_ENGINE_VERSION,
 }));
 
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
+
+import * as Sentry from '@sentry/nestjs';
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import {
@@ -609,6 +617,54 @@ describe('ChapterConfigService — branding accent (#795)', () => {
         CHAPTER_ID,
         expect.anything(),
         '#2F6B4F',
+      );
+    });
+
+    // The 2026-11-05 prod incident: Settings → Chapter → Save mark sent
+    // `{ short_name, show_greek_letters }`, the DTO arrived with an own
+    // `undefined` for every other branding key, and the merge stored their
+    // absence: accent, letters, designation, school and founding year gone,
+    // and the palette re-derived from no seed. An `undefined` is a key the
+    // client never sent, so the stored value stands.
+    it('keeps every stored branding key a PATCH carries only as undefined', async () => {
+      const stored = {
+        colors: { accent: '#35005F' },
+        greek_letters: 'ΦΓΔ',
+        designation: 'Tau Nu',
+        school_short: 'RPI',
+        founded_at: 1878,
+      };
+      const repos = makeRepos([], null, {}, null, null, {
+        chapterBranding: stored,
+      });
+      const service = await buildService(repos);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        branding: {
+          short_name: 'FIJI',
+          show_greek_letters: false,
+          greek_letters: undefined,
+          designation: undefined,
+          school_short: undefined,
+          founded_at: undefined,
+          colors: undefined,
+        },
+      });
+
+      const [, write] = repos.chapterUpdate.mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      expect(write.branding).toEqual({
+        ...stored,
+        short_name: 'FIJI',
+        show_greek_letters: false,
+      });
+      expect(write).not.toHaveProperty('accent_color');
+      expect(repos.paletteWrite).toHaveBeenCalledWith(
+        CHAPTER_ID,
+        expect.anything(),
+        '#35005F',
       );
     });
 
@@ -1581,6 +1637,34 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
     scholarship_pool_cents: 10000,
     installment_count: 2,
   };
+
+  it('reports a failed trailing read once, as a warning, and still returns the merged state', async () => {
+    const captureException = jest.mocked(Sentry.captureException);
+    captureException.mockClear();
+    const repos = makeRepos([], CONFIGURED_DUES, {}, null, null, {
+      readErrorOnCall: { dues: 2 },
+      trailingReadError: TRAILING,
+    });
+    const service = await buildService(repos);
+    jest.spyOn(service['logger'], 'warn').mockImplementation(() => undefined);
+    jest.spyOn(service['logger'], 'error').mockImplementation(() => undefined);
+
+    const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
+      dues: { cadence: 'monthly' },
+    });
+
+    expect(result.dues).toMatchObject({ cadence: 'monthly' });
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        level: 'warning',
+        fingerprint: expect.arrayContaining([
+          'caught-failure',
+          'chapter-config-trailing-read',
+        ]),
+      }),
+    );
+  });
 
   it('returns the merged dues row when only the trailing dues read fails', async () => {
     const repos = makeRepos([], CONFIGURED_DUES, {}, null, null, {

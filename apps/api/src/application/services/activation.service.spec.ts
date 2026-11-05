@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nestjs';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ACTIVATION_MILESTONES } from '#domain/constants/activation-milestones';
 import { ActivationService } from './activation.service';
@@ -7,12 +8,20 @@ import {
   type IActivationMilestoneRepository,
 } from '#domain/repositories/activation-milestone.repository.interface';
 
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
+
 describe('ActivationService', () => {
   let service: ActivationService;
   let mockRepo: jest.Mocked<IActivationMilestoneRepository>;
   let mockAnalytics: jest.Mocked<Pick<AnalyticsService, 'trackForChapter'>>;
 
   beforeEach(async () => {
+    captureException.mockClear();
     mockRepo = {
       recordFirst: jest.fn().mockResolvedValue(true),
     };
@@ -97,6 +106,24 @@ describe('ActivationService', () => {
       service.record('ch-1', 'activation-checkout-completed'),
     ).resolves.toBe(false);
     expect(mockAnalytics.trackForChapter).not.toHaveBeenCalled();
+  });
+
+  it('reports a swallowed failure to Sentry once, grouped by its catch site', async () => {
+    mockRepo.recordFirst.mockRejectedValue(new Error('db down'));
+
+    await expect(
+      service.record('ch-1', 'activation-checkout-completed'),
+    ).resolves.toBe(false);
+
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException.mock.calls[0]?.[1]).toMatchObject({
+      level: 'error',
+      tags: {
+        milestone: 'activation-checkout-completed',
+        caught_at: 'activation-milestone-record',
+      },
+      fingerprint: ['caught-failure', 'activation-milestone-record', 'Error'],
+    });
   });
 
   it('swallows an analytics failure after the milestone is already stored', async () => {

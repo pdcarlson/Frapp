@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-05: Seeded role colors move onto the role palette (#3485)
+
+### 20261105200000_role_color_palette_defaults.sql
+
+- **Purpose**: Rewrites `roles.color` on seeded system roles a chapter never touched, so they use the role palette the rule in [`spec/behavior/rbac.md`](../../../spec/behavior/rbac.md) describes. President `#FFD700` → `#F2994A`, Treasurer `#10B981` → `#6FD08C`, Alumni `#6B7280` → `#A9B4C2`, and Vice President and Secretary `null` → `#8FA8FF` and `#F47FA4`. A row is rewritten only while its color still equals the old seed (`is not distinct from`). For Vice President and Secretary that seed is `null`, which also matches a color a chapter cleared through the API; the web picker never sent a clear. Member, New Member, custom roles and any color a chapter chose are left alone. No column, index, constraint or policy changes.
+- **Checks**: Before `db push`, `select system_key, color, count(*) from public.roles group by 1, 2 order by 1, 2;` on 2026-11-05 showed two chapters on each of `frapp-staging` and `frapp-prod`, every system role on its seed, and no custom role with a color. After it, the same query shows the five new values with two rows each, and Member and New Member still `null`.
+- **Promoter notes**: Ship it with the API and clients from the same PR, in either order. An older client paints names plain whatever the column holds, and the newer clients paint only palette values, so an unmigrated database shows no color on the old seeds until this runs. The update touches at most five rows per chapter. Re-applying changes nothing, because rewritten rows no longer match the old seeds. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-role-palette-defaults-20261105200000) § Rollback the role palette defaults.
+
 ## 2026-11-04: One chapter_documents row per stored object (#3399)
 
 ### 20261104210000_chapter_documents_storage_path_key.sql

@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 
 const mockChunkPushNotifications = jest.fn();
 const mockSendPushNotificationsAsync = jest.fn();
@@ -15,6 +16,14 @@ jest.mock('expo-server-sdk', () => {
   return { __esModule: true, default: MockExpo, Expo: MockExpo };
 });
 
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
+const captureMessage = jest.mocked(Sentry.captureMessage);
+
 // Imported after the mock so the provider's `new Expo()` field picks it up.
 import { ExpoPushProvider, redactPushTokens } from './expo-push.provider';
 
@@ -24,8 +33,19 @@ const VALID_C = 'ExponentPushToken[cccccccccccccccccccccc]';
 
 /** Parse the single `push_delivery` record emitted by a send. */
 function recordFrom(spy: jest.SpyInstance): Record<string, unknown> {
-  expect(spy).toHaveBeenCalledTimes(1);
-  return JSON.parse(spy.mock.calls[0][0] as string) as Record<string, unknown>;
+  const records = spy.mock.calls
+    .map((call) => String(call[0]))
+    .filter((line) => line.startsWith('{"event":"push_delivery"'));
+  expect(records).toHaveLength(1);
+  return JSON.parse(records[0]) as Record<string, unknown>;
+}
+
+/** The provider-error lines a send logged, joined. */
+function providerErrorLines(spy: jest.SpyInstance): string {
+  return spy.mock.calls
+    .map((call) => String(call[0]))
+    .filter((line) => line.startsWith('push_delivery provider error'))
+    .join('\n');
 }
 
 describe('ExpoPushProvider', () => {
@@ -313,6 +333,31 @@ describe('ExpoPushProvider', () => {
       });
     });
 
+    it('reports a throwing chunk to Sentry once, at warning, without the provider message', async () => {
+      mockSendPushNotificationsAsync.mockRejectedValue(
+        new Error(`${VALID_A} is not a registered push notification recipient`),
+      );
+
+      await expect(
+        provider.sendToUser([VALID_A], { title: 'Hi', body: 'There' }),
+      ).resolves.toEqual({ invalidTokens: [] });
+
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(captureException).not.toHaveBeenCalled();
+      expect(captureMessage).toHaveBeenCalledTimes(1);
+      expect(captureMessage).toHaveBeenCalledWith(
+        'caught failure: expo-push-provider-error',
+        {
+          level: 'warning',
+          tags: { error_name: 'Error', caught_at: 'expo-push-provider-error' },
+          fingerprint: ['caught-failure', 'expo-push-provider-error'],
+        },
+      );
+      expect(JSON.stringify(captureMessage.mock.calls)).not.toContain(
+        'aaaaaaaaaaaaaaaaaaaaaa',
+      );
+    });
+
     it('keeps a chunk failure from suppressing a sibling chunk', async () => {
       mockChunkPushNotifications.mockImplementation((messages: unknown[]) => [
         [messages[0]],
@@ -360,7 +405,7 @@ describe('ExpoPushProvider', () => {
 
       await provider.sendToUser([VALID_A], { title: 'Hi', body: 'There' });
 
-      const logged = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      const logged = providerErrorLines(warnSpy);
       expect(logged).toContain('[REDACTED_PUSH_TOKEN]');
       expect(logged).not.toContain('aaaaaaaaaaaaaaaaaaaaaa');
     });
@@ -377,7 +422,7 @@ describe('ExpoPushProvider', () => {
 
       await provider.sendToUser([uuidToken], { title: 'Hi', body: 'There' });
 
-      const logged = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      const logged = providerErrorLines(warnSpy);
       expect(logged).toContain('[REDACTED_PUSH_TOKEN]');
       expect(logged).not.toContain(uuidToken);
     });
@@ -389,7 +434,8 @@ describe('ExpoPushProvider', () => {
 
       await provider.sendToUser([VALID_A], { title: 'Hi', body: 'There' });
 
-      const logged = String(errorSpy.mock.calls[0][0]);
+      const logged = providerErrorLines(warnSpy);
+      expect(logged).not.toBe('');
       expect(logged.length).toBeLessThan(300);
     });
   });
