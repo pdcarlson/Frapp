@@ -176,7 +176,6 @@ The same file's `NotificationsGlyph` (bell, clapper stroke-only; s09 and web
 `NotificationsGlyph`) is drawn by Chat home's inbox bell
 (`components/chat/notifications-bell.tsx`), in `text.foreground` with the
 neutral fill, since the More row it was drawn for moved there (#3362).
-Chat home's UP NEXT rows (`components/chat/up-next-strip.tsx`) reuse the tab bar's `EventsGlyph` (focused, in the chapter accent) and `TasksGlyph` (unfocused, `text.muted`) from §6.1 at 20px, to tell the event from the task.
 
 ### 6.1.3 Mobile chat cards (Signet duotone, shipped)
 
@@ -190,6 +189,7 @@ card's, which is drawn neutral, as web draws it.
 |---|---|---|
 | Event card | `EventsGlyph` (the Events tab's) | `components/tab-glyphs.tsx` |
 | Task card | `TasksGlyph` (the Tasks tab's) | `components/tab-glyphs.tsx` |
+| Chat home's UP NEXT rows (s04, not a card: `components/chat/up-next-strip.tsx`, at 20px) | `EventsGlyph` focused in the chapter accent on the event row, `TasksGlyph` unfocused in `text.muted` on the task row, to tell the two apart | `components/tab-glyphs.tsx` |
 | Points card | `PointsGlyph` (star) | `components/chat/card-glyphs.tsx` |
 | Hours card | The More hub's `ServiceGlyph` heart, adapted as `ServiceHoursGlyph` | `components/chat/card-glyphs.tsx` |
 | Announcement card | `AnnouncementGlyph` (megaphone, sound arc stroke-only) | `components/chat/card-glyphs.tsx` |

@@ -5,6 +5,7 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectRoundedRipple } from "@/test/pressable-row";
 
 // The row itself takes no chapter accent, but `useChapterBranding` reaches
 // `useCurrentChapter` and would drag the API client and a QueryClient into a
@@ -119,7 +120,7 @@ describe("TaskRow — the overdue colour", () => {
 });
 
 // A task row is a list row, so it answers a press as every list row does
-// (`usePressFeedback`): a ripple on Android and, because the row is itself a
+// (`usePressFeedback`, through `PressableRow`): a ripple on Android and, because the row is itself a
 // card, a lift to the popover step on iOS. Never the fade it used to give.
 describe("TaskRow — press feedback", () => {
   it("ripples on Android and lifts card to popover on iOS, never fading", () => {
@@ -135,8 +136,16 @@ describe("TaskRow — press feedback", () => {
     expect(pressable.props.android_ripple?.color).toMatch(/^rgba\(/);
     expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
     expect(held).not.toHaveProperty("opacity");
-    // Clips the ripple to the card's rounded corners.
-    expect(held.overflow).toBe("hidden");
+    // The ripple is rounded by a parent clip with the card's radius
+    // (`PressableRow`); the row's own `overflow` would leave it square.
+    const { clip } = expectRoundedRipple(
+      pressable,
+      signetDarkTokens.radius.card,
+    );
+    // The row has no margins, so the clip adds none and the row stays put.
+    expect(Object.keys(clip).filter((key) => key.startsWith("margin"))).toEqual(
+      [],
+    );
   });
 });
 

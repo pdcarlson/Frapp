@@ -6,10 +6,12 @@ import { describe, expect, it, vi } from "vitest";
 import { Platform } from "react-native";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectRoundedRipple } from "@/test/pressable-row";
 import {
   ListRow,
   listRowHint,
   type ListRowProps,
+  PressableRow,
   type PressFeedback,
   usePressFeedback,
 } from "./list-section";
@@ -132,6 +134,74 @@ describe("usePressFeedback", () => {
     const feedback = feedbackOn("android");
     expect(feedback.ripple.color).toMatch(/^rgba\(237,234,227,0\.12\)$/);
     expect(feedback.lift(true)).toBeNull();
+  });
+});
+
+// React Native paints the ripple as the row's own background, which the row's
+// radius and `overflow` never clip; only a parent's clip rounds it. So the
+// ripple-bearing Pressable sits inside a View with the row's radius and
+// `overflow: "hidden"`, and the row's margins move onto that View so the row
+// is laid out where it was.
+describe("PressableRow", () => {
+  function renderRow(props: Partial<React.ComponentProps<typeof PressableRow>>) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <PressableRow
+            accessibilityLabel="Row"
+            onPress={vi.fn()}
+            style={[
+              {
+                paddingHorizontal: 8,
+                marginHorizontal: -8,
+                marginTop: 4,
+                borderRadius: 12,
+              },
+              null,
+              { borderTopLeftRadius: 6 },
+            ]}
+            {...props}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree.root.find((node) => (node.type as unknown) === "Pressable");
+  }
+
+  it("clips its ripple in a parent with the row's radius, and moves the margins there", () => {
+    const row = renderRow({});
+    const { clip, resting } = expectRoundedRipple(row, 12);
+
+    expect(clip).toEqual({
+      overflow: "hidden",
+      marginHorizontal: -8,
+      marginTop: 4,
+      borderRadius: 12,
+      borderTopLeftRadius: 6,
+    });
+    expect(resting).toEqual({
+      paddingHorizontal: 8,
+      borderRadius: 12,
+      borderTopLeftRadius: 6,
+    });
+    expect(row.props.accessibilityLabel).toBe("Row");
+  });
+
+  it("lifts on iOS while held, and to the popover step for a card", () => {
+    // The suite's react-native stub runs as iOS.
+    expect(renderRow({}).props.style({ pressed: true })).toContainEqual({
+      backgroundColor: signetDarkTokens.color.surface.card,
+    });
+    expect(
+      renderRow({ onCard: true }).props.style({ pressed: true }),
+    ).toContainEqual({
+      backgroundColor: signetDarkTokens.color.surface.popover,
+    });
+  });
+
+  it("gives a disabled row no ripple", () => {
+    expect(renderRow({ disabled: true }).props.android_ripple).toBeUndefined();
   });
 });
 

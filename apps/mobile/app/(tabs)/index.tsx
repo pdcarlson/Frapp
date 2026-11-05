@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   arrangeChannelSidebar,
@@ -45,7 +45,7 @@ import {
   ChannelRow,
   UnreadBadge,
 } from "@/components/chat/channel-row";
-import { usePressFeedback } from "@/components/list-section";
+import { PressableRow } from "@/components/list-section";
 import {
   EmptyState,
   EmptyStateAction,
@@ -90,7 +90,6 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 export default function ChatHomeScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const feedback = usePressFeedback();
   const router = useRouter();
   // s17 is a sheet hosted by its parent screen, not a route
   // (`spec/ui/mobile/patterns.md` § Bottom sheets), so this screen owns the
@@ -304,6 +303,10 @@ export default function ChatHomeScreen() {
           title="Couldn't load channels"
           body="Chat couldn't reach the server."
           onRetry={() => void channelsQuery.refetch()}
+          // Names what it retries, so the button still makes sense heard on
+          // its own (a screen reader's list of buttons) and not only under
+          // the card's title.
+          retryLabel="Try loading channels again"
           isRetrying={channelsQuery.isFetching}
         />
       ) : allChannels.length === 0 ? (
@@ -358,7 +361,7 @@ export default function ChatHomeScreen() {
                 a double-tap does. A folded label also carries the section's
                 total, since the badge inside is not read on its own.
               */}
-              <Pressable
+              <PressableRow
                 accessibilityRole="header"
                 accessibilityState={{ expanded: !section.collapsed }}
                 accessibilityLabel={
@@ -379,11 +382,7 @@ export default function ChatHomeScreen() {
                     collapsed: !section.collapsed,
                   })
                 }
-                android_ripple={feedback.ripple}
-                style={({ pressed }) => [
-                  styles.sectionHeader,
-                  feedback.lift(pressed),
-                ]}
+                style={styles.sectionHeader}
               >
                 <Text style={styles.sectionChevron}>
                   {section.collapsed ? "▸" : "▾"}
@@ -402,7 +401,7 @@ export default function ChatHomeScreen() {
                     addressed={section.addressed}
                   />
                 ) : null}
-              </Pressable>
+              </PressableRow>
               {section.rows.map(renderChannel)}
             </View>
           ))}
@@ -426,20 +425,16 @@ export default function ChatHomeScreen() {
 
           {hidden.length > 0 ? (
             <View style={styles.section}>
-              <Pressable
+              <PressableRow
                 accessibilityRole="button"
                 accessibilityState={{ expanded: showHidden }}
                 onPress={() => setShowHidden((open) => !open)}
-                android_ripple={feedback.ripple}
-                style={({ pressed }) => [
-                  styles.hiddenToggle,
-                  feedback.lift(pressed),
-                ]}
+                style={styles.hiddenToggle}
               >
                 <Text style={styles.sectionLabel}>
                   {`${HIDDEN_CONVERSATIONS_LABEL} (${hidden.length})`}
                 </Text>
-              </Pressable>
+              </PressableRow>
               {showHidden
                 ? hidden.map((channel) => (
                     <ChannelRow

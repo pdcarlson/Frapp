@@ -4,6 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectRoundedRipple } from "@/test/pressable-row";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -210,9 +211,9 @@ describe("More hub anatomy (#1048)", () => {
     );
   });
 
-  // The profile card answers a press as a list row does (`usePressFeedback`).
-  // It is a card, so its iOS lift is to the popover step rather than to its
-  // own colour.
+  // The profile card answers a press as a list row does (`usePressFeedback`,
+  // through `PressableRow`). It is a card, so its iOS lift is to the popover
+  // step rather than to its own colour.
   it("ripples the profile card on Android and lifts it card to popover on iOS", () => {
     const card = render().root.find(
       (node) =>
@@ -228,6 +229,9 @@ describe("More hub anatomy (#1048)", () => {
     // The suite's react-native stub runs as iOS.
     expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
     expect(held).not.toHaveProperty("opacity");
+    // The ripple is rounded by a parent clip with the card's radius
+    // (`PressableRow`); the card's own `overflow` would leave it square.
+    expectRoundedRipple(card, signetDarkTokens.radius.cardLarge);
   });
 
   it("draws labels without a description line, and names the current chapter", () => {

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import {
   dayDelta,
@@ -12,7 +12,7 @@ import {
   type ChapterBranding,
   useChapterBranding,
 } from "@/lib/chapter-branding";
-import { usePressFeedback } from "@/components/list-section";
+import { PressableRow } from "@/components/list-section";
 import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
 
 /**
@@ -225,7 +225,6 @@ export function UpNextStrip({
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
-  const feedback = usePressFeedback();
   const router = useRouter();
 
   // `now` is read once per render rather than per row, so the two rows cannot
@@ -244,7 +243,7 @@ export function UpNextStrip({
       <Text style={styles.eyebrow}>UP NEXT</Text>
 
       {event ? (
-        <Pressable
+        <PressableRow
           accessibilityRole="button"
           accessibilityLabel={`${event.name}, ${formatEventTime(event.start_time, at)}`}
           accessibilityHint="Open event details."
@@ -258,8 +257,7 @@ export function UpNextStrip({
               params: { id: event.id },
             })
           }
-          android_ripple={feedback.ripple}
-          style={({ pressed }) => [styles.row, feedback.lift(pressed)]}
+          style={styles.row}
         >
           <EventsGlyph
             focused
@@ -276,19 +274,18 @@ export function UpNextStrip({
           <Text style={styles.eventTime}>
             {formatEventTime(event.start_time, at)}
           </Text>
-        </Pressable>
+        </PressableRow>
       ) : null}
 
       {event && task ? <View style={styles.divider} /> : null}
 
       {task ? (
-        <Pressable
+        <PressableRow
           accessibilityRole="button"
           accessibilityLabel={`${task.title}, ${formatDueDate(task.due_date, at)}`}
           accessibilityHint="Open the task board."
           onPress={() => router.push("/tasks")}
-          android_ripple={feedback.ripple}
-          style={({ pressed }) => [styles.row, feedback.lift(pressed)]}
+          style={styles.row}
         >
           <TasksGlyph
             focused={false}
@@ -307,7 +304,7 @@ export function UpNextStrip({
           >
             {formatDueDate(task.due_date, at)}
           </Text>
-        </Pressable>
+        </PressableRow>
       ) : null}
     </View>
   );
