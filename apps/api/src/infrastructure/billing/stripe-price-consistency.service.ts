@@ -40,6 +40,7 @@ export class StripePriceConsistencyService implements OnModuleInit {
         'STRIPE_PRICE_ID is empty',
         { code: 'price_id_empty' },
       );
+      // caught-failure-exempt: rethrown; boot failure is captured in main.ts, a readiness 503 by AllExceptionsFilter
       this.logger.error(err.message);
       throw err;
     }
@@ -56,6 +57,7 @@ export class StripePriceConsistencyService implements OnModuleInit {
           'configured Price is inactive',
           { code: 'price_inactive' },
         );
+        // caught-failure-exempt: rethrown; boot failure is captured in main.ts, a readiness 503 by AllExceptionsFilter
         this.logger.error(err.message);
         throw err;
       }
@@ -70,6 +72,7 @@ export class StripePriceConsistencyService implements OnModuleInit {
         const err = new StripePriceAccountMismatchError(priceId, reason, {
           cause: toReportableError(error),
         });
+        // caught-failure-exempt: rethrown; boot failure is captured in main.ts, a readiness 503 by AllExceptionsFilter
         this.logger.error(err.message);
         throw err;
       }

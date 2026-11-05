@@ -162,6 +162,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const requestId = request.requestId ?? getRequestId() ?? 'unknown';
 
     if (status >= 500) {
+      // caught-failure-exempt: this is the 5xx report; reportToSentry below sends it
       this.logger.error(
         JSON.stringify({
           requestId,

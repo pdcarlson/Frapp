@@ -25,6 +25,7 @@ import { NotificationService } from './notification.service';
 import { ChapterWorkflowsService } from './chapter-workflows.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 export interface CreateInvoiceInput {
   chapter_id: string;
@@ -248,12 +249,12 @@ export class FinancialInvoiceService {
           invoice.stripe_payment_intent_id,
         );
       } catch (error) {
-        logThrowable(
-          this.logger,
-          'warn',
-          `Failed to cancel PaymentIntent ${invoice.stripe_payment_intent_id} while moving invoice ${id} to ${newStatus} (the intent may still be confirmable; verify in Stripe)`,
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'invoice-payment-intent-cancel-failed',
+          message: `Failed to cancel PaymentIntent ${invoice.stripe_payment_intent_id} while moving invoice ${id} to ${newStatus} (the intent may still be confirmable; verify in Stripe)`,
           error,
-        );
+        });
       }
     }
 
@@ -345,6 +346,7 @@ export class FinancialInvoiceService {
           'A payment attempt for this invoice is already in progress. Please retry in a moment.',
         );
       }
+      // caught-failure-exempt: rethrown as a 503 with cause; AllExceptionsFilter reports the 5xx
       logThrowable(
         this.logger,
         'error',

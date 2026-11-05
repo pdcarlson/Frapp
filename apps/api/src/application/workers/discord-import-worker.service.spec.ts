@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
+import * as Sentry from '@sentry/nestjs';
 import {
   DiscordImportWorkerService,
   IMPORT_BATCH_SIZE,
@@ -22,6 +23,21 @@ import type {
   DiscordImportFile,
 } from '#domain/entities/discord-import.entity';
 import type { ImportedMessageRow } from '#domain/utils/discord-export';
+import { DiscordApiError } from '#domain/adapters/discord.interface';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
+
+/** The `caught_at` site of every Sentry capture so far. */
+function reportedSites(): string[] {
+  return jest
+    .mocked(Sentry.captureException)
+    .mock.calls.map(
+      (call) => (call[1] as { tags: { caught_at: string } }).tags.caught_at,
+    );
+}
 
 const FIXTURES = join(__dirname, '../../../test/fixtures/discord');
 const CHAPTER = 'chapter-1';
@@ -368,6 +384,7 @@ async function buildWorker(
     worker: moduleRef.get(DiscordImportWorkerService),
     channelRepo,
     channelCache,
+    connectionRepo,
   };
 }
 
@@ -1197,14 +1214,95 @@ describe('DiscordImportWorkerService — importing', () => {
   });
 
   it('never lets a sweep failure escape the cron handler', async () => {
-    // An unhandled rejection out of a @Cron takes the API process down under
-    // Node's default --unhandled-rejections=throw.
+    // A rejection out of a @Cron reaches only Nest's raw logger.error, which
+    // no alert sees.
     repoRef.claimNextRunnable = jest.fn(async () => {
       throw new Error('database down');
     });
     const { worker } = await buildWorker(repoRef, makeStorage(part000()));
 
     await expect(worker.handleImportSweep()).resolves.toBeUndefined();
+  });
+
+  describe('what reaches Sentry', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('reports a failed tick once, however many ticks fail', async () => {
+      repoRef.claimNextRunnable = jest.fn(async () => {
+        throw new Error('database down');
+      });
+      const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+      await expect(worker.handleImportSweep()).resolves.toBeUndefined();
+      await expect(worker.handleImportSweep()).resolves.toBeUndefined();
+
+      expect(reportedSites()).toEqual(['discord-import-sweep-tick']);
+    });
+
+    it('reports an import that a fault stopped, and still marks it failed', async () => {
+      const storage = makeStorage(part000());
+      storage.downloadFile.mockImplementation(async () => {
+        throw new Error('storage exploded');
+      });
+      const { worker } = await buildWorker(repoRef, storage);
+
+      const result = await worker.sweepImports(NOW);
+
+      expect(result).toMatchObject({ claimed: true, finished: true });
+      expect(repoRef.state().status).toBe('failed');
+      expect(reportedSites()).toEqual(['discord-import-job-failed']);
+    });
+
+    it('does not report a stop the admin can fix', async () => {
+      repoRef.channels = [channelMapping({ target_channel_id: null })];
+      const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+      await worker.sweepImports(NOW);
+
+      expect(repoRef.state().status).toBe('failed');
+      expect(Sentry.captureException).not.toHaveBeenCalled();
+    });
+
+    it('does not report Discord refusing the bot', async () => {
+      repoRef = makeRepo(job({ source: 'bot', status: 'running' }));
+      const exportWorker = {
+        runSlice: jest.fn(async () => {
+          throw new DiscordApiError('Missing Access', 403);
+        }),
+      };
+      const { worker } = await buildWorker(repoRef, makeStorage(null), {
+        exportWorker,
+      });
+
+      await worker.sweepImports(NOW);
+
+      expect(repoRef.state()).toMatchObject({
+        status: 'failed',
+        error: 'Missing Access',
+      });
+      expect(Sentry.captureException).not.toHaveBeenCalled();
+    });
+
+    it('reports a failed OAuth state reap as a warning', async () => {
+      const { worker, connectionRepo } = await buildWorker(
+        repoRef,
+        makeStorage(null),
+      );
+      connectionRepo.deleteExpiredStates.mockRejectedValue(
+        new Error('database down'),
+      );
+
+      await expect(worker.handleOAuthStateSweep()).resolves.toBeUndefined();
+
+      expect(reportedSites()).toEqual(['discord-oauth-state-sweep']);
+      expect(
+        jest.mocked(Sentry.captureException).mock.calls[0]?.[1],
+      ).toMatchObject({
+        level: 'warning',
+      });
+    });
   });
 
   it('bounds the warning list', async () => {
