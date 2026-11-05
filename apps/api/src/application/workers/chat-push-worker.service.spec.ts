@@ -811,6 +811,27 @@ describe('ChatPushWorkerService', () => {
       });
     });
 
+    it('reports a failed push to one recipient as a warning, and pushes the rest', async () => {
+      const worker = await compileWorker({ claim: sharedClaimStore() });
+      worker.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+      setMembers(['sender', 'a', 'b']);
+      notifyUser.mockImplementation(async (userId: string) => {
+        if (userId === 'a') throw new Error('push provider down');
+      });
+      jest.mocked(Sentry.captureException).mockClear();
+
+      await worker.handleMessage(MESSAGE);
+
+      expect(notifyUser.mock.calls.map((c) => c[0]).sort()).toEqual(['a', 'b']);
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+      expect(
+        jest.mocked(Sentry.captureException).mock.calls[0]?.[1],
+      ).toMatchObject({
+        level: 'warning',
+        tags: { caught_at: 'chat-push-notify-recipient' },
+      });
+    });
+
     it('the instance that loses the claim still joins the channel presence', async () => {
       // Presence is what keeps a push off the screen of someone already
       // reading the channel, and a subscription only knows the roster once it
@@ -1331,20 +1352,43 @@ describe('ChatPushWorkerService', () => {
       );
     }
 
-    it('warns and pushes nothing when the channel read fails', async () => {
+    it('reports and pushes nothing when the channel read fails', async () => {
       findPushRouting.mockRejectedValue(
         new SupabaseQueryError({ message: 'connection reset', code: '08006' }),
       );
-      const warn = warnSpy();
+      const error = jest
+        .spyOn(
+          (
+            service as unknown as {
+              logger: { error: (...args: unknown[]) => void };
+            }
+          ).logger,
+          'error',
+        )
+        .mockImplementation(() => undefined);
+      jest.mocked(Sentry.captureException).mockClear();
 
       await expect(service.handleMessage(MESSAGE)).resolves.toBeUndefined();
 
       expect(findPushRouting).toHaveBeenCalledWith('ch-uncached');
-      // The lookup's own line, not the handler's catch-all.
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(String(warn.mock.calls[0]?.[0])).toContain(
+      // The lookup's own report, not the handler's catch-all: past the claim
+      // the whole message's pushes are dropped, so it is an error.
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(String(error.mock.calls[0]?.[0])).toContain(
         'chat-push: channel lookup failed',
       );
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+      expect(
+        jest.mocked(Sentry.captureException).mock.calls[0]?.[1],
+      ).toMatchObject({
+        level: 'error',
+        fingerprint: [
+          'caught-failure',
+          'chat-push-channel-lookup',
+          'SupabaseQueryError:08006',
+        ],
+      });
+      error.mockRestore();
       expect(findByChapter).not.toHaveBeenCalled();
       expect(notifyUser).not.toHaveBeenCalled();
     });

@@ -946,7 +946,7 @@ export class ScheduledJobsService {
           : params.recipients;
     } catch (error) {
       reportCaughtFailure(this.logger, {
-        level: 'warning',
+        level: 'error',
         site: `scheduled-reminder-resolve-recipients:${sweep}`,
         message: `${params.entityType} ${params.entityId} (${params.threshold}): could not resolve recipients`,
         error,

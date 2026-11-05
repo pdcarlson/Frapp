@@ -108,8 +108,9 @@ const WORKER_MAY_CONTINUE: DiscordImportStatus[] = ['ready', 'running'];
 const DISCORD_REFUSAL_STATUSES = new Set([401, 403, 404]);
 
 /**
- * Whether an import ended on an expected stop rather than a fault: one of this
- * worker's own admin-facing stops, the integration not configured, or Discord
+ * Whether an import ended on an expected stop rather than a fault: an
+ * admin-facing stop (`DiscordImportStoppedError`, thrown by this worker and by
+ * the bot export worker), the integration not configured, or Discord
  * refusing the bot (a revoked token, missing permissions, a deleted channel).
  * Everything else (the database, storage, the copy service, Discord timeouts
  * and 5xx, and its integrity refusals, which carry no status) is a fault.

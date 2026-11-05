@@ -629,7 +629,7 @@ export class ChatPushWorkerService
       data = await this.channels.findPushRouting(channelId);
     } catch (error) {
       reportCaughtFailure(this.logger, {
-        level: 'warning',
+        level: 'error',
         site: 'chat-push-channel-lookup',
         message: 'chat-push: channel lookup failed',
         error: error,

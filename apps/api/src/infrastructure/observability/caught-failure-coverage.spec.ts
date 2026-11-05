@@ -41,8 +41,8 @@ function sourceFiles(dir: string): string[] {
 }
 
 /**
- * The run of `//` comment lines directly above `index`. A blank line ends
- * it, so an exemption must sit on the call, not a paragraph away.
+ * The run of `//` comment lines directly above `index`, up to six. A blank
+ * line ends it, so an exemption must sit on the call, not a paragraph away.
  */
 function precedingComment(lines: string[], index: number): string {
   const above: string[] = [];

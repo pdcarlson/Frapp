@@ -560,6 +560,10 @@ describe('SupabaseScheduledJobsRepository', () => {
       await expect(
         repo.claimDispatch('chap-1', 'TASK', 'task-1', 'OVERDUE', '2026-08-04'),
       ).resolves.toBe(false);
+      expect(reportedFingerprints()[0]?.slice(0, 2)).toEqual([
+        'caught-failure',
+        'scheduled-dispatch-claim-failed:task.overdue',
+      ]);
     });
   });
 

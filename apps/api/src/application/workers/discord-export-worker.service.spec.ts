@@ -1469,7 +1469,11 @@ describe('DiscordExportWorkerService — attachments', () => {
       ),
     );
 
-    await expect(harness.worker.runSlice(runArgs(harness))).rejects.toThrow(
+    const stop: unknown = await harness.worker
+      .runSlice(runArgs(harness))
+      .catch((e) => e);
+    expect(stop).toBeInstanceOf(DiscordImportStoppedError);
+    expect((stop as Error).message).toMatch(
       /archive would hold .* past its .* limit/,
     );
     expect(harness.copier.copy).not.toHaveBeenCalled();
@@ -1604,7 +1608,9 @@ describe('DiscordExportWorkerService — the missing-intent guard', () => {
     const harness = await build({ pages: [blanks] });
 
     const args = runArgs(harness);
-    await expect(harness.worker.runSlice(args)).rejects.toThrow(
+    const stop: unknown = await harness.worker.runSlice(args).catch((e) => e);
+    expect(stop).toBeInstanceOf(DiscordImportStoppedError);
+    expect((stop as Error).message).toBe(
       missingMessageContentIntentError({ thisRun: 0, earlierRuns: 0 }),
     );
 
@@ -1717,9 +1723,9 @@ describe('DiscordExportWorkerService — the Message Content Intent pre-flight (
     });
     const args = runArgs(harness);
 
-    await expect(harness.worker.runSlice(args)).rejects.toThrow(
-      messageContentIntentOffError(0),
-    );
+    const stop: unknown = await harness.worker.runSlice(args).catch((e) => e);
+    expect(stop).toBeInstanceOf(DiscordImportStoppedError);
+    expect((stop as Error).message).toBe(messageContentIntentOffError(0));
     // Nothing read, made or written: the small-archive case the tally could
     // never see is refused here, with every message still unimported.
     expect(harness.bot.verifyChannelInGuild).not.toHaveBeenCalled();
