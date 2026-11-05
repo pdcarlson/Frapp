@@ -27,8 +27,9 @@ import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
  * Drawn at `canvas-screens.dc.html:117-131`: an `UP NEXT` eyebrow, then two
  * rows separated by a hairline, each a glyph + title + `· context` with a
  * trailing time. The glyphs are the Events and Tasks tab glyphs at the drawn
- * 20pt: the board draws exactly that geometry, the calendar in the accent and
- * the check in the inactive tab's muted paint, so each row says at a glance
+ * 20pt (since 2026-11-05 the shared nav set's shapes, not the board's
+ * geometry), the calendar in the accent and the check in the inactive tab's
+ * muted paint, so each row says at a glance
  * whether it is an event or a task (a dot said neither). The event's trailing
  * time is the chapter accent; an imminent task due date is
  * `semantic.destructive`, which is the drawn `#F85149` — **not** the mention red

@@ -263,7 +263,7 @@ export default function MoreScreen() {
             <ListRow
               label="Host check-in"
               leading={
-                <HostCheckInGlyph color={tokens.color.text.muted} neutral />
+                <HostCheckInGlyph color={tokens.color.text.muted} />
               }
               accessibilityValue={
                 nextEvent ? nextEvent.name : "No upcoming event"

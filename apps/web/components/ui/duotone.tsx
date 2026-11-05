@@ -10,10 +10,14 @@
  *
  * This module holds only the recipe. The glyphs themselves live with the
  * surface that owns their intents — `components/layout/nav-glyphs.tsx` for the
- * shell, `components/chat/chat-glyphs.tsx` for chat — because the intent → glyph
+ * shell's top bar, `components/chat/chat-glyphs.tsx` for chat — because the intent → glyph
  * map in `iconography.md` §6.2 is organised the same way. Two copies of the
  * recipe would be two chances for a surface to drift off it, which is the whole
  * failure mode §1 rule 1 exists to prevent.
+ *
+ * The sidebar nav glyphs are the exception: they draw the two-tone nav set
+ * shared with mobile (`@repo/theme/nav-glyphs`, iconography.md §1.1), not
+ * this recipe.
  */
 
 export type DuotoneGlyphProps = {

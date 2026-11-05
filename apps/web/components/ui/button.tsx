@@ -1,9 +1,9 @@
-import * as React from "react"
-import { Slot } from "@radix-ui/react-slot"
-import { cva, type VariantProps } from "class-variance-authority"
+import * as React from "react";
+import { Slot } from "@radix-ui/react-slot";
+import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "@/lib/utils"
-import { FOCUS_RING } from "@/components/ui/focus"
+import { cn } from "@/lib/utils";
+import { FOCUS_RING } from "@/components/ui/focus";
 
 /*
  * The Signet button, `spec/ui/design-system/components.md` §3.
@@ -87,10 +87,10 @@ const buttonVariants = cva(
         // Square, and 44 rather than the app bar's 38, so an icon-only control
         // clears the touch-target floor (§2) on the 375px layout.
         icon: "h-11 w-11",
-        // A toolbar row's controls (the PageHeader action, filters, search):
+        // A toolbar row's controls (the PageActions row, filters, search):
         // §3's Compact on a mouse, the 44 touch floor on a finger, which is
         // the README's row rule. At 48 the primary action stood taller than
-        // the page's own title row and every list row under it.
+        // the page's title row and every list row under it.
         toolbar: "h-9 px-3 text-sm pointer-coarse:h-11 pointer-coarse:px-3.5",
       },
     },
@@ -98,27 +98,28 @@ const buttonVariants = cva(
       variant: "default",
       size: "default",
     },
-  }
-)
+  },
+);
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
-  asChild?: boolean
+  asChild?: boolean;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button"
+    const Comp = asChild ? Slot : "button";
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         {...props}
       />
-    )
-  }
-)
-Button.displayName = "Button"
+    );
+  },
+);
+Button.displayName = "Button";
 
-export { Button, buttonVariants }
+export { Button, buttonVariants };

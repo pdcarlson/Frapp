@@ -2,8 +2,9 @@
  * Signet duotone glyphs for the Directory family — the actives and alumni tabs
  * of `/members`.
  *
- * Recipe and the shared `Svg` / `stroke` / `detail` / `fillProps` primitives:
- * `components/ui/duotone.tsx` (`spec/ui/design-system/iconography.md` §1). The
+ * Every glyph here draws the shared two-tone set (`@repo/theme/nav-glyphs`,
+ * `spec/ui/design-system/iconography.md` §1.1) except the re-exported
+ * `SearchGlyph`, which keeps the §1 stroke recipe until #3491. The
  * intent → glyph map lives in `iconography.md` §6.2.3 and MUST be updated in
  * the same PR as any change here (§6.3).
  *
@@ -27,8 +28,9 @@
  * drift §1 rule 1 bans.
  */
 
-import { Svg, detail, fillProps, stroke } from "@/components/ui/duotone";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
+import { NavGlyph } from "@/components/layout/nav-glyphs";
 
 export {
   DirectoryGlyph,
@@ -44,17 +46,12 @@ export type DirectoryGlyphProps = DuotoneGlyphProps;
  * One intent that shipped as two icons: `UserPlus` on the directory's trigger
  * and `ShieldPlus` in the dialog that trigger opens. The shield was the wrong
  * half of the story anyway — the dialog issues an invite token, it does not
- * grant a role — so both take the person-plus-mark drawing, and the head shares
- * `DirectoryGlyph`'s geometry so the two read as the same person.
+ * grant a role — so both take the person-plus-mark drawing: Phosphor
+ * `user-plus` from the shared two-tone set (`@repo/theme/nav-glyphs`), the
+ * family `DirectoryGlyph`'s `users-three` comes from.
  */
-export function InviteGlyph({ className, active }: DirectoryGlyphProps) {
-  return (
-    <Svg className={className}>
-      <circle cx="9.5" cy="8.6" r="3.4" {...stroke} {...fillProps(active)} />
-      <path d="M3.8 19c.8-3.1 3.1-4.7 5.7-4.7s4.9 1.6 5.7 4.7" {...detail} />
-      <path d="M18.6 7.2v5.2M16 9.8h5.2" {...detail} />
-    </Svg>
-  );
+export function InviteGlyph(props: DirectoryGlyphProps) {
+  return <NavGlyph paths={NAV_GLYPHS.invite} {...props} />;
 }
 
 /*
