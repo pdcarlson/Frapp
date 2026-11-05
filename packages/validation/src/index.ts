@@ -462,6 +462,18 @@ export function moduleRefusalFromServerMessage(
   return { moduleKey };
 }
 
+/**
+ * The 400 `POST /v1/service-entries` answers when the chapter's
+ * `wf_hours_receipt` workflow is on and the entry carries no `proof_path`.
+ * `ServiceEntryService.create` throws exactly this string, and it carries no
+ * `code`, so it lives here: mobile s20 recognises the refusal by it and asks
+ * for a photo, and one constant means the two cannot drift. A member can't
+ * read the workflow itself (`GET /v1/chapters/:id/config` needs
+ * `chapter-config:view`), so this answer is how the phone learns of it.
+ */
+export const SERVICE_RECEIPT_REQUIRED_MESSAGE =
+  "This chapter requires a receipt (photo or signed slip) with service-hour submissions — attach proof and resubmit";
+
 // ── Chat message schemas (Chunk 02; hot-path moved to NestJS in #416)
 // Originally shared with the Deno Edge Functions; kept dependency-light
 // (zod only) so any future Deno consumer can still import this file

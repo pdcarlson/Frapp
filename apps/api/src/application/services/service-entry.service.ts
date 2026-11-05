@@ -12,6 +12,7 @@ import {
   isAllowedUploadMime,
   isWithinUploadSizeLimit,
   MAX_UPLOAD_LABEL,
+  SERVICE_RECEIPT_REQUIRED_MESSAGE,
 } from '@repo/validation';
 import { SERVICE_ENTRY_REPOSITORY } from '#domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '#domain/repositories/service-entry.repository.interface';
@@ -365,9 +366,7 @@ export class ServiceEntryService {
         WORKFLOW_HOURS_RECEIPT,
       );
       if (receiptPolicy.enabled) {
-        throw new BadRequestException(
-          'This chapter requires a receipt (photo or signed slip) with service-hour submissions — attach proof and resubmit',
-        );
+        throw new BadRequestException(SERVICE_RECEIPT_REQUIRED_MESSAGE);
       }
     } else {
       await this.assertValidProofPath(input.chapter_id, proofPath);

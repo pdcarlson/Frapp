@@ -8,9 +8,16 @@ import { expectBackRow } from "@/test/back-row";
 import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
-import { moduleDisabledMessage } from "@repo/validation";
+import {
+  SERVICE_RECEIPT_REQUIRED_MESSAGE,
+  moduleDisabledMessage,
+} from "@repo/validation";
 import { expectViewerScopedReads } from "@/test/service-entry-reads";
 import { serviceDatePresets } from "@/lib/more/service-hours";
+import {
+  PROOF_SIZE_REFUSAL,
+  RECEIPT_REQUIRED_COPY,
+} from "@/lib/more/service-proof";
 
 /**
  * The s20 "Log service hours" sheet on a subscription refusal (#2410), the
@@ -96,6 +103,17 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentUser: () => ({ isError: false }),
   useServiceEntries: (...args: unknown[]) => useServiceEntries(...args),
   useCreateServiceEntry: () => ({ mutate, isPending }),
+  useRequestServiceProofUploadUrl: () => ({ mutateAsync: requestProofUrl }),
+}));
+
+const requestProofUrl = vi.fn();
+const pickProofPhoto = vi.fn<() => Promise<unknown>>();
+const uploadProofPhoto = vi.fn<(...args: unknown[]) => Promise<unknown>>();
+
+vi.mock("@/lib/more/service-proof", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/more/service-proof")>()),
+  pickProofPhoto: () => pickProofPhoto(),
+  uploadProofPhoto: (...args: unknown[]) => uploadProofPhoto(...args),
 }));
 
 /** `null` online; the offline copy from `lib/connection/state.ts` otherwise. */
@@ -191,6 +209,8 @@ beforeEach(() => {
   mutate.mockImplementation(failNow);
   dismiss.mockReset();
   successHaptic.mockReset();
+  pickProofPhoto.mockReset();
+  uploadProofPhoto.mockReset();
   isPending = false;
   entries = [];
   writeBlockedReason = null;
@@ -685,6 +705,210 @@ describe("Service hours summary and history", () => {
     expect(text).toContain("Approved");
     expect(text).toContain("Pending");
     expect(text).toContain("Rejected");
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * The board's "Add photo proof" row. The photo goes up on Submit, not on
+ * pick, so a change of mind leaves nothing in the bucket, and its storage path
+ * rides on the create as `proof_path`. A chapter that requires proof
+ * (`wf_hours_receipt`, on by default) used to read as "try again" forever.
+ */
+describe("Log service hours photo proof", () => {
+  const PHOTO = {
+    uri: "file:///receipt.jpg",
+    filename: "receipt.jpg",
+    contentType: "image/jpeg",
+    byteSize: 204_800,
+  };
+  const PATH = "chapters/c/service-proof/p/receipt.jpg";
+
+  /** What `ServiceEntryService.create` throws without proof on a receipt chapter. */
+  const RECEIPT_MISSING = {
+    statusCode: 400,
+    error: "Bad Request",
+    message: SERVICE_RECEIPT_REQUIRED_MESSAGE,
+    requestId: "req_receipt",
+  };
+
+  const sentBody = () => mutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+
+  const addRow = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        /^Add photo proof, /.test(String(node.props.accessibilityLabel)),
+    );
+
+  const removeButton = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        /^Remove photo proof/.test(String(node.props.accessibilityLabel)),
+    );
+
+  async function attach(tree: ReactTestRenderer) {
+    pickProofPhoto.mockResolvedValueOnce({ status: "picked", image: PHOTO });
+    await act(async () => addRow(tree).props.onPress());
+  }
+
+  it("offers proof as optional, as drawn", () => {
+    const tree = render();
+    expect(addRow(tree).props.accessibilityLabel).toBe(
+      "Add photo proof, optional",
+    );
+    expect(screenText(tree)).toContain("Add photo proof");
+    expect(screenText(tree)).toContain("optional");
+    act(() => tree.unmount());
+  });
+
+  it("shows the picked photo with Remove, and uploads nothing yet", async () => {
+    const tree = render();
+    await attach(tree);
+
+    expect(screenText(tree)).toContain("receipt.jpg");
+    expect(uploadProofPhoto).not.toHaveBeenCalled();
+    act(() => removeButton(tree).props.onPress());
+    expect(screenText(tree)).not.toContain("receipt.jpg");
+    expect(addRow(tree)).toBeDefined();
+    act(() => tree.unmount());
+  });
+
+  it("says why a pick was refused", async () => {
+    const tree = render();
+    pickProofPhoto.mockResolvedValueOnce({
+      status: "refused",
+      reason: PROOF_SIZE_REFUSAL,
+    });
+    await act(async () => addRow(tree).props.onPress());
+    expect(screenText(tree)).toContain(PROOF_SIZE_REFUSAL);
+    act(() => tree.unmount());
+  });
+
+  it("uploads on Submit, then posts the entry with its proof path", async () => {
+    mutate.mockImplementation(() => {});
+    let finish: (value: unknown) => void = () => {};
+    uploadProofPhoto.mockImplementationOnce(
+      () => new Promise((resolve) => (finish = resolve)),
+    );
+    const tree = render();
+    fill(tree);
+    await attach(tree);
+    act(() => submitButton(tree).props.onPress());
+
+    // The PUT is running: the row says so and the draft holds still.
+    expect(screenText(tree)).toContain("Uploading…");
+    expect(removeButton(tree).props.disabled).toBe(true);
+    expect(submitButton(tree).props.disabled).toBe(true);
+    expect(uploadProofPhoto.mock.calls[0]?.[0]).toBe(PHOTO);
+    expect(mutate).not.toHaveBeenCalled();
+
+    await act(async () => finish({ status: "uploaded", storagePath: PATH }));
+
+    expect(sentBody()).toEqual({
+      date: serviceDatePresets(new Date())[0]?.date,
+      duration_minutes: 60,
+      description: "Food bank",
+      proof_path: PATH,
+    });
+    act(() => tree.unmount());
+  });
+
+  it("keeps the entry and the photo when the upload fails", async () => {
+    uploadProofPhoto.mockResolvedValueOnce({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+      final: false,
+    });
+    const tree = render();
+    fill(tree);
+    await attach(tree);
+    await act(async () => submitButton(tree).props.onPress());
+
+    expect(mutate).not.toHaveBeenCalled();
+    expect(screenText(tree)).toContain(
+      "Couldn't upload that photo. Try again in a moment.",
+    );
+    expect(screenText(tree)).toContain("receipt.jpg");
+    expect(
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "BottomSheetTextInput" &&
+          node.props.accessibilityLabel === "Service description",
+      ).props.value,
+    ).toBe("Food bank");
+    expect(submitButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("withdraws Submit when the upload is refused by a gate", async () => {
+    uploadProofPhoto.mockResolvedValueOnce({
+      status: "refused",
+      reason: SUBSCRIPTION_REFUSAL_COPY.serviceHours,
+      final: true,
+    });
+    const tree = render();
+    fill(tree);
+    await attach(tree);
+    await act(async () => submitButton(tree).props.onPress());
+
+    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.serviceHours);
+    expect(submitButton(tree).props.disabled).toBe(true);
+    act(() => tree.unmount());
+  });
+
+  it("retries a failed create with the bytes already sent", async () => {
+    failure = FAILED;
+    uploadProofPhoto.mockResolvedValue({ status: "uploaded", storagePath: PATH });
+    const tree = render();
+    fill(tree);
+    await attach(tree);
+    await act(async () => submitButton(tree).props.onPress());
+    expect(screenText(tree)).toContain(TRY_AGAIN);
+
+    act(() => submitButton(tree).props.onPress());
+
+    expect(uploadProofPhoto).toHaveBeenCalledTimes(1);
+    expect(mutate).toHaveBeenCalledTimes(2);
+    expect(sentBody().proof_path).toBe(PATH);
+    act(() => tree.unmount());
+  });
+
+  it("asks for a photo when the chapter requires proof, and holds Submit until one is attached", async () => {
+    failure = RECEIPT_MISSING;
+    const tree = render();
+    submitEntry(tree);
+
+    expect(screenText(tree)).toContain(RECEIPT_REQUIRED_COPY);
+    expect(screenText(tree)).not.toContain(TRY_AGAIN);
+    // The server's own words name a "signed slip" the phone can't send.
+    expect(screenText(tree)).not.toContain(SERVICE_RECEIPT_REQUIRED_MESSAGE);
+    expect(addRow(tree).props.accessibilityLabel).toBe(
+      "Add photo proof, required",
+    );
+    expect(submitButton(tree).props.disabled).toBe(true);
+    expect(submitButton(tree).props.accessibilityHint).toBe(
+      RECEIPT_REQUIRED_COPY,
+    );
+
+    await attach(tree);
+
+    expect(screenText(tree)).not.toContain(RECEIPT_REQUIRED_COPY);
+    expect(submitButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("keeps the photo through a scrim close and gives it up on Cancel", async () => {
+    const tree = render();
+    await attach(tree);
+
+    act(() => modal(tree).props.onDismiss());
+    act(() => modal(tree).props.onAnimate(-1, 0)); // reopened
+    expect(screenText(tree)).toContain("receipt.jpg");
+
+    act(() => pressable(tree, "Cancel").props.onPress());
+    expect(screenText(tree)).not.toContain("receipt.jpg");
     act(() => tree.unmount());
   });
 });

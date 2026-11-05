@@ -541,6 +541,15 @@ Advertising Data, Browsing History, Search History.
 > The iOS purpose string doesn't name it yet ([#3401](https://github.com/pdcarlson/Frapp/issues/3401)).
 > Deploy the landing before submitting a binary that carries #3399.
 >
+> **Service-hour proof photos use this row too (2026-11-05).** s20's "Add photo proof"
+> row lets a member attach a library photo to a service entry
+> (`lib/more/service-proof.ts`, the same pipeline). It is a *Photos or Videos* item
+> collected for *App Functionality* and linked to the member, so the row's values don't
+> change. Neither the privacy policy's permissions clause
+> (`apps/landing/app/privacy/page.tsx`) nor the iOS purpose string (`app.json`'s
+> `photosPermission`) names it yet: both are owner calls, made before the build that
+> carries it is submitted.
+>
 > ‡ **`Linked: No` on Crash Data and Performance Data is wrong, and this table's own
 > reasoning is what proves it (owner action — console change).** Found 2026-09-21. The
 > argument for calling User ID *linked* is that `distinct_id` is a pseudonym whose salt
@@ -571,10 +580,11 @@ Where each answer comes from:
   sends a library photo to the documents bucket, and that photo is declared
   under the Photos or Videos row above. A PDF or Office file still uploads only
   from the web dashboard, since picking one needs `expo-document-picker`, a
-  native module no store build carries yet. Backwork has no mobile screen, and
-  proof attachment in the s20 sheet still omits its affordance
-  deliberately, so both stay web-dashboard-only and neither is claimed here as
-  shipped.
+  native module no store build carries yet. Service-hour proof uploads from
+  the phone too, photos only: the s20 sheet's "Add photo proof" row sends a
+  library photo to the service bucket, declared under the same row. Backwork
+  has no mobile screen, so it stays web-dashboard-only and is not claimed here
+  as shipped.
 - **User ID carries Analytics** because PostHog identifies members with
   `distinct_id = hmac_sha256(salt, user_id)`. The derivation lives in
   `hashUserIdForAnalytics` (`apps/api/src/domain/utils/analytics-keying.ts`), called from
@@ -690,8 +700,8 @@ type), Health and fitness, Emails, SMS or MMS, Videos, Audio files, Files and do
 Contacts, Installed apps, Web browsing, and the remaining Personal info types.
 
 - **Files and docs:** the documents screen uploads photos only, declared under Photos (#3399). A
-  PDF or Office document, backwork and service-hour proof still upload only from the web dashboard
-  (see *Other User Content* above).
+  PDF or Office document, a PDF service-hour proof, and backwork still upload only from the web
+  dashboard (see *Other User Content* above).
 - **Calendar:** the event `.ics` export is handed to the phone's share sheet and never comes back
   to us.
 - **Financial info is conditional, as on iOS.** Payment info and Purchase history are *not

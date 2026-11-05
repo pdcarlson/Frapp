@@ -1,0 +1,46 @@
+import Svg, { Circle, Path, Rect } from "react-native-svg";
+import { tint } from "@/lib/theme";
+
+/**
+ * The camera on s20's "Add photo proof" row, transcribed from
+ * `canvas-screens.dc.html` s20: the duotone body (the stroke color at 10%
+ * behind a 1.6 stroke), the lens, and the viewfinder bump. The color arrives
+ * as a prop so it follows the chapter accent rather than the drawn gold.
+ */
+export function CameraGlyph({
+  color,
+  size = 17,
+}: {
+  color: string;
+  size?: number;
+}) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect
+        x={3.5}
+        y={6.5}
+        width={17}
+        height={13}
+        rx={3}
+        stroke={color}
+        strokeWidth={1.6}
+        fill={tint(color, 0.1)}
+      />
+      <Circle
+        cx={12}
+        cy={13}
+        r={3.4}
+        stroke={color}
+        strokeWidth={1.6}
+        fill="none"
+      />
+      <Path
+        d="M8.5 6.5L10 4h4l1.5 2.5"
+        stroke={color}
+        strokeWidth={1.6}
+        fill="none"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}

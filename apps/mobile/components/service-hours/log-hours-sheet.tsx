@@ -1,14 +1,19 @@
 import { forwardRef, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import {
   BottomSheetModal,
   BottomSheetTextInput,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
-import { useCreateServiceEntry } from "@repo/hooks";
+import { formatBytes } from "@repo/formatting";
+import {
+  useCreateServiceEntry,
+  useRequestServiceProofUploadUrl,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { SERVICE_DESCRIPTION_MAX_LENGTH } from "@repo/validation";
 import { FilterChips } from "@/components/filter-chips";
+import { CameraGlyph } from "@/components/service-hours/camera-glyph";
 import {
   SheetGrabber,
   SheetHeader,
@@ -18,6 +23,7 @@ import {
   useSheetBackgroundStyle,
   useSheetVisit,
 } from "@/components/sheet-scaffold";
+import type { PickedImage } from "@/lib/chat/attachment-upload";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useConnection } from "@/lib/connection/use-connection";
 import { successHaptic } from "@/lib/haptics";
@@ -31,10 +37,16 @@ import {
   stepDuration,
 } from "@/lib/more/service-hours";
 import {
+  RECEIPT_REQUIRED_COPY,
+  pickProofPhoto,
+  receiptRequiredOf,
+  uploadProofPhoto,
+} from "@/lib/more/service-proof";
+import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s20 — the "Log service hours" sheet (`canvas-screens.dc.html`, `id="s20"`),
@@ -54,10 +66,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *   field and a row of date chips, Today back to three days ago
  *   (`serviceDatePresets`): there is no date-picker dependency, the same call
  *   s19's due presets make. The entry used to be filed under today, always.
- * - "Add photo proof" is omitted, not rendered dead. The API takes a
- *   `proof_path` and `expo-image-picker` is a dependency (#2464), so it is
- *   ordinary screen work; `lib/chat/attachment-upload.ts` is the reference,
- *   with the `proof` kind. Filed.
+ * - "Add photo proof" is drawn, photos only (`lib/more/service-proof.ts`):
+ *   the dashed row, then the photo's thumbnail with Remove once one is
+ *   picked. Its trailing word says "optional" until the API says otherwise;
+ *   see "Proof the chapter requires" below.
  * - The caption under Submit ("Goes to the service chair · you'll get a
  *   notification") is omitted: it narrates, and neither half is something this
  *   app can promise.
@@ -67,6 +79,28 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * A swipe or a tap on the scrim closes the sheet and keeps the entry for the
  * next visit; Cancel gives it up, and so does a save. The rule s19 and s21
  * follow (`spec/ui/mobile/screens.md`).
+ *
+ * ## The photo goes up on Submit
+ *
+ * Picking only reads the photo on the device. Submit mints the signed URL,
+ * PUTs the bytes, then posts the entry with their `proof_path`, as web's log
+ * dialog does and as s21 uploads on Upload: a member who removes the photo,
+ * picks another or cancels leaves no object in the bucket, and nothing
+ * collects one that no entry claims (#2197). Uploading at pick time would make
+ * Submit faster by one PUT and leave an orphan behind every change of mind.
+ * The row shows "Uploading…" while the PUT runs. Once the bytes are up they
+ * stay claimed for this photo, so a create that fails after them retries with
+ * the same path instead of a second copy.
+ *
+ * ## Proof the chapter requires
+ *
+ * A chapter's `wf_hours_receipt` workflow (on by default) makes the API refuse
+ * an entry without proof. A member can't read that setting: the chapter
+ * config route needs `chapter-config:view`. So the row says "optional" until
+ * the API answers that 400 (`receiptRequiredOf`), and from then on, for the
+ * visit, it says "required", asks for a photo, and holds Submit until one is
+ * attached. Without this, every submit on a default chapter read as an
+ * ordinary failure, "try again", forever.
  *
  * ## A write can outlive its visit
  *
@@ -89,6 +123,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
     const styles = createStyles(tokens, accent);
     const backgroundStyle = useSheetBackgroundStyle();
     const createEntry = useCreateServiceEntry();
+    const requestProofUploadUrl = useRequestServiceProofUploadUrl();
     const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
       useSheetVisit(ref);
 
@@ -132,12 +167,37 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
     // taps handled in one batch both see the same render's `canSubmit`.
     const sending = useRef(false);
 
-    const pending = createEntry.isPending;
+    /**
+     * The attached photo, and its storage path once its bytes are up. The
+     * path rides along with the photo it was uploaded for, so a retry after
+     * a failed create reuses it and a new photo starts over.
+     */
+    const [proof, setProof] = useState<{
+      image: PickedImage;
+      storagePath?: string;
+    } | null>(null);
+    const [picking, setPicking] = useState(false);
+    // Set the moment the row opens the library, so a second tap before the
+    // picker draws doesn't launch another (Android rejects the second launch).
+    const pickingNow = useRef(false);
+    const [uploading, setUploading] = useState(false);
+    /** A refused pick (type, size, photo access) or a failed upload. */
+    const [proofError, setProofError] = useState<string | null>(null);
+    /**
+     * The API refused an entry for want of proof (see the header). Latched
+     * for the visit, like `refusal`, and cleared with it on close: an officer
+     * may have turned the workflow off by the next one.
+     */
+    const [receiptRequired, setReceiptRequired] = useState(false);
+
+    const pending = createEntry.isPending || uploading;
     const canSubmit =
       description.trim().length > 0 &&
       writeBlockedReason === null &&
       !pending &&
-      refusal === null;
+      !picking &&
+      refusal === null &&
+      !(receiptRequired && proof === null);
 
     /** Gives the entry up: Cancel, and a save that filed it. */
     const clearEntry = () => {
@@ -145,6 +205,8 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
       setMinutes(DEFAULT_DURATION_MINUTES);
       setDaysAgo(0);
       setSubmitFailed(false);
+      setProof(null);
+      setProofError(null);
     };
 
     /** A swipe or scrim close: the entry stays for the next visit. */
@@ -153,6 +215,8 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
       setDescriptionFocused(false);
       setSubmitFailed(false);
       setRefusal(null);
+      setReceiptRequired(false);
+      setProofError(null);
     };
 
     const cancel = () => {
@@ -160,53 +224,125 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
       dismiss();
     };
 
+    const choosePhoto = async () => {
+      if (pickingNow.current || sending.current) return;
+      pickingNow.current = true;
+      setPicking(true);
+      setProofError(null);
+      try {
+        const result = await pickProofPhoto();
+        if (result.status === "picked") setProof({ image: result.image });
+        else if (result.status === "refused") setProofError(result.reason);
+      } finally {
+        pickingNow.current = false;
+        setPicking(false);
+      }
+    };
+
+    const removePhoto = () => {
+      if (sending.current) return;
+      setProof(null);
+      setProofError(null);
+    };
+
     const submit = () => {
       const date = (presets[daysAgo] ?? presets[0])?.date;
       if (!canSubmit || sending.current || !date) return;
       sending.current = true;
       setSubmitFailed(false);
+      setProofError(null);
       const sentFrom = visit();
-      createEntry.mutate(
-        {
-          date,
-          duration_minutes: minutes,
-          description: description.trim(),
-        },
-        {
-          onSuccess: () => {
-            sending.current = false;
-            // The confirming action (`spec/ui/mobile/README.md` § Native-feel
-            // rules), felt once the entry is filed.
-            successHaptic();
-            clearEntry();
-            // A sheet closed and reopened since is the member's new visit,
-            // and the save doesn't close it under them.
-            if (isSameVisit(sentFrom)) dismiss();
-          },
-          onError: (error) => {
-            sending.current = false;
-            // A visit that has ended doesn't latch its outcome into the next
-            // one: the member would reopen to a refusal nothing on screen
-            // caused, with Submit already withdrawn.
-            if (!isSameVisit(sentFrom)) return;
-            // Ordinary failures keep the retry they have always had; a gate
-            // refusal takes it away, because retrying cannot win. Both asked
-            // before `submitFailed`, and never as a bare 403: this route also
-            // 403s for a permission denial, which an officer's role grant
-            // clears on the next try, and for the `chapter.context.*` family,
-            // which clears itself.
-            if (subscriptionRefusalOf(error)) {
-              setRefusal(SUBSCRIPTION_REFUSAL_COPY.serviceHours);
-              return;
-            }
-            if (moduleRefusalOf(error)) {
-              setRefusal(MODULE_REFUSAL_COPY.serviceHours);
-              return;
-            }
-            setSubmitFailed(true);
-          },
-        },
+      const entry = {
+        date,
+        duration_minutes: minutes,
+        description: description.trim(),
+      };
+      // Bytes already up for this photo, or no photo: post now, in this tap.
+      if (!proof || proof.storagePath) {
+        const proofPath = proof?.storagePath;
+        send(proofPath ? { ...entry, proof_path: proofPath } : entry, sentFrom);
+        return;
+      }
+      void uploadThenSend(proof.image, entry, sentFrom);
+    };
+
+    const uploadThenSend = async (
+      image: PickedImage,
+      entry: { date: string; duration_minutes: number; description: string },
+      sentFrom: number,
+    ) => {
+      setUploading(true);
+      const put = await uploadProofPhoto(image, (body) =>
+        requestProofUploadUrl.mutateAsync(body),
       );
+      setUploading(false);
+      if (put.status === "refused") {
+        sending.current = false;
+        // Told only to the visit it was sent from, like the create's outcome.
+        if (!isSameVisit(sentFrom)) return;
+        if (put.final) setRefusal(put.reason);
+        else setProofError(put.reason);
+        return;
+      }
+      // Held against the photo it was sent for, so a Cancel while the PUT
+      // ran stays cancelled. The entry is still sent: Submit was pressed.
+      setProof((current) =>
+        current?.image === image
+          ? { image, storagePath: put.storagePath }
+          : current,
+      );
+      send({ ...entry, proof_path: put.storagePath }, sentFrom);
+    };
+
+    const send = (
+      body: {
+        date: string;
+        duration_minutes: number;
+        description: string;
+        proof_path?: string;
+      },
+      sentFrom: number,
+    ) => {
+      createEntry.mutate(body, {
+        onSuccess: () => {
+          sending.current = false;
+          // The confirming action (`spec/ui/mobile/README.md` § Native-feel
+          // rules), felt once the entry is filed.
+          successHaptic();
+          clearEntry();
+          // A sheet closed and reopened since is the member's new visit,
+          // and the save doesn't close it under them.
+          if (isSameVisit(sentFrom)) dismiss();
+        },
+        onError: (error) => {
+          sending.current = false;
+          // A visit that has ended doesn't latch its outcome into the next
+          // one: the member would reopen to a refusal nothing on screen
+          // caused, with Submit already withdrawn.
+          if (!isSameVisit(sentFrom)) return;
+          // Ordinary failures keep the retry they have always had; a gate
+          // refusal takes it away, because retrying cannot win. Both asked
+          // before `submitFailed`, and never as a bare 403: this route also
+          // 403s for a permission denial, which an officer's role grant
+          // clears on the next try, and for the `chapter.context.*` family,
+          // which clears itself.
+          if (subscriptionRefusalOf(error)) {
+            setRefusal(SUBSCRIPTION_REFUSAL_COPY.serviceHours);
+            return;
+          }
+          if (moduleRefusalOf(error)) {
+            setRefusal(MODULE_REFUSAL_COPY.serviceHours);
+            return;
+          }
+          // The chapter requires proof: ask for a photo rather than "try
+          // again", which can't win without one.
+          if (receiptRequiredOf(error)) {
+            setReceiptRequired(true);
+            return;
+          }
+          setSubmitFailed(true);
+        },
+      });
     };
 
     const hours = formatHours(minutes);
@@ -307,6 +443,28 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
             accessibilityLabel="Date of service"
           />
 
+          <ProofRow
+            proof={proof?.image ?? null}
+            required={receiptRequired}
+            picking={picking}
+            uploading={uploading}
+            locked={pending}
+            onChoose={() => void choosePhoto()}
+            onRemove={removePhoto}
+            accent={accent}
+            styles={styles}
+          />
+          {proofError ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {proofError}
+            </Text>
+          ) : null}
+          {receiptRequired && proof === null ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {RECEIPT_REQUIRED_COPY}
+            </Text>
+          ) : null}
+
           {refusal ? <Text style={styles.error}>{refusal}</Text> : null}
 
           {submitFailed ? (
@@ -326,7 +484,13 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
             // The refusal outranks the offline reason: reconnecting clears one
             // and not the other, so naming only the offline reason would
             // promise a fix that doesn't come.
-            accessibilityHint={refusal ?? writeBlockedReason ?? undefined}
+            accessibilityHint={
+              refusal ??
+              writeBlockedReason ??
+              (receiptRequired && proof === null
+                ? RECEIPT_REQUIRED_COPY
+                : undefined)
+            }
             accent={accent}
             onAccent={tokens.color.gold.onHouse}
           />
@@ -335,6 +499,87 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
     );
   },
 );
+
+/**
+ * The board's "Add photo proof" row, and the attached photo in its place: a
+ * thumbnail, its size (or "Uploading…" while the PUT runs) and Remove.
+ */
+function ProofRow({
+  proof,
+  required,
+  picking,
+  uploading,
+  locked,
+  onChoose,
+  onRemove,
+  accent,
+  styles,
+}: {
+  proof: PickedImage | null;
+  required: boolean;
+  picking: boolean;
+  uploading: boolean;
+  /** A save is running: the photo holds still. */
+  locked: boolean;
+  onChoose: () => void;
+  onRemove: () => void;
+  accent: string;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  if (!proof) {
+    const need = required ? "required" : "optional";
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Add photo proof, ${need}`}
+        accessibilityHint="Opens your photo library."
+        accessibilityState={{ disabled: picking || locked }}
+        disabled={picking || locked}
+        onPress={onChoose}
+        style={({ pressed }) => [
+          styles.proofRow,
+          styles.proofRowEmpty,
+          pressed ? styles.proofRowPressed : null,
+        ]}
+      >
+        <CameraGlyph color={accent} />
+        <Text style={styles.proofAdd}>Add photo proof</Text>
+        <Text style={styles.proofNeed}>{picking ? "Opening…" : need}</Text>
+      </Pressable>
+    );
+  }
+  return (
+    <View style={styles.proofRow}>
+      <Image
+        source={{ uri: proof.uri }}
+        style={styles.proofThumb}
+        accessibilityIgnoresInvertColors
+      />
+      <View style={styles.proofText}>
+        <Text style={styles.proofName} numberOfLines={1}>
+          {proof.filename}
+        </Text>
+        <Text style={styles.proofMeta}>
+          {uploading ? "Uploading…" : formatBytes(proof.byteSize)}
+        </Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Remove photo proof, ${proof.filename}`}
+        accessibilityState={{ disabled: locked }}
+        disabled={locked}
+        onPress={onRemove}
+        hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+      >
+        <Text
+          style={[styles.proofRemove, locked ? styles.proofRemoveLocked : null]}
+        >
+          Remove
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
 
 function StepButton({
   glyph,
@@ -430,6 +675,62 @@ function createStyles(tokens: SignetTokens, accent: string) {
     ringActive: fieldStyles.ringActive,
     field: fieldStyles.field,
     fieldFocused: fieldStyles.fieldFocused,
+    // Drawn like the board's row: 50px, the control radius, surface1, and a
+    // dashed border while empty.
+    proofRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      minHeight: 50,
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.surface1,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.xs,
+      marginTop: tokens.spacing.xs,
+    },
+    proofRowEmpty: {
+      borderStyle: "dashed",
+      borderColor: tint(tokens.color.text.foreground, 0.2),
+    },
+    proofRowPressed: {
+      opacity: 0.85,
+    },
+    proofAdd: {
+      ...typeRole(tokens.typography.role.label),
+      color: accent,
+      flex: 1,
+    },
+    proofNeed: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+    },
+    proofThumb: {
+      width: 34,
+      height: 34,
+      borderRadius: tokens.radius.chip,
+      backgroundColor: tokens.color.surface.popover,
+    },
+    proofText: {
+      flex: 1,
+      gap: 2,
+    },
+    proofName: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+    },
+    proofMeta: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+    },
+    proofRemove: {
+      ...typeRole(tokens.typography.role.label),
+      color: accent,
+    },
+    proofRemoveLocked: {
+      color: tokens.color.text.muted,
+    },
     error: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
