@@ -16,8 +16,8 @@ import { drawnText } from "@/test/screen-text";
  * goes back rather than opening More again, and holds while a switch runs. The
  * chapter that's open now is marked, and a tap on it selects it again like any
  * row, since the mark reads a token claim that can lag the server. Unlike any
- * other row, it leaves even when that fails, unless a switch made since the
- * picker opened may have put the server on another chapter.
+ * other row, it leaves even when that fails, unless the last switch it saw
+ * reach the server since it opened put the server on another chapter.
  *
  * Here, not beside the screen: a spec under `app/` is a route module and
  * ships in the bundle (`lib/routes.spec.ts`).

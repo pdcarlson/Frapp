@@ -74,7 +74,7 @@ function createStyles(tokens: SignetTokens) {
     pressed: {
       backgroundColor: tokens.color.surface.surface1,
     },
-    // `ListRow`'s disabled treatment: a control that can't respond looks it.
+    // A row that can't respond dims as a whole, so it looks it.
     dimmed: {
       opacity: 0.5,
     },

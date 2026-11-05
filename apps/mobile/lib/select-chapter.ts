@@ -2,6 +2,21 @@ import { useCallback } from "react";
 import { useActivateChapter } from "@repo/hooks";
 import { getSupabaseClient } from "./supabase";
 
+export interface SelectChapterOptions {
+  /**
+   * Called once step 1's answer has come back, before the refresh: from here
+   * the server holds `chapterId` whatever the result says. So a `false` result
+   * after this call means the server moved and the token in hand didn't. A
+   * `false` with no call means the activate wasn't confirmed: almost always
+   * nothing changed, but an activate the server applied whose answer was lost
+   * on the way back looks the same, and nothing here can tell them apart. Only
+   * the chapter picker needs the difference (`app/(auth)/chapter-picker.tsx`);
+   * join and chapter setup call with the id alone. Keep it to bookkeeping: it
+   * runs inside a selection that otherwise never throws.
+   */
+  onActivated?: () => void;
+}
+
 /**
  * Single entry point for choosing the caller's active chapter on mobile.
  *
@@ -29,19 +44,6 @@ import { getSupabaseClient } from "./supabase";
  *
  * See spec/behavior/multi-tenancy.md.
  */
-export interface SelectChapterOptions {
-  /**
-   * Called once step 1 has landed, before the refresh: from here the server
-   * holds `chapterId` whatever the result says. So a `false` result after this
-   * call means the server moved and the token in hand didn't, and a `false`
-   * with no call means nothing changed anywhere. Only the chapter picker needs
-   * the difference (`app/(auth)/chapter-picker.tsx`); join and chapter setup
-   * call with the id alone. Keep it to bookkeeping: it runs inside a selection
-   * that otherwise never throws.
-   */
-  onActivated?: () => void;
-}
-
 export function useSelectChapter() {
   const activateChapter = useActivateChapter();
 

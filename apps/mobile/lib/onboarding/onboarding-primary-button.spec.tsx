@@ -7,6 +7,7 @@ import type { SignetTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
 import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-primary-button";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
+import { flatStyle } from "@/test/flat-style";
 
 /**
  * The step-forward button join, setup, s03 and the Terms prompt share
@@ -19,15 +20,6 @@ import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-se
  */
 
 type Node = ReactTestRenderer["root"];
-
-/** Resolves a `({ pressed }) => style` the way Pressable would. */
-function flat(style: unknown, pressed = false): Record<string, unknown> {
-  if (typeof style === "function") return flat(style({ pressed }), pressed);
-  if (Array.isArray(style)) {
-    return Object.assign({}, ...style.map((item) => flat(item, pressed)));
-  }
-  return (style ?? {}) as Record<string, unknown>;
-}
 
 function renderButton(
   props: { disabled?: boolean; busy?: boolean },
@@ -53,16 +45,16 @@ function renderButton(
 describe("OnboardingPrimaryButton", () => {
   it("is house gold, with the label on gold's own ink", () => {
     const { pressable, tokens } = renderButton({});
-    expect(flat(pressable.props.style).backgroundColor).toBe(
+    expect(flatStyle(pressable.props.style).backgroundColor).toBe(
       tokens.color.gold.house,
     );
     const label = pressable.findByType("Text" as never) as Node;
-    expect(flat(label.props.style).color).toBe(tokens.color.gold.onHouse);
+    expect(flatStyle(label.props.style).color).toBe(tokens.color.gold.onHouse);
   });
 
   it("stays house gold while it waits, and names itself to a screen reader", () => {
     const { pressable, tokens } = renderButton({ disabled: true, busy: true });
-    expect(flat(pressable.props.style).backgroundColor).toBe(
+    expect(flatStyle(pressable.props.style).backgroundColor).toBe(
       tokens.color.gold.house,
     );
     expect(pressable.props.accessibilityLabel).toBe("Join chapter");
@@ -74,8 +66,8 @@ describe("OnboardingPrimaryButton", () => {
 
   it("shows a press: a dimmed fill while held, and an Android ripple", () => {
     const { pressable } = renderButton({});
-    expect(flat(pressable.props.style, false).opacity).toBeUndefined();
-    expect(flat(pressable.props.style, true).opacity).toBe(0.85);
+    expect(flatStyle(pressable.props.style, false).opacity).toBeUndefined();
+    expect(flatStyle(pressable.props.style, true).opacity).toBe(0.85);
     expect(pressable.props.android_ripple).toEqual({
       color: expect.any(String),
     });
@@ -84,7 +76,7 @@ describe("OnboardingPrimaryButton", () => {
   it("shows no press while disabled", () => {
     const { pressable } = renderButton({ disabled: true });
     // The disabled dim, not the pressed one.
-    expect(flat(pressable.props.style, true).opacity).toBe(0.55);
+    expect(flatStyle(pressable.props.style, true).opacity).toBe(0.55);
     expect(pressable.props.android_ripple).toBeUndefined();
   });
 });
@@ -92,16 +84,18 @@ describe("OnboardingPrimaryButton", () => {
 describe("OnboardingSecondaryButton", () => {
   it("is components.md's Secondary: a card fill under the input border, never gold", () => {
     const { pressable, tokens } = renderButton({}, OnboardingSecondaryButton);
-    const style = flat(pressable.props.style);
+    const style = flatStyle(pressable.props.style);
     expect(style.backgroundColor).toBe(tokens.color.surface.card);
     expect(style.borderColor).toBe(tokens.color.border.input);
     const label = pressable.findByType("Text" as never) as Node;
-    expect(flat(label.props.style).color).toBe(tokens.color.text.foreground);
+    expect(flatStyle(label.props.style).color).toBe(
+      tokens.color.text.foreground,
+    );
   });
 
   it("lifts its fill one rung while held", () => {
     const { pressable, tokens } = renderButton({}, OnboardingSecondaryButton);
-    expect(flat(pressable.props.style, true).backgroundColor).toBe(
+    expect(flatStyle(pressable.props.style, true).backgroundColor).toBe(
       tokens.color.surface.popover,
     );
   });

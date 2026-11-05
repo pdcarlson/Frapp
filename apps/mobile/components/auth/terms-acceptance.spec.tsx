@@ -8,6 +8,7 @@ import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { ACCEPTANCE_LINKS } from "@/lib/more/legal";
 import { TermsAcceptance } from "./terms-acceptance";
+import { flatStyle } from "@/test/flat-style";
 
 /**
  * The Terms checkbox join, setup and the Terms prompt share (#2302), drawn as
@@ -18,14 +19,6 @@ import { TermsAcceptance } from "./terms-acceptance";
  */
 
 type Node = ReactTestRenderer["root"];
-
-function flat(style: unknown, pressed = false): Record<string, unknown> {
-  if (typeof style === "function") return flat(style({ pressed }), pressed);
-  if (Array.isArray(style)) {
-    return Object.assign({}, ...style.map((item) => flat(item, pressed)));
-  }
-  return (style ?? {}) as Record<string, unknown>;
-}
 
 function render(accepted: boolean, onAcceptedChange = vi.fn()) {
   let tree!: ReactTestRenderer;
@@ -53,21 +46,21 @@ describe("TermsAcceptance", () => {
     const { row, box } = render(false);
 
     expect(row.props.accessibilityLabel).toBe(LEGAL_ACCEPTANCE_LABEL);
-    expect(flat(row.props.style).minHeight).toBe(
+    expect(flatStyle(row.props.style).minHeight).toBe(
       signetDarkTokens.touch.minimum,
     );
-    expect(flat(box.props.style)).toEqual(
+    expect(flatStyle(box.props.style)).toEqual(
       expect.objectContaining({ width: 24, height: 24, borderRadius: 7 }),
     );
   });
 
   it("draws an empty box unticked, and a gold box with a check ticked", () => {
     const off = render(false);
-    expect(flat(off.box.props.style).backgroundColor).toBeUndefined();
+    expect(flatStyle(off.box.props.style).backgroundColor).toBeUndefined();
     expect(off.box.findAllByType("Path" as never)).toHaveLength(0);
 
     const on = render(true);
-    expect(flat(on.box.props.style).backgroundColor).toBe(
+    expect(flatStyle(on.box.props.style).backgroundColor).toBe(
       signetDarkTokens.color.gold.house,
     );
     const check = on.box.findByType("Path" as never);
@@ -80,7 +73,7 @@ describe("TermsAcceptance", () => {
   it("toggles from anywhere on the row, and shows the press", () => {
     const { row, onAcceptedChange } = render(false);
 
-    expect(flat(row.props.style, true).opacity).toBe(0.7);
+    expect(flatStyle(row.props.style, true).opacity).toBe(0.7);
     act(() => {
       row.props.onPress();
     });
@@ -102,11 +95,11 @@ describe("TermsAcceptance", () => {
       // The link's own height, with its slop above and below, is the floor.
       const { top, bottom } = link.props.hitSlop;
       expect(
-        flat(link.props.style).minHeight + top + bottom,
+        flatStyle(link.props.style).minHeight + top + bottom,
       ).toBeGreaterThanOrEqual(signetDarkTokens.touch.minimum);
     }
     const line = links[0]!.parent!;
-    expect(flat(line.props.style).flexDirection).toBe("row");
+    expect(flatStyle(line.props.style).flexDirection).toBe("row");
   });
 
   it("keeps each link's slop out of the checkbox row above it", () => {
@@ -121,7 +114,7 @@ describe("TermsAcceptance", () => {
     // The row, then the line of links, a gap apart: a top slop wider than
     // the gap would take the row's bottom edge from the checkbox.
     expect(block.children[0]).toBe(row);
-    const gap = flat(block.props.style).gap as number;
+    const gap = flatStyle(block.props.style).gap as number;
     expect(gap).toBeGreaterThan(0);
     for (const link of links) {
       expect(link.props.hitSlop.top).toBeLessThanOrEqual(gap);
@@ -135,7 +128,7 @@ describe("TermsAcceptance", () => {
         (node.type as unknown) === "Pressable" &&
         node.props.accessibilityRole === "link",
     );
-    const line = flat(links[0]!.parent!.props.style);
+    const line = flatStyle(links[0]!.parent!.props.style);
 
     // Large text wraps the links onto two lines. One line's bottom slop and
     // the next one's top slop have to fit in the gap between them, or the
