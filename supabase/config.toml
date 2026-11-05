@@ -3,6 +3,8 @@ enabled = true
 port = 54321
 schemas = ["public"]
 extra_search_path = ["public"]
+# Restated as BACKWORK_LIST_CAP (apps/web/components/backwork/backwork-library.ts),
+# which tells /backwork its list was cut off (#3525). Change both together.
 max_rows = 1000
 
 [db]
