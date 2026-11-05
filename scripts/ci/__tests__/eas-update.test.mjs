@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -333,6 +334,7 @@ test("isNativePackage spots Expo modules, Android projects and podspecs, and not
     assert.equal(isNativePackage(pkg("rn-android", ["android/build.gradle"])), true);
     assert.equal(isNativePackage(pkg("rn-kts", ["android/build.gradle.kts"])), true);
     assert.equal(isNativePackage(pkg("rn-ios", ["RNThing.podspec"])), true);
+    assert.equal(isNativePackage(pkg("macros", ["apple/Macro.swift"])), true, "native tooling counts too");
     assert.equal(isNativePackage(pkg("js-only", ["index.js", "package.json"])), false);
     assert.equal(isNativePackage(join(root, "absent")), false);
   } finally {
@@ -381,7 +383,7 @@ test("fetches a build commit it doesn't have, and refuses when it still can't", 
   const git = (args) => {
     const key = args.join(" ");
     if (key === `fetch --quiet origin ${BUILD_SHA}`) fetched = true;
-    if (key.startsWith("cat-file")) return { status: 1, stdout: "", stderr: "" };
+    if (key.startsWith(`cat-file -e ${BUILD_SHA}`)) return { status: 1, stdout: "", stderr: "" };
     return base(args);
   };
   const result = productionChecks({ git, readFile: files(), isNative });
@@ -496,4 +498,81 @@ test("main hands the guard a way to pull the EAS environment", () => {
     guardUpdate: (args, opts) => ((gotPull = opts.pullEnv), { ok: false, errors: ["stop"] }),
   });
   assert.equal(typeof gotPull, "function");
+});
+
+test("refuses while the release production serves predates the guard, without sending you to it", () => {
+  const { result } = checks({ answers: { "cat-file -e v0.9.1:scripts/eas-update.mjs": { status: 1 } } });
+  assert.match(result.errors[0], /v0\.9\.1, predates this guard/);
+  assert.doesNotMatch(result.errors[0], /git checkout/);
+});
+
+test("checks every recorded build of the runtime, and only those", () => {
+  const OTHER = "c".repeat(40);
+  const OLD = "d".repeat(40);
+  const registry = JSON.stringify({
+    builds: [
+      { platform: "android", version: "0.9.0", build: "2", sha: OLD, recorded: "2026-11-03" },
+      { platform: "android", version: "0.9.1", build: "3", sha: BUILD_SHA, recorded: "2026-11-06" },
+      { platform: "ios", version: "0.9.1", build: "1", sha: OTHER, recorded: "2026-11-07" },
+    ],
+  });
+  const answers = {
+    [`show origin/main:${SHIPPED_BUILDS}`]: { stdout: registry },
+    [`show ${OLD}:${LOCKFILE}`]: { stdout: JSON.stringify(lock({ react: "19.2.3" })) },
+    [`diff --quiet ${OLD}`]: { status: 1 },
+    [`show ${OTHER}:${LOCKFILE}`]: { stdout: JSON.stringify(lock({ "expo-haptics": "57.0.3" })) },
+  };
+  const ok = checks({ answers }).result;
+  assert.deepEqual(ok.errors, [], "the 0.9.0 build differs, but an update for 0.9.1 can't reach it");
+  assert.equal(ok.notes.length, 2);
+  const second = checks({ answers: { ...answers, [`show ${OTHER}:${LOCKFILE}`]: { stdout: JSON.stringify(lock({ "expo-haptics": "57.0.1" })) } } }).result;
+  assert.equal(second.errors.length, 1);
+  assert.match(second.errors[0], /ios 0\.9\.1 build 1/);
+});
+
+test("refuses when eas.json and the EAS environment disagree on a name both set", () => {
+  const r = prepareUpdate(["--channel", "production"], {
+    readFile: files(),
+    git: fakeGit().git,
+    env: {},
+    production: () => ({ errors: [], notes: [] }),
+    pullEnv: () => ({ vars: { EXPO_PUBLIC_SENTRY_ENVIRONMENT: "staging" } }),
+  });
+  assert.equal(r.ok, false);
+  assert.match(r.errors[0], /EXPO_PUBLIC_SENTRY_ENVIRONMENT is "production" in apps\/mobile\/eas\.json .* but "staging"/);
+});
+
+test("the names the guard sets are the ones app.config.js reads", () => {
+  const requireConfig = createRequire(join(REPO, "apps", "mobile", "app.config.js"));
+  const { applyMobileConfig, PRODUCTION_SUPABASE_PUBLIC_ERROR } = requireConfig("./app.config.js");
+  const { env } = updateEnv({}, { profileName: "production", profile: realEasJson.build.production, gitSha: SHA });
+  // The production fences run: with nothing from EAS, the Supabase presence check stops it.
+  assert.throws(() => applyMobileConfig({}, { env, existsSync: () => false }), (e) => e.message === PRODUCTION_SUPABASE_PUBLIC_ERROR);
+  const { env: withPreview } = updateEnv({}, { profileName: "preview", profile: realEasJson.build.preview, gitSha: SHA });
+  assert.equal(applyMobileConfig({}, { env: withPreview, existsSync: () => false }).extra.gitSha, SHA);
+});
+
+test("pullEasEnv pulls with the shell env the guard publishes with, and deletes File variables it wrote", () => {
+  const mobileDir = mkdtempSync(join(tmpdir(), "frapp-mobile-"));
+  try {
+    const fileVar = join(mobileDir, ".eas", ".env", "GOOGLE_SERVICES_JSON");
+    mkdirSync(dirname(fileVar), { recursive: true });
+    const removed = [];
+    const spawn = (cmd, args, opts) => {
+      assert.deepEqual(opts.env, { PATH: "/bin" }, "no EXPO_PUBLIC_*, EAS_BUILD_* or update marker");
+      writeFileSync(fileVar, "{}");
+      writeFileSync(args[args.indexOf("--path") + 1], `GOOGLE_SERVICES_JSON=${fileVar}\nEXPO_PUBLIC_X=1\n`);
+      return { status: 0 };
+    };
+    const r = pullEasEnv("/fake/eas", "production", {
+      spawn,
+      mobileDir,
+      env: { PATH: "/bin", EXPO_PUBLIC_X: "shell", EAS_BUILD_PROFILE: "production", FRAPP_EAS_UPDATE_PROFILE: "production" },
+      remove: (p) => (removed.push(p), rmSync(p, { recursive: true, force: true })),
+    });
+    assert.deepEqual(r, { vars: { EXPO_PUBLIC_X: "1" } });
+    assert.ok(removed.includes(fileVar));
+  } finally {
+    rmSync(mobileDir, { recursive: true, force: true });
+  }
 });

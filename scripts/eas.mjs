@@ -370,24 +370,44 @@ export function main(
  * The `EXPO_PUBLIC_*` variables of one EAS environment, read with `eas env:pull` into a temporary
  * file that is deleted at once. `{ vars }`, or `{ error }`. eas's own output goes to stderr.
  */
-export function pullEasEnv(bin, environment, { spawn = spawnSync, tmp = tmpdir() } = {}) {
+export function pullEasEnv(
+  bin,
+  environment,
+  { spawn = spawnSync, tmp = tmpdir(), env = process.env, mobileDir = MOBILE_DIR, remove = removeQuietly } = {},
+) {
   let dir;
+  let text = "";
   try {
     dir = mkdtempSync(path.join(tmp, "frapp-eas-env-"));
     const file = path.join(dir, "pulled.env");
+    // env:pull evaluates app.config.js itself (to find the project), so it gets the same shell env
+    // the guard publishes with, minus what the guard drops and its own update markers.
     const result = spawn(
       process.execPath,
       [bin, "env:pull", "--environment", environment, "--path", file, "--non-interactive"],
-      { cwd: MOBILE_DIR, stdio: ["inherit", 2, 2] },
+      { cwd: mobileDir, stdio: ["inherit", 2, 2], env: pullEnvFor(env) },
     );
     if (result.error) return { error: result.error.message };
     if (result.status !== 0) return { error: `eas env:pull exited ${result.status}; its output above says why` };
-    return { vars: parsePulledEnv(readFileSync(file, "utf8")) };
+    text = readFileSync(file, "utf8");
+    return { vars: parsePulledEnv(text) };
   } catch (err) {
     return { error: err.message };
   } finally {
-    if (dir) removeQuietly(dir);
+    if (dir) remove(dir);
+    // A File variable is written beside the project, not into --path: delete each one it wrote.
+    const fileDir = path.join(mobileDir, ".eas", ".env");
+    for (const line of text.split(/\r?\n/)) {
+      const value = line.slice(line.indexOf("=") + 1);
+      if (line.includes("=") && path.dirname(value) === fileDir) remove(value);
+    }
   }
+}
+
+function pullEnvFor(env) {
+  return Object.fromEntries(
+    Object.entries(env).filter(([k]) => !/^(EXPO_PUBLIC_|EAS_BUILD_|FRAPP_EAS_UPDATE_)/.test(k)),
+  );
 }
 
 if (isInvokedDirectly(import.meta.url)) {

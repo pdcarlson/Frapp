@@ -27,8 +27,9 @@
 // a local run ever gets) because eas-cli evaluates app.config.js several times before it merges
 // them in (`DynamicProjectConfigContextField`, `ServerSideEnvironmentVariablesContextField`): with
 // the profile set and those values absent, the production Supabase fence would stop every run.
-// They are layered over eas.json's, as eas-cli layers them for the export, so every evaluation sees
-// what the bundle gets. `--branch`, `--auto`, `--skip-bundler` and `--input-dir` are refused: each
+// A name both set must agree (a build takes eas.json's value, an update's export takes EAS's), so
+// every evaluation sees what the bundle gets, and the bundle what its binary has. The guard that
+// runs is the checked-out release's own copy, so a release older than it is refused. `--branch`, `--auto`, `--skip-bundler` and `--input-dir` are refused: each
 // publishes somewhere other than the named channel, or a bundle this guard never shaped.
 //
 // For the production channel it also requires a clean tree at exactly the commit production
@@ -52,6 +53,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseRegistry } from "./check-api-breaking-changes.mjs";
 import { latestReleaseTag } from "./ci/lib/release-tag.mjs";
+import { REGISTRY_PATH } from "./ci/record-shipped-builds.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -60,7 +62,8 @@ export const UPDATE_GIT_SHA_ENV = "FRAPP_EAS_UPDATE_GIT_SHA";
 export const EAS_JSON = "apps/mobile/eas.json";
 export const APP_JSON = "apps/mobile/app.json";
 export const APP_CONFIG = "apps/mobile/app.config.js";
-export const SHIPPED_BUILDS = "apps/mobile/store/shipped-builds.json";
+export const SHIPPED_BUILDS = REGISTRY_PATH;
+export const GUARD_PATH = "scripts/eas-update.mjs";
 export const LOCKFILE = "package-lock.json";
 const DIST = "dist";
 
@@ -159,11 +162,9 @@ export function parsePulledEnv(text) {
 
 /** True when an installed package directory carries iOS or Android code a binary links. */
 export function isNativePackage(dir, { exists = existsSync, readdir = readdirSync } = {}) {
-  if (
-    exists(path.join(dir, "expo-module.config.json")) ||
-    exists(path.join(dir, "android", "build.gradle")) ||
-    exists(path.join(dir, "android", "build.gradle.kts"))
-  ) {
+  // Any android/, ios/ or apple/ directory counts, not only a module's build.gradle: tooling such
+  // as expo-modules-autolinking (a Gradle plugin) or a Swift macros plugin shapes the binary too.
+  if (["expo-module.config.json", "android", "ios", "apple"].some((f) => exists(path.join(dir, f)))) {
     return true;
   }
   try {
@@ -265,6 +266,12 @@ export function productionChecks({
     const headSha = git(["rev-parse", "HEAD"]);
     if (!latest.ok) {
       errors.push(`Can't tell what production serves: ${latest.error}.`);
+    } else if (git(["cat-file", "-e", `${latest.tag}:${GUARD_PATH}`]).status !== 0) {
+      // The guard runs from the checked-out tree, so a release without it would publish unguarded.
+      errors.push(
+        `The release production serves, ${latest.tag}, predates this guard, and \`npm run eas -- update\` ` +
+          "there is a bare, unsafe `eas update`. No update can be published until Deploy production ships a release that carries it.",
+      );
     } else if (tagSha.status !== 0 || headSha.status !== 0 || tagSha.stdout.trim() !== headSha.stdout.trim()) {
       errors.push(
         `HEAD isn't ${latest.tag}, the commit production serves. Publish from it: ` +
@@ -400,6 +407,19 @@ export function prepareUpdate(
   if (pulled.error) {
     return { ok: false, errors: [`Couldn't read the ${profile.environment} EAS environment's variables: ${pulled.error}`] };
   }
+  // A build takes eas.json's value when both set a name (eas-cli build/evaluateConfigWithEnvVarsAsync)
+  // and an update's export takes EAS's, so a difference would make the bundle disagree with its binary.
+  const conflicts = Object.entries(profile.env ?? {}).filter(([k, v]) => k in pulled.vars && pulled.vars[k] !== v);
+  if (conflicts.length) {
+    return {
+      ok: false,
+      errors: conflicts.map(
+        ([k, v]) =>
+          `${k} is "${v}" in ${EAS_JSON} build.${profileName}.env but "${pulled.vars[k]}" in the ${profile.environment} ` +
+          "EAS environment. A store build uses eas.json's value and an update would use EAS's: delete the EAS variable.",
+      ),
+    };
+  }
   const head = git(["rev-parse", "HEAD"]);
   const { env: outEnv, stripped } = updateEnv(env, {
     profileName,
@@ -408,9 +428,7 @@ export function prepareUpdate(
     easVars: pulled.vars,
   });
   if (stripped.length) notes.push(`Dropped from your shell for this run: ${stripped.join(", ")}.`);
-  for (const [k, v] of Object.entries(profile.env ?? {})) {
-    if (!(k in pulled.vars)) notes.push(`${k}=${v} (from ${EAS_JSON} build.${profileName}.env)`);
-  }
+  for (const [k, v] of Object.entries(profile.env ?? {})) notes.push(`${k}=${v} (from ${EAS_JSON} build.${profileName}.env)`);
   const fromEas = Object.keys(pulled.vars);
   notes.push(`From the ${profile.environment} EAS environment: ${fromEas.length ? fromEas.join(", ") : "nothing"}.`);
   return { ok: true, args: outArgs, env: outEnv, notes, profileName };

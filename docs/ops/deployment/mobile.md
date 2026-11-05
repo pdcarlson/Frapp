@@ -481,11 +481,16 @@ npm run eas -- update --channel production --message "<what changed, for the EAS
 git switch main   # afterwards
 ```
 
+**The guard that runs is the checked-out release's own copy.** A release older than the guard
+(`v0.8.1` and earlier) has none, and `npm run eas -- update` there is a bare, unsafe `eas update`.
+Before publishing, `git show <tag>:scripts/eas-update.mjs` must succeed. From `main`, the guard
+refuses outright while the latest release predates it.
+
 **Nothing can take an update yet.** As of 2026-11-05, the only store build is Android 0.9.0
-build 2, and `main` is at 0.9.1, because native code changed after that build (#3472). The first
-update becomes possible once a store build of 0.9.1 ships through § 6.6 and the PR that records it
-in `apps/mobile/store/shipped-builds.json` has merged. Until then, the guard refuses with "No store
-build of version 0.9.1 is recorded".
+build 2 (from `v0.8.1`), and `main` is at 0.9.1, because native code changed after that build
+(#3472). The first update becomes possible once Deploy production ships a release that carries
+the guard and version 0.9.1, a store build of it ships through § 6.6, and the PR that records that
+build in `apps/mobile/store/shipped-builds.json` has merged.
 
 `npm run eas -- update` runs [`scripts/eas-update.mjs`](../../../scripts/eas-update.mjs) before
 eas-cli, and refuses to publish when any check fails. It names what to fix. The checks fix four
@@ -495,10 +500,11 @@ traps a bare `eas update` falls into (eas-cli 24.8.0 source, read 2026-11-05, #3
   `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_SENTRY_ENVIRONMENT` would fall back to
   `http://localhost:3001` and `development`. The guard passes `--environment` for the channel's
   build profile and adds that profile's `env`. It then pulls that EAS environment's own
-  `EXPO_PUBLIC_*` variables (`eas env:pull` into a temporary file it deletes), because eas-cli
-  evaluates `app.config.js` before it loads them itself. It also drops every `EXPO_PUBLIC_*` your
-  shell holds, so nothing local is inlined. An EAS variable wins over `eas.json` for any name both
-  define, as it does in eas-cli's own export.
+  `EXPO_PUBLIC_*` variables (`eas env:pull` into a temporary file, deleted along with any File
+  variable the pull writes under `apps/mobile/.eas/.env/`), because eas-cli evaluates
+  `app.config.js` before it loads them itself. It also drops every `EXPO_PUBLIC_*` your shell
+  holds, so nothing local is inlined. A name set in both places must agree: a store build takes
+  `eas.json`'s value and an update would take EAS's, so the guard refuses a difference.
 - **The production fences.** `app.config.js` reads `FRAPP_EAS_UPDATE_PROFILE`, which the guard
   sets, so the API, Supabase, app URL and Ask fences run as they would for a store build. A
   production update also needs `EXPO_PUBLIC_SENTRY_DSN`. A local run loads only EAS variables whose
