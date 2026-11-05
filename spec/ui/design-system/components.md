@@ -192,6 +192,28 @@ There is no command menu and no ⌘K. The find field binds Cmd/Ctrl+F without ad
 
 ## 9. Sheets and dialogs
 
+### Surface size
+
+*(Added 2026-11-05, owner call: "small boxed dialogs for content that should be big" was one of the four patterns he asked to remove.)* The size of the surface follows its content, and the same content gets the same surface on every screen and on both apps.
+
+| Content | Web | Mobile |
+| --- | --- | --- |
+| A question, a confirmation, or a short form that fits without scrolling | **Dialog**: centered, the primitive's 512px, never scrolls | **Sheet** sized to its content, or a confirm alert |
+| Anything that scrolls, holds a list that grows, or shows a whole record (an event, a member, a long form, every live invite) | **Panel**: full height from the right edge, 576px, title row and footer pinned while the body scrolls ([`apps/web/components/shared/panel.tsx`](../../../apps/web/components/shared/panel.tsx)) | **Tall sheet**: full height, stopping just under the status bar, with an icon X in the header ([`apps/mobile/components/sheet-scaffold.tsx`](../../../apps/mobile/components/sheet-scaffold.tsx) `TALL_SHEET_SNAP_POINTS`, `TallSheetHeader`) |
+| Switches you change while watching the page | **Drawer**: the per-page settings drawer, `4c`'s 400px ([`../web-dashboard/README.md`](../web-dashboard/README.md) § Page grammar) | not used |
+
+Rules that go with it:
+
+- **A dialog never scrolls.** A dialog that needs a `max-h` and `overflow-y-auto` to fit is a panel. Before this rule five forms scrolled inside dialogs, with five different width and height caps between them (512 to 672 wide, 80vh to 90vh tall).
+- **One panel width.** Every panel is 576px, the width the event and member detail sheets already had. A form that opens from a record (Edit event from the event panel) slides in at the same size, so it reads as the record turning into its editor.
+- **Nothing scrolls inside a panel's body.** A list in a panel flows with the body rather than sitting in its own scroll box (`PermissionCheckboxGrid`'s `inPanel`).
+- **The primary action is pinned.** A panel's footer and a sheet's primary button stay on screen however long the body is. The member panel's Save role changes used to sit below the fold.
+- **A big surface closes with an X, not a word.** The panel's corner X and the tall sheet's header X are icon only. A record does not repeat its kind as a title: the member sheet shows the member's name, not "Member".
+- **No decorative glyph before a title.** The title names the surface; a glyph repeating the button just pressed is chrome.
+- **Mobile picks match web.** A member's profile is a panel on web and a tall sheet on mobile. Assign to, which lists the whole roster, is a tall sheet with its search pinned above the list.
+
+Not covered here: Find, the centered search palette, takes its own size from the top bar (its thread owns it), and the upload sheet is board `1j`'s drawn dialog.
+
 ### Bottom sheet (mobile)
 
 - Fill elevated `#2A2621`; top corners radius 20, bottom square; 1px hairline on top/sides, no bottom border.

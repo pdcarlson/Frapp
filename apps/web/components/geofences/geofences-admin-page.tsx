@@ -21,15 +21,13 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Sheet, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  PanelBody,
+  PanelContent,
+  PanelFooter,
+  PanelHeader,
+} from "@/components/shared/panel";
 import {
   anyReadUncached,
   PermissionsOfflineSurface,
@@ -419,29 +417,28 @@ export function GeofencesAdminPage() {
    * offline branch of its own: `gate.controlProps()` folds OFFLINE in.
    */
   const createZone = (
-    <Dialog {...createDialog.dialogProps}>
-      <DialogTrigger asChild>
+    <Sheet {...createDialog.dialogProps}>
+      <SheetTrigger asChild>
         <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
           <Plus className="h-4 w-4" />
           New study zone
         </Button>
-      </DialogTrigger>
-      <DialogContent
-        className="max-h-[80vh] overflow-y-auto sm:max-w-lg"
+      </SheetTrigger>
+      {/*
+        A panel, not a dialog (`components.md` § Surface size): a polygon has
+        no fixed length, and this scrolled inside a 512px dialog capped at
+        80vh. The event editor's check-in zone is the same kind of field and
+        opens in the same panel.
+      */}
+      <PanelContent
         // No description: the vertex format is field help beside the field
         // it describes. Explicitly undefined, or Radix logs a missing
         // `Description` warning.
         aria-describedby={undefined}
         {...createDialog.contentProps}
       >
-        <DialogHeader>
-          <DialogTitle>New study zone</DialogTitle>
-        </DialogHeader>
-        <form
-          id="geofence-create-form"
-          className="space-y-4"
-          onSubmit={submitCreate}
-        >
+        <PanelHeader>New study zone</PanelHeader>
+        <PanelBody as="form" id="geofence-create-form" onSubmit={submitCreate}>
           <div className="grid gap-1">
             <Label htmlFor="gf-name">Name</Label>
             <Input
@@ -481,7 +478,7 @@ export function GeofencesAdminPage() {
               its own.
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1">
               <Label htmlFor="gf-minutes-per-point">Minutes per point</Label>
               <Input
@@ -537,9 +534,9 @@ export function GeofencesAdminPage() {
               </p>
             </div>
           </div>
-        </form>
-        <DialogFooter>
-          {/* Cancel only closes the dialog — not a write, so not gated. */}
+        </PanelBody>
+        <PanelFooter>
+          {/* Cancel only closes the panel — not a write, so not gated. */}
           <Button
             variant="secondary"
             onClick={() => createDialog.setOpen(false)}
@@ -557,9 +554,9 @@ export function GeofencesAdminPage() {
             ) : null}
             Create study zone
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </PanelFooter>
+      </PanelContent>
+    </Sheet>
   );
 
   return (
@@ -714,116 +711,122 @@ export function GeofencesAdminPage() {
             </ul>
           )}
 
-          <Dialog {...editDialog.dialogProps}>
-            <DialogContent
-              className="max-h-[80vh] overflow-y-auto sm:max-w-lg"
-              {...editDialog.contentProps}
-            >
-              <DialogHeader>
-                <DialogTitle>Edit study zone</DialogTitle>
-                <DialogDescription>
+          <Sheet {...editDialog.dialogProps}>
+            <PanelContent {...editDialog.contentProps}>
+              <PanelHeader>Edit study zone</PanelHeader>
+              <PanelBody>
+                <SheetDescription>
                   Coordinates replace the full polygon on save.
-                </DialogDescription>
-              </DialogHeader>
-              {editTarget ? (
-                <form
-                  id="geofence-edit-form"
-                  className="space-y-4"
-                  onSubmit={submitEdit}
-                >
-                  <div className="grid gap-1">
-                    <Label htmlFor="gf-edit-name">Name</Label>
-                    <Input
-                      id="gf-edit-name"
-                      value={editDraft.name}
-                      onChange={(event) =>
-                        setEditDraft((prev) => ({
-                          ...prev,
-                          name: event.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="gf-edit-coords">Vertices</Label>
-                    <Textarea
-                      id="gf-edit-coords"
-                      aria-describedby="gf-edit-coords-help"
-                      className="font-mono text-sm"
-                      value={editDraft.coordinates}
-                      onChange={(event) =>
-                        setEditDraft((prev) => ({
-                          ...prev,
-                          coordinates: event.target.value,
-                        }))
-                      }
-                      rows={6}
-                      required
-                    />
-                    <p
-                      id="gf-edit-coords-help"
-                      className="text-caption text-muted-foreground"
-                    >
-                      One lat, lng pair per line.
-                    </p>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-3">
+                </SheetDescription>
+                {editTarget ? (
+                  <form
+                    id="geofence-edit-form"
+                    className="space-y-4"
+                    onSubmit={submitEdit}
+                  >
                     <div className="grid gap-1">
-                      <Label htmlFor="gf-edit-mpp">Minutes per point</Label>
+                      <Label htmlFor="gf-edit-name">Name</Label>
                       <Input
-                        id="gf-edit-mpp"
-                        type="number"
-                        min={1}
-                        value={editDraft.minutes_per_point}
+                        id="gf-edit-name"
+                        value={editDraft.name}
                         onChange={(event) =>
-                          setEditRule("minutes_per_point", event.target.value)
+                          setEditDraft((prev) => ({
+                            ...prev,
+                            name: event.target.value,
+                          }))
                         }
+                        required
                       />
                     </div>
                     <div className="grid gap-1">
-                      <Label htmlFor="gf-edit-ppi">Points per interval</Label>
-                      <Input
-                        id="gf-edit-ppi"
-                        type="number"
-                        min={1}
-                        value={editDraft.points_per_interval}
+                      <Label htmlFor="gf-edit-coords">Vertices</Label>
+                      <Textarea
+                        id="gf-edit-coords"
+                        aria-describedby="gf-edit-coords-help"
+                        className="font-mono text-sm"
+                        value={editDraft.coordinates}
                         onChange={(event) =>
-                          setEditRule("points_per_interval", event.target.value)
+                          setEditDraft((prev) => ({
+                            ...prev,
+                            coordinates: event.target.value,
+                          }))
                         }
+                        rows={6}
+                        required
                       />
+                      <p
+                        id="gf-edit-coords-help"
+                        className="text-caption text-muted-foreground"
+                      >
+                        One lat, lng pair per line.
+                      </p>
                     </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="gf-edit-min">Min session (min)</Label>
-                      <Input
-                        id="gf-edit-min"
-                        type="number"
-                        min={0}
-                        value={editDraft.min_session_minutes}
-                        onChange={(event) =>
-                          setEditRule("min_session_minutes", event.target.value)
-                        }
-                      />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="grid gap-1">
+                        <Label htmlFor="gf-edit-mpp">Minutes per point</Label>
+                        <Input
+                          id="gf-edit-mpp"
+                          type="number"
+                          min={1}
+                          value={editDraft.minutes_per_point}
+                          onChange={(event) =>
+                            setEditRule("minutes_per_point", event.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="gf-edit-ppi">Points per interval</Label>
+                        <Input
+                          id="gf-edit-ppi"
+                          type="number"
+                          min={1}
+                          value={editDraft.points_per_interval}
+                          onChange={(event) =>
+                            setEditRule(
+                              "points_per_interval",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="gf-edit-min">Min session (min)</Label>
+                        <Input
+                          id="gf-edit-min"
+                          type="number"
+                          min={0}
+                          value={editDraft.min_session_minutes}
+                          onChange={(event) =>
+                            setEditRule(
+                              "min_session_minutes",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="gf-edit-pause-grace">
+                          Pause grace (min)
+                        </Label>
+                        <Input
+                          id="gf-edit-pause-grace"
+                          type="number"
+                          min={1}
+                          value={editDraft.pause_grace_minutes}
+                          onChange={(event) =>
+                            setEditRule(
+                              "pause_grace_minutes",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </div>
                     </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="gf-edit-pause-grace">
-                        Pause grace (min)
-                      </Label>
-                      <Input
-                        id="gf-edit-pause-grace"
-                        type="number"
-                        min={1}
-                        value={editDraft.pause_grace_minutes}
-                        onChange={(event) =>
-                          setEditRule("pause_grace_minutes", event.target.value)
-                        }
-                      />
-                    </div>
-                  </div>
-                </form>
-              ) : null}
-              <DialogFooter>
-                {/* Cancel only closes the dialog — not a write, so not gated. */}
+                  </form>
+                ) : null}
+              </PanelBody>
+              <PanelFooter>
+                {/* Cancel only closes the panel — not a write, so not gated. */}
                 <Button
                   variant="secondary"
                   onClick={() => editDialog.setOpen(false)}
@@ -841,9 +844,9 @@ export function GeofencesAdminPage() {
                   ) : null}
                   Save changes
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </PanelFooter>
+            </PanelContent>
+          </Sheet>
           {confirmDialog}
         </div>
       </Can>

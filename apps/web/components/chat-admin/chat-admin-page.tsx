@@ -39,15 +39,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Sheet, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  PanelBody,
+  PanelContent,
+  PanelFooter,
+  PanelHeader,
+} from "@/components/shared/panel";
 import {
   anyReadUncached,
   readIsOffline,
@@ -590,22 +588,31 @@ function ChatAdminBody() {
           >
             Channels
           </SectionLabel>
-          <Dialog
+          <Sheet
             open={createDialogOpen}
             onOpenChange={(open) => {
               setCreateDialogOpen(open);
               if (!open) resetCreateDraft();
             }}
           >
-            <DialogTrigger asChild>
+            <SheetTrigger asChild>
               <Button className="gap-2">
                 <Plus className="h-4 w-4" />
                 New channel
               </Button>
-            </DialogTrigger>
-            <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Create a channel</DialogTitle>
+            </SheetTrigger>
+            {/*
+              A panel, not a dialog (`components.md` § Surface size): a
+              role-gated channel carries the whole permission grid, so this
+              scrolled inside a 512px dialog capped at 80vh.
+            */}
+            <PanelContent>
+              <PanelHeader>Create a channel</PanelHeader>
+              <PanelBody
+                as="form"
+                id="channel-create-form"
+                onSubmit={handleCreateChannel}
+              >
                 {/*
                   Kept, because it is the one place the three types are told
                   apart, and the last place to choose one: the update route
@@ -615,19 +622,13 @@ function ChatAdminBody() {
                   Channels): only the ids in `member_ids` read it, and the
                   create route seeds that with its creator alone.
                 */}
-                <DialogDescription>
+                <SheetDescription>
                   Public channels are open to every member. A private channel is
                   readable only by its members, and you are its first. A
                   role-gated channel is readable by members holding at least one
                   of the selected permissions. A channel&apos;s type can&apos;t
                   be changed after it&apos;s created.
-                </DialogDescription>
-              </DialogHeader>
-              <form
-                id="channel-create-form"
-                className="space-y-4"
-                onSubmit={handleCreateChannel}
-              >
+                </SheetDescription>
                 <div className="grid gap-1">
                   <Label htmlFor="ca-create-name">Name</Label>
                   <Input
@@ -710,6 +711,7 @@ function ChatAdminBody() {
                       A member needs at least one of these to read or post.
                     </p>
                     <PermissionCheckboxGrid
+                      inPanel
                       catalog={catalog}
                       catalogLoading={catalogLoading}
                       catalogUnavailable={catalogUnavailable}
@@ -719,8 +721,8 @@ function ChatAdminBody() {
                     />
                   </div>
                 ) : null}
-              </form>
-              <DialogFooter>
+              </PanelBody>
+              <PanelFooter>
                 <Button
                   variant="secondary"
                   onClick={() => setCreateDialogOpen(false)}
@@ -743,9 +745,9 @@ function ChatAdminBody() {
                   ) : null}
                   Create channel
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </PanelFooter>
+            </PanelContent>
+          </Sheet>
         </div>
 
         {channels.length === 0 ? (

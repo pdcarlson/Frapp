@@ -32,9 +32,10 @@ const INVITE = {
 };
 
 vi.mock("@repo/hooks", () => ({
-  useRoles: () => mockRoles(),
+  // `refetch`: opening the panel re-reads invites and roles.
+  useRoles: () => ({ refetch: vi.fn(), ...mockRoles() }),
   useOrgConfig: () => mockOrgConfig(),
-  useInvites: () => ({ data: [INVITE], isError: false }),
+  useInvites: () => ({ data: [INVITE], isError: false, refetch: vi.fn() }),
   useCreateInvite: () => ({
     mutateAsync: mockCreateInvite,
     isPending: false,
@@ -304,7 +305,7 @@ describe("InviteMemberDialog default role", () => {
     expect(rolePicker().value).toBe("Member");
   });
 
-  it("re-adopts the default after the dialog is closed with Done", async () => {
+  it("re-adopts the default after the panel is closed", async () => {
     mockRoles.mockReturnValue({ data: ROLES, isError: false });
     mockOrgConfig.mockReturnValue({
       data: { default_invite_role_id: "role-pledge" },
@@ -314,9 +315,9 @@ describe("InviteMemberDialog default role", () => {
     await userEvent.selectOptions(rolePicker(), "Alumni");
     expect(rolePicker().value).toBe("Alumni");
 
-    // Done sets state directly rather than going through Radix's dismiss
-    // path, so it is the close route most likely to skip the reset.
-    await userEvent.click(screen.getByRole("button", { name: /^done$/i }));
+    // The panel's X is its only close control now that the Done footer is
+    // gone; it goes through `handleOpenChange`, which owns the reset.
+    await userEvent.click(screen.getByRole("button", { name: /^close$/i }));
     await userEvent.click(screen.getByRole("button", { name: /^invite$/i }));
 
     expect(rolePicker().value).toBe("New Member");

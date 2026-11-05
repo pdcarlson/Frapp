@@ -25,9 +25,11 @@ import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { ErrorState, SkeletonLines } from "@/components/state-block";
 import {
   SheetGrabber,
-  SheetHeader,
   SheetScrim,
+  TALL_SHEET_SNAP_POINTS,
+  TallSheetHeader,
   useSheetBackgroundStyle,
+  useTallSheetTopInset,
 } from "@/components/sheet-scaffold";
 import {
   resolveCustomRoleNames,
@@ -66,6 +68,14 @@ import {
  * because the directory is where a member you have blocked is still listed and
  * so where you would look for them.
  *
+ * ## A tall sheet
+ *
+ * It opens at full height (`TALL_SHEET_SNAP_POINTS`,
+ * `spec/ui/design-system/components.md` § Surface size): it holds a whole
+ * profile, and the 65% box it used to open in cut the bio and Block off below
+ * the fold. No "Member" title and no "Done": the member's name heads the
+ * body, and the header's X closes it.
+ *
  * ## Fixed snap points, not `enableDynamicSizing`
  *
  * A bio has no length cap (the API's `UpdateUserDto` bounds none of its
@@ -76,25 +86,29 @@ import {
  * spells out at its second modal: nested inside a `BottomSheetView`, the view
  * and the scrollable write competing heights to the same animated value.
  */
-const SNAP_POINTS = ["65%"];
-
 export interface MemberDetailSheetProps {
-  /** `null` while no row is selected; the sheet stays mounted regardless. */
-  userId: string | null;
+  /**
+   * The tapped row's ids, or `null` while no row is selected; the sheet stays
+   * mounted regardless. The profile is fetched by `memberId` (the route takes
+   * the member row's id) and the stale-DM guard keys on `userId`.
+   */
+  member: { memberId: string; userId: string } | null;
   onDismiss?: () => void;
 }
 
 export const MemberDetailSheet = forwardRef<
   BottomSheetModal,
   MemberDetailSheetProps
->(function MemberDetailSheet({ userId, onDismiss }, ref) {
+>(function MemberDetailSheet({ member, onDismiss }, ref) {
+  const userId = member?.userId ?? null;
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
+  const topInset = useTallSheetTopInset();
 
   // `useMember` is already `enabled: !!id`, so this stays idle until a row is
   // actually tapped rather than firing for every mounted-but-closed sheet.
-  const memberQuery = useMember(userId ?? "");
+  const memberQuery = useMember(member?.memberId ?? "");
   const rolesQuery = useRoles();
 
   // Custom roles (`chapter_custom_roles` — chapter-specific titles like
@@ -198,7 +212,8 @@ export const MemberDetailSheet = forwardRef<
     <BottomSheetModal
       ref={ref}
       enableDynamicSizing={false}
-      snapPoints={SNAP_POINTS}
+      snapPoints={TALL_SHEET_SNAP_POINTS}
+      topInset={topInset}
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
@@ -208,7 +223,7 @@ export const MemberDetailSheet = forwardRef<
         style={styles.scroll}
         contentContainerStyle={styles.body}
       >
-        <SheetHeader title="Member" onCancel={dismiss} cancelLabel="Done" />
+        <TallSheetHeader onClose={dismiss} />
 
         {memberQuery.isPending ? (
           <SkeletonLines lines={4} showTile tone="list" />

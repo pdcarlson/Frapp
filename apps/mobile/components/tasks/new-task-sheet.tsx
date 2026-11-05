@@ -23,8 +23,11 @@ import {
   SheetPrimaryButton,
   SheetScrim,
   sheetFieldStyles,
+  TALL_SHEET_SNAP_POINTS,
+  TallSheetHeader,
   useSheetBackgroundStyle,
   useSheetVisit,
+  useTallSheetTopInset,
 } from "@/components/sheet-scaffold";
 import { CalendarGlyph } from "@/components/tasks/task-glyphs";
 import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
@@ -104,9 +107,6 @@ import {
  * that was sent.
  */
 
-/** A list has no natural height, so the picker snaps rather than sizing to content. */
-const PICKER_SNAP_POINTS = ["70%"];
-
 export interface NewTaskSheetProps {
   /** Injected so the presets are deterministic under test. */
   now?: Date;
@@ -147,6 +147,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const { accent } = brand;
     const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
+    const pickerTopInset = useTallSheetTopInset();
     const pickerRef = useRef<BottomSheetModal>(null);
     const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
       useSheetVisit(ref);
@@ -467,7 +468,11 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           size to. */}
       <BottomSheetModal
         ref={pickerRef}
-        snapPoints={PICKER_SNAP_POINTS}
+        // A tall sheet (`components.md` § Surface size): the whole roster,
+        // and a search the keyboard would otherwise squeeze into a sliver of
+        // the old 70% box.
+        snapPoints={TALL_SHEET_SNAP_POINTS}
+        topInset={pickerTopInset}
         keyboardBehavior="interactive"
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
@@ -478,12 +483,14 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           keyExtractor={(row: RosterMember) => row.userId}
           contentContainerStyle={styles.pickerContent}
           keyboardShouldPersistTaps="handled"
+          // The title and search stay pinned while the roster scrolls under
+          // them, so the field is still there after a long scroll.
+          stickyHeaderIndices={[0]}
           ListHeaderComponent={
             <View style={styles.pickerHeader}>
-              <SheetHeader
+              <TallSheetHeader
                 title="Assign to"
-                onCancel={() => pickerRef.current?.dismiss()}
-                cancelLabel="Done"
+                onClose={() => pickerRef.current?.dismiss()}
               />
               {/* Not `SearchField` from `components/filter-chips.tsx`: that is a
                   plain `TextInput`, and inside a gorhom sheet a plain input
@@ -609,6 +616,8 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     pickerHeader: {
       gap: tokens.spacing.sm,
       paddingBottom: tokens.spacing.sm,
+      // Sticky, so it paints the sheet's own fill over the rows passing under.
+      backgroundColor: tokens.color.surface.popover,
     },
     pickerEmpty: {
       ...typeRole(tokens.typography.role.caption),

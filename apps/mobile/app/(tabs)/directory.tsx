@@ -67,7 +67,7 @@ export default function DirectoryScreen() {
   const styles = createStyles(tokens);
   const chapterId = useActiveChapterId();
   const detailSheetRef = useRef<BottomSheetModal>(null);
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<DirectoryRow | null>(null);
 
   const [tab, setTab] = useState<Tab>("actives");
   const [query, setQuery] = useState("");
@@ -297,7 +297,7 @@ export default function DirectoryScreen() {
           <MemberRow
             row={item}
             onPress={() => {
-              setSelectedUserId(item.userId);
+              setSelected(item);
               detailSheetRef.current?.present();
             }}
           />
@@ -307,8 +307,8 @@ export default function DirectoryScreen() {
       />
       <MemberDetailSheet
         ref={detailSheetRef}
-        userId={selectedUserId}
-        onDismiss={() => setSelectedUserId(null)}
+        member={selected}
+        onDismiss={() => setSelected(null)}
       />
     </SafeAreaView>
   );

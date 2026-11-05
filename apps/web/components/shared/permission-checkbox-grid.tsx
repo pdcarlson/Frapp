@@ -6,6 +6,7 @@ import {
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { cn } from "@/lib/utils";
 
 export interface PermissionCatalogEntry {
   key: string;
@@ -33,6 +34,10 @@ export interface PermissionCatalogEntry {
  * "Loading" until reconnect) or fails (and would blame a permission nobody
  * checked), depending on how the dashboard got offline — `anyReadUncached` in
  * `async-states.tsx` has the two cases (#2267).
+ *
+ * `inPanel` drops the list's own 192px scroll box. Inside a panel the body
+ * already scrolls, and a scroller inside a scroller is the cramped box the
+ * panel exists to remove (`components.md` § Surface size).
  */
 export function PermissionCheckboxGrid({
   catalog,
@@ -41,6 +46,7 @@ export function PermissionCheckboxGrid({
   selected,
   onToggle,
   holders,
+  inPanel = false,
 }: {
   catalog: PermissionCatalogEntry[];
   catalogLoading: boolean;
@@ -48,6 +54,7 @@ export function PermissionCheckboxGrid({
   selected: Set<string>;
   onToggle: (permission: string) => void;
   holders?: ReadonlyMap<string, readonly string[]>;
+  inPanel?: boolean;
 }) {
   const { isOffline } = useNetwork();
   if (isOffline && (catalogUnavailable || catalogLoading)) {
@@ -79,7 +86,12 @@ export function PermissionCheckboxGrid({
       .map((permission) => ({ key: permission, permission })),
   ];
   return (
-    <div className="mt-2 grid gap-2 rounded-md border border-border p-3 max-h-48 overflow-y-auto">
+    <div
+      className={cn(
+        "mt-2 grid gap-2 rounded-md border border-border p-3",
+        !inPanel && "max-h-48 overflow-y-auto",
+      )}
+    >
       {entries
         .filter((entry) => entry.permission !== "*")
         .map((entry) => {
@@ -97,7 +109,9 @@ export function PermissionCheckboxGrid({
                   onChange={() => onToggle(entry.permission)}
                 />
               </span>
-              <span>{permissionLabel(entry.permission)}</span>
+              <span className="shrink-0">
+                {permissionLabel(entry.permission)}
+              </span>
               {holders ? (
                 <span className="truncate text-xs text-muted-foreground">
                   {roles.length > 0 ? roles.join(", ") : "no role holds this"}

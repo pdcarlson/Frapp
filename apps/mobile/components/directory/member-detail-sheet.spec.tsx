@@ -51,12 +51,16 @@ function profile(userId: string, name: string) {
   };
 }
 
-const PROFILES: Record<string, ReturnType<typeof profile>> = {
-  [ADA]: profile(ADA, "Ada"),
-  [BOB]: profile(BOB, "Bob"),
-  [SYSTEM_SENDER_ID]: profile(SYSTEM_SENDER_ID, "Frapp"),
-  [VIEWER]: profile(VIEWER, "Me"),
-};
+// Keyed by member id, the id `GET /v1/members/{id}` takes: a sheet that
+// fetched by user id would find nothing here, as it found a 404 on the API.
+const PROFILES: Record<string, ReturnType<typeof profile>> = Object.fromEntries(
+  [
+    profile(ADA, "Ada"),
+    profile(BOB, "Bob"),
+    profile(SYSTEM_SENDER_ID, "Frapp"),
+    profile(VIEWER, "Me"),
+  ].map((p) => [p.id, p]),
+);
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -103,12 +107,16 @@ const dismiss = vi.fn();
 
 // The directory hands the sheet a ref, and the sheet dismisses itself through
 // it; one ref across re-renders, as the directory's `useRef` is.
-const sheetRef = React.createRef<React.ComponentRef<typeof MemberDetailSheet>>();
+const sheetRef =
+  React.createRef<React.ComponentRef<typeof MemberDetailSheet>>();
 
 function sheet(userId: string | null) {
   return (
     <FrappThemeProvider>
-      <MemberDetailSheet ref={sheetRef} userId={userId} />
+      <MemberDetailSheet
+        ref={sheetRef}
+        member={userId ? { memberId: `m-${userId}`, userId } : null}
+      />
     </FrappThemeProvider>
   );
 }
@@ -447,7 +455,7 @@ describe("MemberDetailSheet fact rows", () => {
     state.blockStatus = "ready";
     state.blocked = new Set();
     state.blockPaused = false;
-    PROFILES[CARA] = {
+    PROFILES[`m-${CARA}`] = {
       ...profile(CARA, "Cara"),
       custom_fields: [
         {

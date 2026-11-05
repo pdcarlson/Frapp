@@ -5,8 +5,10 @@ import {
   type BottomSheetBackdropProps,
   type BottomSheetModal,
 } from "@gorhom/bottom-sheet";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { CloseGlyph } from "@/components/chat/viewer-glyphs";
 
 /**
  * The chrome every Signet bottom sheet draws: the grabber, the title/Cancel
@@ -105,6 +107,84 @@ export function SheetHeader({
           {cancelLabel}
         </Text>
       </Pressable>
+    </View>
+  );
+}
+
+/**
+ * The tall sheet: a sheet for content that should be big
+ * (`spec/ui/design-system/components.md` § Surface size). A whole record (a
+ * member's profile) or a roster to pick from (Assign to) opens at full height,
+ * stopping just under the status bar, rather than in a fixed 65–70% box that
+ * cuts the content off and scrolls it in a window. The owner called those
+ * cramped (2026-11-05); web puts the same content in a full-height panel.
+ *
+ * Pass `snapPoints={TALL_SHEET_SNAP_POINTS}` and
+ * `topInset={useTallSheetTopInset()}` with `enableDynamicSizing={false}`. At
+ * full height there is no scrim left to tap, so the header carries
+ * {@link SheetCloseButton}; the grabber still drags it away.
+ */
+export const TALL_SHEET_SNAP_POINTS = ["100%"];
+
+/**
+ * How far a tall sheet stops below the top of the screen: the status bar plus
+ * a sliver, so the screen behind still shows above the sheet's rounded corners
+ * and the sheet reads as something to swipe away, not a new page.
+ */
+export function useTallSheetTopInset() {
+  const { tokens } = useFrappTheme();
+  return useSafeAreaInsets().top + tokens.spacing.sm;
+}
+
+/**
+ * The close control a tall sheet's header carries: the image viewer's X glyph,
+ * icon only, muted, in a 44pt box (the Small icon button step on touch,
+ * `foundations.md` § 9). A word ("Done", "Cancel") repeats
+ * what the X already says, which is the audit's worded-icon-button rule.
+ */
+export function SheetCloseButton({
+  onPress,
+  accessibilityLabel = "Close",
+}: {
+  onPress: () => void;
+  accessibilityLabel?: string;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPress={onPress}
+      style={styles.closeButton}
+    >
+      <CloseGlyph color={tokens.color.text.mutedForeground} />
+    </Pressable>
+  );
+}
+
+/**
+ * A tall sheet's header row: an optional title and the close X. A record
+ * sheet passes no title, because the record's own name heads the body (the
+ * member sheet used to say "Member" above "Marcus Ellison").
+ */
+export function TallSheetHeader({
+  title,
+  onClose,
+}: {
+  title?: string;
+  onClose: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <View style={[styles.headerRow, title ? null : styles.headerRowEnd]}>
+      {title ? (
+        <Text style={styles.title} accessibilityRole="header">
+          {title}
+        </Text>
+      ) : null}
+      <SheetCloseButton onPress={onClose} />
     </View>
   );
 }
@@ -274,6 +354,19 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "space-between",
       marginBottom: tokens.spacing.sm,
+    },
+    headerRowEnd: {
+      justifyContent: "flex-end",
+    },
+    closeButton: {
+      width: tokens.touch.minimum,
+      height: tokens.touch.minimum,
+      // The 24pt glyph sits on the content's right edge and the header row
+      // keeps its height: the box's extra 10pt each side overhangs.
+      marginRight: -(tokens.touch.minimum - 24) / 2,
+      marginVertical: -(tokens.touch.minimum - 24) / 2,
+      alignItems: "center",
+      justifyContent: "center",
     },
     title: {
       // TODO-DESIGN: Canvas draws the sheet title at 19px/700; `title` is 18/600.
