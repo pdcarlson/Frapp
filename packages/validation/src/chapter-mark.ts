@@ -68,7 +68,11 @@ export function greekLettersShown(branding: ChapterMarkBranding): boolean {
  * The chapter's Greek letters, or null when it has none or has turned them off.
  * `chapterTextMark` reads the letters only through this, and every surface that
  * shows the mark reads it through `chapterTextMark` or `resolveChapterMark`,
- * which is what makes the opt-out hold everywhere.
+ * which is what makes the chapter's own opt-out hold everywhere. An
+ * organization that never displays its letters is not decided here: each
+ * caller that shows a live chapter's mark sets the switch off first by the
+ * chapter's name (`orgHidingGreekLettersIn`), as spec/behavior/branding.md
+ * § Where it's set lists (one shared helper: #3459).
  */
 export function displayedGreekLetters(
   branding: ChapterMarkBranding,
