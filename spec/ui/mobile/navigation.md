@@ -227,9 +227,9 @@ through `pickImage` and the PUT half of the same pipeline, attaching a photo to 
 service entry. Like the fourth it needs no native change and ships over the air, and
 `photosPermission` can only widen in a store build, so #3401 must name service proof
 alongside documents. The privacy policy's permissions clause names it in the same
-change, moving only the page's pin on the #3395 precedent; the owner's ruling is
-[#3424](https://github.com/pdcarlson/Frapp/issues/3424), and if it is material the
-page's date and `LEGAL_POLICY_VERSION` move instead.
+change, moving only the page's pin on the #3395 precedent. Whether that edit is
+material is still open in [#3424](https://github.com/pdcarlson/Frapp/issues/3424); the
+outcomes are in [the store README](../../../apps/mobile/store/README.md#privacy-questionnaire-answers).
 
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`
