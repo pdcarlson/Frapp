@@ -114,7 +114,7 @@ export type SignetTokens = {
    * Scrollbars are quiet chrome drawn on every scroll region: a thin neutral
    * thumb on a clear track, so the bar blends into whichever surface it sits
    * on. It replaced the board's gold-on-`#1A1A1A` bar (option `3a`) on
-   * 2026-11-05 at Paul's request: the gold bar read as the loudest thing on
+   * 2026-11-05 at the owner's request: the gold bar read as the loudest thing on
    * the chat screen. See the `@layer components` block in `signet.css` for the
    * engine split.
    *

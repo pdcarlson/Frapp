@@ -439,7 +439,9 @@
 
   *::-webkit-scrollbar-thumb {
     background-color: var(--scrollbar-thumb);
-    border-radius: 9999px;
+    /* `--radius-xs` is larger than half the thumb, so the corners clamp to a
+     * full round: no off-map pill radius needed. */
+    border-radius: var(--radius-xs);
     /* A 1px clear border with `background-clip: padding-box` insets the
      * thumb inside its gutter, so the visible bar is 4px with a hairline of
      * surface around it rather than a slab that fills the gutter. */

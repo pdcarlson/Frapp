@@ -422,7 +422,11 @@ describe("each surface imports exactly its own system", () => {
  * 3. **`::selection`**, which had no value, no token and no test before lane 7.
  */
 describe("the fixed families cannot be wired to the accent slot", () => {
-  /** Every token the brand lock keeps out of the accent engine. */
+  /**
+   * Every token kept out of the accent engine: the brand-locked golds, plus
+   * fixed families that must read the same in every chapter for their own
+   * reasons, noted beside each.
+   */
   const FIXED = [
     // The mention family states "you were addressed" and must read identically
     // in every chapter (foundations §5), so it is locked out of the engine for
@@ -447,6 +451,8 @@ describe("the fixed families cannot be wired to the accent slot", () => {
     "--gold-ask-fill",
     "--gold-ask-border",
     "--gold-ask-text",
+    // The scrollbar is neutral chrome meant to blend in (foundations §12),
+    // not brand: a chapter accent on it is the loud bar coming back.
     "--scrollbar-thumb",
     "--scrollbar-thumb-hover",
     "--scrollbar-track",
@@ -480,27 +486,76 @@ describe("the fixed families cannot be wired to the accent slot", () => {
     ).toEqual([]);
   });
 
-  it("the scrollbar is neutral: no hue, no gold, no accent", () => {
-    // Paul retired the board's gold-on-`#1A1A1A` bar on 2026-11-05 because it
-    // was the loudest thing on the chat screen (foundations §12). A thumb or
-    // track with any hue in it, gold included, is that bar coming back.
-    const channels = (value: string | undefined) =>
-      /^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/
-        .exec(value ?? "")
-        ?.slice(1)
-        .map(Number);
-    for (const token of [
+  describe("the scrollbar is thin, neutral and quiet (foundations §12)", () => {
+    // The owner retired the board's gold-on-`#1A1A1A` bar on 2026-11-05
+    // because it was the loudest thing on the chat screen. Each assertion
+    // below is one way that bar could come back.
+    const rgba = (token: string) => {
+      const match =
+        /^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)$/.exec(
+          root.get(token) ?? "",
+        );
+      expect(match, `${token} is not an rgba() literal`).not.toBeNull();
+      return match!.slice(1).map(Number) as [number, number, number, number];
+    };
+
+    it.each([
       "--scrollbar-thumb",
       "--scrollbar-thumb-hover",
       "--scrollbar-track",
-    ]) {
-      const rgba = channels(root.get(token));
-      expect(rgba, `${token} is not an rgba() literal`).toBeDefined();
-      const [r, g, b] = rgba!;
-      expect(new Set([r, g, b]).size, `${token} carries a hue`).toBe(1);
-    }
-    // The track paints nothing, so the bar sits on the region's own surface.
-    expect(channels(root.get("--scrollbar-track"))![3]).toBe(0);
+    ])("%s carries no hue", (token) => {
+      const [r, g, b] = rgba(token);
+      expect(new Set([r, g, b]).size).toBe(1);
+    });
+
+    it.each(["--scrollbar-thumb", "--scrollbar-thumb-hover"])(
+      "%s stays visible but quiet",
+      (token) => {
+        // Above 0: the bar is never hidden. At most 0.3: past that it stops
+        // blending in. §12 records the contrast exception these bounds keep.
+        const alpha = rgba(token)[3];
+        expect(alpha).toBeGreaterThan(0);
+        expect(alpha).toBeLessThanOrEqual(0.3);
+      },
+    );
+
+    it("the track paints nothing and the gutter stays thin", () => {
+      expect(rgba("--scrollbar-track")[3]).toBe(0);
+      expect(signetDarkTokens.scrollbar.width).toBeLessThanOrEqual(8);
+    });
+
+    it("the rules that paint the bar read only the scrollbar tokens", () => {
+      // The tokens above are only half of it: a literal gold or a
+      // `var(--primary)` written straight into a paint rule would bring the
+      // loud bar back with every token test green.
+      const body = (selector: string) => {
+        const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const match = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(css);
+        expect(match, `${selector} rule is missing`).not.toBeNull();
+        return match![1]!;
+      };
+      const painted = (decls: string) =>
+        [
+          ...decls.matchAll(
+            /(background(?:-color)?|scrollbar-color)\s*:\s*([^;]+);/g,
+          ),
+        ].map((m) => m[2]!.trim());
+      expect(painted(body("*::-webkit-scrollbar-thumb"))).toEqual([
+        "var(--scrollbar-thumb)",
+      ]);
+      expect(painted(body("*::-webkit-scrollbar-thumb:hover"))).toEqual([
+        "var(--scrollbar-thumb-hover)",
+      ]);
+      expect(painted(body("*::-webkit-scrollbar-track"))).toEqual([
+        "var(--scrollbar-track)",
+      ]);
+      expect(painted(body("*::-webkit-scrollbar-corner"))).toEqual([
+        "var(--scrollbar-track)",
+      ]);
+      expect(css).toMatch(
+        /scrollbar-color:\s*var\(--scrollbar-thumb\)\s+var\(--scrollbar-track\);/,
+      );
+    });
   });
 });
 

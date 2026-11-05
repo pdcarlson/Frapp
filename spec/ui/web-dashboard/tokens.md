@@ -256,7 +256,9 @@ Two things lane 2 found while taking these, both recorded rather than smoothed o
   that element's WebKit pseudo-elements ignored outright, so Chrome and Edge get a flat `thin` bar
   and silently discard the 8px width, the rounding and the track inset. The repo's existing
   `@supports not selector(::-webkit-scrollbar)` split was kept, which is what makes every engine
-  render the board's *intent*. Transcribe the reference, never lift it.
+  render the board's *intent*. Transcribe the reference, never lift it. *(Corrected 2026-11-05: the
+  split now carries §12's neutral values, not the board's gold. The board's scrollbar is a recorded
+  departure in [`reference/README.md`](reference/README.md) § What this board settles.)*
 - **`#332E26` is measurably a weaker shimmer on this ladder, and shipped anyway.** The gradient is
   `--popover` -> highlight -> `--popover`, so that delta is the whole visible signal. Against the
   greenfield `--popover` (`#2A2621`): `#38312A` measures **1.1740:1**, `#332E26` measures
