@@ -248,6 +248,32 @@ describe("the image viewer", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("covers the whole window over a dim backdrop, with no card around the image", async () => {
+    show(photo(1));
+    const { dialog } = await openViewerOn("photo-1.png");
+
+    expect(dialog).toHaveClass("fixed", "inset-0");
+    expect(dialog).not.toHaveClass("border");
+    // The backdrop is the overlay behind it, the dialog's sibling in the portal.
+    const overlay = dialog.previousElementSibling;
+    expect(overlay).toHaveClass("fixed", "inset-0", "bg-black/85");
+  });
+
+  it("stays open when a press on a control slips off onto the backdrop", async () => {
+    // The browser fires `click` on the common ancestor, which is the backdrop.
+    show(photo(1), photo(2));
+    const { user, dialog } = await openViewerOn("photo-1.png");
+    const next = within(dialog).getByRole("button", { name: "Next image" });
+
+    await user.pointer([
+      { keys: "[MouseLeft>]", target: next },
+      { target: dialog },
+      { keys: "[/MouseLeft]", target: dialog },
+    ]);
+
+    expect(screen.queryByRole("dialog")).not.toBeNull();
+  });
+
   it("stays open on a click on the image", async () => {
     show(photo(1));
     const { user, dialog } = await openViewerOn("photo-1.png");

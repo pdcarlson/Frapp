@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type KeyboardEvent,
 } from "react";
@@ -102,7 +103,7 @@ export const PREVIEW_ATTRIBUTE = "data-attachment-preview";
  * A message's images, full screen (#2874). Clicking an inline preview opens
  * it over a dim backdrop that covers the whole window; the image takes its own
  * size, shrunk to fit the window and never enlarged past it, with no card or
- * caption around it. Esc, a click anywhere off the image and the close button
+ * caption around it. Esc, a press on the backdrop and the close button
  * dismiss it, and the arrow keys step through the message's other images,
  * wrapping at the ends. Mobile's counterpart is
  * `apps/mobile/components/chat/image-viewer.tsx`.
@@ -141,6 +142,8 @@ function OpenImageViewer({
   viewer: ImageViewerState;
 }) {
   const { close } = viewer;
+  // Whether the current press started on the backdrop (see `onPointerUp`).
+  const pressedBackdrop = useRef(false);
   // The row that opened the viewer already holds this query, so opening sends
   // no request (`refetchOnMount: false`: a refetch mints new signed URLs and
   // would swap the image being opened for a fresh download of itself). It
@@ -199,12 +202,22 @@ function OpenImageViewer({
           <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/85 data-[state=open]:animate-in data-[state=open]:fade-in-0 motion-reduce:animate-none" />
           <DialogPrimitive.Content
             aria-modal="true"
-            // The whole window, so the backdrop is part of the content: Radix's
-            // outside-click never fires, and a click that lands on this
-            // element itself (not the image or a control) closes it instead.
+            // The whole window, so the backdrop is part of the content and
+            // Radix's outside-press never fires. A press that both starts and
+            // ends on this element itself (not the image or a control) closes
+            // it instead. Pointer events, not `click`: a press that starts on
+            // a button and slips off it fires `click` on this common ancestor,
+            // and iOS Safari may not fire `click` at all on a plain element.
             className="fixed inset-0 z-50 flex items-center justify-center p-4 focus:outline-none sm:px-16 sm:py-14"
-            onClick={(event) => {
-              if (event.target === event.currentTarget) viewer.close();
+            onPointerDown={(event) => {
+              pressedBackdrop.current = event.target === event.currentTarget;
+            }}
+            onPointerUp={(event) => {
+              const fromBackdrop = pressedBackdrop.current;
+              pressedBackdrop.current = false;
+              if (fromBackdrop && event.target === event.currentTarget) {
+                viewer.close();
+              }
             }}
             onKeyDown={handleKeyDown}
             // Focus the viewer itself, not its first control: a screen reader
@@ -263,14 +276,14 @@ function OpenImageViewer({
                 download={image.filename}
                 aria-label="Download"
                 title="Download"
-                className={cn(VIEWER_CONTROL, "size-9")}
+                className={cn(VIEWER_CONTROL, "size-9 pointer-coarse:size-11")}
               >
                 <Download aria-hidden="true" className="size-[18px]" />
               </a>
               <DialogPrimitive.Close
                 aria-label="Close"
                 title="Close"
-                className={cn(VIEWER_CONTROL, "size-9")}
+                className={cn(VIEWER_CONTROL, "size-9 pointer-coarse:size-11")}
               >
                 <X aria-hidden="true" className="size-5" />
               </DialogPrimitive.Close>
@@ -285,7 +298,7 @@ function OpenImageViewer({
                   onClick={() => step(-1)}
                   className={cn(
                     VIEWER_CONTROL,
-                    "absolute left-3 top-1/2 size-10 -translate-y-1/2 rounded-full bg-black/55",
+                    "absolute left-3 top-1/2 size-10 -translate-y-1/2 pointer-coarse:size-11 rounded-full bg-black/55",
                   )}
                 >
                   <ChevronLeft aria-hidden="true" className="size-5" />
@@ -297,7 +310,7 @@ function OpenImageViewer({
                   onClick={() => step(1)}
                   className={cn(
                     VIEWER_CONTROL,
-                    "absolute right-3 top-1/2 size-10 -translate-y-1/2 rounded-full bg-black/55",
+                    "absolute right-3 top-1/2 size-10 -translate-y-1/2 pointer-coarse:size-11 rounded-full bg-black/55",
                   )}
                 >
                   <ChevronRight aria-hidden="true" className="size-5" />
@@ -321,7 +334,9 @@ function OpenImageViewer({
  * An icon control on the backdrop. White at 70%, full white on hover: the
  * backdrop is black in both themes, so the theme's text roles (and the
  * chapter accent) don't apply here, and nothing in the corner should draw
- * the eye before the image does.
+ * the eye before the image does. Compact under a mouse, and 44px under a
+ * finger (`pointer-coarse:size-11` at each call site), the touch floor
+ * foundations.md §9 sets for web too.
  */
 const VIEWER_CONTROL = cn(
   "inline-flex items-center justify-center rounded-md border border-transparent text-white/70 transition-colors hover:bg-white/10 hover:text-white",

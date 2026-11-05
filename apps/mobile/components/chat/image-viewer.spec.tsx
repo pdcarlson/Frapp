@@ -256,6 +256,25 @@ describe("opening and closing", () => {
     }
   });
 
+  it("sits on a near-black backdrop, not the page color", () => {
+    const tree = render();
+    openOn([image(1)], 0);
+    const root = tree.root.findAll(
+      (node) => node.props.accessibilityViewIsModal === true,
+    )[0]!;
+
+    expect(JSON.stringify(root.props.style)).toContain(
+      '"backgroundColor":"rgba(0,0,0,0.92)"',
+    );
+  });
+
+  it("makes the image an accessibility element, so focus can land on it", () => {
+    const tree = render();
+    openOn([image(1)], 0);
+    expect(shownImage(tree).props.accessible).toBe(true);
+    expect(shownImage(tree).props.accessibilityLabel).toBe("photo-1.png");
+  });
+
   it("covers the container it is drawn in, and is modal to VoiceOver", () => {
     const tree = render();
     openOn([image(1)], 0);
