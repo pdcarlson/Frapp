@@ -4,8 +4,10 @@
  *
  * `AuthFrame` (`auth-frame.tsx`, mounted by `app/(auth)/layout.tsx`) owns the
  * page: the `<main>`, the lockup and the live product panel. This component is
- * what changes between routes: the screen's one `<h1>`, its subtitle, the form,
- * and a footer pinned to the bottom of the column. It renders a fragment into
+ * what changes between routes: an optional `toggle` above the title (sign-in
+ * and sign-up pass `AuthModeToggle`), the screen's one `<h1>`, an optional
+ * subtitle (`/join` and `/no-access` keep theirs), the form, and a footer
+ * pinned to the bottom of the column. It renders a fragment into
  * the frame's flex column, so the body takes `my-auto` and centres in the
  * space the footer leaves.
  *
@@ -42,25 +44,35 @@
 export function AuthScreen({
   title,
   subtitle,
+  toggle,
   children,
   footer,
 }: {
   title: string;
-  subtitle: string;
+  /** Left out on sign-in and sign-up, where the toggle above says the same. */
+  subtitle?: string;
+  /** The sign-in / sign-up switch, above the title. */
+  toggle?: React.ReactNode;
   children: React.ReactNode;
   footer?: React.ReactNode;
 }) {
+  // Spacing is tight on purpose: sign-in and sign-up have to fit a 1280×650
+  // window without scrolling (Paul, 2026-11-05; `tests/visual/pre-auth-fit.spec.ts`),
+  // so every gap is the smallest step that still separates its groups.
   return (
     <>
-      <div className="my-auto w-full py-10">
+      <div className="my-auto w-full py-4">
+        {toggle ? <div className="mb-6">{toggle}</div> : null}
         <h1 className="text-headline font-bold tracking-tight text-foreground">
           {title}
         </h1>
-        <p className="mt-1.5 text-base leading-relaxed text-muted-foreground">
-          {subtitle}
-        </p>
+        {subtitle ? (
+          <p className="mt-1.5 text-base leading-relaxed text-muted-foreground">
+            {subtitle}
+          </p>
+        ) : null}
 
-        <div className="mt-8">{children}</div>
+        <div className={subtitle ? "mt-8" : "mt-5"}>{children}</div>
       </div>
 
       {footer ? (
@@ -81,7 +93,7 @@ export function AuthScreen({
  */
 export function AuthDivider({ label }: { label: string }) {
   return (
-    <div className="my-6 flex items-center gap-3">
+    <div className="my-5 flex items-center gap-3">
       <span aria-hidden="true" className="h-px flex-1 bg-border" />
       <span className="text-caption text-muted-foreground">{label}</span>
       <span aria-hidden="true" className="h-px flex-1 bg-border" />
