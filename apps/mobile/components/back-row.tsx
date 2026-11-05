@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { SignetTokens } from "@repo/theme/signet";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /** Where a back row leads: the name it shows, and the route it opens. */
@@ -34,9 +35,10 @@ export const BACK_TO_CHAT: BackTarget = { label: "Chat", href: "/" };
  * off Chat home would land on Chat under a row that says More. Android's back
  * button keeps the history behavior, which is where a member expects it.
  *
- * Drawn in the board's `‹` gold (`gold.askText`), the same fixed token s05's
- * chevron uses, not the chapter accent: it is the app's navigation chrome, as
- * the tab bar is.
+ * Drawn in the chapter accent, as s05's `‹` and the active tab are. The board
+ * bakes house gold here because its mock chapter is gold; the owner's rule
+ * (2026-11-04, `spec/behavior/branding.md`) puts the accent on every back
+ * arrow inside a chapter, and keeps house gold for places with no chapter.
  */
 export function BackRow({
   label,
@@ -52,7 +54,8 @@ export function BackRow({
 }) {
   const router = useRouter();
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens, accent);
 
   return (
     <View style={styles.row}>
@@ -72,7 +75,7 @@ export function BackRow({
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, accent: string) {
   return StyleSheet.create({
     row: {
       flexDirection: "row",
@@ -86,7 +89,7 @@ function createStyles(tokens: SignetTokens) {
     text: {
       // The board's 16pt regular line, which is the body role.
       ...typeRole(tokens.typography.role.body),
-      color: tokens.color.gold.askText,
+      color: accent,
     },
   });
 }

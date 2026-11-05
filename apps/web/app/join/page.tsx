@@ -73,9 +73,9 @@ function JoinPageContent() {
   );
   const [editedToken, setEditedToken] = useState<string | null>(null);
   const token = editedToken ?? initialToken;
-  const [sessionState, setSessionState] = useState<"checking" | "ready" | "failed">(
-    "checking",
-  );
+  const [sessionState, setSessionState] = useState<
+    "checking" | "ready" | "failed"
+  >("checking");
   const [attempt, setAttempt] = useState(0);
   const [redeemError, setRedeemError] = useState<string | null>(null);
   // When to show the Terms checkbox, and what a refused join means for it,
@@ -94,7 +94,10 @@ function JoinPageContent() {
 
         if (!user) {
           const signInUrl = new URL("/sign-in", window.location.origin);
-          signInUrl.searchParams.set("redirectTo", `/join${window.location.search}`);
+          signInUrl.searchParams.set(
+            "redirectTo",
+            `/join${window.location.search}`,
+          );
           router.replace(signInUrl.pathname + signInUrl.search);
           return;
         }
@@ -187,7 +190,7 @@ function JoinPageContent() {
         ) : (
           <ErrorState
             title="Couldn't check your session"
-            description="We couldn't reach the API to confirm you're signed in. Retry in a moment."
+            description="Frapp couldn't be reached to confirm you're signed in. Try again in a moment."
             onRetry={retrySessionCheck}
           />
         )}
