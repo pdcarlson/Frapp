@@ -382,15 +382,23 @@ since 62, and an invalid prefixed selector in the same rule list would drop the 
 ## 14. Native controls
 
 A Signet web surface declares `color-scheme: dark` on `:root` (`packages/theme/src/signet.css`), so
-the controls the browser draws itself render on the dark ladder: checkboxes and radios, the calendar
-and clock glyphs in date and time fields, native `<select>` popups, file inputs, number spinners and
+the controls the browser draws itself render on the dark ladder: radios, the calendar and clock
+glyphs in date and time fields, native `<select>` popups, file inputs, number spinners and
 autofill. Until 2026-11-05 nothing declared it, and every one of them kept light-scheme chrome: a
 white box per row on each list with a checkbox column (`/events`, `/points`, `/members`, `/billing`)
-and a black calendar glyph that vanished into every date field.
+and a black calendar glyph that vanished into every date field. The checkbox, which the scheme alone
+did not fix, is now drawn by hand (below).
 
 It is `dark` alone, never `light dark`: Signet has one appearance (§1), so handing the choice back to
 the operating system would draw light controls on a dark page for anyone whose OS is in light mode.
 `signet.css.spec.ts` pins the single declaration.
+
+The scheme gets a browser's dark control, not Signet's, so the web checkbox is drawn by hand: a
+native input with `appearance: none`, painted as [components.md](components.md) § Checkbox by
+`.signet-checkbox` in `apps/web/app/globals.css`. Chromium's dark checkbox is a solid grey square
+with a light rim, which matches neither the spec's transparent fill nor its border, and border and
+radius utilities do nothing to a control the browser paints itself (#3186, 2026-11-05).
+`table-controls.spec.ts` pins the rule.
 
 ---
 

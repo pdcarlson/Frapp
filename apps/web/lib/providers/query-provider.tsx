@@ -5,8 +5,36 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { isRetryableFailure } from "@repo/api-sdk";
 import { createReportingCaches } from "@/lib/sentry/query-errors";
 
+/** How many times a failed query is retried, when it is worth retrying. */
+const QUERY_RETRIES = 3;
+
 /** How many times a failed mutation is retried, when it is worth retrying. */
 const MUTATION_RETRIES = 2;
+
+/**
+ * The default query retry: up to {@link QUERY_RETRIES} more attempts, never
+ * for a definitive client refusal (#3141). A 400, 401, 403, 404, 409, 422 or
+ * the throttler's 429 is answered the same way every time, so retrying it
+ * only holds the error state back by the 1s, 2s and 4s of backoff before
+ * showing what the first answer already said.
+ *
+ * The 429 is no exception for a read. Once a caller is over the limit, the
+ * API's throttler blocks it for `blockDuration`, which defaults to the
+ * window's 60-second `ttl` (`apps/api/src/app.module.ts`), so every attempt
+ * inside the 7 seconds of backoff is refused again, and each one counts.
+ *
+ * A 401 is not retried either. The web client asks Supabase for the session
+ * on every request (`frapp-client-provider.tsx`), and `getSession` refreshes
+ * an access token within 90 seconds of its expiry before handing it over, so
+ * no read is waiting on a retry to pick up a fresh token: the retry would
+ * carry the same token and get the same 401.
+ *
+ * `spec/ui/resilience/api-retry.md` § Reads.
+ */
+export function retryQuery(failureCount: number, error: unknown): boolean {
+  if (failureCount >= QUERY_RETRIES) return false;
+  return isRetryableFailure(error);
+}
 
 /**
  * The default mutation retry: up to {@link MUTATION_RETRIES} more attempts,
@@ -34,7 +62,7 @@ export function makeQueryClient() {
       queries: {
         staleTime: 30_000,
         gcTime: 10 * 60_000,
-        retry: 3,
+        retry: retryQuery,
         retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30_000),
         refetchOnWindowFocus: true,
         refetchOnReconnect: "always",
