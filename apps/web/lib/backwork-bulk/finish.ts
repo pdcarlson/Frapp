@@ -23,8 +23,8 @@ export type ConfirmBody = Parameters<
 >[0];
 
 export type FinishDeps<Doc> = {
-  /** Throws when the active chapter is no longer the one the batch belongs to. */
-  assertChapter?: () => void;
+  /** Throws (or rejects) when the batch's chapter or account is no longer the one in use. */
+  assertChapter?: () => void | Promise<void>;
   /** For the rate-limit backoff; tests pass one that resolves at once. */
   sleep?: (ms: number) => Promise<void>;
   flatten: (doc: Doc, boxes: BoxesByPage, options?: FlattenOptions) => Promise<Uint8Array>;
@@ -126,7 +126,7 @@ export async function finishUpload<Doc>(
   // Student Copy can't reach the upload unflattened through a stale flag.
   // Checked before the flatten too, so a batch whose chapter is gone doesn't
   // render every page only to be refused.
-  deps.assertChapter?.();
+  await deps.assertChapter?.();
   const flatten = submission.flatten || mustFlatten(submission.fields, submission.boxes);
   let body = prepared.bytes;
   if (flatten) {
@@ -151,7 +151,7 @@ export async function finishUpload<Doc>(
   };
   let signed: unknown;
   for (let attempt = 0; ; attempt += 1) {
-    deps.assertChapter?.();
+    await deps.assertChapter?.();
     try {
       signed = await deps.requestUpload(request);
       break;
@@ -166,7 +166,7 @@ export async function finishUpload<Doc>(
     signedUrl,
     body: new Blob([body as BlobPart], { type: "application/pdf" }),
   });
-  deps.assertChapter?.();
+  await deps.assertChapter?.();
   await deps.confirm({
     storage_path: storagePath,
     file_hash: fileHash,

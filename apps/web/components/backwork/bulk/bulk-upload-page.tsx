@@ -106,19 +106,26 @@ export function BulkUploadPage() {
         </div>
       }
     >
-      <BulkUploadWorkspace key={`${authUserId ?? ""}:${activeChapterId}`} chapterId={activeChapterId} />
+      {/* Waits for the account (a moment after mount) so the workspace mounts once. */}
+      {authUserId ? (
+        <BulkUploadWorkspace
+          key={`${authUserId}:${activeChapterId}`}
+          userId={authUserId}
+          chapterId={activeChapterId}
+        />
+      ) : null}
     </Can>
   );
 }
 
-function BulkUploadWorkspace({ chapterId }: { chapterId: string }) {
+function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId: string }) {
   const { toast } = useToast();
   const gate = useSubscriptionGate();
   const requestUpload = useRequestBackworkUploadUrl();
   const confirmUpload = useConfirmBackworkUpload();
   // The batch belongs to the chapter, not to this mount (`session.ts`):
   // leaving and coming back shows the same list.
-  const [session] = useState(() => getBulkSession(chapterId));
+  const [session] = useState(() => getBulkSession(userId, chapterId));
   const queue = session.queue;
   useEffect(() => {
     session.bind({ requestUpload, confirmUpload });

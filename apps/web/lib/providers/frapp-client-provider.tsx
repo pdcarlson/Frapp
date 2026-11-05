@@ -44,10 +44,8 @@ import { endBulkSessions } from "@/lib/backwork-bulk/session";
  * behind it.
  *
  * Bulk backwork upload batches (`lib/backwork-bulk/session.ts`) live outside
- * React for the life of the tab, so they end on the same two events: the next
- * account must never see the last one's files, and an upload must never go
- * out under someone else's token. The batch module also ends them itself the
- * moment the chapter store moves, ahead of this effect.
+ * React for the life of the tab. They end themselves the moment the chapter
+ * store moves; the uid effect below ends the ones another account left.
  */
 function dropCacheWhenIdentityChanges(
   previousRef: { current: string | null | undefined },
@@ -59,7 +57,6 @@ function dropCacheWhenIdentityChanges(
   if (previous === undefined || previous === null) return;
   if (previous === next) return;
   queryClient.clear();
-  endBulkSessions();
   void wipeFirstChunkCache();
   clearCachedAccent();
 }
@@ -136,7 +133,11 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
    * clear exists to drop. First uid (`null` → A) is a sign-in, not a swap.
    */
   useEffect(() => {
+    const previous = previousAuthUserId.current;
     dropCacheWhenIdentityChanges(previousAuthUserId, authUserId, queryClient);
+    // Every batch but the new account's: the page may already have made one
+    // for it in this commit, and that one stays.
+    if (previous && previous !== authUserId) endBulkSessions({ except: authUserId });
   }, [authUserId, queryClient]);
 
   return (

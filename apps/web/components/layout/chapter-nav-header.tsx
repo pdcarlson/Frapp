@@ -27,6 +27,7 @@ import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { hasSettingsDestination } from "@/components/settings/settings-access";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
+import { confirmDropBulkUploads } from "@/lib/backwork-bulk/session";
 
 /**
  * The 40px chapter row at the top of the left nav.
@@ -130,6 +131,7 @@ export function ChapterNavHeader({
 
   async function handleSelect(chapterId: string) {
     if (switchingTo || chapterId === activeChapterId) return;
+    if (!confirmDropBulkUploads("switch")) return;
     setSwitchingTo(chapterId);
     try {
       const switched = await selectChapter(chapterId);

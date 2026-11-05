@@ -166,9 +166,10 @@ describe("redactRenderedPage", () => {
     expect(kept.map((t) => t.str)).toContain("Question 2.");
   });
 
-  // pdf.js already leaves out a run wholly off the page; the clip in
-  // `redactRenderedPage` covers the cells of one that is only partly off.
-  it("drops text placed off the page, whatever ink is at the edge", async () => {
+  // End to end only: pdf.js itself leaves out a run wholly off the page, so
+  // this doesn't reach the clip in `redactRenderedPage`, which is there for
+  // the cells of a run only partly off it.
+  it("never carries a run placed wholly off the page", async () => {
     const { bytes } = await partlyHiddenPdf();
     const { page, base } = await firstPage(bytes);
     const kept = await redactRenderedPage(page, base, [], 2, renderedExam(2, []).canvas);

@@ -41,6 +41,8 @@ export type QueueItem<P, S> = {
   error?: string;
   /** Which background step failed, so retry knows what to re-run. */
   failedStage?: "prepare" | "finish";
+  /** The failure leaves nothing to save (say, already in the library). */
+  final?: boolean;
 };
 
 export type QueueSnapshot<P, S> = {
@@ -58,6 +60,8 @@ export type BulkQueueOptions<P, S> = {
   /** Items prepared past the current one. */
   lookahead?: number;
   maxFinishing?: number;
+  /** Whether a failure leaves nothing to save, so it doesn't count as unsaved. */
+  isFinal?: (error: unknown, stage: "prepare" | "finish") => boolean;
   /** Turns a thrown value into the line shown on the item. */
   describeError?: (error: unknown, stage: "prepare" | "finish") => string;
 };
@@ -116,6 +120,7 @@ export class BulkUploadQueue<P, S> {
         status: "waiting",
         error: undefined,
         failedStage: undefined,
+        final: undefined,
       });
     } else {
       this.patch(id, {
@@ -190,7 +195,9 @@ export class BulkUploadQueue<P, S> {
   /** Items that would be lost if the tab went away: everything not uploaded yet. */
   unsaved(): number {
     return this.items.filter(
-      (it) => it.status !== "done" && !(it.status === "failed" && it.failedStage === "prepare"),
+      (it) =>
+        it.status !== "done" &&
+        !(it.status === "failed" && (it.failedStage === "prepare" || it.final)),
     ).length;
   }
 
@@ -321,6 +328,7 @@ export class BulkUploadQueue<P, S> {
         this.patch(item.id, {
           status: "failed",
           failedStage: "finish",
+          final: this.options.isFinal?.(error, "finish") ?? false,
           error: this.describe(error, "finish"),
         });
       },

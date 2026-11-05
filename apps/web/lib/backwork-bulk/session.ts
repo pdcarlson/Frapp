@@ -7,6 +7,7 @@ import {
   type useRequestBackworkUploadUrl,
 } from "@repo/hooks";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { toast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import type { BulkFields } from "@/lib/backwork-bulk/fields";
@@ -24,11 +25,12 @@ import { BulkUploadQueue } from "@/lib/backwork-bulk/queue";
  * without redacting it again. While anything in a batch would be lost, the
  * tab asks before it closes or reloads.
  *
- * A batch ends with the identity it was made under: a chapter switch, a
- * sign-out, or another account signing in in this tab (`endBulkSessions`,
- * called from `FrappProvider` and from the chapter store). An ended batch
- * frees its documents, stops uploading, and never warns or toasts again, so
- * the next account never sees the last one's files.
+ * A batch belongs to one account and one chapter, and ends with them: a
+ * chapter switch or sign-out (the chapter store moving; the switcher and the
+ * account menu ask first when something would be lost), or another account
+ * signing in in this tab (`FrappProvider`, and `getBulkSession` itself). An
+ * ended batch frees its documents, stops uploading, and never warns or
+ * toasts again, so the next account never sees the last one's files.
  *
  * The page hands the session its current mutation hooks on every render
  * (`bind`); after the page unmounts the session keeps using the last ones,
@@ -58,9 +60,11 @@ export type BulkSession = {
   bind: (mutations: Mutations) => void;
   /** Whether the page is showing this batch; off it, failures become toasts. */
   setOnScreen: (onScreen: boolean) => void;
-  /** True once the batch has ended (see above); the page then shows a fresh one. */
+  /** True once the batch has ended (see above). */
   ended: () => boolean;
   end: () => void;
+  /** The account the batch was made under. */
+  userId: string;
 };
 
 /** pdf.js and the flattener, loaded on first use and shared by every batch. */
@@ -81,7 +85,19 @@ function releasePrepared(prepared: Prepared) {
   void prepared.doc.loadingTask.destroy();
 }
 
-function createSession(chapterId: string): BulkSession {
+function statusOf(error: unknown): number | undefined {
+  return error && typeof error === "object" && "statusCode" in error
+    ? (error as { statusCode?: number }).statusCode
+    : undefined;
+}
+
+/** The signed-in account right now: the one the API client's token is for. */
+async function liveUserId(): Promise<string | null> {
+  const { data } = await createSupabaseBrowserClient().auth.getSession();
+  return data.session?.user?.id ?? null;
+}
+
+function createSession(userId: string, chapterId: string): BulkSession {
   let mutations: Mutations | null = null;
   let onScreen = false;
   let ended = false;
@@ -121,16 +137,20 @@ function createSession(chapterId: string): BulkSession {
       try {
         const bound = mutations;
         if (!bound) throw new Error("Bulk upload isn't ready yet. Retry this one.");
-        const assertChapter = () => {
-          if (ended || useChapterStore.getState().activeChapterId !== chapterId) {
-            throw new Error("You switched chapters, so this one wasn't uploaded.");
+        // Policy, not plumbing: the bound mutations would still send this
+        // batch's chapter, but a batch never files anything once its chapter
+        // is no longer the active one, nor under any account but its own.
+        // The account is read live, so a sign-in elsewhere stops the next
+        // request even before the batch is ended.
+        const assertChapter = async () => {
+          const stale = () =>
+            ended || useChapterStore.getState().activeChapterId !== chapterId;
+          if (stale() || (await liveUserId()) !== userId || stale()) {
+            throw new Error("You switched chapters or accounts, so this one wasn't uploaded.");
           }
         };
         const { flattenPdf } = await loadPdfModule();
         await finishUpload(job, {
-          // Policy, not plumbing: the bound mutations would still send this
-          // batch's chapter, but a batch never files anything once its
-          // chapter or account is no longer the one in use.
           assertChapter,
           flatten: flattenPdf,
           requestUpload: (body) => bound.requestUpload.mutateAsync(body),
@@ -156,12 +176,10 @@ function createSession(chapterId: string): BulkSession {
       }
     },
     release: releasePrepared,
+    // A 409 means the file is already in the library: nothing to save.
+    isFinal: (error) => statusOf(error) === 409,
     describeError: (error, stage) => {
-      const status =
-        error && typeof error === "object" && "statusCode" in error
-          ? (error as { statusCode?: number }).statusCode
-          : undefined;
-      if (status === 409) return "Already in the library.";
+      if (statusOf(error) === 409) return "Already in the library.";
       return getErrorMessage(
         error,
         stage === "prepare" ? "This PDF couldn't be loaded." : "The upload failed. Retry it.",
@@ -189,6 +207,7 @@ function createSession(chapterId: string): BulkSession {
     setOnScreen: (next) => {
       onScreen = next;
     },
+    userId,
     ended: () => ended,
     end: () => {
       if (ended) return;
@@ -202,9 +221,14 @@ function createSession(chapterId: string): BulkSession {
 const sessions = new Map<string, BulkSession>();
 let watchingChapter = false;
 
-export function getBulkSession(chapterId: string): BulkSession {
-  // A chapter change ends every batch the moment the store moves, before the
-  // switcher's reload, so that reload doesn't stop on a leave prompt.
+/**
+ * The batch for this account and chapter, made on first use. Making one ends
+ * any batch another account left in this tab, so the page never shows it.
+ */
+export function getBulkSession(userId: string, chapterId: string): BulkSession {
+  // A chapter change ends every batch the moment the store moves: the
+  // switcher and sign-out have already asked (`confirmDropBulkUploads`), and
+  // their reload mustn't stop on a second, browser leave prompt.
   if (!watchingChapter) {
     watchingChapter = true;
     useChapterStore.subscribe((state, previous) => {
@@ -213,16 +237,46 @@ export function getBulkSession(chapterId: string): BulkSession {
       }
     });
   }
-  let session = sessions.get(chapterId);
+  endBulkSessions({ except: userId });
+  const key = `${userId}:${chapterId}`;
+  let session = sessions.get(key);
   if (!session || session.ended()) {
-    session = createSession(chapterId);
-    sessions.set(chapterId, session);
+    session = createSession(userId, chapterId);
+    sessions.set(key, session);
   }
   return session;
 }
 
-/** Ends every batch in this tab: a chapter switch, sign-out, or account change. */
-export function endBulkSessions(): void {
-  for (const session of sessions.values()) session.end();
-  sessions.clear();
+/**
+ * Ends batches in this tab: every one on a chapter switch or sign-out, or
+ * every one but the signed-in account's on an account change.
+ */
+export function endBulkSessions({ except }: { except?: string | null } = {}): void {
+  for (const [key, session] of sessions) {
+    if (except && session.userId === except) continue;
+    session.end();
+    sessions.delete(key);
+  }
+}
+
+/** Documents in this tab's batches that aren't uploaded yet. */
+export function unsavedBulkUploads(): number {
+  let count = 0;
+  for (const session of sessions.values()) count += session.queue.unsaved();
+  return count;
+}
+
+/**
+ * Asks before a chapter switch or sign-out drops documents that aren't
+ * uploaded yet. True when there is nothing to lose or the person agrees.
+ */
+export function confirmDropBulkUploads(action: "switch" | "sign-out"): boolean {
+  const count = unsavedBulkUploads();
+  if (count === 0 || typeof window === "undefined") return true;
+  const docs = count === 1 ? "1 document that isn't" : `${count} documents that aren't`;
+  return window.confirm(
+    `Bulk upload has ${docs} uploaded yet. ${
+      action === "switch" ? "Switching chapters" : "Signing out"
+    } drops ${count === 1 ? "it" : "them"}.`,
+  );
 }

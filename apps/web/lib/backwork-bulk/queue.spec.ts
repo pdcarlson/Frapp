@@ -277,4 +277,20 @@ describe("BulkUploadQueue", () => {
     expect(h.release).toHaveBeenCalledWith("A");
     expect(h.queue.getSnapshot().items).toEqual([]);
   });
+
+  it("doesn't count a failure that leaves nothing to save as unsaved", async () => {
+    const queue = new BulkUploadQueue<string, { title: string }>({
+      prepare: async () => "A",
+      finish: async () => {
+        throw Object.assign(new Error("Conflict"), { statusCode: 409 });
+      },
+      isFinal: (error) => (error as { statusCode?: number }).statusCode === 409,
+    });
+    queue.add([pdf("a.pdf")]);
+    await flush();
+    queue.submit(queue.getSnapshot().items[0]!.id, { title: "A" });
+    await flush();
+    expect(queue.getSnapshot().items[0]!.status).toBe("failed");
+    expect(queue.unsaved()).toBe(0);
+  });
 });
