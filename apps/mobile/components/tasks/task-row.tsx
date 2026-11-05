@@ -39,7 +39,11 @@ export interface TaskRowProps {
   now: Date;
   /** Omitted entirely when the server allows no transition — never a no-op handler. */
   onToggle?: () => void;
-  /** True while this row's own PATCH sequence is in flight. */
+  /**
+   * True while this row's own PATCH sequence is in flight. The Tasks screen
+   * drops `onToggle` for that time, so an in-flight row takes the plain branch;
+   * it dims and reads busy whichever branch it takes.
+   */
   isPending?: boolean;
 }
 
@@ -105,16 +109,28 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
     </>
   );
 
+  // A row in flight is dimmed less than a finished one; the finished dim comes
+  // second so it wins if the optimistic write lands mid-sequence.
+  const rowStyle = [
+    styles.row,
+    isPending ? styles.rowPending : null,
+    row.isDone ? styles.rowDone : null,
+  ];
+
   // No `onPress` at all rather than a handler that returns early: a Pressable
   // that silently swallows taps reads as broken, and the server allows this row
-  // nothing.
+  // nothing, or its own PATCH sequence is still running.
   if (!onToggle) {
     return (
       <View
         accessibilityRole="checkbox"
-        accessibilityState={{ checked: row.isDone, disabled: true }}
+        accessibilityState={{
+          checked: row.isDone,
+          disabled: true,
+          busy: isPending,
+        }}
         accessibilityLabel={`${row.title}${subtitle ? `, ${subtitle}` : ""}`}
-        style={[styles.row, row.isDone ? styles.rowDone : null]}
+        style={rowStyle}
       >
         {body}
       </View>
@@ -135,7 +151,7 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
       // no reject affordance — only an officer could undo it.
       accessibilityHint="Mark this task done."
       onPress={onToggle}
-      style={[styles.row, isPending ? styles.rowPending : null]}
+      style={rowStyle}
     >
       {body}
     </PressableRow>

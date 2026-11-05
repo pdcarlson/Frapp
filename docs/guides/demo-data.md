@@ -280,9 +280,9 @@ two generated paths and the errors go with them. They are an artifact of the
 capture, not a defect — do not "fix" the flagged component.
 
 **Capture from a freshly seeded chapter.** Opening a channel marks it read, and
-`ChannelRow` drops both the unread badge and the elevated card treatment for a
-read row — so a second capture run photographs a chat home whose `#general` has
-gone flat and empty. `capture-mobile.mjs` shoots s04 before it opens the thread,
+`ChannelRow` drops the unread badge for a read row and dims its title from a
+700 weight in `text.foreground` to a 600 in `text.mutedForeground` — so a second
+capture run photographs a chat home whose `#general` reads as already seen. `capture-mobile.mjs` shoots s04 before it opens the thread,
 which keeps a single run self-consistent; across runs, re-run `setup-demo.sh`
 first.
 

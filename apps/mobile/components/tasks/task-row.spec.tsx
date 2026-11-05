@@ -149,6 +149,53 @@ describe("TaskRow — press feedback", () => {
   });
 });
 
+// The Tasks screen drops `onToggle` while a row's PATCH sequence runs, so the
+// row in flight is the plain branch. It still has to look and read in progress,
+// not merely disabled: dimmed, and `busy` to a screen reader.
+describe("TaskRow — a row in flight", () => {
+  it("dims and reads busy on the plain branch the screen gives it", () => {
+    const tree = render(<TaskRow row={row()} now={NOW} isPending />);
+    const node = tree.root.find(
+      (candidate) => candidate.props?.accessibilityRole === "checkbox",
+    );
+    expect(node.type as unknown).toBe("View");
+    expect(node.props.accessibilityState).toMatchObject({
+      busy: true,
+      disabled: true,
+    });
+    expect(flatten(node.props.style).opacity).toBe(0.8);
+  });
+
+  it("dims and reads busy as a pressable row too", () => {
+    const tree = render(
+      <TaskRow row={row()} now={NOW} isPending onToggle={() => {}} />,
+    );
+    const pressable = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    expect(pressable.props.accessibilityState).toMatchObject({ busy: true });
+    const { clip, resting } = expectRoundedRipple(
+      pressable,
+      signetDarkTokens.radius.card,
+    );
+    // The dim is the row's, not the clip's: `splitRowStyle` keeps opacity on
+    // the Pressable.
+    expect(resting.opacity).toBe(0.8);
+    expect(clip).not.toHaveProperty("opacity");
+  });
+
+  it("is neither dimmed nor busy at rest", () => {
+    const tree = render(<TaskRow row={row()} now={NOW} onToggle={() => {}} />);
+    const pressable = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    expect(pressable.props.accessibilityState).toMatchObject({ busy: false });
+    expect(flatten(pressable.props.style({ pressed: false }))).not.toHaveProperty(
+      "opacity",
+    );
+  });
+});
+
 describe("TaskRow — the completed row", () => {
   const done = row({
     storedStatus: "COMPLETED",

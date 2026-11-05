@@ -45,7 +45,7 @@ import {
   ChannelRow,
   UnreadBadge,
 } from "@/components/chat/channel-row";
-import { PressableRow } from "@/components/list-section";
+import { gutterBleed, PressableRow } from "@/components/list-section";
 import {
   EmptyState,
   EmptyStateAction,
@@ -476,17 +476,14 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
       marginBottom: tokens.spacing.xs,
     },
-    // The fold header and the Hidden conversations toggle bleed into the
-    // gutter as `ChannelRow` does, so their captions line up with the rows'
-    // sigils and the press lift has room around the text.
+    // The fold header and the Hidden conversations toggle take the rows'
+    // `gutterBleed`, so their captions line up with the rows' sigils.
     sectionHeader: {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.xs,
       minHeight: tokens.touch.minimum,
-      paddingHorizontal: tokens.spacing.sm,
-      marginHorizontal: -tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
+      ...gutterBleed(tokens),
     },
     // Inside the fold control the row carries the spacing, so the label drops
     // its own bottom margin and gives up width to the badge.
@@ -501,9 +498,7 @@ function createStyles(tokens: SignetTokens) {
     hiddenToggle: {
       minHeight: tokens.touch.minimum,
       justifyContent: "center",
-      paddingHorizontal: tokens.spacing.sm,
-      marginHorizontal: -tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
+      ...gutterBleed(tokens),
     },
     unreadWarning: {
       ...typeRole(tokens.typography.role.caption),

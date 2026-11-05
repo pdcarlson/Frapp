@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
-import type { TextStyle } from "react-native";
+import { StyleSheet, type TextStyle } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
@@ -67,20 +67,13 @@ function render(): ReactTestRenderer {
   return tree;
 }
 
-/**
- * The flattened style of the one `Text` that draws exactly `text`. Flattened
- * here because the suite's react-native stub makes `StyleSheet.flatten` the
- * identity.
- */
+/** The flattened style of the one `Text` that draws exactly `text`. */
 function styleOf(tree: ReactTestRenderer, text: string): TextStyle {
   const [node] = tree.root
     .findAllByType("Text" as never)
     .filter((candidate) => candidate.props.children === text);
   if (!node) throw new Error(`no Text draws ${JSON.stringify(text)}`);
-  return Object.assign(
-    {},
-    ...[node.props.style].flat(Infinity).filter(Boolean),
-  ) as TextStyle;
+  return StyleSheet.flatten(node.props.style) as TextStyle;
 }
 
 const skeletons = (tree: ReactTestRenderer) =>
@@ -156,10 +149,7 @@ describe("Event card", () => {
         node.props.accessibilityLabel === "Open Chapter meeting" &&
         typeof node.props.style === "function",
     );
-    const held = Object.assign(
-      {},
-      ...[card.props.style({ pressed: true })].flat(Infinity).filter(Boolean),
-    );
+    const held = StyleSheet.flatten(card.props.style({ pressed: true }));
 
     // The suite's stub is iOS: the card lifts one rung up the surface ladder.
     expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);

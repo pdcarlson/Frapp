@@ -2,6 +2,7 @@
 import React from "react";
 import { act } from "react";
 import * as expoRouter from "expo-router";
+import { StyleSheet } from "react-native";
 import {
   create,
   type ReactTestInstance,
@@ -213,9 +214,9 @@ describe("Event details back row (#3022)", () => {
   });
 });
 
-/** The flattened style of `node`; the suite's stub `flatten` is the identity. */
+/** The flattened style of `node`. */
 const flat = (node: ReactTestInstance): Record<string, unknown> =>
-  Object.assign({}, ...[node.props.style].flat(Infinity).filter(Boolean));
+  StyleSheet.flatten(node.props.style);
 
 const textNode = (tree: ReactTestRenderer, text: string) =>
   tree.root
@@ -279,10 +280,7 @@ describe("Event details layout", () => {
         node.findAll((text) => text.props.children === "Scan QR to check in")
           .length > 0,
     );
-    const style = Object.assign(
-      {},
-      ...[scan.props.style({ pressed: false })].flat(Infinity).filter(Boolean),
-    );
+    const style = StyleSheet.flatten(scan.props.style({ pressed: false }));
     expect(style).toMatchObject({
       height: 50,
       borderRadius: signetDarkTokens.radius.control,
@@ -323,14 +321,8 @@ describe("Event details layout", () => {
         node.props.accessibilityLabel === "Add this event to your calendar" &&
         typeof node.props.style === "function",
     );
-    const rest = Object.assign(
-      {},
-      ...[button.props.style({ pressed: false })].flat(Infinity).filter(Boolean),
-    );
-    const held = Object.assign(
-      {},
-      ...[button.props.style({ pressed: true })].flat(Infinity).filter(Boolean),
-    );
+    const rest = StyleSheet.flatten(button.props.style({ pressed: false }));
+    const held = StyleSheet.flatten(button.props.style({ pressed: true }));
 
     expect(rest).toMatchObject({
       height: 50,

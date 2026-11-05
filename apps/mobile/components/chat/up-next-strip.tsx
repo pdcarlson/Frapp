@@ -12,7 +12,7 @@ import {
   type ChapterBranding,
   useChapterBranding,
 } from "@/lib/chapter-branding";
-import { PressableRow } from "@/components/list-section";
+import { gutterBleed, PressableRow } from "@/components/list-section";
 import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
 
 /**
@@ -328,11 +328,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       // The strip's rows are drawn tighter than a standalone control, so the
       // 44pt floor is met by minHeight rather than by padding.
       minHeight: tokens.touch.minimum,
-      // Bleeds into the gutter as Chat home's channel rows do, so the glyph
-      // stays on the gutter line and the press lift clears it.
-      paddingHorizontal: tokens.spacing.sm,
-      marginHorizontal: -tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
+      ...gutterBleed(tokens),
     },
     rowText: {
       flex: 1,

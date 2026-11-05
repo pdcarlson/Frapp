@@ -6,7 +6,7 @@ import {
   useChapterBranding,
 } from "@/lib/chapter-branding";
 import { initialsFor } from "@/lib/chat/display-name";
-import { PressableRow } from "@/components/list-section";
+import { gutterBleed, PressableRow } from "@/components/list-section";
 import { SkeletonBlock } from "@/components/state-block";
 import {
   HIDE_CONVERSATION_LABEL,
@@ -320,12 +320,8 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       gap: tokens.spacing.md,
       minHeight: tokens.touch.minimum,
       paddingVertical: tokens.spacing.md,
-      paddingHorizontal: tokens.spacing.sm,
-      // The row bleeds its own padding into the screen gutter, as the board
-      // draws it: the sigil lines up with the section captions and the UP
-      // NEXT glyphs, and the press lift still clears the text on both sides.
-      marginHorizontal: -tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
+      // As the board draws it: the sigil sits on the gutter line.
+      ...gutterBleed(tokens),
     },
     skeletonList: {
       gap: tokens.spacing.xs,
