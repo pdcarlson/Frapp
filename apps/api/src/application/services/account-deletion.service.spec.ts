@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nestjs';
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadGatewayException, NotFoundException } from '@nestjs/common';
 import { AccountDeletionService } from './account-deletion.service';
@@ -15,6 +16,13 @@ import { AUTH_ADMIN_PROVIDER } from '#domain/adapters/auth-admin.interface';
 import type { IAuthAdminProvider } from '#domain/adapters/auth-admin.interface';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import { memberFixture, userFixture } from '#test/helpers/entity-fixtures';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
 
 const liveUser = userFixture({
   email: 'doomed@example.com',
@@ -189,6 +197,27 @@ describe('AccountDeletionService', () => {
     expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalled();
   });
 
+  it('reports a failed convergence scrub to Sentry once, grouped by its catch site', async () => {
+    captureException.mockClear();
+    mockUserRepo.findById.mockResolvedValue(liveUser);
+    mockUserRepo.anonymize
+      .mockResolvedValueOnce(tombstone)
+      .mockRejectedValueOnce(new Error('db blip'));
+
+    await expect(service.deleteAccount('user-1')).resolves.toBeUndefined();
+
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException.mock.calls[0]?.[1]).toMatchObject({
+      level: 'error',
+      tags: { caught_at: 'account-deletion-convergence-scrub' },
+      fingerprint: [
+        'caught-failure',
+        'account-deletion-convergence-scrub',
+        'Error',
+      ],
+    });
+  });
+
   it('purges avatars across every chapter membership', async () => {
     mockUserRepo.findById.mockResolvedValue(liveUser);
     mockMemberRepo.findByUser.mockResolvedValue([
@@ -249,6 +278,24 @@ describe('AccountDeletionService', () => {
     await expect(service.deleteAccount('user-1')).resolves.toBeUndefined();
     expect(mockUserRepo.anonymize).toHaveBeenCalledWith('user-1');
     expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalledWith('auth-1');
+  });
+
+  it('reports a failed report purge once, as a warning, not once per chapter', async () => {
+    captureException.mockClear();
+    mockUserRepo.findById.mockResolvedValue(liveUser);
+    mockMemberRepo.findByUser.mockResolvedValue([
+      membership('chapter-a'),
+      membership('chapter-b'),
+    ]);
+    mockStorage.listObjects.mockRejectedValue(new Error('reports listing 500'));
+
+    await expect(service.deleteAccount('user-1')).resolves.toBeUndefined();
+
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException.mock.calls[0]?.[1]).toMatchObject({
+      level: 'warning',
+      tags: { caught_at: 'account-deletion-report-purge' },
+    });
   });
 
   it('still aborts before the scrub when the AVATAR purge fails', async () => {

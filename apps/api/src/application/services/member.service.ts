@@ -440,6 +440,7 @@ export class MemberService {
     } catch (error) {
       // The prune has committed, so a member who is still in the chapter is
       // now off these channels. Say which, so an officer can add them back.
+      // caught-failure-exempt: rethrown; AllExceptionsFilter reports the 5xx
       logThrowable(
         this.logger,
         'error',

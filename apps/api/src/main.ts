@@ -64,11 +64,13 @@ async function bootstrap() {
  */
 bootstrap().catch(async (error: unknown) => {
   const bootLogger = new Logger('Bootstrap');
+  // caught-failure-exempt: captured at fatal just below, then the process exits
   logThrowable(bootLogger, 'error', 'API failed to start', error);
   try {
     Sentry.captureException(error, { level: 'fatal' });
     await Sentry.flush(2000);
   } catch (flushError) {
+    // caught-failure-exempt: Sentry itself failed; stdout is the only channel left and the process exits
     logThrowable(
       bootLogger,
       'error',

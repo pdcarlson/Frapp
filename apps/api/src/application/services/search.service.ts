@@ -16,7 +16,7 @@ import {
   type ISearchRepository,
   type SearchMemberHit,
 } from '#domain/repositories/search.repository.interface';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /** A member search hit; the shape is the repository's. */
 export type SearchMemberResult = SearchMemberHit;
@@ -93,12 +93,13 @@ async function withinBudget<T>(
   void work.catch((error: unknown) => {
     // Inside the budget the rejection propagates to the caller instead.
     if (!timedOut) return;
-    logThrowable(
-      logger,
-      'error',
-      `search source "${source}" failed after the ${SEARCH_TIMEOUT_MS}ms budget; reported to the caller as a timeout`,
+    reportCaughtFailure(logger, {
+      level: 'error',
+      site: 'search-source-late-failure',
+      message: `search source "${source}" failed after the ${SEARCH_TIMEOUT_MS}ms budget; reported to the caller as a timeout`,
       error,
-    );
+      tags: { source },
+    });
   });
 
   try {

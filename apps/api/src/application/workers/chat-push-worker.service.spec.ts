@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import * as Sentry from '@sentry/nestjs';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
@@ -18,6 +19,12 @@ import {
 } from '../services/channel-cache.service';
 import { SYSTEM_SENDER_ID } from '@repo/validation';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
+
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
 
 describe('ChatPushWorkerService', () => {
   let service: ChatPushWorkerService;
@@ -882,6 +889,22 @@ describe('ChatPushWorkerService', () => {
       await expect(
         service.purgeDispatchClaims(new Date()),
       ).resolves.toBeUndefined();
+    });
+
+    it('reports a failed purge to Sentry once, as a warning', async () => {
+      jest.mocked(Sentry.captureException).mockClear();
+      purgeBefore.mockRejectedValue(new Error('pg down'));
+
+      await service.purgeDispatchClaims(new Date());
+      await service.purgeDispatchClaims(new Date());
+
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+      expect(
+        jest.mocked(Sentry.captureException).mock.calls[0]?.[1],
+      ).toMatchObject({
+        level: 'warning',
+        tags: { caught_at: 'chat-push-dispatch-claim-purge' },
+      });
     });
   });
 

@@ -7,7 +7,7 @@ import {
   type PagedQueryResult,
   fetchAllPages as fetchAllPagesOrThrow,
 } from '../supabase.utils';
-import { logThrowable } from '../../observability/log-throwable';
+import { reportCaughtFailure } from '../../observability/report-caught-failure';
 import { TaskStatus } from '#domain/entities';
 import type { DispatchEntityType, DispatchThreshold } from '#domain/entities';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
@@ -37,6 +37,15 @@ import type {
  * the headroom is no longer load-bearing.
  */
 const SWEEP_PAGE_SIZE = 500;
+
+/** The sweep a candidate read belongs to; the suffix of its report site. */
+type SweepName =
+  | 'auto-absent'
+  | 'event-reminder'
+  | 'invoice'
+  | 'task'
+  | 'poll-expiry'
+  | 'palette';
 
 interface EventCandidateRow {
   id: string;
@@ -99,6 +108,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
     endedBefore: Date,
   ): Promise<SweepEventRow[]> {
     const rows = await this.fetchAllPages<EventCandidateRow>(
+      'auto-absent',
       'auto-absent sweep: event lookup failed',
       (from, to) =>
         this.supabase
@@ -141,6 +151,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
     startOnOrBefore: Date,
   ): Promise<SweepUpcomingEventRow[]> {
     const rows = await this.fetchAllPages<SweepUpcomingEventRow>(
+      'event-reminder',
       'event-reminder sweep: event lookup failed',
       (from, to) =>
         this.supabase
@@ -176,6 +187,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
     dueOnOrBefore: string,
   ): Promise<SweepInvoiceRow[]> {
     return this.fetchAllPages<SweepInvoiceRow>(
+      'invoice',
       'invoice sweep: lookup failed',
       (from, to) =>
         this.supabase
@@ -195,6 +207,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
     dueOnOrBefore: string,
   ): Promise<SweepTaskRow[]> {
     return this.fetchAllPages<SweepTaskRow>(
+      'task',
       'task sweep: lookup failed',
       (from, to) =>
         this.supabase
@@ -227,6 +240,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
     expiredBefore: Date,
   ): Promise<SweepPollRow[]> {
     const rows = await this.fetchAllPages<PollCandidateRow>(
+      'poll-expiry',
       'poll-expiry sweep: lookup failed',
       (from, to) =>
         // Cast at the query boundary: the generated `Database` type has no
@@ -298,6 +312,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
     engineVersion: number,
   ): Promise<StalePaletteRow[]> {
     return this.fetchAllPages<StalePaletteRow>(
+      'palette',
       'palette sweep: chapter lookup failed',
       (from, to) =>
         this.supabase
@@ -389,12 +404,12 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
     // mechanism, so another worker got there first.
     if (error.code === PG_UNIQUE_VIOLATION) return false;
 
-    logThrowable(
-      this.logger,
-      'error',
-      `dispatch claim failed for ${entityType} ${entityId} (${threshold})`,
+    reportCaughtFailure(this.logger, {
+      level: 'error',
+      site: 'scheduled-dispatch-claim-failed',
+      message: `dispatch claim failed for ${entityType} ${entityId} (${threshold})`,
       error,
-    );
+    });
     return false;
   }
 
@@ -429,12 +444,12 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
       .eq('due_date', dueDate);
 
     if (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        `dispatch release failed for ${entityType} ${entityId} (${threshold}) — this reminder will not be retried`,
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'scheduled-dispatch-release-failed',
+        message: `dispatch release failed for ${entityType} ${entityId} (${threshold}) — this reminder will not be retried`,
         error,
-      );
+      });
     }
   }
 
@@ -447,15 +462,24 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
    * that throw here is what keeps this repository's contract — the rows read
    * before the failure are discarded with them, exactly as when this loop was
    * hand-rolled.
+   *
+   * The failure reports under `sweep`, so each sweep's outage is its own
+   * Sentry issue rather than one issue for all six.
    */
   private async fetchAllPages<T>(
+    sweep: SweepName,
     errorMessage: string,
     page: (from: number, to: number) => PromiseLike<PagedQueryResult<T>>,
   ): Promise<T[]> {
     try {
       return await fetchAllPagesOrThrow<T>(page, { pageSize: SWEEP_PAGE_SIZE });
     } catch (error) {
-      logThrowable(this.logger, 'error', errorMessage, error);
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: `scheduled-sweep-candidate-read:${sweep}`,
+        message: errorMessage,
+        error,
+      });
       return [];
     }
   }

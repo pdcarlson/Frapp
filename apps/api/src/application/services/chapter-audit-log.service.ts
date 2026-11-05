@@ -109,6 +109,7 @@ export class ChapterAuditLogService {
         member_visible: entry.memberVisible ?? true,
       });
     } catch (error) {
+      // caught-failure-exempt: rethrown; callers do not catch it, so AllExceptionsFilter reports the 5xx
       logThrowable(
         this.logger,
         'error',

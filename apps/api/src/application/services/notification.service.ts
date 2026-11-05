@@ -27,6 +27,7 @@ import type {
 import { clampListLimit } from '#domain/constants/list-query-limits';
 import { ID_CHUNK_SIZE, chunkIds } from '#domain/utils/chunk-ids';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { ChatBlockService } from './chat-block.service';
 
 /**
@@ -308,12 +309,12 @@ export class NotificationService {
         created.push(...result.value);
       } else {
         insertFailures += chunk.length;
-        logThrowable(
-          this.logger,
-          'warn',
-          `Chapter notify insert failed for ${chunk.length} recipients in ${chapterId}`,
-          result.reason,
-        );
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'chapter-notify-insert-failed',
+          message: `Chapter notify insert failed for ${chunk.length} recipients in ${chapterId}`,
+          error: result.reason,
+        });
       }
     }
 
@@ -447,12 +448,13 @@ export class NotificationService {
         rows.push(...result.value);
       } else {
         failedIds.push(...chunk);
-        logThrowable(
-          this.logger,
-          'warn',
-          `Chapter notify ${label} failed for ${chunk.length} recipients in ${chapterId}`,
-          result.reason,
-        );
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'chapter-notify-chunk-lookup-failed',
+          message: `Chapter notify ${label} failed for ${chunk.length} recipients in ${chapterId}`,
+          error: result.reason,
+          tags: { lookup: label },
+        });
       }
     }
     if (failedIds.length > 0) {

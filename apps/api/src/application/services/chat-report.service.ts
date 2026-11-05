@@ -21,6 +21,7 @@ import type {
 } from '#domain/entities/chat-moderation.entity';
 import type { ChatMessage } from '#domain/entities/chat.entity';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import {
   ChannelAccessService,
   ReportedMessageGrant,
@@ -656,12 +657,12 @@ export class ChatReportService {
     } catch (sweepError) {
       // Logged, not thrown: the caller rethrows the removal's own error, which
       // is the one worth seeing, and a retry's replay path sweeps again.
-      logThrowable(
-        this.logger,
-        'error',
-        `Sibling sweep after a failed removal for chat report ${reportId} failed; a retry sweeps again`,
-        sweepError,
-      );
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'chat-report-failed-removal-sibling-sweep',
+        message: `Sibling sweep after a failed removal for chat report ${reportId} failed; a retry sweeps again`,
+        error: sweepError,
+      });
     }
   }
 
@@ -701,7 +702,7 @@ export class ChatReportService {
    * Best-effort, and it never replaces the delete's own error: that is what
    * the caller rethrows. A release that does not land — the store is down, or
    * the same reporter filed a new report on the message while the claim stood
-   * and the partial unique index refuses a second open one — is logged at
+   * and the partial unique index refuses a second open one — is reported at
    * `error`, because the record now says `actioned` over a message that may
    * still be there, and a person has to look.
    */
@@ -719,18 +720,19 @@ export class ChatReportService {
         resolvedAt,
       );
       if (!released) {
-        this.logger.error(
-          'A failed chat report removal left its claim in place',
-          { reportId, chapterId },
-        );
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'chat-report-claim-release-refused',
+          message: `A failed chat report removal left its claim in place (report ${reportId}, chapter ${chapterId})`,
+        });
       }
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        `Could not release the claim on chat report ${reportId} after a failed removal`,
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'chat-report-claim-release-failed',
+        message: `Could not release the claim on chat report ${reportId} after a failed removal`,
         error,
-      );
+      });
     }
   }
 

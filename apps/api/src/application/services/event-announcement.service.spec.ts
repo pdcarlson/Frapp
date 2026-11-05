@@ -1,10 +1,18 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { Event } from '#domain/entities/event.entity';
 import {
   baseEvent,
   createEventServiceFixture,
   type EventServiceFixture,
 } from '#test/helpers/event-service.fixture';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
 
 // Moved out of `event.service.spec.ts` with the methods (#3270). Cases drive
 // `EventService.create` / `update`, which announce through this service.
@@ -17,6 +25,7 @@ describe('EventAnnouncementService', () => {
   let mockChatService: EventServiceFixture['mockChatService'];
 
   beforeEach(async () => {
+    captureException.mockClear();
     ({
       service,
       mockEventRepo,
@@ -89,11 +98,14 @@ describe('EventAnnouncementService', () => {
       );
     });
 
-    it('should not fail if notification throws on create', async () => {
+    it('should not fail if notification throws on create, and reports it once', async () => {
       mockEventRepo.create.mockResolvedValue(baseEvent);
       mockNotificationService.notifyChapter.mockRejectedValue(
         new Error('push failed'),
       );
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
 
       const result = await service.create({
         chapter_id: 'ch-1',
@@ -103,6 +115,20 @@ describe('EventAnnouncementService', () => {
       });
 
       expect(result).toEqual(baseEvent);
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'push failed' }),
+        expect.objectContaining({
+          level: 'error',
+          tags: { caught_at: 'event-created-announce-failed' },
+          fingerprint: [
+            'caught-failure',
+            'event-created-announce-failed',
+            'Error',
+          ],
+        }),
+      );
+      error.mockRestore();
     });
 
     it('should not fail if notification throws on update', async () => {
@@ -111,10 +137,25 @@ describe('EventAnnouncementService', () => {
       mockNotificationService.notifyChapter.mockRejectedValue(
         new Error('push failed'),
       );
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
 
       await expect(
         service.update('evt-1', 'ch-1', { location: 'New Location' }),
       ).resolves.toEqual(moved);
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'push failed' }),
+        expect.objectContaining({
+          fingerprint: [
+            'caught-failure',
+            'event-updated-announce-failed',
+            'Error',
+          ],
+        }),
+      );
+      error.mockRestore();
     });
 
     // A role-targeted event's "New Event"/"Event Updated" push must not name
