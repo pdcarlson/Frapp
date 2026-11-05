@@ -34,8 +34,9 @@ import { shareAttachment } from "@/lib/chat/share-attachment";
 /**
  * The chat thread's image viewer (#2874): tapping an image in a message opens
  * it over the whole thread, with pinch, pan and double-tap to zoom and a share
- * action. It covers the thread, not the tab bar, which the frozen tab layout
- * draws (#2889). Web's counterpart is `apps/web/components/chat/image-viewer.tsx`.
+ * action. The thread takes the whole window, with no tab bar under it (#2889),
+ * so the viewer does too. Web's counterpart is
+ * `apps/web/components/chat/image-viewer.tsx`.
  *
  * It draws the attachment's signed URL in an `Image`, which never runs a
  * response as a document, so it keeps the trust rule the forced download
@@ -242,13 +243,19 @@ function ViewerBody({
   return (
     <View accessibilityViewIsModal style={styles.fill}>
       {/*
-        The backdrop covers the thread edge to edge, status bar included, but
-        its controls must not. The thread's own inset is padding, which an
-        absolute child ignores, and since #2485 the thread starts at the top
-        of the window. The native view applies only the part of the inset its
-        own frame overlaps, so it stays right under the network banner too.
+        The backdrop covers the thread edge to edge, status bar and home
+        indicator included, but its controls must not. The thread's own inset
+        is padding, which an absolute child ignores: since #2485 the thread
+        starts at the top of the window, and since it hid the tab bar (#2889)
+        it ends at the bottom, so the step bar would otherwise sit under the
+        home indicator or Android's navigation buttons. The native view
+        applies only the part of the inset its own frame overlaps, so it
+        stays right under the network banner too.
       */}
-      <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
+      <SafeAreaView
+        style={styles.safe}
+        edges={["top", "left", "right", "bottom"]}
+      >
         <View style={styles.bar}>
           <Pressable
             accessibilityRole="button"

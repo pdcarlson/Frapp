@@ -4,7 +4,8 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Text, View } from "react-native";
 import { describe, expect, it, vi } from "vitest";
-import { FrappThemeProvider } from "@/lib/theme";
+import { getSignetTokens } from "@repo/theme/signet";
+import { FrappThemeProvider, typeRole } from "@/lib/theme";
 import { screenText, textHeadings } from "@/test/screen-text";
 import { expectBackRow } from "@/test/back-row";
 import { BACK_TO_MORE } from "./back-row";
@@ -58,6 +59,25 @@ describe("ScreenShell (#2485)", () => {
     expect(textHeadings(tree).map((node) => node.props.children)).toEqual([
       "Tasks",
     ]);
+  });
+
+  it("draws the title in the board's headline role, a level above a card's title", () => {
+    const tree = render(
+      <ScreenShell title="Tasks">
+        <Text>Body</Text>
+      </ScreenShell>,
+    );
+    const [title] = textHeadings(tree);
+
+    // canvas-screens.dc.html draws s06, s08–s14 and s16's titles 24/700 at -.3px.
+    // typeRole carries the 700 weight as Figtree's bold face.
+    expect(title!.props.style).toEqual(
+      expect.objectContaining({
+        ...typeRole(getSignetTokens().typography.role.headline),
+        fontSize: 24,
+        letterSpacing: -0.3,
+      }),
+    );
   });
 
   it("draws a title mark on the title's row, ahead of the title", () => {

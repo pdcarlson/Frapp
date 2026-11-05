@@ -1,5 +1,17 @@
-import { describe, expect, it } from "vitest";
-import { parsePrimerDecision, shouldOfferPrimer } from "./primer";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  acceptPrimer,
+  parsePrimerDecision,
+  PUSH_PRIMER_STORAGE_KEY,
+  shouldOfferPrimer,
+} from "./primer";
+
+const requestPushPermission = vi.hoisted(() => vi.fn<() => Promise<boolean>>());
+
+vi.mock("@/lib/notifications/push", () => ({
+  requestPushPermission: () => requestPushPermission(),
+}));
 
 describe("parsePrimerDecision", () => {
   it("reads the two stored values", () => {
@@ -75,5 +87,48 @@ describe("shouldOfferPrimer", () => {
         }),
       ).toBe(false);
     }
+  });
+});
+
+/**
+ * The one accept sequence, shared by the s03 card's "Turn on" and s16
+ * Settings' push switch.
+ */
+describe("acceptPrimer", () => {
+  beforeEach(() => {
+    requestPushPermission.mockReset().mockResolvedValue(true);
+    vi.mocked(AsyncStorage.setItem).mockClear();
+  });
+
+  it("stores the decision, then runs onRecorded, then asks the OS", async () => {
+    const order: string[] = [];
+    vi.mocked(AsyncStorage.setItem).mockImplementationOnce(
+      async (key, value) => {
+        order.push(`stored ${key}=${value}`);
+      },
+    );
+    requestPushPermission.mockImplementation(async () => {
+      order.push("asked");
+      return true;
+    });
+
+    await expect(acceptPrimer(() => order.push("recorded"))).resolves.toBe(
+      true,
+    );
+    expect(order).toEqual([
+      `stored ${PUSH_PRIMER_STORAGE_KEY}=accepted`,
+      "recorded",
+      "asked",
+    ]);
+  });
+
+  it("resolves false, without rejecting, when the OS prompt fails", async () => {
+    requestPushPermission.mockRejectedValue(new Error("native module"));
+
+    await expect(acceptPrimer()).resolves.toBe(false);
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      PUSH_PRIMER_STORAGE_KEY,
+      "accepted",
+    );
   });
 });

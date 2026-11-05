@@ -91,9 +91,12 @@ export class AttendanceController {
 
   // GET, not POST: minting writes nothing — the code is derived from the event
   // id, the clock, and the signing secret. Beyond being the honest verb, it
-  // keeps the host screen's ~6 requests/minute of polling on the read throttle
-  // bucket (100/60s) instead of the write bucket (30/60s), which an officer
-  // running check-in also needs for everything else they are doing.
+  // keeps the host screen's requests on the read throttle bucket (100/60s)
+  // instead of the write bucket (30/60s), which an officer running check-in
+  // also needs for everything else they are doing. The screen asks about once
+  // per 30s rotation, again each time it regains focus, and every 10s only
+  // while a request is failing in a way that may clear (`useMintCheckInToken`
+  // in `@repo/hooks`).
   @Get('check-in-token')
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
