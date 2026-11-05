@@ -1,10 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import type { OrgDues } from "@repo/hooks";
-import {
-  expectClearingEntriesEmpty,
-  expectRefusedEntriesKeep,
-} from "@/tests/numeric-input";
+import { expectRefusedEntriesKeep } from "@/tests/numeric-input";
 
 const mockToast = vi.fn();
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -35,9 +32,11 @@ describe("SettingsDuesTab", () => {
         pledgeTerm="New member"
       />,
     );
+    // Typed and shown in dollars; stored in cents.
     expect(
-      screen.getByRole("spinbutton", { name: /active member dues/i }),
-    ).toHaveValue(85000);
+      screen.getByRole("textbox", { name: /active member dues/i }),
+    ).toHaveValue("850");
+    expect(screen.getByRole("textbox", { name: /late fee/i })).toHaveValue("25");
     expect(
       screen.getByRole("spinbutton", { name: /grace period/i }),
     ).toHaveValue(7);
@@ -77,18 +76,29 @@ describe("SettingsDuesTab", () => {
       return onSave;
     }
     const field = (name: RegExp) => screen.getByRole("spinbutton", { name });
+    const amount = (name: RegExp) => screen.getByRole("textbox", { name });
     const save = () =>
       fireEvent.click(screen.getByRole("button", { name: /save dues/i }));
 
     it("keeps the last whole number through a negative or a decimal", () => {
       renderTab();
-      expectRefusedEntriesKeep(field(/active member dues/i), "90000");
       expectRefusedEntriesKeep(field(/grace period/i), "3");
     });
 
-    it("lets a field be emptied mid-edit instead of snapping back", () => {
+    it("keeps the last amount through anything that isn't dollars and cents", () => {
       renderTab();
-      expectClearingEntriesEmpty(field(/late fee/i), "3000");
+      const active = amount(/active member dues/i);
+      fireEvent.change(active, { target: { value: "42.5" } });
+      for (const entry of ["-3", "42.505", "abc", "1e3"]) {
+        fireEvent.change(active, { target: { value: entry } });
+        expect(active, `after typing ${entry}`).toHaveValue("42.5");
+      }
+    });
+
+    it("lets an amount be emptied mid-edit instead of snapping back", () => {
+      renderTab();
+      fireEvent.change(amount(/late fee/i), { target: { value: "" } });
+      expect(amount(/late fee/i)).toHaveValue("");
     });
 
     it("keeps the 0 left by deleting the 1 of 10 installments, then refuses it at save", () => {
@@ -125,10 +135,10 @@ describe("SettingsDuesTab", () => {
 
     it("refuses an emptied amount at save by name, and sends nothing", () => {
       const onSave = renderTab();
-      fireEvent.change(field(/alumni dues/i), { target: { value: "" } });
+      fireEvent.change(amount(/alumni dues/i), { target: { value: "" } });
       save();
       expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Alumni dues (cents) needs a number" }),
+        expect.objectContaining({ title: "Alumni dues needs an amount" }),
       );
       expect(onSave).not.toHaveBeenCalled();
     });
@@ -165,12 +175,18 @@ describe("SettingsDuesTab", () => {
         pledgeTerm="New member"
       />,
     );
-    fireEvent.change(
-      screen.getByRole("spinbutton", { name: /late fee/i }),
-      { target: { value: "3000" } },
-    );
+    fireEvent.change(screen.getByRole("textbox", { name: /late fee/i }), {
+      target: { value: "30" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /alumni dues/i }), {
+      target: { value: "$12.75" },
+    });
     fireEvent.click(screen.getByRole("button", { name: /save dues/i }));
-    expect(onSave).toHaveBeenCalledWith({ ...DUES, late_fee_cents: 3000 });
+    expect(onSave).toHaveBeenCalledWith({
+      ...DUES,
+      late_fee_cents: 3000,
+      alumni_amount_cents: 1275,
+    });
   });
 
   // #351: the "new member" amount field's label reads in the chapter's own
@@ -185,10 +201,10 @@ describe("SettingsDuesTab", () => {
       />,
     );
     expect(
-      screen.getByRole("spinbutton", { name: /aspirant dues/i }),
+      screen.getByRole("textbox", { name: /aspirant dues/i }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("spinbutton", { name: /new member dues/i }),
+      screen.queryByRole("textbox", { name: /new member dues/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -202,7 +218,7 @@ describe("SettingsDuesTab", () => {
       />,
     );
     expect(
-      screen.getByRole("spinbutton", { name: /active member dues/i }),
+      screen.getByRole("textbox", { name: /active member dues/i }),
     ).toBeDisabled();
     expect(
       screen.getByRole("switch", { name: /allow installments/i }),

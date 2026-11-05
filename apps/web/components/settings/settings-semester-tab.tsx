@@ -165,9 +165,7 @@ export function SettingsSemesterTab({
           <CardHeader>
             <CardTitle>Start a new semester</CardTitle>
             <CardDescription>
-              Archives the current leaderboard period with a label and date
-              range. Points keep accumulating. The leaderboard just resets its
-              default window.
+              Archives the current leaderboard period. Points are kept.
             </CardDescription>
           </CardHeader>
           <form onSubmit={startRollover}>
@@ -275,10 +273,6 @@ export function SettingsSemesterTab({
       <Card>
         <CardHeader>
           <CardTitle>Archived semesters</CardTitle>
-          <CardDescription>
-            Every rollover is preserved and viewable in reports and
-            leaderboards.
-          </CardDescription>
         </CardHeader>
         <CardContent>
           {semestersPending ? (

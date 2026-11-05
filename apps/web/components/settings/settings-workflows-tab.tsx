@@ -134,9 +134,7 @@ export function SettingsWorkflowsTab({
       <CardHeader>
         <CardTitle>Workflows</CardTitle>
         <CardDescription>
-          Enable the approvals and enforcement rules your chapter runs on. Each
-          enabled workflow can carry a numeric threshold. Saving writes an entry
-          to the chapter audit log.
+          Saving writes an entry to the chapter audit log.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>

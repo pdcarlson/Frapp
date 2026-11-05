@@ -43,8 +43,7 @@ export function SettingsPrivacyTab({
       <CardHeader>
         <CardTitle>Privacy</CardTitle>
         <CardDescription>
-          Control how your chapter&apos;s data is used. Changes here are written
-          to the chapter audit log.
+          Changes are written to the chapter audit log.
         </CardDescription>
       </CardHeader>
       <CardContent>

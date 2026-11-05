@@ -254,10 +254,6 @@ export function SettingsOrgTab({
       <Card>
         <CardHeader>
           <CardTitle>Chapter profile</CardTitle>
-          <CardDescription>
-            Name and university appear across the dashboard, reports, and
-            member-facing screens.
-          </CardDescription>
         </CardHeader>
         <form onSubmit={saveProfile}>
           <CardContent className="space-y-4">
@@ -336,8 +332,8 @@ export function SettingsOrgTab({
           <CardTitle>Identity &amp; founding</CardTitle>
           <CardDescription>
             {orgHidesGreekLetters(storedName)
-              ? "Your chapter's founding details. Saving writes an entry to the chapter audit log."
-              : "Your chapter's letters and founding details. Whether the letters show is set under Chapter mark. Saving writes an entry to the chapter audit log."}
+              ? "Saving writes an entry to the chapter audit log."
+              : "Whether the letters show is set under Chapter mark. Saving writes an entry to the chapter audit log."}
           </CardDescription>
         </CardHeader>
         <form onSubmit={saveIdentity}>
@@ -491,8 +487,7 @@ export function SettingsOrgTab({
         <CardHeader>
           <CardTitle>Vocabulary</CardTitle>
           <CardDescription>
-            Tailor the words your chapter uses. Defaults follow the{" "}
-            {current.short} archetype.
+            Defaults follow the {current.short} archetype.
           </CardDescription>
         </CardHeader>
         <form onSubmit={saveVocabulary}>

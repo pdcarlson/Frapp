@@ -144,8 +144,8 @@ export function SettingsChapterMarkCard({
         <CardTitle>Chapter mark</CardTitle>
         <CardDescription>
           {lettersHidden
-            ? "What stands for your chapter in the nav and at the top of the mobile app's Chat home: your logo if you upload one, otherwise your short name."
-            : "What stands for your chapter in the nav and at the top of the mobile app's Chat home: your logo if you upload one, otherwise your short name, otherwise your Greek letters. Some organizations don't display their letters; turn them off and they appear nowhere."}
+            ? "Shown in the nav and on mobile's Chat home: your logo, or else your short name."
+            : "Shown in the nav and on mobile's Chat home: your logo, or else your short name, or else your Greek letters."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">

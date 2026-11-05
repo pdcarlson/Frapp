@@ -341,8 +341,7 @@ function DefaultInviteRoleCard({
       <CardHeader>
         <CardTitle>Default invite role</CardTitle>
         <CardDescription>
-          The role new invites use when the sender doesn&apos;t pick one.
-          Senders can still override it per invite. Changes here are written to
+          Used when an invite doesn&apos;t pick a role. Changes are written to
           the chapter audit log.
         </CardDescription>
       </CardHeader>
@@ -554,11 +553,9 @@ function CustomView({
         <CardHeader>
           <CardTitle>Custom roles</CardTitle>
           <CardDescription>
-            Chapter-defined roles with a label, rank, and capabilities.
-            Capabilities are enforced: assign these roles in the member
-            directory and they apply on the member&apos;s next request. Core
-            roles are protected from deletion. Saving writes an entry to the
-            chapter audit log.
+            A role applies on the member&apos;s next request. Core roles
+            can&apos;t be deleted. Saving writes an entry to the chapter audit
+            log.
           </CardDescription>
         </CardHeader>
         <CardContent>
