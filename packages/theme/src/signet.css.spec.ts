@@ -480,17 +480,27 @@ describe("the fixed families cannot be wired to the accent slot", () => {
     ).toEqual([]);
   });
 
-  it("the scrollbar is the locked brand pair, not a near-miss of it", () => {
-    // `#2153` is the precedent: three nearly-but-not-quite golds on one screen
-    // survived for months because every copy was a separate literal and no
-    // test compared them. These read from `signet.ts`, which is the token
-    // source, so a re-pitch there moves the assertion with it.
-    expect(root.get("--scrollbar-thumb")).toBe(
-      signetDarkTokens.color.gold.seed,
-    );
-    expect(root.get("--scrollbar-track")).toBe(
-      signetDarkTokens.color.surface.surface1,
-    );
+  it("the scrollbar is neutral: no hue, no gold, no accent", () => {
+    // Paul retired the board's gold-on-`#1A1A1A` bar on 2026-11-05 because it
+    // was the loudest thing on the chat screen (foundations §12). A thumb or
+    // track with any hue in it, gold included, is that bar coming back.
+    const channels = (value: string | undefined) =>
+      /^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/
+        .exec(value ?? "")
+        ?.slice(1)
+        .map(Number);
+    for (const token of [
+      "--scrollbar-thumb",
+      "--scrollbar-thumb-hover",
+      "--scrollbar-track",
+    ]) {
+      const rgba = channels(root.get(token));
+      expect(rgba, `${token} is not an rgba() literal`).toBeDefined();
+      const [r, g, b] = rgba!;
+      expect(new Set([r, g, b]).size, `${token} carries a hue`).toBe(1);
+    }
+    // The track paints nothing, so the bar sits on the region's own surface.
+    expect(channels(root.get("--scrollbar-track"))![3]).toBe(0);
   });
 });
 

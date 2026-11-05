@@ -268,18 +268,22 @@ A scroll region on a Signet surface draws its own scrollbar. The browser default
 
 | Token | Value | Role |
 |-------|-------|------|
-| `--scrollbar-width` | `8px` | track width, and height for a horizontal bar |
-| `--scrollbar-thumb` | `#DDB844` | the thumb at rest |
-| `--scrollbar-thumb-hover` | `#F0CD5E` | the thumb under the pointer |
-| `--scrollbar-track` | `#1A1A1A` | the track |
+| `--scrollbar-width` | `6px` | gutter width, and height for a horizontal bar |
+| `--scrollbar-thumb` | `rgba(255,255,255,0.12)` | the thumb at rest |
+| `--scrollbar-thumb-hover` | `rgba(255,255,255,0.22)` | the thumb under the pointer |
+| `--scrollbar-track` | `rgba(0,0,0,0)` | the track, which paints nothing |
+
+The thumb is inset 1px inside its gutter and fully rounded, so the visible bar is 4px wide.
 
 Three rules, each for a reason the token values alone do not carry:
 
-- **The thumb is fixed mark gold and never retints.** It is brand chrome, not an accent role. The chapter accent engine must not reach it, for the same reason it must not reach the mark (`../brand-identity.md` §2) — a tenant accent on the scrollbar is the house-tenant mistake in a different place. The track is the fixed `#1A1A1A` nav field, not a ladder token, so the pair reads the same on every surface.
-- **The track is opaque, and the bar is never hidden.** A scroll region always shows where it is. This reverses the earlier transparent-track rule: a persistent bar is part of how the surface reads.
-- **Styling is global, not opt-in per region.** The web implementation is a rule on `*` (`packages/theme/src/signet.css`), not a class. The previous `.signet-scroll` opt-in was retired by the greenfield shell lane ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)) because the framework board declares the bar at the root and calls it chrome; the class had zero call sites, so nothing regressed. The old objection that a blanket rule can land a low-opacity thumb on an unknown surface no longer applies, because both colors are now opaque.
+- **The bar is neutral and never retints.** A scrollbar is quiet chrome, not an accent role and not brand. The chapter accent engine must not reach it, and it carries no hue of its own. The thumb is a low-alpha white, the same idea as the hairline family (§3), so it reads as a slightly lighter step of whatever surface it sits on.
+- **The track is clear, and the bar is never hidden.** A scroll region always shows where it is, but the bar does not draw a strip of its own between panes.
+- **Styling is global, not opt-in per region.** The web implementation is a rule on `*` (`packages/theme/src/signet.css`), not a class. The previous `.signet-scroll` opt-in was retired by the greenfield shell lane ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)); it had zero call sites. A low-alpha thumb on a clear track would vanish on a light surface, which is acceptable only because every Signet surface is dark; a light surface that scrolls would need its own track.
 
-**Engine split, and why the board's own CSS is not copied verbatim.** The standard properties (`scrollbar-width` / `scrollbar-color`) and the WebKit pseudo-elements are mutually exclusive: since Chromium 121, a non-`auto` value for either standard property makes that element's `::-webkit-scrollbar-*` rules ignored outright. The board declares both together, which in Chrome and Edge silently discards the 8px width, the rounding and the track inset it also specifies. So the standard properties are scoped to `@supports not selector(::-webkit-scrollbar)` — true only in Firefox — and every other engine gets the pseudo-elements. All engines then render the board's intent rather than only the one that reads the shorthand.
+**Why the gold bar was retired (2026-11-05).** From lane 2 until this date the bar was the framework board's option `3a`: an 8px mark-gold thumb (`#DDB844`, hover `#F0CD5E`) on an opaque `#1A1A1A` track, held at gold by the brand lock and drawn as a persistent part of how the surface reads. In use it was the loudest element on the chat screen: two tall gold bars beside the channel list and the timeline pulled the eye away from the content. Paul asked for it to blend in, so the bar went back to a neutral thumb on a clear track, close to the pre-board `.signet-scroll` values (`rgba(255,255,255,0.14)` on `transparent`, 10px) but thinner. The gold measured 9.13:1 on its track; the neutral thumb is deliberately low contrast, which is the point.
+
+**Engine split, and why the board's own CSS is not copied verbatim.** The standard properties (`scrollbar-width` / `scrollbar-color`) and the WebKit pseudo-elements are mutually exclusive: since Chromium 121, a non-`auto` value for either standard property makes that element's `::-webkit-scrollbar-*` rules ignored outright. The board declares both together, which in Chrome and Edge silently discards the width, the rounding and the thumb inset. So the standard properties are scoped to `@supports not selector(::-webkit-scrollbar)` (true only in Firefox) and every other engine gets the pseudo-elements. Firefox has no width finer than `thin`, so only the two colors reach it.
 
 ---
 
@@ -313,7 +317,7 @@ engine never writes. Against the gold accent fill the highlight still measures a
 perceptible, and the text pair under it goes from near-black-on-gold to near-black-on-near-white.
 
 **This is §12's rule again, for a different reason.** The scrollbar is chrome that looks like it
-should carry the chapter and must not, because the brand lock holds it at mark gold. Selection is
+should carry the chapter and must not, because it is meant to blend in. Selection is
 chrome that looks like it should carry the chapter and must not, because the chapter's own colour is
 what it would have to be legible against.
 
