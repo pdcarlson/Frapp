@@ -39,11 +39,12 @@
 //
 // 1. iOS. The shipped `*UsageDescription*` keys are exactly
 //    IOS_PURPOSE_STRINGS, each with its exact text, and each entry's
-//    `requestedBy` call is still in the app's source (comments don't count),
-//    or, for a key the app never requests, its `linkedBy` symbol is still in
-//    the linked library's native source. A key for a feature the app doesn't
-//    have fails, however it got into Info.plist. `UIBackgroundModes` is
-//    exactly IOS_BACKGROUND_MODES.
+//    `requestedBy` call is still in the app's source (comments don't count).
+//    A key for a feature the app doesn't have fails, however it got into
+//    Info.plist, except a linked-only key App Store Connect demands for a
+//    linked library's API: its `linkedBy` pod must still be linked and use
+//    the symbol, and the app must never make the request its text disowns.
+//    `UIBackgroundModes` is exactly IOS_BACKGROUND_MODES.
 // 2. Android declarations. The app manifest declares exactly
 //    ANDROID_RUNTIME_PERMISSIONS plus ANDROID_TEMPLATE_PERMISSIONS, and marks
 //    none of the runtime ones `tools:node="remove"`.
@@ -71,6 +72,11 @@
 //    held on Stripe's Swift Package path).
 //
 // What a green run does NOT prove:
+//   - That App Store Connect accepts the binary. Its upload scan demands a
+//     purpose string for some linked APIs the app never calls (ITMS-90683),
+//     and which ones it flags is Apple's, so a newly linked library can still
+//     be rejected on upload. The linked-only roster entries hold the keys
+//     Apple has named so far.
 //   - Library manifests merge into the Android manifest at Gradle build time,
 //     which introspection doesn't run. So check 2 covers what the template and
 //     config plugins declare. POST_NOTIFICATIONS, which expo-notifications' own
@@ -106,13 +112,17 @@ const MOBILE_DIR = "apps/mobile";
  * with no such call is a Guideline 5.1.1(i) rejection, and a call with no
  * purpose string crashes on iOS.
  *
- * The exception is a key the app never requests but a linked library's native
- * code references. App Store Connect scans the binary for those APIs and
- * rejects the upload without the key (ITMS-90683), whether or not anything
- * calls them. Such an entry has `requestedBy: null` and a `linkedBy` naming
- * the package file and symbol that make Apple require it, so the entry goes
- * away when the library stops linking the API. Declining one with `false`
- * is what got iOS 0.9.1 (8) rejected on 2026-11-05.
+ * The exception is a key the app never requests but App Store Connect demands
+ * anyway. Its upload scan flags some APIs a linked library references and
+ * rejects the binary without their key (ITMS-90683), whether or not anything
+ * calls them. Such an entry has `requestedBy: null` and a `linkedBy`: the
+ * linked pod and native symbol that make Apple ask, and the JS call that
+ * would make the app ask too (which the app must not make, because the text
+ * says it never does). Declining one with `false` is what got iOS 0.9.1 (8)
+ * rejected on 2026-11-05. Not every linked API is flagged: the same upload
+ * named only the motion key, though expo-camera links microphone access and
+ * expo-secure-store links Face ID, both declined below. So an entry is added
+ * when Apple names the key, not for every symbol a library links.
  *
  * Two plugin options that write no string here are load-bearing, and the
  * checks below catch either one changing:
@@ -164,8 +174,8 @@ export const IOS_PURPOSE_STRINGS = new Map([
       requestedBy: null,
       linkedBy: {
         packageName: "expo-location",
-        file: "ios/Requesters/MotionActivityPermissionRequester.swift",
         symbol: "CMMotionActivityManager",
+        requestCall: "requestMotionActivityPermissionsAsync(",
       },
     },
   ],
@@ -282,7 +292,7 @@ export function purposeStringProblems(infoPlist, roster = IOS_PURPOSE_STRINGS) {
   }
   for (const [key, entry] of roster) {
     if (shipped.includes(key)) continue;
-    if (entry.requestedBy) {
+    if (!entry.linkedBy) {
       problems.push(
         `iOS ships no ${key}, but ${entry.requestedBy.file} requests the permission: iOS terminates an app that asks without a purpose string`,
       );
@@ -363,7 +373,7 @@ export function requesterProblems(readSource, rosters = [IOS_PURPOSE_STRINGS, AN
   for (const roster of rosters) {
     for (const [key, entry] of roster) {
       // A linked-only purpose string has no requester; linkedApiProblems checks it.
-      if (entry.requestedBy === null) continue;
+      if (entry.linkedBy) continue;
       const { file, call } = entry.requestedBy ?? entry;
       const source = readSource(file);
       if (source === null) {
@@ -378,21 +388,72 @@ export function requesterProblems(readSource, rosters = [IOS_PURPOSE_STRINGS, AN
   return problems;
 }
 
+/** Whether any native source file under `dir` uses `symbol` outside a comment. */
+export function nativeSourcesUse(dir, symbol) {
+  const walk = (current) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      if (entry.name.startsWith(".")) continue;
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name) && walk(path)) return true;
+      } else if (entry.isFile() && NATIVE_SOURCE.test(entry.name)) {
+        if (withoutComments(readFileSync(path, "utf8")).includes(symbol)) return true;
+      }
+    }
+    return false;
+  };
+  return existsSync(dir) && walk(dir);
+}
+
+const APP_SOURCE = /\.(?:ts|tsx|js|jsx|mjs|cjs)$/;
+const APP_SKIP_DIRS = new Set(["node_modules", "ios", "android", "dist"]);
+
+/** `{ file, text }` for each JS or TS source under apps/mobile, repo-relative. */
+export function appSources(root) {
+  const out = [];
+  const walk = (current) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      if (entry.name.startsWith(".")) continue;
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!APP_SKIP_DIRS.has(entry.name)) walk(path);
+      } else if (entry.isFile() && APP_SOURCE.test(entry.name)) {
+        out.push({ file: relative(root, path).replaceAll("\\", "/"), text: readFileSync(path, "utf8") });
+      }
+    }
+  };
+  const dir = join(root, MOBILE_DIR);
+  if (existsSync(dir)) walk(dir);
+  return out;
+}
+
 /**
- * Problems with the roster's `linkedBy` entries, given a reader from a package
- * name and a file inside it to its text (null when either is missing). A key
- * whose library no longer links the API is a purpose string for nothing.
+ * Problems with the roster's linked-only entries, given the linked iOS pods
+ * (`{ packageName, dir }`) and the app's sources (`{ file, text }`). Each one
+ * must still be linked, its pod must still use the symbol Apple flags, and
+ * nothing in the app may call the request its text says the app never makes.
  */
-export function linkedApiProblems(readPackageFile, roster = IOS_PURPOSE_STRINGS) {
+export function linkedApiProblems({ pods, sources }, roster = IOS_PURPOSE_STRINGS) {
   const problems = [];
   for (const [key, entry] of roster) {
     if (!entry.linkedBy) continue;
-    const { packageName, file, symbol } = entry.linkedBy;
-    const source = readPackageFile(packageName, file);
-    if (source === null) {
-      problems.push(`${key}: ${packageName}/${file} no longer exists, so nothing shows the library still links ${symbol}. Find where it moved and update linkedBy, or drop the key if the library no longer links it`);
-    } else if (!withoutComments(source).includes(symbol)) {
-      problems.push(`${key}: ${packageName}/${file} no longer uses ${symbol}. If no linked library references it now, drop the key and decline the plugin option with \`false\`; if it moved, update linkedBy`);
+    const { packageName, symbol, requestCall } = entry.linkedBy;
+    const pod = pods.find((p) => p.packageName === packageName);
+    if (!pod) {
+      problems.push(
+        `${key}: ${packageName} is no longer linked into the iOS build, so nothing needs this purpose string. If no other linked library uses ${symbol}, drop the key and decline the plugin option with \`false\`; if another one does, point linkedBy at it`,
+      );
+    } else if (!nativeSourcesUse(pod.dir, symbol)) {
+      problems.push(
+        `${key}: no native source in ${packageName} uses ${symbol} any more. If no other linked library does, drop the key and decline the plugin option with \`false\`; if another one does, point linkedBy at it`,
+      );
+    }
+    for (const { file, text } of sources) {
+      if (withoutComments(text).includes(requestCall)) {
+        problems.push(
+          `${key}: ${file} calls ${requestCall.replace(/\($/, "")}, but the purpose string says Frapp never asks. Write a real purpose for the feature and give the entry a requestedBy instead of linkedBy`,
+        );
+      }
     }
   }
   return problems;
@@ -721,17 +782,6 @@ export function main(root = process.cwd(), run = expoCli(root)) {
     const path = join(root, file);
     return existsSync(path) ? readFileSync(path, "utf8") : null;
   };
-  const mobileRequire = createRequire(join(root, MOBILE_DIR, "package.json"));
-  const readPackageFile = (packageName, file) => {
-    let dir;
-    try {
-      dir = dirname(mobileRequire.resolve(`${packageName}/package.json`));
-    } catch {
-      return null;
-    }
-    const path = join(dir, file);
-    return existsSync(path) ? readFileSync(path, "utf8") : null;
-  };
   const scanned = pods.map((pod) => ({
     packageName: pod.packageName,
     ...scanPod(pod.dir),
@@ -750,7 +800,7 @@ export function main(root = process.cwd(), run = expoCli(root)) {
       ...purposeStringProblems(modResults.ios.infoPlist),
       ...backgroundModeProblems(modResults.ios.infoPlist),
       ...requesterProblems(readSource),
-      ...linkedApiProblems(readPackageFile),
+      ...linkedApiProblems({ pods, sources: appSources(root) }),
       ...androidPermissionProblems(modResults.android.manifest),
       ...requiredReasonProblems(scanned, declared, { reactNativeCore }),
       ...swiftPackageProblems(scanned, modResults.ios.podfileProperties),

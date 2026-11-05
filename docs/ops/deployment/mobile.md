@@ -511,6 +511,11 @@ build 2 (from `v0.8.1`), and `main` is at 0.9.1, because native code changed aft
 (#3472). The first update becomes possible once Deploy production ships a release that carries
 the guard and version 0.9.1, a store build of it ships through § 6.6, and the PR that records that
 build in `apps/mobile/store/shipped-builds.json` has merged.
+*Updated 2026-11-05, later:* the 0.9.1 builds came from `v0.9.0`, which carries the guard.
+Android build 3 is on Play's internal track. App Store Connect rejected iOS build 8 in processing
+(ITMS-90683, a missing motion purpose string), so no tester can install it. The fix changed the
+native config, so `main` is at 0.9.2, and the next release's store builds on both platforms are
+the ones the guard compares an update against.
 
 `npm run eas -- update` runs [`scripts/eas-update.mjs`](../../../scripts/eas-update.mjs) before
 eas-cli, and refuses to publish when any check fails. It names what to fix. The checks fix four
