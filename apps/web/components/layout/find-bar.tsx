@@ -35,10 +35,13 @@ import { EYEBROW } from "@/components/ui/typography";
  * **Taking over Cmd/Ctrl+F is deliberate.** It is the key people already press
  * to find something on a page, and in an app whose content is paginated and
  * virtualized, the browser's own in-page find searches only what happens to be
- * mounted. Escape closes and returns the page. The keyboard hint in the field
- * says `⌘F`, so the binding is advertised where it is used rather than being
- * folklore — `components.md` §7 bans a hint for a binding that is not wired,
- * and this one is.
+ * mounted. Escape closes and returns the page.
+ *
+ * **The binding is not advertised.** The field used to carry a `⌘F` / `esc`
+ * keycap, removed 2026-11-05 as noise in the app's most visible control: the
+ * field is always on screen, so nobody needs the shortcut to find it. The binding stays because it is the key people already
+ * press. `components.md` §7 bans a hint for a binding that is NOT wired; an
+ * unadvertised binding that is wired breaks nothing.
  *
  * **Ranking is Channels, then Members, then Messages** (`1d` pins 2-4), with
  * the first hit preselected and Enter opening it. Channels rank first because
@@ -374,7 +377,7 @@ export function FindBar({ className }: { className?: string }) {
       */}
       <div
         className={cn(
-          "flex h-[34px] w-full items-center gap-2.5 rounded-[10px] border border-input bg-card px-3",
+          "flex h-[34px] w-full items-center gap-2.5 rounded-[10px] border border-input bg-surface-1 px-3",
           FOCUS_RING_WITHIN,
         )}
       >
@@ -406,24 +409,8 @@ export function FindBar({ className }: { className?: string }) {
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onInputKeyDown}
-          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted"
+          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
-        {/*
-          The hint swaps to `esc` while the field is live, because that is the
-          key that does something at that moment. Advertising `⌘F` to someone
-          already typing in the field would be advertising a no-op.
-        */}
-        <kbd
-          aria-hidden="true"
-          className={cn(
-            "shrink-0 font-mono text-caption text-muted",
-            open
-              ? ""
-              : "rounded-xs border border-border px-1.5 py-px",
-          )}
-        >
-          {open ? "esc" : "⌘F"}
-        </kbd>
       </div>
 
       {/*
