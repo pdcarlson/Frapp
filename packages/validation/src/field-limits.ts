@@ -101,6 +101,14 @@ export const GRADUATION_YEAR_MAX = 2100;
  */
 export const DOCUMENT_TITLE_MAX_LENGTH = 255;
 
+/**
+ * What a member says they did on a service entry
+ * (`service_entries.description`), on web and mobile s20. The API's
+ * `CreateServiceEntryDto` refuses a longer one, and s20's field stops at it.
+ * Web's service dialog doesn't apply it yet (#3456).
+ */
+export const SERVICE_DESCRIPTION_MAX_LENGTH = 2_000;
+
 /** Options on one poll, and the fewest a poll may have. */
 export const POLL_OPTIONS_MAX = 10;
 export const POLL_OPTIONS_MIN = 2;

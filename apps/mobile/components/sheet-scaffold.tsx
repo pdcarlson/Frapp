@@ -19,9 +19,9 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * and the reason its header gives applies here: the copies drift, and the drift
  * is invisible until two sheets sit side by side.
  *
- * `app/(tabs)/service-hours.tsx` still carries its own copy — migrating it is a
- * mechanical change with its own review surface, tracked in #1060, exactly as
- * #1050 tracks the state-block ones.
+ * Every sheet in the app draws it, s20's log sheet
+ * (`components/service-hours/log-hours-sheet.tsx`) included, which was the last
+ * to carry its own copy (#1060).
  *
  * This owns chrome only. The caller supplies the modal itself, because
  * `BottomSheetModal`'s ref, snap behavior and keyboard mode are per-sheet
@@ -38,6 +38,9 @@ const SCRIM_OPACITY = 0.55;
  * nothing dims a screen that has no sheet over it. A plain function of its
  * props, so it can be passed directly without a per-sheet `useCallback`.
  *
+ * Every `BottomSheetModal` passes a scrim, and `lib/sheet-scrim.spec.ts`
+ * fails the build on one that doesn't: the sheets that predated this one shipped
+ * without it, and the screen behind them read through at full brightness.
  * s17 (`components/ask/ask-sheet.tsx`) drew this first and still renders its
  * own identical backdrop; folding it onto this is left to the next change that
  * rewrites that file, rather than churning it here.
@@ -68,10 +71,18 @@ export function SheetHeader({
   title,
   onCancel,
   cancelLabel = "Cancel",
+  cancelDisabled = false,
 }: {
   title: string;
   onCancel: () => void;
   cancelLabel?: string;
+  /**
+   * Holds Cancel while a save is in flight, on a sheet whose Cancel gives the
+   * draft up: the save can't be called back, so a Cancel then would clear
+   * the draft and file it anyway, or lose it with no word if the save
+   * failed. A swipe still closes such a sheet, keeping the draft.
+   */
+  cancelDisabled?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -80,13 +91,19 @@ export function SheetHeader({
     <View style={styles.headerRow}>
       <Text style={styles.title}>{title}</Text>
       {/* `hitSlop` meets the 44pt floor while keeping components.md §9's compact
-          visual — the #939 ruling, as `service-hours.tsx` applies it. */}
+          visual — the #939 ruling. */}
       <Pressable
         accessibilityRole="button"
+        accessibilityState={cancelDisabled ? { disabled: true } : undefined}
+        disabled={cancelDisabled}
         onPress={onCancel}
         hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
       >
-        <Text style={styles.cancel}>{cancelLabel}</Text>
+        <Text
+          style={[styles.cancel, cancelDisabled ? styles.cancelDisabled : null]}
+        >
+          {cancelLabel}
+        </Text>
       </Pressable>
     </View>
   );
@@ -136,9 +153,9 @@ export function SheetPrimaryButton({
 }
 
 /**
- * Which visit of a sheet is on screen, for a sheet whose write can settle
- * after it closed. s15's edit sheet and s21's upload sheet use it; s19's
- * new-task sheet and s20's log sheet still dismiss unguarded (#3405).
+ * Which visit of a sheet is on screen. Any sheet whose save can settle after
+ * the member closed it uses it; search for the hook to find them. Sheets that
+ * still dismiss unguarded after a write are tracked in #3405.
  *
  * Wire `onAnimate` and call `markClosed` first thing in the modal's
  * `onDismiss`. Then:
@@ -187,15 +204,19 @@ export function useSheetVisit(ref: ForwardedRef<BottomSheetModal>) {
 }
 
 /**
- * The text field a sheet form draws (s15's profile edit, s19's new task,
- * s21's upload), as plain style objects for the caller's own
+ * The text field a sheet form draws (s15's profile edit, s19's new task, s20's
+ * log, s21's upload), as plain style objects for the caller's own
  * `StyleSheet.create`, so a sheet can add its own layout to `field`. Focus
  * swaps the border to the chapter accent, as every focusable control does
  * (`spec/ui/design-system/components.md` § States). Shared because those
  * sheets had grown three copies, and the focus border had already drifted to
- * house gold in two of them. s20's log sheet (`app/(tabs)/service-hours.tsx`)
- * still carries its own copy, with no focus border, along with the rest of
- * its chrome (#1060).
+ * house gold in two of them.
+ *
+ * `ring` / `ringActive` are the drawn focus ring, for a view wrapping the
+ * field. Canvas draws `box-shadow: 0 0 0 3px` in the accent at 22%; React
+ * Native has no `box-shadow`, and drop shadows are banned by the De-Google
+ * guardrails, so the wrapper's border carries `focus.ringWidth` /
+ * `focus.ringOpacity` instead. s19 and s20 draw it.
  */
 export function sheetFieldStyles(tokens: SignetTokens, accent: string) {
   return {
@@ -212,6 +233,14 @@ export function sheetFieldStyles(tokens: SignetTokens, accent: string) {
     },
     fieldFocused: {
       borderColor: accent,
+    },
+    ring: {
+      borderRadius: tokens.radius.control + tokens.focus.ringWidth,
+      borderWidth: tokens.focus.ringWidth,
+      borderColor: "transparent",
+    },
+    ringActive: {
+      borderColor: tint(accent, tokens.focus.ringOpacity),
     },
   };
 }
@@ -254,6 +283,9 @@ function createStyles(tokens: SignetTokens) {
     cancel: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.muted,
+    },
+    cancelDisabled: {
+      opacity: 0.5,
     },
     primaryButton: {
       marginTop: tokens.spacing.sm,
