@@ -461,7 +461,7 @@ export function ServiceHoursPage() {
           <Can permission="service:log">
             <Dialog {...logDialog.dialogProps}>
               <DialogTrigger asChild>
-                <Button className="gap-2" {...gate.controlProps()}>
+                <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
                   <Plus className="h-4 w-4" /> Log service
                 </Button>
               </DialogTrigger>
@@ -858,7 +858,7 @@ export function ServiceHoursPage() {
                       from a card headed "Your pending entries". */}
                   <Button
                     size="sm"
-                    variant="ghost"
+                    variant="quiet"
                     onClick={() => void withdraw(entry)}
                     {...gate.controlProps()}
                   >

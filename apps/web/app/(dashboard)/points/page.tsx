@@ -24,6 +24,8 @@ import {
   dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
+  dashboardToolbarSearchClassName,
+  dashboardToolbarSearchGlyphClassName,
 } from "@/components/shared/table-controls";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -420,12 +422,12 @@ export default function PointsPage() {
           </CardHeader>
           <CardContent>
             <div className="mb-3 relative">
-              <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
               <Input
                 value={leaderboardSearch}
                 onChange={(event) => setLeaderboardSearch(event.target.value)}
                 placeholder="Search by member name"
-                className="h-11 pl-9"
+                className={dashboardToolbarSearchClassName}
               />
             </div>
             {filteredLeaderboard.length === 0 ? (
@@ -486,12 +488,12 @@ export default function PointsPage() {
           <CardContent>
             <div className="mb-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
               <div className="relative">
-                <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
                 <Input
                   value={transactionSearch}
                   onChange={(event) => setTransactionSearch(event.target.value)}
                   placeholder="Search descriptions"
-                  className="h-11 pl-9"
+                  className={dashboardToolbarSearchClassName}
                 />
               </div>
               <select

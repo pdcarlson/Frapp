@@ -805,7 +805,7 @@ function ChatAdminBody() {
                     ) : null}
                   </button>
                   <Button
-                    variant="ghost"
+                    variant="quiet"
                     size="icon"
                     className={compactControlClassName}
                     aria-label={`Delete #${channel.name}`}
@@ -1020,7 +1020,7 @@ function ChatAdminBody() {
                               </p>
                             </div>
                             <Button
-                              variant="ghost"
+                              variant="quiet"
                               size="icon"
                               className={compactControlClassName}
                               aria-label="Unpin message"
@@ -1129,7 +1129,7 @@ function ChatAdminBody() {
                       </span>
                       <div className="flex shrink-0 gap-1">
                         <Button
-                          variant="ghost"
+                          variant="quiet"
                           size="icon"
                           className={compactControlClassName}
                           aria-label={`Rename ${category.name}`}
@@ -1138,7 +1138,7 @@ function ChatAdminBody() {
                           <Pencil className="h-4 w-4" />
                         </Button>
                         <Button
-                          variant="ghost"
+                          variant="quiet"
                           size="icon"
                           className={compactControlClassName}
                           aria-label={`Delete ${category.name}`}

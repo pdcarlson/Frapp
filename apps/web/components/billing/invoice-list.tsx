@@ -51,6 +51,7 @@ import {
 import {
   dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
+  dashboardToolbarHeightClassName,
   dashboardTableCheckboxClassName,
   denseListClassName,
 } from "@/components/shared/table-controls";
@@ -436,7 +437,7 @@ export function InvoiceList({ id }: { id?: string }) {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search invoice or member"
-            className="h-11 w-full sm:w-56"
+            className={`${dashboardToolbarHeightClassName} w-full sm:w-56`}
           />
           <select
             aria-label="Invoice status filter"
@@ -477,7 +478,7 @@ export function InvoiceList({ id }: { id?: string }) {
           <Can permission="billing:manage">
             <Dialog {...createDialog.dialogProps}>
               <DialogTrigger asChild>
-                <Button size="sm" className="gap-2" {...gate.controlProps()}>
+                <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
                   <Plus className="h-4 w-4" />
                   Create invoice
                 </Button>

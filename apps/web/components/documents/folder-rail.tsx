@@ -83,7 +83,7 @@ export function FolderRail({
         </h2>
         <Can permission="chapter_docs:manage">
           <Button
-            variant="ghost"
+            variant="quiet"
             size="icon"
             className={compactControlClassName}
             aria-label="New folder"
@@ -149,7 +149,7 @@ export function FolderRail({
                 */}
                 <div className="flex items-center justify-end gap-0.5 pb-1 pl-6">
                   <Button
-                    variant="ghost"
+                    variant="quiet"
                     size="icon"
                     className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
                     aria-label={`Move ${folder.name} up`}
@@ -159,7 +159,7 @@ export function FolderRail({
                     <ChevronUp className="h-4 w-4" />
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="quiet"
                     size="icon"
                     className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
                     aria-label={`Move ${folder.name} down`}
@@ -171,7 +171,7 @@ export function FolderRail({
                     <ChevronDown className="h-4 w-4" />
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="quiet"
                     size="icon"
                     className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
                     aria-label={`Rename ${folder.name}`}
@@ -181,7 +181,7 @@ export function FolderRail({
                     <Pencil className="h-4 w-4" />
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="quiet"
                     size="icon"
                     className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
                     aria-label={`Delete folder ${folder.name}`}

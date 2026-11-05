@@ -404,7 +404,7 @@ export function TasksBoard() {
           <Can permission="tasks:manage">
             <Dialog {...createDialog.dialogProps}>
               <DialogTrigger asChild>
-                <Button className="gap-2" {...gate.controlProps()}>
+                <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
                   <Plus className="h-4 w-4" /> New task
                 </Button>
               </DialogTrigger>
@@ -705,7 +705,7 @@ export function TasksBoard() {
                               ) : null}
                               <Button
                                 size="sm"
-                                variant="ghost"
+                                variant="quiet"
                                 {...gate.controlProps()}
                                 onClick={() => void removeTask(task)}
                               >

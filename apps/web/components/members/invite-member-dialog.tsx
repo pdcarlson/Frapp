@@ -27,7 +27,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
+import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
 import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { getErrorMessage, guardIntDraft, parseGuardedInt } from "@/lib/utils";
 import { normalizeRoleOptions } from "@/lib/roles";
@@ -420,7 +420,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                 setHasPickedRole(true);
                 setRoleName(event.target.value);
               }}
-              className={dashboardFilterSelectClassName}
+              className={dashboardFormSelectClassName}
             >
               {roleOptions.map((role) => (
                 <option key={role.id} value={role.name}>

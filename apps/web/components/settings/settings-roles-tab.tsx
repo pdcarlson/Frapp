@@ -585,7 +585,7 @@ function CustomView({
                     {!role.core ? (
                       <Button
                         type="button"
-                        variant="ghost"
+                        variant="quiet"
                         size="sm"
                         disabled={!canManage || deleteRole.isPending}
                         onClick={() => void handleDelete(role)}

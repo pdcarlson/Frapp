@@ -226,7 +226,7 @@ export function UploadDocumentDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button className="gap-2" {...gate.controlProps()}>
+        <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
           <Upload className="h-4 w-4" /> Upload document
         </Button>
       </DialogTrigger>

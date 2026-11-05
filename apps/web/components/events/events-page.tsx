@@ -45,6 +45,8 @@ import {
   dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
+  dashboardToolbarSearchClassName,
+  dashboardToolbarSearchGlyphClassName,
 } from "@/components/shared/table-controls";
 import { useToast } from "@/lib/hooks/use-toast";
 import { EventDetailSheet } from "@/components/events/event-detail-sheet";
@@ -354,6 +356,7 @@ export function EventsPage() {
         title="Events"
         actions={
           <Button
+            size="toolbar"
             className="gap-2"
             {...eventWriteGate.controlProps()}
             onClick={() => {
@@ -364,7 +367,7 @@ export function EventsPage() {
             }}
           >
             <Plus className="h-4 w-4" />
-            New Event
+            New event
           </Button>
         }
       />
@@ -380,13 +383,13 @@ export function EventsPage() {
         />
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative max-w-md">
-              <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search events by name or location"
                 aria-label="Search events by name or location"
-                className="h-11 pl-9"
+                className={dashboardToolbarSearchClassName}
               />
             </div>
             <div className="flex flex-wrap gap-2">

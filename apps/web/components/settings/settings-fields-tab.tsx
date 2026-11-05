@@ -248,7 +248,7 @@ function FieldRow({
         </div>
         <Button
           type="button"
-          variant="ghost"
+          variant="quiet"
           size="sm"
           disabled={!canManage || busy}
           onClick={() => void handleDelete()}

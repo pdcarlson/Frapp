@@ -727,7 +727,7 @@ export function GeofencesAdminPage() {
                       </Button>
                       <Button
                         size="sm"
-                        variant="ghost"
+                        variant="quiet"
                         {...gate.controlProps()}
                         onClick={() => void handleDelete(zone)}
                       >

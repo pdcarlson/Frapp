@@ -59,6 +59,13 @@ const buttonVariants = cva(
         tinted:
           "border-accent-border bg-accent-subtle font-bold text-accent-text hover:bg-accent-subtle-hover",
         ghost: "font-semibold text-accent-text hover:bg-accent-subtle",
+        // Not one of §3's five either: a row's secondary actions (Edit,
+        // Delete, Remove, an icon). Ghost paints the chapter accent, so a
+        // column of "Delete" links read as the brightest thing on the page;
+        // these sit in the text's own tone and light up only on hover. The
+        // dialog and sheet close buttons were already this recipe.
+        quiet:
+          "font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground",
         // Tint, never a solid red fill (§3): `--destructive-tint` (13%) at
         // rest, `--destructive-tint-hover` (20%) on hover. The label is the
         // AA-lifted tone: `--destructive` on its own tint measures 3.82:1 over
@@ -80,6 +87,11 @@ const buttonVariants = cva(
         // Square, and 44 rather than the app bar's 38, so an icon-only control
         // clears the touch-target floor (§2) on the 375px layout.
         icon: "h-11 w-11",
+        // A toolbar row's controls (the PageHeader action, filters, search):
+        // §3's Compact on a mouse, the 44 touch floor on a finger, which is
+        // the README's row rule. At 48 the primary action stood taller than
+        // the page's own title row and every list row under it.
+        toolbar: "h-9 px-3 text-sm pointer-coarse:h-11 pointer-coarse:px-3.5",
       },
     },
     defaultVariants: {
