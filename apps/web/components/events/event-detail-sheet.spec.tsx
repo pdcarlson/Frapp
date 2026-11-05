@@ -9,7 +9,9 @@ const {
   mockResetDownloadIcs,
   mockToast,
   mockIcsState,
+  eventQueryState,
 } = vi.hoisted(() => ({
+  eventQueryState: { isLoading: false },
   mockCurrentChapter: vi.fn(),
   mockDownloadIcs: vi.fn(),
   mockResetDownloadIcs: vi.fn(),
@@ -22,7 +24,7 @@ const {
 // usingPreviewData renders from the `event` prop and gates out AttendancePanel;
 // stub the live hooks so the sheet renders without a query client / API.
 vi.mock("@repo/hooks", () => ({
-  useEvent: () => ({ data: undefined, isLoading: false, isError: false }),
+  useEvent: () => ({ data: undefined, isLoading: eventQueryState.isLoading, isError: false }),
   useDeleteEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDownloadEventIcs: () => ({
     mutateAsync: mockDownloadIcs,
@@ -566,6 +568,31 @@ describe("EventDetailSheet schedule and policy", () => {
     expect(screen.getByRole("dialog")).not.toHaveAttribute(
       "aria-describedby",
     );
+  });
+});
+
+describe("EventDetailSheet loading", () => {
+  it("draws a skeleton and one screen-reader status line, not a spinner with a caption (components.md §10)", () => {
+    eventQueryState.isLoading = true;
+    try {
+      render(
+        <EventDetailSheet
+          open
+          onOpenChange={() => {}}
+          usingPreviewData={false}
+          event={baseEvent}
+          onRequestEdit={() => {}}
+          onEventDeleted={() => {}}
+        />,
+      );
+      const status = screen
+        .getAllByRole("status")
+        .find((node) => node.textContent === "Loading event details");
+      expect(status).toBeDefined();
+      expect(status).toHaveClass("sr-only");
+    } finally {
+      eventQueryState.isLoading = false;
+    }
   });
 });
 
