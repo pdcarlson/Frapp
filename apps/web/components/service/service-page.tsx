@@ -713,7 +713,7 @@ export function ServiceHoursPage() {
                         */}
                       <Button
                         size="toolbar"
-                        variant="quiet"
+                        variant="ghost"
                         onClick={() => void reject(entry)}
                         {...gate.controlProps(reviewEntry.isPending)}
                       >
@@ -839,7 +839,7 @@ export function ServiceHoursPage() {
                     from a section headed "Your pending entries". */}
                 <Button
                   size="toolbar"
-                  variant="quiet"
+                  variant="ghost"
                   onClick={() => void withdraw(entry)}
                   {...gate.controlProps()}
                 >

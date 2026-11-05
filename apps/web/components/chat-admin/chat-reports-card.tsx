@@ -622,7 +622,7 @@ function ReportAttachments({
 
   const rowClass = cn(
     "flex max-w-full items-center gap-2 rounded-md border border-border bg-surface-1 px-2 py-1.5",
-    "text-xs hover:bg-accent-subtle hover:text-accent-text",
+    "text-xs hover:bg-card-hover hover:text-foreground",
     FOCUS_RING,
   );
 

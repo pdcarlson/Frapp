@@ -271,11 +271,3 @@ export function accentRolesFor(seed: string) {
  */
 export const accentFour = (roles: Record<string, string>) =>
   mixHex(roles["--accent-subtle"]!, roles["--accent-border"]!, 0.22);
-
-/** The channel spread of a fill's delta from a surface — its hue shift. */
-export function chromaShift(fill: string, base: string) {
-  const a = parseHex(fill)!;
-  const b = parseHex(base)!;
-  const deltas = [a.r - b.r, a.g - b.g, a.b - b.b];
-  return Math.max(...deltas) - Math.min(...deltas);
-}

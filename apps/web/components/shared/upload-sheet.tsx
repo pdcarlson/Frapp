@@ -365,7 +365,7 @@ export function UploadFileField({
           <div className="flex items-center gap-3">
             <span
               aria-hidden
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-sm bg-accent-subtle text-accent-text"
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-sm bg-popover text-muted-foreground"
             >
               <DocumentsGlyph className="h-5 w-5" active />
             </span>

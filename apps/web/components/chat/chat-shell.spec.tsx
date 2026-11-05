@@ -205,6 +205,12 @@ const slashGateReads = {
   The viewer's block list (#2313). Ready and naming nobody by default, so the
   shell's other cases see every row; the block cases below set it.
 */
+const setupChecklistState = vi.hoisted(() => ({
+  value: null as null | {
+    doneCount: number;
+    lines: { key: string; label: string; done: boolean }[];
+  },
+}));
 const blockListState = vi.hoisted(() => ({
   value: {
     ids: new Set<string>() as ReadonlySet<string>,
@@ -302,6 +308,12 @@ vi.mock("@repo/hooks", async () => ({
   // its own behaviour is pinned.
   useAccessibleChapters: () => ({ data: [] }),
   useDismissOpsNudge: () => ({ mutate: vi.fn() }),
+  // Read by the setup checklist at the top of the rail. Inert here for the
+  // same reason as the nudge: `setup-checklist.spec.tsx` pins its behaviour.
+  useChapterSetupChecklist: () => ({
+    checklist: setupChecklistState.value,
+    hide: vi.fn(),
+  }),
   directChannelDisplayName: () => "",
   // The channel header now carries `ChatSearchPopover`, which reads these.
   // Idle by default: these cases are about the shell, and a search that never
@@ -1543,7 +1555,10 @@ describe("ChatShell deep-link targets", () => {
     fireEvent.click(screen.getByTestId("search-jump"));
     expect(await screen.findByText(NOT_IN_CHANNEL)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    // An × alone (components.md § Icon-only actions), not a worded button.
+    const dismiss = screen.getByRole("button", { name: "Dismiss" });
+    expect(dismiss.textContent).toBe("");
+    fireEvent.click(dismiss);
     expect(screen.queryByText(NOT_IN_CHANNEL)).toBeNull();
 
     // A new message lands. Dismiss abandons the target, so this must not
@@ -1885,7 +1900,9 @@ describe("ChatShell channel description and start", () => {
       .find((found) => found !== null)!;
     expect(header).toBeTruthy();
     // The channel name is the thread's own h2, so the start's h3 sits under it.
-    expect(within(header).getByRole("heading", { level: 2 })).toBeInTheDocument();
+    expect(
+      within(header).getByRole("heading", { level: 2 }),
+    ).toBeInTheDocument();
     expect(
       within(screen.getByTestId("channel-start")).getByRole("heading", {
         level: 3,
@@ -2855,6 +2872,40 @@ describe("ChatShell narrow viewports (#2142)", () => {
 describe("ChatShell channel-list states (#2142)", () => {
   afterEach(() => {
     channelsQueryState.value = {};
+    setupChecklistState.value = null;
+  });
+
+  it("puts the setup checklist above the channels once they load", () => {
+    setupChecklistState.value = {
+      doneCount: 0,
+      lines: [{ key: "event", label: "Schedule the first event", done: false }],
+    };
+    render(<ChatShell />);
+
+    const channels = screen.getByRole("region", { name: "Channels" });
+    const setup = within(channels).getByRole("region", {
+      name: "Set up your chapter",
+    });
+    const firstChannel = within(channels).getAllByRole("button", {
+      name: /general/,
+    })[0]!;
+    expect(
+      setup.compareDocumentPosition(firstChannel) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("doesn't draw the setup checklist over the loading skeleton", () => {
+    setupChecklistState.value = {
+      doneCount: 0,
+      lines: [{ key: "event", label: "Schedule the first event", done: false }],
+    };
+    channelsQueryState.value = { isPending: true, data: undefined };
+    render(<ChatShell />);
+
+    expect(
+      screen.queryByRole("region", { name: "Set up your chapter" }),
+    ).not.toBeInTheDocument();
   });
 
   it("announces the cold load, which the skeleton alone cannot", () => {

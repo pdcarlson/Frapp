@@ -1,31 +1,27 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import * as SelectPrimitive from "@radix-ui/react-select"
-import { Check, ChevronDown, ChevronUp } from "lucide-react"
+import * as React from "react";
+import * as SelectPrimitive from "@radix-ui/react-select";
+import { Check, ChevronDown, ChevronUp } from "lucide-react";
 
-import { cn } from "@/lib/utils"
-import { FOCUS_RING } from "@/components/ui/focus"
+import { cn } from "@/lib/utils";
+import { FOCUS_RING } from "@/components/ui/focus";
 
 /*
- * The highlighted-row recipe in this file is `--accent-subtle` / `--accent-text`,
- * not `--accent`.
+ * The highlighted row is `--card-hover` with `--foreground` text: neutral,
+ * since 2026-11-05 (`foundations.md` §6, "Where the accent goes"). It was the
+ * accent tint until then, so every menu lit its hovered row gold.
  *
- * That is not a preference. On Signet the scaffold's `--accent` held the SAME
- * value as `--popover` (`#2A2621`) — it was the neutral highlight for a control
- * sitting on a lower surface, and a menu is already on the top step of the
- * ladder. The scaffold's `focus:bg-accent` on a `bg-popover` panel therefore
- * painted the hovered row in exactly its own background: keyboard navigation
- * through a dropdown moved an invisible cursor. `--accent` is deleted (#3036),
- * so that class now compiles to nothing.
- *
- * The selected row separates by hue instead, which is what the shell slice
- * settled for the same reason (the ladder's own steps are ~1.1:1 apart) and
- * what components.md §5 gives as the selected recipe.
+ * Not `--popover`, and not the deleted scaffold `--accent` (#3036), which held
+ * `--popover`'s own value: a menu sits on `--popover`, the top step of the
+ * ladder, so a row highlighted with it moved an invisible cursor.
+ * `--card-hover` sits above every ladder step, 1.194:1 on `--popover`
+ * (`shared/elevation-contrast.spec.ts`), which reads as a state where the
+ * ladder's own ~1.1:1 steps do not.
  */
-const Select = SelectPrimitive.Root
+const Select = SelectPrimitive.Root;
 
-const SelectValue = SelectPrimitive.Value
+const SelectValue = SelectPrimitive.Value;
 
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
@@ -42,7 +38,7 @@ const SelectTrigger = React.forwardRef<
       "flex h-10 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-surface-1 px-3 text-base pointer-coarse:h-11 text-foreground transition-colors data-[placeholder]:text-muted-foreground [&>span]:line-clamp-1",
       FOCUS_RING,
       "disabled:cursor-not-allowed disabled:border-border disabled:text-disabled",
-      className
+      className,
     )}
     {...props}
   >
@@ -51,8 +47,8 @@ const SelectTrigger = React.forwardRef<
       <ChevronDown className="h-4 w-4 opacity-50" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
-))
-SelectTrigger.displayName = SelectPrimitive.Trigger.displayName
+));
+SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
 
 const SelectScrollUpButton = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.ScrollUpButton>,
@@ -62,14 +58,14 @@ const SelectScrollUpButton = React.forwardRef<
     ref={ref}
     className={cn(
       "flex cursor-default items-center justify-center py-1",
-      className
+      className,
     )}
     {...props}
   >
     <ChevronUp className="h-4 w-4" />
   </SelectPrimitive.ScrollUpButton>
-))
-SelectScrollUpButton.displayName = SelectPrimitive.ScrollUpButton.displayName
+));
+SelectScrollUpButton.displayName = SelectPrimitive.ScrollUpButton.displayName;
 
 const SelectScrollDownButton = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.ScrollDownButton>,
@@ -79,15 +75,15 @@ const SelectScrollDownButton = React.forwardRef<
     ref={ref}
     className={cn(
       "flex cursor-default items-center justify-center py-1",
-      className
+      className,
     )}
     {...props}
   >
     <ChevronDown className="h-4 w-4" />
   </SelectPrimitive.ScrollDownButton>
-))
+));
 SelectScrollDownButton.displayName =
-  SelectPrimitive.ScrollDownButton.displayName
+  SelectPrimitive.ScrollDownButton.displayName;
 
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
@@ -100,7 +96,7 @@ const SelectContent = React.forwardRef<
         "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border border-border bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-select-content-transform-origin]",
         position === "popper" &&
           "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
-        className
+        className,
       )}
       position={position}
       {...props}
@@ -110,7 +106,7 @@ const SelectContent = React.forwardRef<
         className={cn(
           "p-1",
           position === "popper" &&
-            "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"
+            "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]",
         )}
       >
         {children}
@@ -118,8 +114,8 @@ const SelectContent = React.forwardRef<
       <SelectScrollDownButton />
     </SelectPrimitive.Content>
   </SelectPrimitive.Portal>
-))
-SelectContent.displayName = SelectPrimitive.Content.displayName
+));
+SelectContent.displayName = SelectPrimitive.Content.displayName;
 
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
@@ -128,8 +124,8 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex min-h-8 w-full cursor-default select-none items-center rounded-xs px-2 py-1.5 pr-8 text-sm outline-none pointer-coarse:min-h-11 pointer-coarse:text-base transition-colors focus:bg-accent-subtle focus:text-accent-text data-[disabled]:pointer-events-none data-[disabled]:text-disabled",
-      className
+      "relative flex min-h-8 w-full cursor-default select-none items-center rounded-xs px-2 py-1.5 pr-8 text-sm outline-none pointer-coarse:min-h-11 pointer-coarse:text-base transition-colors focus:bg-card-hover focus:text-foreground data-[disabled]:pointer-events-none data-[disabled]:text-disabled",
+      className,
     )}
     {...props}
   >
@@ -140,13 +136,7 @@ const SelectItem = React.forwardRef<
     </span>
     <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
   </SelectPrimitive.Item>
-))
-SelectItem.displayName = SelectPrimitive.Item.displayName
+));
+SelectItem.displayName = SelectPrimitive.Item.displayName;
 
-export {
-  Select,
-  SelectValue,
-  SelectTrigger,
-  SelectContent,
-  SelectItem,
-}
+export { Select, SelectValue, SelectTrigger, SelectContent, SelectItem };

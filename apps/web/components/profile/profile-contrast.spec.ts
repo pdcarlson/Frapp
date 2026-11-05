@@ -198,7 +198,7 @@ describe("the pre-auth screens have no tenant, so nothing on them takes the acce
   });
 
   it("keeps the gold footer links above the gate", () => {
-    // The pre-auth footer links ("Create an account", "Join your chapter") are `--accent-text`.
+    // The pre-auth text links ("Email me a magic link instead", "Join your chapter") are `--accent-text`.
     for (const seed of SEEDS) {
       expect(
         ratio(accentRolesFor(seed)["--accent-text"]!, SURFACE.background),
@@ -209,18 +209,12 @@ describe("the pre-auth screens have no tenant, so nothing on them takes the acce
 });
 
 describe("the profile identity header", () => {
-  it("keeps s15's initials legible on the accent tint under every seed", () => {
-    // s15 draws the avatar `#251E0E` / `#6B5619` / `#F4CB63`, which is the
-    // house-gold family — but the Canvas header says the demo tenant runs the
-    // house-gold accent, so the board draws one seed where the engine ships
-    // nineteen. `/profile` is inside a chapter, so the accent roles are what
-    // generalise, and the measurement decides the other eighteen.
-    for (const seed of SEEDS) {
-      const roles = accentRolesFor(seed);
-      expect(
-        ratio(roles["--accent-text"]!, roles["--accent-subtle"]!),
-        seed,
-      ).toBeGreaterThanOrEqual(AA_TEXT);
-    }
+  it("keeps the initials legible on the neutral avatar", () => {
+    // s15 drew the avatar in the house-gold family, and it took the chapter
+    // accent until 2026-11-05 (`foundations.md` §6: people's avatars are
+    // neutral). It is now the chat avatar's recipe at 84px.
+    expect(ratio(TEXT.mutedForeground, SURFACE.popover)).toBeGreaterThanOrEqual(
+      AA_TEXT,
+    );
   });
 });

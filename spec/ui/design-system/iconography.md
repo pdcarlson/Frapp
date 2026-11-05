@@ -112,6 +112,10 @@ Use only these icon sizes in product UI:
 - Icon strokes MUST have sufficient contrast against their background surface.
 - Icon-only controls follow the 44px minimum touch target
   ([foundations](foundations.md)).
+- Which buttons draw their icon alone, and where the word goes instead, is
+  [components.md § Icon-only actions](components.md#icon-only-actions). Build
+  them with `IconButton` (`apps/web/components/ui/icon-button.tsx`,
+  `apps/mobile/components/icon-button.tsx`), which requires the label.
 
 ---
 
@@ -177,8 +181,9 @@ Points no longer exist as screens; Profile moved into the More hub.
 
 Chat home's UP NEXT rows (s04, `apps/mobile/components/chat/up-next-strip.tsx`)
 draw the same file's `EventsGlyph` and `TasksGlyph` at 20px (§2's list-row
-size): the event row's focused, in the chapter accent, and the task row's
-unfocused, in `text.muted`, so the two rows read apart. The s05 chat cards reuse
+size), both unfocused in `text.muted`, since a row's label icon is neutral
+([foundations.md](foundations.md) §6, 2026-11-05). Until then the event row's
+was focused and in the chapter accent. The s05 chat cards reuse
 them too (§6.1.3).
 
 ### 6.1.1 Mobile in-screen icons (Ionicons, interim)
@@ -191,8 +196,9 @@ cluster replaces its own as it rebuilds; there is no separate icon migration.
 The More hub's leading row glyphs (s09, #1048) live in
 `apps/mobile/components/more/more-glyphs.tsx` at 20px (§2's list-row size)
 and draw the shared nav set (§1.1), so one intent draws one shape on both
-surfaces. Member rows are painted in the chapter accent; the Admin rows in
-`text.muted`.
+surfaces. Every row, Member and Admin alike, is painted in `text.muted`
+([foundations.md](foundations.md) §6; the Member rows took the chapter accent
+until 2026-11-05).
 
 | Semantic intent | Glyph (nav set key, Phosphor name) | Web counterpart |
 |---|---|---|
@@ -218,8 +224,9 @@ The eyebrow glyph over each s05 chat card, drawn at 16px by `CardEyebrow`
 card and the tab it belongs to share a silhouette. The event, task, points and
 hours glyphs are nav-set shapes (§1.1, through `TabGlyph`); the rest keep the
 §1 stroke recipe. Each is the web glyph for the same intent (§6.2.2). Painted
-in the accent, except the audit card's, which is drawn neutral, as web draws
-it.
+neutral, with the eyebrow's muted label, on every card and on both surfaces
+([foundations.md](foundations.md) §6; they took the accent until 2026-11-05,
+except the audit card's).
 
 | Semantic intent | Glyph | Lives in |
 |---|---|---|
@@ -244,9 +251,25 @@ viewer draws the same intents in Lucide (`Download`, `X`, `ChevronLeft`,
 
 | Semantic intent | Glyph | Lives in |
 |---|---|---|
-| Close the viewer | `CloseGlyph` (an ×) | `components/chat/viewer-glyphs.tsx` |
+| Close the viewer | `CloseGlyph` (an ×), at 24 | `components/control-glyphs.tsx` (§6.1.5) |
 | Share the image | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark | `components/chat/viewer-glyphs.tsx` |
 | Previous / next image | `ChevronGlyph` | `components/chat/viewer-glyphs.tsx` |
+
+### 6.1.5 Mobile control glyphs (stroke recipe, shipped)
+
+The verbs an icon-only control draws ([components.md § Icon-only
+actions](components.md#icon-only-actions)) live in one file,
+`apps/mobile/components/control-glyphs.tsx`, so every dismiss on mobile is the
+same ×. Detail strokes only, no silhouette fill, at 20px (§2's icon-button
+size) unless a caller passes another size. Color comes from the surface: the
+banner's semantic hue on the network banner, `text.muted` on a row or chip,
+the chapter accent in a back-row slot (2026-11-05).
+
+| Semantic intent | Glyph | Drawn by | Web counterpart |
+|---|---|---|---|
+| Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply and attachment chips (16px), the image viewer (24px), the service-hours proof row | Lucide `X` |
+| Edit | `PencilGlyph` | Profile's back row | Lucide `Pencil` |
+| Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | Lucide `CheckCheck` |
 
 ### 6.2 Web Dashboard shell (Signet duotone)
 
@@ -474,7 +497,7 @@ points — and the events table drew its role-targeting and recurrence markers a
 12px, under §2's 14–16 badge-companion floor.
 
 - **Control furniture**, unchanged from §6.2.2's rule: `Loader2`,
-  `AlertCircle`, `AlertTriangle`, `Trash2`, `Plus` and `Save`. This family has
+  `AlertCircle`, `AlertTriangle`, `Trash2`, `Pencil`, `Plus` and `Save`. This family has
   more of the second kind than any other — every pair naming a *control's own
   action* rather than a domain object stays Lucide: `Play`/`Pause`/`Square` on
   the study timer, `Eye`/`EyeOff` on its tracking state, `Power`/`PowerOff` on
