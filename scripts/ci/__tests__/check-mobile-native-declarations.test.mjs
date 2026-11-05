@@ -19,6 +19,8 @@ import {
   androidPermissionProblems,
   backgroundModeProblems,
   declaredCategories,
+  appSources,
+  linkedApiProblems,
   linkedIosPods,
   main,
   purposeStringProblems,
@@ -207,6 +209,112 @@ test("a /* or // inside a string, a line comment, or JSX text can't swallow a li
 test("a deleted requester file fails", () => {
   const problems = requesterProblems((file) => (file.endsWith("location.ts") ? null : "useCameraPermissions( requestMediaLibraryPermissionsAsync("));
   assert.ok(problems.some((p) => p === "NSLocationWhenInUseUsageDescription: its requester apps/mobile/lib/location.ts no longer exists"), problems.join("\n"));
+});
+
+// ── the roster's linked-only keys ────────────────────────────────────────────
+
+test("a declined linked-only purpose string fails, because App Store Connect rejects the upload", () => {
+  // What `"motionUsagePermission": false` shipped in iOS 0.9.1 (8), rejected 2026-11-05 (ITMS-90683).
+  const plist = rosterInfoPlist();
+  delete plist.NSMotionUsageDescription;
+  assert.deepEqual(purposeStringProblems(plist), [
+    "iOS ships no NSMotionUsageDescription, but expo-location links CMMotionActivityManager: App Store Connect rejects the binary without it (ITMS-90683), even though the app never asks. Set the plugin option to the roster text instead of `false`",
+  ]);
+});
+
+test("a linked-only key has no requester to check", () => {
+  const live = "useCameraPermissions( requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync(";
+  assert.deepEqual(requesterProblems(() => live), []);
+});
+
+test("every iOS roster entry names exactly one of a requester or a linked API", () => {
+  for (const [key, entry] of IOS_PURPOSE_STRINGS) {
+    const linked = entry.linkedBy !== undefined;
+    assert.equal(linked, entry.requestedBy === null, `${key}: requestedBy is null exactly when linkedBy is set`);
+    if (linked) {
+      for (const field of ["packageName", "symbol", "requestCall"]) {
+        assert.equal(typeof entry.linkedBy[field], "string", `${key}: linkedBy.${field}`);
+      }
+    } else {
+      assert.equal(typeof entry.requestedBy?.file, "string", `${key}: requestedBy.file`);
+      assert.equal(typeof entry.requestedBy?.call, "string", `${key}: requestedBy.call`);
+    }
+  }
+});
+
+/** A temp pod tree for expo-location holding `files` (relative path to text). */
+function linkedPod(files) {
+  const dir = mkdtempSync(join(tmpdir(), "linked-pod-"));
+  for (const [rel, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, rel)), { recursive: true });
+    writeFileSync(join(dir, rel), text);
+  }
+  return { pods: [{ packageName: "expo-location", dir }], cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+test("a linked-only key passes while its pod uses the symbol anywhere in its native sources", () => {
+  // The symbol moving between files (requester, streamer, module) must not read as the library dropping it.
+  const pod = linkedPod({ "ios/LocationModule.swift": "guard CMMotionActivityManager.isActivityAvailable() else {}" });
+  try {
+    assert.deepEqual(linkedApiProblems({ pods: pod.pods, sources: [] }), []);
+  } finally {
+    pod.cleanup();
+  }
+});
+
+test("a linked-only key fails once its pod stops using the symbol, or stops being linked", () => {
+  const pod = linkedPod({
+    "ios/LocationModule.swift": "// used CMMotionActivityManager before v58\nclass Gone {}",
+    "ios/Notes.md": "CMMotionActivityManager",
+  });
+  try {
+    assert.deepEqual(linkedApiProblems({ pods: pod.pods, sources: [] }), [
+      "NSMotionUsageDescription: no native source in expo-location uses CMMotionActivityManager any more. If no other linked library does, drop the key and decline the plugin option with `false`; if another one does, point linkedBy at it",
+    ]);
+  } finally {
+    pod.cleanup();
+  }
+  const unlinked = linkedApiProblems({ pods: [], sources: [] });
+  assert.equal(unlinked.length, 1);
+  assert.match(unlinked[0], /^NSMotionUsageDescription: expo-location is no longer linked into the iOS build/);
+});
+
+test("a linked-only key fails when the app makes the request its text says it never makes", () => {
+  const pod = linkedPod({ "ios/LocationModule.swift": "CMMotionActivityManager()" });
+  try {
+    const sources = [
+      { file: "apps/mobile/lib/steps.ts", text: "await Location.requestMotionActivityPermissionsAsync();" },
+      { file: "apps/mobile/lib/old.ts", text: "// requestMotionActivityPermissionsAsync() was here" },
+    ];
+    assert.deepEqual(linkedApiProblems({ pods: pod.pods, sources }), [
+      "NSMotionUsageDescription: apps/mobile/lib/steps.ts calls requestMotionActivityPermissionsAsync, but the purpose string says Frapp never asks. Write a real purpose for the feature and give the entry a requestedBy instead of linkedBy",
+    ]);
+  } finally {
+    pod.cleanup();
+  }
+});
+
+test("appSources reads the app's JS and TS, and skips node_modules and the native trees", () => {
+  const root = mkdtempSync(join(tmpdir(), "app-sources-"));
+  try {
+    for (const rel of ["lib/a.ts", "app/b.tsx", "node_modules/x/c.js", "ios/d.js", ".expo/e.js", "assets/f.png"]) {
+      mkdirSync(dirname(join(root, "apps/mobile", rel)), { recursive: true });
+      writeFileSync(join(root, "apps/mobile", rel), "x");
+    }
+    assert.deepEqual(appSources(root).map((s) => s.file).sort(), ["apps/mobile/app/b.tsx", "apps/mobile/lib/a.ts"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the app never makes a linked-only key's request today", () => {
+  const sources = appSources(process.cwd());
+  assert.ok(sources.length > 50, "read the real app sources");
+  for (const [, entry] of IOS_PURPOSE_STRINGS) {
+    if (!entry.linkedBy) continue;
+    const callers = sources.filter((s) => withoutComments(s.text).includes(entry.linkedBy.requestCall)).map((s) => s.file);
+    assert.deepEqual(callers, []);
+  }
 });
 
 // ── 2 and 3. Android permissions ─────────────────────────────────────────────
@@ -589,6 +697,7 @@ function fixture({
   aggregation = AGGREGATION_RB,
   reactNativePath = true,
   podfileProperties,
+  motionRequester = "private var manager: CMMotionActivityManager?",
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "native-declarations-"));
   const put = (rel, text) => {
@@ -599,6 +708,8 @@ function fixture({
   put("apps/mobile/lib/location.ts", "requestForegroundPermissionsAsync();");
   put("apps/mobile/lib/chat/attachment-upload.ts", "requestMediaLibraryPermissionsAsync();");
   const podDirs = {};
+  podDirs["expo-location"] = join(root, "node_modules/expo-location/ios");
+  put("node_modules/expo-location/ios/Requesters/MotionActivityPermissionRequester.swift", motionRequester);
   for (const name of MANIFESTLESS_REQUIRED_REASON_USERS.keys()) {
     podDirs[name] = join(root, "node_modules", name, "ios");
     put(`node_modules/${name}/ios/Module.swift`, podSource);
@@ -629,7 +740,7 @@ test("main passes a coherent project, and asks the CLI for iOS introspection and
   try {
     const { checked, violations } = main(f.root, f.run);
     assert.deepEqual(violations, []);
-    assert.equal(checked.pods, MANIFESTLESS_REQUIRED_REASON_USERS.size + 1, "the roster's pods plus react-native");
+    assert.equal(checked.pods, MANIFESTLESS_REQUIRED_REASON_USERS.size + 2, "the roster's pods, expo-location and react-native");
     assert.deepEqual(f.calls, [
       "cli config --type introspect --json",
       "autolinking react-native-config --platform ios --json",
@@ -651,6 +762,19 @@ test("main reports each check's failure together", () => {
     assert.match(text, /NSMicrophoneUsageDescription/);
     assert.match(text, /removes android\.permission\.CAMERA/);
     assert.match(text, /ActiveKeyboards API/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("main reads a linked-only key's symbol from the pod autolinking lists, and the app's own sources", () => {
+  const f = fixture({ motionRequester: "class MotionActivityPermissionRequester {}" });
+  try {
+    f.put("apps/mobile/lib/steps.ts", "requestMotionActivityPermissionsAsync();");
+    assert.deepEqual(main(f.root, f.run).violations, [
+      "NSMotionUsageDescription: no native source in expo-location uses CMMotionActivityManager any more. If no other linked library does, drop the key and decline the plugin option with `false`; if another one does, point linkedBy at it",
+      "NSMotionUsageDescription: apps/mobile/lib/steps.ts calls requestMotionActivityPermissionsAsync, but the purpose string says Frapp never asks. Write a real purpose for the feature and give the entry a requestedBy instead of linkedBy",
+    ]);
   } finally {
     f.cleanup();
   }

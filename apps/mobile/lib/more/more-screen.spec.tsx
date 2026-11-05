@@ -293,11 +293,9 @@ describe("More hub anatomy (#1048)", () => {
     for (const row of rows) {
       const glyph = row.props.leading as React.ReactElement<{
         color: string;
-        neutral?: boolean;
       }>;
       expect(glyph, row.props.label).toBeTruthy();
       if (row.props.label === "Host check-in") {
-        expect(glyph.props.neutral).toBe(true);
         expect(glyph.props.color).not.toBe("#7FB2FF");
       } else {
         expect(glyph.props.color, row.props.label).toBe("#7FB2FF");

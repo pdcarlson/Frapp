@@ -7,6 +7,22 @@
       "sha": "ea9bc12c836d3bbfb4c111ef0f4b9bdd00dc9211",
       "recorded": "2026-11-03",
       "note": "First Play upload, built by hand from tag v0.8.1 (EAS f9cfec8e) and released to the internal track on 2026-11-03."
+    },
+    {
+      "platform": "ios",
+      "version": "0.9.1",
+      "build": "8",
+      "sha": "cca52decb010887544fa21523e8d06041136b4b7",
+      "recorded": "2026-11-05",
+      "note": "Deploy production run 42069025825 (tag v0.9.0). EAS build 7d0f5107; its TestFlight submission finished in Expo's free queue after the CI step timed out (#3483), so the record job skipped it and this entry is by hand. App Store Connect then rejected the binary in processing (ITMS-90683, no NSMotionUsageDescription), so no tester can install it; kept as the upload record."
+    },
+    {
+      "platform": "android",
+      "version": "0.9.1",
+      "build": "3",
+      "sha": "cca52decb010887544fa21523e8d06041136b4b7",
+      "recorded": "2026-11-05",
+      "note": "Deploy production run 42069025825 (tag v0.9.0). EAS build 193f435b; its Play internal-track submission finished in Expo's free queue after the CI step timed out (#3483), so the record job skipped it and this entry is by hand."
     }
   ]
 }

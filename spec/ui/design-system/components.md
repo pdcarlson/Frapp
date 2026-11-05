@@ -90,7 +90,7 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 | Inline | 44px | 12 | 14.5px | action rows inside cards |
 | Compact | 34px | 10 | 13.5px | web app bar only (pointer) |
 
-**Web's toolbar row takes Compact on a mouse** (added 2026-11-05). A dashboard route's one toolbar row (the `PageHeader` action, filters, search) is 36px to a fine pointer and 44px to a coarse one: Button's `toolbar` size, and `dashboardFilterSelectClassName` / `dashboardToolbarSearchClassName` in `apps/web/components/shared/table-controls.ts`. That is the same rule the dense list rows under it follow ([`../web-dashboard/README.md` § Page grammar](../web-dashboard/README.md#page-grammar)), rounded onto the 4px grid, and §2's carve-out keeps the touch floor. At the Default 48 a route's primary action stood taller than the title row it sits in and every row it acts on, which is the hierarchy the owner called off on every page (2026-11-04). Forms, dialogs and sheets keep Default.
+**Web's toolbar row takes Compact on a mouse** (added 2026-11-05). A dashboard route's one toolbar row (the `PageActions` row, filters, search) is 36px to a fine pointer and 44px to a coarse one: Button's `toolbar` size, and `dashboardFilterSelectClassName` / `dashboardToolbarSearchClassName` in `apps/web/components/shared/table-controls.ts`. That is the same rule the dense list rows under it follow ([`../web-dashboard/README.md` § Page grammar](../web-dashboard/README.md#page-grammar)), rounded onto the 4px grid, and §2's carve-out keeps the touch floor. At the Default 48 a route's primary action stood taller than the toolbar row it sits in and every row it acts on, which is the hierarchy the owner called off on every page (2026-11-04). Forms, dialogs and sheets keep Default.
 
 **Quiet is a row's secondary action** (added 2026-11-05): transparent, `--muted-foreground` text at 600, `--card-hover` fill and `--foreground` text on hover. It is the recipe the dialog and sheet close buttons already used. Edit, Delete, Remove and icon actions on a list row take it, because Ghost paints `accent-11`, and a column of accent "Delete" links read as the most important thing on the page. A destructive action still confirms in a dialog, where Destructive paints the commit.
 
@@ -107,7 +107,7 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 | Error | surface `#1A1A1A` | 1px `#f85149` + 3px ring danger @ ~25% | caption 12.5 `#f85149` below |
 | Disabled | surface `#1A1A1A` | 1px `rgba(255,255,255,.08)` | `#57534C` |
 
-Default height 48px, radius 12, padding-x 14, text 15.5px. The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#131211` inside the surface-level app bar).
+Default height 48px, radius 12, padding-x 14, text 15.5px. The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#131211` inside the surface-level app bar). The web top bar's find field is the named exception: it shares the bar's surface (§7). *(Exception added 2026-11-05.)*
 
 In the Error state the caption MUST be wired to the field, not merely placed under it: `aria-describedby` on the input references the caption's id, and `aria-invalid` marks the input while the error stands.
 
@@ -172,15 +172,16 @@ Container: height 48px (was 58), surface `#1A1A1A`, 1px hairline, no radius — 
 
 | Element | Spec |
 | ------- | ---- |
+| Page title | Left cell, the route's `<h1>`: `label` / 700, `--foreground`, truncating. A page under Settings prefixes its parent as a link at `label` / 500 `--muted-foreground` and a 14px `ChevronRight`. Below `sm` the whole title is visually hidden (still the `h1`). Added 2026-11-05, reversing #2141; rules in [`../web-dashboard/README.md` § Top bar](../web-dashboard/README.md#top-bar) |
 | Mark | 30px "S" rounded square (radius 9), house gold — never retints ([brand-identity.md](../brand-identity.md)). **Not in the web top bar**: the chapter identity lives in the nav's 40px chapter row instead, whose 28px tile draws the chapter mark ([`branding.md` § Chapter mark](../../behavior/branding.md#chapter-mark)) |
-| Find | wide input, height 34, radius 10, max width 520, fill `--card`, 1px `--input`. The container owns the focus ring on the input's behalf (`FOCUS_RING_WITHIN`) |
+| Find | wide input, height 34, radius 10, max width 520, fill `--surface-1` (the bar's own surface, so the field reads as part of the bar rather than a raised card), 1px `--input`, no keyboard hint. The container owns the focus ring on the input's behalf (`FOCUS_RING_WITHIN`) |
 | Ask entry | Tinted **geometry**, house-gold **paint**: height 34, radius 10, ✦ glyph + "Ask", 700 — rounded rect, not a capsule. Fill `gold.askFill`, 1px `gold.askBorder`, text `gold.askText` (§11), never `accent-3/7/11`. The board draws Ask in the same values as the chapter accent tints **because its demo tenant is the house tenant** — they coincide there and nowhere else, so merging the two families is the house-tenant trap, not a simplification |
 | Notification badge | Fixed `--gold-house` on the bell, never `--primary`. A count is not direct address, so it takes neither the chapter accent nor the mention red (§5) |
 | Avatar | 30px circle, elevated `--popover` fill, 1px `--border`, initials 11px / 600 |
 
 **Any control that exists only below `lg`** — the drawer trigger, and every nav row inside the drawer — is on the touch tier by construction and takes the 44px floor (§2, foundations §9), not the 34px pointer geometry above.
 
-There is no command menu and no ⌘K. The find field binds Cmd/Ctrl+F and advertises `⌘F` in the field itself, which is legitimate only because the binding is wired: no keybinding hint, visible or in an `aria-label`, may name a shortcut the surface does not bind. *(Corrected 2026-10-01: this sentence used to attribute the ban on unwired hints to §5, which is Badges and chips and has no such rule. It is stated here now, beside the `aria-label` half this paragraph already carried.)*
+There is no command menu and no ⌘K. The find field binds Cmd/Ctrl+F without advertising it: the field is always visible, so the shortcut is a convenience, not the way in. No keybinding hint, visible or in an `aria-label`, may name a shortcut the surface does not bind. *(Corrected 2026-10-01: this sentence used to attribute the ban on unwired hints to §5, which is Badges and chips and has no such rule. It is stated here now, beside the `aria-label` half this paragraph already carried.)* *(Changed 2026-11-05: the field used to show a `⌘F` keycap, and its fill was `--card`. Both were dropped at Paul's request, recorded as a board departure in [`web-dashboard/README.md` § Top bar](../web-dashboard/README.md#top-bar); the binding stays.)*
 
 ## 8. Cards
 

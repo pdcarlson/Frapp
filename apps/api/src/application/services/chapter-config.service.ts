@@ -79,11 +79,19 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * Recursively merges `patch` onto `base`. Nested plain objects merge key by
  * key; everything else (scalars, arrays) is replaced by the patch value.
  * Used so a partial config PATCH preserves untouched keys in JSON columns.
+ *
+ * An `undefined` value is a key the client did not send, never a request to
+ * delete one: JSON cannot carry `undefined`, so only a DTO instance with an
+ * emitted class field can produce it. Merging it would store the key's
+ * absence, which is how a Save mark wiped a chapter's accent, letters and
+ * founding year (`useDefineForClassFields` in this app's tsconfig). Clearing
+ * a branding text field is an empty string instead.
  */
 function deepMerge(base: unknown, patch: unknown): unknown {
   if (!isPlainObject(base) || !isPlainObject(patch)) return patch;
   const result: Record<string, unknown> = { ...base };
   for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
     result[key] =
       isPlainObject(value) && isPlainObject(result[key])
         ? deepMerge(result[key], value)

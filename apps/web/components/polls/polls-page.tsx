@@ -32,7 +32,7 @@ import {
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { dashboardToolbarHeightClassName } from "@/components/shared/table-controls";
-import { PageHeader } from "@/components/layout/page-header";
+import { PageActions } from "@/components/layout/page-actions";
 import { Can } from "@/components/shared/can";
 import {
   SubscriptionNotice,
@@ -331,10 +331,9 @@ export function PollsPage() {
   );
 
   /*
-   * The route's one toolbar row, carried by `PageHeader`. Only the granted
-   * branch gets it: the filters and refresh drive `usePolls`, which a member
-   * without `polls:view_all` cannot read, so the other branches render the
-   * title alone.
+   * The route's one toolbar row. Only the granted branch gets it: the filters
+   * and refresh drive `usePolls`, which a member without `polls:view_all`
+   * cannot read, so the other branches render no row at all.
    */
   const toolbar = (
     <>
@@ -389,20 +388,11 @@ export function PollsPage() {
     </>
   );
 
-  /*
-   * `PageHeader` renders inside every branch rather than once above the
-   * `<Can>`, so the toolbar can ride on the granted branch alone while the
-   * permission-pending, denied and offline branches keep the route's heading
-   * (the shell no longer supplies one, #2141).
-   */
-  const title = <PageHeader title="Polls" />;
-
   return (
     <Can
       permission="polls:view_all"
       offlineFallback={(retry) => (
         <div className="space-y-4">
-          {title}
           <PermissionsOfflineSurface
             description="Reconnect to check whether you can see the chapter's polls."
             onRetry={retry}
@@ -411,7 +401,6 @@ export function PollsPage() {
       )}
       fallback={
         <div className="space-y-4">
-          {title}
           <p className="text-sm text-muted-foreground">
             Checking your chapter permissions&hellip;
           </p>
@@ -419,14 +408,13 @@ export function PollsPage() {
       }
       deniedFallback={
         <div className="space-y-4">
-          {title}
           <p className="text-sm text-muted-foreground">
             Your role can&apos;t see every poll. You can still vote in chat.
           </p>
         </div>
       }
     >
-      <PageHeader title="Polls" actions={toolbar} />
+      <PageActions>{toolbar}</PageActions>
       <div className="mt-4 space-y-4">
         {/*
           Disable, don't hide (§5 rule 4): the poll list and its tallies keep

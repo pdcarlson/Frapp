@@ -22,7 +22,7 @@ import {
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { SectionLabel } from "@/components/shared/section-label";
-import { PageHeader } from "@/components/layout/page-header";
+import { PageActions } from "@/components/layout/page-actions";
 import { amountToneClassName } from "@/components/points/amount-tone";
 import {
   POINT_CATEGORIES,
@@ -52,8 +52,6 @@ const windows = [
   { label: "Semester", value: "semester" as const },
   { label: "Month", value: "month" as const },
 ];
-
-const PAGE_TITLE = "Points";
 
 type LeaderboardRow = {
   user_id: string;
@@ -282,8 +280,8 @@ export default function PointsPage() {
    * than a broken-looking one. Only the two reads the board and the ledger are
    * actually made of belong here.
    *
-   * Every path below is the nested state family with `sole`, under the same
-   * `PageHeader`. The whole-screen `LoadingState` / `ErrorState` /
+   * Every path below is the nested state family with `sole`, under the top
+   * bar's page title. The whole-screen `LoadingState` / `ErrorState` /
    * `OfflineState` paint `--card`, which on a flush route redraws the card the
    * route deleted (`spec/ui/web-dashboard/README.md` § Page grammar); `sole`
    * gives the nested one back the live region and heading a page's only state
@@ -292,7 +290,6 @@ export default function PointsPage() {
   if (isOffline && anyReadUncached(leaderboardQuery, summaryQuery)) {
     return (
       <div className="space-y-6">
-        <PageHeader title={PAGE_TITLE} />
         <NestedOffline
           sole
           title="Points ledger unavailable offline"
@@ -327,7 +324,6 @@ export default function PointsPage() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <PageHeader title={PAGE_TITLE} />
         <NestedLoading sole message={stateMicrocopy.points.loading} />
       </div>
     );
@@ -342,7 +338,6 @@ export default function PointsPage() {
   if (hasError) {
     return (
       <div className="space-y-6">
-        <PageHeader title={PAGE_TITLE} />
         <NestedError
           sole
           title={stateMicrocopy.points.errorTitle}
@@ -367,79 +362,73 @@ export default function PointsPage() {
     <div className="space-y-6">
       {/*
         One toolbar row: the window choice, the archive picker and the route's
-        action sit beside the title rather than in a summary card under it.
-        `PageHeader` wraps its actions beneath the title once the row runs out
-        of width, which is what holds the 375px floor (#1142 was this row
-        overflowing inside the old card header).
+        action, rather than a summary card. `PageActions` wraps them once the
+        row runs out of width, which is what holds the 375px floor (#1142 was
+        this row overflowing inside the old card header).
       */}
-      <PageHeader
-        title={PAGE_TITLE}
-        actions={
-          <>
-            {/*
-              A segmented choice, not three primaries: the selected window is
-              the outlined Secondary and the others are Quiet, so the row's
-              filled control is never a filter. `aria-pressed` carries the
-              selection, which the fill alone used to.
-            */}
-            <div
-              role="group"
-              aria-label="Time window"
-              className="flex items-center gap-1"
-            >
-              {windows.map((item) => {
-                // Selecting an archived period overrides `window` entirely,
-                // so none of these reads as selected while one is chosen —
-                // reselecting one here is what returns to live mode.
-                const active = !semesterArchiveId && window === item.value;
-                return (
-                  <Button
-                    key={item.value}
-                    variant={active ? "secondary" : "quiet"}
-                    size="toolbar"
-                    aria-pressed={active}
-                    onClick={() => {
-                      setWindow(item.value);
-                      setSemesterArchiveId("");
-                    }}
-                  >
-                    {item.label}
-                  </Button>
-                );
-              })}
-            </div>
-            {archives.length > 0 ? (
-              <select
-                aria-label="View an archived semester"
-                value={semesterArchiveId}
-                onChange={(event) => setSemesterArchiveId(event.target.value)}
-                className={dashboardFilterSelectClassName}
+      <PageActions>
+        {/*
+            A segmented choice, not three primaries: the selected window is
+            the outlined Secondary and the others are Quiet, so the row's
+            filled control is never a filter. `aria-pressed` carries the
+            selection, which the fill alone used to.
+          */}
+        <div
+          role="group"
+          aria-label="Time window"
+          className="flex items-center gap-1"
+        >
+          {windows.map((item) => {
+            // Selecting an archived period overrides `window` entirely,
+            // so none of these reads as selected while one is chosen —
+            // reselecting one here is what returns to live mode.
+            const active = !semesterArchiveId && window === item.value;
+            return (
+              <Button
+                key={item.value}
+                variant={active ? "secondary" : "quiet"}
+                size="toolbar"
+                aria-pressed={active}
+                onClick={() => {
+                  setWindow(item.value);
+                  setSemesterArchiveId("");
+                }}
               >
-                <option value="">Archived period…</option>
-                {archives.map((archive) => (
-                  <option key={archive.id} value={archive.id}>
-                    {archive.label}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-            {/*
-              The window buttons beside this trigger are reads and stay live
-              while it is gated: a lapsed chapter keeps its full ledger history.
-            */}
-            <Button
-              size="toolbar"
-              variant="secondary"
-              className="gap-2"
-              {...adjustGate.controlProps()}
-              onClick={() => adjustDialog.setOpen(true)}
-            >
-              <AdjustGlyph className="h-4 w-4" />
-              Adjust points
-            </Button>
-          </>
-        }
-      />
+                {item.label}
+              </Button>
+            );
+          })}
+        </div>
+        {archives.length > 0 ? (
+          <select
+            aria-label="View an archived semester"
+            value={semesterArchiveId}
+            onChange={(event) => setSemesterArchiveId(event.target.value)}
+            className={dashboardFilterSelectClassName}
+          >
+            <option value="">Archived period…</option>
+            {archives.map((archive) => (
+              <option key={archive.id} value={archive.id}>
+                {archive.label}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        {/*
+            The window buttons beside this trigger are reads and stay live
+            while it is gated: a lapsed chapter keeps its full ledger history.
+          */}
+        <Button
+          size="toolbar"
+          variant="secondary"
+          className="gap-2"
+          {...adjustGate.controlProps()}
+          onClick={() => adjustDialog.setOpen(true)}
+        >
+          <AdjustGlyph className="h-4 w-4" />
+          Adjust points
+        </Button>
+      </PageActions>
 
       <SubscriptionNotice gate={adjustGate} feature="point adjustments" />
 

@@ -302,8 +302,8 @@ same `typescript` alias in every workspace that lists it):
 what `require('typescript').version` and `npx tsc6 --version` report (currently 6.0.3). Root
 `overrides` pin `@typescript/old` to `npm:typescript@6.0.3` so a `^6` float cannot land 6.1
 while the wrapper still looks like 6.0.2 (`typescript-eslint`'s peer is `<6.1.0`). `@nestjs/cli`
-still nests its own `typescript@5.9.3`; ESLint, ts-jest, and Next's API mode load the project
-alias. TypeScript 7 also stopped inferring `rootDir` from the common source directory — emitting
+(12.x, dependency `~6.0.2`) resolves the hoisted wrapper too, as do ESLint, ts-jest, and Next's API mode
+*(corrected 2026-11-05: this said the CLI nested its own `typescript@5.9.3`; it no longer does)*. TypeScript 7 also stopped inferring `rootDir` from the common source directory — emitting
 packages set `"rootDir": "src"` in their own `tsconfig.json` (not in
 `@repo/typescript-config/base.json`: TypeScript resolves `rootDir` relative to the file that
 declares it, so a shared `./src` would point at `packages/typescript-config/src`). The emitting
@@ -321,7 +321,7 @@ project service.
 Expo's `tsconfig.base` also does not set it. `apps/api` also sets `"strict": false` explicitly:
 TypeScript 6/7 default `strict` to true, and this app had only opted into `strictNullChecks` /
 `noImplicitAny` / `strictBindCallApply` — Nest DTO class fields would otherwise be hundreds of
-`TS2564`s. Do not flip it to `true` as cleanup. TypeScript 6 also treats many mock `as never` /
+`TS2564`s. Do not flip it to `true` as cleanup. It also sets `"useDefineForClassFields": false`, which the `ES2023` target would otherwise default to true: every declared DTO field then becomes an own `undefined` key, and a partial config PATCH erased the branding keys it left out (2026-11-05). Do not drop it as redundant; `chapter-config.dto.spec.ts` pins it. TypeScript 6 also treats many mock `as never` /
 `as Member` assertions as unnecessary, which `@typescript-eslint/no-unnecessary-type-assertion`
 now flags as errors. Remaining `as never` / `as unknown as` in specs are load-bearing (smuggled
 DTO keys, incomplete Express/Sentry/Stripe mocks) — do not strip them as a TS-version leftover.
