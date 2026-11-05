@@ -21,6 +21,7 @@ import { CardListSkeleton } from "@/components/card-list-skeleton";
 import { CardMessages } from "@/components/card-messages";
 import {
   BalanceCard,
+  BalanceCardSkeleton,
   type BalanceCardStatus,
 } from "@/components/dues/balance-card";
 import { InvoiceHistoryRow } from "@/components/dues/invoice-row";
@@ -656,7 +657,7 @@ function ChapterDues() {
       return (
         <>
           {standalone}
-          <CardListSkeleton rows={3} />
+          <CardListSkeleton card={<BalanceCardSkeleton />} rows={3} />
         </>
       );
     }

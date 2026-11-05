@@ -294,7 +294,7 @@ export default function DirectoryScreen() {
         ListEmptyComponent={
           // The skeleton stands in for the rows themselves, so it takes no
           // inset: the empty and error cards do.
-          chapterId && activeQuery.isPending ? (
+          !!chapterId && activeQuery.isPending ? (
             <MemberListSkeleton />
           ) : (
             <View style={styles.emptyWrap}>{renderBody()}</View>

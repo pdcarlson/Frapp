@@ -31,6 +31,8 @@ import { ListRow, ListRowSkeleton, ListSection } from "./list-section";
 import { TaskRow, TaskRowSkeleton } from "./tasks/task-row";
 import { ChoiceRow, ChoiceRowSkeleton } from "./auth/choice-row";
 import { CardListSkeleton } from "./card-list-skeleton";
+import { BalanceCardSkeleton } from "./dues/balance-card";
+import { StartCardSkeleton } from "./study/start-card";
 
 /**
  * components.md §10: "the skeleton mirrors the layout it becomes — same
@@ -252,23 +254,40 @@ describe("Placeholder rows sit on their real row's frame", () => {
 
 describe("CardListSkeleton", () => {
   it("draws every shape as a SkeletonBlock, so the shimmer lands once", () => {
-    const tree = render(<CardListSkeleton rows={3} summary />);
+    const tree = render(
+      <CardListSkeleton card={<BalanceCardSkeleton />} rows={3} summary />,
+    );
     const blocks = tree.root.findAllByType(SkeletonBlock);
     const drawn = tree.root.findAllByType("Animated.View" as never);
 
-    // Card: caption, figure, button. Summary: two. Caption: one. Rows: three
+    // Card: label, amount, button. Summary: two. Caption: one. Rows: three
     // of title, meta and trailing.
     expect(blocks).toHaveLength(3 + 2 + 1 + 9);
     expect(drawn).toHaveLength(blocks.length);
   });
 
   it("is one busy node with one pulse", () => {
-    const tree = render(<CardListSkeleton />);
+    const tree = render(<CardListSkeleton card={<StartCardSkeleton />} />);
     const progress = tree.root.findAll(
       (node) => node.props.accessibilityRole === "progressbar",
     );
     expect(progress).toHaveLength(1);
     expect(tree.root.findAllByType(SkeletonPulse)).toHaveLength(1);
+  });
+
+  // Each screen's card draws its own skeleton, so Study's start card (a zone
+  // row and a grace line) and Dues' balance card (a display-size amount) each
+  // land in place, rather than one approximate card serving both.
+  it("draws each card's own button at that card's height", () => {
+    const button = (node: React.ReactElement) =>
+      render(node)
+        .root.findAllByType(SkeletonBlock)
+        .find(
+          (block) => block.props.width === "100%" && block.props.height > 40,
+        )!.props.height;
+
+    expect(button(<StartCardSkeleton />)).toBe(tokens.touch.buttonLarge);
+    expect(button(<BalanceCardSkeleton />)).toBe(50);
   });
 });
 

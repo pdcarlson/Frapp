@@ -5,6 +5,7 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import type { StudyZoneModel } from "@/lib/study/zones";
 import { zoneRewardCopy } from "@/lib/study/zones";
 import { CardMessages } from "@/components/card-messages";
+import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 
 /**
  * The idle half of s10 — pick a zone, start a session.
@@ -118,6 +119,40 @@ export function StartCard({
   );
 }
 
+/**
+ * The start card before its zones load, on the card's own styles: the eyebrow,
+ * the zone row's name and reward lines, the start button and the grace line.
+ * `CardListSkeleton` places it above the session list.
+ */
+export function StartCardSkeleton() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { caption, title } = tokens.typography.role;
+
+  return (
+    <View style={styles.card}>
+      <SkeletonText role={caption} width="26%" />
+      <View style={styles.zoneRow}>
+        <View style={styles.zoneText}>
+          <SkeletonText role={title} width="50%" />
+          <SkeletonText
+            role={caption}
+            width="36%"
+            style={styles.skeletonMeta}
+          />
+        </View>
+      </View>
+      <SkeletonBlock
+        width="100%"
+        height={tokens.touch.buttonLarge}
+        radius={tokens.radius.control}
+        style={styles.skeletonButton}
+      />
+      <SkeletonText role={caption} width="72%" style={styles.skeletonGrace} />
+    </View>
+  );
+}
+
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     card: {
@@ -174,6 +209,16 @@ function createStyles(tokens: SignetTokens) {
     },
     startLabel: {
       ...typeRole(tokens.typography.role.label),
+    },
+    // The skeleton's copies of the margins its real lines carry.
+    skeletonMeta: {
+      marginTop: 2,
+    },
+    skeletonButton: {
+      marginTop: tokens.spacing.md,
+    },
+    skeletonGrace: {
+      marginTop: tokens.spacing.md,
     },
     grace: {
       ...typeRole(tokens.typography.role.caption),

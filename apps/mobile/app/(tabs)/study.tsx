@@ -22,7 +22,7 @@ import { CardListSkeleton } from "@/components/card-list-skeleton";
 import { CardMessages } from "@/components/card-messages";
 import { SessionCard } from "@/components/study/session-card";
 import { SessionRow } from "@/components/study/session-row";
-import { StartCard } from "@/components/study/start-card";
+import { StartCard, StartCardSkeleton } from "@/components/study/start-card";
 import { WeekSummary } from "@/components/study/week-summary";
 import { ZonePickerSheet } from "@/components/study/zone-picker-sheet";
 import { LocationPrimerSheet } from "@/components/study/location-primer-sheet";
@@ -869,7 +869,7 @@ export default function StudyScreen() {
     }
 
     if (sessionsQuery.isPending || zonesQuery.isPending) {
-      return <CardListSkeleton summary rows={3} />;
+      return <CardListSkeleton card={<StartCardSkeleton />} summary rows={3} />;
     }
 
     if (sessionsQuery.isError) {

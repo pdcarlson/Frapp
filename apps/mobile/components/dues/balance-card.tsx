@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { StatusChip } from "@/components/status-chip";
+import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   dueChipHue,
@@ -198,6 +199,35 @@ export function BalanceCard({
   );
 }
 
+/** The pay button's height, which its skeleton draws at too. */
+const PAY_BUTTON_HEIGHT = 50;
+
+/**
+ * The balance card before the invoices load, on the card's own styles: the
+ * label line, the amount at the display size, and the pay button.
+ * `CardListSkeleton` places it above the history list.
+ */
+export function BalanceCardSkeleton() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { caption, display } = tokens.typography.role;
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.metaRow}>
+        <SkeletonText role={caption} width="30%" />
+      </View>
+      <SkeletonText role={display} width="40%" style={styles.skeletonAmount} />
+      <SkeletonBlock
+        width="100%"
+        height={PAY_BUTTON_HEIGHT}
+        radius={tokens.radius.control}
+        style={styles.skeletonButton}
+      />
+    </View>
+  );
+}
+
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     card: {
@@ -236,10 +266,17 @@ function createStyles(tokens: SignetTokens) {
       // reference wins over components.md §9's 46–48px band per
       // `spec/ui/README.md`'s precedence rule, and diverging from the sheet CTA
       // would put two different primary heights in one app.
-      height: 50,
+      height: PAY_BUTTON_HEIGHT,
       borderRadius: tokens.radius.control,
       alignItems: "center",
       justifyContent: "center",
+      marginTop: tokens.spacing.lg,
+    },
+    // The skeleton's copies of the margins its real lines carry.
+    skeletonAmount: {
+      marginTop: tokens.spacing.sm,
+    },
+    skeletonButton: {
       marginTop: tokens.spacing.lg,
     },
     payButtonPressed: {
