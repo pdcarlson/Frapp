@@ -147,6 +147,12 @@ second, filled variant to swap to.
 Retired with the 4-tab collapse: the Home, Points, and Profile tabs. Home and
 Points no longer exist as screens; Profile moved into the More hub.
 
+Chat home's UP NEXT rows (s04, `apps/mobile/components/chat/up-next-strip.tsx`)
+draw the same file's `EventsGlyph` and `TasksGlyph` at 20px (§2's list-row
+size): the event row's focused, in the chapter accent, and the task row's
+unfocused, in `text.muted`, so the two rows read apart. The s05 chat cards reuse
+them too (§6.1.3).
+
 ### 6.1.1 Mobile in-screen icons (Ionicons, interim)
 
 Screens that have not been reskinned yet still draw Ionicons per §5. Each
@@ -176,6 +182,7 @@ The same file's `NotificationsGlyph` (bell, clapper stroke-only; s09 and web
 `NotificationsGlyph`) is drawn by Chat home's inbox bell
 (`components/chat/notifications-bell.tsx`), in `text.foreground` with the
 neutral fill, since the More row it was drawn for moved there (#3362).
+The More screens' empty-state tiles (`EmptyState` in `components/state-block.tsx`) reuse the same file's glyphs for the screen they sit on, in the chapter accent: `DocumentsGlyph` on s12, `DirectoryGlyph` on s13 and the Blocked members sheet, `NotificationsGlyph` on s14's inbox, and `ChapterGlyph` on the no-chapter card. A search or filter that finds nothing draws `SearchGlyph`, there and on Chat home's filtered channel list (s04): `components/search-glyph.tsx`, web's search geometry drawn with the same file's recipe (its exported `paint` and `Frame`). s15's avatar badge draws s20's camera (`CameraGlyph`, `components/service-hours/camera-glyph.tsx`) in the accent's on-colour, its body at §1's emphasis fill.
 
 ### 6.1.3 Mobile chat cards (Signet duotone, shipped)
 

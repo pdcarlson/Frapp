@@ -4,6 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectRoundedRipple } from "@/test/pressable-row";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -55,6 +56,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 
 import MoreScreen from "@/app/(tabs)/more";
 import { ListRow, ListSection } from "@/components/list-section";
+import { signetDarkTokens } from "@repo/theme/signet";
 
 /**
  * Unmounted in `afterEach`, not at the end of each test: the shared clock is
@@ -209,6 +211,45 @@ describe("More hub anatomy (#1048)", () => {
     );
   });
 
+  // The profile card answers a press as a list row does (`usePressFeedback`,
+  // through `PressableRow`). It sits on `surface1`, the tone of the rows
+  // under it, so its iOS lift is the rows' own one step, to `card`.
+  it("draws the profile card in the rows' tone, ripples it on Android and lifts it a step on iOS", () => {
+    const card = render().root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityHint === "Opens your profile.",
+    );
+    const held = Object.assign(
+      {},
+      ...[card.props.style({ pressed: true })].flat(Infinity),
+    ) as Record<string, unknown>;
+
+    const resting = Object.assign(
+      {},
+      ...[card.props.style({ pressed: false })].flat(Infinity),
+    ) as Record<string, unknown>;
+
+    expect(resting.backgroundColor).toBe(
+      signetDarkTokens.color.surface.surface1,
+    );
+    expect(card.props.android_ripple?.color).toMatch(/^rgba\(/);
+    // The suite's react-native stub runs as iOS.
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(held).not.toHaveProperty("opacity");
+    // The ripple is rounded by a parent clip with the card's radius
+    // (`PressableRow`); the card's own `overflow` would leave it square.
+    expectRoundedRipple(card, signetDarkTokens.radius.cardLarge);
+    // The chevron is `ListRow`'s, at the label role's size.
+    const chevron = card.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "›",
+    );
+    expect(Object.assign({}, chevron.props.style).fontSize).toBe(
+      signetDarkTokens.typography.role.label.size,
+    );
+  });
+
   it("draws labels without a description line, and names the current chapter", () => {
     const text = screenText(render());
     for (const label of [
@@ -308,7 +349,10 @@ describe("More hub anatomy (#1048)", () => {
         (node.type as unknown) === "Pressable" &&
         node.props.accessibilityLabel === "Host check-in",
     );
-    expect(host.props.accessibilityState).toEqual({ disabled: true });
+    expect(host.props.accessibilityState).toEqual({
+      disabled: true,
+      busy: false,
+    });
     expect(host.props.accessibilityHint).toBeUndefined();
     expect(host.props.accessibilityValue).toEqual({
       text: "No upcoming event",

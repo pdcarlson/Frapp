@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useCurrentChapter } from "@repo/hooks";
+import { orgHidingGreekLettersIn } from "@repo/org-archetypes";
 import { chapterTextMark } from "@repo/validation";
 import { useFrappTheme } from "./theme";
 
@@ -45,7 +46,9 @@ export type ChapterBranding = {
    * The chapter mark's text for when there is no logo: its short name, else
    * its Greek letters unless it turned them off, else null (#2876). From
    * `chapterTextMark`, the precedence every surface shares, so the opt-out
-   * holds here without this hook reading the letters itself.
+   * holds here without this hook reading the letters itself. An organization
+   * that never displays its letters (FIJI) counts as turned off whatever its
+   * stored switch says (#3421).
    */
   textMark: string | null;
 };
@@ -136,9 +139,19 @@ export function useChapterBranding(): ChapterBranding {
   // the palette's roles below.
   const logoUrl = data?.logo_url || null;
   const chapterName = data?.name || null;
+  // An organization that never displays its letters (FIJI) keeps them out of
+  // the mark even when its stored switch was never turned off, as for a
+  // chapter created before its org profile knew to (#3421). The match reads
+  // the organization's name inside the chapter's ("Phi Gamma Delta Tau Nu").
+  // Web's nav crest applies the same override (`chapter-nav-header.tsx`), and
+  // the invite preview does it for the join card (`InviteService.preview`).
+  const storedBranding = data?.branding as Record<string, unknown> | undefined;
   const textMark =
-    chapterTextMark(data?.branding as Record<string, unknown> | undefined)
-      ?.text ?? null;
+    chapterTextMark(
+      orgHidingGreekLettersIn(data?.name)
+        ? { ...storedBranding, show_greek_letters: false }
+        : storedBranding,
+    )?.text ?? null;
   const palette = data?.theme_palette;
   const generatedAccent = readString(palette, "--signet-accent-text");
   const generatedAccentPrimary = readString(palette, "--signet-accent-primary");

@@ -83,6 +83,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 // Stubbed so the header needs none of the chapter-branding hooks they call.
 // The spec reads their props off the header element the screen builds.
 vi.mock("@/components/filter-chips", () => ({
+  Chip: () => null,
   FilterChips: () => null,
   SearchField: () => null,
 }));
@@ -91,7 +92,11 @@ vi.mock("@/components/directory/member-detail-sheet", () => ({
   MemberDetailSheet: () => null,
 }));
 
-import DirectoryScreen from "@/app/(tabs)/directory";
+import DirectoryScreen, { MemberRow } from "@/app/(tabs)/directory";
+import { signetDarkTokens } from "@repo/theme/signet";
+import { DirectoryGlyph } from "@/components/more/more-glyphs";
+import { SearchGlyph } from "@/components/search-glyph";
+import { EmptyState } from "@/components/state-block";
 import {
   FilterChips as FilterChipsStandIn,
   SearchField as SearchFieldStandIn,
@@ -153,7 +158,28 @@ function chips(tree: ReactTestRenderer) {
   ) as {
     chips: { value: string; count: number | null }[];
     onSelect: (value: string) => void;
+    scroll?: boolean;
+    trailing: React.ReactElement<{
+      label: string;
+      on: boolean;
+      accessibilityState: { expanded: boolean };
+      onPress: () => void;
+    }> | null;
   };
+}
+
+/** The alumni filter field with this label, or `null` while they're folded. */
+function alumniField(tree: ReactTestRenderer, label: string) {
+  try {
+    return inHeader(
+      tree,
+      (element) =>
+        (element.type as unknown) === SearchFieldStandIn &&
+        element.props.accessibilityLabel === label,
+    ) as { onChangeText: (text: string) => void };
+  } catch {
+    return null;
+  }
 }
 
 function countOf(tree: ReactTestRenderer, value: string) {
@@ -190,18 +216,70 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
   it("lists what GET /v1/alumni answers for the Alumni tab's filters", () => {
     const tree = render();
     act(() => chips(tree).onSelect("alumni"));
+    act(() => chips(tree).trailing!.props.onPress());
 
-    const company = inHeader(
-      tree,
-      (element) =>
-        (element.type as unknown) === SearchFieldStandIn &&
-        element.props.accessibilityLabel === "Filter alumni by company",
-    ) as { onChangeText: (text: string) => void };
+    const company = alumniField(tree, "Filter alumni by company")!;
     act(() => company.onChangeText("Acme"));
 
     expect(listed(tree)).toEqual(["Charles Whitmore III"]);
     // A filtered list isn't the chapter's total, so the chip drops its count.
     expect(countOf(tree, "alumni")).toBeNull();
+  });
+
+  // One row that scrolls sideways, with the Filters chip at its end, rather
+  // than FilterChips' default wrapping row, which is the sheets'.
+  it("puts its chips on one sideways-scrolling row", () => {
+    const tree = render();
+    expect(chips(tree).scroll).toBe(true);
+  });
+
+  // The owner's design review, 2026-11-04: the three fields used to stack
+  // under the tabs whenever the Alumni tab was up, pushing the list down.
+  it("keeps the alumni fields behind a Filters chip that counts what is set", () => {
+    const tree = render();
+    expect(chips(tree).trailing).toBeNull();
+
+    act(() => chips(tree).onSelect("alumni"));
+    const filters = () => chips(tree).trailing!.props;
+    expect(filters().label).toBe("Filters");
+    expect(filters().accessibilityState).toEqual({ expanded: false });
+    expect(alumniField(tree, "Filter alumni by city")).toBeNull();
+
+    act(() => filters().onPress());
+    expect(filters().on).toBe(true);
+    act(() => alumniField(tree, "Filter alumni by city")!.onChangeText("Troy"));
+    act(() =>
+      alumniField(tree, "Filter alumni by company")!.onChangeText("Acme"),
+    );
+    expect(filters().label).toBe("Filters · 2");
+
+    // Folded away, the filters still apply and the chip still says so.
+    act(() => filters().onPress());
+    expect(alumniField(tree, "Filter alumni by city")).toBeNull();
+    expect(filters().label).toBe("Filters · 2");
+    expect(listed(tree)).toEqual(["Charles Whitmore III"]);
+  });
+
+  it("draws the More hub's glyphs on its empty states, and doesn't narrate", () => {
+    const tree = render();
+    const body = () =>
+      list(tree).props.ListEmptyComponent as React.ReactElement<{
+        children: React.ReactElement<Record<string, unknown>>;
+      }>;
+    expect(body().props.children.type).toBe(EmptyState);
+    expect(body().props.children.props).toEqual({
+      glyph: DirectoryGlyph,
+      title: "No actives yet",
+    });
+
+    act(() => chips(tree).onSelect("alumni"));
+    act(() => chips(tree).trailing!.props.onPress());
+    act(() => alumniField(tree, "Filter alumni by city")!.onChangeText("Troy"));
+    expect(body().props.children.props).toEqual({
+      glyph: SearchGlyph,
+      title: "No alumni match the filters",
+      body: "Clear a filter to see more.",
+    });
   });
 
   it("searches across both lists", () => {
@@ -217,6 +295,66 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
     act(() => field.onChangeText("r"));
 
     expect(listed(tree)).toEqual(["Charles Whitmore III", "Marcus Reid"]);
+  });
+});
+
+describe("s13's member rows", () => {
+  const ROW: DirectoryRow = {
+    userId: "u-1",
+    displayName: "Marcus Reid",
+    initials: "MR",
+    meta: null,
+    avatarUrl: null,
+  };
+
+  function pressableOf(onPress?: () => void) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MemberRow row={ROW} onPress={onPress} />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree.root.find((node) => (node.type as unknown) === "Pressable");
+  }
+
+  // Every list row answers a press the same way (`usePressFeedback`); these
+  // rows used to give none at all.
+  it("ripples on Android and lifts on iOS while held, never fading", () => {
+    const row = pressableOf(vi.fn());
+    const held = Object.assign(
+      {},
+      ...[row.props.style({ pressed: true })].flat(Infinity),
+    ) as Record<string, unknown>;
+
+    expect(row.props.android_ripple?.color).toMatch(/^rgba\(/);
+    // The suite's react-native stub runs as iOS.
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(held).not.toHaveProperty("opacity");
+  });
+
+  // The row pads itself by `sm` and bleeds that same `sm` into the screen
+  // gutter, as Chat home's channel rows do: without the padding the ripple
+  // and lift stop flush at the avatar and text, and without the bleed the
+  // content moves off the gutter line.
+  it("bleeds its own padding into the screen gutter", () => {
+    const row = pressableOf(vi.fn());
+    const resting = Object.assign(
+      {},
+      ...[row.props.style({ pressed: false })].flat(Infinity),
+    ) as Record<string, unknown>;
+
+    expect(resting.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
+    expect(resting.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
+  });
+
+  it("gives a row with nothing to open no feedback", () => {
+    const row = pressableOf(undefined);
+    expect(row.props.android_ripple).toBeUndefined();
+    expect(
+      JSON.stringify(row.props.style({ pressed: true })),
+    ).not.toContain(signetDarkTokens.color.surface.card);
   });
 });
 

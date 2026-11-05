@@ -28,6 +28,10 @@ export const reactNativeStub = {
   Alert: {
     alert: vi.fn(),
   },
+  // s15's photo choices are iOS's own action sheet (Android takes an Alert).
+  ActionSheetIOS: {
+    showActionSheetWithOptions: vi.fn(),
+  },
   // Outcomes a sighted member reads off the screen are announced to VoiceOver
   // through this, because `accessibilityLiveRegion` is Android-only. A spec
   // asserting on it clears it itself (`clearMocks` is off, see the config).
@@ -36,12 +40,29 @@ export const reactNativeStub = {
     // An overlay moves a screen reader's focus onto itself as it appears
     // (spec/ui/mobile/patterns.md § Overlays).
     sendAccessibilityEvent: vi.fn(),
+    // The skeleton's pulse follows the Reduce Motion setting live
+    // (`components/state-block.tsx`). Off by default; a spec flips it, or
+    // runs the listener a block registered.
+    isReduceMotionEnabled: vi.fn().mockResolvedValue(false),
+    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
   },
   // Enough of the styling/layout surface for Signet token factories and
   // component tests; string stand-ins render fine under react-test-renderer.
   StyleSheet: {
     create: <T>(styles: T) => styles,
-    flatten: (style: unknown) => style,
+    // Merges nested arrays left to right and skips falsy entries, as React
+    // Native's does, so code that reads a flattened style sees real values.
+    flatten: function flatten(style: unknown): Record<string, unknown> {
+      if (Array.isArray(style)) {
+        return style.reduce<Record<string, unknown>>(
+          (acc, entry) => ({ ...acc, ...flatten(entry) }),
+          {},
+        );
+      }
+      return style && typeof style === "object"
+        ? (style as Record<string, unknown>)
+        : {};
+    },
     hairlineWidth: 1,
   },
   useColorScheme: () => "dark",

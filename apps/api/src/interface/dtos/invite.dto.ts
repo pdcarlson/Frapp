@@ -101,7 +101,7 @@ export class InvitePreviewResponseDto implements InvitePreview {
     nullable: true,
     type: String,
     description:
-      "The chapter's text mark: its short name, else its Greek letters if it shows them, else null. Never letters the chapter hides.",
+      "The chapter's text mark: its short name, else its Greek letters if it shows them, else null. Never letters the chapter hides, nor those of an organization that never displays them (such as Phi Gamma Delta), whatever the chapter's stored switch says (#3421).",
   })
   mark_text: string | null;
 

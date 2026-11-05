@@ -10,7 +10,12 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_CHAT } from "@/components/back-row";
-import { SectionHeader } from "@/components/list-section";
+import {
+  listRowHint,
+  SectionHeader,
+  usePressFeedback,
+} from "@/components/list-section";
+import { NotificationsGlyph } from "@/components/more/more-glyphs";
 import {
   EmptyState,
   ErrorState,
@@ -25,7 +30,10 @@ import {
 import { NOTIFICATION_FALLBACK_PATHNAME } from "@/lib/notifications/targets";
 import { asRoute } from "@/lib/href";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
+import {
+  type ChapterBranding,
+  useChapterBranding,
+} from "@/lib/chapter-branding";
 
 /**
  * s14 — Notifications (`canvas-screens.dc.html:474`).
@@ -133,11 +141,7 @@ export default function NotificationsScreen() {
     }
     if (groups.length === 0) {
       return (
-        <EmptyState
-          glyph="✓"
-          title="You're all caught up"
-          body="Chapter activity you're involved in shows up here."
-        />
+        <EmptyState glyph={NotificationsGlyph} title="You're all caught up" />
       );
     }
     return groups.map((group) => (
@@ -202,23 +206,34 @@ export function NotificationListRow({
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
+  const feedback = usePressFeedback();
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={row.title}
+      // The Pressable is one node, so its texts aren't read on their own: the
+      // label carries the body too, all of it, though the row shows two lines.
+      // `listRowHint` joins them as sentences, the way a row's hint is.
+      accessibilityLabel={
+        row.body ? listRowHint(row.title, row.body) : row.title
+      }
       accessibilityHint={row.isUnread ? "Marks this as read." : undefined}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.row,
-        row.isUnread ? null : styles.rowRead,
-        pressed ? styles.pressed : null,
-      ]}
+      android_ripple={feedback.ripple}
+      style={({ pressed }) => [styles.row, feedback.lift(pressed)]}
     >
       <View style={row.isUnread ? styles.dot : styles.dotSpacer} />
       <View style={styles.rowText}>
-        <Text style={styles.rowTitle}>{row.title}</Text>
-        {row.body ? <Text style={styles.rowBody}>{row.body}</Text> : null}
+        <Text
+          style={[styles.rowTitle, row.isUnread ? null : styles.rowTitleRead]}
+        >
+          {row.title}
+        </Text>
+        {row.body ? (
+          <Text style={styles.rowBody} numberOfLines={2}>
+            {row.body}
+          </Text>
+        ) : null}
         <Text style={styles.rowMeta}>
           {[row.categoryLabel, row.time].filter(Boolean).join(" · ")}
         </Text>
@@ -227,7 +242,15 @@ export function NotificationListRow({
   );
 }
 
+/**
+ * The title and body's line height. The label role carries none, so the line
+ * box was the font's own and the unread dot could only guess at its middle.
+ * 20 is the 14pt label's natural line on the 4pt grid.
+ */
+const LINE_HEIGHT = 20;
+
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
+  const DOT_SIZE = tokens.spacing.sm;
   return StyleSheet.create({
     headerAction: {
       ...typeRole(tokens.typography.role.label),
@@ -241,46 +264,60 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       color: tokens.color.semantic.warning,
       paddingHorizontal: tokens.spacing.xs,
     },
+    // Padded on both sides so the dot sits inset from the section caption, as
+    // drawn, and the press lift clears the text. No radius: the hairline
+    // under each row would meet a rounded corner.
     row: {
       flexDirection: "row",
       gap: tokens.spacing.md,
       paddingVertical: tokens.spacing.md,
+      paddingHorizontal: tokens.spacing.sm,
       minHeight: tokens.touch.minimum,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: tokens.color.border.hairline,
     },
-    // Read rows recede rather than disappear, as drawn.
-    rowRead: {
-      opacity: 0.7,
-    },
+    // Centred on the title's first line, as drawn, however many lines the
+    // title wraps to.
     dot: {
-      width: tokens.spacing.sm,
-      height: tokens.spacing.sm,
-      borderRadius: tokens.spacing.xs,
-      marginTop: tokens.spacing.sm,
+      width: DOT_SIZE,
+      height: DOT_SIZE,
+      borderRadius: DOT_SIZE / 2,
+      marginTop: (LINE_HEIGHT - DOT_SIZE) / 2,
       backgroundColor: brand.accent,
     },
     dotSpacer: {
-      width: tokens.spacing.sm,
+      width: DOT_SIZE,
     },
+    // Title and body read as one sentence at one size, as s14 sets them, and
+    // the meta line sits a step below.
     rowText: {
       flex: 1,
-      gap: tokens.spacing.xs,
     },
     rowTitle: {
       ...typeRole(tokens.typography.role.label),
+      lineHeight: LINE_HEIGHT,
       color: tokens.color.text.foreground,
     },
+    // Read rows recede rather than disappear, as drawn: the title drops to the
+    // body's tone, so the row reads as one quieter sentence. Colour, not
+    // opacity, so the press lift behind it is as strong as any other row's.
+    rowTitleRead: {
+      color: tokens.color.text.mutedForeground,
+    },
+    // The title's size at regular weight. It used to be the body role (16),
+    // larger than the 14pt title above it.
     rowBody: {
-      ...typeRole(tokens.typography.role.body),
+      ...typeRole({
+        ...tokens.typography.role.label,
+        weight: tokens.typography.weight.regular,
+      }),
+      lineHeight: LINE_HEIGHT,
       color: tokens.color.text.mutedForeground,
     },
     rowMeta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
-    },
-    pressed: {
-      opacity: 0.6,
+      marginTop: tokens.spacing.xs,
     },
   });
 }

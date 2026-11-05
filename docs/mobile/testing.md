@@ -77,8 +77,9 @@ except the on-screen readout of the keyboard path, which a unit test covers:
       field on the join screen (s02), behind its "I have an invite" answer (an
       account with no chapter lands on the question first), renders in a
       monospace face.
-- [ ] **Sheets and the keyboard.** More → Service hours, then **Log** in the
-      header, presents the s20 "Log service hours" sheet with its grabber,
+- [ ] **Sheets and the keyboard.** More → Service hours, then the header's
+      **+** tile (labelled "Log service hours" for a screen reader), presents
+      the s20 "Log service hours" sheet with its grabber,
       header and Cancel. It drags and
       dismisses, and typing in its description field keeps the field visible
       above the keyboard. In Expo Go that is the fallback keyboard path;

@@ -16,7 +16,10 @@ import {
   SkeletonLines,
 } from "@/components/state-block";
 import { BACK_TO_MORE, BackRow } from "@/components/back-row";
-import { FilterChips, SearchField } from "@/components/filter-chips";
+import { Chip, FilterChips, SearchField } from "@/components/filter-chips";
+import { gutterBleed, usePressFeedback } from "@/components/list-section";
+import { DirectoryGlyph } from "@/components/more/more-glyphs";
+import { SearchGlyph } from "@/components/search-glyph";
 import { screenTitleStyle } from "@/components/screen-shell";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import {
@@ -77,9 +80,10 @@ export default function DirectoryScreen() {
   // same `useAlumni` params. Filters persist across a tab switch (the fields
   // are only shown on the Alumni tab, but staying applied means returning to
   // it doesn't silently drop what was typed). Held as one object, rather than
-  // three parallel `useState`s, so `hasAlumniFilters` and the `useAlumni` call
-  // below can both derive from the exact same value instead of two
-  // hand-written copies of "is any filter set" drifting apart.
+  // three parallel `useState`s, so `hasAlumniFilters`, the Filters chip's
+  // count and the `useAlumni` call below all derive from the same value, by
+  // the one rule in `countSetFilters`, instead of hand-written copies of "is
+  // any filter set" drifting apart.
   const [alumniFilterInputs, setAlumniFilterInputs] = useState({
     gradYear: "",
     city: "",
@@ -94,11 +98,16 @@ export default function DirectoryScreen() {
     [alumniFilterInputs],
   );
   const deferredAlumniFilters = useDeferredValue(alumniFilters);
-  const hasAlumniFilters = Boolean(
-    deferredAlumniFilters.graduation_year ||
-    deferredAlumniFilters.city ||
-    deferredAlumniFilters.company,
-  );
+  // The three fields sit behind a Filters chip rather than always stacking
+  // under the tabs, where they pushed the alumni list down by three field
+  // heights before a member had typed anything. The chip counts the fields
+  // that are set, so a filter left on while the fields are folded away still
+  // shows; the count reads the typed values, so it moves with the keystroke.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const alumniFilterCount = countSetFilters(alumniFilters);
+  // The deferred value, as the query reads: this picks the empty state for
+  // the list that query returns.
+  const hasAlumniFilters = countSetFilters(deferredAlumniFilters) > 0;
 
   const membersQuery = useMembers();
   const alumniQuery = useAlumni(deferredAlumniFilters);
@@ -164,16 +173,37 @@ export default function DirectoryScreen() {
       {isSearching ? null : (
         <FilterChips
           accessibilityLabel="Actives or alumni"
+          scroll
           selected={tab}
           onSelect={(value) => setTab((value as Tab) ?? "actives")}
           chips={[
             { value: "actives", label: "Actives", count: activesCount },
             { value: "alumni", label: "Alumni", count: alumniCount },
           ]}
+          trailing={
+            tab === "alumni" ? (
+              <Chip
+                accessibilityRole="button"
+                accessibilityState={{ expanded: filtersOpen }}
+                accessibilityLabel={
+                  alumniFilterCount > 0
+                    ? `Filters, ${alumniFilterCount} set`
+                    : "Filters"
+                }
+                label={
+                  alumniFilterCount > 0
+                    ? `Filters · ${alumniFilterCount}`
+                    : "Filters"
+                }
+                on={filtersOpen}
+                onPress={() => setFiltersOpen((open) => !open)}
+              />
+            ) : null
+          }
         />
       )}
 
-      {isSearching || tab !== "alumni" ? null : (
+      {isSearching || tab !== "alumni" || !filtersOpen ? null : (
         <View style={styles.alumniFilters}>
           <SearchField
             value={alumniFilterInputs.gradYear}
@@ -223,26 +253,28 @@ export default function DirectoryScreen() {
     if (isSearching) {
       return (
         <EmptyState
-          glyph="⌕"
+          glyph={SearchGlyph}
           title="No matches"
           body={`Nobody in this chapter matches “${deferredQuery}”.`}
         />
       );
     }
+    // writing.md § Alumni's no-results row, with "filter" for its "field":
+    // the fields are behind a chip named Filters here.
     if (tab === "alumni" && hasAlumniFilters) {
       return (
         <EmptyState
-          glyph="⌕"
-          title="No alumni match these filters"
-          body="Graduation year, city, and company are self-reported — try loosening a filter."
+          glyph={SearchGlyph}
+          title="No alumni match the filters"
+          body="Clear a filter to see more."
         />
       );
     }
+    // A title alone: there is nothing to do about an empty roster from here.
     return (
       <EmptyState
-        glyph="☺"
+        glyph={DirectoryGlyph}
         title={tab === "actives" ? "No actives yet" : "No alumni yet"}
-        body="Members appear here once they join the chapter."
       />
     );
   }
@@ -295,6 +327,7 @@ export function MemberRow({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const feedback = usePressFeedback();
 
   return (
     <Pressable
@@ -310,7 +343,11 @@ export function MemberRow({
           : undefined
       }
       onPress={onPress}
-      style={styles.row}
+      android_ripple={onPress ? feedback.ripple : undefined}
+      style={({ pressed }) => [
+        styles.row,
+        onPress ? feedback.lift(pressed) : null,
+      ]}
     >
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>{row.initials}</Text>
@@ -321,6 +358,11 @@ export function MemberRow({
       </View>
     </Pressable>
   );
+}
+
+/** How many of the alumni filters hold a value: a new key counts with no edit here. */
+function countSetFilters(filters: Record<string, string | undefined>): number {
+  return Object.values(filters).filter(Boolean).length;
 }
 
 /** Rows the directory would draw, without the map-and-sort of a full select. */
@@ -358,6 +400,8 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       gap: tokens.spacing.md,
       paddingVertical: tokens.spacing.md,
+      // A square row: hairlines split the list, so no radius.
+      ...gutterBleed(tokens, { rounded: false }),
       minHeight: tokens.touch.minimum,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: tokens.color.border.hairline,

@@ -1,16 +1,10 @@
 import { useEffect, useState } from "react";
-import {
-  Image,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Image, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { onlineManager } from "@tanstack/react-query";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { PressableRow } from "@/components/list-section";
 
 const AVATAR_SIZE = 48;
 
@@ -69,17 +63,15 @@ export function ProfileCard({
   const name = displayName ?? "Your profile";
 
   return (
-    <Pressable
+    <PressableRow
+      // The card is `surface1`, like the ListSections under it, so its iOS
+      // lift is the default one step, to `card`.
       accessibilityRole="button"
       accessibilityLabel={name}
       accessibilityValue={pointsLabel ? { text: pointsLabel } : undefined}
       accessibilityHint="Opens your profile."
-      android_ripple={{ color: styles.ripple.color }}
       onPress={() => router.push("/profile")}
-      style={({ pressed }) => [
-        styles.card,
-        pressed && Platform.OS !== "android" ? styles.pressed : null,
-      ]}
+      style={styles.card}
     >
       {showPhoto ? (
         <Image
@@ -109,7 +101,7 @@ export function ProfileCard({
         {pointsLabel ? <Text style={styles.meta}>{pointsLabel}</Text> : null}
       </View>
       <Text style={styles.chevron}>›</Text>
-    </Pressable>
+    </PressableRow>
   );
 }
 
@@ -123,15 +115,9 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-      // Bounds the Android ripple to the card's rounded corners.
-      overflow: "hidden",
-    },
-    pressed: {
-      backgroundColor: tokens.color.surface.popover,
-    },
-    ripple: {
-      color: tint(tokens.color.text.foreground, 0.12),
+      // The More list's tone, so the card and the rows under it read as one
+      // surface (s09). It was the warmer `card`, a step browner than them.
+      backgroundColor: tokens.color.surface.surface1,
     },
     avatar: {
       width: AVATAR_SIZE,
@@ -158,8 +144,9 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
     },
+    // `ListRow`'s chevron, so the two on More are the same size.
     chevron: {
-      ...typeRole(tokens.typography.role.title),
+      ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.muted,
     },
   });

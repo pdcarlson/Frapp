@@ -26,6 +26,7 @@ import { ErrorState, SkeletonLines } from "@/components/state-block";
 import {
   SheetGrabber,
   SheetHeader,
+  SheetScrim,
   useSheetBackgroundStyle,
 } from "@/components/sheet-scaffold";
 import {
@@ -200,6 +201,7 @@ export const MemberDetailSheet = forwardRef<
       snapPoints={SNAP_POINTS}
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
+      backdropComponent={SheetScrim}
       onDismiss={onDismiss}
     >
       <BottomSheetScrollView
@@ -208,7 +210,9 @@ export const MemberDetailSheet = forwardRef<
       >
         <SheetHeader title="Member" onCancel={dismiss} cancelLabel="Done" />
 
-        {memberQuery.isPending ? <SkeletonLines lines={4} showTile /> : null}
+        {memberQuery.isPending ? (
+          <SkeletonLines lines={4} showTile tone="list" />
+        ) : null}
 
         {/* A cached member still renders through a background-refetch
             failure (TanStack keeps `data` on an errored refetch) — the error
@@ -250,10 +254,15 @@ export const MemberDetailSheet = forwardRef<
                 <ListRow
                   label="Message"
                   description={messageRowDescription(messageRow)}
+                  // Busy while the DM opens, so the row keeps its look and
+                  // shows a spinner; disabled only while the block list
+                  // can't vouch for a DM yet, which is the row being
+                  // unavailable rather than working.
+                  busy={
+                    messageRow.kind === "ready" && dmPending.has(detail.userId)
+                  }
                   disabled={
-                    messageRow.kind === "ready"
-                      ? dmPending.has(detail.userId)
-                      : messageRow.kind !== "retry"
+                    messageRow.kind !== "ready" && messageRow.kind !== "retry"
                   }
                   onPress={() => {
                     if (messageRow.kind === "retry") blockList.retry();
@@ -264,8 +273,13 @@ export const MemberDetailSheet = forwardRef<
             ) : null}
 
             <ListSection>
-              <ListRow label="Email" value={detail.email ?? "Not set"} />
               <ListRow
+                variant="detail"
+                label="Email"
+                value={detail.email ?? "Not set"}
+              />
+              <ListRow
+                variant="detail"
                 label="Role"
                 value={
                   rolesStillLoading
@@ -275,7 +289,11 @@ export const MemberDetailSheet = forwardRef<
                       : "—"
                 }
               />
-              <ListRow label="Joined" value={detail.joinedLabel ?? "—"} />
+              <ListRow
+                variant="detail"
+                label="Joined"
+                value={detail.joinedLabel ?? "—"}
+              />
             </ListSection>
 
             {detail.customFields.length > 0 ? (
@@ -285,6 +303,7 @@ export const MemberDetailSheet = forwardRef<
                   {detail.customFields.map((field) => (
                     <ListRow
                       key={field.fieldId}
+                      variant="detail"
                       label={field.label}
                       value={field.value}
                     />
