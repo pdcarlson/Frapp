@@ -3,6 +3,7 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as expoRouter from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
 
@@ -155,6 +156,11 @@ const cta = (tree: ReactTestRenderer) =>
   tree.root
     .findByType(BalanceCard)
     .find((node) => node.type === ("Pressable" as never));
+
+/** "Another screen is over this one" (vitest.setup.ts's expo-router). */
+function blur() {
+  (expoRouter as unknown as { __blur: () => void }).__blur();
+}
 
 /** "The member came back to this screen" (vitest.setup.ts's expo-router). */
 async function refocus() {
@@ -316,7 +322,9 @@ describe("Dues after a captured payment", () => {
     expect(card(tree)).not.toContain("Pays Social fee");
     // The rows: the confirming one as Pending, the other with its amount and
     // due chip, and no line of its own under either.
-    expect(drawnText(openRow(tree, "inv-fall"))).toBe("Fall dues$425.00Pending");
+    expect(drawnText(openRow(tree, "inv-fall"))).toBe(
+      "Fall dues$425.00Pending",
+    );
     expect(drawnText(openRow(tree, "inv-social"))).toMatch(
       /^Social fee\$50\.00Due Oct\s?1$/,
     );
@@ -427,27 +435,79 @@ describe("Dues after a captured payment", () => {
     expect(payButton(tree).props.disabled).toBe(false);
   });
 
-  it("ends the hold when the member comes back, and a re-tap shows the server's 409 on that invoice", async () => {
-    // The webhook is stuck. The tab stays mounted, so coming back is what
-    // ends the hold; the server, not the hold, refuses a second payment.
+  it("keeps the hold when the member comes back, and re-reads the list", async () => {
+    // The webhook is late. The tab stays mounted, so coming back doesn't
+    // reset the hold, and Pay stays off: the server already has the payment.
     const tree = mount();
     await tapPay(tree);
 
     refetchInvoices.mockClear();
+    act(() => blur());
     await refocus();
     expect(refetchInvoices).toHaveBeenCalled();
+    expect(payButton(tree).props.disabled).toBe(true);
+    expect(drawnText(cta(tree))).toBe("Confirming payment…");
+    expect(card(tree)).toContain(PENDING_COPY);
+
+    // The webhook lands, and the list read says so.
+    invoices = [paid(FALL)];
+    rerender(tree);
+    expect(screenText(tree)).not.toContain(PENDING_COPY);
+    expect(card(tree)).toContain(paidCopy("Fall dues"));
+  });
+
+  it("re-reads the list every 10s while the hold stands and the screen is up", async () => {
+    // The poll gave up (12 × 2s) before the webhook landed. Nothing else
+    // would ask again while the member stays on the screen.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const tree = mount();
+      await tapPay(tree);
+      refetchInvoices.mockClear();
+
+      act(() => vi.advanceTimersByTime(10_000));
+      expect(refetchInvoices).toHaveBeenCalledTimes(1);
+
+      // Another screen over it: no reads while nobody is looking.
+      act(() => blur());
+      act(() => vi.advanceTimersByTime(30_000));
+      expect(refetchInvoices).toHaveBeenCalledTimes(1);
+      await refocus();
+      refetchInvoices.mockClear();
+
+      // Settled: the re-reads stop.
+      invoices = [paid(FALL)];
+      rerender(tree);
+      act(() => vi.advanceTimersByTime(30_000));
+      expect(refetchInvoices).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("starts no hold when the member closes the sheet", async () => {
+    presentPaymentSheet.mockResolvedValue({ kind: "canceled" });
+    const tree = mount();
+    await tapPay(tree);
+
     expect(payButton(tree).props.disabled).toBe(false);
     expect(drawnText(cta(tree))).toBe("Pay now");
     expect(card(tree)).not.toContain("Pending");
     expect(screenText(tree)).not.toContain(PENDING_COPY);
+    expect(awaitPaid).not.toHaveBeenCalled();
+  });
 
-    // The body the API's exception filter writes for a ConflictException.
+  it("pays that invoice again on a fresh screen, and shows the server's 409 there", async () => {
+    // The app was closed with the webhook still stuck, so the hold is gone
+    // and Pay targets the invoice again; the server, not the hold, refuses a
+    // second payment.
     payInvoice.mockRejectedValue({ statusCode: 409, message: REFUSAL });
+    const tree = mount();
     await tapPay(tree);
-    expect(paidFor(1)).toBe("inv-fall");
+    expect(paidFor(0)).toBe("inv-fall");
     expect(card(tree)).toContain(REFUSAL);
     expect(payButton(tree).props.accessibilityHint).toBe(REFUSAL);
-    expect(presentPaymentSheet).toHaveBeenCalledTimes(1);
+    expect(presentPaymentSheet).not.toHaveBeenCalled();
   });
 
   it("ends the hold when the chapter changes", async () => {
@@ -544,6 +604,22 @@ describe("Dues after a failed payment", () => {
     expect(screenText(tree)).not.toContain(DECLINED);
     expect(card(tree)).toContain("Social fee");
     expect(payButton(tree).props.accessibilityHint).toBeUndefined();
+  });
+
+  it("doesn't bring it back when the card returns to its invoice", async () => {
+    invoices = [FALL, SOCIAL];
+    const tree = mount();
+    await tapPay(tree);
+    expect(card(tree)).toContain(DECLINED);
+
+    // An earlier-due bill moves the card off Fall, then is paid on the web.
+    invoices = [FALL, SOCIAL, RUSH];
+    rerender(tree);
+    invoices = [FALL, SOCIAL, paid(RUSH)];
+    rerender(tree);
+    expect(card(tree)).toContain("Fall dues");
+    expect(screenText(tree)).not.toContain(DECLINED);
+    expect(payButton(tree).props.accessibilityHint).not.toBe(DECLINED);
   });
 
   it("clears it when a new attempt starts", async () => {

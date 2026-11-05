@@ -74,15 +74,20 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * webhook lands. The card stays on the confirming invoice, and the OPEN list
  * shows the rest with their own amounts and due chips.
  *
- * ## Why the hold has no time bound
+ * ## How long the hold lasts
  *
- * It lives in this screen's state, and leaving the screen ends it, so a stuck
- * webhook can't hold Pay off beyond the visit. Dues is a hidden tab route
- * (`href: null` in `app/(tabs)/_layout.tsx`), and the tab navigator keeps a
- * visited route mounted, so it is the focus effect below that drops the hold
- * when the member comes back. A chapter switch remounts the screen
- * ({@link DuesScreen}) and drops it too. If the webhook is stuck and the
- * member comes back, Pay targets that invoice again, and a tap meets
+ * Until the list reads the invoice as no longer OPEN, with no time bound,
+ * because until then Pay has nothing honest to offer: the server already has
+ * the payment, and a second tap would only meet its refusal below. The list
+ * is re-read every {@link HOLD_REREAD_MS} while the hold stands and the screen
+ * is up, so a webhook that lands after the poll gives up still ends it in
+ * front of the member, and again when they come back to the screen (Dues is a
+ * hidden tab route, `href: null` in `app/(tabs)/_layout.tsx`, which the tab
+ * navigator keeps mounted, so coming back doesn't reset it).
+ *
+ * The hold lives in this screen's state, so a chapter switch, which remounts
+ * the screen ({@link DuesScreen}), or the app being closed ends it. If the
+ * webhook is still stuck then, Pay targets that invoice again, and a tap meets
  * `createPaymentIntent`'s answer for the invoice's stored intent
  * (`financial-invoice.service.ts`, `billing.md` § Member payment flow):
  *
@@ -90,8 +95,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *   processed". `payIntentErrorCopy` passes a 409's message through as the
  *   server wrote it, and the card shows it as that attempt's failure.
  * - `processing`: the server reuses the intent and answers 200 with its client
- *   secret and no status, so this screen can't tell and opens the sheet. The
- *   pinned Stripe SDKs load a processing intent: stripe-ios 26.11.0's
+ *   secret and no status (#3432), so this screen can't tell and opens the
+ *   sheet. The pinned Stripe SDKs load a processing intent: stripe-ios 26.11.0's
  *   `PaymentSheetLoader` and stripe-android 23.19.0's `StripeIntentValidator`
  *   turn away only succeeded, canceled and requires_capture ones. The rest of
  *   this bullet is derived and hasn't been seen on a device. Stripe confirms
@@ -125,6 +130,13 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /** `billing.md`'s own phrase for the window between capture and settlement. */
 const PENDING_COPY =
   "Payment received, confirmation pending. This updates as soon as your chapter's records catch up.";
+
+/**
+ * How often the invoice list is re-read while a hold stands and the screen is
+ * up: after the payment poll (12 × 2s) gives up, nothing else would ask, and
+ * the list's 30s staleTime only matters to a read something triggers.
+ */
+const HOLD_REREAD_MS = 10_000;
 
 /** Names the invoice, because it sits beside the next invoice's CTA. */
 const paidCopy = (title: string) =>
@@ -222,18 +234,27 @@ function ChapterDues() {
   useFocusEffect(
     useCallback(() => {
       setNow(new Date());
-      // Coming back is a fresh look. It ends the hold, which is what "leaving
-      // the screen ends it" in the docblock rests on, since the tab stays
-      // mounted. Last visit's failure is about an attempt the member has moved
-      // on from, and a settled "Paid …" line isn't news.
+      // Coming back is a fresh look: last visit's failure is about an
+      // attempt the member has moved on from, and a settled "Paid …" line
+      // isn't news. A hold stays, since the payment it stands for is still
+      // confirming (see "How long the hold lasts"), and a webhook that landed
+      // while the member was elsewhere settles it on this read, which the
+      // list's 30s staleTime would otherwise skip.
       setFailure(null);
-      setCapturedId(null);
-      // A webhook that landed while the member was elsewhere settles the
-      // invoice they come back to, and the list's 30s staleTime would
-      // otherwise skip the read.
       if (isHoldingRef.current) void refetchInvoicesRef.current();
+      else setCapturedId(null);
       return undefined;
     }, []),
+  );
+  useFocusEffect(
+    useCallback(() => {
+      if (!isHolding) return undefined;
+      const timer = setInterval(
+        () => void refetchInvoicesRef.current(),
+        HOLD_REREAD_MS,
+      );
+      return () => clearInterval(timer);
+    }, [isHolding]),
   );
 
   // Memoized rather than re-derived inside `renderBody`, which re-runs on every
@@ -254,6 +275,21 @@ function ChapterDues() {
     () => confirming ?? selectNextDueInvoice(rows),
     [confirming, rows],
   );
+
+  // A failure belongs to the invoice its attempt was for. Once a loaded list
+  // moves the card off that invoice it is dropped, in the render that moves
+  // it (React re-runs this render before committing it), so it is never drawn
+  // beside another invoice and can't come back if the card later returns
+  // there. A list that is loading or withheld says nothing about where the
+  // card is, so the failure stands through it.
+  const targetId = target?.id ?? null;
+  if (failure !== null && listLoaded && failure.invoiceId !== targetId) {
+    setFailure(null);
+  }
+  const failureText =
+    failure !== null && (!listLoaded || failure.invoiceId === targetId)
+      ? failure.text
+      : null;
 
   const canPay = isStripeAvailable();
   const blockedReason = canPay ? null : stripeUnavailableReason();
@@ -315,13 +351,8 @@ function ChapterDues() {
     }
   }, [awaitPaid, chapterName, payInvoice, target]);
 
-  // A failure is drawn on the card only while the card is about the invoice it
-  // came from. Worked out here rather than cleared when the card moves, so no
-  // render can draw it as another invoice's caption or hint.
-  const cardFailure =
-    failure !== null && failure.invoiceId === target?.id ? failure.text : null;
-  const cardStatus: BalanceCardStatus | null = cardFailure
-    ? { text: cardFailure, tone: "destructive" }
+  const cardStatus: BalanceCardStatus | null = failureText
+    ? { text: failureText, tone: "destructive" }
     : confirming
       ? { text: PENDING_COPY, tone: "neutral" }
       : null;
@@ -336,7 +367,7 @@ function ChapterDues() {
   const standalone = (
     <>
       {capturedLine ? <Text style={styles.notice}>{capturedLine}</Text> : null}
-      {failure ? <Text style={styles.failure}>{failure.text}</Text> : null}
+      {failureText ? <Text style={styles.failure}>{failureText}</Text> : null}
     </>
   );
 
