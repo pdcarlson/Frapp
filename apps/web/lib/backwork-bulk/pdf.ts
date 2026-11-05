@@ -1,11 +1,7 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { assembleFlatPdf, type FlatPage } from "./assemble";
 import type { BoxesByPage } from "./geometry";
-import {
-  placeTextItems,
-  textOutsideBoxes,
-  type RawTextItem,
-} from "./text-layer";
+import { burnBoxes, hasInk, inkSampleRect, pageTextLayer } from "./flatten-page";
 
 /**
  * Browser-only pdf.js glue for backwork bulk upload (#3499): loading, page
@@ -29,6 +25,11 @@ function loadPdfJs(): Promise<PdfJs> {
       );
     }
     return pdfjs;
+  });
+  // A failed chunk load (a network blip, or a deploy that rotated chunks)
+  // mustn't stick: the next call tries again.
+  pdfjsPromise.catch(() => {
+    pdfjsPromise = null;
   });
   return pdfjsPromise;
 }
@@ -128,37 +129,27 @@ export async function flattenPdf(
     await page.render({ canvas, viewport, annotationMode: AnnotationMode.ENABLE }).promise;
 
     const pageBoxes = boxes[number] ?? [];
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) throw new Error("This browser can't draw the redacted page.");
-    ctx.fillStyle = "#000";
-    for (const box of pageBoxes) {
-      ctx.fillRect(
-        Math.floor(box.x * scale),
-        Math.floor(box.y * scale),
-        Math.ceil(box.width * scale) + 1,
-        Math.ceil(box.height * scale) + 1,
-      );
-    }
+
+    // Text first, read off the page as rendered and before the boxes go on.
+    const text: FlatPage["text"] = keepText
+      ? await pageTextLayer(page, base, pageBoxes, (textRect) => {
+          const rect = inkSampleRect(textRect);
+          const x = Math.max(0, Math.floor(rect.x * scale));
+          const y = Math.max(0, Math.floor(rect.y * scale));
+          const width = Math.min(canvas.width - x, Math.ceil(rect.width * scale));
+          const height = Math.min(canvas.height - y, Math.ceil(rect.height * scale));
+          if (width <= 0 || height <= 0) return false;
+          return hasInk(ctx.getImageData(x, y, width, height).data);
+        })
+      : [];
+
+    burnBoxes(ctx, pageBoxes, scale);
     const jpeg = new Uint8Array(
       await (await canvasBlob(canvas, "image/jpeg", quality)).arrayBuffer(),
     );
     releaseCanvas(canvas);
-
-    let text: FlatPage["text"] = [];
-    if (keepText) {
-      const content = await page.getTextContent();
-      const items = content.items.filter(
-        (item): item is RawTextItem & typeof item => "str" in item,
-      );
-      text = textOutsideBoxes(
-        placeTextItems(
-          items,
-          (x, y) => base.convertToViewportPoint(x, y),
-          base.rotation,
-        ),
-        pageBoxes,
-      );
-    }
     pages.push({ width: base.width, height: base.height, jpeg, text });
     page.cleanup();
     await yieldToBrowser();

@@ -4,7 +4,13 @@
  * counted and skipped, so the person sees "3 files skipped" instead of a
  * silent gap.
  */
-export type CollectedFiles = { files: File[]; skipped: number };
+export type CollectedFiles = {
+  files: File[];
+  /** Files that aren't PDFs. */
+  skipped: number;
+  /** Files or folders the browser couldn't read (permissions, moved mid-drop). */
+  unreadable?: number;
+};
 
 export function isPdfFile(file: { name: string; type: string }): boolean {
   return (
@@ -64,8 +70,9 @@ export async function collectFromDrop(
   }
 
   const all: File[] = [...looseFiles];
+  const counts = { unreadable: 0 };
   for (const entry of entries) {
-    await walk(entry, all);
+    await walk(entry, all, counts);
   }
   // A stable order, so a folder of exams queues the way it reads on disk.
   all.sort((a, b) =>
@@ -73,7 +80,7 @@ export async function collectFromDrop(
       numeric: true,
     }),
   );
-  return collectFromList(all);
+  return { ...collectFromList(all), unreadable: counts.unreadable };
 }
 
 const PATH_KEY = "__backworkPath";
@@ -83,10 +90,22 @@ function relativePath(file: File): string {
   return tagged ?? file.webkitRelativePath ?? file.name;
 }
 
-async function walk(entry: Entry, out: File[], prefix = ""): Promise<void> {
+/** One unreadable entry is counted and skipped; it never sinks the whole drop. */
+async function walk(
+  entry: Entry,
+  out: File[],
+  counts: { unreadable: number },
+  prefix = "",
+): Promise<void> {
   const path = prefix ? `${prefix}/${entry.name}` : entry.name;
   if (entry.isFile && entry.file) {
-    const file = await new Promise<File>((ok, fail) => entry.file!(ok, fail));
+    const file = await new Promise<File | null>((ok) =>
+      entry.file!(ok, () => ok(null)),
+    );
+    if (!file) {
+      counts.unreadable += 1;
+      return;
+    }
     Object.defineProperty(file, PATH_KEY, { value: path });
     out.push(file);
     return;
@@ -96,11 +115,15 @@ async function walk(entry: Entry, out: File[], prefix = ""): Promise<void> {
     // `readEntries` returns at most a batch (100 in Chrome) per call; keep
     // reading until it comes back empty.
     for (;;) {
-      const batch = await new Promise<Entry[]>((ok, fail) =>
-        reader.readEntries(ok, fail),
+      const batch = await new Promise<Entry[] | null>((ok) =>
+        reader.readEntries(ok, () => ok(null)),
       );
+      if (batch === null) {
+        counts.unreadable += 1;
+        break;
+      }
       if (batch.length === 0) break;
-      for (const child of batch) await walk(child, out, path);
+      for (const child of batch) await walk(child, out, counts, path);
     }
   }
 }

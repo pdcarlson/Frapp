@@ -88,4 +88,18 @@ describe("collect-files", () => {
     ]);
     expect(result.files.map((f) => f.name)).toEqual(["solo.pdf"]);
   });
+
+  it("counts an unreadable file and keeps the rest of the folder", async () => {
+    const broken = {
+      isFile: true,
+      isDirectory: false,
+      name: "locked.pdf",
+      file: (_ok: unknown, fail: (err: unknown) => void) => fail(new Error("NotReadableError")),
+    };
+    const result = await collectFromDrop([
+      dropItem(dirEntry("Exams", [broken, fileEntry(file("Exam 1.pdf"))])),
+    ]);
+    expect(result.files.map((f) => f.name)).toEqual(["Exam 1.pdf"]);
+    expect(result.unreadable).toBe(1);
+  });
 });

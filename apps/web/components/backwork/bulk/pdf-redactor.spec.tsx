@@ -6,10 +6,12 @@ import { PdfRedactor } from "./pdf-redactor";
 
 /**
  * The redaction editor (#3499). The overlay maps pointer positions to page
- * units through its bounding box, so the spec pins that box at the page's own
- * size: one CSS pixel is one point.
+ * units through its bounding box, so the spec pins that box at twice the
+ * page's size, offset from the corner: two CSS pixels are one point, and a
+ * box only lands right if the editor scales and offsets the pointer.
  */
 const PAGE = { url: "blob:page", width: 600, height: 800 };
+const SCREEN = { left: 40, top: 30, scale: 2 };
 
 // Stable, like the page's own `useCallback`: a new function every render
 // would reload the preview on every render.
@@ -34,15 +36,17 @@ function Harness({ pageCount = 1 }: { pageCount?: number }) {
 
 beforeAll(() => {
   Element.prototype.setPointerCapture ??= vi.fn();
+  const width = PAGE.width * SCREEN.scale;
+  const height = PAGE.height * SCREEN.scale;
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
-    left: 0,
-    top: 0,
-    width: PAGE.width,
-    height: PAGE.height,
-    right: PAGE.width,
-    bottom: PAGE.height,
-    x: 0,
-    y: 0,
+    left: SCREEN.left,
+    top: SCREEN.top,
+    width,
+    height,
+    right: SCREEN.left + width,
+    bottom: SCREEN.top + height,
+    x: SCREEN.left,
+    y: SCREEN.top,
     toJSON: () => ({}),
   } as DOMRect);
 });
@@ -51,8 +55,14 @@ beforeEach(() => {
   latest = {};
 });
 
+/** Fires a pointer event at a point given in page units. */
 function pointer(type: "pointerDown" | "pointerMove" | "pointerUp", el: Element, x: number, y: number) {
-  fireEvent[type](el, { clientX: x, clientY: y, button: 0, pointerId: 1 });
+  fireEvent[type](el, {
+    clientX: SCREEN.left + x * SCREEN.scale,
+    clientY: SCREEN.top + y * SCREEN.scale,
+    button: 0,
+    pointerId: 1,
+  });
 }
 
 async function draw(x1: number, y1: number, x2: number, y2: number) {

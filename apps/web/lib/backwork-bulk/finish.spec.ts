@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { MAX_BACKWORK_UPLOAD_BYTES } from "@repo/validation";
 import { EMPTY_FIELDS, type BulkFields } from "./fields";
-import { finishUpload, sha256Hex, type FinishDeps } from "./finish";
+import { finishUpload, flattenedFileName, sha256Hex, type FinishDeps } from "./finish";
 import type { BoxesByPage } from "./geometry";
 
 /**
@@ -40,10 +40,11 @@ async function run(
   boxes: BoxesByPage,
   deps: FinishDeps<typeof DOC>,
   flatten = false,
+  name = "exam.pdf",
 ) {
   await finishUpload(
     {
-      file: new File([ORIGINAL as BlobPart], "exam.pdf", { type: "application/pdf" }),
+      file: new File([ORIGINAL as BlobPart], name, { type: "application/pdf" }),
       prepared: { bytes: ORIGINAL, hash: await sha256Hex(ORIGINAL), doc: DOC },
       submission: { fields: { ...EMPTY_FIELDS, ...fields }, boxes, flatten },
     },
@@ -121,7 +122,8 @@ describe("finishUpload", () => {
     );
     expect(deps.confirm).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "exam.pdf",
+        // A blank title on a flattened copy never falls back to the filename.
+        title: "Redacted backwork",
         department_code: "CSCI",
         year: 2024,
         semester: "Fall",
@@ -130,5 +132,56 @@ describe("finishUpload", () => {
         tags: ["curved", "rubric"],
       }),
     );
+  });
+
+  it("never sends a Student Copy's original filename", async () => {
+    const { deps } = harness();
+    await run(
+      { document_variant: "Student Copy", title: "CSCI 1200 Midterm 2" },
+      {},
+      deps,
+      false,
+      "smithj_661234567_Midterm2.pdf",
+    );
+    expect(deps.requestUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ filename: "CSCI-1200-Midterm-2.pdf" }),
+    );
+    const sent = JSON.stringify([
+      (deps.requestUpload as ReturnType<typeof vi.fn>).mock.calls,
+      (deps.confirm as ReturnType<typeof vi.fn>).mock.calls,
+    ]);
+    expect(sent).not.toContain("smithj");
+    expect(flattenedFileName("  ")).toBe("backwork.pdf");
+  });
+
+  it("waits out the upload-url rate limit instead of failing", async () => {
+    const { deps } = harness();
+    const limited = Object.assign(new Error("Too many requests"), { statusCode: 429 });
+    const signed = { upload_url: "https://storage.example/u", storage_path: "chapters/c1/backwork/r/x.pdf" };
+    deps.requestUpload = vi
+      .fn()
+      .mockRejectedValueOnce(limited)
+      .mockRejectedValueOnce(limited)
+      .mockResolvedValueOnce(signed);
+    deps.sleep = vi.fn(async () => undefined);
+    await run({ document_variant: "Blank Copy" }, {}, deps);
+    expect(deps.sleep).toHaveBeenCalledTimes(2);
+    expect(deps.confirm).toHaveBeenCalled();
+  });
+
+  it("stops before filing anything once the chapter has changed", async () => {
+    const { deps, put } = harness();
+    let active = "c1";
+    deps.assertChapter = () => {
+      if (active !== "c1") throw new Error("You switched chapters.");
+    };
+    deps.put = vi.fn(async (input) => {
+      await put(input);
+      active = "c2";
+    });
+    await expect(run({ document_variant: "Blank Copy" }, {}, deps)).rejects.toThrow(
+      /switched chapters/,
+    );
+    expect(deps.confirm).not.toHaveBeenCalled();
   });
 });

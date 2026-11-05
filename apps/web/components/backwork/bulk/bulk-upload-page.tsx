@@ -62,6 +62,7 @@ import {
   type BulkFields,
 } from "@/lib/backwork-bulk/fields";
 import { finishUpload, mustFlatten, sha256Hex } from "@/lib/backwork-bulk/finish";
+import { takeStagedBulkUpload } from "@/lib/backwork-bulk/handoff";
 
 /**
  * Backwork bulk upload (#3499): drop PDFs or folders, redact and describe each
@@ -112,7 +113,7 @@ export function BulkUploadPage() {
   return (
     <Can
       permission="backwork:upload"
-      fallback={
+      deniedFallback={
         <div className="space-y-6">
           <PageHeader title="Bulk upload" />
           <EmptyState
@@ -122,12 +123,12 @@ export function BulkUploadPage() {
         </div>
       }
     >
-      <BulkUploadWorkspace key={activeChapterId} />
+      <BulkUploadWorkspace key={activeChapterId} chapterId={activeChapterId} />
     </Can>
   );
 }
 
-function BulkUploadWorkspace() {
+function BulkUploadWorkspace({ chapterId }: { chapterId: string }) {
   const { toast } = useToast();
   const gate = useSubscriptionGate();
   const requestUpload = useRequestBackworkUploadUrl();
@@ -138,39 +139,60 @@ function BulkUploadWorkspace() {
   useEffect(() => {
     mutations.current = { requestUpload, confirmUpload };
   });
-  const seenHashes = useRef(new Set<string>());
+  const queueRef = useRef<BulkUploadQueue<Prepared, Submission> | null>(null);
+  // Original hash -> the item that holds it, for the in-batch duplicate check.
+  const seenHashes = useRef(new Map<string, string>());
+  // False once the page is gone: a failure then can't show on its row, so it
+  // becomes a toast instead.
+  const onScreen = useRef(true);
 
   const [queue] = useState(
     // eslint-disable-next-line react-hooks/refs -- the queue reads both refs when a file is prepared or uploaded, never during render
     () =>
       new BulkUploadQueue<Prepared, Submission>({
-        prepare: async (file) => {
+        prepare: async (file, id) => {
           const { loadPdf, renderPagePreview } = await import(
             "@/lib/backwork-bulk/pdf"
           );
           const bytes = new Uint8Array(await file.arrayBuffer());
           const hash = await sha256Hex(bytes);
-          if (seenHashes.current.has(hash)) {
+          // A duplicate only while the other copy is still in the batch: a
+          // removed item, or this item on a retry, doesn't count.
+          const owner = seenHashes.current.get(hash);
+          if (owner && owner !== id && queueRef.current?.has(owner)) {
             throw new Error("This file is already in this batch.");
           }
-          seenHashes.current.add(hash);
+          seenHashes.current.set(hash, id);
           let doc: PDFDocumentProxy;
           try {
             doc = await loadPdf(bytes);
           } catch {
-            seenHashes.current.delete(hash);
             throw new Error("This PDF couldn't be opened. It may be damaged or password-protected.");
           }
           const previews = new Map<number, Promise<PagePreview>>();
           const first = renderPagePreview(doc, 1);
           previews.set(1, first);
-          await first;
+          try {
+            await first;
+          } catch (error) {
+            void doc.loadingTask.destroy();
+            throw error;
+          }
           return { bytes, hash, doc, pageCount: doc.numPages, previews };
         },
         finish: async (job) => {
-          const { flattenPdf } = await import("@/lib/backwork-bulk/pdf");
-          await finishUpload(job, {
-            flatten: flattenPdf,
+          try {
+            const { flattenPdf } = await import("@/lib/backwork-bulk/pdf");
+            await finishUpload(job, {
+              // Uploads keep finishing after the page unmounts, and a chapter
+              // switch remounts it. The API client sends whichever chapter is
+              // active now, so stop rather than file this one elsewhere.
+              assertChapter: () => {
+                if (useChapterStore.getState().activeChapterId !== chapterId) {
+                  throw new Error("You switched chapters. Switch back and retry this one.");
+                }
+              },
+              flatten: flattenPdf,
             requestUpload: (body) => mutations.current.requestUpload.mutateAsync(body),
             put: ({ signedUrl, body }) =>
               putSignedUpload({
@@ -180,8 +202,18 @@ function BulkUploadWorkspace() {
                 upsert: true,
                 describeRejection: (status) => `Storage rejected the upload (${status}).`,
               }),
-            confirm: (body) => mutations.current.confirmUpload.mutateAsync(body),
-          });
+              confirm: (body) => mutations.current.confirmUpload.mutateAsync(body),
+            });
+          } catch (error) {
+            if (!onScreen.current) {
+              toast({
+                variant: "destructive",
+                title: `${job.submission.fields.title.trim() || "A backwork file"} didn't upload`,
+                description: "Open Bulk upload to retry it.",
+              });
+            }
+            throw error;
+          }
         },
         release: releasePrepared,
         describeError: (error, stage) => {
@@ -197,7 +229,24 @@ function BulkUploadWorkspace() {
         },
       }),
   );
-  useEffect(() => () => queue.destroy(), [queue]);
+  useEffect(() => {
+    queueRef.current = queue;
+    onScreen.current = true;
+    queue.open();
+    const handedOver = takeStagedBulkUpload();
+    if (handedOver.length > 0) queue.add(handedOver);
+    return () => {
+      onScreen.current = false;
+      const pendingCount = queue.pendingUploads();
+      if (pendingCount > 0) {
+        toast({
+          title: `Finishing ${pendingCount} ${pendingCount === 1 ? "upload" : "uploads"}`,
+          description: "They keep uploading in the background. Come back to Bulk upload to check on them.",
+        });
+      }
+      queue.close();
+    };
+  }, [queue, toast]);
 
   const snapshot = useSyncExternalStore(queue.subscribe, queue.getSnapshot, queue.getSnapshot);
   const current = snapshot.items.find((it) => it.id === snapshot.currentId) ?? null;
@@ -223,18 +272,24 @@ function BulkUploadWorkspace() {
   }, [pending]);
 
   const addCollected = useCallback(
-    ({ files, skipped }: CollectedFiles) => {
+    ({ files, skipped, unreadable = 0 }: CollectedFiles) => {
       const accepted: File[] = [];
       let tooLarge = 0;
+      let unnamed = 0;
       for (const file of files) {
         const inspected = inspectUploadFile("document", file, MAX_BACKWORK_UPLOAD_BYTES);
         if (inspected.ok) accepted.push(file);
-        else tooLarge += 1;
+        else if (inspected.reason === "size") tooLarge += 1;
+        else unnamed += 1;
       }
       if (accepted.length > 0) queue.add(accepted);
       const notes = [
         skipped > 0 ? `${skipped} non-PDF ${skipped === 1 ? "file" : "files"} skipped` : null,
         tooLarge > 0 ? `${tooLarge} over ${MAX_BACKWORK_UPLOAD_LABEL} skipped` : null,
+        unnamed > 0
+          ? `${unnamed} ${unnamed === 1 ? "PDF" : "PDFs"} without a .pdf name skipped. Rename and add again`
+          : null,
+        unreadable > 0 ? `${unreadable} couldn't be read from your device` : null,
       ].filter(Boolean);
       if (notes.length > 0) {
         toast({
@@ -331,7 +386,7 @@ function BulkUploadWorkspace() {
               <BulkFieldsForm value={fields} onChange={setFields} disabled={!current} />
               <p className="text-caption text-muted-foreground">
                 {mustFlatten(fields, boxes)
-                  ? "This copy is flattened on your device with the boxes burned in. Only the flattened file is uploaded."
+                  ? "This copy is flattened on your device with the boxes burned in. Only the flattened file is uploaded, named after the title. The title starts as the file's name, so make sure it doesn't name a student."
                   : "Uploads as-is. Add a box or mark it a Student Copy to flatten it."}
               </p>
               <Button
@@ -499,7 +554,9 @@ function DropZone({
   function onDrop(event: React.DragEvent) {
     event.preventDefault();
     setOver(false);
-    void collectFromDrop(event.dataTransfer.items).then(onFiles);
+    void collectFromDrop(event.dataTransfer.items).then(onFiles, () =>
+      onFiles({ files: [], skipped: 0, unreadable: 1 }),
+    );
   }
 
   function onPick(event: React.ChangeEvent<HTMLInputElement>) {

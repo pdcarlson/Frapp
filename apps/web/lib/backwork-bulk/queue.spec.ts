@@ -154,4 +154,50 @@ describe("BulkUploadQueue", () => {
     h.queue.submit(h.idOf("a.pdf"), { title: "too soon" });
     expect(h.status("a.pdf")).toBe("preparing");
   });
+
+  it("keeps uploading what was submitted after close, and frees the rest", async () => {
+    const h = harness();
+    h.queue.add(["a.pdf", "b.pdf"].map(pdf));
+    h.prepares.get("a.pdf")!.resolve("A");
+    h.prepares.get("b.pdf")!.resolve("B");
+    await flush();
+    h.queue.submit(h.idOf("a.pdf"), { title: "A" });
+    expect(h.status("a.pdf")).toBe("finishing");
+
+    h.queue.close();
+    // b was only in review: its document goes back, and it waits to load again.
+    expect(h.release).toHaveBeenCalledWith("B");
+    expect(h.status("b.pdf")).toBe("queued");
+    // a was submitted: it carries on.
+    h.finishes.get("a.pdf")!.resolve();
+    await flush();
+    expect(h.status("a.pdf")).toBe("done");
+    expect(h.queue.pendingUploads()).toBe(0);
+  });
+
+  it("survives close then open, like StrictMode's double mount", async () => {
+    const h = harness();
+    h.queue.close();
+    h.queue.open();
+    h.queue.add([pdf("a.pdf")]);
+    expect(h.status("a.pdf")).toBe("preparing");
+    h.prepares.get("a.pdf")!.resolve("A");
+    await flush();
+    expect(h.status("a.pdf")).toBe("ready");
+    expect(h.queue.getSnapshot().currentId).toBe(h.idOf("a.pdf"));
+  });
+
+  it("releases a document that finishes loading after close, and reloads it on open", async () => {
+    const h = harness();
+    h.queue.add([pdf("a.pdf")]);
+    h.queue.close();
+    const first = h.prepares.get("a.pdf")!;
+    first.resolve("A");
+    await flush();
+    expect(h.release).toHaveBeenCalledWith("A");
+    expect(h.status("a.pdf")).toBe("queued");
+    h.queue.open();
+    expect(h.status("a.pdf")).toBe("preparing");
+    expect(h.prepares.get("a.pdf")).not.toBe(first);
+  });
 });

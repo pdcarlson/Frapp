@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 import { assembleFlatPdf } from "./assemble";
-import { placeTextItems, textOutsideBoxes, type RawTextItem } from "./text-layer";
+import { pageTextLayer } from "./flatten-page";
 
 /** An 8x8 JPEG, standing in for a rendered page image. */
 const JPEG = Uint8Array.from(
@@ -55,24 +55,14 @@ async function pageText(bytes: Uint8Array): Promise<string> {
   return text;
 }
 
-/** What `flattenPdf` does with pdf.js text, minus the rendering. */
+/** The text layer `flattenPdf` builds for page 1, minus the rendering. */
 async function survivingText(
   bytes: Uint8Array,
   box: { x: number; y: number; width: number; height: number },
 ) {
   const doc = await openPdf(bytes);
   const page = await doc.getPage(1);
-  const viewport = page.getViewport({ scale: 1 });
-  const content = await page.getTextContent();
-  const items = content.items.filter(
-    (item): item is RawTextItem & typeof item => "str" in item,
-  );
-  const placed = placeTextItems(
-    items,
-    (x, y) => viewport.convertToViewportPoint(x, y),
-    viewport.rotation,
-  );
-  return textOutsideBoxes(placed, [box]);
+  return pageTextLayer(page, page.getViewport({ scale: 1 }), [box]);
 }
 
 // A box over "Jane Doe" in top-left viewport space: the text's baseline sits

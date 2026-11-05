@@ -16,6 +16,12 @@
  * Framework-free on purpose: React reads it through `useSyncExternalStore`
  * (`getSnapshot` returns a new object only when something changed), and the
  * spec drives it with controlled promises.
+ *
+ * `close()` is what a page calls when it unmounts. It is not the end of the
+ * queue: submitted items keep finishing (the person pressed Upload; a link
+ * click mustn't drop that), review items give back their loaded PDFs, and
+ * `open()` picks up where it left off. That is also what makes React
+ * StrictMode's mount, unmount, mount in development harmless.
  */
 export type ItemStatus =
   | "queued"
@@ -44,7 +50,8 @@ export type QueueSnapshot<P, S> = {
 };
 
 export type BulkQueueOptions<P, S> = {
-  prepare: (file: File) => Promise<P>;
+  /** Gets the item's id too, so a duplicate check can tell an item from itself. */
+  prepare: (file: File, id: string) => Promise<P>;
   finish: (job: { file: File; prepared: P; submission: S }) => Promise<void>;
   /** Frees what `prepare` made (a loaded PDF, object URLs) once it's unneeded. */
   release?: (prepared: P) => void;
@@ -68,6 +75,7 @@ export class BulkUploadQueue<P, S> {
   private snapshot: QueueSnapshot<P, S> = { items: [], currentId: null };
   private listeners = new Set<() => void>();
   private destroyed = false;
+  private closed = false;
   private pumping = false;
   private repump = false;
   private readonly lookahead: number;
@@ -134,6 +142,39 @@ export class BulkUploadQueue<P, S> {
     this.changed();
   }
 
+  /**
+   * Stops preparing and frees every loaded document still in review (they
+   * load again on `open()`), but lets submitted items finish.
+   */
+  close(): void {
+    if (this.destroyed) return;
+    this.closed = true;
+    for (const item of this.reviewLine()) {
+      if (item.status === "ready" && item.prepared) {
+        this.options.release?.(item.prepared);
+        this.patch(item.id, { status: "queued", prepared: undefined });
+      }
+    }
+  }
+
+  open(): void {
+    if (this.destroyed) return;
+    this.closed = false;
+    this.changed();
+  }
+
+  /** Whether the item is still in the batch (not removed or cleared). */
+  has(id: string): boolean {
+    return this.find(id) !== undefined;
+  }
+
+  /** Submitted items not finished yet. */
+  pendingUploads(): number {
+    return this.items.filter(
+      (it) => it.status === "waiting" || it.status === "finishing",
+    ).length;
+  }
+
   destroy(): void {
     this.destroyed = true;
     for (const item of this.items) {
@@ -194,9 +235,11 @@ export class BulkUploadQueue<P, S> {
     try {
       do {
         this.repump = false;
-        const toPrepare = this.reviewLine()
-          .slice(0, this.lookahead + 1)
-          .filter((it) => it.status === "queued");
+        const toPrepare = this.closed
+          ? []
+          : this.reviewLine()
+              .slice(0, this.lookahead + 1)
+              .filter((it) => it.status === "queued");
         let finishing = this.items.filter(
           (it) => it.status === "finishing",
         ).length;
@@ -229,10 +272,16 @@ export class BulkUploadQueue<P, S> {
   }
 
   private runPrepare(item: QueueItem<P, S>): void {
-    settle(() => this.options.prepare(item.file)).then(
+    settle(() => this.options.prepare(item.file, item.id)).then(
       (prepared) => {
         if (!this.find(item.id) || this.destroyed) {
           this.options.release?.(prepared);
+          return;
+        }
+        if (this.closed) {
+          // Nobody is reviewing; load it again when the page comes back.
+          this.options.release?.(prepared);
+          this.patch(item.id, { status: "queued" });
           return;
         }
         this.patch(item.id, { status: "ready", prepared });

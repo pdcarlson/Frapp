@@ -28,7 +28,7 @@
 
 **Duplicate prevention:** Unique constraint on (chapter_id, file_hash). Same file cannot be uploaded twice to the same chapter.
 
-**PDF redaction (v2):** In-app viewer with draggable black rectangles for redacting personal info. Rasterized output stored (original never uploaded).
+**PDF redaction:** Web bulk upload (#3499) flattens a Student Copy, or any PDF with a box, on the member's device; only the flattened file is stored. Behavior: [`backwork.md` § PDF Redaction](../behavior/backwork.md#pdf-redaction).
 
 **AI metadata extraction (v3+):** Optional AI parses the PDF and pre-fills metadata fields. User reviews before confirming.
 

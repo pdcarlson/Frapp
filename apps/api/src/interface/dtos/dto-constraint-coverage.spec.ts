@@ -103,7 +103,7 @@ describe('DTO constraint coverage (#849)', () => {
    */
   const UNBOUNDED_INTS: Record<string, string> = {
     'RequestBackworkUploadUrlDto.size_bytes':
-      'not stored; the service refuses one past MAX_UPLOAD_BYTES with its own message',
+      'not stored; the service refuses one past MAX_BACKWORK_UPLOAD_BYTES with its own message',
     'RequestDocumentUploadUrlDto.size_bytes':
       'not stored; the service refuses one past MAX_UPLOAD_BYTES with its own message',
     'RequestChatUploadUrlDto.size_bytes':

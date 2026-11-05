@@ -451,6 +451,21 @@ describe("BackworkPage subscription gating", () => {
     expect(mockRequestUpload).not.toHaveBeenCalled();
   });
 
+  it("takes a 30 MB scan, over the shared 25 MB cap but under backwork's 50 MB", async () => {
+    const user = userEvent.setup();
+    chapter.active();
+    render(<BackworkPage />);
+    await user.click(uploadTrigger());
+
+    const dialog = within(screen.getByRole("dialog"));
+    const scan = new File(["x"], "scan.pdf", { type: "application/pdf" });
+    Object.defineProperty(scan, "size", { value: 30 * 1024 * 1024 });
+    await user.upload(dialog.getByLabelText(/^file$/i), scan);
+    await user.click(dialog.getByRole("button", { name: /^upload$/i }));
+
+    await waitFor(() => expect(mockRequestUpload).toHaveBeenCalled());
+  });
+
   // #1040: the call site read `download_url` while the API returns
   // `downloadUrl`, so this opened `undefined`. The SDK types this body as
   // `never` (no OpenAPI response schema), so no type catches the wrong key.

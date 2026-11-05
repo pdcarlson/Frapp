@@ -23,6 +23,10 @@ export type ConfirmBody = Parameters<
 >[0];
 
 export type FinishDeps<Doc> = {
+  /** Throws when the active chapter is no longer the one the batch belongs to. */
+  assertChapter?: () => void;
+  /** For the rate-limit backoff; tests pass one that resolves at once. */
+  sleep?: (ms: number) => Promise<void>;
   flatten: (doc: Doc, boxes: BoxesByPage, options?: FlattenOptions) => Promise<Uint8Array>;
   requestUpload: (body: {
     filename: string;
@@ -43,6 +47,37 @@ export type FinishJob<Doc> = {
 const SMALLER: FlattenOptions = { dpi: 110, quality: 0.7 };
 
 const BACKWORK_YEAR_MIN = 1900;
+
+/**
+ * `POST /v1/backwork/upload-url` allows 10 a minute per member. A fast run
+ * through a folder of Blank Copies can pass that, so a 429 waits and tries
+ * again instead of failing the document.
+ */
+const RATE_LIMIT_WAITS_MS = [15_000, 30_000, 45_000];
+
+function statusOf(error: unknown): number | undefined {
+  return error && typeof error === "object" && "statusCode" in error
+    ? (error as { statusCode?: number }).statusCode
+    : undefined;
+}
+
+const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The object name a flattened file is stored under. Never the original
+ * filename, which for a Student Copy is often the student's own name
+ * ("smithj_12345_Midterm.pdf"); the title is what the person confirmed.
+ */
+export function flattenedFileName(title: string): string {
+  const base = title
+    .normalize("NFKD")
+    .replace(/[^A-Za-z0-9 ._-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, 80)
+    .replace(/^[.-]+|[.-]+$/g, "");
+  return `${base || "backwork"}.pdf`;
+}
 
 /** A Student Copy is always flattened, and so is anything with a box on it. */
 export function mustFlatten(fields: BulkFields, boxes: BoxesByPage): boolean {
@@ -105,20 +140,34 @@ export async function finishUpload<Doc>(
     );
   }
   const fileHash = flatten ? await sha256Hex(body) : prepared.hash;
-  const signed = await deps.requestUpload({
-    filename: file.name,
+  const sleep = deps.sleep ?? realSleep;
+  const request = {
+    filename: flatten ? flattenedFileName(submission.fields.title) : file.name,
     content_type: "application/pdf",
     size_bytes: body.byteLength,
-  });
+  };
+  let signed: unknown;
+  for (let attempt = 0; ; attempt += 1) {
+    deps.assertChapter?.();
+    try {
+      signed = await deps.requestUpload(request);
+      break;
+    } catch (error) {
+      const wait = RATE_LIMIT_WAITS_MS[attempt];
+      if (statusOf(error) !== 429 || wait === undefined) throw error;
+      await sleep(wait);
+    }
+  }
   const { signedUrl, storagePath } = readSignedUpload(signed);
   await deps.put({
     signedUrl,
     body: new Blob([body as BlobPart], { type: "application/pdf" }),
   });
+  deps.assertChapter?.();
   await deps.confirm({
     storage_path: storagePath,
     file_hash: fileHash,
-    ...confirmFields(submission.fields, file.name),
+    ...confirmFields(submission.fields, flatten ? "Redacted backwork" : file.name),
     is_redacted: flatten,
   });
 }
