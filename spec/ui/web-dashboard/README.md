@@ -128,7 +128,7 @@ Every dashboard route but `/chat` (see [Full-bleed routes](#full-bleed-routes)) 
   | | `/documents`, `/backwork`, `/billing` invoices, `/discord-import`, Chat Admin's categories and report queue | `/members` (actives and alumni), Chat Admin's channels |
   | --- | --- | --- |
   | Row is itself a control | No: text plus trailing controls | **Yes**: the row opens the member |
-  | Height | `min-h-11` (44; on the Small step's 36 / 44 once [#3511](https://github.com/pdcarlson/Frapp/issues/3511) lands) | `min-h-9`, and `pointer-coarse:min-h-11` (36, 44 on touch: the Small step) |
+  | Height | `min-h-11` (44; on the Small step's 36 / 44 once [#3511](https://github.com/pdcarlson/Frapp/issues/3511) lands). `/backwork` is the exception: a seven-column grid at `md:min-h-12` (48), stacking to two lines below `md` | `min-h-9`, and `pointer-coarse:min-h-11` (36, 44 on touch: the Small step) |
 
   `pointer-coarse` is [`components.md`](../design-system/components.md) §2's "compact 34px controls are web/pointer-only" carve-out in CSS: a mouse gets the board's density (`4a` draws a 34px member row), a finger the full 44. Trailing 32px row controls take `compactControlClassName` on the same rule. Rows **stack** on a narrow viewport (`flex-col`, becoming a row at `sm` or `md`) rather than hide fields, because `display:none` removes text from the accessibility tree too, and at the 375px floor a hidden meta line exists nowhere in the product.
 - **The checkbox column is gone; selection is not.** The checkbox is the row's leading element, and select-all sits in the list header whenever there are rows, never inside the selection bar. In the bar it would be a control conditioned on its own output: unreachable until a row is ticked, and unmounted by its own use, which drops keyboard focus to `<body>`.
@@ -155,7 +155,7 @@ Per-route decisions that still bind. Each is either the product declining to be 
 
 ### Resources: Documents and Backwork
 
-- **Each page keeps its own search field.** It is a server-side search over that collection; the find bar navigates rather than narrowing a route, so deleting it would move a capability.
+- **Each page keeps its own search field.** Documents searches on the server; Backwork searches the library it already loaded, typos forgiven ([`backwork.md` § Browsing and Search](../../behavior/backwork.md#browsing-and-search)). The find bar navigates rather than narrowing a route, so deleting either would move a capability.
 - Backwork's one actionable instruction (unknown departments and professors are created on upload) is field help beside those two fields, not a dialog description.
 - **Folder management is a mode.** The rail is navigation; an officer's Edit reveals each folder's move, rename and delete controls and Done puts them away (2026-11-05). Edit is not a write and is not gated; the controls it reveals are.
 
