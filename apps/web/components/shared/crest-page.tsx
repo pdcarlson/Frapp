@@ -38,8 +38,10 @@ import { cn } from "@/lib/utils";
  *    recolored" — is the half that governs, and the wash is the half that
  *    contradicts it. Quiet is carried instead by what the board also draws: no
  *    border, no interaction, `alt=""`, and the crest's own `#1A1A1A` field
- *    sitting flush on a `--surface-1` page, so the tile edge is invisible and
- *    the glyph floats.
+ *    sitting on a `--surface-1` page. Until 2026-11-05 the two were the same
+ *    hex, so the tile edge was invisible; the neutral ladder moved
+ *    `--surface-1` to `#111111` (foundations.md §2), so the crest now reads as
+ *    a quiet rounded tile one step lighter, the way the system avatar draws it.
  * 2. **Radius 24 rounds onto 20.** `foundations.md` §8 locks the map at a 20
  *    ceiling and calls an off-map radius "a defect, exactly as a raw hex value
  *    is". `signet-mark.tsx` already rounds its 30px chip from 9 onto the

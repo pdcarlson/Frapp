@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { contrastRatio, parseHex } from "@repo/color";
 import { signetDarkTokens } from "@repo/theme/signet";
 
 import { resolveChapterAccentColor } from "@/components/settings/resolve-chapter-accent";
@@ -14,6 +15,9 @@ const DARK = {
   background: signetDarkTokens.color.surface.card,
   fallbackAccent: signetDarkTokens.color.gold.house,
 };
+const ratio = (fg: string, bg: string) =>
+  contrastRatio(parseHex(fg)!, parseHex(bg)!);
+
 /** A light surface, to show the verdict depends on the surface named. */
 const LIGHT = { background: "#FFFFFF", fallbackAccent: "#7A5A2F" };
 
@@ -54,11 +58,14 @@ describe("resolveChapterAccentColor — the Settings preview's surface", () => {
   });
 
   it("passes an accent that clears AA only after 2dp rounding", () => {
-    // #FF3100 scores 4.498 on the dark card: below 4.5 exactly, 4.50 rounded.
+    // #FF0400 scores 4.4985 on the dark card: below 4.5 exactly, 4.50 rounded.
     // Chapters already use colours in that band (see `ratioOn`), so exact
     // comparison would quietly flip the preview's verdict on them.
-    expect(resolveChapterAccentColor("#FF3100", DARK)).toMatchObject({
-      resolvedAccent: "#FF3100",
+    // (neutral ladder, 2026-11-05: the darker card lifted the old example,
+    // `#FF3100`, to 4.86, out of the band, so this is the band's red now.)
+    expect(ratio("#FF0400", DARK.background)).toBeLessThan(4.5);
+    expect(resolveChapterAccentColor("#FF0400", DARK)).toMatchObject({
+      resolvedAccent: "#FF0400",
       fallbackApplied: false,
       contrastOnBackground: 4.5,
       reason: "ok",

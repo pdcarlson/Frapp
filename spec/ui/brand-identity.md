@@ -11,7 +11,7 @@
 | Name        | **Frapp** ([ADR-25](../architecture/adr/adr-25.md), 2026-09-23). "Signet" is retired as a product name and remains the design system's internal name. |
 | Tagline     | "Ask your chapter anything."                                                                                |
 | Positioning | The AI-first operating system for Greek life — see [../product/positioning.md](../product/positioning.md)   |
-| Lane        | Dark-first, warm, **consumer** (Notion / Cash App), with de-Google guardrails. Not Linear/Vercel technical. |
+| Lane        | Dark-first, warm, **consumer** (Notion / Cash App), with de-Google guardrails. Not Linear/Vercel technical. Since 2026-11-05 the warmth comes from the gold accent, Figtree and the copy, not from the surfaces: the owner moved the surface ladder to a darker, pure neutral graphite ([foundations.md](design-system/foundations.md) §2). |
 
 **Naming rule (binding).** This is the one canonical statement; other docs link here.
 

@@ -19,14 +19,22 @@ Fixed for every chapter — only the accent varies per tenant.
 
 | Token | Value | Role |
 |-------|-------|------|
-| `--background` | `#131211` | App background, base of the ladder |
-| `--surface-1` | `#1A1A1A` | Raised surface — nav bars, input fills, other-party chat context |
-| `--card` | `#211E1A` | Cards and list rows |
-| `--popover` | `#2A2621` | Elevated surface — sheets, popovers, menus (the "elevated" step) |
+| `--background` | `#0A0A0A` | App background, base of the ladder |
+| `--surface-1` | `#111111` | Raised surface — nav bars, input fills, other-party chat context |
+| `--card` | `#171717` | Cards and list rows |
+| `--popover` | `#1E1E1E` | Elevated surface — sheets, popovers, menus (the "elevated" step) |
 
-Rationale: a warm charcoal ladder deliberately lifted off a pure `#0a0a0a` floor so the warmth reads on real screens. Each step is visibly lighter than the one below it, which is what carries elevation (§10).
+Rationale: a pure neutral graphite ladder with no hue in any step, so nothing on a surface competes with the chapter's accent and every chapter's accent sits on it the same way. Each step is an even notch lighter than the one below it (OKLCH lightness 0.145 / 0.178 / 0.205 / 0.235), which is what carries elevation (§10). `--card-hover` (`#2C2C2C`, `--popover` lifted 6% toward white) and the skeleton highlight (`#2B2B2B`) sit above the ladder and are neutral for the same reason.
 
-**The ladder was re-pitched for the web greenfield** ([#2143](https://github.com/pdcarlson/Frapp/issues/2143)). It previously ran `#0E0D0B` / `#171512` / `#1E1B17` / `#26221C`. Two things moved with it, and both are deliberate:
+**The ladder went dark and neutral on 2026-11-05, at the owner's request.** The owner found the warm yellowish surfaces did not fit the darker, simpler look the app had moved to. The old ladder was `#131211` / `#1A1A1A` / `#211E1A` / `#2A2621`, and it was uneven twice over: the base and `--surface-1` were neutral while `--card` and `--popover` leaned brown, and `--card` sat barely above `--surface-1`. The owner picked the neutral option over a faintly blue "ink" ladder at the same lightness. Before and after: <https://claude.ai/artifact/7hhDN6nptq1B5EmzGWDdUV>. What moved with it:
+
+- **Text contrast only rose.** Body text on `--popover` went from 12.5:1 to 14.0:1, and `--muted` on `--popover` from 3.1:1 to 3.5:1.
+- **The accent engine's ladder and generator background moved too**, so its version went to 2 and stored palettes are recomputed ([`accent-engine.md`](accent-engine.md) §4). The house seed paints the same fill; `accent-subtle` moved one 8-bit step (`#282314` to `#272213`). Some dark directory seeds lift differently on the darker surfaces: `#003087` no longer needs a lift, and `#1F4E79` and `#800000` now get one.
+- **`--surface-1` is no longer the mark's field.** The mark keeps `#1A1A1A` ([`../brand-identity.md`](../brand-identity.md) §2), so the crest raster now shows as a quiet tile one step above `--surface-1`, the way the system avatar always drew it on its own field.
+
+**Before that, the ladder was re-pitched for the web greenfield** ([#2143](https://github.com/pdcarlson/Frapp/issues/2143)). The history below is kept as it was written.
+
+It previously ran `#0E0D0B` / `#171512` / `#1E1B17` / `#26221C`. Two things moved with it, and both are deliberate:
 
 - `--surface-1` is now `#1A1A1A`, stated at the time as the **mark's own field** ([`../brand-identity.md`](../brand-identity.md) §2), so locked emblem B would sit flush on the raised surface instead of on a warmer neighbour. **That rationale did not survive measurement at the time:** the committed mark's field measured `#151515` and its gold `#DDA220`, so `#1A1A1A` was close to but not the mark's field, and the emblem did not sit flush. [#2153](https://github.com/pdcarlson/Frapp/issues/2153) closed the gap by re-exporting the mark at the spec'd pair rather than by moving this rung, so the rationale now holds and the value never changed — see [`../web-dashboard/tokens.md`](../web-dashboard/tokens.md) L-08 for the measurements and the history.
 - Every step is lighter than before, which lowers contrast for light text by 0.142 to 0.681 points. **Three pairs crossed** below the 4.5:1 gate in [`README.md`](README.md) §6 as a result, and are handled in §5: `--destructive` on `--popover` (4.717 → 4.482), `--info` on `--card` (4.577 → 4.429), and `--mention` on `--surface-1` (4.656 → 4.447).
@@ -49,12 +57,12 @@ Borders MUST be low-opacity white. Fixed-hex border colors are banned: an opaque
 
 | Token | Value | Role |
 |-------|-------|------|
-| `--foreground` | `#EDEAE3` | Primary text |
-| `--muted-foreground` | `#A9A399` | Secondary text |
-| `--muted` | `#78716A` | Muted text — placeholders, timestamps, metadata |
-| `--disabled` | `#57534C` | Disabled text |
+| `--foreground` | `#EBEBEB` | Primary text |
+| `--muted-foreground` | `#A3A3A3` | Secondary text |
+| `--muted` | `#737373` | Muted text — placeholders, timestamps, metadata |
+| `--disabled` | `#525252` | Disabled text |
 
-Token names follow panel 4h (ShadCN-style); panel 4a labels the same values text / secondary / muted. All four are warm-tinted to match the surface ladder — pure grays look dirty on warm charcoal.
+Token names follow panel 4h (ShadCN-style); panel 4a labels the same values text / secondary / muted. All four are neutral, matching the surface ladder: cream text on the graphite ladder reads yellow. Until 2026-11-05 they were warm-tinted (`#EDEAE3` / `#A9A399` / `#78716A` / `#57534C`) to match the warm ladder (§2).
 
 ---
 

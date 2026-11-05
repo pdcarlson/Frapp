@@ -34,8 +34,8 @@ describe("the archetype card's selected state", () => {
     // A raw opacity wash of the chapter hex — banned outright by
     // `spec/ui/design-system/README.md` §2 — and at 5% it is not even a dim
     // version of the right answer. Measured across all 19 seeds it spans
-    // 1.005:1 to 1.106:1 against the surface it sat on, so the *best* case in
-    // the whole corpus is still no visible selection.
+    // 1.026:1 to 1.094:1 against the surface it sat on (`#FFFFFF` the best), so
+    // the *best* case in the whole corpus is still no visible selection.
     let best = 0;
     for (const seed of SEEDS) {
       const washed = applyAlpha(
@@ -46,7 +46,7 @@ describe("the archetype card's selected state", () => {
       best = Math.max(best, ratio(washed, WIZARD_SURFACE));
     }
     expect(best).toBeLessThan(INDISTINGUISHABLE);
-    expect(best).toBeCloseTo(1.124, 2);
+    expect(best).toBeCloseTo(1.094, 2);
   });
 
   it("would have caught `hover:bg-accent/50`, which was a colour over itself", () => {
@@ -82,16 +82,17 @@ describe("the archetype card's selected state", () => {
 describe("the tutorial's step strip, and the fix that would have been a second defect", () => {
   it("would have caught `bg-secondary/60` inside a DialogContent", () => {
     // `--secondary` held `--card`'s value (deleted, #3036) and a dialog is
-    // `--popover`, so the strip composited to 1.064:1 against its own
-    // container at today's ladder (1.050:1, `#211E19`, when first measured).
+    // `--popover`, so the strip composited to 1.044:1 against its own
+    // container at today's ladder (1.050:1, `#211E19`, when first measured;
+    // 1.064:1 on the warm greenfield ladder).
     const washed = applyAlpha(SURFACE.card, 0.6, SURFACE.popover);
-    expect(ratio(washed, SURFACE.popover)).toBeCloseTo(1.064, 2);
+    expect(ratio(washed, SURFACE.popover)).toBeCloseTo(1.044, 2);
     expect(ratio(washed, SURFACE.popover)).toBeLessThan(1.1);
   });
 
   it("rules out the accent tint, which is the obvious repair and is worse", () => {
     // The natural instinct is to recolour rather than to drop the fill. Across
-    // every seed `--accent-subtle` on `--popover` tops out at 1.054:1 — the
+    // every seed `--accent-subtle` on `--popover` tops out at 1.097:1 — the
     // same washout in a new place, which is `meter.ts`'s finding met from
     // another direction. §10's answer is to drop the fill and let the hairline
     // carry the edge.
@@ -103,7 +104,7 @@ describe("the tutorial's step strip, and the fix that would have been a second d
       );
     }
     expect(best).toBeLessThan(1.1);
-    expect(best).toBeCloseTo(1.099, 2);
+    expect(best).toBeCloseTo(1.097, 2);
   });
 
   it("shows dropping the fill improves the boundary rather than costing one", () => {
@@ -137,16 +138,16 @@ describe("the step indicator's track", () => {
         ratio(fill, SURFACE.background),
       );
     }
-    // Both worst cases are `#800000`'s `#F42F22`, the generator's own step 9,
-    // which the engine's fill floor leaves as it is. Before that floor they
-    // were crimson's `#8B0000` at 1.528 and 1.869 (#2541), then `#CC0000`'s
-    // lifted `#DA2017` at 3.060 and 3.742 until the floor took in hover too
-    // (#2586) and lifted the dark fills further. The ranking is the same
-    // throughout, and on `--background` the fill now clears the 3:1 non-text
-    // floor.
+    // Both worst cases are `#BF0A30`'s `#D83144`. Before the engine's fill
+    // floor they were crimson's `#8B0000` at 1.528 and 1.869 (#2541), then
+    // `#CC0000`'s lifted `#DA2017` at 3.060 and 3.742 until the floor took in
+    // hover too (#2586) and lifted the dark fills further, then `#800000`'s
+    // `#F42F22` at 3.844 and 4.701 until the neutral ladder and engine v2
+    // (2026-11-05) lifted `#800000` too. The ranking is the same throughout,
+    // and on `--background` the fill clears the 3:1 non-text floor.
     expect(worstOnBackground).toBeGreaterThan(worstOnBorder);
-    expect(worstOnBorder).toBeCloseTo(3.844, 2);
-    expect(worstOnBackground).toBeCloseTo(4.701, 2);
+    expect(worstOnBorder).toBeCloseTo(3.527, 2);
+    expect(worstOnBackground).toBeCloseTo(4.188, 2);
   });
 });
 
@@ -157,7 +158,7 @@ describe("the emerald notice `/join` shipped", () => {
     // the tone that actually shipped was the light branch: near-black text on
     // the app floor. The family's last raw-palette colour and last inert `dark:`.
     expect(ratio("#064e3b", SURFACE.background)).toBeLessThan(AA_TEXT);
-    expect(ratio("#064e3b", SURFACE.background)).toBeCloseTo(1.925, 2);
+    expect(ratio("#064e3b", SURFACE.background)).toBeCloseTo(2.037, 2);
   });
 
   it("keeps the danger tone the rebuilt inline error uses above the gate", () => {
@@ -184,9 +185,13 @@ describe("the pre-auth screens have no tenant, so nothing on them takes the acce
     // s01, s02 and s15 all draw their captions in `--muted`. `--background` is
     // that token's *most forgiving* step on the whole ladder and it still
     // misses §6's text gate, which is why every one of them lifts to
-    // `--muted-foreground`. The assertion is the argument.
+    // `--muted-foreground`. The assertion is the argument. (neutral ladder,
+    // 2026-11-05: `--muted` is now `#737373`, and the darker floor lifts it
+    // from 3.893 to 4.175; the reference's literal `#78716A` is 4.119 there.
+    // Both still miss.)
+    expect(ratio("#78716A", SURFACE.background)).toBeLessThan(AA_TEXT);
     expect(ratio(TEXT.muted, SURFACE.background)).toBeLessThan(AA_TEXT);
-    expect(ratio(TEXT.muted, SURFACE.background)).toBeCloseTo(3.893, 2);
+    expect(ratio(TEXT.muted, SURFACE.background)).toBeCloseTo(4.175, 2);
     expect(
       ratio(TEXT.mutedForeground, SURFACE.background),
     ).toBeGreaterThanOrEqual(AA_TEXT);

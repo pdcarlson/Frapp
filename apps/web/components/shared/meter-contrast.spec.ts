@@ -8,6 +8,7 @@ import {
   SEEDS,
   SURFACE,
   signetDarkTokens,
+  INDISTINGUISHABLE,
 } from "@/tests/signet-contrast";
 import {
   meterFillClassName,
@@ -92,21 +93,22 @@ describe("the invisible track", () => {
 describe("the fix that would itself have been a defect", () => {
   it("keeps bg-input the weaker track, now that it no longer collides with a maroon fill", () => {
     // Adopting chat's already-shipped spelling looked like the safe move: a
-    // white wash at 14% is a real 1.540:1 groove against `--card`. But a
+    // white wash at 14% is a real 1.506:1 groove against `--card`. But a
     // meter has two relationships and this is the one nobody measured — a
     // maroon `accent-9` landed almost exactly on that wash (under 1.1:1).
     //
     // Since #2541 the engine lifts a dark fill until it clears 3:1 on every
     // ladder surface (and since #2586 until its hover does too), so no seed's
     // fill sits at the wash's luminance any more: the worst case is
-    // `#800000`'s `#F42F22` at 2.68:1. The collision is gone, but `bg-input` is
+    // `#BF0A30`'s `#D83144` at 2.52:1 (`#800000`'s `#F42F22` at 2.68:1 before
+    // the neutral ladder and engine v2, 2026-11-05). The collision is gone, but `bg-input` is
     // still a worse track than the chosen one, and that ordering, not the
     // collision, is what kept it out.
     const inputTrack = applyAlpha(WHITE, INPUT_ALPHA, SURFACE.card);
     const worst = Math.min(
       ...SEEDS.map((seed) => ratio(fillFor(seed), inputTrack)),
     );
-    expect(worst).toBeCloseTo(2.681, 2);
+    expect(worst).toBeCloseTo(2.518, 2);
     expect(worst).toBeLessThan(
       Math.min(...SEEDS.map((seed) => ratio(fillFor(seed), TRACK))),
     );
@@ -125,7 +127,7 @@ describe("the fix that would itself have been a defect", () => {
       worstFor(() => applyAlpha(WHITE, HAIRLINE_ALPHA, SURFACE.card)),
     );
     // The accent tint moves with the chapter, which sounds like it should win
-    // — but it is still beaten, and it washes out to 1.001:1 inside a dialog.
+    // — but it is still beaten, and it washes out to 1.013:1 inside a dialog.
     expect(chosen).toBeGreaterThan(
       worstFor((seed) => roleFor(seed, "--accent-subtle")),
     );
@@ -144,7 +146,7 @@ describe("why the track recedes instead of rising", () => {
   });
 
   it("records that the groove is faintest on --surface-1, which nothing uses", () => {
-    // One ladder step from the floor is 1.066:1 — under what `--card` gives
+    // One ladder step from the floor is 1.049:1 — under what `--card` gives
     // and not a usable groove. Recorded rather than enforced: no surface in
     // this app puts a meter on `--surface-1` (the sidebar is the only
     // `--surface-1` region and it holds no meters). If one ever does, this is
@@ -161,26 +163,36 @@ describe("why the track recedes instead of rising", () => {
 
   it("would have caught the two candidates that wash out inside a dialog", () => {
     // Both are the same 1.000:1 alias failure in a new place: a `--popover`
-    // track inside a `DialogContent`, and an accent tint that is 1.001:1 there.
+    // track inside a `DialogContent`, and an accent tint that is 1.013:1 there
+    // (`#BF0A30`'s; 1.001:1 on the warm ladder, which is what the old `1.01`
+    // bound was cut against — neutral ladder, 2026-11-05).
     expect(ratio(SURFACE.popover, SURFACE.popover)).toBeCloseTo(1, 3);
     const worstTint = Math.min(
       ...SEEDS.map((seed) =>
         ratio(roleFor(seed, "--accent-subtle"), SURFACE.popover),
       ),
     );
-    expect(worstTint).toBeLessThan(1.01);
-    // The chosen track holds there instead.
-    expect(ratio(TRACK, SURFACE.popover)).toBeGreaterThan(1.2);
+    expect(worstTint).toBeLessThan(1.02);
+    // The chosen track holds there instead. (neutral ladder, 2026-11-05: the
+    // darker `--popover` closed this groove from over 1.2:1 to 1.188:1, so it
+    // is asserted against the shared washout ceiling rather than a 1.2 cut
+    // against the warm ladder.)
+    expect(ratio(TRACK, SURFACE.popover)).toBeGreaterThan(INDISTINGUISHABLE);
   });
 });
 
 describe("the accent fill, across every seeded chapter", () => {
   it("separates from its own track for all 19 seeds", () => {
-    // Worst is 4.701:1 under `#800000` (its generated step 9, `#F42F22`). The
-    // threshold is set just below the measured worst case rather than at a
-    // round number, so a change that erodes it fails here instead of shipping.
+    // Worst is 4.188:1 under `#BF0A30` (`#D83144`). The threshold is set just
+    // below the measured worst case rather than at a round number, so a change
+    // that erodes it fails here instead of shipping. It is a ratchet, not a
+    // floor: the floor is the 3:1 non-text gate, asserted below.
+    // (neutral ladder, 2026-11-05: was 4.65 against `#800000`'s `#F42F22` at
+    // 4.701; engine v2 on the darker ladder lifts the dark fills less, which
+    // eroded the worst case to 4.188, still well over 3:1, so the ratchet was
+    // re-cut there.)
     for (const seed of SEEDS) {
-      expect(ratio(fillFor(seed), TRACK), `seed ${seed}`).toBeGreaterThan(4.65);
+      expect(ratio(fillFor(seed), TRACK), `seed ${seed}`).toBeGreaterThan(4.15);
     }
   });
 

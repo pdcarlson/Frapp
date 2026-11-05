@@ -249,7 +249,7 @@ describe("usePressFeedback", () => {
 
   it("leaves Android to its ripple, with no lift on top", () => {
     const feedback = feedbackOn("android");
-    expect(feedback.ripple.color).toMatch(/^rgba\(237,234,227,0\.12\)$/);
+    expect(feedback.ripple.color).toMatch(/^rgba\(235,235,235,0\.12\)$/);
     expect(feedback.lift(true)).toBeNull();
   });
 });

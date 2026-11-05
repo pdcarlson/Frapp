@@ -171,7 +171,7 @@ export function SettingsAccentTab({
     resolver on `--card`, ink under AA; the figures are pinned in
     `settings-contrast.spec.ts`. The original `#0080FD` stopped reaching this
     branch when the greenfield ladder lightened `--card` and the resolver
-    began substituting it.)
+    began substituting it, and reaches it again on the darker neutral ladder.)
 
     The docstring's excuse was wrong too: `resolveChapterAccentColor` does not
     reject that accent. It asks whether the accent is legible **as text on the

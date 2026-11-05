@@ -215,7 +215,9 @@ describe("the accent preview reports its own legibility", () => {
    * resolver rounds to 2dp before comparing. The greenfield ladder
    * (foundations.md §2) lifted `--card` to `#211E1A`, dropping it under 4.5:1
    * and substituting it away, which silently emptied this test. `#0086FE` clears
-   * the card floor on the value rather than on the rounding.
+   * the card floor on the value rather than on the rounding. (The darker
+   * neutral ladder, 2026-11-05, keeps `#0080FD` again; the seed stays
+   * `#0086FE`, which has the wider margin.)
    *
    * `settings-contrast.spec.ts` measures the tones. This asserts the screen
    * actually surfaces the verdict, which no measurement can.

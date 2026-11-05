@@ -111,10 +111,11 @@ describe("the crest", () => {
     },
   );
 
-  it("is drawn on the mark's own field, so the tile edge does not show", () => {
-    // `--surface-1` is `#1A1A1A`, which since #2153 is the committed raster's
-    // field exactly. That equality is what lets the wash the board draws at
-    // `opacity:.9` be dropped without the crest reading as a pasted-on square.
+  it("is drawn on the raised surface, with no wash on the crest", () => {
+    // Until 2026-11-05 `--surface-1` was `#1A1A1A`, the committed raster's
+    // field exactly, so the tile edge did not show. The neutral ladder moved
+    // it to `#111111` (foundations.md §2): the crest is now a rounded tile one
+    // step lighter, still never washed with the board's `opacity:.9`.
     const { container } = render(<NotFound />);
     expect(container.querySelector("main")?.className).toMatch(
       /\bbg-surface-1\b/,

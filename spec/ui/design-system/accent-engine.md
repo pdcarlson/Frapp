@@ -18,7 +18,7 @@ generateRadixColors({
   appearance: "dark",
   accent: seed,
   gray: "#191919",
-  background: "#131211",
+  background: "#0A0A0A",
 })
   │
   ▼
@@ -155,7 +155,7 @@ under 4.5:1 on it (written before the floor took in hover, #2586), or carry the 
 keys. On a row lacking the keys, web showed the default-seed (`#DDB844`) palette from `signet.css`,
 and mobile showed the chapter's own `accent_color` only where it cleared 4.5:1 on the card, house
 gold (`#EFB63B`) otherwise. Staleness could not be read off the seed either: #2152 (`057bb1c`,
-2026-09-10) moved the generator's background from `#0E0D0B` to `#131211`, so a row written before
+2026-09-10) moved the generator's background from `#0E0D0B` to `#131211` (and the neutral ladder moved it again to `#0A0A0A` on 2026-11-05, engine version 2, [foundations.md](foundations.md) §2), so a row written before
 then can hold a fill today's engine never produces for its seed (maroon `#800000` stored itself,
 1.37:1 on `--popover`, where it now paints `#F42F22`). Recomputing every row with `NULL` engine
 version fixes all three cases, because every writer replaces the whole map. The one precondition was the seed: a
