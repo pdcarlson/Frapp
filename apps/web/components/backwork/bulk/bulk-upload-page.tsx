@@ -257,7 +257,7 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
             />
             <DropZone onFiles={addCollected} />
             {counts.done > 0 ? (
-              <Button type="button" variant="quiet" size="toolbar" onClick={() => queue.clearDone()}>
+              <Button type="button" variant="ghost" size="toolbar" onClick={() => queue.clearDone()}>
                 Clear uploaded
               </Button>
             ) : null}
@@ -321,7 +321,7 @@ function CurrentDocument({
         <p className="min-w-0 flex-1 truncate text-label font-semibold text-foreground" title={item.file.name}>
           {item.file.name}
         </p>
-        <Button type="button" variant="quiet" size="toolbar" onClick={onRemove} className="gap-1.5">
+        <Button type="button" variant="ghost" size="toolbar" onClick={onRemove} className="gap-1.5">
           <X className="h-4 w-4" /> Skip
         </Button>
       </div>

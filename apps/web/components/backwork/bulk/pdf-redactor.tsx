@@ -264,7 +264,7 @@ export function PdfRedactor({
         <div className="flex items-center gap-1">
           <Button
             type="button"
-            variant="quiet"
+            variant="ghost"
             size="icon"
             aria-label="Previous page"
             disabled={page <= 1}
@@ -277,7 +277,7 @@ export function PdfRedactor({
           </span>
           <Button
             type="button"
-            variant="quiet"
+            variant="ghost"
             size="icon"
             aria-label="Next page"
             disabled={page >= pageCount}
@@ -287,12 +287,12 @@ export function PdfRedactor({
           </Button>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1">
-          <Button type="button" variant="quiet" size="toolbar" onClick={undo} className="gap-1.5">
+          <Button type="button" variant="ghost" size="toolbar" onClick={undo} className="gap-1.5">
             <Undo2 className="h-4 w-4" /> Undo
           </Button>
           <Button
             type="button"
-            variant="quiet"
+            variant="ghost"
             size="toolbar"
             disabled={selected === null}
             onClick={deleteSelected}
@@ -303,7 +303,7 @@ export function PdfRedactor({
           {pageCount > 1 ? (
             <Button
               type="button"
-              variant="quiet"
+              variant="ghost"
               size="toolbar"
               disabled={pageBoxes.length === 0}
               onClick={copyToAllPages}
