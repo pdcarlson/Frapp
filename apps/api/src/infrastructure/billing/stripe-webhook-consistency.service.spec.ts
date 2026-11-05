@@ -1,11 +1,18 @@
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import Stripe from 'stripe';
 import { StripeWebhookConsistencyService } from './stripe-webhook-consistency.service';
 import { StripeWebhookEndpointMismatchError } from './stripe-webhook-consistency';
 import { HANDLED_WEBHOOK_EVENT_TYPES } from './stripe-webhook-events';
 
 jest.mock('stripe');
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
+
+const captureMessage = jest.mocked(Sentry.captureMessage);
 
 const StripeCtor = Stripe as unknown as jest.Mock;
 
@@ -88,6 +95,24 @@ describe('StripeWebhookConsistencyService', () => {
     expect(errorLog).toHaveBeenCalledWith(
       expect.stringContaining('none are enabled'),
     );
+  });
+
+  it('reports a missing or disabled endpoint to Sentry once, by site', async () => {
+    captureMessage.mockClear();
+    list.mockResolvedValue({ data: [endpoint({ status: 'disabled' })] });
+    const service = serviceWith({ secret: REAL_SECRET, apiUrl: API_URL });
+    await expect(service.assertRegisteredEndpoint()).resolves.toBeUndefined();
+    expect(captureMessage).toHaveBeenCalledTimes(1);
+    const [message, context] = captureMessage.mock.calls[0] as [
+      string,
+      { level: string; fingerprint: string[] },
+    ];
+    expect(message).toBe('caught failure: stripe-webhook-endpoint-mismatch');
+    expect(context.level).toBe('error');
+    expect(context.fingerprint).toEqual([
+      'caught-failure',
+      'stripe-webhook-endpoint-mismatch',
+    ]);
   });
 
   it("matches an endpoint carrying a query string — Stripe's own versioning runbook adds one", async () => {

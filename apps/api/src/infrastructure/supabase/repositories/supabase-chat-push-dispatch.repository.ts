@@ -5,7 +5,7 @@ import {
   PG_FOREIGN_KEY_VIOLATION,
   PG_UNIQUE_VIOLATION,
 } from '#domain/constants/postgres-error-codes';
-import { logThrowable } from '../../observability/log-throwable';
+import { reportCaughtFailure } from '../../observability/report-caught-failure';
 import { SupabaseQueryError } from '../supabase-query-error';
 import type {
   ChatPushClaimOutcome,
@@ -41,12 +41,12 @@ export class SupabaseChatPushDispatchRepository implements IChatPushDispatchRepo
     if (error.code === PG_UNIQUE_VIOLATION) return 'taken';
     if (error.code === PG_FOREIGN_KEY_VIOLATION) return 'gone';
 
-    logThrowable(
-      this.logger,
-      'error',
-      `chat-push: dispatch claim failed for message ${messageId}; its pushes are skipped`,
+    reportCaughtFailure(this.logger, {
+      level: 'error',
+      site: 'chat-push-dispatch-claim-failed',
+      message: `chat-push: dispatch claim failed for message ${messageId}; its pushes are skipped`,
       error,
-    );
+    });
     return 'failed';
   }
 

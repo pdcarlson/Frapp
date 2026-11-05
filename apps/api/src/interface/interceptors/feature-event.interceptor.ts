@@ -9,7 +9,7 @@ import { Observable, tap } from 'rxjs';
 import type { AnalyticsProperties } from '@repo/validation';
 import { AnalyticsService } from '../../application/services/analytics.service';
 import { FEATURE_EVENTS } from '#domain/constants/feature-events';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import {
   featureEventsOf,
   type FeatureEventInput,
@@ -100,9 +100,11 @@ export class FeatureEventInterceptor implements NestInterceptor {
         else dropped.push(key);
       }
       if (dropped.length > 0) {
-        this.logger.error(
-          `Feature event "${name}" dropped undeclared properties: ${dropped.join(', ')}`,
-        );
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: `feature-event-undeclared-properties:${name}`,
+          message: `Feature event "${name}" dropped undeclared properties: ${dropped.join(', ')}`,
+        });
       }
 
       this.analytics
@@ -112,20 +114,20 @@ export class FeatureEventInterceptor implements NestInterceptor {
           app: requestApp(request),
         })
         .catch((error: unknown) => {
-          logThrowable(
-            this.logger,
-            'error',
-            `Feature event "${name}" was rejected`,
+          reportCaughtFailure(this.logger, {
+            level: 'error',
+            site: 'feature-event-track-rejected',
+            message: `Feature event "${name}" was rejected`,
             error,
-          );
+          });
         });
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        `Feature event "${name}" could not be built`,
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'feature-event-build-failed',
+        message: `Feature event "${name}" could not be built`,
         error,
-      );
+      });
     }
   }
 }

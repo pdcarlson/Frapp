@@ -75,6 +75,19 @@ export class DiscordNotConfiguredError extends Error {
 }
 
 /**
+ * An import stopped on a condition the admin can see and fix, its message the
+ * sentence the Watch panel shows. Not a fault: the import sweep logs it and
+ * does not report it to Sentry. Both the import worker and the bot export
+ * worker throw it, so it lives here rather than in either.
+ */
+export class DiscordImportStoppedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DiscordImportStoppedError';
+  }
+}
+
+/**
  * One channel the bot can read, as Discord reported it.
  *
  * `guildId` is carried explicitly and is **always** the value from Discord's

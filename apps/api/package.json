@@ -119,6 +119,9 @@
     "coverageDirectory": "../coverage",
     "coverageProvider": "v8",
     "testEnvironment": "node",
+    "setupFilesAfterEnv": [
+      "<rootDir>/../test/setup/reset-caught-failure-throttle.ts"
+    ],
     "moduleNameMapper": {
       "^#domain/(.*)$": "<rootDir>/domain/$1",
       "^#test/(.*)$": "<rootDir>/../test/$1"

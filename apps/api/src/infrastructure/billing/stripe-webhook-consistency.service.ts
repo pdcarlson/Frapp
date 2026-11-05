@@ -10,6 +10,7 @@ import {
   StripeWebhookEndpointMismatchError,
 } from './stripe-webhook-consistency';
 import { HANDLED_WEBHOOK_EVENT_TYPES } from './stripe-webhook-events';
+import { reportCaughtFailure } from '../observability/report-caught-failure';
 
 const WEBHOOK_LIST_TIMEOUT_MS = 8_000;
 
@@ -111,6 +112,7 @@ export class StripeWebhookConsistencyService implements OnModuleInit {
         expectedUrl,
         'account has no webhook endpoints at all',
       );
+      // caught-failure-exempt: rethrown from onModuleInit; main.ts captures the boot failure at fatal
       this.logger.error(err.message);
       throw err;
     }
@@ -118,15 +120,17 @@ export class StripeWebhookConsistencyService implements OnModuleInit {
     const endpoint = findEnabledEndpoint(endpoints, expectedUrl);
     if (!endpoint) {
       const forUrl = findEndpointsForUrl(endpoints, expectedUrl);
-      this.logger.error(
-        forUrl.length
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'stripe-webhook-endpoint-mismatch',
+        message: forUrl.length
           ? `Stripe has ${forUrl.length} endpoint(s) for ${expectedUrl} but none are enabled — ` +
-              'deliveries are not being sent. Re-enable it in the Stripe dashboard.'
+            'deliveries are not being sent. Re-enable it in the Stripe dashboard.'
           : `Stripe has ${endpoints.length} endpoint(s) on this account but none for ${expectedUrl} — ` +
-              'either this deployment receives no webhooks, or the endpoint is registered ' +
-              'against a different hostname for the same service. Not refusing boot, because ' +
-              'that would trade a billing outage for a total one.',
-      );
+            'either this deployment receives no webhooks, or the endpoint is registered ' +
+            'against a different hostname for the same service. Not refusing boot, because ' +
+            'that would trade a billing outage for a total one.',
+      });
       return;
     }
 

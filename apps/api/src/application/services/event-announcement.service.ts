@@ -10,6 +10,7 @@ import { ChatService } from './chat.service';
 import { hasRequiredRole } from './event-role-targeting';
 import type { CreateEventInput, UpdateEventInput } from './event-input';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /**
  * What the chapter hears about an event write: the "New Event" / "Event
@@ -42,12 +43,12 @@ export class EventAnnouncementService {
         data: { target: { screen: 'events', eventId: event.id } },
       });
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Failed to send the New Event push (event ${event.id}, chapter ${chapterId})`,
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'event-created-announce-failed',
+        message: `Failed to send the New Event push (event ${event.id}, chapter ${chapterId})`,
         error,
-      );
+      });
     }
   }
 
@@ -168,12 +169,12 @@ export class EventAnnouncementService {
         data: { target: { screen: 'events', eventId: updated.id } },
       });
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Failed to send the Event Updated push (event ${updated.id}, chapter ${chapterId})`,
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'event-updated-announce-failed',
+        message: `Failed to send the Event Updated push (event ${updated.id}, chapter ${chapterId})`,
         error,
-      );
+      });
     }
   }
 
