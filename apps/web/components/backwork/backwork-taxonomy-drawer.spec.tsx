@@ -1,7 +1,8 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { BackworkTaxonomyDrawer } from "./backwork-taxonomy-drawer";
+import { chapterSubscription } from "@/tests/chapter-subscription";
+import { networkMock } from "@/tests/network";
 
 const {
   mockToast,
@@ -13,7 +14,11 @@ const {
   mockUpdateProfessor,
   mockDeleteProfessor,
   mockMergeProfessors,
+  mockCurrentChapter,
+  mockOffline,
 } = vi.hoisted(() => ({
+  mockCurrentChapter: vi.fn(),
+  mockOffline: { value: false },
   mockToast: vi.fn(),
   departmentsData: {
     value: [
@@ -32,7 +37,10 @@ const {
   mockMergeProfessors: vi.fn().mockResolvedValue({ reassigned: 1 }),
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // The shared rename and merge dialogs read the subscription gate.
+  useCurrentChapter: () => mockCurrentChapter(),
   useDepartments: () => ({ data: departmentsData.value }),
   useProfessors: () => ({ data: professorsData.value }),
   useUpdateDepartment: () => ({ mutateAsync: mockUpdateDepartment }),
@@ -47,8 +55,14 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
+vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
+
+const { BackworkTaxonomyDrawer } = await import("./backwork-taxonomy-drawer");
+const chapter = chapterSubscription(mockCurrentChapter);
+
 beforeEach(() => {
   vi.clearAllMocks();
+  chapter.active();
   departmentsData.value = [
     { id: "dept-1", code: "CHEM", name: "Chemistry" },
     { id: "dept-2", code: "MATH", name: "Mathematics" },
@@ -56,12 +70,12 @@ beforeEach(() => {
   professorsData.value = [{ id: "prof-1", name: "Dr. Rivera" }];
 });
 
+// The drawer has no trigger of its own: `/backwork`'s ⋯ menu opens it.
+const noop = () => {};
+
 async function openDrawer() {
   const user = userEvent.setup();
-  render(<BackworkTaxonomyDrawer />);
-  await user.click(
-    screen.getByRole("button", { name: /manage taxonomy/i }),
-  );
+  render(<BackworkTaxonomyDrawer open onOpenChange={noop} />);
   return user;
 }
 
@@ -103,9 +117,8 @@ describe("BackworkTaxonomyDrawer", () => {
 
   it("re-opening rename shows the current name, not a stale draft from an earlier abandoned edit", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(<BackworkTaxonomyDrawer />);
-    await user.click(
-      screen.getByRole("button", { name: /manage taxonomy/i }),
+    const { rerender } = render(
+      <BackworkTaxonomyDrawer open onOpenChange={noop} />,
     );
 
     // Open the edit, type something, then cancel without saving — `draft`
@@ -121,7 +134,7 @@ describe("BackworkTaxonomyDrawer", () => {
       { id: "dept-1", code: "CHEM", name: "Chem & Biochem" },
       { id: "dept-2", code: "MATH", name: "Mathematics" },
     ];
-    rerender(<BackworkTaxonomyDrawer />);
+    rerender(<BackworkTaxonomyDrawer open onOpenChange={noop} />);
 
     // Re-opening edit must show the current server name, not "abandoned edit".
     await user.click(
@@ -211,6 +224,13 @@ describe("BackworkTaxonomyDrawer", () => {
       screen.getByText(/merge "chemistry"/i),
     ).toBeInTheDocument();
     // Merge is disabled until a target is picked.
+    expect(screen.getByRole("button", { name: /^merge$/i })).toBeDisabled();
+  });
+
+  it("keeps the shared merge dialog's submit shut on a lapsed chapter", async () => {
+    chapter.pastDue();
+    const user = await openDrawer();
+    await user.click(screen.getByRole("button", { name: /merge chemistry/i }));
     expect(screen.getByRole("button", { name: /^merge$/i })).toBeDisabled();
   });
 });
