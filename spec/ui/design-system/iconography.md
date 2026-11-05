@@ -147,6 +147,12 @@ second, filled variant to swap to.
 Retired with the 4-tab collapse: the Home, Points, and Profile tabs. Home and
 Points no longer exist as screens; Profile moved into the More hub.
 
+Chat home's UP NEXT rows (s04, `apps/mobile/components/chat/up-next-strip.tsx`)
+draw the same file's `EventsGlyph` and `TasksGlyph` at 20px (§2's list-row
+size): the event row's focused, in the chapter accent, and the task row's
+unfocused, in `text.muted`, so the two rows read apart. The s05 chat cards reuse
+them too (§6.1.3).
+
 ### 6.1.1 Mobile in-screen icons (Ionicons, interim)
 
 Screens that have not been reskinned yet still draw Ionicons per §5. Each
@@ -191,6 +197,7 @@ card's, which is drawn neutral, as web draws it.
 | Task card | `TasksGlyph` (the Tasks tab's) | `components/tab-glyphs.tsx` |
 | Points card | `PointsGlyph` (star) | `components/chat/card-glyphs.tsx` |
 | Hours card | The More hub's `ServiceGlyph` heart, adapted as `ServiceHoursGlyph` | `components/chat/card-glyphs.tsx` |
+| Recruitment candidate card | `RushGlyph` (funnel, inner line stroke-only; the module catalog's `funnel`) | `components/chat/card-glyphs.tsx` |
 | Announcement card | `AnnouncementGlyph` (megaphone, sound arc stroke-only) | `components/chat/card-glyphs.tsx` |
 | `#chapter-audit` card, neutral | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |
 

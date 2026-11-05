@@ -1,4 +1,7 @@
 /** @vitest-environment jsdom */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -91,6 +94,19 @@ function resolved(
   return (options as Record<string, unknown> | undefined) ?? {};
 }
 
+describe("Android back", () => {
+  /**
+   * Every pushed screen is a hidden tab, and the tab router's default
+   * (`firstRoute`) sent back from any of them to Chat home, so back from an
+   * event opened on Events landed on Chat. History sends it to the screen the
+   * member came from.
+   */
+  it("returns to the screen the member came from", () => {
+    const [tabs] = hosts(render().root, "Tabs");
+    expect(tabs.props.backBehavior).toBe("history");
+  });
+});
+
 describe("tab layout (#2485)", () => {
   it("draws no navigator header over any screen", () => {
     const tree = render();
@@ -150,5 +166,75 @@ describe("tab bar inset (#3344)", () => {
     const style = barStyle();
     expect(style.height).toBe(62);
     expect(style.paddingBottom).toBe(6);
+  });
+});
+
+/**
+ * A conversation and the two check-in screens take the whole window, as the
+ * board draws s05, s18 and s22: the thread's composer sits on the bottom
+ * inset, and the scanner and host QR have no tabs under them. Every other
+ * route keeps the bar.
+ */
+describe("full-window screens", () => {
+  const FULL_WINDOW = ["chat-thread", "check-in", "host-check-in"];
+
+  function optionsByName(): Map<string, Record<string, unknown>> {
+    const tree = render();
+    return new Map(
+      hosts(tree.root, "Tabs.Screen").map((screen) => [
+        screen.props.name as string,
+        resolved(screen.props.options, screen.props.name),
+      ]),
+    );
+  }
+
+  it("hides the tab bar on the thread, the scanner and the host QR", () => {
+    const options = optionsByName();
+
+    for (const name of FULL_WINDOW) {
+      expect(options.get(name)?.tabBarStyle, name).toEqual({
+        display: "none",
+      });
+    }
+  });
+
+  it("keeps it on every other route", () => {
+    const options = optionsByName();
+    const [tabs] = hosts(render().root, "Tabs");
+
+    // Hidden for the whole navigator would hide it everywhere.
+    expect(resolved(tabs.props.screenOptions).tabBarStyle).not.toHaveProperty(
+      "display",
+    );
+    expect(options.size).toBeGreaterThan(FULL_WINDOW.length + 4);
+    for (const [name, screen] of options) {
+      if (FULL_WINDOW.includes(name)) continue;
+      expect(screen, name).not.toHaveProperty("tabBarStyle");
+    }
+  });
+
+  /**
+   * With no bar under it, each screen sits on the window's bottom edge, so it
+   * must take the bottom safe-area inset itself or its composer, manual code
+   * field or QR footer lands under the home indicator or Android's navigation
+   * buttons. A render here draws no route, so this reads the route's source.
+   */
+  it("has each of them take the bottom safe-area inset itself", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+
+    for (const name of FULL_WINDOW) {
+      const source = readFileSync(
+        join(here, "..", "app", "(tabs)", `${name}.tsx`),
+        "utf8",
+      );
+      const edges = [...source.matchAll(/edges=\{\[([^\]]*)\]\}/g)].map(
+        (match) => match[1],
+      );
+      expect(edges.length, name).toBeGreaterThan(0);
+      expect(
+        edges.some((list) => list.includes('"bottom"')),
+        name,
+      ).toBe(true);
+    }
   });
 });

@@ -55,6 +55,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 
 import { useRouter } from "expo-router";
 import Welcome from "@/app/(auth)/welcome";
+import { requestPushPermission } from "@/lib/notifications/push";
 
 type Node = ReactTestRenderer["root"];
 
@@ -122,6 +123,25 @@ describe("s03 welcome, push primer (#2299)", () => {
     const button = turnOn(root);
     expect(button).toBeDefined();
     expect(button?.props.disabled).toBe(false);
+  });
+
+  it("hides the card once Turn on is answered, even with Don't Allow", async () => {
+    // A denial leaves the permission not granted, so only the recorded
+    // decision hides the card. Left up, it would offer a "Turn on" that iOS
+    // now ignores, until the screen remounted.
+    pushAvailable = true;
+    permission = { granted: false };
+    vi.mocked(requestPushPermission).mockClear().mockResolvedValueOnce(false);
+
+    const { root } = await render();
+    await act(async () => {
+      turnOn(root)?.props.onPress();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    expect(requestPushPermission).toHaveBeenCalledTimes(1);
+    expect(turnOn(root)).toBeUndefined();
+    expect(texts(root).some((t) => t.includes("miss @channel"))).toBe(false);
   });
 });
 

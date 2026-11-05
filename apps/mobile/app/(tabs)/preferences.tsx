@@ -39,10 +39,13 @@ import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { shouldShowDonationCta } from "@/lib/more/donation";
 import { LEGAL_LINKS } from "@/lib/more/legal";
+import { acceptPrimer } from "@/lib/notifications/primer";
 import {
   getPushPermission,
+  isPushChannelBlocked,
   pushUnavailableReason,
 } from "@/lib/notifications/push";
+import type { PushPermissionStatus } from "@/lib/notifications/push-types";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
   type QuietHoursWindow,
@@ -68,18 +71,29 @@ import {
  *   token (`apps/api/src/domain/entities/invite.entity.ts`). Rendering one of
  *   those as a stable "join code" would tell members something false about how
  *   it behaves. Filed instead.
- * - **`announcements` is not a switch.** The delivery flow checks the member's
- *   preference *before* it checks priority, so the row would let someone
- *   silence URGENT chapter announcements — and the in-app record of them — from
- *   here. See the catalog's docblock in `@repo/validation`.
+ * - **`announcements` is not a switch.** The category has no non-URGENT
+ *   traffic to govern: its one emitter, the chat push worker, sends every
+ *   announcement push URGENT, and URGENT skips the category preference (#1041),
+ *   so the switch would suppress nothing, a dead control. It ships once routine
+ *   announcements can be told apart from emergency ones (#1323). Why in full:
+ *   the catalog's docblock in `@repo/validation` and
+ *   `spec/behavior/notifications.md` § Preference sync.
  * - **Appearance is static text.** The app is dark-only by design
  *   (`lib/theme.tsx`), and Canvas draws this row as a value, not a control.
- * - **"Push notifications" is a status row, not a switch.** Canvas draws a
- *   toggle, but it is a *device* permission: an app cannot turn one off on the
- *   member's behalf, and iOS never re-prompts once asked. So C7 (#998) renders
- *   what is true — granted, off, or unavailable in this build — and sends the
- *   member to the OS settings, which is the only place it can actually change.
- *   TODO-DESIGN: the drawn control is a switch.
+ * - **"Push notifications" is a switch that reports the device's settings.**
+ *   Canvas draws a toggle, and it shows what is true: on only when the OS will
+ *   show a push (`pushIsOn()`). A tap asks the OS while a prompt can still help
+ *   (the tap is the member accepting, so `patterns.md`'s "OS prompt only after
+ *   the member accepts" holds) and otherwise opens the OS settings: an app
+ *   cannot revoke its own permission, and iOS never re-prompts once asked.
+ *   Before this the row always sent the member to the OS settings, even when
+ *   the OS had never asked (More → Settings → Notifications → device
+ *   settings, the owner's 2026-11-04 complaint). Unlike the drawing, a line
+ *   under it says so whenever a tap opens the OS settings (`pushRowCaption()`).
+ *   In a build that can't push it stays a status row that states why
+ *   (`pushUnavailableReason()`).
+ * - **Study zones says where zones are changed**, which the drawing doesn't:
+ *   the row is read-only on the phone, and nothing else on it says where to go.
  * - **"Blocked members" is here and is not drawn.** `spec/behavior/chat/README.md`
  *   § Block makes a Settings list the one durable place a block is undone
  *   (#2257), and App Store Guideline 1.2 is why the control exists at all. It
@@ -87,7 +101,9 @@ import {
  *   meets the rule.
  * - **"Mandatory events only" is still not built.** It has no backing field on
  *   `events` and no preference key. The per-category switches below are what the
- *   API actually enforces.
+ *   API actually enforces. They are drawn as the drawing draws its switches,
+ *   a label and nothing under it, so the shared catalog's one-line hint per
+ *   category is web's alone (why: the comment where they are mapped below).
  */
 
 const TIME_INPUT_PATTERN = /^\d{2}:\d{2}$/;
@@ -111,6 +127,89 @@ function formatTimeOfDay(value: string): string {
   const suffix = hours < 12 ? "AM" : "PM";
   const displayHours = hours % 12 === 0 ? 12 : hours % 12;
   return `${displayHours}:${rawMinutes} ${suffix}`;
+}
+
+/**
+ * What the push switch reads: the OS permission, and whether the member has
+ * switched off the app's Android push channel (`isPushChannelBlocked()`),
+ * which the permission doesn't report.
+ */
+type PushState = PushPermissionStatus & { channelBlocked: boolean };
+
+/**
+ * Both reads, together, so the switch never pairs a fresh one with a stale
+ * other. `null` when there is no module to ask; rejects if either read fails,
+ * which the callers treat as unknown.
+ */
+async function readPushState(): Promise<PushState | null> {
+  const [permission, channelBlocked] = await Promise.all([
+    getPushPermission(),
+    isPushChannelBlocked(),
+  ]);
+  return permission ? { ...permission, channelBlocked } : null;
+}
+
+/**
+ * Whether the OS will show a push, which is what the switch reports.
+ *
+ * `status`, not `granted`. On Android 13+ (`targetSdk` 33 and up)
+ * expo-notifications 57 sets `granted` from the POST_NOTIFICATIONS runtime
+ * permission alone, and reports the app's notifications being switched off
+ * (`areNotificationsEnabled()`) only in `status`. So
+ * `{ granted: true, status: "denied" }` is a real answer, and that device
+ * shows nothing (`NotificationPermissionsModule.kt`,
+ * `getPermissionsWithPromiseImplApi33`). Below Android 13 and on iOS the two
+ * fields agree. iOS reports `status: "granted"` only for full authorization
+ * (`ExpoNotificationsPermissionsRequester.swift`): a provisional or ephemeral
+ * grant reads `"undetermined"`, so the switch is off there and a tap asks for
+ * the full prompt.
+ *
+ * Nor is it on with the app's Android push channel switched off: `status`
+ * still reads `"granted"` then, but that channel is where the API's pushes
+ * show (`isPushChannelBlocked()`).
+ */
+function pushIsOn(push: PushState): boolean {
+  return push.status === "granted" && !push.channelBlocked;
+}
+
+/**
+ * Whether a tap should show the OS prompt: nothing granted yet, the OS will
+ * still ask, and a grant would be enough. A granted permission whose
+ * notifications are blocked (the Android 13+ case above) is not one: Android
+ * answers that request at once, with no prompt. Nor is a channel switched
+ * off, which no prompt turns back on. Only the OS settings fix those.
+ */
+function pushTapAsks(push: PushState): boolean {
+  return !push.granted && push.canAskAgain && !push.channelBlocked;
+}
+
+/**
+ * What a tap does when it isn't the switch flipping: on, and off once no
+ * prompt can help, it opens the phone's settings to turn push off or on.
+ * `null` while a tap asks the OS, which the switch moving already shows.
+ */
+function pushSettingsAction(push: PushState): "Turn off" | "Turn on" | null {
+  if (pushIsOn(push)) return "Turn off";
+  return pushTapAsks(push) ? null : "Turn on";
+}
+
+/**
+ * The push row's one line, drawn whenever a tap leaves the app for the OS
+ * settings. Nothing else on screen says so: the row is a plain switch, so a
+ * member who taps it to turn push off would otherwise see it snap back and
+ * the Settings app open with no reason given.
+ */
+function pushRowCaption(push: PushState): string | null {
+  const action = pushSettingsAction(push);
+  return action ? `${action} in your phone's settings.` : null;
+}
+
+/** The push switch's accessible name: the label, then the same hand-off. */
+function pushToggleLabel(push: PushState): string {
+  const action = pushSettingsAction(push);
+  return action
+    ? `Push notifications, ${action.toLowerCase()} in your phone's settings`
+    : "Push notifications";
 }
 
 type QuietHoursCardProps = {
@@ -183,13 +282,17 @@ function QuietHoursCard({
       <View style={styles.quietHoursHeaderRow}>
         <View style={styles.toggleTextStack}>
           <Text style={styles.toggleTitle}>Quiet hours</Text>
-          <Text style={styles.toggleDescription}>
-            {enabled
-              ? `Silence normal-priority pushes from ${formatTimeOfDay(
-                  quietHoursWindow.start,
-                )} to ${formatTimeOfDay(quietHoursWindow.end)}.`
-              : "Silence normal-priority pushes during a window you choose."}
-          </Text>
+          {/* The window, and only while it is in force. The label and the
+              fields below say what quiet hours are, so a sentence explaining
+              them was more words than clarity needs (writing.md §1, "in the
+              fewest words that stay clear"). */}
+          {enabled ? (
+            <Text style={styles.toggleDescription}>
+              {`${formatTimeOfDay(quietHoursWindow.start)} – ${formatTimeOfDay(
+                quietHoursWindow.end,
+              )}`}
+            </Text>
+          ) : null}
         </View>
         <Toggle
           value={enabled}
@@ -255,19 +358,16 @@ function QuietHoursCard({
         />
       </View>
 
-      <Text
-        style={
-          draftIsValid ? styles.quietHoursHint : styles.quietHoursHintError
-        }
-      >
-        {!timesAreValid
-          ? "Use 24-hour HH:mm times (e.g. 21:00)."
-          : !tzIsValid
-            ? "Enter a timezone name like America/Chicago."
-            : enabled
-              ? "Applies to this account on every device."
-              : "Saved for when you turn quiet hours back on."}
-      </Text>
+      {/* Only a problem earns a line here. The steady-state sentences
+          ("Applies to this account on every device.", "Saved for when you
+          turn quiet hours back on.") narrated how the card works. */}
+      {draftIsValid ? null : (
+        <Text style={styles.quietHoursHintError}>
+          {!timesAreValid
+            ? "Use 24-hour HH:mm times (e.g. 21:00)."
+            : "Enter a timezone name like America/Chicago."}
+        </Text>
+      )}
     </View>
   );
 }
@@ -282,29 +382,29 @@ export default function PreferencesScreen() {
   const deleteAccount = useDeleteAccount();
 
   /**
-   * OS notification permission, read once on mount and again on every
-   * foreground.
+   * OS notification permission and the Android channel (`readPushState()`),
+   * read once on mount and again on every foreground.
    *
-   * The re-read is the whole point: the only place this setting can actually be
-   * changed is the OS settings app, so the member leaves, changes it, and comes
-   * back — and a row still reporting the old answer would be worse than no row.
-   * `null` while unread, so the row never flashes "Off" at a member who has
-   * granted it.
+   * The re-read matters because turning push *off* (and back on, once the OS
+   * stops asking) happens in the OS settings app, so the member leaves,
+   * changes it, and comes back — and a row still reporting the old answer
+   * would be worse than no row. `null` while unread, so the switch never
+   * flashes off at a member who has granted it.
    */
-  const [pushGranted, setPushGranted] = useState<boolean | null>(null);
+  const [pushState, setPushState] = useState<PushState | null>(null);
   useEffect(() => {
     let cancelled = false;
     const read = () => {
-      void getPushPermission()
-        .then((status) => {
-          if (!cancelled) setPushGranted(status?.granted ?? null);
+      void readPushState()
+        .then((next) => {
+          if (!cancelled) setPushState(next);
         })
         .catch(() => {
-          // An unreadable permission is unknown, not "off" — the row says so
-          // below rather than telling someone who has granted push to go turn
+          // An unreadable permission is unknown, not "off" — the row draws no
+          // switch rather than telling someone who has granted push to go turn
           // it on. Swallowed rather than surfaced: there is nothing a member
           // can do about it, and an unhandled rejection would be worse.
-          if (!cancelled) setPushGranted(null);
+          if (!cancelled) setPushState(null);
         });
     };
     read();
@@ -331,24 +431,45 @@ export default function PreferencesScreen() {
         : String(blockList.ids.size);
 
   const pushReason = pushUnavailableReason();
-  const pushStatusValue = pushReason
-    ? "Unavailable"
-    : pushGranted === null
-      ? "—"
-      : pushGranted
-        ? "On"
-        : "Off";
-  const pushStatusDescription =
-    pushReason ??
-    (pushGranted === null
-      ? // Unread, not "off". The read is a round trip, so the old truthiness
-        // test told every member who had *already* granted push to go and turn
-        // it on, for as long as it took to resolve — and permanently if it
-        // rejected.
-        "Checking…"
-      : pushGranted
-        ? "Turn off in iOS or Android settings."
-        : "Turn on in iOS or Android settings to get chapter alerts.");
+  // One tap at a time: a second tap while the OS prompt is up would queue a
+  // second prompt, or open the settings app over it.
+  const pushTapInFlight = useRef(false);
+
+  /**
+   * The push switch's one action, for every state. It re-reads the permission
+   * first rather than trusting the last read, because the answer can change
+   * outside the app (the OS settings, or a prompt answered elsewhere).
+   *
+   * - Not granted, and the OS will still ask (`pushTapAsks()`): ask. The
+   *   member tapping this row is them accepting, which is the step
+   *   `patterns.md` § Push notifications puts before the OS prompt, so it goes
+   *   through the primer's own accept (`acceptPrimer()`): the decision is
+   *   recorded first, so the s03 card isn't offered afterwards with a
+   *   "Turn on" the OS would now ignore.
+   * - On: the OS settings, since an app cannot revoke its own permission.
+   * - Off, and no prompt can help: the OS settings, the only place left. That
+   *   is iOS after one answer, Android after a second "Don't allow",
+   *   Android 13+ with the permission granted but the app's notifications
+   *   blocked, and Android with the app's channel switched off.
+   */
+  async function handlePushTap() {
+    if (pushTapInFlight.current) return;
+    pushTapInFlight.current = true;
+    try {
+      const current = await readPushState().catch(() => null);
+      if (current && pushTapAsks(current)) {
+        // A prompt the OS failed to show reads as not granted; the re-read
+        // below reports whatever is true either way.
+        await acceptPrimer();
+        setPushState(await readPushState().catch(() => null));
+        return;
+      }
+      if (current) setPushState(current);
+      await Linking.openSettings().catch(() => undefined);
+    } finally {
+      pushTapInFlight.current = false;
+    }
+  }
 
   const {
     quietHoursEnabled,
@@ -390,6 +511,8 @@ export default function PreferencesScreen() {
   const zones = geofencesQuery.data as unknown;
   const zoneCount = Array.isArray(zones) ? zones.length : null;
 
+  // `null` when there is nothing to report. "Synced with your account." was
+  // shown in the steady state, which is the one state that needs no line.
   const notificationsMeta = !isHydrated
     ? "Loading your saved preferences…"
     : hydrationRecovered
@@ -404,7 +527,7 @@ export default function PreferencesScreen() {
               ? "Saving…"
               : categorySync === "loading" || quietHoursSync === "loading"
                 ? "Loading your preferences…"
-                : "Synced with your account.";
+                : null;
 
   async function handleSignOut() {
     await signOut();
@@ -442,13 +565,37 @@ export default function PreferencesScreen() {
       <SectionHeader>Notifications</SectionHeader>
 
       <ListSection>
-        <ListRow
-          label="Push notifications"
-          value={pushStatusValue}
-          description={pushStatusDescription}
-          accessibilityHint="Opens this app's settings, where notifications can be turned on or off."
-          onPress={() => void Linking.openSettings()}
-        />
+        {pushReason ? (
+          // A build that can't push: nothing here or in the OS settings can
+          // change that, so the row states why and does nothing on a tap.
+          <ListRow
+            label="Push notifications"
+            value="Unavailable"
+            description={pushReason}
+          />
+        ) : pushState ? (
+          <ListRow
+            label="Push notifications"
+            description={pushRowCaption(pushState)}
+            trailing={
+              <Toggle
+                value={pushIsOn(pushState)}
+                onValueChange={() => void handlePushTap()}
+                accessibilityLabel={pushToggleLabel(pushState)}
+              />
+            }
+          />
+        ) : (
+          // Unread, or the read failed. No switch: drawing it off would tell
+          // a member who has granted push that they haven't. A tap still
+          // re-reads and acts on the answer.
+          <ListRow
+            label="Push notifications"
+            value="—"
+            accessibilityHint="Turns notifications on, or opens your phone's settings for them."
+            onPress={() => void handlePushTap()}
+          />
+        )}
       </ListSection>
 
       <QuietHoursCard
@@ -463,10 +610,12 @@ export default function PreferencesScreen() {
 
       <ListSection>
         {NOTIFICATION_CATEGORIES.map((category) => (
+          // No description. The shared catalog carries one per category for
+          // web's Profile card, but on the phone five two-line hints pushed
+          // Account three screens down, and the labels say enough.
           <ListRow
             key={category.key}
             label={category.label}
-            description={category.description}
             trailing={
               <Toggle
                 value={categories[category.key]}
@@ -478,11 +627,16 @@ export default function PreferencesScreen() {
         ))}
       </ListSection>
 
+      {/* Scoped to this grid, never a delivery promise: a member's channel
+          level for #announcements, or a block, still stops an announcement
+          push (`spec/behavior/chat/README.md`). Why there is no switch: the
+          docblock's `announcements` bullet. */}
       <Text style={styles.footnote}>
-        Chapter announcements always arrive — they can carry emergencies, so
-        they are not switchable here.
+        Chapter announcements can&apos;t be switched off here.
       </Text>
-      <Text style={styles.footnote}>{notificationsMeta}</Text>
+      {notificationsMeta ? (
+        <Text style={styles.footnote}>{notificationsMeta}</Text>
+      ) : null}
       {persistenceFailed ? (
         <Text style={styles.footnoteError}>
           This device couldn&apos;t save a local copy, so these may not show
@@ -496,9 +650,12 @@ export default function PreferencesScreen() {
           <ListSection>
             <ListRow
               label="Chapter accent"
+              // An editor's row is the swatch and a chevron. Anyone else's
+              // can't open, so it says who can change it rather than leaving a
+              // dead row unexplained (design-system README §5).
               description={
                 canEditAccent
-                  ? "Your organization's colors, or any color you like."
+                  ? null
                   : "Set by an officer with chapter settings access."
               }
               accessibilityHint={
@@ -519,8 +676,11 @@ export default function PreferencesScreen() {
               }
             />
             {geofencesEnabled ? (
+              // Read-only here (the phone has no zone editor), so it says
+              // where zones are changed: the dashboard's Study zones tool.
               <ListRow
                 label="Study zones"
+                description="Managed on the web dashboard."
                 value={
                   zoneCount === null
                     ? "—"
@@ -529,9 +689,6 @@ export default function PreferencesScreen() {
               />
             ) : null}
           </ListSection>
-          <Text style={styles.footnote}>
-            Other chapter settings are edited on the web dashboard.
-          </Text>
         </>
       ) : null}
 
@@ -549,7 +706,6 @@ export default function PreferencesScreen() {
         {showDonationCta ? (
           <ListRow
             label="Support the Chapter"
-            description="Opens the chapter's donation page in your browser."
             accessibilityHint="Opens the chapter's donation page in your browser."
             onPress={() => openExternalLink("Support the Chapter", donationUrl)}
           />
@@ -628,16 +784,14 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.card,
+      // The card's own surface1, so Settings has one container tone; the
+      // hairline input border marks the field.
+      backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.sm,
       minHeight: tokens.touch.minimum,
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
-    },
-    quietHoursHint: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
     },
     quietHoursHintError: {
       ...typeRole(tokens.typography.role.caption),
@@ -648,7 +802,7 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
     },
     toggleDescription: {
-      ...typeRole(tokens.typography.role.body),
+      ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
     footnote: {

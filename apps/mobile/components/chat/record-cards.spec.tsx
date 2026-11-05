@@ -25,14 +25,17 @@ const OWNER = "owner-1";
 const OFFICER = "officer-1";
 
 const state = vi.hoisted(() => ({
-  permissions: [] as string[],
+  /** `undefined`: the permissions read hasn't answered (loading, or failed). */
+  permissions: [] as string[] | undefined,
   live: undefined as unknown,
   entryIds: [] as string[],
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  usePermissionList: () => state.permissions,
+  useMyPermissions: () => ({
+    data: state.permissions ? { permissions: state.permissions } : undefined,
+  }),
   // The real hook is disabled on an empty id, so an empty id reads nothing.
   useServiceEntry: (id: string) => {
     state.entryIds.push(id);
@@ -260,6 +263,15 @@ describe("HoursCard", () => {
     const text = allText(render(OWNER));
     expect(state.entryIds.every((id) => id === "")).toBe(true);
     expect(text).not.toContain("Approved");
+  });
+
+  it("lets only the member who logged it ask while the permissions read hasn't answered", () => {
+    state.permissions = undefined;
+    state.live = { id: "entry-1", status: "APPROVED" };
+    expect(allText(render(OWNER))).toContain("Approved");
+    state.entryIds = [];
+    render(OFFICER);
+    expect(state.entryIds.every((id) => id === "")).toBe(true);
   });
 
   it("never reads an empty viewer as the owner of an entry with no member id", () => {

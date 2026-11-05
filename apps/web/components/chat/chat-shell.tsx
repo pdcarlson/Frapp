@@ -59,7 +59,7 @@ import { coldLoadDefaultChannelId } from "@/lib/chat/default-channel";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
-import { vocab } from "@/lib/vocabulary";
+import { vocab } from "@repo/org-archetypes";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {

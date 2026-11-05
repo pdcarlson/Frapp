@@ -34,9 +34,9 @@ A per-chapter monthly subscription unlocks the ops integrations and AI:
 
 ## Vocabulary-first
 
-Greek organizations use different words for the same concepts — rush vs recruitment vs intake; pledge vs aspirant vs candidate; class vs line vs cohort. Vocabulary is resolved per chapter (`apps/web/lib/vocabulary.ts`'s `vocab(key, chapterConfig)`, falling back to the IFC term) and threaded into member-facing copy wherever a rendered surface names one of these concepts: the member directory's class/cohort filter, Settings → Dues' pledge-tier amount label, and the semester rollover confirmation/toggle copy (#351).
+Greek organizations use different words for the same concepts — rush vs recruitment vs intake; pledge vs aspirant vs candidate; class vs line vs cohort. Vocabulary is resolved per chapter (`vocab(key, chapterConfig)` in `@repo/org-archetypes`, falling back to the IFC term, with `memberViewVocabulary` laying the chapter's stored words over its archetype's) and threaded into member-facing copy wherever a rendered surface names one of these concepts: the member directory's class/cohort filter, Settings → Dues' pledge-tier amount label, the semester rollover confirmation/toggle copy (#351), the recruitment slash command's palette name (`/rush`, `/recruitment`, `/intake`, `/induction`), and the chat candidate card's eyebrow on web and mobile (#3383).
 
-Chat channel names and slash-command labels are not wired to this yet — `vocab()` has no caller in `apps/api` or `apps/mobile` today, and no entry in `@repo/chat-core/integrations`' `SLASH_COMMANDS` catalog currently names a recruitment/pledge/class concept for it to apply to. Tracked as a follow-up; treat "applied everywhere" above as the design intent this list is working toward, not a claim about today's coverage.
+Chat channel names are not wired to this yet ([#1504](https://github.com/pdcarlson/Frapp/issues/1504)), and `vocab()` has no caller in `apps/api`. Treat "applied everywhere" above as the design intent this list is working toward, not a claim about today's coverage. *(Corrected 2026-11-05: this said the slash-command labels weren't wired and that mobile had no caller; the recruitment command has rendered the chapter's word since its catalog entry took a `displayName`, and the mobile candidate card calls `vocab()` since #3383.)*
 
 ## Member-visible audit log
 

@@ -5,6 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { useRouter } from "expo-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectRoundedRipple } from "@/test/pressable-row";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -56,6 +57,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 
 import MoreScreen from "@/app/(tabs)/more";
 import { ListRow, ListSection } from "@/components/list-section";
+import { signetDarkTokens } from "@repo/theme/signet";
 
 /**
  * Unmounted in `afterEach`, not at the end of each test: the shared clock is
@@ -208,6 +210,29 @@ describe("More hub anatomy (#1048)", () => {
     expect(text.indexOf("Paul Carlson")).toBeLessThan(
       text.indexOf("Study hours"),
     );
+  });
+
+  // The profile card answers a press as a list row does (`usePressFeedback`,
+  // through `PressableRow`). It is a card, so its iOS lift is to the popover
+  // step rather than to its own colour.
+  it("ripples the profile card on Android and lifts it card to popover on iOS", () => {
+    const card = render().root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityHint === "Opens your profile.",
+    );
+    const held = Object.assign(
+      {},
+      ...[card.props.style({ pressed: true })].flat(Infinity),
+    ) as Record<string, unknown>;
+
+    expect(card.props.android_ripple?.color).toMatch(/^rgba\(/);
+    // The suite's react-native stub runs as iOS.
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(held).not.toHaveProperty("opacity");
+    // The ripple is rounded by a parent clip with the card's radius
+    // (`PressableRow`); the card's own `overflow` would leave it square.
+    expectRoundedRipple(card, signetDarkTokens.radius.cardLarge);
   });
 
   it("draws labels without a description line, and names the current chapter", () => {

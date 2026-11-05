@@ -139,9 +139,10 @@ function AccentSheetForm({
   return (
     <BottomSheetView style={styles.body}>
       <SheetHeader title="Chapter accent" onCancel={onDone} />
+      {/* The one line the picker can't show: Settings is otherwise a screen
+          of personal preferences, and this save repaints every member's app. */}
       <Text style={styles.helper}>
-        Buttons, the active tab and highlights use this color for everyone in
-        the chapter.
+        Changes the color for everyone in the chapter.
       </Text>
       <AccentPicker
         label="Chapter accent"
