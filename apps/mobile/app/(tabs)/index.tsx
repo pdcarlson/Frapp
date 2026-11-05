@@ -23,6 +23,9 @@ import {
   useChannelUnreadCounts,
   useGetOrCreateDm,
   useChannels,
+  useChapterRoster,
+  useCurrentUser,
+  useNotifications,
   useEvents,
   useLeaveChannel,
   useMemberDisplayNames,
@@ -30,11 +33,13 @@ import {
   useSetSidebarFilter,
   useSetSidebarSectionCollapsed,
   useSidebarPreferences,
+  useSidebarPreferencesRefetch,
   useTasks,
   useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
+import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
@@ -157,6 +162,25 @@ export default function ChatHomeScreen() {
     useSetSidebarSectionCollapsed(sidebarWriteOptions);
   const { mutate: setSidebarFilter } = useSetSidebarFilter(sidebarWriteOptions);
   const notificationPrefsQuery = useChannelNotificationPreferences();
+  // Everything the screen draws: rows, categories, badges, the agenda, mute
+  // state, the arrangement, the names a DM row is titled with, the viewer a
+  // DM title subtracts, and the header bell's inbox.
+  const sidebarRefetch = useSidebarPreferencesRefetch();
+  const rosterQuery = useChapterRoster();
+  const viewerQuery = useCurrentUser();
+  const inboxQuery = useNotifications();
+  const refresh = useRefetchAll([
+    viewerQuery,
+    inboxQuery,
+    channelsQuery,
+    categoriesQuery,
+    unreadQuery,
+    eventsQuery,
+    tasksQuery,
+    notificationPrefsQuery,
+    sidebarRefetch,
+    rosterQuery,
+  ]);
 
   // Categories are grouping only. While they load, or if the read fails,
   // `selectCategories` gives `[]` and every channel sits under CHANNELS, the
@@ -261,6 +285,7 @@ export default function ChatHomeScreen() {
     <ScreenShell
       title={chapterName ?? "Frapp"}
       titleMark={<ChapterMark />}
+      refresh={refresh}
       headerAction={
         <View style={styles.headerActions}>
           {/* No pill at all in a build without Ask (#2259): `AskSheet`
@@ -295,9 +320,9 @@ export default function ChatHomeScreen() {
       {channelsQuery.isPending ? (
         <ChannelListSkeleton />
       ) : channelsQuery.isError ? (
-        // An explicit retry, because nothing else here recovers from a server
-        // error: this tab stays mounted for the session and `ScreenShell`'s
-        // ScrollView has no RefreshControl to pull. A *connectivity* blip
+        // An explicit retry as well as the pull (#3385): this tab stays
+        // mounted for the session, and a button is the recovery a member
+        // sees without knowing the gesture. A *connectivity* blip
         // recovers on its own since C8 (#998) wired `onlineManager` and
         // `focusManager` (`lib/connection/query-connectivity.ts`).
         <ErrorState
