@@ -196,6 +196,8 @@ const slashGateReads = {
   enabledModules: null as Record<string, boolean> | null,
   recruitment: undefined as string | undefined,
   archetype: undefined as string | undefined,
+  /** The member view never answered and TanStack paused it offline (#3160). */
+  paused: false,
 };
 
 // ChatShell pulls a wide surface from @repo/hooks; stub every hook it reads
@@ -287,17 +289,27 @@ vi.mock("@repo/hooks", async () => ({
         },
   // The slash gate's source: the member view, through
   // `useChapterModuleGateState` (#2957, #2993).
-  useCurrentChapter: () => ({
-    data: {
-      enabled_modules: slashGateReads.enabledModules,
-      org_archetype: slashGateReads.archetype,
-      vocabulary: slashGateReads.recruitment
-        ? { recruitment: slashGateReads.recruitment }
-        : undefined,
-    },
-    isError: false,
-    refetch: vi.fn(),
-  }),
+  useCurrentChapter: () =>
+    slashGateReads.paused
+      ? {
+          data: undefined,
+          isPending: true,
+          isError: false,
+          fetchStatus: "paused",
+          refetch: vi.fn(),
+        }
+      : {
+          data: {
+            enabled_modules: slashGateReads.enabledModules,
+            org_archetype: slashGateReads.archetype,
+            vocabulary: slashGateReads.recruitment
+              ? { recruitment: slashGateReads.recruitment }
+              : undefined,
+          },
+          isError: false,
+          fetchStatus: "idle",
+          refetch: vi.fn(),
+        },
   useChapterRoster: () => ({ data: [] }),
   useMyPermissions: () => mockUseMyPermissions(),
   // Read by `OpsSetupNudge`, which the shell renders above the timeline
@@ -872,6 +884,7 @@ beforeEach(() => {
   slashGateReads.enabledModules = null;
   slashGateReads.recruitment = undefined;
   slashGateReads.archetype = undefined;
+  slashGateReads.paused = false;
   // Session-wide by design, so a row an earlier case showed against a ready
   // list would otherwise stay cleared into the next one.
   blockClearance.reset();
@@ -930,6 +943,18 @@ describe("ChatShell slash-command module gate (#2957, #2993)", () => {
       "data-recruitment",
       "Intake",
     );
+  });
+
+  it("tells the composer the gate is offline, not loading, when the member view is paused (#3160)", () => {
+    // A paused read never answers by itself. Reported as "loading", the
+    // palette drew a wait with no Retry for as long as the member stayed
+    // offline.
+    slashGateReads.paused = true;
+    render(<ChatShell />);
+
+    const composer = screen.getByTestId("composer");
+    expect(composer).toHaveAttribute("data-slash-status", "offline");
+    expect(composer).toHaveAttribute("data-polls-enabled", "false");
   });
 
   it("hands the composer the chapter's switched-off modules", () => {

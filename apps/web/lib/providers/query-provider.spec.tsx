@@ -4,9 +4,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   focusManager,
   onlineManager,
+  QueryClientProvider,
   useMutation,
+  useQuery,
 } from "@tanstack/react-query";
-import { QueryProvider } from "./query-provider";
+import { makeQueryClient, QueryProvider } from "./query-provider";
 
 /**
  * The one behaviour this file exists to pin: **a dashboard write attempted
@@ -215,5 +217,79 @@ describe("QueryProvider — which failed mutations retry", () => {
     ["a failure with no status", new TypeError("Failed to fetch")],
   ])("retries %s twice", async (_label, failWith) => {
     expect(await attemptsFor(failWith)).toBe(3);
+  });
+});
+
+/**
+ * Records how many times a query's `queryFn` ran before it settled in error.
+ * Only `retryDelay` is overridden, to collapse the provider's 1s, 2s and 4s
+ * backoff; `retry` comes from the provider defaults, which are under test.
+ */
+function QueryHarness({
+  failWith,
+  onAttempt,
+}: {
+  failWith: unknown;
+  onAttempt: () => void;
+}) {
+  const query = useQuery({
+    queryKey: ["retry-probe"],
+    queryFn: async () => {
+      onAttempt();
+      throw failWith;
+    },
+    retryDelay: 0,
+  });
+  return <span data-testid="status">{query.status}</span>;
+}
+
+/**
+ * A read refused with a definitive 4xx is not retried (#3141,
+ * `spec/ui/resilience/api-retry.md` § Reads): the same request gets the same
+ * answer, and each retry holds the error state back by its backoff. That
+ * includes the throttler's 429, which blocks the caller for longer than the
+ * backoff lasts. A 5xx, an intermediary's 408 and a failure with no status
+ * still get three retries, because a read is safe to repeat and any of them
+ * may pass next time.
+ */
+describe("QueryProvider — which failed queries retry", () => {
+  async function attemptsFor(failWith: unknown): Promise<number> {
+    let attempts = 0;
+    // A fresh client per case, so no case inherits another's cached failure.
+    const view = render(
+      <QueryClientProvider client={makeQueryClient()}>
+        <QueryHarness
+          failWith={failWith}
+          onAttempt={() => {
+            attempts += 1;
+          }}
+        />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("status")).toHaveTextContent("error"),
+    );
+    view.unmount();
+    return attempts;
+  }
+
+  it.each([400, 401, 403, 404, 409, 422, 429])(
+    "asks once when refused with a %i",
+    async (statusCode) => {
+      expect(await attemptsFor({ statusCode, message: "Refused" })).toBe(1);
+    },
+  );
+
+  it("reads the status from `status` as well as `statusCode`", async () => {
+    expect(await attemptsFor({ status: 403 })).toBe(1);
+  });
+
+  it.each([
+    ["a 500", { statusCode: 500 }],
+    ["a 503", { statusCode: 503 }],
+    ["a proxy's 408", { statusCode: 408 }],
+    ["a failure with no status", new TypeError("Failed to fetch")],
+  ])("retries %s three times", async (_label, failWith) => {
+    expect(await attemptsFor(failWith)).toBe(4);
   });
 });
