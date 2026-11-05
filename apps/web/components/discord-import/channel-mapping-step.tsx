@@ -8,9 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
-import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
+import {
+  dashboardFormSelectClassName,
+  dashboardTableCheckboxClassName,
+} from "@/components/shared/table-controls";
 import {
   PermissionCheckboxGrid,
   type PermissionCatalogEntry,
@@ -28,6 +32,7 @@ import {
   type PrivacyReason,
 } from "./mapping-issues";
 import type { SameAsDiscordReaders } from "./role-matching";
+import { NO_SIDEBAR_GROUPS, type SidebarGroups } from "./sidebar-groups";
 
 type Visibility = NonNullable<ChannelChoice["visibility"]>;
 type ReadersOf = (channel: StagedChannel) => SameAsDiscordReaders | null;
@@ -79,6 +84,9 @@ function rowId(channelId: string): string {
  *
  * A private channel never merges by default: it would take the target's
  * readers, which may be the whole chapter (#2800).
+ *
+ * "Keep Discord's categories as channel groups" is off until the admin turns
+ * it on; then each category says whether it is kept (`SidebarGroups`).
  */
 export function ChannelMappingStep({
   channels,
@@ -89,6 +97,8 @@ export function ChannelMappingStep({
   readersOf = () => null,
   onRescan,
   rescanning = false,
+  sidebarGroups = NO_SIDEBAR_GROUPS,
+  onSidebarGroups,
 }: {
   channels: StagedChannel[];
   choices: Record<string, ChannelChoice>;
@@ -101,6 +111,9 @@ export function ChannelMappingStep({
   /** Bot path: scan the server again, after the bot has been given access. */
   onRescan?: () => void;
   rescanning?: boolean;
+  /** Which Discord categories become channel groups; no control without it. */
+  sidebarGroups?: SidebarGroups;
+  onSidebarGroups?: (next: SidebarGroups) => void;
 }) {
   const existingChannels = useChannels();
   const catalogQuery = usePermissionsCatalog();
@@ -309,6 +322,14 @@ export function ChannelMappingStep({
         />
       </div>
 
+      {onSidebarGroups ? (
+        <KeepCategoriesSwitch
+          groups={sidebarGroups}
+          onChange={onSidebarGroups}
+          knowsOrder={knowsPrivacy}
+        />
+      ) : null}
+
       <NeedsAttention issues={issues} onJump={jump} />
 
       <div className="space-y-3">
@@ -331,6 +352,21 @@ export function ChannelMappingStep({
             existingNames={existingNames}
             readersOf={readersOf}
             together={together}
+            keepAsGroup={
+              onSidebarGroups &&
+              sidebarGroups.keep &&
+              group.name !== NO_CATEGORY
+                ? {
+                    checked: !sidebarGroups.dropped.has(group.name),
+                    onToggle: () => {
+                      const dropped = new Set(sidebarGroups.dropped);
+                      if (dropped.has(group.name)) dropped.delete(group.name);
+                      else dropped.add(group.name);
+                      onSidebarGroups({ ...sidebarGroups, dropped });
+                    },
+                  }
+                : null
+            }
             {...permissionProps}
           />
         ))}
@@ -343,6 +379,47 @@ export function ChannelMappingStep({
           rescanning={rescanning}
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The one switch for keeping categories. Group names show in every member's
+ * sidebar, so the hint says so before anyone turns it on.
+ */
+function KeepCategoriesSwitch({
+  groups,
+  onChange,
+  knowsOrder,
+}: {
+  groups: SidebarGroups;
+  onChange: (next: SidebarGroups) => void;
+  /** Bot path: the scan read Discord's category order. */
+  knowsOrder: boolean;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-3">
+      <div className="min-w-0 space-y-1">
+        <Label htmlFor="keep-discord-categories" className="font-semibold">
+          Keep Discord&rsquo;s categories as channel groups
+        </Label>
+        <p
+          id="keep-discord-categories-hint"
+          className="text-sm text-muted-foreground"
+        >
+          Each new channel goes into a sidebar group named after its Discord
+          category
+          {knowsOrder ? ", in Discord's order" : ""}. A name your chapter
+          already uses joins that group. Merged channels stay where they are.
+          Every member can see group names.
+        </p>
+      </div>
+      <Switch
+        id="keep-discord-categories"
+        checked={groups.keep}
+        onCheckedChange={(keep) => onChange({ ...groups, keep })}
+        aria-describedby="keep-discord-categories-hint"
+      />
     </div>
   );
 }
@@ -422,6 +499,7 @@ function CategoryGroup({
   existingNames,
   readersOf,
   together,
+  keepAsGroup,
   catalog,
   holders,
   catalogLoading,
@@ -442,6 +520,8 @@ function CategoryGroup({
   readersOf: ReadersOf;
   /** Per row, how many rows share its new channel (#2856). */
   together: ReadonlyMap<string, number>;
+  /** Whether this category becomes a group; null when that isn't asked. */
+  keepAsGroup: { checked: boolean; onToggle: () => void } | null;
   catalog: PermissionCatalogEntry[];
   holders: ReadonlyMap<string, readonly string[]> | undefined;
   catalogLoading: boolean;
@@ -504,7 +584,19 @@ function CategoryGroup({
             </span>
           </span>
         </button>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {keepAsGroup ? (
+            <label className="flex min-h-11 cursor-pointer items-center gap-2 px-1 text-sm">
+              <input
+                type="checkbox"
+                className={dashboardTableCheckboxClassName}
+                checked={keepAsGroup.checked}
+                onChange={keepAsGroup.onToggle}
+                aria-label={`Keep ${group.name} as a channel group`}
+              />
+              Keep as group
+            </label>
+          ) : null}
           <Button size="sm" variant="secondary" onClick={() => onBulk(asNew)}>
             All new
           </Button>

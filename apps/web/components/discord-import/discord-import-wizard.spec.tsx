@@ -522,6 +522,79 @@ describe("ImportWizard — the bot path", () => {
     expect(setChannelMapping).not.toHaveBeenCalled();
   });
 
+  it("keeps Discord's categories as channel groups only when asked, and only the ones still ticked", async () => {
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "random",
+          discord_category: "Generic",
+          discord_category_position: 2,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+        {
+          discord_channel_id: "c2",
+          discord_channel_name: "vault",
+          discord_category: "Secret",
+          discord_category_position: 5,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+        // Merges into the chapter's #general by default, so it stays put.
+        {
+          discord_channel_id: "c3",
+          discord_channel_name: "general",
+          discord_category: "Generic",
+          discord_category_position: 2,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    });
+
+    await renderAtChannels();
+    await screen.findByText(/Nothing needs attention/);
+
+    const keep = screen.getByRole("switch", {
+      name: /Keep Discord.s categories as channel groups/,
+    });
+    // Off until the admin turns it on, and no per-category choice until then.
+    expect(keep).not.toBeChecked();
+    expect(
+      screen.queryByRole("checkbox", { name: /as a channel group/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/Every member can see group names/)).toBeVisible();
+
+    fireEvent.click(keep);
+    const secret = screen.getByRole("checkbox", {
+      name: "Keep Secret as a channel group",
+    });
+    expect(secret).toBeChecked();
+    fireEvent.click(secret);
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => expect(setDiscoveredMapping).toHaveBeenCalled());
+    const { channels } = setDiscoveredMapping.mock.calls[0]![0] as {
+      channels: { discord_channel_id: string; new_channel_group?: string }[];
+    };
+    expect(
+      channels.map((row) => [row.discord_channel_id, row.new_channel_group]),
+    ).toEqual([
+      ["c1", "Generic"],
+      ["c2", undefined],
+      ["c3", undefined],
+    ]);
+    expect(await screen.findByText("Channel groups:")).toBeInTheDocument();
+    expect(screen.getByText(/^Generic\. A name your chapter/)).toBeInTheDocument();
+  });
+
   it("holds Continue on a channel that was private in Discord until its visibility is chosen", async () => {
     discoverChannels.mockResolvedValue({
       channels: [

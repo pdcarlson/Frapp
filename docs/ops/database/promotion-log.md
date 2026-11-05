@@ -29,6 +29,22 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-05: A Discord import can keep the server's categories as channel groups
+
+### 20261105220000_discord_import_channel_groups.sql
+
+- **Purpose**: Lets a Discord import put the channels it creates into channel groups (`chat_channel_categories`) named after the server's categories, when the admin chooses it on the mapping step. The behaviour is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+  - Three nullable columns on `discord_import_channels`: `new_channel_group` (the group name the admin chose), `discord_category_position` (the category's place in Discord, read by the bot scan) and `new_channel_category_id` (the group `start` resolved the name to; `on delete set null`). Two checks: only a `create_new` row may carry a group, and a group name is 1 to 100 characters once trimmed.
+  - `discord_import_created_categories` (RLS on, no policies) records each group an import created, as `discord_import_created_channels` does for channels.
+  - `delete_empty_discord_import_categories` and its check `discord_import_category_holds_anything`, the purge's group step. Service role only.
+  - Two partial indexes: `discord_import_channels (new_channel_category_id)` and `chat_channels (category_id)`.
+
+  No row is rewritten: every existing mapping row gets nulls, which is the behaviour it had.
+- **Checks**: After `db push`, `select count(*) from public.discord_import_created_categories;` returns 0, and `select has_function_privilege('authenticated', 'public.delete_empty_discord_import_categories(uuid, uuid)', 'execute');` returns `false`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API ignores the new columns and table. The newer API against an unmigrated database fails to save a channel mapping and to start an import, because it writes the new columns. Adding nullable columns and empty indexes is quick; `chat_channels` holds one row per channel. Re-applying is idempotent (`if not exists`, `create or replace`, constraints dropped and re-added). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-discord-import-channel-groups-20261105220000) § Rollback Discord import channel groups.
+
 ## 2026-11-05: Seeded role colors move onto the role palette (#3485)
 
 ### 20261105200000_role_color_palette_defaults.sql

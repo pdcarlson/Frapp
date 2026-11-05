@@ -1,6 +1,9 @@
 import { Test } from '@nestjs/testing';
 import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
-import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import {
+  CHAT_CATEGORY_REPOSITORY,
+  CHAT_CHANNEL_REPOSITORY,
+} from '#domain/repositories/chat.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import { DISCORD_BOT_GATEWAY } from '#domain/adapters/discord.interface';
 import type { DiscordImport } from '#domain/entities/discord-import.entity';
@@ -90,6 +93,9 @@ export function botChannel(overrides: Record<string, unknown> = {}) {
     new_channel_required_permissions: null,
     discord_reader_role_ids: null,
     new_channel_same_as_discord: false,
+    new_channel_group: null,
+    discord_category_position: null,
+    new_channel_category_id: null,
     ...overrides,
   };
 }
@@ -133,6 +139,8 @@ export async function createDiscordImportFixture(
     insertMessages: jest.fn(),
     insertAttachments: jest.fn(),
     deleteImportedMessages: jest.fn(),
+    assignChannelGroup: jest.fn(async () => undefined),
+    recordCreatedCategory: jest.fn(async () => undefined),
   };
   const storage: Record<string, jest.Mock> = {
     getSignedUploadUrl: jest.fn(async () => 'https://signed.example/put'),
@@ -165,6 +173,18 @@ export async function createDiscordImportFixture(
     create: jest.fn(),
     findRoleGates: jest.fn(async () => []),
   };
+  // The chapter's channel groups: none unless a case adds some. `create`
+  // hands back a fresh id per group, in the order they're made.
+  const categoryRepo: Record<string, jest.Mock> = {
+    findByChapter: jest.fn(async () => []),
+    create: jest.fn(async (data: Record<string, unknown>) => ({
+      id: `group-${String(data.name).toLowerCase()}`,
+      chapter_id: data.chapter_id,
+      name: data.name,
+      display_order: data.display_order,
+      created_at: '2026-11-05T22:00:00Z',
+    })),
+  };
   const rbac: Record<string, jest.Mock> = {
     findByChapter: jest.fn(async () => []),
     create: jest.fn(),
@@ -178,6 +198,7 @@ export async function createDiscordImportFixture(
       { provide: DISCORD_IMPORT_REPOSITORY, useValue: repo },
       { provide: STORAGE_PROVIDER, useValue: storage },
       { provide: CHAT_CHANNEL_REPOSITORY, useValue: channelRepo },
+      { provide: CHAT_CATEGORY_REPOSITORY, useValue: categoryRepo },
       // The bot path's collaborators. An upload-path case never reaches
       // them; a bot-path case stubs what it needs.
       { provide: DISCORD_BOT_GATEWAY, useValue: bot },
@@ -189,6 +210,7 @@ export async function createDiscordImportFixture(
     repo,
     storage,
     channelRepo,
+    categoryRepo,
     bot,
     oauthService,
     rbac,

@@ -678,6 +678,22 @@ channel that reports a different one fails the import rather than being skipped.
     worker reuses the channel the first of them created. Channels that share
     a name but not those settings would become separate channels of one
     name, so they are listed as something to resolve.
+  - **Discord's categories can come across as the chapter's channel
+    categories** (the sidebar's named sections, § Channels), when the admin
+    turns on "Keep Discord's categories as channel groups". It is off by
+    default, so a chapter that arranged its sidebar finds nothing new; with it
+    on, each category is kept unless the admin unticks it. Each new channel
+    goes into the category named after its Discord one. Starting the import
+    makes that name a category: the chapter's own of that name, compared
+    trimmed and in any case, or else a new one, placed after the chapter's
+    own. New ones keep Discord's order on a bot import, which the scan reads;
+    an upload, whose export doesn't record it, places them A to Z. A merged
+    channel stays where it is, and a thread follows its channel. A category
+    is a name every member sees, which the switch says. An officer may rename
+    or delete one at any time; a channel the import still has to make then
+    lands in no category. A restart never makes a category again for a
+    channel that already exists. *2026-11-05, owner's request: a 78-channel
+    server landed as one flat list.*
   - **A channel an import merges into stays an ordinary channel, which an
     officer can delete at any time (#2922)**: before the import starts, while
     it runs, or long after. Each import that merged into it keeps its mapping
@@ -860,6 +876,13 @@ channel that reports a different one fails the import rather than being skipped.
   revisits stays until an officer deletes it, which works for any channel
   since #2922 (before it, deleting a channel an import had merged into failed
   the `discord_import_channels_target_present` CHECK).
+
+  After its channels, the purge deletes each category the import created
+  that is left with no channel in it and that no import that isn't being or
+  hasn't been deleted still means to put a channel in. A category another
+  deleted import created, which this one put channels into, goes under the
+  same rules, as channels do. A category the chapter already had is never
+  deleted, even when the import put channels into it.
 
   Before #2905 every created channel stayed. A bot re-import then merged a
   public leftover by default (#2856). A channel private in Discord, or any

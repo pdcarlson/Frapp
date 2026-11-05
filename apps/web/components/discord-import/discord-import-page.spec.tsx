@@ -477,7 +477,7 @@ describe("DiscordImportPage — deleting an import (#2944)", () => {
       `the ${n(145574)} messages and ${n(11612)} attachments it brought in`,
     );
     expect(description).toContain(
-      "the channels it created, and any it merged into that another deleted import created, once they hold nothing",
+      "the channels it created, and any it merged into that another deleted import created, once they hold nothing, and the channel groups it created once they are empty",
     );
     expect(description).toContain(
       "The roles and read permissions it created stay.",

@@ -317,4 +317,34 @@ export interface IDiscordImportRepository {
     importId: string,
     chapterId: string,
   ): Promise<string[]>;
+
+  /**
+   * Point these mapping rows at the chapter group their channels go into
+   * (`new_channel_category_id`). Scoped through the import's chapter; the
+   * caller resolved the group in that chapter.
+   */
+  assignChannelGroup(
+    importId: string,
+    chapterId: string,
+    rowIds: readonly string[],
+    categoryId: string,
+  ): Promise<void>;
+
+  /**
+   * Record that `start` created this channel group for this import, so the
+   * purge can find it again.
+   */
+  recordCreatedCategory(importId: string, categoryId: string): Promise<void>;
+
+  /**
+   * Delete the channel groups this import created that now hold no channel,
+   * and that no mapping row of an import that isn't `purging` or `purged`
+   * still means to put a channel into. Also considers a group a `purging` or
+   * `purged` import created that this one put channels into. Runs only while
+   * the import is `purging`, after its channel step. Returns the ids deleted.
+   */
+  deleteEmptyCreatedCategories(
+    importId: string,
+    chapterId: string,
+  ): Promise<string[]>;
 }

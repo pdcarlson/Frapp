@@ -859,3 +859,166 @@ describe('DiscordImportChannelMappingService — the upload mapping route refuse
     expect(repo.replaceChannels).toHaveBeenCalled();
   });
 });
+
+describe('DiscordImportChannelMappingService — keeping Discord categories as groups', () => {
+  it("records each top-level channel's Discord category position, and none for a thread", async () => {
+    await build(job({ source: 'bot' }));
+    bot.discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          id: 'c1',
+          name: 'general',
+          guildId: GUILD,
+          categoryName: 'Generic',
+          categoryPosition: 3,
+          parentChannelId: null,
+          isThread: false,
+        },
+        {
+          id: 't1',
+          name: 'general › planning',
+          guildId: GUILD,
+          categoryName: 'general',
+          parentChannelId: 'c1',
+          isThread: true,
+        },
+        {
+          id: 'c2',
+          name: 'loose',
+          guildId: GUILD,
+          categoryName: null,
+          parentChannelId: null,
+          isThread: false,
+        },
+      ],
+      warnings: [],
+      roles: [],
+    });
+
+    await channelMapping.discoverBotChannels(IMPORT_ID, CHAPTER);
+
+    const rows = repo.replaceChannels.mock.calls[0][2] as {
+      discord_channel_id: string;
+      discord_category_position: number | null;
+      new_channel_group: string | null;
+    }[];
+    expect(
+      rows.map((row) => [
+        row.discord_channel_id,
+        row.discord_category_position,
+      ]),
+    ).toEqual([
+      ['c1', 3],
+      ['t1', null],
+      ['c2', null],
+    ]);
+    // Nothing is grouped until the admin asks for it.
+    expect(rows.every((row) => row.new_channel_group === null)).toBe(true);
+  });
+
+  it('puts a new channel, and its threads, in the group the admin named, trimmed', async () => {
+    await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({
+        id: 'm-parent',
+        discord_channel_id: 'c1',
+        discord_category_position: 2,
+        position: 0,
+      }),
+      botChannel({
+        id: 'm-thread',
+        discord_channel_id: 't1',
+        parent_discord_channel_id: 'c1',
+        position: 1,
+      }),
+    ]);
+
+    await channelMapping.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: 'c1',
+        discord_channel_name: 'general',
+        mapping_action: 'create_new',
+        new_channel_name: 'General',
+        new_channel_group: '  Generic ',
+      },
+    ]);
+
+    const rows = repo.replaceChannels.mock.calls[0][2] as {
+      new_channel_group: string | null;
+      discord_category_position: number | null;
+      new_channel_category_id: string | null;
+    }[];
+    expect(rows).toEqual([
+      expect.objectContaining({
+        new_channel_group: 'Generic',
+        discord_category_position: 2,
+        new_channel_category_id: null,
+      }),
+      expect.objectContaining({ new_channel_group: 'Generic' }),
+    ]);
+  });
+
+  it('drops a group sent with a merge, which leaves its channel where it is', async () => {
+    await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ discord_channel_id: 'c1' }),
+    ]);
+
+    await channelMapping.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: 'c1',
+        discord_channel_name: 'general',
+        mapping_action: 'use_existing',
+        target_channel_id: OWN_CHANNEL,
+        new_channel_group: 'Generic',
+      },
+    ]);
+
+    const rows = repo.replaceChannels.mock.calls[0][2] as {
+      new_channel_group: string | null;
+    }[];
+    expect(rows[0]?.new_channel_group).toBeNull();
+  });
+
+  it('reads a blank group as none', async () => {
+    await build(job({ source: 'upload' }));
+    const rows = await channelMapping.setChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: '1',
+        discord_channel_name: 'general',
+        mapping_action: 'create_new',
+        new_channel_name: 'general',
+        new_channel_visibility: 'chapter',
+        new_channel_group: '   ',
+      },
+    ]);
+
+    expect(rows[0].new_channel_group).toBeNull();
+    expect(rows[0].discord_category_position).toBeNull();
+  });
+
+  it('keeps the group an upload names for a new channel', async () => {
+    await build(job({ source: 'upload' }));
+    const rows = await channelMapping.setChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        discord_channel_id: '1',
+        discord_channel_name: 'general',
+        mapping_action: 'create_new',
+        new_channel_name: 'general',
+        new_channel_visibility: 'chapter',
+        new_channel_group: 'Committees',
+      },
+      {
+        discord_channel_id: '2',
+        discord_channel_name: 'old',
+        mapping_action: 'skip',
+        new_channel_group: 'Committees',
+      },
+    ]);
+
+    expect(rows.map((row) => row.new_channel_group)).toEqual([
+      'Committees',
+      null,
+    ]);
+  });
+});

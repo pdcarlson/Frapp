@@ -23,7 +23,9 @@ import {
   archiveImportPrefix,
 } from '#domain/constants/storage';
 import {
+  CHAT_CATEGORY_REPOSITORY,
   CHAT_CHANNEL_REPOSITORY,
+  type IChatCategoryRepository,
   type IChatChannelRepository,
 } from '#domain/repositories/chat.repository.interface';
 import {
@@ -190,6 +192,8 @@ export class DiscordImportWorkerService {
     private readonly storage: IStorageProvider,
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
+    @Inject(CHAT_CATEGORY_REPOSITORY)
+    private readonly categoryRepo: IChatCategoryRepository,
     private readonly exportWorker: DiscordExportWorkerService,
     @Inject(DISCORD_CONNECTION_REPOSITORY)
     private readonly connectionRepo: IDiscordConnectionRepository,
@@ -1036,6 +1040,17 @@ export class DiscordImportWorkerService {
       }
     }
 
+    // The group `start` resolved, read back through the chapter: an officer
+    // may delete it while the import runs, and a channel then lands with no
+    // group rather than failing on the foreign key.
+    const categoryId = mapping.new_channel_category_id
+      ? ((
+          await this.categoryRepo.findById(
+            mapping.new_channel_category_id,
+            chapterId,
+          )
+        )?.id ?? null)
+      : null;
     const created = await this.channelRepo.create({
       chapter_id: chapterId,
       name: mapping.new_channel_name,
@@ -1052,7 +1067,7 @@ export class DiscordImportWorkerService {
           ? mapping.new_channel_required_permissions
           : null,
       member_ids: null,
-      category_id: null,
+      category_id: categoryId,
       is_read_only: mapping.new_channel_is_read_only,
     });
     // Recorded before the mapping row learns its target: remapping a failed
@@ -1141,6 +1156,10 @@ export class DiscordImportWorkerService {
     for (const channelId of channelsDeleted) {
       this.channelCache.invalidate(channelId);
     }
+    // Then the channel groups it created, now that its channels are gone,
+    // under the same rules: a group still holding a channel, or one a live
+    // import still means to fill, stays.
+    await this.importRepo.deleteEmptyCreatedCategories(job.id, job.chapter_id);
 
     const prefix =
       job.storage_prefix ?? archiveImportPrefix(job.chapter_id, job.id);
