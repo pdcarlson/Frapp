@@ -367,7 +367,8 @@ laptop build, so anything a hand build needs, this one needs too.
 
 **When it fails.** Production and the tag are already live and stay as they are. The `mobile` job
 goes red on its own, and the deploy summary and alert don't change. The `record` job's summary
-lists each platform's EAS id, status and upload, and says which of these applies. A build that
+lists each platform's EAS id, status and upload, and says which of these applies, except a
+red `confirm`, whose own summary says what happened to each submission. A build that
 uploaded but couldn't be recorded is listed there as the JSON entries to add.
 
 A re-run builds every platform the run asked for again, so re-run only when nothing uploaded and
@@ -377,9 +378,9 @@ nothing is still building.
   run the summary's `npm run eas -- submit … --id <build id>` from the repo root, and record the
   build by hand.
 - **EAS accepted a submission and then failed to upload it** (the `confirm` job is red): the
-  record PR already lists the build. Either fix the cause and upload it again with the
-  `npm run eas -- submit … --id <build id>` the `confirm` summary gives, and keep the entry, or
-  drop the entry: from the record PR before merging, or in a PR of its own if it has merged. A
+  record PR already lists the build. Either, while its commit is still the latest `v*` tag, fix
+  the cause and upload it again with the `npm run eas -- submit … --id <build id>` the `confirm`
+  summary gives, and keep the entry, or drop the entry: from the record PR before merging, or in a PR of its own if it has merged. A
   build that never reached a store can be dropped at once
   ([`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract)).
 - **A build was still running when the job stopped waiting:** it may finish on EAS. Don't start

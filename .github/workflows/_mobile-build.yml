@@ -32,7 +32,8 @@ name: Mobile build
 # The `record` job records a build once its submission is accepted. The
 # `confirm` job then waits out the queue beside it, polling each submission
 # (`scripts/ci/confirm-store-submissions.mjs`), and goes red with what to do
-# when one errors, is cancelled, or is still queued at its deadline.
+# when one errors, is cancelled, is still queued at its deadline, can't be
+# read, or succeeded with no submission id.
 #
 # ── Upload, never release ───────────────────────────────────────────────────
 # iOS goes to TestFlight and Android to the Play `internal` track

@@ -266,7 +266,7 @@ export async function openRecordPr({ token, repo, fetchImpl, entries, rows, sha,
   await call("POST", `/repos/${repo}/git/refs`, { ref: `refs/heads/${branch}`, sha: base });
   const title = prTitle(added);
   await call("PUT", `/repos/${repo}/contents/${REGISTRY_PATH}`, {
-    message: `${title}\n\nUploaded by Deploy production: ${runUrl}`,
+    message: `${title}\n\nSubmitted by Deploy production: ${runUrl}`,
     content: Buffer.from(text, "utf8").toString("base64"),
     sha: file.sha,
     branch,
@@ -344,7 +344,7 @@ export function summary({ sha, rows, entries, pr, problems, tag = {} }) {
   if (pr?.outcome === "opened") {
     lines.push(`**Recorded in ${pr.url}.** Merge it before any tester installs these builds.`, "");
   } else if (pr?.outcome === "already-recorded") {
-    lines.push(`Every uploaded build is already listed in \`${REGISTRY_PATH}\` on \`main\`; no PR was needed.`, "");
+    lines.push(`Every submitted build is already listed in \`${REGISTRY_PATH}\` on \`main\`; no PR was needed.`, "");
   } else if (!uploaded) {
     lines.push("Nothing was uploaded, so nothing was recorded.", "");
   }

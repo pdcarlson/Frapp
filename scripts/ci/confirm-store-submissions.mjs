@@ -43,7 +43,7 @@
 
 import { appendFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
-import { fetchWithRetry } from "./lib/http.mjs";
+import { fetchWithRetry, isRetriableStatus } from "./lib/http.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { pollUntilTerminal } from "./lib/polling.mjs";
 
@@ -60,7 +60,12 @@ const QUERY = `query ConfirmSubmission($id: ID!) {
 
 /** EAS's terminal submission states. Anything else is still on its way. */
 export const TERMINAL = new Set(["FINISHED", "ERRORED", "CANCELED"]);
-/** Rounds in a row a submission may go unread before this job stops asking. */
+/**
+ * Rounds in a row a submission may fail to read, with an answer that asking
+ * again won't change (a 4xx, a GraphQL error), before this job stops asking.
+ * A dropped connection, a 429 or a 5xx never counts: fetchWithRetry has
+ * already retried it, and an Expo API blip mustn't end the wait early.
+ */
 export const MAX_FAILED_READS = 10;
 const DISPLAY = Object.freeze({ ios: "iOS", android: "Android" });
 const STORE = Object.freeze({ ios: "TestFlight", android: "the Play internal track" });
@@ -75,8 +80,9 @@ const oneLine = (text) => String(text).replace(/[\r\n]+/g, " ").trim();
 
 /**
  * One read of a submission, with fetchWithRetry's bounded retry on a dropped
- * connection, a 429 or a 5xx. Returns `{ status, error }`, or `{ readError }`
- * when the API couldn't be read.
+ * connection, a 429 or a 5xx. Returns `{ status, error }`, or `{ readError,
+ * lasting }` when the API couldn't be read, `lasting` when asking again won't
+ * change the answer.
  */
 export async function readSubmission({ id, token, fetchImpl = fetch, sleep = delay }) {
   let res;
@@ -93,7 +99,7 @@ export async function readSubmission({ id, token, fetchImpl = fetch, sleep = del
   } catch (error) {
     return { readError: `request failed: ${oneLine(error.message)}` };
   }
-  if (!res.ok) return { readError: `HTTP ${res.status}` };
+  if (!res.ok) return { readError: `HTTP ${res.status}`, lasting: !isRetriableStatus(res.status) };
   let body;
   try {
     body = await res.json();
@@ -101,11 +107,12 @@ export async function readSubmission({ id, token, fetchImpl = fetch, sleep = del
     return { readError: "the response was not JSON" };
   }
   if (Array.isArray(body?.errors) && body.errors.length > 0) {
-    return { readError: oneLine(body.errors.map((e) => e?.message ?? "unknown error").join("; ")) };
+    const lasting = !body.errors.some((e) => e?.extensions?.isTransient === true);
+    return { readError: oneLine(body.errors.map((e) => e?.message ?? "unknown error").join("; ")), lasting };
   }
   const submission = body?.data?.submissions?.byId;
   if (!submission || typeof submission.status !== "string") return { readError: "the response named no submission" };
-  return { status: submission.status, error: submission.error ?? null };
+  return { status: oneLine(submission.status), error: submission.error ?? null };
 }
 
 /** A row this job has stopped asking about. */
@@ -125,7 +132,7 @@ export async function pollSubmissions({ submissions, token, fetchImpl = fetch, d
       const read = await readSubmission({ id: row.id, token, fetchImpl, sleep });
       if (read.readError) {
         row.readError = read.readError;
-        row.failedReads += 1;
+        if (read.lasting) row.failedReads += 1;
         const next = row.failedReads >= MAX_FAILED_READS ? `giving up after ${MAX_FAILED_READS} failed rounds` : "trying again next round";
         log(`${DISPLAY[row.store]} submission ${row.id}: couldn't read it (${read.readError}); ${next}.`);
         continue;
@@ -149,6 +156,10 @@ export async function pollSubmissions({ submissions, token, fetchImpl = fetch, d
   });
 }
 
+// The same flags CI passes, as `record-shipped-builds.mjs` gives them.
+const submitCommand = (store, build) =>
+  `\`npm run eas -- submit --platform ${store} --profile production --id ${build} --non-interactive${store === "ios" ? " --no-auto-testflight-setup" : ""}\` from the repo root`;
+
 const DROP =
   "drop its entry from the record PR before merging, or in a PR of its own once that has merged (`apps/mobile/store/README.md` § Shipped builds and the API contract)";
 
@@ -165,15 +176,13 @@ export function nextStep(row) {
   const url = `${SUBMISSIONS_URL}/${row.id}`;
   if (row.status === "ERRORED" || row.status === "CANCELED") {
     const why = row.error?.message ? `: ${oneLine(row.error.message)}${row.error.errorCode ? ` (\`${oneLine(row.error.errorCode)}\`)` : ""}` : "";
-    const again = ID.test(row.build ?? "")
-      ? `with \`npm run eas -- submit --platform ${row.store} --profile production --id ${row.build}\` from the repo root`
-      : "by hand";
-    return `${name}'s upload to ${STORE[row.store]} ${row.status === "ERRORED" ? "failed" : "was cancelled"}${why}. The record PR lists this build, so ${DROP}. Or fix the cause, upload it again ${again} (\`docs/ops/deployment/mobile.md\` § 6.6), and keep the entry. Details: ${url}`;
+    const again = ID.test(row.build ?? "") ? `with ${submitCommand(row.store, row.build)}` : "by hand";
+    return `${name}'s upload to ${STORE[row.store]} ${row.status === "ERRORED" ? "failed" : "was cancelled"}${why}. The record PR lists this build, so ${DROP}. Or, while its commit is still the latest \`v*\` tag, fix the cause, upload it again ${again} (\`docs/ops/deployment/mobile.md\` § 6.6), and keep the entry. Details: ${url}`;
   }
   if (row.failedReads >= MAX_FAILED_READS || row.status === "unread") {
     return `${name}'s submission couldn't be read${row.readError ? ` (${row.readError})` : ""}, so this job doesn't know how it ended. Check ${url}. If it finished, the record PR is right as it is; if it failed, ${DROP}.`;
   }
-  return `${name}'s submission was still \`${row.status}\` when this job stopped waiting. It may still finish: check ${url}. If it finishes, the record PR is right as it is; if it fails, ${DROP}.`;
+  return `${name}'s submission was still \`${row.status}\` when this job stopped waiting${row.readError ? ` (its last read failed: ${row.readError})` : ""}. It may still finish: check ${url}. If it finishes, the record PR is right as it is; if it fails, ${DROP}.`;
 }
 
 /** The run summary. */
@@ -214,7 +223,12 @@ export async function confirmStoreSubmissions({ env, fetchImpl = fetch, now = Da
     return 1;
   };
   if (toPoll.length === 0 && unchecked.length === 0) return fail("No upload succeeded and no submission id reached this job, so there is nothing to confirm.");
-  if (toPoll.length > 0 && !env.EXPO_TOKEN) return fail("EXPO_TOKEN is empty, so no submission can be read.");
+  if (toPoll.length > 0 && !env.EXPO_TOKEN) {
+    // Still report every row, so a missing id isn't hidden behind the token.
+    log("::error::EXPO_TOKEN is empty, so no submission can be read.");
+    for (const r of toPoll) unchecked.push({ ...r, status: "unread", readError: "EXPO_TOKEN is empty", failedReads: MAX_FAILED_READS });
+    toPoll.length = 0;
+  }
   const positive = (value, fallback) => {
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? n : fallback;
@@ -232,7 +246,7 @@ export async function confirmStoreSubmissions({ env, fetchImpl = fetch, now = Da
           sleep,
           log,
         });
-  const rows = [...polled, ...unchecked.map((r) => ({ ...r, error: null, readError: null, failedReads: 0 }))];
+  const rows = [...polled, ...unchecked.map((r) => ({ error: null, readError: null, failedReads: 0, ...r }))];
   rows.sort((a, b) => (a.store === b.store ? 0 : a.store === "ios" ? -1 : 1));
   writeSummary(summary(rows));
   const unfinished = rows.filter((r) => r.status !== "FINISHED");

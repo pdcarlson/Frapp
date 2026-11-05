@@ -132,6 +132,33 @@ describe("pollSubmissions", () => {
     assert.match(nextStep(rows[0]), /^iOS's submission couldn't be read \(Submission not found\), so this job doesn't know how it ended\./);
   });
 
+  it("counts only failed reads in a row that asking again won't fix, so an API blip never ends the wait", async () => {
+    const lasting = { errors: [{ message: "Unauthorized" }] };
+    const blips = Array.from({ length: 12 }, () => 503);
+    const replies = [...Array(MAX_FAILED_READS - 1).fill(lasting), { status: "IN_QUEUE" }, ...Array(MAX_FAILED_READS - 1).fill(lasting), ...blips, { status: "FINISHED" }];
+    const eas = fakeEas({ [IOS]: replies });
+    const c = clock();
+    const rows = await pollSubmissions({
+      submissions: [{ store: "ios", id: IOS }],
+      token: "t",
+      fetchImpl: eas.fetchImpl,
+      deadlineMs: 280 * 60_000,
+      pollMs: 60_000,
+      now: c.now,
+      sleep: c.sleep,
+      log: () => {},
+    });
+    assert.equal(rows[0].status, "FINISHED");
+    assert.equal(rows[0].failedReads, 0);
+  });
+
+  it("says a status is stale when the reads after it failed", () => {
+    assert.match(
+      nextStep({ store: "ios", id: IOS, status: "IN_QUEUE", readError: "HTTP 401", failedReads: 3 }),
+      /still `IN_QUEUE` when this job stopped waiting \(its last read failed: HTTP 401\)\./,
+    );
+  });
+
   it("keeps reading after a failed read, and doesn't read an ended submission again", async () => {
     const eas = fakeEas({ [IOS]: [503, { status: "FINISHED" }], [ANDROID]: [{ status: "ERRORED", error: { errorCode: "X", message: "bad key" } }] });
     const c = clock();
@@ -156,7 +183,10 @@ describe("nextStep and summary", () => {
     assert.equal(nextStep({ store: "ios", id: IOS, status: "FINISHED" }), null);
     const errored = nextStep({ store: "android", id: ANDROID, build: BUILD, status: "ERRORED", error: { errorCode: "SUBMISSION_SERVICE_ANDROID_UNKNOWN", message: "Google rejected the key" } });
     assert.match(errored, /^Android's upload to the Play internal track failed: Google rejected the key \(`SUBMISSION_SERVICE_ANDROID_UNKNOWN`\)\. The record PR lists this build, so drop its entry from the record PR before merging, or in a PR of its own once that has merged/);
-    assert.ok(errored.includes(`\`npm run eas -- submit --platform android --profile production --id ${BUILD}\``), errored);
+    assert.ok(errored.includes(`\`npm run eas -- submit --platform android --profile production --id ${BUILD} --non-interactive\` from the repo root`), errored);
+    assert.match(errored, /while its commit is still the latest `v\*` tag/);
+    const ios = nextStep({ store: "ios", id: IOS, build: BUILD, status: "CANCELED", error: null });
+    assert.ok(ios.includes(`--id ${BUILD} --non-interactive --no-auto-testflight-setup\``), ios);
     assert.match(nextStep({ store: "ios", id: IOS, build: "", status: "ERRORED", error: null }), /upload it again by hand/);
     assert.match(nextStep({ store: "ios", id: IOS, status: "CANCELED" }), /^iOS's upload to TestFlight was cancelled\./);
     const queued = nextStep({ store: "ios", id: IOS, status: "IN_QUEUE", readError: null });
@@ -210,6 +240,11 @@ describe("confirmStoreSubmissions", () => {
     assert.deepEqual([...new Set(calls.map((c) => c.id))], [IOS]);
     assert.match(written, /\| Android \| none \| `no-id` \|/);
     assert.match(written, /EAS accepted Android's upload, but `eas submit` printed no submission link, so nothing checked it\./);
+    const noToken = await run({ EXPO_TOKEN: "", IOS_UPLOAD: "success", IOS_SUBMISSION: IOS, ANDROID_UPLOAD: "success" }, {});
+    assert.equal(noToken.code, 1);
+    assert.equal(noToken.calls.length, 0);
+    assert.match(noToken.written, /iOS's submission couldn't be read \(EXPO_TOKEN is empty\)/);
+    assert.match(noToken.written, /EAS accepted Android's upload, but/);
     const alone = await run({ EXPO_TOKEN: "", IOS_UPLOAD: "success" }, {});
     assert.equal(alone.code, 1);
     assert.equal(alone.calls.length, 0);
