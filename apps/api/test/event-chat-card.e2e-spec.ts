@@ -127,12 +127,15 @@ describe('Event chat card — create endpoint wiring (e2e)', () => {
       })
       .expect(201);
 
-    expect(eventServiceMock.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        channel_id: undefined,
-        client_message_id: undefined,
-      }),
-    );
+    // Absent, not present-and-undefined: the API compiles with
+    // `useDefineForClassFields: false`, so the transformed DTO carries only
+    // the keys the request sent.
+    expect(eventServiceMock.create).toHaveBeenCalledTimes(1);
+    const [dto] = eventServiceMock.create.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+    expect(dto).not.toHaveProperty('channel_id');
+    expect(dto).not.toHaveProperty('client_message_id');
   });
 
   it('rejects a non-UUID channel_id (400) without calling the service', async () => {
