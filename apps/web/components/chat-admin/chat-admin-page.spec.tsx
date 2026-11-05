@@ -477,6 +477,46 @@ describe("ChatAdminPage — saving a channel", () => {
         .body,
     ).toMatchObject({ description: "The whole chapter." });
   });
+
+  it("sends an empty description when the officer clears one", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    reads.channels = settled([
+      { ...CHANNELS[0], description: "Old words." },
+      ...CHANNELS.slice(1),
+    ]);
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.change(document.getElementById("ca-description")!, {
+      target: { value: "   " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).toMatchObject({ description: "" });
+  });
+
+  it("doesn't send an untouched draft over a description that arrived on refetch", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    const { rerender } = render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    reads.channels = settled([
+      { ...CHANNELS[0], description: "The whole chapter." },
+      ...CHANNELS.slice(1),
+    ]);
+    rerender(<ChatAdminPage initialChannelId="ch-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).not.toHaveProperty("description");
+  });
 });
 
 describe("ChatAdminPage — opened from a channel start", () => {

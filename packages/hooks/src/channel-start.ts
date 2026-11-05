@@ -55,8 +55,10 @@ export function channelStartCopy(input: ChannelStartInput): ChannelStartCopy {
         startLine: "This is the start of your group conversation.",
         description: null,
       };
+    // A role-gated channel is not called private: who can read it depends on
+    // its required permissions, and the seeded #alumni asks only for
+    // `members:view`, which every member holds.
     case "PRIVATE":
-    case "ROLE_GATED":
       return {
         title: `Welcome to #${input.name}`,
         startLine: `This is the start of the private #${input.name} channel.`,

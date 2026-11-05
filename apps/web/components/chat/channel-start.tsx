@@ -20,6 +20,13 @@ export interface ChannelStartChannel {
   description?: string | null;
 }
 
+/** Channels the app posts to itself; the rail, header and start mark them alike. */
+const SYSTEM_CHANNEL_NAMES = new Set(["chapter-audit"]);
+
+export function isSystemChannel(channel: Pick<ChannelStartChannel, "name">) {
+  return SYSTEM_CHANNEL_NAMES.has(channel.name);
+}
+
 /**
  * Leading mark for a channel: in the header, and large in the channel start.
  *
@@ -38,7 +45,7 @@ export function ChannelMark({
   /** The `#` is type, so it is sized by font rather than by `className`. */
   hashClassName?: string;
 }) {
-  if (channel?.name === "chapter-audit")
+  if (channel && isSystemChannel(channel))
     return <AuditGlyph className={className} />;
   if (channel && isDirectChannel(channel))
     return <DirectMessageGlyph className={className} />;

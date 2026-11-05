@@ -325,6 +325,9 @@ function ChatAdminBody({
 
   const [nameDraft, setNameDraft] = useState("");
   const [descriptionDraft, setDescriptionDraft] = useState("");
+  // What the draft was seeded with, so a save can tell an officer's edit from
+  // the server row moving underneath an untouched draft.
+  const [descriptionSeed, setDescriptionSeed] = useState("");
   const [categoryDraft, setCategoryDraft] = useState(NO_CATEGORY);
   const [readOnlyDraft, setReadOnlyDraft] = useState(false);
   const [defaultLevelDraft, setDefaultLevelDraft] = useState<string>(
@@ -358,6 +361,7 @@ function ChatAdminBody({
     setSelectedChannelId(channel.id);
     setNameDraft(channel.name);
     setDescriptionDraft(channel.description ?? "");
+    setDescriptionSeed((channel.description ?? "").trim());
     setCategoryDraft(channel.category_id ?? NO_CATEGORY);
     setReadOnlyDraft(channel.is_read_only);
     setDefaultLevelDraft(
@@ -386,10 +390,12 @@ function ChatAdminBody({
     // The description goes out only when the officer changed it. Sending the
     // blank draft on every save turned a never-set description (null) into
     // `''`, which reads the same on screen but is what a deliberate clear
-    // looks like to the default-description backfill (20261105210000).
+    // looks like to the default-description backfill (20261105210000). The
+    // draft is compared with what it was seeded from, not the live row: a
+    // refetch that brings in the backfill or another officer's text while
+    // this draft sits untouched must not send the stale draft over it.
     const description = descriptionDraft.trim();
-    const descriptionChanged =
-      description !== (selectedChannel.description ?? "").trim();
+    const descriptionChanged = description !== descriptionSeed;
     try {
       await updateChannel.mutateAsync({
         id: selectedChannel.id,
@@ -410,6 +416,7 @@ function ChatAdminBody({
             : {}),
         },
       });
+      if (descriptionChanged) setDescriptionSeed(description);
       toast({ description: `#${name} saved.` });
     } catch (error) {
       toast({

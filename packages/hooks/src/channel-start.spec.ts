@@ -16,12 +16,16 @@ describe("channelStartCopy", () => {
     });
   });
 
-  it("names a private or role-gated channel as private", () => {
-    for (const type of ["PRIVATE", "ROLE_GATED"] as const) {
-      expect(channelStartCopy({ type, name: "cabinet" }).startLine).toBe(
-        "This is the start of the private #cabinet channel.",
-      );
-    }
+  it("names a private channel as private", () => {
+    expect(
+      channelStartCopy({ type: "PRIVATE", name: "cabinet" }).startLine,
+    ).toBe("This is the start of the private #cabinet channel.");
+  });
+
+  it("doesn't call a role-gated channel private", () => {
+    expect(
+      channelStartCopy({ type: "ROLE_GATED", name: "alumni" }).startLine,
+    ).toBe("This is the start of #alumni.");
   });
 
   it("shows no description line for a blank description", () => {
