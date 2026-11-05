@@ -4,8 +4,9 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
+import { AccessibilityInfo } from "react-native";
 import { FrappThemeProvider } from "@/lib/theme";
-import { screenText, textHeadings } from "@/test/screen-text";
+import { drawnText, screenText, textHeadings } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
@@ -92,6 +93,8 @@ import CheckInScreen from "@/app/(tabs)/check-in";
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
 const refocus = (expoRouter as unknown as { __refocus: () => void })
   .__refocus;
+/** "The member left this screen": the other half of `__refocus`. */
+const blur = (expoRouter as unknown as { __blur: () => void }).__blur;
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -108,12 +111,15 @@ function render(): ReactTestRenderer {
 const camera = (tree: ReactTestRenderer) =>
   tree.root.findByType("CameraView" as never);
 
+/** The manual sheet's "Check in" button (`SheetPrimaryButton`). */
 const manualSubmit = (tree: ReactTestRenderer) =>
-  tree.root.find(
-    (node) =>
-      node.props.accessibilityLabel === "Submit manual check-in code" &&
-      node.type === ("Pressable" as never),
-  );
+  tree.root
+    .findByType("BottomSheetModal" as never)
+    .find(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        drawnText(node) === "Check in",
+    );
 
 /** Types a plausible code and submits it, settling the async submit. */
 async function submitManualCode(tree: ReactTestRenderer) {
@@ -176,14 +182,15 @@ describe("Check-in on a subscription refusal (#2297)", () => {
   });
 
   it("re-arms the scanner after a check-in when the member comes back", async () => {
-    // The same instance serves the next event, and `success` disarms the
-    // decoder just as a refusal does. Without the reset the camera is live but
-    // deaf at the next event, under "You're checked in" for the previous one.
+    // The same instance serves the next event, and `success` swaps the
+    // scanner for its panel. Without the reset the member would arrive at the
+    // next event to "You're checked in" for the previous one, and no camera.
     checkIn.mockResolvedValue({});
     const tree = render();
     await submitManualCode(tree);
-    expect(screenText(tree)).toContain("You're checked in. +10 pts");
-    expect(camera(tree).props.onBarcodeScanned).toBeUndefined();
+    expect(screenText(tree)).toContain("You're checked in");
+    // The success panel replaces the camera outright.
+    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(0);
 
     act(() => refocus());
 
@@ -242,5 +249,134 @@ describe("Check-in's title (#2485)", () => {
     const headings = textHeadings(tree);
 
     expect(headings.map((node) => node.props.children)).toEqual(["Check in"]);
+  });
+});
+
+/** A control found by what it draws. */
+const pressableDrawing = (tree: ReactTestRenderer, label: string) =>
+  tree.root.find(
+    (node) =>
+      node.type === ("Pressable" as never) && drawnText(node) === label,
+  );
+
+describe("Check-in's success moment", () => {
+  beforeEach(() => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      eventId: "evt-1",
+    });
+    checkIn.mockReset();
+    vi.mocked(vi.mocked(expoRouter.useRouter)().back).mockClear();
+    vi.mocked(AccessibilityInfo.announceForAccessibility).mockClear();
+  });
+
+  it("replaces the scanner with a confirmation: the points, the event, and a way back", async () => {
+    checkIn.mockResolvedValue({});
+    const tree = render();
+    await submitManualCode(tree);
+
+    const text = screenText(tree);
+    expect(text).toContain("You're checked in");
+    expect(text).toContain("+10 pts");
+    expect(text).toContain("Chapter meeting");
+    // Nothing of the scanner is left to act on.
+    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(0);
+    expect(text).not.toContain("Enter code manually");
+    // VoiceOver hears the same sentence the chat event card shows.
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      "You're checked in. +10 pts",
+    );
+
+    act(() => pressableDrawing(tree, "Back to event").props.onPress());
+    expect(vi.mocked(expoRouter.useRouter)().back).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
+describe("Check-in's manual code", () => {
+  beforeEach(() => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      eventId: "evt-1",
+    });
+    checkIn.mockReset();
+  });
+
+  it("is typed in a sheet field, which rises with the keyboard", () => {
+    // A plain `TextInput` at the foot of the screen sat under the keyboard on
+    // Android, where the app-wide provider stops the window resizing (#3354).
+    const tree = render();
+    const input = tree.root.find(
+      (node) => node.props.accessibilityLabel === "Manual check-in code",
+    );
+    expect(input.type).toBe("BottomSheetTextInput");
+    expect(tree.root.findAllByType("TextInput" as never)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("switches the decoder off while the sheet is up, and back on when it closes", () => {
+    const tree = render();
+    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
+
+    act(() => pressableDrawing(tree, "Enter code manually").props.onPress());
+    // A scan behind the scrim would send a second check-in under the member.
+    expect(camera(tree).props.onBarcodeScanned).toBeUndefined();
+
+    act(() =>
+      tree.root.findByType("BottomSheetModal" as never).props.onDismiss(),
+    );
+    expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
+    act(() => tree.unmount());
+  });
+
+  it("shows a failed code in the sheet, where the member is typing", async () => {
+    checkIn.mockRejectedValue(FAILED);
+    const tree = render();
+    await submitManualCode(tree);
+
+    const sheet = tree.root.findByType("BottomSheetModal" as never);
+    expect(drawnText(sheet)).toContain(FAILED.message);
+    act(() => tree.unmount());
+  });
+});
+
+describe("Check-in's camera and torch", () => {
+  beforeEach(() => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      eventId: "evt-1",
+    });
+  });
+
+  const torch = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Flashlight" &&
+        node.type === ("Pressable" as never),
+    );
+
+  it("turns the torch on and off", () => {
+    const tree = render();
+    expect(camera(tree).props.enableTorch).toBe(false);
+
+    act(() => torch(tree).props.onPress());
+    expect(camera(tree).props.enableTorch).toBe(true);
+    expect(torch(tree).props.accessibilityState).toEqual({ checked: true });
+
+    act(() => torch(tree).props.onPress());
+    expect(camera(tree).props.enableTorch).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("lets the camera, and the torch, go when the member leaves", () => {
+    // The tab screen stays mounted after `router.back()`; a camera left
+    // mounted would keep running, torch and all, behind the next screen.
+    const tree = render();
+    act(() => torch(tree).props.onPress());
+    expect(camera(tree).props.enableTorch).toBe(true);
+
+    act(() => blur());
+    expect(tree.root.findAllByType("CameraView" as never)).toHaveLength(0);
+
+    act(() => refocus());
+    expect(camera(tree).props.enableTorch).toBe(false);
+    act(() => tree.unmount());
   });
 });

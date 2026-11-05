@@ -108,6 +108,68 @@ describe("useAttendance", () => {
     expect(result.current.fetchStatus).toBe("idle");
     expect(mockGet).not.toHaveBeenCalled();
   });
+
+  /**
+   * s22's "N checked in" (#20 of the 2026-11 polish pass). Nothing pushes a
+   * roster change, so a host screen that never re-read it showed the count
+   * from when it opened for the whole meeting. The query's own option is read
+   * off the cache rather than by waiting out a real interval.
+   */
+  describe("refetchInterval", () => {
+    const optionsOf = (eventId: string) =>
+      queryClient
+        .getQueryCache()
+        .find({ queryKey: ["attendance", eventId], exact: true })?.options as
+        | { refetchInterval?: unknown }
+        | undefined;
+
+    it("polls at the interval a caller passes", async () => {
+      const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
+      renderHook(
+        () => useAttendance("event-123", { refetchInterval: 10_000 }),
+        { wrapper: createWrapper({ GET: mockGet }) },
+      );
+
+      await waitFor(() => expect(mockGet).toHaveBeenCalled());
+      expect(optionsOf("event-123")?.refetchInterval).toBe(10_000);
+    });
+
+    it("does not poll by default, so web's roster and chat card are unchanged", async () => {
+      const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
+      renderHook(() => useAttendance("event-123"), {
+        wrapper: createWrapper({ GET: mockGet }),
+      });
+
+      await waitFor(() => expect(mockGet).toHaveBeenCalled());
+      expect(optionsOf("event-123")?.refetchInterval).toBe(false);
+    });
+
+    it("re-reads the roster on each tick", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        const mockGet = vi
+          .fn()
+          .mockResolvedValueOnce({ data: [{ status: "PRESENT" }], error: null })
+          .mockResolvedValue({
+            data: [{ status: "PRESENT" }, { status: "LATE" }],
+            error: null,
+          });
+        const { result } = renderHook(
+          () => useAttendance("event-123", { refetchInterval: 10_000 }),
+          { wrapper: createWrapper({ GET: mockGet }) },
+        );
+
+        await waitFor(() => expect(result.current.data).toHaveLength(1));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10_000);
+        });
+        await waitFor(() => expect(result.current.data).toHaveLength(2));
+        expect(mockGet).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });
 
 describe("useCheckIn", () => {

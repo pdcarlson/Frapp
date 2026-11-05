@@ -3,7 +3,22 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
 
-export function useAttendance(eventId: string) {
+export interface AttendanceOptions {
+  /**
+   * Re-read the roster on a timer, in ms, or `false` for no timer (the
+   * default). For a screen that shows a count while members arrive, such as
+   * mobile's host check-in (s22): nothing pushes a roster change to the
+   * client, and only this client's own check-in and status writes invalidate
+   * it, so another member's check-in otherwise never shows until a refetch.
+   * The caller turns it off while the screen is out of sight.
+   */
+  refetchInterval?: number | false;
+}
+
+export function useAttendance(
+  eventId: string,
+  options: AttendanceOptions = {},
+) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["attendance", eventId],
@@ -17,6 +32,7 @@ export function useAttendance(eventId: string) {
     },
     staleTime: 30_000,
     enabled: !!eventId,
+    refetchInterval: options.refetchInterval ?? false,
   });
 }
 
