@@ -130,3 +130,20 @@ export function selectOpsNudge(
     ) ?? null
   );
 }
+
+/**
+ * The officer "Set up your chapter" checklist's dismissal, stored in the same
+ * `members.dismissed_ops_nudges` array as the nudges (per user, per chapter),
+ * so it needs no column of its own. `selectOpsNudge` ignores it: it only reads
+ * keys it has a nudge for.
+ */
+export const SETUP_CHECKLIST_DISMISS_KEY = "setup-checklist";
+
+/** Every key `PATCH /v1/members/me/ops-nudges/dismiss` accepts. */
+export const MEMBER_DISMISSAL_KEYS = [
+  ...OPS_NUDGE_MODULES.map((module) => module.key),
+  SETUP_CHECKLIST_DISMISS_KEY,
+] as const;
+
+export type MemberDismissalKey =
+  OpsNudgeModuleKey | typeof SETUP_CHECKLIST_DISMISS_KEY;

@@ -654,11 +654,17 @@ export type {
 // `selectOpsNudge` carries the spec's priority order, which is behavior rather
 // than presentation, so it is shared too rather than re-derived per surface.
 export {
+  MEMBER_DISMISSAL_KEYS,
   OPS_NUDGE_MODULES,
+  SETUP_CHECKLIST_DISMISS_KEY,
   isOpsNudgeModuleKey,
   selectOpsNudge,
 } from "./ops-nudges";
-export type { OpsNudgeModule, OpsNudgeModuleKey } from "./ops-nudges";
+export type {
+  MemberDismissalKey,
+  OpsNudgeModule,
+  OpsNudgeModuleKey,
+} from "./ops-nudges";
 
 // Client-side RBAC gates, shared by apps/web and apps/mobile. Moved out of
 // `apps/web/lib/auth/can.ts` with #994 so the wildcard rule has one definition.

@@ -302,6 +302,9 @@ vi.mock("@repo/hooks", async () => ({
   // its own behaviour is pinned.
   useAccessibleChapters: () => ({ data: [] }),
   useDismissOpsNudge: () => ({ mutate: vi.fn() }),
+  // Read by the setup checklist at the top of the rail. Inert here for the
+  // same reason as the nudge: `setup-checklist.spec.tsx` pins its behaviour.
+  useChapterSetupChecklist: () => ({ checklist: null, hide: vi.fn() }),
   directChannelDisplayName: () => "",
   // The channel header now carries `ChatSearchPopover`, which reads these.
   // Idle by default: these cases are about the shell, and a search that never

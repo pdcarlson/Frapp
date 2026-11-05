@@ -249,6 +249,20 @@ Not every paid module has a slash command: a module gets one only when it has a 
 
 Enabling paid ops modules is never a gate — it is surfaced as a dismissible inline nudge in chat once a chapter is settled there ([`spec/product/positioning.md`](./positioning.md)). **One nudge per module**, shown in the fixed priority order **Dues > Events > Tasks > Points**, so a chapter is never asked two things at once. Nudge copy renders the chapter's terms through the vocabulary helper rather than hardcoding "rush" or "pledge". The dismissed state is persisted **per user per chapter**: one officer dismissing a nudge neither hides it from the rest of the exec board nor carries across their other chapters. Clicking a nudge opens the Settings → Modules surface on the module it names ([`spec/behavior/settings/README.md`](../behavior/settings/README.md)).
 
+## Setup checklist
+
+Officers get one **Set up your chapter** list instead of an officer half on every empty screen. On web it sits at the top of the chat channel rail, above the channels, where it stays out of the conversation. Each line opens the screen where the thing gets made, and checks itself off once the real thing exists, counted from the same list that screen shows:
+
+| Line | Shown to holders of | Module | Done when |
+| --- | --- | --- | --- |
+| Invite members | `members:invite` | always on | the roster has someone besides the officer |
+| Schedule the first event | `events:create` | `events` | the chapter has an event |
+| Add a study zone | `geofences:manage` | `hours` | the chapter has a study zone |
+| Upload the bylaws | `chapter_docs:upload` | `documents` | the library has a document |
+| Send the first dues | `billing:manage` | `dues` | the chapter has an invoice |
+
+A line shows only to an officer who can do it, and only while its module is on (switching a module on is the ops nudge's job, above). The list draws nothing until every read it needs has loaded, so it never flashes in half-checked, and it goes away for good once every line it shows is done. An officer can hide it sooner; like a nudge, the hide is stored per user per chapter, as `setup-checklist` in `members.dismissed_ops_nudges`. The rule is shared by both clients (`useChapterSetupChecklist` in `@repo/hooks`); mobile chat home does not draw it yet.
+
 ## Module disabling behavior
 
 The control surface is **Settings → Modules**, driven by the `@repo/org-archetypes` `MODULE_CATALOG`. Toggling a paid module writes `chapter_config.enabled_modules[key]` through `usePatchOrgConfig()` (optimistic cache update + audited PATCH).
