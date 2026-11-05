@@ -220,7 +220,7 @@ export class SearchService {
    * dishonest to describe it as one.** It skips three sources only for the
    * *single-channel* form. A chat caller searching chapter-wide sends no
    * `channelId` and therefore still pays the full four-source fan-out, exactly
-   * as the command palette does — there is no source-selection parameter today.
+   * as the web Find dialog does — there is no source-selection parameter today.
    * So the saving is real for the default scope and absent for the wide one;
    * any per-keystroke cost argument has to be read with that split in mind.
    */
@@ -242,7 +242,7 @@ export class SearchService {
     // Every source takes the raw query: all four parse it as a full-text query
     // rather than matching it as a substring.
     const [backwork, events, members, messages] = await Promise.all([
-      wrap('backwork', this.searchBackwork(chapterId, q), []),
+      wrap('backwork', this.searchBackwork(chapterId, userId, q), []),
       wrap('events', this.searchEvents(chapterId, userId, q), []),
       wrap('members', this.searchMembers(chapterId, q), []),
       wrap('messages', this.searchMessages(chapterId, userId, q), []),
@@ -250,11 +250,30 @@ export class SearchService {
     return { backwork, events, members, messages };
   }
 
-  /** Backwork hits in the chapter; how the match works is the repository's. */
+  /**
+   * Backwork hits in the chapter, for a caller who may browse the library;
+   * how the match works is the repository's.
+   *
+   * Search must not become a side-channel around the library's own gate:
+   * every `/v1/backwork` route requires `backwork:upload` or `backwork:admin`
+   * (`spec/behavior/backwork.md` § Taxonomy Admin), while this route needs
+   * only `members:view`. Before 2026-11-05 nothing rendered these hits, so the
+   * gap was unreachable from a client; the web Find dialog lists them, so a
+   * member without either permission (Alumni, or VP or Secretary alone) would
+   * otherwise read file titles, courses and terms they cannot open. Same
+   * any-of rule as `BackworkController`, wildcard included.
+   */
   private async searchBackwork(
     chapterId: string,
+    userId: string,
     query: string,
   ): Promise<BackworkResource[]> {
+    const mayBrowse = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.BACKWORK_UPLOAD, SystemPermissions.BACKWORK_ADMIN],
+    );
+    if (!mayBrowse) return [];
     return this.repo.searchBackwork(chapterId, query, SEARCH_LIMIT);
   }
 
