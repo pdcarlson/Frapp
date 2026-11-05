@@ -35,7 +35,14 @@ vi.mock("@repo/hooks", () => ({
   // needs `chapter-config:view`, so it errors and never yields data.
   useOrgConfig: () => ({ data: undefined, isError: true }),
   useAccessibleChapters: () => ({ data: [], isSuccess: true }),
-  useCurrentChapter: () => ({ data: mockChapter.value, isError: false }),
+  // An uncached read is a running one here, so the nav does not gate it. A
+  // paused or disabled read closes the gate instead (#3160), which the hook's
+  // own spec pins.
+  useCurrentChapter: () => ({
+    data: mockChapter.value,
+    isError: false,
+    fetchStatus: mockChapter.value === undefined ? "fetching" : "idle",
+  }),
   useCurrentUser: () => ({ data: { display_name: "Paul Carlson" } }),
   useSearch: () => ({ data: undefined, isFetching: false }),
   useChannels: () => ({ data: [] }),
