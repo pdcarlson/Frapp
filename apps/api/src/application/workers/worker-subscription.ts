@@ -193,6 +193,7 @@ export class WorkerSubscription {
         this.onStatus(fresh, status, err),
       );
     } catch (err) {
+      // caught-failure-exempt: recordFailure reports it below; an outage reports at error
       logThrowable(
         logger,
         'error',
@@ -291,6 +292,7 @@ export class WorkerSubscription {
     const downForS = Math.round((Date.now() - this.downSince) / 1000);
     const lastFailure = this.lastFailure;
     const failures = String(this.failures);
+    // caught-failure-exempt: reported by reportSwallowed below
     logger.error(
       `${worker}: ${topic} has not been subscribed for ${downForS} s (last status ${lastFailure}, ${failures} failed); ${impact} are not being sent`,
     );

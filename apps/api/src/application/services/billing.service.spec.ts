@@ -7,8 +7,12 @@ import {
 } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 
-jest.mock('@sentry/nestjs', () => ({ captureMessage: jest.fn() }));
+jest.mock('@sentry/nestjs', () => ({
+  captureMessage: jest.fn(),
+  captureException: jest.fn(),
+}));
 const captureMessage = Sentry.captureMessage as jest.Mock;
+const captureException = Sentry.captureException as jest.Mock;
 
 /**
  * Put `ANALYTICS_HMAC_SALT` back exactly as it was.
@@ -232,6 +236,7 @@ describe('BillingService', () => {
     // all-exceptions.filter.spec.ts and covers anything added later.
     jest.clearAllMocks();
     captureMessage.mockReset();
+    captureException.mockReset();
 
     mockBillingProvider = {
       createCustomer: jest.fn(),
@@ -1767,6 +1772,58 @@ describe('BillingService', () => {
         CHECKOUT_CHAPTER_ID,
         expect.any(String),
         expect.objectContaining({ subscription_id: 'sub_new' }),
+      );
+
+      logSpy.mockRestore();
+    });
+
+    it('reports a replaced subscription to Sentry once, by site, and still acks', async () => {
+      const logSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      const event: WebhookEvent = {
+        id: 'evt_conflicting_sub_report',
+        type: 'checkout.session.completed',
+        created: Date.now(),
+        data: {
+          object: {
+            metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
+            subscription: 'sub_new',
+            customer: 'cus_123',
+          },
+        },
+      };
+
+      mockChapterRepo.findById.mockResolvedValue({
+        ...checkoutChapter,
+        subscription_id: 'sub_old',
+      });
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
+        ...checkoutChapter,
+        subscription_status: 'active',
+        subscription_id: 'sub_new',
+      });
+
+      await expect(service.handleWebhookEvent(event)).resolves.toBeUndefined();
+
+      expect(captureMessage).toHaveBeenCalledTimes(1);
+      const [message, context] = captureMessage.mock.calls[0];
+      // The log line names the chapter and subscriptions; the event does not.
+      expect(message).toBe(
+        'caught failure: billing-checkout-replaced-subscription',
+      );
+      expect(context).toMatchObject({
+        level: 'error',
+        fingerprint: [
+          'caught-failure',
+          'billing-checkout-replaced-subscription',
+        ],
+        tags: { caught_at: 'billing-checkout-replaced-subscription' },
+      });
+      expect(captureException).not.toHaveBeenCalled();
+      expect(mockWebhookEventRepo.markProcessed).toHaveBeenCalledWith(
+        'evt_conflicting_sub_report',
       );
 
       logSpy.mockRestore();

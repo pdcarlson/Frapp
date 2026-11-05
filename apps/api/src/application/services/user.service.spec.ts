@@ -1,5 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import * as Sentry from '@sentry/nestjs';
 import {
+  Logger,
   NotFoundException,
   BadRequestException,
   GoneException,
@@ -11,6 +13,12 @@ import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import { ProfilePhotoUrlService } from './profile-photo-url.service';
 import { userFixture } from '#test/helpers/entity-fixtures';
+
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
 
 describe('UserService', () => {
   let service: UserService;
@@ -474,6 +482,35 @@ describe('UserService', () => {
       );
 
       expect(result.avatar_url).toBe(`signed:${NEW_PATH}`);
+    });
+
+    it('reports a failed old-photo delete once, and still removes the avatar', async () => {
+      const captureException = jest.mocked(Sentry.captureException);
+      captureException.mockClear();
+      const logged = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      mockRepo.findById.mockResolvedValue(userWith(`${FOLDER}/old.jpg`));
+      mockStorageProvider.deleteFiles.mockRejectedValue(new Error('down'));
+
+      const result = await service.removeAvatar('user-1');
+
+      expect(result.avatar_url).toBeNull();
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining('Could not delete 1 old profile photo(s)'),
+        expect.anything(),
+      );
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException.mock.calls[0]?.[1]).toEqual(
+        expect.objectContaining({
+          level: 'error',
+          fingerprint: expect.arrayContaining([
+            'caught-failure',
+            'profile-photo-delete-failed',
+          ]),
+        }),
+      );
+      logged.mockRestore();
     });
 
     it('removes the photo and deletes its object', async () => {

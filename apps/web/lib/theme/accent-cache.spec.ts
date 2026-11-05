@@ -187,8 +187,9 @@ describe("the value grammar is the escaping", () => {
 describe("the no-retint boundary holds on the cached path", () => {
   /**
    * `settings-accent.spec.tsx` and `signet.css.spec.ts` guard the live path:
-   * the accent bridge emits seven semantic tokens and none of the locked brand
-   * families. This cache is a second writer of those same tokens, so it needs
+   * the accent bridge emits seven semantic tokens and none of the fixed
+   * families (the locked brand golds, and the neutral scrollbar). This cache
+   * is a second writer of those same tokens, so it needs
    * the same guard — a cache that could carry one extra key would retint the
    * mark, the Ask pill or the scrollbars on every chapter that had one stored.
    */

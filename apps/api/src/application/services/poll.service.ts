@@ -29,7 +29,7 @@ import { ChannelAccessService } from './channel-access.service';
 import { ChatBlockService } from './chat-block.service';
 import { maskBlockedPoll } from './chat-block-mask';
 import { clampListLimit } from '#domain/constants/list-query-limits';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 export interface CreatePollInput {
   channelId: string;
@@ -498,12 +498,12 @@ export class PollService {
         return this.groupTotalsByMessage(totals);
       } catch (error) {
         // Failed aggregate read: return polls with zero vote tallies rather than failing the list.
-        logThrowable(
-          this.logger,
-          'error',
-          `Batch poll vote totals RPC failed for chapter ${chapterId} (${messageIds.length} polls); vote tallies omitted`,
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'poll-list-vote-totals',
+          message: `Batch poll vote totals RPC failed for chapter ${chapterId} (${messageIds.length} polls); vote tallies omitted`,
           error,
-        );
+        });
         return new Map();
       }
     };
@@ -526,12 +526,12 @@ export class PollService {
         }
         return userVotes;
       } catch (error) {
-        logThrowable(
-          this.logger,
-          'error',
-          `Batch poll user-vote RPC failed for chapter ${chapterId} (user ${userId}); userVotes omitted`,
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'poll-list-user-votes',
+          message: `Batch poll user-vote RPC failed for chapter ${chapterId} (user ${userId}); userVotes omitted`,
           error,
-        );
+        });
         return new Map();
       }
     };
