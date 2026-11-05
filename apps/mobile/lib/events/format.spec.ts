@@ -99,10 +99,12 @@ describe("formatEventDateBlock", () => {
     expect(block(at(2026, 3, 10, 18, 0))).toMatchObject({
       label: "Today",
       day: "10",
+      isToday: true,
     });
     expect(block(at(2026, 3, 11, 18, 0))).toMatchObject({
       label: "Tmrw",
       day: "11",
+      isToday: false,
     });
   });
 
@@ -189,8 +191,11 @@ describe("resolveCheckInWindow", () => {
       ).state,
     ).toBe("closed");
     expect(
-      resolveCheckInWindow(iso(start), iso(end), at(2026, 3, 10, 18, 30))
-        .closesAt?.getTime(),
+      resolveCheckInWindow(
+        iso(start),
+        iso(end),
+        at(2026, 3, 10, 18, 30),
+      ).closesAt?.getTime(),
     ).toBe(graceEnd.getTime());
   });
 

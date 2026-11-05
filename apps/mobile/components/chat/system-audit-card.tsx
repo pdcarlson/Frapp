@@ -19,8 +19,8 @@ import {
  * `apps/web/components/chat/renderers/system-audit-card.tsx` on the phone:
  * the action, who took it, and which fields it changed.
  *
- * The one accent-free card on both surfaces (a muted eyebrow), and the one
- * that draws mono: an audit row's action is a key, which `foundations.md` §7
+ * An accent-free card: it has no primary action, and its eyebrow is muted
+ * like every card's. It is also the one card that draws mono: an audit row's action is a key, which `foundations.md` §7
  * reserves the mono role for. The actor is a member's name, so it is not.
  * `actorLabel` names them: the roster's name, "Frapp" for the system, or the
  * member fallback, never a bare id prefix.
@@ -42,7 +42,7 @@ export function SystemAuditCard({
       {...frame}
       header={
         <>
-          <CardEyebrow label="Audit" glyph={AuditGlyph} tone="muted" />
+          <CardEyebrow label="Audit" glyph={AuditGlyph} />
           {/*
             Siblings, not nested: a nested Text inherits the mono
             `fontWeight`, which on a Figtree face is the Android fallback

@@ -719,7 +719,7 @@ function TaskTile({
           */}
           <Button
             size="toolbar"
-            variant="quiet"
+            variant="ghost"
             className="ml-auto w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
             aria-label={`Delete ${task.title}`}
             {...gate.controlProps()}
