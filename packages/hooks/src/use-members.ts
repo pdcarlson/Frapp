@@ -8,7 +8,7 @@ import {
   keepPreviousData,
 } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
-import { roleColorOrNull, type OpsNudgeModuleKey } from "@repo/validation";
+import { roleColorOrNull, type MemberDismissalKey } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { resolveDisplayName, type DisplayNameMap } from "./display-names";
 
@@ -369,7 +369,7 @@ export function useDismissOpsNudge() {
   const queryClient = useQueryClient();
   return useMutation({
     scope: { id: "ops-nudge-dismiss" },
-    mutationFn: async (body: { module_key: OpsNudgeModuleKey }) => {
+    mutationFn: async (body: { module_key: MemberDismissalKey }) => {
       const { data, error } = await client.PATCH(
         "/v1/members/me/ops-nudges/dismiss",
         { body },

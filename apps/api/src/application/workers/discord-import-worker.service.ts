@@ -17,13 +17,18 @@ import {
   STORAGE_PROVIDER,
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
-import { MAX_ARCHIVE_EXPORT_PART_BYTES } from '#domain/constants/discord-archive-limits';
+import {
+  MAX_ARCHIVE_EXPORT_PART_BYTES,
+  MAX_WARNINGS,
+} from '#domain/constants/discord-archive-limits';
 import {
   CHAT_ARCHIVE_BUCKET,
   archiveImportPrefix,
 } from '#domain/constants/storage';
 import {
+  CHAT_CATEGORY_REPOSITORY,
   CHAT_CHANNEL_REPOSITORY,
+  type IChatCategoryRepository,
   type IChatChannelRepository,
 } from '#domain/repositories/chat.repository.interface';
 import {
@@ -90,9 +95,6 @@ export const IMPORT_BATCH_SIZE = 200;
  * costs extra round trips instead of stranding rows — see `runPurgeSlice`.
  */
 export const PURGE_BATCH_SIZE = 500;
-
-/** Most recent warnings kept on the job row. */
-export const MAX_WARNINGS = 50;
 
 /**
  * Statuses in which a slice may keep going.
@@ -190,6 +192,8 @@ export class DiscordImportWorkerService {
     private readonly storage: IStorageProvider,
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
+    @Inject(CHAT_CATEGORY_REPOSITORY)
+    private readonly categoryRepo: IChatCategoryRepository,
     private readonly exportWorker: DiscordExportWorkerService,
     @Inject(DISCORD_CONNECTION_REPOSITORY)
     private readonly connectionRepo: IDiscordConnectionRepository,
@@ -1036,25 +1040,46 @@ export class DiscordImportWorkerService {
       }
     }
 
-    const created = await this.channelRepo.create({
-      chapter_id: chapterId,
-      name: mapping.new_channel_name,
-      description: `Imported from Discord #${mapping.discord_channel_name}`,
-      // The admin's choice, recorded on the mapping. On the bot path a channel
-      // that was private in Discord, held a private thread, or whose privacy
-      // the scan could not read reaches here as PUBLIC only by an explicit
-      // choice (the mapping route refuses the default); an upload has no
-      // privacy to go on. ROLE_GATED always carries at least one permission
-      // (DB CHECK).
-      type: mapping.new_channel_type,
-      required_permissions:
-        mapping.new_channel_type === 'ROLE_GATED'
-          ? mapping.new_channel_required_permissions
-          : null,
-      member_ids: null,
-      category_id: null,
-      is_read_only: mapping.new_channel_is_read_only,
-    });
+    // The group `start` resolved, read back through the chapter: an officer
+    // may delete it while the import runs, and a channel then lands with no
+    // group. A delete between this read and the insert meets the foreign key,
+    // so the insert is tried again with no group rather than failing.
+    const categoryId = mapping.new_channel_category_id
+      ? ((
+          await this.categoryRepo.findById(
+            mapping.new_channel_category_id,
+            chapterId,
+          )
+        )?.id ?? null)
+      : null;
+    const name = mapping.new_channel_name;
+    const create = (category_id: string | null) =>
+      this.channelRepo.create({
+        chapter_id: chapterId,
+        name,
+        description: `Imported from Discord #${mapping.discord_channel_name}`,
+        // The admin's choice, recorded on the mapping. On the bot path a
+        // channel that was private in Discord, held a private thread, or whose
+        // privacy the scan could not read reaches here as PUBLIC only by an
+        // explicit choice (the mapping route refuses the default); an upload
+        // has no privacy to go on. ROLE_GATED always carries at least one
+        // permission (DB CHECK).
+        type: mapping.new_channel_type,
+        required_permissions:
+          mapping.new_channel_type === 'ROLE_GATED'
+            ? mapping.new_channel_required_permissions
+            : null,
+        member_ids: null,
+        category_id,
+        is_read_only: mapping.new_channel_is_read_only,
+      });
+    let created: Awaited<ReturnType<typeof create>>;
+    try {
+      created = await create(categoryId);
+    } catch (error) {
+      if (categoryId === null || !isForeignKeyViolation(error)) throw error;
+      created = await create(null);
+    }
     // Recorded before the mapping row learns its target: remapping a failed
     // import rewrites the mapping rows without targets, and this is how the
     // purge still finds a channel the import made (#2905).
@@ -1141,6 +1166,10 @@ export class DiscordImportWorkerService {
     for (const channelId of channelsDeleted) {
       this.channelCache.invalidate(channelId);
     }
+    // Then the channel groups it created, now that its channels are gone,
+    // under the same rules: a group still holding a channel, or one a live
+    // import still means to fill, stays.
+    await this.importRepo.deleteEmptyCreatedCategories(job.id, job.chapter_id);
 
     const prefix =
       job.storage_prefix ?? archiveImportPrefix(job.chapter_id, job.id);

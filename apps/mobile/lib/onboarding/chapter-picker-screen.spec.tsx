@@ -208,6 +208,24 @@ describe("chapter picker, opened from More", () => {
     expect(moreRow(tree.root)?.props.disabled).toBe(false);
   });
 
+  // foundations.md §6 "Where the accent goes" (2026-11-05): a spinner is
+  // neutral, never house gold or the chapter accent.
+  it("spins the row in flight in a neutral, never gold", async () => {
+    const settle = pendingSwitch();
+    const tree = render();
+    await act(async () => {
+      rowFor(tree.root, "Sigma Phi Epsilon").props.onPress();
+    });
+    const spinners = tree.root.findAll(
+      (node) => (node.type as unknown) === "ActivityIndicator",
+    );
+    expect(spinners.length).toBeGreaterThan(0);
+    for (const spinner of spinners) {
+      expect(spinner.props.color).toBe(signetDarkTokens.color.text.muted);
+    }
+    await settle(false);
+  });
+
   it("doesn't navigate when a switch lands after the picker went away", async () => {
     const settle = pendingSwitch();
     const tree = render();

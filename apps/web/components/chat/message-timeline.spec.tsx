@@ -371,8 +371,8 @@ describe("MessageTimeline loading state (#2145)", () => {
 /**
  * The own-message mis-ID on load (#2243).
  *
- * `viewerId` decides whose message a row is (the "You" author line in the
- * chapter accent, and Edit and Delete), and it arrives on its own clock — `GET /v1/users/me`, which the first
+ * `viewerId` decides whose message a row is (the "You" author line, and Edit
+ * and Delete), and it arrives on its own clock — `GET /v1/users/me`, which the first
  * chunk's Dexie read (#2227) regularly beats. It used to arrive as `null` into a
  * row that treated `null` as "not mine", so on staging the signed-in member's
  * own messages painted as a stranger's: left, incoming chrome, and labelled with
@@ -430,8 +430,7 @@ describe("MessageTimeline identity gate (#2243)", () => {
     });
 
     expect(bodies()).toHaveLength(1);
-    const name = screen.getByText("Alice Chen");
-    expect(name.className).not.toContain("text-accent-text");
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
     expect(screen.queryByText("You")).not.toBeInTheDocument();
   });
 
@@ -493,10 +492,9 @@ describe("MessageTimeline identity gate (#2243)", () => {
     );
 
     expect(bodies()).toHaveLength(1);
-    // "You" in the chapter accent — never the viewer's own uuid read back to
-    // them as a stranger's name, which is what the row resolved to before the
-    // gate existed.
-    expect(screen.getByText("You").className).toContain("text-accent-text");
+    // "You", never the viewer's own uuid read back to them as a stranger's
+    // name, which is what the row resolved to before the gate existed.
+    expect(screen.getByText("You")).toBeInTheDocument();
     expect(screen.queryByText("Member 111111")).not.toBeInTheDocument();
   });
 });

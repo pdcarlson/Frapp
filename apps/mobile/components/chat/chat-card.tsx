@@ -190,41 +190,32 @@ function CardDeliveryChrome({
 /**
  * The kind label over a card's title: "POLL", "EVENT", "TASK".
  *
- * With a glyph it is the chapter accent, glyph and label together, as web's
- * event and task eyebrows are. Without one it is muted, as the poll's is on
- * both surfaces. `tone="muted"` draws a glyph neutral too: the audit card is
- * the one accent-free card on web, a record rather than something to act on.
- * `trailing` sits at the far end of the row (a status chip).
+ * Always neutral, glyph and label together in the muted foreground: a card's
+ * kind label is a label, and the accent is kept for the card's one primary
+ * action (`CardButton`'s `primary`) and the member's on-states
+ * (foundations.md §6, "Where the accent goes", 2026-11-05). The glyph draws
+ * at rest, never lifted like a focused tab. `trailing` sits at the far end
+ * of the row (a status chip).
  */
 export function CardEyebrow({
   label,
   glyph: Glyph,
-  tone = "accent",
   trailing,
 }: {
   label: string;
   glyph?: ComponentType<TabGlyphProps>;
-  tone?: "accent" | "muted";
   trailing?: ReactNode;
 }) {
   const styles = useCardStyles();
-  const brand = useChapterBranding();
   const { tokens } = useFrappTheme();
-  const accent = Glyph !== undefined && tone === "accent";
+  const muted = tokens.color.text.mutedForeground;
   return (
     <View style={styles.eyebrowRow}>
       <View style={styles.eyebrowLead}>
         {Glyph ? (
-          <Glyph
-            focused={accent}
-            accent={brand.accent}
-            muted={tokens.color.text.mutedForeground}
-            size={16}
-          />
+          <Glyph focused={false} accent={muted} muted={muted} size={16} />
         ) : null}
-        <Text style={[styles.eyebrow, accent ? { color: brand.accent } : null]}>
-          {label}
-        </Text>
+        <Text style={styles.eyebrow}>{label}</Text>
       </View>
       {trailing}
     </View>

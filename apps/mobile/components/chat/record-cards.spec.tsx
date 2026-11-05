@@ -173,13 +173,19 @@ describe("PointsCard", () => {
     );
   });
 
-  it("draws its glyph in the chapter accent", () => {
+  // foundations.md §6 "Where the accent goes" (2026-11-05): a card's kind
+  // label is a label, so its eyebrow is neutral, glyph and label alike.
+  it("draws its eyebrow glyph and label muted, never in the chapter accent", () => {
     const tree = mount(
       <PointsCard {...frame("points", GRANT)} payload={GRANT} />,
     );
     const glyph = tree.root.findByType(PointsGlyph);
-    expect(glyph.props.focused).toBe(true);
-    expect(glyph.props.accent).toBe("#C49A3A");
+    expect(glyph.props.focused).toBe(false);
+    expect(glyph.props.muted).toBe(tokens.color.text.mutedForeground);
+    expect(glyph.props.accent).not.toBe("#C49A3A");
+    expect(flatStyle(textNode(tree, "Points").props.style).color).toBe(
+      tokens.color.text.mutedForeground,
+    );
   });
 
   it("draws no empty quotes for a blank reason", () => {

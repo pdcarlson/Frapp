@@ -22,6 +22,7 @@ vi.mock("@/lib/chapter-branding", () => ({
     textMark: null,
   }),
 }));
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { ChatNotificationLevel } from "@repo/hooks";
 import {
@@ -208,6 +209,19 @@ describe("NotificationLevelControl", () => {
     expect(trigger.props.disabled).toBe(false);
   });
 
+  // components.md § Icon-only actions: the muted speaker draws its own ×, so
+  // no "Muted" word sits beside it. The label above still says it.
+  it("draws the muted glyph alone, with no word beside it", () => {
+    const tree = renderControl({ level: "off" });
+    const trigger = byLabel(
+      tree,
+      "Notifications: muted. Change notification level",
+    );
+    expect(
+      trigger.findAll((node) => (node.type as unknown) === "Text"),
+    ).toHaveLength(0);
+  });
+
   it("names the current level when not muted", () => {
     const tree = renderControl({ level: "all" });
     expect(
@@ -257,6 +271,53 @@ describe("NotificationLevelControl", () => {
 
     // A no-op round trip would still bump `updated_at` for nothing.
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  // foundations.md §6 "Where the accent goes" (2026-11-05): the current level
+  // is a selected radio, so its checkmark is the accent, and nothing else is.
+  it("marks the current level with an accent check and keeps every row neutral", () => {
+    const tree = renderControl({ level: "off", onChange: vi.fn() });
+    press(byLabel(tree, "Notifications: muted. Change notification level"));
+    const muteRow = byLabel(
+      tree,
+      "Mute. No notifications — but @mentions still reach you.",
+    );
+    const flat = (style: unknown) =>
+      Object.assign({}, ...[style].flat(Infinity)) as Record<string, unknown>;
+
+    expect(flat(muteRow.props.style({ pressed: false })).backgroundColor).toBe(
+      undefined,
+    );
+    const label = muteRow.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "Mute",
+    );
+    expect(flat(label.props.style).color).toBe(
+      signetDarkTokens.color.text.foreground,
+    );
+    const description = muteRow.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        node.props.children ===
+          "No notifications — but @mentions still reach you.",
+    );
+    expect(flat(description.props.style).color).toBe(
+      signetDarkTokens.color.text.mutedForeground,
+    );
+    // The check's stroke is the accent text, on the selected row alone.
+    const strokes = (row: typeof muteRow) =>
+      row
+        .findAll((node) => (node.type as unknown) === "Path")
+        .map((node) => node.props.stroke);
+    expect(strokes(muteRow)).toEqual(["#CB9FFF"]);
+    const allRow = byLabel(
+      tree,
+      `${NOTIFICATION_LEVEL_OPTIONS[0]!.label}. ${NOTIFICATION_LEVEL_OPTIONS[0]!.description}`,
+    );
+    expect(strokes(allRow)).toEqual([]);
+    expect(JSON.stringify(menu(tree).map((node) => node.props.style))).not.toContain(
+      "#251A33",
+    );
   });
 
   it("is disabled when the caller says so", () => {

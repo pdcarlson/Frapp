@@ -236,7 +236,7 @@ export default function ChapterPicker() {
         <View style={styles.body}>
           {isPending ? (
             <View style={styles.stateBlock}>
-              <ActivityIndicator color={tokens.color.gold.house} />
+              <ActivityIndicator color={tokens.color.text.muted} />
               <Text style={styles.helperText}>Loading your chapters…</Text>
             </View>
           ) : isError ? (
@@ -305,7 +305,7 @@ export default function ChapterPicker() {
                     busy={isPendingRow}
                     trailing={
                       isPendingRow ? (
-                        <ActivityIndicator color={tokens.color.gold.house} />
+                        <ActivityIndicator color={tokens.color.text.muted} />
                       ) : isCurrent ? (
                         <Text style={styles.currentText}>Current</Text>
                       ) : undefined

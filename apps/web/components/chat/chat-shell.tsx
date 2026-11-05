@@ -41,8 +41,9 @@ import {
   useSidebarPreferences,
 } from "@repo/hooks";
 import { can, isAnnouncementChannel } from "@repo/validation";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
@@ -90,6 +91,7 @@ import {
 } from "@repo/chat-core/message-actions";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
+import { SetupChecklistSection } from "./setup-checklist";
 import { ChannelMenu } from "./channel-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
@@ -1532,6 +1534,11 @@ export function ChatShell({
             `hasHydrated` for, reached from the other side.
           */}
           {channelsPaneState === "loading" ? <ChannelListSkeleton /> : null}
+          {/*
+            The officer setup checklist, above the channels where Discord puts
+            its server guide. Renders `null` for anyone with nothing to set up.
+          */}
+          {channelsPaneState === "ready" ? <SetupChecklistSection /> : null}
           {channelsPaneState === "ready" ? (
             <ChannelList
               viewerId={userId}
@@ -1771,10 +1778,8 @@ export function ChatShell({
                       ? UNREACHABLE_COPY[unreachableTarget.reason]
                       : "Finding that message..."}
                 </p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="h-8"
+                <IconButton
+                  label="Dismiss"
                   onClick={() => {
                     // Abandons the target, not just the notice. Clearing only
                     // the message would leave it pending, so the effect would
@@ -1786,8 +1791,8 @@ export function ChatShell({
                     setPendingJumpChannelId(null);
                   }}
                 >
-                  Dismiss
-                </Button>
+                  <X />
+                </IconButton>
               </div>
             ) : null}
           </div>

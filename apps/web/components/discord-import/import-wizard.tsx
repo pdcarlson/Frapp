@@ -50,6 +50,12 @@ import {
   type RoleChoice,
 } from "./role-matching";
 import { ReviewStep } from "./review-step";
+import {
+  NO_SIDEBAR_GROUPS,
+  keptSidebarGroups,
+  sidebarGroupFor,
+  type SidebarGroups,
+} from "./sidebar-groups";
 
 /**
  * The Discord import wizard.
@@ -136,6 +142,8 @@ export function ImportWizard({
   const [importId, setImportId] = useState<string | null>(null);
   const [staged, setStaged] = useState<StagedExport | null>(null);
   const [scanWarnings, setScanWarnings] = useState<string[]>([]);
+  const [sidebarGroups, setSidebarGroups] =
+    useState<SidebarGroups>(NO_SIDEBAR_GROUPS);
   const [channelChoices, setChannelChoices] = useState<
     Record<string, ChannelChoice>
   >({});
@@ -458,6 +466,7 @@ export function ImportWizard({
         .filter(isImportTarget)
         .map((channel) => channel.name),
       readersOf,
+      sidebarGroups,
     );
     if (existingChannels.data === undefined) {
       issues.unshift(
@@ -482,6 +491,7 @@ export function ImportWizard({
     existingChannels.isError,
     refetchChannels,
     readersOf,
+    sidebarGroups,
   ]);
   const channelsReady = !!staged && channelIssues.length === 0;
 
@@ -530,6 +540,9 @@ export function ImportWizard({
           choice.action === "create_new" && choice.visibility === "restricted"
             ? (choice.requiredPermissions ?? [])
             : undefined,
+        // Only a new channel goes into a group; a merge stays where it is.
+        new_channel_group:
+          sidebarGroupFor(channel, choice, sidebarGroups) ?? undefined,
         message_count: 0,
       };
     });
@@ -698,6 +711,8 @@ export function ImportWizard({
               readersOf={readersOf}
               onRescan={source === "bot" ? () => void rescan() : undefined}
               rescanning={discoverChannels.isPending}
+              sidebarGroups={sidebarGroups}
+              onSidebarGroups={setSidebarGroups}
             />
           </>
         ) : null}
@@ -734,6 +749,11 @@ export function ImportWizard({
             messagesSince={messagesSince}
             onMessagesSinceChange={setMessagesSince}
             messagesSinceProblem={cutoff.problem}
+            sidebarGroups={keptSidebarGroups(
+              staged.channels,
+              channelChoices,
+              sidebarGroups,
+            )}
           />
         ) : null}
       </div>

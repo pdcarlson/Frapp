@@ -134,36 +134,36 @@ export function SettingsFieldsTab({ canManage }: Props) {
   } else {
     body = (
       <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Custom member fields</CardTitle>
-          <CardDescription>
-            Sensitive fields are shown only to authorized viewers. Saving
-            writes an entry to the chapter audit log.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {fields.length === 0 ? (
-            <EmptyState
-              title="No custom fields yet"
-              description="Add one below to start collecting it from members."
-            />
-          ) : (
-            <ul className="space-y-3">
-              {fields.map((field) => (
-                <FieldRow
-                  key={field.id}
-                  field={field}
-                  canManage={canManage}
-                  confirm={confirm}
-                />
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Custom member fields</CardTitle>
+            <CardDescription>
+              Sensitive fields are shown only to authorized viewers. Saving
+              writes an entry to the chapter audit log.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {fields.length === 0 ? (
+              <EmptyState
+                title="No custom fields yet"
+                description="Add one below to start collecting it from members."
+              />
+            ) : (
+              <ul className="space-y-3">
+                {fields.map((field) => (
+                  <FieldRow
+                    key={field.id}
+                    field={field}
+                    canManage={canManage}
+                    confirm={confirm}
+                  />
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
 
-      <AddFieldForm canManage={canManage} />
+        <AddFieldForm canManage={canManage} />
       </>
     );
   }
@@ -247,7 +247,7 @@ function FieldRow({
         </div>
         <Button
           type="button"
-          variant="quiet"
+          variant="ghost"
           size="sm"
           disabled={!canManage || busy}
           onClick={() => void handleDelete()}
@@ -501,12 +501,12 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
                       /*
                         `--accent` was an alias of `--popover` (deleted, #3036),
                         so `hover:bg-accent` on a chip inside a card composited
-                        to 1.085:1 at the time, and `shared/table-contrast.spec.ts`
-                        asserts that pair stays indistinguishable. The accent
-                        tint separates by hue instead of by a ladder step that
-                        is not there.
+                        to 1.085:1 at the time. The chip is `bg-input`, a white
+                        wash, so the X hovers to a second `bg-input` laid over
+                        it: a step lighter than the chip, which `--card-hover`
+                        (an opaque fill darker than the chip) could not be.
                       */
-                      className={`rounded-sm hover:bg-accent-subtle ${FOCUS_RING_OFFSET}`}
+                      className={`rounded-sm hover:bg-input ${FOCUS_RING_OFFSET}`}
                     >
                       <X className="h-3 w-3" />
                     </button>

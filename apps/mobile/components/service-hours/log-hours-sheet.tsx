@@ -14,6 +14,8 @@ import { SignetTokens } from "@repo/theme/signet";
 import { SERVICE_DESCRIPTION_MAX_LENGTH } from "@repo/validation";
 import { FilterChips } from "@/components/filter-chips";
 import { CameraGlyph } from "@/components/service-hours/camera-glyph";
+import { CloseGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
 import {
   SheetGrabber,
   SheetHeader,
@@ -68,7 +70,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *   (`serviceDatePresets`): there is no date-picker dependency, the same call
  *   s19's due presets make. The entry used to be filed under today, always.
  * - "Add photo proof" is drawn, photos only (`lib/more/service-proof.ts`):
- *   the dashed row, then the photo's thumbnail with Remove once one is
+ *   the dashed row, then the photo's thumbnail with a remove × once one is
  *   picked. Its trailing word says "optional" until the API says otherwise;
  *   see "Proof the chapter requires" below.
  * - The caption under Submit ("Goes to the service chair · you'll get a
@@ -494,7 +496,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
             locked={pending}
             onChoose={() => void choosePhoto()}
             onRemove={removePhoto}
-            accent={accent}
+            glyphColor={tokens.color.text.mutedForeground}
             styles={styles}
           />
           {proofError ? (
@@ -545,7 +547,11 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
 
 /**
  * The board's "Add photo proof" row, and the attached photo in its place: a
- * thumbnail, its size (or "Uploading…" while the PUT runs) and Remove.
+ * thumbnail, its size (or "Uploading…" while the PUT runs) and a remove ×.
+ *
+ * The empty row's camera and label are neutral: a field's icon and label never
+ * take the chapter accent (foundations.md §6, "Where the accent goes",
+ * 2026-11-05). The dashed border already says it can be tapped.
  */
 function ProofRow({
   proof,
@@ -555,7 +561,7 @@ function ProofRow({
   locked,
   onChoose,
   onRemove,
-  accent,
+  glyphColor,
   styles,
 }: {
   proof: PickedImage | null;
@@ -566,9 +572,11 @@ function ProofRow({
   locked: boolean;
   onChoose: () => void;
   onRemove: () => void;
-  accent: string;
+  /** The camera's hue: `text.mutedForeground`, as a field icon is. */
+  glyphColor: string;
   styles: ReturnType<typeof createStyles>;
 }) {
+  const { tokens } = useFrappTheme();
   if (!proof) {
     const need = required ? "required" : "optional";
     return (
@@ -585,7 +593,7 @@ function ProofRow({
           pressed ? styles.proofRowPressed : null,
         ]}
       >
-        <CameraGlyph color={accent} />
+        <CameraGlyph color={glyphColor} />
         <Text style={styles.proofAdd}>Add photo proof</Text>
         <Text style={styles.proofNeed}>{picking ? "Opening…" : need}</Text>
       </Pressable>
@@ -606,20 +614,15 @@ function ProofRow({
           {uploading ? "Uploading…" : formatBytes(proof.byteSize)}
         </Text>
       </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Remove photo proof, ${proof.filename}`}
-        accessibilityState={{ disabled: locked }}
+      <IconButton
+        label={`Remove photo proof, ${proof.filename}`}
         disabled={locked}
         onPress={onRemove}
-        hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
       >
-        <Text
-          style={[styles.proofRemove, locked ? styles.proofRemoveLocked : null]}
-        >
-          Remove
-        </Text>
-      </Pressable>
+        <CloseGlyph
+          color={locked ? tokens.color.text.disabled : tokens.color.text.muted}
+        />
+      </IconButton>
     </View>
   );
 }
@@ -688,9 +691,12 @@ function createStyles(tokens: SignetTokens, accent: string) {
     stepButtonPressed: {
       opacity: 0.85,
     },
+    // The stepper's − and + are icon-only controls, so neutral, never the
+    // chapter accent (foundations.md §6). Foreground rather than the muted
+    // step, so an enabled step stays clearly apart from a disabled one.
     stepGlyph: {
       ...typeRole(tokens.typography.role.title),
-      color: accent,
+      color: tokens.color.text.foreground,
     },
     stepGlyphDisabled: {
       color: tokens.color.text.muted,
@@ -742,7 +748,7 @@ function createStyles(tokens: SignetTokens, accent: string) {
     },
     proofAdd: {
       ...typeRole(tokens.typography.role.label),
-      color: accent,
+      color: tokens.color.text.foreground,
       flex: 1,
     },
     proofNeed: {
@@ -765,13 +771,6 @@ function createStyles(tokens: SignetTokens, accent: string) {
     },
     proofMeta: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-    },
-    proofRemove: {
-      ...typeRole(tokens.typography.role.label),
-      color: accent,
-    },
-    proofRemoveLocked: {
       color: tokens.color.text.muted,
     },
     error: {
