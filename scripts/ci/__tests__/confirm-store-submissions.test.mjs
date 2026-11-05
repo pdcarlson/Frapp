@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   GRAPHQL_URL,
+  MAX_FAILED_READS,
   confirmStoreSubmissions,
   nextStep,
   pollSubmissions,
@@ -12,6 +13,7 @@ import {
 
 const IOS = "3f1c2b4a-1111-4a2b-9c3d-0123456789ab";
 const ANDROID = "9e8d7c6b-2222-4b3c-8d4e-abcdefabcdef";
+const BUILD = "0b1c2d3e-3333-4c4d-8e5f-0123456789ab";
 
 /** A fetch stand-in that answers each submission id from its own script of replies, in order. */
 function fakeEas(replies) {
@@ -43,17 +45,32 @@ function clock() {
 describe("readSubmission", () => {
   it("asks EAS's GraphQL API for the one submission, with the token as a bearer", async () => {
     const eas = fakeEas({ [IOS]: [{ status: "IN_QUEUE" }] });
-    assert.deepEqual(await readSubmission({ id: IOS, token: "t0k", fetchImpl: eas.fetchImpl }), { status: "IN_QUEUE", error: null });
+    assert.deepEqual(await readSubmission({ id: IOS, token: "t0k", fetchImpl: eas.fetchImpl, sleep: async () => {} }), { status: "IN_QUEUE", error: null });
     assert.deepEqual(eas.calls, [{ url: GRAPHQL_URL, id: IOS, auth: "Bearer t0k" }]);
   });
 
   it("turns a network failure, an HTTP error or a GraphQL error into a read error", async () => {
-    for (const reply of [new Error("socket hang up"), 502, { errors: [{ message: "Unauthorized" }] }]) {
+    for (const reply of [new Error("socket hang up"), 502, 401, { errors: [{ message: "Unauthorized" }] }]) {
       const eas = fakeEas({ [IOS]: [reply] });
-      const read = await readSubmission({ id: IOS, token: "t", fetchImpl: eas.fetchImpl });
+      const read = await readSubmission({ id: IOS, token: "t", fetchImpl: eas.fetchImpl, sleep: async () => {} });
       assert.ok(read.readError, JSON.stringify(read));
       assert.equal(read.status, undefined);
     }
+  });
+
+  it("asks again within the read after a dropped connection or a 5xx, but not after a 4xx", async () => {
+    const blip = fakeEas({ [IOS]: [503, { status: "IN_PROGRESS" }] });
+    assert.deepEqual(await readSubmission({ id: IOS, token: "t", fetchImpl: blip.fetchImpl, sleep: async () => {} }), { status: "IN_PROGRESS", error: null });
+    assert.equal(blip.calls.length, 2);
+    const refused = fakeEas({ [IOS]: [403] });
+    await readSubmission({ id: IOS, token: "t", fetchImpl: refused.fetchImpl, sleep: async () => {} });
+    assert.equal(refused.calls.length, 1);
+  });
+
+  it("keeps an error message from EAS on one line", async () => {
+    const eas = fakeEas({ [IOS]: [{ errors: [{ message: "bad\n::error::forged" }] }] });
+    const read = await readSubmission({ id: IOS, token: "t", fetchImpl: eas.fetchImpl, sleep: async () => {} });
+    assert.equal(read.readError, "bad ::error::forged");
   });
 });
 
@@ -97,6 +114,24 @@ describe("pollSubmissions", () => {
     assert.ok(c.elapsed() <= 10 * 60_000);
   });
 
+  it("stops asking about a submission it couldn't read for MAX_FAILED_READS rounds in a row", async () => {
+    const eas = fakeEas({ [IOS]: [{ errors: [{ message: "Submission not found" }] }] });
+    const c = clock();
+    const rows = await pollSubmissions({
+      submissions: [{ store: "ios", id: IOS }],
+      token: "t",
+      fetchImpl: eas.fetchImpl,
+      deadlineMs: 280 * 60_000,
+      pollMs: 60_000,
+      now: c.now,
+      sleep: c.sleep,
+      log: () => {},
+    });
+    assert.equal(eas.calls.length, MAX_FAILED_READS);
+    assert.equal(rows[0].failedReads, MAX_FAILED_READS);
+    assert.match(nextStep(rows[0]), /^iOS's submission couldn't be read \(Submission not found\), so this job doesn't know how it ended\./);
+  });
+
   it("keeps reading after a failed read, and doesn't read an ended submission again", async () => {
     const eas = fakeEas({ [IOS]: [503, { status: "FINISHED" }], [ANDROID]: [{ status: "ERRORED", error: { errorCode: "X", message: "bad key" } }] });
     const c = clock();
@@ -119,8 +154,10 @@ describe("pollSubmissions", () => {
 describe("nextStep and summary", () => {
   it("says nothing for a finished upload, and what to do with the record PR otherwise", () => {
     assert.equal(nextStep({ store: "ios", id: IOS, status: "FINISHED" }), null);
-    const errored = nextStep({ store: "android", id: ANDROID, status: "ERRORED", error: { errorCode: "SUBMISSION_SERVICE_ANDROID_UNKNOWN", message: "Google rejected the key" } });
-    assert.match(errored, /^Android's upload to the Play internal track failed: Google rejected the key \(`SUBMISSION_SERVICE_ANDROID_UNKNOWN`\)\. The record PR lists this build, so drop its entry before merging/);
+    const errored = nextStep({ store: "android", id: ANDROID, build: BUILD, status: "ERRORED", error: { errorCode: "SUBMISSION_SERVICE_ANDROID_UNKNOWN", message: "Google rejected the key" } });
+    assert.match(errored, /^Android's upload to the Play internal track failed: Google rejected the key \(`SUBMISSION_SERVICE_ANDROID_UNKNOWN`\)\. The record PR lists this build, so drop its entry from the record PR before merging, or in a PR of its own once that has merged/);
+    assert.ok(errored.includes(`\`npm run eas -- submit --platform android --profile production --id ${BUILD}\``), errored);
+    assert.match(nextStep({ store: "ios", id: IOS, build: "", status: "ERRORED", error: null }), /upload it again by hand/);
     assert.match(nextStep({ store: "ios", id: IOS, status: "CANCELED" }), /^iOS's upload to TestFlight was cancelled\./);
     const queued = nextStep({ store: "ios", id: IOS, status: "IN_QUEUE", readError: null });
     assert.match(queued, /still `IN_QUEUE` when this job stopped waiting\. It may still finish: check https:\/\/expo\.dev\/accounts\/pdcarlson\/projects\/frapp\/submissions\//);
@@ -149,7 +186,7 @@ describe("confirmStoreSubmissions", () => {
   };
 
   it("passes when every given submission finished, and checks only the ones it was given", async () => {
-    const { code, written, calls } = await run({ IOS_SUBMISSION: IOS, ANDROID_SUBMISSION: "" }, { [IOS]: [{ status: "FINISHED" }] });
+    const { code, written, calls } = await run({ IOS_UPLOAD: "success", IOS_SUBMISSION: IOS, ANDROID_UPLOAD: "skipped", ANDROID_SUBMISSION: "" }, { [IOS]: [{ status: "FINISHED" }] });
     assert.equal(code, 0);
     assert.match(written, new RegExp(`\\| iOS \\| \`${IOS}\` \\| \`FINISHED\` \\|`));
     assert.deepEqual([...new Set(calls.map((c) => c.id))], [IOS]);
@@ -162,6 +199,21 @@ describe("confirmStoreSubmissions", () => {
     const queued = await run({ ANDROID_SUBMISSION: ANDROID }, { [ANDROID]: [{ status: "IN_QUEUE" }] });
     assert.equal(queued.code, 1);
     assert.match(queued.written, /still `IN_QUEUE`/);
+  });
+
+  it("fails, and says where to look, when an upload succeeded but no submission id came back", async () => {
+    const { code, written, calls } = await run(
+      { IOS_UPLOAD: "success", IOS_SUBMISSION: IOS, ANDROID_UPLOAD: "success", ANDROID_SUBMISSION: "" },
+      { [IOS]: [{ status: "FINISHED" }] },
+    );
+    assert.equal(code, 1);
+    assert.deepEqual([...new Set(calls.map((c) => c.id))], [IOS]);
+    assert.match(written, /\| Android \| none \| `no-id` \|/);
+    assert.match(written, /EAS accepted Android's upload, but `eas submit` printed no submission link, so nothing checked it\./);
+    const alone = await run({ EXPO_TOKEN: "", IOS_UPLOAD: "success" }, {});
+    assert.equal(alone.code, 1);
+    assert.equal(alone.calls.length, 0);
+    assert.match(alone.written, /EAS accepted iOS's upload, but/);
   });
 
   it("fails without reading anything when there's no token, no id, or an id that isn't one", async () => {

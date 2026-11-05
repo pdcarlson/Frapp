@@ -198,11 +198,15 @@ describe("the PR", () => {
   // of an hour. The build is recorded then, and the body points at the job
   // that says whether the upload finished.
   it("records a build whose submission is accepted but still queued, and says where to see it finish", () => {
-    const { entries, rows } = plan({ builds: [iosBuild()], platform: "ios", uploads: { ios: "success" } });
-    assert.equal(entries.length, 1);
+    // Both platforms, as the queued 2026-11-05 run asked for: each accepted
+    // submission is listed, with nothing in the body calling it uploaded.
+    const { entries, rows } = plan({ builds: [iosBuild(), androidBuild()], platform: "all", uploads: { ios: "success", android: "success" } });
+    assert.deepEqual(entries.map((e) => e.platform), ["ios", "android"]);
     const body = prBody({ entries, rows, sha: SHA, runUrl: "https://x/runs/9", repo: "pdcarlson/Frapp" });
     assert.match(body, /submitted these builds to the stores without releasing them/);
-    assert.match(body, /EAS accepted each submission, and Expo may still be uploading it\. \[The run\]\(https:\/\/x\/runs\/9\)'s `confirm` job says whether each upload finished\. If one failed, drop its entry before merging\./);
+    assert.match(body, /EAS accepted each submission, and Expo may still be uploading it\. \[The run\]\(https:\/\/x\/runs\/9\)'s `confirm` job says whether each upload finished\. If one failed, drop its entry before merging, or in a PR of its own once this has merged\./);
+    assert.match(body, /\| Submitted to \|/);
+    assert.doesNotMatch(body, /[Uu]ploaded (build|to)/);
   });
 });
 

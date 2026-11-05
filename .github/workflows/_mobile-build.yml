@@ -60,6 +60,8 @@ name: Mobile build
 # names the main-only environment too (`workflow-secrets-scope.test.mjs` B).
 #   * `build` holds `EXPO_TOKEN` and runs the deployed tree.
 #   * `record` holds the base-sync App token and runs the trusted ref.
+#   * `confirm` holds `EXPO_TOKEN` too, but runs the trusted ref with nothing
+#     installed: it only reads each submission's status from EAS's API.
 #   * `snapshot` publishes the migration snapshot as the store build starts.
 #     This run stays in flight for as long as EAS takes, and
 #     `migration-snapshot.yml` otherwise publishes only when a Deploy
@@ -84,11 +86,13 @@ name: Mobile build
 #
 # ── Failure ─────────────────────────────────────────────────────────────────
 # Production is live and tagged before this starts, so nothing here rolls
-# anything back or turns the deploy's summary red. A failed build or upload
-# reds this workflow's own job, which reds the run with the caller's job name
-# saying the ship stands, and the `record` job's summary says what was built,
-# what was uploaded and how to finish each case by hand (ADR-24 I4: never a
-# silent skip). A re-run rebuilds every platform the run asked for, so re-run
+# anything back or turns the deploy's summary red. A failed build, or a
+# submission EAS refused, reds the `build` job, which reds the run with the
+# caller's job name saying the ship stands, and the `record` job's summary
+# says what was built, what was submitted and how to finish each case by hand.
+# A submission EAS accepted and then failed to upload reds `confirm`, whose
+# summary says what to do with its record entry (ADR-24 I4: never a silent
+# skip). A re-run rebuilds every platform the run asked for, so re-run
 # only when nothing uploaded and nothing is still building
 # (`docs/ops/deployment/mobile.md` § 6.6).
 
@@ -568,8 +572,9 @@ jobs:
           BUILD_ID: ${{ steps.wait.outputs.ios_id }}
         # `--no-wait`: the step ends once EAS accepts the submission, and the
         # `confirm` job waits out Expo's queue (this file's header, #3483).
-        # The id comes from the details link eas prints; a missing one only
-        # leaves `confirm` nothing to check, which it reports.
+        # The id comes from the details link eas prints. Without one the step
+        # still passes, since EAS took the build, and `confirm` fails on an
+        # upload that succeeded with no id, so nothing goes unchecked.
         run: |
           set -euo pipefail
           eas submit --platform ios --profile production --id "$BUILD_ID" --non-interactive --no-wait --no-auto-testflight-setup | tee "$RUNNER_TEMP/submit.log"
@@ -663,9 +668,10 @@ jobs:
     name: Confirm the store uploads finished (waits out Expo's queue)
     needs: build
     # Beside `record`, after a failed build too: one platform may have been
-    # submitted. Only when a submission id came back, so a run that submitted
-    # nothing has nothing to wait for.
-    if: ${{ !cancelled() && (needs.build.outputs.ios-submission != '' || needs.build.outputs.android-submission != '') }}
+    # submitted. Only when an upload step succeeded, so a run that submitted
+    # nothing has nothing to wait for; the script fails an upload that
+    # succeeded without a submission id.
+    if: ${{ !cancelled() && (needs.build.outputs.ios-upload == 'success' || needs.build.outputs.android-upload == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     environment:
@@ -694,8 +700,12 @@ jobs:
         timeout-minutes: 290
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          IOS_UPLOAD: ${{ needs.build.outputs.ios-upload }}
           IOS_SUBMISSION: ${{ needs.build.outputs.ios-submission }}
+          IOS_BUILD: ${{ needs.build.outputs.ios-started }}
+          ANDROID_UPLOAD: ${{ needs.build.outputs.android-upload }}
           ANDROID_SUBMISSION: ${{ needs.build.outputs.android-submission }}
+          ANDROID_BUILD: ${{ needs.build.outputs.android-started }}
           DEADLINE_MINUTES: "280"
           POLL_SECONDS: "60"
         run: node scripts/ci/confirm-store-submissions.mjs

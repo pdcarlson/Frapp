@@ -348,9 +348,14 @@ const UPLOAD_STEPS = {
 };
 const RUN_URL_EXPR = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}";
 
-/** Runs a step's script under the runner's own `bash -eo pipefail`. */
-function runStep(step, { cwd, env }) {
-  return spawnSync("bash", ["-eo", "pipefail", "-c", scriptOf(step)], {
+/**
+ * Runs a step's script under `bash -eo pipefail`, what the runner uses for
+ * `shell: bash`. `flags: ["-e"]` gives the runner's default when a step names
+ * no shell, as this file's upload steps don't, so a test of a step's own
+ * `set -o pipefail` can see it go missing.
+ */
+function runStep(step, { cwd, env, flags = ["-eo", "pipefail"] }) {
+  return spawnSync("bash", [...flags, "-c", scriptOf(step)], {
     cwd,
     env: { ...process.env, ...env },
     encoding: "utf8",
@@ -942,9 +947,12 @@ describe("the upload steps, against a stand-in eas", () => {
   const SUBMISSION = "3f1c2b4a-1111-4a2b-9c3d-0123456789ab";
   function run({ printed, exit = 0, store = "ios" }) {
     const { dir, output, path } = withStub("eas", `echo "$*" > "$RUNNER_TEMP/argv"\n${printed === undefined ? "" : `printf '%s\\n' '${printed}'`}\nexit ${exit}`);
+    // The runner's default `bash -e`: the steps name no shell, so only their
+    // own `set -o pipefail` lets a failed `eas submit | tee` fail the step.
     const result = runStep(stepNamed(CALLED, "build", UPLOAD_STEPS[store]), {
       cwd: dir,
       env: { PATH: path, RUNNER_TEMP: dir, GITHUB_OUTPUT: output, BUILD_ID: "b1" },
+      flags: ["-e"],
     });
     const outputs = readOutputs(output);
     const argv = readFileSync(join(dir, "argv"), "utf8");
@@ -971,19 +979,21 @@ describe("the upload steps, against a stand-in eas", () => {
   });
 
   it("fails when eas refuses the submission, so record never lists it", () => {
-    const refused = run({ printed: "Error: build not found", exit: 1 });
-    assert.equal(refused.status, 1);
-    assert.equal(refused.outputs.submission, undefined);
+    for (const store of ["ios", "android"]) {
+      const refused = run({ store, printed: "Error: build not found", exit: 1 });
+      assert.equal(refused.status, 1);
+      assert.equal(refused.outputs.submission, undefined);
+    }
   });
 });
 
 describe("the confirm job", () => {
-  it("runs beside record once a submission id exists, from the trusted ref, with nothing installed", () => {
+  it("runs beside record once an upload succeeded, from the trusted ref, with nothing installed", () => {
     const job = jobOf(CALLED, "confirm");
     assert.equal(job.keys.get("needs"), "build");
     assert.equal(
       job.if,
-      "${{ !cancelled() && (needs.build.outputs.ios-submission != '' || needs.build.outputs.android-submission != '') }}",
+      "${{ !cancelled() && (needs.build.outputs.ios-upload == 'success' || needs.build.outputs.android-upload == 'success') }}",
     );
     const steps = stepsOf(CALLED, "confirm");
     const checkout = steps.find((s) => /uses:\s*actions\/checkout@/.test(s.body));
@@ -995,10 +1005,14 @@ describe("the confirm job", () => {
     }
   });
 
-  it("feeds the script both ids, and stops polling before its step and job are killed", () => {
+  it("feeds the script each upload's outcome, submission and build, and stops polling before its step and job are killed", () => {
     const poll = stepNamed(CALLED, "confirm", CONFIRM_POLL);
-    assert.equal(poll.stepEnv.get("IOS_SUBMISSION"), "${{ needs.build.outputs.ios-submission }}");
-    assert.equal(poll.stepEnv.get("ANDROID_SUBMISSION"), "${{ needs.build.outputs.android-submission }}");
+    for (const store of ["ios", "android"]) {
+      const KEY = store.toUpperCase();
+      assert.equal(poll.stepEnv.get(`${KEY}_UPLOAD`), `\${{ needs.build.outputs.${store}-upload }}`);
+      assert.equal(poll.stepEnv.get(`${KEY}_SUBMISSION`), `\${{ needs.build.outputs.${store}-submission }}`);
+      assert.equal(poll.stepEnv.get(`${KEY}_BUILD`), `\${{ needs.build.outputs.${store}-started }}`);
+    }
     const step = Number(poll.body.match(/^\s+timeout-minutes:\s*(\d+)/m)[1]);
     const job = Number(jobOf(CALLED, "confirm").keys.get("timeout-minutes"));
     assert.ok(Number(poll.stepEnv.get("DEADLINE_MINUTES")) < step, "the poll's deadline must end before its step's ceiling");

@@ -348,13 +348,13 @@ job then calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.ym
    Don't merge around it.
 3. **`confirm`** waits out Expo's queue beside `record`
    (`scripts/ci/confirm-store-submissions.mjs`). It polls each submission through EAS's GraphQL
-   API with `EXPO_TOKEN`, because eas-cli 24.8 has no command that shows one submission, from the
-   trusted ref with nothing installed. It goes green when every upload `FINISHED`, and red, with
-   what to do, when one errors, is cancelled, or is still queued at its 280-minute deadline. If
-   one failed, drop its entry from the record PR before merging, or upload it again by hand and
-   keep it. `FINISHED` means the binary reached the store, not that it passed processing: App
-   Store Connect can still reject an iOS binary by email afterwards, as it did iOS 0.9.1 (8)
-   with ITMS-90683.
+   API with `EXPO_TOKEN`, from the trusted ref with nothing installed. `eas submit:view --json`
+   shows the same thing, but would put eas-cli's unlocked dependencies (#3118) in a job holding
+   the token. It goes green when every successful upload has `FINISHED`, and red, with what to
+   do, when one errors, is cancelled, is still queued at its 280-minute deadline, can't be read,
+   or came back with no submission id. `FINISHED` means the binary reached the store, not that it
+   passed processing: App Store Connect can still reject an iOS binary by email afterwards, as it
+   did iOS 0.9.1 (8) with ITMS-90683.
 4. **`snapshot`** dispatches **Migration snapshot** as the store build starts. The run stays in
    flight for as long as EAS takes, and the snapshot otherwise publishes only when a Deploy
    production run completes, so the required PR migration gates would judge production against
@@ -373,8 +373,15 @@ uploaded but couldn't be recorded is listed there as the JSON entries to add.
 A re-run builds every platform the run asked for again, so re-run only when nothing uploaded and
 nothing is still building.
 
-- **A build finished but its upload failed:** fix the cause, run the summary's
-  `npm run eas -- submit … --id <build id>` from the repo root, and record the build by hand.
+- **A build finished but EAS refused its submission** (the `build` job is red): fix the cause,
+  run the summary's `npm run eas -- submit … --id <build id>` from the repo root, and record the
+  build by hand.
+- **EAS accepted a submission and then failed to upload it** (the `confirm` job is red): the
+  record PR already lists the build. Either fix the cause and upload it again with the
+  `npm run eas -- submit … --id <build id>` the `confirm` summary gives, and keep the entry, or
+  drop the entry: from the record PR before merging, or in a PR of its own if it has merged. A
+  build that never reached a store can be dropped at once
+  ([`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract)).
 - **A build was still running when the job stopped waiting:** it may finish on EAS. Don't start
   another. When it finishes, and its commit is still the latest `v*` tag, upload it with the same
   `npm run eas -- submit … --id` and record it.
