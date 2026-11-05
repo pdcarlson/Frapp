@@ -476,3 +476,43 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
     ).toBeDisabled();
   });
 });
+
+describe("SettingsOrgTab for an organization that hides its letters", () => {
+  // FIJI chapters created before the profile turned the letters off still
+  // store them, sometimes with the switch on.
+  const fiji = {
+    ...baseProps,
+    profile: { name: "Phi Gamma Delta", university: "RPI", donation_url: "" },
+    branding: { greek_letters: "ΦΓΔ", show_greek_letters: true, designation: "Tau Nu" },
+  };
+
+  it("draws neither the letters field nor the switch, and the mark skips them", () => {
+    render(<SettingsOrgTab archetypeKey="ifc" {...fiji} />);
+    expect(screen.queryByLabelText(/^greek letters$/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: /show greek letters/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByTestId(/chapter-mark-/)[0]!).not.toHaveTextContent("ΦΓΔ");
+    expect(screen.queryByText(/ΦΓΔ/)).not.toBeInTheDocument();
+  });
+
+  it("writes the letters off on the next mark save", async () => {
+    const user = userEvent.setup();
+    const onPatchConfig = vi.fn();
+    render(<SettingsOrgTab archetypeKey="ifc" {...fiji} onPatchConfig={onPatchConfig} />);
+    await user.type(screen.getByLabelText(/short name/i), "FIJI");
+    await user.click(screen.getByRole("button", { name: /save mark/i }));
+    expect(onPatchConfig).toHaveBeenCalledWith({
+      branding: { short_name: "FIJI", show_greek_letters: false },
+    });
+  });
+
+  it("saves identity with the stored letters unchanged", () => {
+    const onPatchConfig = vi.fn();
+    render(<SettingsOrgTab archetypeKey="ifc" {...fiji} onPatchConfig={onPatchConfig} />);
+    fireEvent.click(screen.getByRole("button", { name: /save identity/i }));
+    expect(onPatchConfig).toHaveBeenCalledWith({
+      branding: expect.objectContaining({ greek_letters: "ΦΓΔ", designation: "Tau Nu" }),
+    });
+  });
+});

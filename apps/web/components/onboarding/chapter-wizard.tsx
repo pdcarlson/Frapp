@@ -17,6 +17,7 @@ import {
   ARCHETYPES,
   getArchetype,
   orgDefaultAccent,
+  orgHidesGreekLetters,
   orgMarkFields,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
@@ -485,6 +486,36 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   );
 }
 
+/**
+ * How a directory row reads in the results: the organization's letters before
+ * its name, except for an organization that never displays them (FIJI). The
+ * directory carries letters for every row, so the profile has to say no.
+ */
+function directoryRowTitle(row: ChapterDirectoryResult): string {
+  const name = row.org_name ?? "";
+  return row.org_letters && !orgHidesGreekLetters(row.org_name)
+    ? `${row.org_letters} · ${name}`
+    : name;
+}
+
+/**
+ * The identity after the organization's name is typed: a profile's short name
+ * and letters switch follow the name (`orgMarkFields`), as a directory match
+ * applies them and as mobile's setup does. Without this, a founder who typed
+ * "Phi Gamma Delta" by hand kept the letters switch on, and any letters they
+ * had already entered would have reached the nav.
+ */
+function withOrgName(
+  identity: ChapterIdentityForm,
+  name: string,
+): ChapterIdentityForm {
+  return {
+    ...identity,
+    name,
+    ...orgMarkFields(name, identity.name, identity),
+  };
+}
+
 function FindStep({
   rawQuery,
   onQueryChange,
@@ -590,8 +621,7 @@ function FindStep({
                   className="flex-col items-start gap-0.5 py-2"
                 >
                   <span className="font-medium">
-                    {row.org_letters ? `${row.org_letters} · ` : ""}
-                    {row.org_name}
+                    {directoryRowTitle(row)}
                   </span>
                   <span className="text-xs text-muted-foreground">
                     {[row.chapter_designation, row.university]
@@ -741,7 +771,7 @@ function IdentityStep({
           <Input
             id="wiz-name"
             value={identity.name}
-            onChange={(e) => set("name", e.target.value)}
+            onChange={(e) => onChange(withOrgName(identity, e.target.value))}
             placeholder="Sigma Phi Epsilon"
             required
           />
@@ -756,15 +786,23 @@ function IdentityStep({
             required
           />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="wiz-letters">Greek letters</Label>
-          <Input
-            id="wiz-letters"
-            value={identity.greekLetters}
-            onChange={(e) => set("greekLetters", e.target.value)}
-            placeholder="ΣΦΕ"
-          />
-        </div>
+        {/*
+          An organization that hides its letters (FIJI) gets neither this
+          field nor the show-letters switch, as on mobile: the directory still
+          fills them, and they stay stored and switched off, but setup never
+          draws them. The short name stands in.
+        */}
+        {orgHidesGreekLetters(identity.name) ? null : (
+          <div className="space-y-1.5">
+            <Label htmlFor="wiz-letters">Greek letters</Label>
+            <Input
+              id="wiz-letters"
+              value={identity.greekLetters}
+              onChange={(e) => set("greekLetters", e.target.value)}
+              placeholder="ΣΦΕ"
+            />
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="wiz-designation">Chapter designation</Label>
           <Input
@@ -1052,6 +1090,7 @@ function ChapterMarkFields({
     show_greek_letters: identity.showGreekLetters,
   };
   const mark = resolveChapterMark({ logoUrl, branding, name: identity.name });
+  const lettersHidden = orgHidesGreekLetters(identity.name);
 
   return (
     <fieldset className="space-y-3 rounded-lg border border-border p-3 sm:col-span-2">
@@ -1059,8 +1098,9 @@ function ChapterMarkFields({
       <div className="flex items-center gap-3">
         <CrestTile mark={mark} />
         <p className="text-xs text-muted-foreground">
-          How your chapter shows in the nav: your logo, else your short name,
-          else your Greek letters.
+          {lettersHidden
+            ? `${identity.name.trim()} doesn't display its Greek letters, so your logo or short name stands in for them.`
+            : "How your chapter shows in the nav: your logo, else your short name, else your Greek letters."}
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -1117,19 +1157,21 @@ function ChapterMarkFields({
           ) : null}
         </div>
       </div>
-      <div className="flex items-center justify-between gap-3">
-        <Label htmlFor="wiz-show-letters" className="font-normal">
-          Show Greek letters
-          <span className="block text-xs text-muted-foreground">
-            Turn off if your organization doesn&apos;t display its letters.
-          </span>
-        </Label>
-        <Switch
-          id="wiz-show-letters"
-          checked={identity.showGreekLetters}
-          onCheckedChange={(checked) => onSet("showGreekLetters", checked)}
-        />
-      </div>
+      {lettersHidden ? null : (
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="wiz-show-letters" className="font-normal">
+            Show Greek letters
+            <span className="block text-xs text-muted-foreground">
+              Turn off if your organization doesn&apos;t display its letters.
+            </span>
+          </Label>
+          <Switch
+            id="wiz-show-letters"
+            checked={identity.showGreekLetters}
+            onCheckedChange={(checked) => onSet("showGreekLetters", checked)}
+          />
+        </div>
+      )}
     </fieldset>
   );
 }

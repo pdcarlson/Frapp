@@ -6,6 +6,7 @@ import {
   ARCHETYPES,
   VOCABULARY_DEFAULTS,
   getArchetype,
+  orgHidesGreekLetters,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import {
@@ -334,25 +335,32 @@ export function SettingsOrgTab({
         <CardHeader>
           <CardTitle>Identity &amp; founding</CardTitle>
           <CardDescription>
-            Your chapter&apos;s letters and founding details. Whether the
-            letters show is set under Chapter mark. Saving writes an entry to
-            the chapter audit log.
+            {orgHidesGreekLetters(storedName)
+              ? "Your chapter's founding details. Saving writes an entry to the chapter audit log."
+              : "Your chapter's letters and founding details. Whether the letters show is set under Chapter mark. Saving writes an entry to the chapter audit log."}
           </CardDescription>
         </CardHeader>
         <form onSubmit={saveIdentity}>
           <CardContent className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
-              <div className="grid gap-1">
-                <Label htmlFor="greek-letters">Greek letters</Label>
-                <Input
-                  id="greek-letters"
-                  value={greekLetters}
-                  onChange={(event) => setGreekLetters(event.target.value)}
-                  maxLength={8}
-                  placeholder="ΣΦΕ"
-                  className="font-mono"
-                />
-              </div>
+              {/*
+                FIJI never displays its letters, so Settings doesn't draw
+                them either. They stay stored: the hidden field's draft is
+                the stored value, so a save writes them back unchanged.
+              */}
+              {orgHidesGreekLetters(storedName) ? null : (
+                <div className="grid gap-1">
+                  <Label htmlFor="greek-letters">Greek letters</Label>
+                  <Input
+                    id="greek-letters"
+                    value={greekLetters}
+                    onChange={(event) => setGreekLetters(event.target.value)}
+                    maxLength={8}
+                    placeholder="ΣΦΕ"
+                    className="font-mono"
+                  />
+                </div>
+              )}
               <div className="grid gap-1">
                 <Label htmlFor="designation">Chapter designation</Label>
                 <Input

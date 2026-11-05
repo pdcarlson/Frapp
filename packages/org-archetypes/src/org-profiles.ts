@@ -359,6 +359,18 @@ export function orgProfileFor(
   return PROFILES_BY_KEY.get(nameKey(orgName));
 }
 
+/**
+ * Whether the organization keeps its Greek letters off every surface (Phi
+ * Gamma Delta). A screen that would show or ask for letters (a directory
+ * result, a setup or settings field, the show-letters switch) draws neither
+ * for such an organization; its short name stands in.
+ */
+export function orgHidesGreekLetters(
+  orgName: string | null | undefined,
+): boolean {
+  return orgProfileFor(orgName)?.displaysGreekLetters === false;
+}
+
 /** The organization's official colors, or an empty list when unknown. */
 export function orgColorsFor(
   orgName: string | null | undefined,
