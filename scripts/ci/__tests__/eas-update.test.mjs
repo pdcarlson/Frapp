@@ -460,7 +460,7 @@ test("`npm run eas -- update` refuses before eas runs when the guard says no", (
 test("a guarded update runs eas with the guard's arguments and env, then uploads source maps for production", () => {
   const calls = [];
   const after = [];
-  const env = { [UPDATE_PROFILE_ENV]: "production" };
+  const env = { [UPDATE_PROFILE_ENV]: "production", EXPO_TOKEN: "expo", SENTRY_AUTH_TOKEN: "sntrys" };
   const status = main(["update", "--channel", "production"], {
     pin: PIN,
     installer,
@@ -471,8 +471,10 @@ test("a guarded update runs eas with the guard's arguments and env, then uploads
   });
   assert.equal(status, 0);
   assert.deepEqual(calls[0].args, ["/fake/eas", "update", "--channel", "production", "--environment", "production"]);
-  assert.equal(calls[0].opts.env, env);
+  // Each token reaches only its own tool.
+  assert.deepEqual(calls[0].opts.env, { [UPDATE_PROFILE_ENV]: "production", EXPO_TOKEN: "expo" });
   assert.equal(after.length, 1);
+  assert.deepEqual(after[0].env, { [UPDATE_PROFILE_ENV]: "production", SENTRY_AUTH_TOKEN: "sntrys" });
 });
 
 test("no source-map upload after a failed publish or off production, and other commands skip the guard", () => {
