@@ -79,7 +79,7 @@ A Chat anchor, two member sections (Chapter, Resources), and one unlabeled group
 | Destination | Route | Path |
 | --- | --- | --- |
 | Roles | `/settings?tab=roles` (`/roles` redirects) | Settings → Roles tab |
-| Chat Admin | `/chat-admin` | Settings → Tools → Chat admin; the `chat_reports` notification deep-links here |
+| Chat Admin | `/chat-admin` | Settings → Tools → Chat admin; the `chat_reports` notification deep-links here, and a channel start's `Edit channel` / `Add a description` opens `/chat-admin?channel=<id>` on that channel |
 | Discord Import | `/discord-import` | Settings → Tools → Discord import |
 | Study Zones | `/geofences` | Settings → Tools → Study zones |
 | Reports | `/reports` | Settings → Tools → Reports |
