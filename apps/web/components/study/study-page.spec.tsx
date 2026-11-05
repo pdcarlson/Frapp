@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 
 const {
   mockCurrentChapter,
@@ -83,7 +84,9 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 
 const {
   StudyPage,
@@ -193,8 +196,40 @@ describe("StudyPage subscription gating", () => {
     render(<StudyPage />);
 
     expect(screen.getByText(/session history/i)).toBeInTheDocument();
-    expect(screen.getByText(/60 minutes/i)).toBeInTheDocument();
+    expect(screen.getByText("1h")).toBeInTheDocument();
     expect(screen.getByRole("combobox")).toBeEnabled();
+  });
+
+  it("renders flush sections with the house date shape and plain-language status", () => {
+    chapter.active();
+    const { container } = render(<StudyPage />);
+
+    // No `--card` container: the start and history sections sit on the page.
+    expect(cardFilledContainers(container)).toEqual([]);
+    expect(
+      screen.getByRole("region", { name: /start a session/i }),
+    ).toBeInTheDocument();
+    const history = screen.getByRole("region", { name: /session history/i });
+    // Aug 1 2026 is a Saturday; the clock depends on the runner's zone, so
+    // only the day and the middle dot are pinned. No seconds, no "Started".
+    expect(history).toHaveTextContent(/Sat, Aug 1(, 2026)? · /);
+    expect(history).not.toHaveTextContent(/Started|:\d{2}:\d{2}/);
+    expect(history).toHaveTextContent("Completed");
+    expect(history).not.toHaveTextContent("COMPLETED");
+    // The one caption the start section keeps.
+    expect(
+      screen.getByText(
+        "Hiding this tab pauses the session. Closing it ends the session.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("frames the running timer without a card", async () => {
+    const { container } = await renderWithLiveSession();
+    expect(cardFilledContainers(container)).toEqual([]);
+    expect(
+      screen.getByRole("region", { name: "Library 3rd floor" }),
+    ).toBeInTheDocument();
   });
 
   it("fails open when the chapter record cannot be read", () => {

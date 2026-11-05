@@ -1,7 +1,7 @@
 import { ServiceHoursPage } from "@/components/service/service-page";
 
 export const metadata = {
-  title: "Service Hours",
+  title: "Service hours",
 };
 
 export default function Service() {
