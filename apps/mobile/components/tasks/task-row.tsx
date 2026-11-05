@@ -4,6 +4,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { PressableRow } from "@/components/list-section";
+import { AccentChip } from "@/components/status-chip";
 import {
   formatDoneSubtitle,
   formatDueSubtitle,
@@ -98,9 +99,7 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
         chip.tone === "awarded" ? (
           <Text style={styles.awardedChip}>{chip.label}</Text>
         ) : (
-          <View style={styles.offeredChip}>
-            <Text style={styles.offeredChipText}>{chip.label}</Text>
-          </View>
+          <AccentChip label={chip.label} />
         )
       ) : null}
     </>
@@ -209,18 +208,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     subtitleDone: {
       color: tokens.color.text.muted,
-    },
-    offeredChip: {
-      borderRadius: tokens.radius.chip,
-      borderWidth: 1,
-      borderColor: brand.accentBorder,
-      backgroundColor: brand.accentSubtle,
-      paddingHorizontal: tokens.spacing.sm,
-      paddingVertical: 2,
-    },
-    offeredChipText: {
-      ...typeRole(tokens.typography.role.caption),
-      color: brand.accent,
     },
     awardedChip: {
       ...typeRole(tokens.typography.role.caption),

@@ -1,21 +1,25 @@
 import { useMemo, useRef } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { useEvents, useNowDate } from "@repo/hooks";
+import { useActiveChapterId, useEvents, useNowDate } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import {
+  EmptyState,
+  ErrorState,
+  NoChapterState,
+  SkeletonLines,
+} from "@/components/state-block";
+import { AccentChip, StatusChip } from "@/components/status-chip";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
 import { isAskAvailable } from "@/lib/ask/flag";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { formatEventRowTime, resolveCheckInWindow } from "@/lib/events/format";
+import {
+  formatEventDateBlock,
+  resolveCheckInWindow,
+} from "@/lib/events/format";
 import { selectEventRows, type EventRow } from "@/lib/events/select";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -33,12 +37,14 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * Chat home and Events", and only in a build that has Ask (#2259). The sheet
  * it opens is hosted here rather than routed to, per
  * `spec/ui/mobile/patterns.md` § Bottom sheets.
+ *
+ * The board's Going / Can't buttons and "Going ✓" marker are not drawn: RSVP
+ * has no server model yet (`spec/behavior/events.md`), and they come back with
+ * the endpoint (#1035), as on s07.
  */
 
 export default function EventsScreen() {
-  const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
-  const styles = createStyles(tokens, accent);
+  const chapterId = useActiveChapterId();
   const router = useRouter();
   const eventsQuery = useEvents();
   const askSheetRef = useRef<BottomSheetModal>(null);
@@ -58,6 +64,50 @@ export default function EventsScreen() {
     router.push({ pathname: "/event-details", params: { id: eventId } });
   }
 
+  function renderList() {
+    // `useEvents` is `enabled: !!chapterId`, so with no active chapter the
+    // query never runs and `isPending` never clears. Without this gate the tab
+    // showed its loading state forever.
+    if (!chapterId) return <NoChapterState noun="events" />;
+
+    // The tile stands in for the row's date block.
+    if (eventsQuery.isPending) return <SkeletonLines lines={2} showTile />;
+
+    if (eventsQuery.isError) {
+      // Explicit retry for the same reason Chat home carries one: this is a
+      // tab that stays mounted and the shell's ScrollView has no
+      // RefreshControl. C8 (#998) wired `onlineManager`, so a connectivity
+      // blip recovers on its own; a server error still needs this.
+      return (
+        <ErrorState
+          title="Couldn't load events"
+          body="The server couldn't be reached."
+          onRetry={() => void eventsQuery.refetch()}
+          isRetrying={eventsQuery.isFetching}
+        />
+      );
+    }
+
+    if (events.length === 0) {
+      return (
+        <EmptyState
+          glyph="◷"
+          title="Nothing scheduled"
+          body="Your chapter has nothing coming up."
+        />
+      );
+    }
+
+    return events.map((event) => (
+      <EventRowCard
+        key={event.id}
+        event={event}
+        now={now}
+        onPress={() => openEvent(event.id)}
+      />
+    ));
+  }
+
   return (
     <ScreenShell
       title="Events"
@@ -68,61 +118,21 @@ export default function EventsScreen() {
         ) : undefined
       }
     >
-      {eventsQuery.isPending ? (
-        <View style={styles.stateBlock}>
-          <ActivityIndicator color={tokens.color.text.muted} />
-          <Text style={styles.stateBody}>Loading events…</Text>
-        </View>
-      ) : eventsQuery.isError ? (
-        <View style={styles.stateBlock}>
-          <Text style={styles.stateTitle}>Couldn&apos;t load events</Text>
-          <Text style={styles.stateBody}>
-            Events couldn&apos;t reach the server.
-          </Text>
-          {/*
-            Explicit retry for the same reason Chat home carries one: this is a
-            tab that stays mounted and the shell's ScrollView has no
-            RefreshControl. C8 (#998) wired `onlineManager`, so a connectivity
-            blip now recovers on its own; a server error still needs this.
-          */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Try loading events again"
-            disabled={eventsQuery.isFetching}
-            onPress={() => void eventsQuery.refetch()}
-            style={({ pressed }) => [
-              styles.retryButton,
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={styles.retryText}>
-              {eventsQuery.isFetching ? "Retrying…" : "Try again"}
-            </Text>
-          </Pressable>
-        </View>
-      ) : events.length === 0 ? (
-        <View style={styles.stateBlock}>
-          <Text style={styles.stateTitle}>Nothing scheduled</Text>
-          <Text style={styles.stateBody}>
-            Events your chapter schedules will appear here.
-          </Text>
-        </View>
-      ) : (
-        events.map((event) => (
-          <EventRowCard
-            key={event.id}
-            event={event}
-            now={now}
-            onPress={() => openEvent(event.id)}
-          />
-        ))
-      )}
+      {renderList()}
 
       <AskSheet ref={askSheetRef} />
     </ScreenShell>
   );
 }
 
+/**
+ * One event, as the board draws it: a date block on the left, and on the
+ * right the name (with Mandatory beside it), a muted "6:00 PM · Great Hall"
+ * line, then the points chip and the check-in status. The name leads: it is
+ * the largest, heaviest text on the card, and the place sits under it at
+ * caption size. The card used to stack an accent time caption, a 14pt name and
+ * a 16pt location, so the location was the biggest text on every card.
+ */
 function EventRowCard({
   event,
   now,
@@ -136,6 +146,9 @@ function EventRowCard({
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens, accent);
   const window = resolveCheckInWindow(event.start_time, event.end_time, now);
+  const date = formatEventDateBlock(event.start_time, now);
+  const meta = [date?.clock, event.location].filter(Boolean).join(" · ");
+  const isOpen = window.state === "open";
 
   return (
     <Pressable
@@ -143,34 +156,46 @@ function EventRowCard({
       accessibilityLabel={`Open ${event.name}`}
       accessibilityHint="View event details and check in."
       onPress={onPress}
-      style={({ pressed }) => [styles.card, pressed ? styles.pressed : null]}
+      // Press feedback per platform, as `ListRow` does it: Android gets a
+      // bounded ripple of the foreground at 12%, clipped to the card's corners
+      // by `overflow: hidden`; iOS has no ripple, so the card lifts one rung
+      // up the surface ladder while it is held.
+      android_ripple={{ color: styles.ripple.color }}
+      style={({ pressed }) => [
+        styles.card,
+        pressed && Platform.OS !== "android" ? styles.pressed : null,
+      ]}
     >
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTime}>
-          {formatEventRowTime(event.start_time, now)}
-        </Text>
-        <View style={styles.badgeRow}>
+      {date ? (
+        <View style={styles.dateBlock}>
+          <Text style={styles.dateLabel}>{date.label}</Text>
+          <Text style={styles.dateDay}>{date.day}</Text>
+        </View>
+      ) : null}
+
+      <View style={styles.body}>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>{event.name}</Text>
           {event.is_mandatory ? (
-            <View style={styles.mandatoryBadge}>
-              <Text style={styles.mandatoryText}>Mandatory</Text>
-            </View>
-          ) : null}
-          {event.point_value ? (
-            <View style={styles.pointsBadge}>
-              <Text style={styles.pointsText}>+{event.point_value} pts</Text>
-            </View>
+            <StatusChip
+              label="Mandatory"
+              hue={tokens.color.semantic.destructive}
+            />
           ) : null}
         </View>
+        {meta ? <Text style={styles.meta}>{meta}</Text> : null}
+
+        {event.point_value || isOpen ? (
+          <View style={styles.footer}>
+            {event.point_value ? (
+              <AccentChip label={`+${event.point_value} pts`} />
+            ) : null}
+            {isOpen ? (
+              <Text style={styles.openNow}>Check-in is open</Text>
+            ) : null}
+          </View>
+        ) : null}
       </View>
-
-      <Text style={styles.cardTitle}>{event.name}</Text>
-      {event.location ? (
-        <Text style={styles.cardMeta}>{event.location}</Text>
-      ) : null}
-
-      {window.state === "open" ? (
-        <Text style={styles.openNow}>Check-in is open</Text>
-      ) : null}
     </Pressable>
   );
 }
@@ -178,97 +203,76 @@ function EventRowCard({
 function createStyles(tokens: SignetTokens, accent: string) {
   return StyleSheet.create({
     card: {
-      borderRadius: tokens.radius.card,
+      flexDirection: "row",
+      gap: tokens.spacing.md,
+      borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
-      gap: tokens.spacing.xs,
+      // Bounds the Android ripple to the rounded card.
+      overflow: "hidden",
     },
     pressed: {
-      opacity: 0.7,
+      backgroundColor: tokens.color.surface.popover,
     },
-    cardHeader: {
-      flexDirection: "row",
+    // Not a style a view takes: the ripple's color, kept in the factory so it
+    // derives from a token, as in `list-section.tsx`.
+    ripple: {
+      color: tint(tokens.color.text.foreground, 0.12),
+    },
+    dateBlock: {
+      // 52 as drawn. No spacing token sits near it, and the column has to
+      // hold "TODAY" over a two-digit day without shifting the names beside it.
+      width: 52,
       alignItems: "center",
-      justifyContent: "space-between",
-      gap: tokens.spacing.sm,
     },
-    cardTime: {
-      flexShrink: 1,
+    dateLabel: {
+      // The board draws 11px / 700. `caption` is the smallest role, so it
+      // keeps the role's size and takes the drawn weight.
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.bold,
+      }),
       color: accent,
-      ...typeRole(tokens.typography.role.caption),
-      letterSpacing: 0.4,
+      letterSpacing: 0.6,
       textTransform: "uppercase",
     },
-    badgeRow: {
+    dateDay: {
+      ...typeRole(tokens.typography.role.headline),
+      color: tokens.color.text.foreground,
+    },
+    body: {
+      flex: 1,
+      gap: tokens.spacing.xs,
+    },
+    titleRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: tokens.spacing.xs,
-      flexShrink: 0,
+      flexWrap: "wrap",
+      gap: tokens.spacing.sm,
     },
-    mandatoryBadge: {
-      borderRadius: tokens.radius.chip,
-      backgroundColor: tint(tokens.color.semantic.warning),
-      paddingHorizontal: tokens.spacing.sm,
-      paddingVertical: tokens.spacing.xs,
-    },
-    mandatoryText: {
-      color: tokens.color.semantic.warning,
-      ...typeRole(tokens.typography.role.caption),
-    },
-    pointsBadge: {
-      borderRadius: tokens.radius.chip,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      paddingHorizontal: tokens.spacing.sm,
-      paddingVertical: tokens.spacing.xs,
-    },
-    pointsText: {
-      color: tokens.color.text.mutedForeground,
-      ...typeRole(tokens.typography.role.caption),
-    },
-    cardTitle: {
+    title: {
+      flexShrink: 1,
+      ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.label),
     },
-    cardMeta: {
+    meta: {
+      ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
-      ...typeRole(tokens.typography.role.body),
+    },
+    footer: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      marginTop: tokens.spacing.xs,
     },
     openNow: {
-      marginTop: tokens.spacing.xs,
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
       color: tokens.color.semantic.success,
-      ...typeRole(tokens.typography.role.caption),
-    },
-    stateBlock: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.lg,
-      gap: tokens.spacing.sm,
-      alignItems: "flex-start",
-    },
-    stateTitle: {
-      color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.label),
-    },
-    stateBody: {
-      color: tokens.color.text.mutedForeground,
-      ...typeRole(tokens.typography.role.body),
-    },
-    retryButton: {
-      marginTop: tokens.spacing.xs,
-      borderRadius: tokens.radius.chip,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-    },
-    retryText: {
-      color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.label),
     },
   });
 }
