@@ -177,7 +177,18 @@ export class MemberService {
     const userIds = [...new Set(members.map((member) => member.user_id))];
     const [identities, roles] = await Promise.all([
       this.userRepo.findDisplayIdentitiesByIds(userIds),
-      this.roleRepo.findByChapter(chapterId),
+      // Role colors only decorate names, so a failed roles read paints every
+      // name plain rather than taking the whole roster (and with it every
+      // chat author and DM title) down.
+      this.roleRepo.findByChapter(chapterId).catch((error: unknown) => {
+        logThrowable(
+          this.logger,
+          'warn',
+          `Roster role colors unavailable for chapter ${chapterId}`,
+          error,
+        );
+        return [];
+      }),
     ]);
     const byId = new Map(identities.map((user) => [user.id, user]));
     // A user holds one membership per chapter, but the read is not keyed that

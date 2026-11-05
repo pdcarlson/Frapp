@@ -75,6 +75,12 @@ export function useUpdateRole() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });
+      // The roster's `role_color` is computed from role colors and order
+      // (#3485), so a role edit or delete repaints chat names now, not after
+      // the roster's 60s staleTime.
+      queryClient.invalidateQueries({
+        queryKey: ["members", chapterId, "roster"],
+      });
     },
   });
 }
@@ -93,6 +99,12 @@ export function useDeleteRole() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });
+      // The roster's `role_color` is computed from role colors and order
+      // (#3485), so a role edit or delete repaints chat names now, not after
+      // the roster's 60s staleTime.
+      queryClient.invalidateQueries({
+        queryKey: ["members", chapterId, "roster"],
+      });
       // Deleting a role can clear `chapters.default_invite_role_id` server-side
       // via `on delete set null` (#422). The config query has a 5-minute
       // staleTime, so without this the Settings card keeps showing the deleted

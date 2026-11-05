@@ -560,4 +560,16 @@ describe("role color swatches (#3485)", () => {
     await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
     expect(updateRole.mutateAsync.mock.calls[0]![0].body.color).toBeUndefined();
   });
+
+  it("clears an off-palette stored color when the officer picks No color", async () => {
+    Object.assign(roles, {
+      data: [{ ...SYSTEM_ROLE, color: "#123456" }, CUSTOM_ROLE],
+    });
+    const user = await selectPresident();
+    const group = screen.getAllByRole("group", { name: /^color$/i })[0]!;
+    await user.click(within(group).getByRole("button", { name: "No color" }));
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+    await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
+    expect(updateRole.mutateAsync.mock.calls[0]![0].body.color).toBeNull();
+  });
 });

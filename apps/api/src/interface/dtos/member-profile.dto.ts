@@ -68,10 +68,12 @@ export class MemberProfileDto {
 /**
  * The chapter roster projected to display fields only — `GET /v1/members/roster`.
  *
- * Deliberately three fields wide. Chat resolves message authors and DM titles
- * on the client by `users.id`, and {@link MemberProfileDto} would put the whole
- * chapter's `email`/`bio`/`graduation_year`/`current_city`/`current_company` on
- * every member's device to render a name (#1000, #986).
+ * Deliberately narrow: id, name, avatar, and the name's role color (#3485).
+ * Chat resolves message authors and DM titles on the client by `users.id`, and
+ * {@link MemberProfileDto} would put the whole chapter's
+ * `email`/`bio`/`graduation_year`/`current_city`/`current_company` on every
+ * member's device to render a name (#1000, #986). `role_color` is computed on
+ * the server so a client never needs `role_ids` to paint one.
  *
  * Carrying a real response DTO is load-bearing rather than tidy: without one the
  * exporter records a bare `200` with no schema and `openapi-typescript` infers

@@ -1820,7 +1820,7 @@
             "bearer": []
           }
         ],
-        "summary": "Display roster for the chapter — id, name and avatar only",
+        "summary": "Display roster for the chapter — id, name, avatar and role color only",
         "tags": [
           "Members"
         ]
@@ -11629,7 +11629,7 @@
               "#D9B99B",
               "#A9B4C2"
             ],
-            "description": "One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), exactly as listed. Null clears the color."
+            "description": "One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color."
           }
         },
         "required": [
@@ -11669,7 +11669,7 @@
               "#D9B99B",
               "#A9B4C2"
             ],
-            "description": "One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), exactly as listed. Null clears the color."
+            "description": "One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color."
           }
         }
       },

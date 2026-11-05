@@ -10,9 +10,19 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ROLE_COLOR_HEXES, ROLE_NAME_MAX_LENGTH } from '@repo/validation';
 import { POSITION_MAX } from '#domain/constants/field-limits';
+
+/**
+ * Upper-cases a role color string before `@IsIn` checks it, so `#f2994a` is
+ * the palette's `#F2994A` and is stored in the palette's spelling (#3485).
+ * Anything else passes through for the validators to judge.
+ */
+function normalizeRoleColorInput(value: unknown): unknown {
+  return typeof value === 'string' ? value.trim().toUpperCase() : value;
+}
 
 export class CreateRoleDto {
   @ApiProperty({ maxLength: ROLE_NAME_MAX_LENGTH })
@@ -38,9 +48,10 @@ export class CreateRoleDto {
     nullable: true,
     enum: ROLE_COLOR_HEXES,
     description:
-      'One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), exactly as listed. Null clears the color.',
+      'One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.',
   })
   @IsOptional()
+  @Transform(({ value }) => normalizeRoleColorInput(value))
   @IsIn(ROLE_COLOR_HEXES, {
     message: 'color must be one of the role palette colors',
   })
@@ -72,9 +83,10 @@ export class UpdateRoleDto {
     nullable: true,
     enum: ROLE_COLOR_HEXES,
     description:
-      'One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), exactly as listed. Null clears the color.',
+      'One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.',
   })
   @IsOptional()
+  @Transform(({ value }) => normalizeRoleColorInput(value))
   @IsIn(ROLE_COLOR_HEXES, {
     message: 'color must be one of the role palette colors',
   })

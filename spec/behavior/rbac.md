@@ -86,7 +86,7 @@ The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.m
 - Roles have a **display_order** (integer, for UI sorting) and an optional **color**, for chat name colors like Discord (#3485).
   - The color is one of ten fixed palette values (`ROLE_COLOR_PALETTE` in `packages/validation/src/role-colors.ts`), each readable as text on every charcoal surface. Role create and update refuse any other value (`400`), and `null` clears it. Red and gold are left out: red means a mention or an error, and gold is the Ask surface's.
   - A member's name in chat takes the color of their highest-ranked colored role: the lowest `display_order` among their roles that has one. A member with no colored role reads in the plain foreground, and the viewer's own name keeps the chapter accent. `GET /v1/members/roster` carries it per member as `role_color`, so no client needs `role_ids` to paint a name. Clients paint only palette values, so an older stored hex paints nothing.
-  - Seeded defaults: President orange, Vice President periwinkle, Treasurer green, Secretary rose, Alumni slate; Member and New Member have none, so officers stand out.
+  - Seeded roles get palette defaults from `DEFAULT_SYSTEM_ROLES` (`apps/api/src/domain/constants/permissions.ts`), which owns the per-role values. The rule is that the officer and Alumni roles are colored and Member and New Member are not, so officers stand out.
   - Custom roles from `chapter_custom_roles` carry no color.
 - A user with no assigned roles has zero permissions (fail-safe closed).
 

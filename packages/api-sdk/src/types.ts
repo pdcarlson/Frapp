@@ -552,7 +552,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Display roster for the chapter — id, name and avatar only */
+        /** Display roster for the chapter — id, name, avatar and role color only */
         get: operations["MemberController_roster_v1"];
         put?: never;
         post?: never;
@@ -3638,7 +3638,7 @@ export interface components {
             permissions: string[];
             display_order?: number;
             /**
-             * @description One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), exactly as listed. Null clears the color.
+             * @description One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.
              * @enum {string|null}
              */
             color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
@@ -3648,7 +3648,7 @@ export interface components {
             permissions?: string[];
             display_order?: number;
             /**
-             * @description One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), exactly as listed. Null clears the color.
+             * @description One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.
              * @enum {string|null}
              */
             color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;

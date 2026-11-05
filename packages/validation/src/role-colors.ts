@@ -4,8 +4,10 @@
  * A role's color paints text: a chat author's name, and the dot on a role
  * chip. Text on Frapp's charcoal surfaces has to stay readable, so roles pick
  * from this list instead of a free hex picker. Every swatch clears WCAG AA for
- * normal text (4.5:1) on the lightest surface it sits on, the popover
- * `#2A2621` (lowest is Violet at 5.9:1), and so on every darker one too.
+ * normal text (4.5:1) on every surface a name sits on, a hovered row's
+ * `--card-hover` included (lowest is Violet at 4.95:1 there, 5.9:1 on the
+ * popover). `apps/web/components/roles/role-colors-contrast.spec.ts` guards it
+ * against the token source.
  *
  * Two hue families are left out on purpose: red, which already means a mention
  * or an error, and gold, which is Signet's own colour for the Ask surface.

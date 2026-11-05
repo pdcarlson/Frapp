@@ -193,6 +193,10 @@ export function RolesAndPermissionsPage() {
   // Draft state for editing the active role.
   const [nameDraft, setNameDraft] = useState("");
   const [colorDraft, setColorDraft] = useState<RoleColorHex | null>(null);
+  // Whether the officer picked a swatch since selecting the role. An
+  // off-palette stored value shows as "No color", so the draft alone can't
+  // tell "left alone" from "cleared on purpose".
+  const [colorTouched, setColorTouched] = useState(false);
   const [displayOrderDraft, setDisplayOrderDraft] = useState("");
 
   // Draft state for creating a new role.
@@ -209,6 +213,7 @@ export function RolesAndPermissionsPage() {
     // An off-palette value (a pre-#3485 seed or free pick) reads as none,
     // which is also how every client paints it.
     setColorDraft(roleColorOrNull(role.color));
+    setColorTouched(false);
     setDisplayOrderDraft(String(role.display_order ?? 0));
   }
 
@@ -219,11 +224,12 @@ export function RolesAndPermissionsPage() {
         id: activeRole.id,
         body: {
           name: nameDraft || undefined,
-          // Sent only when it changed, and `null` clears it. Re-saving an
-          // untouched role whose stored value is off-palette leaves it alone
-          // rather than writing a no-op change to the audit log.
+          // Sent only when the officer picked one that differs from what is
+          // stored, and `null` clears it. Re-saving an untouched role leaves
+          // the column alone (no no-op audit row), and picking "No color" on
+          // a role holding an off-palette hex does clear it.
           color:
-            colorDraft !== roleColorOrNull(activeRole.color)
+            colorTouched && colorDraft !== (activeRole.color ?? null)
               ? colorDraft
               : undefined,
           display_order: parseGuardedInt(displayOrderDraft),
@@ -533,7 +539,10 @@ export function RolesAndPermissionsPage() {
                     <RoleColorSwatches
                       labelId="role-color-label"
                       value={colorDraft}
-                      onChange={setColorDraft}
+                      onChange={(next) => {
+                        setColorDraft(next);
+                        setColorTouched(true);
+                      }}
                     />
                   </div>
                 </div>

@@ -364,6 +364,25 @@ describe('MemberService', () => {
         },
       ]);
     });
+    it('paints every name plain instead of failing when the roles read fails (#3485)', async () => {
+      mockRepo.findByChapter.mockResolvedValue([memberRow('user-1')]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+      ]);
+      mockRoleRepo.findByChapter.mockRejectedValue(new Error('timeout'));
+
+      const result = await service.findRosterByChapter('chapter-1');
+
+      expect(result).toEqual([
+        {
+          user_id: 'user-1',
+          display_name: 'Marcus Reid',
+          avatar_url: null,
+          role_color: null,
+        },
+      ]);
+    });
+
     it("colors each entry with the member's highest-ranked palette role (#3485)", async () => {
       mockRepo.findByChapter.mockResolvedValue([
         memberFixture({

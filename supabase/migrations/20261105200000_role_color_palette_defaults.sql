@@ -7,10 +7,13 @@
 -- Clients paint only palette values, so the old seeds would otherwise show as
 -- no color at all.
 --
--- Only rows a chapter never touched are rewritten: a system role whose color
--- is still its pre-#3485 seed (President, Treasurer, Alumni) or still null
--- (Vice President, Secretary). Member and New Member stay null. A color a
--- chapter chose, and every custom role (system_key null), is left alone.
+-- Only system roles still on their pre-#3485 seed are rewritten: President,
+-- Treasurer and Alumni on their old hex, and Vice President and Secretary still
+-- null. A null cannot tell "never set" from "cleared on purpose", so a chapter
+-- that cleared VP or Secretary through the API would get the default too. The
+-- web picker never sent a clear, so in practice a null here was never set.
+-- Member and New Member stay null. A color a chapter chose, and every custom
+-- role (system_key null), is left alone.
 --
 -- On 2026-11-05 frapp-staging and frapp-prod each held two chapters, every
 -- system role still on its seed and no custom role with a color.
