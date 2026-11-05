@@ -14,10 +14,11 @@ import {
   messageActionsA11yProps,
   ReactionRow,
 } from "./message-item";
+import type { MessageLink } from "./message-markdown";
 
 /**
- * The frame every mobile chat card shares: the poll, event and task cards
- * today, and the points, hours, rush, announcement and audit cards next (#3383).
+ * The frame every mobile chat card shares: the poll, event, task, points,
+ * service hours, announcement and audit cards (#3185, #3383).
  *
  * `thread-message-row.tsx` puts a card inside `MessageRowFrame`, which draws
  * the reply quote, the avatar and the author line every row has. The frame
@@ -73,15 +74,23 @@ export function ChatCardShell({
   onOpenActions,
   onJumpToParent,
   header,
+  links,
   children,
 }: ChatCardFrameProps & {
   /** The card's own text, which carries the message's screen-reader actions. */
   header: ReactNode;
+  /**
+   * The links the header draws, from `parseMessageMarkdown`. The header's
+   * accessible container makes them unreachable one by one, so each rides it
+   * as "Open <link>", as a plain message's links do.
+   */
+  links?: MessageLink[];
   /** Everything under the header: options, meta lines, actions, notes. */
   children?: ReactNode;
 }) {
   const styles = useCardStyles();
   const a11yActions = messageActionsA11yProps(onOpenActions, {
+    links,
     onJumpToParent,
   });
   const hasActions = "accessibilityActions" in a11yActions;
@@ -183,32 +192,37 @@ function CardDeliveryChrome({
  *
  * With a glyph it is the chapter accent, glyph and label together, as web's
  * event and task eyebrows are. Without one it is muted, as the poll's is on
- * both surfaces. `trailing` sits at the far end of the row (a status chip).
+ * both surfaces. `tone="muted"` draws a glyph neutral too: the audit card is
+ * the one accent-free card on web, a record rather than something to act on.
+ * `trailing` sits at the far end of the row (a status chip).
  */
 export function CardEyebrow({
   label,
   glyph: Glyph,
+  tone = "accent",
   trailing,
 }: {
   label: string;
   glyph?: ComponentType<TabGlyphProps>;
+  tone?: "accent" | "muted";
   trailing?: ReactNode;
 }) {
   const styles = useCardStyles();
   const brand = useChapterBranding();
   const { tokens } = useFrappTheme();
+  const accent = Glyph !== undefined && tone === "accent";
   return (
     <View style={styles.eyebrowRow}>
       <View style={styles.eyebrowLead}>
         {Glyph ? (
           <Glyph
-            focused
+            focused={accent}
             accent={brand.accent}
-            muted={tokens.color.text.muted}
+            muted={tokens.color.text.mutedForeground}
             size={16}
           />
         ) : null}
-        <Text style={[styles.eyebrow, Glyph ? { color: brand.accent } : null]}>
+        <Text style={[styles.eyebrow, accent ? { color: brand.accent } : null]}>
           {label}
         </Text>
       </View>
@@ -254,6 +268,60 @@ export function CardMeta({ items }: { items: ReactNode[] }) {
       ))}
     </View>
   );
+}
+
+/** One word or phrase of a {@link CardSentence}, and how it reads. */
+export interface CardSentencePart {
+  text: string;
+  /**
+   * `strong` for a name or a quantity, `muted` for the words between them;
+   * `success` and `destructive` are a strong part in a status hue, a points
+   * grant or deduction.
+   */
+  tone?: "strong" | "muted" | "success" | "destructive";
+}
+
+/**
+ * A record card's body sentence at the body role, the words web's points and
+ * hours cards draw: "Paul Carlson granted +5 points to Elias Brandt". Parts
+ * are joined with a space and wrap as one line of text.
+ */
+export function CardSentence({ parts }: { parts: CardSentencePart[] }) {
+  const styles = useCardStyles();
+  const { tokens } = useFrappTheme();
+  return (
+    <Text style={styles.bodyText}>
+      {parts.map((part, index) => {
+        const tone = part.tone ?? "strong";
+        const style =
+          tone === "muted"
+            ? styles.sentenceMuted
+            : [
+                styles.sentenceStrong,
+                tone === "success"
+                  ? { color: tokens.color.semantic.success }
+                  : tone === "destructive"
+                    ? { color: tokens.color.semantic.destructive }
+                    : null,
+              ];
+        return (
+          <Text key={index} style={style}>
+            {index > 0 ? " " : ""}
+            {part.text}
+          </Text>
+        );
+      })}
+    </Text>
+  );
+}
+
+/**
+ * A member's own words on a record card, in curly quotes and muted: a points
+ * reason, an hours description.
+ */
+export function CardQuote({ text }: { text: string }) {
+  const styles = useCardStyles();
+  return <Text style={styles.quote}>{`“${text}”`}</Text>;
 }
 
 /** A meta-line fact with a leading glyph, such as an event's location. */
@@ -417,6 +485,28 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       }),
       color: tokens.color.text.foreground,
       marginTop: tokens.spacing.xs,
+    },
+    // A card's body copy: a record card's sentence, an announcement's text.
+    bodyText: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+      marginTop: tokens.spacing.sm,
+    },
+    sentenceStrong: {
+      ...typeRole({
+        ...tokens.typography.role.body,
+        weight: tokens.typography.weight.semibold,
+      }),
+      color: tokens.color.text.foreground,
+    },
+    sentenceMuted: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
+    },
+    quote: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
+      marginTop: tokens.spacing.sm,
     },
     metaRow: {
       flexDirection: "row",

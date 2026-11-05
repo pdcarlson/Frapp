@@ -268,6 +268,26 @@ export function resolveAuthorName(
   return authored ? authored : null;
 }
 
+/**
+ * The name a card gives the member behind a change it records, such as the
+ * actor on a `#chapter-audit` row, or `null` for a row with no actor.
+ *
+ * The author chain for an id alone: the system actor is
+ * {@link SYSTEM_AUTHOR_LABEL}, a member their roster name or, when the roster
+ * can't name them, {@link memberFallbackLabel}, so the card never draws a
+ * bare id prefix.
+ */
+export function actorLabel(
+  userId: string | null | undefined,
+  nameFor: NameResolver,
+): string | null {
+  if (!userId) return null;
+  return (
+    resolveAuthorName({ sender_id: userId }, nameFor) ??
+    memberFallbackLabel(userId)
+  );
+}
+
 /** Resolves a `users.id` to the member's signed photo URL, or `null`. */
 export type AvatarResolver = (userId: string) => string | null;
 

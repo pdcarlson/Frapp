@@ -110,6 +110,7 @@ describe("the renderer registry and the layout predicate agree", () => {
         <MessageRenderer
           message={message(kind)}
           viewerId="11111111-1111-4111-8111-111111111111"
+          nameFor={() => null}
           isConfirmed
           onAct={vi.fn()}
         />,
@@ -126,6 +127,7 @@ describe("the renderer registry and the layout predicate agree", () => {
         <MessageRenderer
           message={message(kind, { is_deleted: true })}
           viewerId="11111111-1111-4111-8111-111111111111"
+          nameFor={() => null}
           isConfirmed
           onAct={vi.fn()}
         />,

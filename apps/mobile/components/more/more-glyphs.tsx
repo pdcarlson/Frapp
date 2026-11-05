@@ -44,8 +44,9 @@ export type MoreGlyphProps = {
   /** `true` draws §1's neutral fill rather than the stroke hue's tint. */
   neutral?: boolean;
   /**
-   * Another §2 size, for a glyph drawn outside the hub. Only
-   * `DocumentsGlyph` takes one today: s21's file card draws it at 24.
+   * Another §2 size, for a glyph drawn outside the hub. `DocumentsGlyph`
+   * takes one for s21's file card (24), and `ServiceGlyph` for the chat hours
+   * card's eyebrow (16).
    */
   size?: number;
 };
@@ -103,7 +104,7 @@ export function StudyGlyph(props: MoreGlyphProps) {
 export function ServiceGlyph(props: MoreGlyphProps) {
   const { body } = paint(props);
   return (
-    <Frame>
+    <Frame size={props.size}>
       <Path
         d="M12 20.2s-6.8-4.2-8.7-8.2a4.9 4.9 0 018.7-4.5 4.9 4.9 0 018.7 4.5c-1.9 4-8.7 8.2-8.7 8.2z"
         {...body}

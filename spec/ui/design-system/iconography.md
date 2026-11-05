@@ -177,6 +177,25 @@ The same file's `NotificationsGlyph` (bell, clapper stroke-only; s09 and web
 (`components/chat/notifications-bell.tsx`), in `text.foreground` with the
 neutral fill, since the More row it was drawn for moved there (#3362).
 
+### 6.1.3 Mobile chat cards (Signet duotone, shipped)
+
+The eyebrow glyph over each s05 chat card, drawn at 16px by `CardEyebrow`
+(`apps/mobile/components/chat/chat-card.tsx`) in the tab bar's props and
+recipe, so a card and the tab it belongs to share a silhouette. Each is the
+web glyph for the same intent (§6.2.2). Accent-stroked, except the audit
+card's, which is drawn neutral, as web draws it.
+
+| Semantic intent | Glyph | Lives in |
+|---|---|---|
+| Event card | `EventsGlyph` (the Events tab's) | `components/tab-glyphs.tsx` |
+| Task card | `TasksGlyph` (the Tasks tab's) | `components/tab-glyphs.tsx` |
+| Points card | `PointsGlyph` (star) | `components/chat/card-glyphs.tsx` |
+| Hours card | The More hub's `ServiceGlyph` heart, adapted as `ServiceHoursGlyph` | `components/chat/card-glyphs.tsx` |
+| Announcement card | `AnnouncementGlyph` (megaphone, sound arc stroke-only) | `components/chat/card-glyphs.tsx` |
+| `#chapter-audit` card, neutral | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |
+
+The poll card has no glyph: its eyebrow is muted text on both surfaces.
+
 ### 6.2 Web Dashboard shell (Signet duotone)
 
 Since the #920 shell slice the dashboard's shell chrome draws the duotone

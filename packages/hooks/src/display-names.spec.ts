@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  actorLabel,
   authorInitialsFallback,
   directChannelDisplayName,
   displayNameOrNull,
@@ -538,5 +539,30 @@ describe("resolveAuthorLabel", () => {
     expect(resolveAuthorLabel({ sender_id: null }, roster({}), null)).toBe(
       "Unknown member",
     );
+  });
+});
+
+describe("actorLabel", () => {
+  const names: Record<string, string> = { "user-a": "Paul Carlson" };
+  const nameFor = (id: string) => names[id] ?? null;
+
+  it("names a member from the roster", () => {
+    expect(actorLabel("user-a", nameFor)).toBe("Paul Carlson");
+  });
+
+  it("names the system actor without a lookup", () => {
+    const lookup = vi.fn(nameFor);
+    expect(actorLabel(SYSTEM_SENDER_ID, lookup)).toBe(SYSTEM_AUTHOR_LABEL);
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the member label, never a bare id prefix", () => {
+    expect(actorLabel("2f4a1c9e-0000", nameFor)).toBe("Member 2f4a1c");
+  });
+
+  it("is null for a row with no actor", () => {
+    expect(actorLabel(null, nameFor)).toBe(null);
+    expect(actorLabel(undefined, nameFor)).toBe(null);
+    expect(actorLabel("", nameFor)).toBe(null);
   });
 });

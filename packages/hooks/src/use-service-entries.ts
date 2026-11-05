@@ -52,6 +52,33 @@ export function useServiceEntries(
   });
 }
 
+/**
+ * One service entry, as `GET /v1/service-entries/{id}` returns it: what a chat
+ * hours card reads its live review status from.
+ *
+ * The route answers only the member who logged the entry and a
+ * `service:approve` holder (anyone else gets a 403), so a caller that knows
+ * the viewer is neither passes an empty id, which holds the request (see
+ * `canReadCardServiceEntry`). Under the list's `["service-entries"]` prefix, so
+ * a review or a delete from any screen refreshes it.
+ */
+export function useServiceEntry(id: string) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["service-entries", chapterId, "detail", id],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/service-entries/{id}", {
+        params: { path: { id } },
+      });
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 30_000,
+    enabled: !!id,
+  });
+}
+
 export function useCreateServiceEntry() {
   const client = useFrappClient();
   const queryClient = useQueryClient();

@@ -38,8 +38,12 @@ const STATUSES: ReadonlySet<string> = new Set([
 /** A single logged shift longer than a day is a typo, not a shift. */
 export const MAX_DURATION_MINUTES = 24 * 60;
 
-/** `"2026-08-12"` → `"Aug 12"`. Falls back to the raw value if unparseable. */
-function formatDate(value: string): string {
+/**
+ * `"2026-08-12"` → `"Aug 12"`. Falls back to the raw value if unparseable.
+ * The s19 list's date, and the chat hours card's, so an entry reads the same
+ * day in both.
+ */
+export function formatServiceDate(value: string): string {
   // Parsed at local noon: `new Date` reads a bare `YYYY-MM-DD` as UTC midnight,
   // which renders as the previous day for anyone west of Greenwich, and UTC
   // noon is already the next day at UTC+12 and east (#3026). A service entry
@@ -62,7 +66,7 @@ function toRow(row: Record<string, unknown>): ServiceEntryRow | null {
     description: str(row, "description") ?? "Service entry",
     status: rawStatus as ServiceEntryStatus,
     durationMinutes,
-    meta: metaLine([formatMinutesRounded(durationMinutes), formatDate(date)]),
+    meta: metaLine([formatMinutesRounded(durationMinutes), formatServiceDate(date)]),
     date,
   };
 }

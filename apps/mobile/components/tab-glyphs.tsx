@@ -32,7 +32,7 @@ import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 export const TAB_GLYPH_SIZE = 24;
 
-const STROKE_WIDTH = 1.6;
+export const STROKE_WIDTH = 1.6;
 
 /** Canvas draws the tab labels at 10.5px. */
 const TAB_LABEL_SIZE = 10.5;
@@ -76,15 +76,19 @@ export type TabGlyphProps = {
  * nothing. A `use` prefix here would be a false promise to the `rules-of-hooks`
  * lint, which would then reject a perfectly legal future refactor that moved
  * one of these calls inside a `.map` or a conditional.
+ *
+ * Exported with {@link GlyphFrame} for the chat card glyphs
+ * (`components/chat/card-glyphs.tsx`), which are drawn in this recipe so a
+ * card's eyebrow and the tab it belongs to read as one family.
  */
-function glyphPaint({ focused, accent, muted }: TabGlyphProps) {
+export function glyphPaint({ focused, accent, muted }: TabGlyphProps) {
   return {
     stroke: focused ? accent : muted,
     fill: focused ? tint(accent, ACTIVE_FILL_ALPHA) : INACTIVE_FILL,
   };
 }
 
-function GlyphFrame({
+export function GlyphFrame({
   size = TAB_GLYPH_SIZE,
   children,
 }: {
