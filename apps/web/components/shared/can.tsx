@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { useMyPermissions } from "@repo/hooks";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { can, canAll, canAny } from "@repo/validation";
 import { PermissionsOffline } from "@/components/shared/async-states";
+import { useRefetchAfterOutage } from "@/lib/hooks/use-refetch-after-outage";
 
 type BaseProps = {
   children: ReactNode;
@@ -118,8 +119,8 @@ type CanProps = BaseProps &
  *
  * A paused check resumes by itself on reconnect. A failed one does not:
  * TanStack's `onlineManager` never went offline, so it has no reconnect to
- * refetch on. The gate refetches it when `useNetwork()` leaves OFFLINE, or
- * the outage would end on the denial this branch exists to avoid.
+ * refetch on. `useRefetchAfterOutage` re-runs it once the outage ends, or the
+ * outage would end on the denial this branch exists to avoid.
  */
 export function Can({
   children,
@@ -136,15 +137,13 @@ export function Can({
   });
   const { isOffline } = useNetwork();
 
-  const wasOffline = useRef(isOffline);
-  useEffect(() => {
-    const recovered = wasOffline.current && !isOffline;
-    wasOffline.current = isOffline;
-    // `cancelRefetch: false`: every gate on the page runs this effect for the
-    // same query, and the default would have each call abort the last one's
-    // request.
-    if (recovered && isError && !data) void refetch({ cancelRefetch: false });
-  }, [isOffline, isError, data, refetch]);
+  useRefetchAfterOutage({
+    isOffline,
+    enabled: Boolean(activeChapterId),
+    isError,
+    loaded: data !== undefined,
+    refetch,
+  });
 
   if (!activeChapterId) {
     // No chapter picked yet — there is no permission context to evaluate
