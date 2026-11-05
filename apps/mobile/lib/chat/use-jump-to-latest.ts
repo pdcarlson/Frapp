@@ -33,38 +33,67 @@ export interface LatestScrollableList {
 type Zone = "newest" | "near" | "away";
 
 /**
- * The thread's newest row: its stable key (`client_message_id`) and its
- * `created_at`, which is what the cache orders rows by.
+ * One row of the thread, newest first as the inverted list draws it: its
+ * stable key (`client_message_id`, unchanged through confirmation) and whether
+ * it is the viewer's own send from this device that the server has not echoed
+ * yet (any `_status` but `confirmed`). Such a row is never news to them.
  */
-export interface NewestRow {
+export interface LatestRow {
   id: string;
-  createdAt: string;
+  local: boolean;
 }
 
 /** Where the reader is, per channel. */
 interface ReadingState {
   channelKey: string | null;
   zone: Zone;
-  /** The newest row when they left `newest`, so a later arrival can be noticed. */
-  newestWhenLeft: NewestRow | null;
+  /**
+   * Every row's key when they left `newest`, so a later arrival can be told
+   * from a row that was already there.
+   */
+  seenWhenLeft: ReadonlySet<string> | null;
 }
 
 /**
- * Whether `now` is a row that arrived after `before`. A different newest row
- * is not enough: discarding your own failed newest message takes it out of
- * the cache, and the row before it becomes the newest without anything having
- * arrived. The cache keeps rows ascending by `created_at` (ISO strings, which
- * it compares as strings too), so while `before` is still there a different
- * newest row is at least as late; once it is gone, the new newest is earlier
- * (or, rarely, shares its timestamp). `>=` rather than `>`: two rows can share
- * a timestamp, and the cache puts the later-inserted one after, so an arrival
- * is never missed for a tie.
+ * Whether a row landed below the reader since they left `newest`, judged on
+ * the cache's order as it is now rather than on anything frozen when they
+ * left. The newest row's identity or timestamp is not enough:
+ *
+ * - The viewer's own message is re-sorted when the server confirms it (its
+ *   `created_at` becomes the server's), so a device clock ahead of the
+ *   server's puts a later arrival behind a timestamp the cache no longer
+ *   orders by.
+ * - A message queued offline is confirmed after everything backfilled from
+ *   the outage, so it comes back newest under the same key with the
+ *   backfilled rows beneath it.
+ * - Discarding your own failed newest message takes a row away, and the row
+ *   before it becomes the newest without anything having arrived.
+ *
+ * So: a row arrived when its key was not there when they left and it sits
+ * newer than the oldest row that was, which every row they could have been
+ * reading is. An older page loads past that end and is not news; a removal
+ * adds no key. With none of the old rows left (an empty thread when they
+ * left), anything there now arrived. The viewer's own unconfirmed sends never
+ * count: their row lands a moment before the send that queued it takes them
+ * to the newest message, and must not light the dot in between.
  */
-function arrivedSince(now: NewestRow | null, before: NewestRow | null) {
-  if (now === null) return false;
-  // Nothing was there when they left, so anything now has arrived.
-  if (before === null) return true;
-  return now.id !== before.id && now.createdAt >= before.createdAt;
+function arrivedSince(
+  rows: readonly LatestRow[],
+  seen: ReadonlySet<string> | null,
+): boolean {
+  if (seen === null) return false;
+  let oldestSeen = rows.length;
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    if (seen.has(rows[index]!.id)) {
+      oldestSeen = index;
+      break;
+    }
+  }
+  for (let index = 0; index < oldestSeen; index += 1) {
+    const row = rows[index]!;
+    if (!row.local && !seen.has(row.id)) return true;
+  }
+  return false;
 }
 
 /**
@@ -81,8 +110,9 @@ function arrivedSince(now: NewestRow | null, before: NewestRow | null) {
  * The thread keeps its place while the reader is back in history through the
  * list's own `maintainVisibleContentPosition`, so arrivals no longer shift what
  * they are reading; this is only the way back and the notice. A send is the
- * other way back: the thread calls `jumpToLatest` when the member sends, so
- * their own message never lands out of sight.
+ * other way back: the thread calls `jumpToLatest` once the composer has
+ * queued the member's message, so it never lands out of sight (and a send
+ * that queued nothing leaves them where they were reading).
  *
  * Per channel (`channelKey`): the thread reuses one screen across channels,
  * and a reader back in history in one channel is not in the next. Kept out of
@@ -90,34 +120,23 @@ function arrivedSince(now: NewestRow | null, before: NewestRow | null) {
  */
 export function useJumpToLatest<L extends LatestScrollableList>({
   listRef,
-  newest,
+  rows,
   channelKey,
 }: {
   listRef: RefObject<L | null>;
-  /** The newest row, or `null` for an empty thread. */
-  newest: NewestRow | null;
+  /** The thread's rows, newest first; memoised, as it is read per render. */
+  rows: readonly LatestRow[];
   channelKey: string | null;
 }) {
-  // Keyed on primitives, so a fresh object for the same row each render
-  // changes nothing.
-  const newestId = newest?.id ?? null;
-  const newestAt = newest?.createdAt ?? null;
-  const current = useMemo<NewestRow | null>(
-    () =>
-      newestId === null || newestAt === null
-        ? null
-        : { id: newestId, createdAt: newestAt },
-    [newestId, newestAt],
-  );
   const [state, setState] = useState<ReadingState>({
     channelKey,
     zone: "newest",
-    newestWhenLeft: null,
+    seenWhenLeft: null,
   });
   // Reset during render when the channel changes, as the thread does its
   // other per-channel state, so no frame draws the last channel's control.
   if (state.channelKey !== channelKey) {
-    setState({ channelKey, zone: "newest", newestWhenLeft: null });
+    setState({ channelKey, zone: "newest", seenWhenLeft: null });
   }
 
   const zone: Zone = state.channelKey === channelKey ? state.zone : "newest";
@@ -125,11 +144,11 @@ export function useJumpToLatest<L extends LatestScrollableList>({
   // Read from the scroll handler, which stays one function for the list's
   // life. Mirrored in effects because refs cannot be written in render.
   const viewportRef = useRef(0);
-  const newestRef = useRef(current);
+  const rowsRef = useRef(rows);
   const zoneRef = useRef(zone);
   useEffect(() => {
-    newestRef.current = current;
-  }, [current]);
+    rowsRef.current = rows;
+  }, [rows]);
   useEffect(() => {
     zoneRef.current = zone;
   }, [zone]);
@@ -154,18 +173,16 @@ export function useJumpToLatest<L extends LatestScrollableList>({
       if (next === zoneRef.current) return;
       const leftNewest = zoneRef.current === "newest";
       zoneRef.current = next;
-      const newest = newestRef.current;
+      const seen = leftNewest
+        ? new Set(rowsRef.current.map((row) => row.id))
+        : null;
       setState((previous) => ({
         ...previous,
         zone: next,
         // Remembered from the moment the reader stopped following arrivals,
         // and kept while they move between `near` and `away`.
-        newestWhenLeft:
-          next === "newest"
-            ? null
-            : leftNewest
-              ? newest
-              : previous.newestWhenLeft,
+        seenWhenLeft:
+          next === "newest" ? null : (seen ?? previous.seenWhenLeft),
       }));
     },
     [],
@@ -173,12 +190,10 @@ export function useJumpToLatest<L extends LatestScrollableList>({
 
   /**
    * Scrolls to the newest message. Animated for the control's tap; a send
-   * passes `animated: false`, so the list is already at the bottom when the
-   * new row lands and `maintainVisibleContentPosition` follows it there,
-   * rather than adjusting for it halfway through an animation. An unanimated
-   * jump is at the bottom at once, so it also clears the control there and
-   * then: the member's own message landing must not light the dot for the
-   * frame before the scroll event says they are back.
+   * passes `animated: false`, so the member is at their message at once
+   * rather than watching the list run down to it. An unanimated jump is at
+   * the bottom at once, so it also clears the control there and then, rather
+   * than for the frame after, when the scroll event says they are back.
    */
   const jumpToLatest = useCallback(
     (options: { animated?: boolean } = {}) => {
@@ -189,16 +204,19 @@ export function useJumpToLatest<L extends LatestScrollableList>({
         setState((previous) => ({
           ...previous,
           zone: "newest",
-          newestWhenLeft: null,
+          seenWhenLeft: null,
         }));
       }
     },
     [listRef],
   );
 
-  /** A newer message landed since the reader stopped following arrivals. */
-  const hasNewBelow =
-    zone !== "newest" && arrivedSince(current, state.newestWhenLeft);
+  /** A message landed below the reader since they stopped following arrivals. */
+  const seenWhenLeft = state.seenWhenLeft;
+  const hasNewBelow = useMemo(
+    () => zone !== "newest" && arrivedSince(rows, seenWhenLeft),
+    [zone, rows, seenWhenLeft],
+  );
 
   return {
     onLayout,

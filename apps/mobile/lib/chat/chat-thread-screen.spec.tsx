@@ -76,6 +76,8 @@ vi.mock("react-native", async () => {
 // The reaction tick. Mocked so a spec can count it: one per tap, never per
 // render.
 const selectionHaptic = vi.hoisted(() => vi.fn());
+/** The actions sheet's `dismiss`, as the screen calls it through its ref. */
+const dismissSheet = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/haptics", () => ({
   selectionHaptic: () => selectionHaptic(),
   successHaptic: vi.fn(),
@@ -101,7 +103,10 @@ vi.mock("@/components/chat/message-actions-sheet", async () => {
       props: Record<string, unknown>,
       ref,
     ) {
-      useImperativeHandle(ref, () => ({ present: () => {} }));
+      useImperativeHandle(ref, () => ({
+        present: () => {},
+        dismiss: () => dismissSheet(),
+      }));
       return createElement("MessageActionsSheet", props);
     }),
   };
@@ -872,6 +877,22 @@ describe("chat thread loading state (components.md §10)", () => {
     });
     act(() => tree.unmount());
   });
+
+  it("reads aloud as one loading element", () => {
+    // A label alone is not enough on iOS: VoiceOver only reads a View that is
+    // an accessibility element, and the shapes inside have nothing to read.
+    channel = channelState({ isLoading: true });
+    const tree = render();
+
+    const container = skeletons(tree)[0]!.find(
+      (node) =>
+        node.type === ("View" as never) &&
+        node.props.accessibilityLabel === "Loading messages",
+    );
+    expect(container.props.accessible).toBe(true);
+    expect(container.props.accessibilityRole).toBe("progressbar");
+    act(() => tree.unmount());
+  });
 });
 
 describe("chat thread list behaviour", () => {
@@ -1028,14 +1049,128 @@ describe("chat thread jump to latest", () => {
     act(() => tree.unmount());
   });
 
-  it("takes a member who sends a new message to the bottom to see it go", () => {
+  it("takes a member who sends a new message to the bottom to see it go", async () => {
     const scrollToOffset = vi.fn();
     const tree = renderMeasured(scrollToOffset);
     scrollTo(tree, 1200);
 
-    act(() => tree.root.findByType(ChatComposer).props.onSend());
+    await act(async () => {
+      tree.root.findByType(ChatComposer).props.onSend();
+      await Promise.resolve();
+    });
 
     expect(scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: false });
+    act(() => tree.unmount());
+  });
+
+  // A send that queued nothing (the outbox write failed) has no row to show,
+  // so taking the reader to the bottom only lost their place in history.
+  it("leaves the reader where they are when the send queued nothing", async () => {
+    channel = channelState({ send: vi.fn(async () => false) });
+    const scrollToOffset = vi.fn();
+    const tree = renderMeasured(scrollToOffset);
+    scrollTo(tree, 1200);
+
+    await act(async () => {
+      tree.root.findByType(ChatComposer).props.onSend();
+      await Promise.resolve();
+    });
+
+    expect(scrollToOffset).not.toHaveBeenCalled();
+    expect(jumpButtons(tree)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("does not move the reader for a second tap while their reply is still on its way", async () => {
+    let settle!: (queued: boolean) => void;
+    channel = channelState({
+      send: vi.fn(() => new Promise<boolean>((resolve) => (settle = resolve))),
+    });
+    const scrollToOffset = vi.fn();
+    const tree = renderMeasured(scrollToOffset);
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    act(() => (sheet.props.onReply as (id: string) => void)("m1"));
+    scrollTo(tree, 1200);
+
+    await act(async () => {
+      // One render: the second tap meets the same staged reply, in flight.
+      const composer = tree.root.findByType(ChatComposer);
+      composer.props.onSend();
+      composer.props.onSend();
+      await Promise.resolve();
+    });
+    expect(channel.send).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).not.toHaveBeenCalled();
+
+    await act(async () => {
+      settle(true);
+      await Promise.resolve();
+    });
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: false });
+    act(() => tree.unmount());
+  });
+
+  // Queued offline, the viewer's message comes back from the server newest,
+  // under the same key, after everything backfilled from the outage.
+  it("says so when rows are backfilled beneath the viewer's own message", () => {
+    const own = message("own", {
+      sender_id: VIEWER,
+      created_at: new Date(2026, 8, 28, 17, 2).toISOString(),
+      _status: "pending",
+    });
+    channel = channelState({
+      messages: [...channelState().messages, own],
+    });
+    const tree = renderMeasured();
+    scrollTo(tree, 200);
+    expect(jumpButtons(tree)).toHaveLength(0);
+
+    channel = {
+      ...channel,
+      messages: [
+        ...channelState().messages,
+        message("b1", {
+          created_at: new Date(2026, 8, 28, 17, 3).toISOString(),
+        }),
+        message("b2", {
+          created_at: new Date(2026, 8, 28, 17, 4).toISOString(),
+        }),
+        {
+          ...own,
+          created_at: new Date(2026, 8, 28, 17, 5).toISOString(),
+          _status: "confirmed",
+        },
+      ],
+    };
+    rerender(tree);
+
+    expect(jumpButtons(tree)[0]!.props.accessibilityLabel).toBe(
+      jumpToLatestLabel(true),
+    );
+    act(() => tree.unmount());
+  });
+
+  // The viewer's own message lands a moment before the send that queued it
+  // takes them down; it is not news to them.
+  it("lights no dot for the viewer's own unconfirmed message", () => {
+    const tree = renderMeasured();
+    scrollTo(tree, 200);
+
+    channel = {
+      ...channel,
+      messages: [
+        ...channel.messages,
+        message("mine", {
+          sender_id: VIEWER,
+          created_at: new Date(2026, 8, 28, 17, 2).toISOString(),
+          _status: "pending",
+        }),
+      ],
+    };
+    rerender(tree);
+
+    expect(jumpButtons(tree)).toHaveLength(0);
     act(() => tree.unmount());
   });
 
@@ -1133,6 +1268,30 @@ describe("chat thread reactions from the actions sheet", () => {
     rerender(tree);
 
     expect(target()).toMatchObject({ messageId: "m1", reactedWith: ["👍"] });
+    act(() => tree.unmount());
+  });
+
+  it("closes the sheet when its message is deleted while it is open", () => {
+    // A deleted message offers no actions; left open, the quick row would
+    // write a reaction the thread no longer draws.
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const row = rows(tree)[0]!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+    rerender(tree);
+    expect(dismissSheet).not.toHaveBeenCalled();
+
+    channel = {
+      ...channel,
+      messages: [message("m1", { is_deleted: true, content: "" })],
+    };
+    rerender(tree);
+
+    expect(dismissSheet).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 });

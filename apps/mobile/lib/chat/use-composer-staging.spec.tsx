@@ -189,6 +189,69 @@ describe("useComposerStaging — reply", () => {
   });
 });
 
+// The thread follows a send to the newest message through `onSent`, so it
+// must run only for a message that was actually queued.
+describe("useComposerStaging — onSent", () => {
+  it("runs once the message is queued", async () => {
+    const onSent = vi.fn();
+    const { result } = setup({ onSent });
+    await act(async () => {
+      result.current.submit();
+      await Promise.resolve();
+    });
+    expect(onSent).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not run when the send queued nothing", async () => {
+    const onSent = vi.fn();
+    const { result } = setup({
+      onSent,
+      send: vi.fn().mockResolvedValue(false),
+    });
+    act(() => result.current.startReply("m1"));
+    await act(async () => {
+      result.current.submit();
+      await Promise.resolve();
+    });
+    expect(onSent).not.toHaveBeenCalled();
+  });
+
+  it("does not run for a resubmit while the staged reply is still in flight", async () => {
+    let settle!: (queued: boolean) => void;
+    const send = vi.fn(
+      () => new Promise<boolean>((resolve) => (settle = resolve)),
+    );
+    const onSent = vi.fn();
+    const { result } = setup({ onSent, send });
+    act(() => result.current.startReply("m1"));
+    await act(async () => {
+      // One render: the second tap sees the same staged reply, in flight.
+      result.current.submit();
+      result.current.submit();
+      await Promise.resolve();
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(onSent).not.toHaveBeenCalled();
+    await act(async () => {
+      settle(true);
+      await Promise.resolve();
+    });
+    expect(onSent).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not run for an edit", async () => {
+    const onSent = vi.fn();
+    const { result } = setup({ onSent });
+    act(() => result.current.startEdit("m2"));
+    act(() => result.current.onChangeText("fixed text"));
+    await act(async () => {
+      result.current.submit();
+      await Promise.resolve();
+    });
+    expect(onSent).not.toHaveBeenCalled();
+  });
+});
+
 describe("replyContextFor", () => {
   it("names nobody for a parent outside the loaded window", () => {
     expect(replyContextFor(null, VIEWER, nameFor, READY)).toEqual({

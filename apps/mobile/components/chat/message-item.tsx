@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import {
   Image,
+  Keyboard,
   Pressable,
   StyleSheet,
   Text,
@@ -286,6 +287,12 @@ export function MessageRowFrame({
     <Pressable
       accessible={false}
       onLongPress={onOpenActions}
+      // The thread's list lets a tap reach a control with the keyboard up
+      // (`keyboardShouldPersistTaps="handled"`), and this Pressable claims a
+      // tap anywhere on the row, so without this a tap on a message no longer
+      // put the keyboard away. The row has no tap action of its own; its
+      // controls (chips, links, photos, Retry) claim their own taps first.
+      onPress={Keyboard.dismiss}
       disabled={!onOpenActions}
       style={[styles.row, startsRun ? styles.rowStartsRun : styles.rowFollows]}
     >

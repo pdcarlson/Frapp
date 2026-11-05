@@ -32,7 +32,11 @@ export function ThreadSkeleton() {
   const styles = createStyles(tokens);
 
   return (
+    // `accessible` makes the container one element, so VoiceOver reads the
+    // label: on iOS a View's label counts only on an accessibility element,
+    // and the shapes inside have nothing to read.
     <View
+      accessible
       accessibilityRole="progressbar"
       accessibilityLabel="Loading messages"
       style={styles.container}

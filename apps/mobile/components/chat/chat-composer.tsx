@@ -414,8 +414,9 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.muted,
     },
-    // A border in both states, transparent when lit, so the box never shifts
-    // as the button flips between them.
+    // A 1pt border in both states, so the box never shifts as the button flips
+    // between them. Lit, it is painted the accent, the same as the fill, so it
+    // reads as part of the fill; a lit fill that changes must change it too.
     send: {
       width: tokens.touch.minimum,
       height: tokens.touch.minimum,

@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
 import { FrappThemeProvider } from "@/lib/theme";
+import { Keyboard } from "react-native";
 import { drawnText } from "@/test/screen-text";
 
 const attachmentHook = vi.hoisted(() => ({
@@ -455,6 +456,27 @@ describe("the reaction row", () => {
 });
 
 /** The rows' own layout (components.md §11, #2873). */
+describe("a tap on the row", () => {
+  // The thread's list keeps taps for its controls while the keyboard is up
+  // (`keyboardShouldPersistTaps="handled"`), and the row's frame claims a tap
+  // for its long press, so the frame is what has to put the keyboard away.
+  it("puts the keyboard away, as a tap on the thread did before", () => {
+    vi.mocked(Keyboard.dismiss).mockClear();
+    const onOpenActions = vi.fn();
+    const tree = renderItem(message(), undefined, { onOpenActions });
+    const frame = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.onLongPress === onOpenActions &&
+        node.props.accessible === false,
+    );
+
+    act(() => frame.props.onPress());
+    expect(Keyboard.dismiss).toHaveBeenCalledTimes(1);
+    expect(onOpenActions).not.toHaveBeenCalled();
+  });
+});
+
 describe("compact layout (#2873)", () => {
   /** Accessible containers carrying the long-press action. */
   function actionHosts(tree: ReactTestRenderer) {

@@ -82,6 +82,7 @@ import { useComposerStaging } from "@/lib/chat/use-composer-staging";
 import {
   FOLLOW_ARRIVALS_WITHIN,
   useJumpToLatest,
+  type LatestRow,
 } from "@/lib/chat/use-jump-to-latest";
 import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
@@ -448,15 +449,19 @@ export default function ChatThreadScreen() {
     onScrollToIndexFailed: handleScrollToIndexFailed,
   } = useJumpToMessage<FlatList<ThreadRow>>(inverted, channelId);
   // The way back to the newest message after reading back through history,
-  // and the notice that something new landed there.
+  // and the notice that something new landed there, judged on the rows in
+  // the order the list draws them.
+  const latestRows = useMemo<LatestRow[]>(
+    () =>
+      inverted.map((row) => ({
+        id: row.message.client_message_id,
+        local: row.message._status !== "confirmed",
+      })),
+    [inverted],
+  );
   const latest = useJumpToLatest({
     listRef,
-    newest: inverted[0]
-      ? {
-          id: inverted[0].message.client_message_id,
-          createdAt: inverted[0].message.created_at,
-        }
-      : null,
+    rows: latestRows,
     channelKey: channelId,
   });
   const jumpToLatest = latest.jumpToLatest;
@@ -496,6 +501,16 @@ export default function ChatThreadScreen() {
     return index;
   }, [messages]);
 
+  // A new message lands at the bottom, so a member who sends from deep in
+  // history is taken there to see it go, once it is queued. Only then: a send
+  // that queued nothing (the outbox write failed, or the staged reply is
+  // still on its way) leaves them where they were reading, next to the
+  // message they were replying to. An edit stays where it is too: its message
+  // is the one they were reading.
+  const followSend = useCallback(
+    () => jumpToLatest({ animated: false }),
+    [jumpToLatest],
+  );
   // A staged reply or an open edit (#2775), keyed by channel. Typing into the
   // draft still emits typing; typing into an edit does not, since nothing new
   // is on its way.
@@ -509,20 +524,16 @@ export default function ChatThreadScreen() {
     setDraft: handleChangeText,
     send,
     edit,
+    onSent: followSend,
   });
   const submitComposer = staging.submit;
-  const sendingEdit = staging.isEditing;
   const handleSend = useCallback(() => {
     // Clear first: `attachError` sits ahead of `sendError` in the hint chain
     // below, and a stale photo-permission line would hide the one report that
     // a message never reached the outbox.
     setAttachError(null);
     submitComposer();
-    // A new message lands at the bottom, so a member who sends from deep in
-    // history is taken there to see it go. An edit stays where it is: its
-    // message is the one they were reading.
-    if (!sendingEdit) jumpToLatest({ animated: false });
-  }, [submitComposer, sendingEdit, jumpToLatest]);
+  }, [submitComposer]);
 
   const handleDelete = useCallback(
     (messageId: string) => confirmDeleteMessage(() => remove(messageId)),
@@ -645,6 +656,21 @@ export default function ChatThreadScreen() {
           : [],
     };
   }, [actionTarget, byId, viewerId]);
+
+  // A message deleted while its sheet is open (by its sender, a moderator, or
+  // the viewer on another device) closes the sheet. A deleted message offers
+  // no actions at all (`messageActionsFor`), so the sheet never opens on one,
+  // and its rows would otherwise stay live: a quick reaction would be written
+  // to a message whose reactions the thread no longer draws (`MessageItem`
+  // drops them), and Reply or Edit would stage against `[message deleted]`.
+  // Gone from the cache counts the same. The report form, if the member has
+  // moved on to it, stays: what they are reporting still happened.
+  const sheetMessageGone = actionTarget
+    ? (byId.get(actionTarget.messageId)?.is_deleted ?? true)
+    : false;
+  useEffect(() => {
+    if (sheetMessageGone) actionsSheetRef.current?.dismiss();
+  }, [sheetMessageGone]);
 
   const renderItem = useCallback(
     ({ item }: { item: ThreadRow }) => {
@@ -972,16 +998,18 @@ export default function ChatThreadScreen() {
                   // a member reading back through history was reading by a
                   // row. The native scroll view keeps the first visible row
                   // where it was (iOS, and Android's Fabric scroll view in RN
-                  // 0.86, which this app runs) and, within 80pt of the newest
-                  // message, scrolls on to show the arrival instead. Older
-                  // pages append at the far end, which this never touches.
+                  // 0.86, which this app runs) and, within
+                  // `FOLLOW_ARRIVALS_WITHIN` of the newest message, scrolls on
+                  // to show the arrival instead. Older pages append at the far
+                  // end, which this never touches.
                   maintainVisibleContentPosition={MAINTAIN_POSITION}
                   onScroll={latest.onScroll}
                   onLayout={latest.onLayout}
                   // A tap on a reaction, link, photo, quote or Retry acts at
                   // once with the keyboard up; React Native's default spent
                   // that tap on dismissing the keyboard. Dragging the thread
-                  // puts the keyboard away, as every messenger does.
+                  // puts the keyboard away, as every messenger does, and so
+                  // does a tap on a message itself (`MessageRowFrame`).
                   // `on-drag` rather than iOS's `interactive`, on both: the
                   // avoiding view under the composer follows keyboard frame
                   // events, which an interactive drag only sends at its end,

@@ -161,6 +161,8 @@ function announce(message: string) {
 
 export interface MessageActionsSheetHandle {
   present: () => void;
+  /** Closes the menu. The report form, once open, is the member's to close. */
+  dismiss: () => void;
 }
 
 export interface MessageActionsSheetProps {
@@ -201,7 +203,10 @@ export const MessageActionsSheet = forwardRef<
 
   useImperativeHandle(
     ref,
-    () => ({ present: () => menuRef.current?.present() }),
+    () => ({
+      present: () => menuRef.current?.present(),
+      dismiss: () => menuRef.current?.dismiss(),
+    }),
     [],
   );
 

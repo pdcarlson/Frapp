@@ -109,6 +109,13 @@ export interface ComposerStagingInput {
   /** Resolves `true` once the message is queued, `false` when it was not. */
   send: (content: string, options?: SendOptions) => Promise<boolean>;
   edit: (messageId: string, content: string) => Promise<void>;
+  /**
+   * Runs once a message `submit` sent is queued. Never for an edit, a
+   * resubmit while the staged reply is still in flight, or a send that
+   * queued nothing, so the thread can follow a real send without moving the
+   * reader for one that didn't happen.
+   */
+  onSent?: () => void;
 }
 
 export interface ComposerStaging {
@@ -160,6 +167,7 @@ export function useComposerStaging({
   setDraft,
   send,
   edit,
+  onSent,
 }: ComposerStagingInput): ComposerStaging {
   // One staged reply and one open edit per channel, keyed by channel id: the
   // screen stays mounted across channels, and what a member left staged or
@@ -353,6 +361,7 @@ export function useComposerStaging({
     }
     void send(draft, { replyToId: staged?.messageId ?? null }).then(
       (dispatched) => {
+        if (dispatched) onSent?.();
         if (!staged) return;
         if (replyInFlightRef.current === staged)
           replyInFlightRef.current = null;
@@ -365,7 +374,7 @@ export function useComposerStaging({
         }
       },
     );
-  }, [activeEdit, activeReply, cancelEdit, draft, edit, send]);
+  }, [activeEdit, activeReply, cancelEdit, draft, edit, onSent, send]);
 
   // An edit emptied of the text it had can't be saved, and the composer greys
   // Save out; this is what says why, rather than leaving a dead button. A
