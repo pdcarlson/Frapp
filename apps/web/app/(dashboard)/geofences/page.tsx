@@ -1,7 +1,7 @@
 import { GeofencesAdminPage } from "@/components/geofences/geofences-admin-page";
 
 export const metadata = {
-  title: "Study Zones",
+  title: "Study zones",
 };
 
 export default function Geofences() {

@@ -58,7 +58,7 @@ describe("the per-page settings drawer", () => {
     // on every page: "Settings" alone would be three identical buttons to a
     // screen reader moving between routes.
     expect(
-      screen.getByRole("button", { name: "Study Zones settings" }),
+      screen.getByRole("button", { name: "Study zones settings" }),
     ).toBeInTheDocument();
   });
 

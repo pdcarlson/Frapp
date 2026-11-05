@@ -14,7 +14,7 @@ import {
 type Role = { id: string; name: string; permissions?: string[] };
 
 /**
- * Board `4c` on Study Zones.
+ * Board `4c` on Study zones.
  *
  * **Access only, and the omission is the honest part.** `4c` draws three
  * sections — Access, Defaults, and Posts to chat — on Events, and pin 4 scopes
@@ -57,7 +57,7 @@ export function StudyZonesSettingsDrawer() {
   }, [catalogQuery.data]);
 
   return (
-    <PageSettingsDrawer pageTitle="Study Zones">
+    <PageSettingsDrawer pageTitle="Study zones">
       <PageSettingsSection
         label="Access"
         footer={
