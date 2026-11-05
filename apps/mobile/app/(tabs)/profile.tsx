@@ -58,7 +58,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 export default function ProfileScreen() {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
-  const styles = createStyles(tokens);
+  const styles = createStyles(tokens, accent);
   const { email: sessionEmail } = useAuthSession();
   const chapterId = useActiveChapterId();
 
@@ -210,7 +210,7 @@ export default function ProfileScreen() {
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, accent: string) {
   return StyleSheet.create({
     identity: {
       alignItems: "center",
@@ -263,11 +263,11 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
     },
-    // The board's Edit: 13.5px semibold in the back row's gold. The label
-    // role (14 semibold) is the nearest step on the type scale.
+    // The board's Edit: 13.5px semibold in the back row's color, the chapter
+    // accent. The label role (14 semibold) is the nearest step on the scale.
     edit: {
       ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.askText,
+      color: accent,
     },
     pressed: {
       opacity: 0.6,

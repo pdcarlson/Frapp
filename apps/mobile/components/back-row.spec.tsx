@@ -5,6 +5,11 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
+// A purple stand-in, so a row painted house gold fails instead of passing.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({ accent: "#CB9FFF" }),
+}));
+
 import {
   BACK_TO_CHAT,
   BACK_TO_EVENTS,
@@ -41,13 +46,14 @@ describe("BackRow (#3022)", () => {
     expectBackRow(tree, label, href);
   });
 
-  it("draws in the board's back-row gold, whatever the chapter's accent", () => {
+  it("draws in the chapter accent, not house gold", () => {
     const tree = render(<BackRow {...BACK_TO_MORE} />);
     const text = tree.root.findByType("Text" as unknown as React.ElementType);
 
-    // `gold.askText`, the board's `#F4CB63`, which s05's `‹` draws too.
+    // The purple stand-in the mock returns: inside a chapter every back arrow
+    // follows the accent (spec/behavior/branding.md, owner rule 2026-11-04).
     expect(text.props.style).toEqual(
-      expect.objectContaining({ color: "#F4CB63" }),
+      expect.objectContaining({ color: "#CB9FFF" }),
     );
   });
 });

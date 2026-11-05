@@ -3,7 +3,6 @@ import {
   AppState,
   Linking,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
@@ -34,6 +33,7 @@ import { BACK_TO_MORE } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { AccentSheet } from "@/components/settings/accent-sheet";
 import { BlockedMembersSheet } from "@/components/settings/blocked-members-sheet";
+import { Toggle } from "@/components/toggle";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -43,7 +43,7 @@ import {
   getPushPermission,
   pushUnavailableReason,
 } from "@/lib/notifications/push";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
   type QuietHoursWindow,
   useNotificationPreferencesSync,
@@ -125,7 +125,6 @@ type QuietHoursCardProps = {
    */
   windowEditable: boolean;
   tokens: SignetTokens;
-  accent: string;
   styles: ReturnType<typeof createStyles>;
 };
 
@@ -136,7 +135,6 @@ function QuietHoursCard({
   onWindowChange,
   windowEditable,
   tokens,
-  accent,
   styles,
 }: QuietHoursCardProps) {
   const [draft, setDraft] = useState<QuietHoursWindow>(quietHoursWindow);
@@ -193,15 +191,10 @@ function QuietHoursCard({
               : "Silence normal-priority pushes during a window you choose."}
           </Text>
         </View>
-        <Switch
+        <Toggle
           value={enabled}
           onValueChange={onEnabledChange}
           accessibilityLabel="Quiet hours"
-          trackColor={{
-            false: tokens.color.border.input,
-            true: tint(tokens.color.semantic.info, 0.3),
-          }}
-          thumbColor={enabled ? accent : tokens.color.surface.card}
         />
       </View>
 
@@ -465,7 +458,6 @@ export default function PreferencesScreen() {
         onWindowChange={setQuietHoursWindow}
         windowEditable={quietHoursSync !== "loading"}
         tokens={tokens}
-        accent={accent}
         styles={styles}
       />
 
@@ -476,17 +468,10 @@ export default function PreferencesScreen() {
             label={category.label}
             description={category.description}
             trailing={
-              <Switch
+              <Toggle
                 value={categories[category.key]}
                 onValueChange={(value) => setCategory(category.key, value)}
                 accessibilityLabel={category.label}
-                trackColor={{
-                  false: tokens.color.border.input,
-                  true: tint(tokens.color.semantic.info, 0.3),
-                }}
-                thumbColor={
-                  categories[category.key] ? accent : tokens.color.surface.card
-                }
               />
             }
           />
