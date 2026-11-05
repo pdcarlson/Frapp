@@ -55,7 +55,9 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 
 const { ReportsPage } = await import("./reports-page");
 
@@ -225,6 +227,30 @@ describe("ReportsPage preview states", () => {
       screen.queryByText("Generate a report to see a preview here."),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("shows the server's message from the body the report hooks throw", async () => {
+    // openapi-fetch throws the parsed error body, a plain object, not an
+    // `Error`; an `instanceof Error` check showed the fallback for every
+    // refusal the API explained.
+    const user = userEvent.setup();
+    mockAttendanceReport.mockReturnValue({
+      mutateAsync: vi.fn().mockRejectedValue({
+        statusCode: 400,
+        message: "The start date must come before the end date.",
+      }),
+      isPending: false,
+    });
+
+    render(<ReportsPage />);
+    await user.click(generateButton());
+
+    expect(
+      await screen.findByText("The start date must come before the end date."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Confirm your chapter access and retry."),
+    ).not.toBeInTheDocument();
   });
 
   it("will not let Retry queue a second run during a PDF export", async () => {
@@ -519,10 +545,7 @@ describe("ReportsPage event and member pickers", () => {
 
     render(<ReportsPage />);
     await user.click(screen.getByText(/can't find the event/i));
-    await user.type(
-      screen.getByPlaceholderText(/event id/i),
-      "evt-not-listed",
-    );
+    await user.type(screen.getByPlaceholderText(/event id/i), "evt-not-listed");
     await user.click(generateButton());
 
     expect(mutateAsync).toHaveBeenCalledWith(
@@ -538,10 +561,7 @@ describe("ReportsPage event and member pickers", () => {
 
     render(<ReportsPage />);
     await user.click(screen.getByText(/can't find the event/i));
-    await user.type(
-      screen.getByPlaceholderText(/event id/i),
-      "evt-not-listed",
-    );
+    await user.type(screen.getByPlaceholderText(/event id/i), "evt-not-listed");
 
     expect(screen.getByText(/not in the list above/i)).toBeInTheDocument();
   });

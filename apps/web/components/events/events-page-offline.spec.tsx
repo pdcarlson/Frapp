@@ -48,6 +48,7 @@ vi.mock("@repo/hooks", () => ({
   useMembers: () => ({ data: [], isPending: false, isError: false }),
   useUpdateAttendanceStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAutoAbsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useMyPermissions: () => ({ data: { permissions: ["events:update"] } }),
   useEvents: () => eventsQuery,
   useNow: () => Date.parse("2026-09-01T12:00:00Z"),
 }));
@@ -67,7 +68,9 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 
 vi.mock("@/lib/realtime/use-realtime-table", () => ({
   useRealtimeTable: () => {},

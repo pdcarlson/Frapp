@@ -3,12 +3,17 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Text, View } from "react-native";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { getSignetTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, typeRole } from "@/lib/theme";
 import { screenText, textHeadings } from "@/test/screen-text";
 import { expectBackRow } from "@/test/back-row";
 import { BACK_TO_MORE } from "./back-row";
+
+// The back row paints the chapter accent; its value is back-row.spec.tsx's.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({ accent: "#CB9FFF" }),
+}));
 import { ScreenShell } from "./screen-shell";
 
 /**

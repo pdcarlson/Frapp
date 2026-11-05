@@ -111,6 +111,19 @@ export function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * `"Due Fri, Nov 6"`: a label before a formatted value, or null when the value
+ * didn't format. The house date helpers return null for a value they can't
+ * read, so guarding on the raw field and interpolating the result printed
+ * "Due null" for a malformed date. Guard on the formatted value instead.
+ */
+export function labelled(
+  label: string,
+  formatted: string | null,
+): string | null {
+  return formatted ? `${label} ${formatted}` : null;
+}
+
 /** Escape one CSV cell per RFC 4180 (quote when it contains a comma, quote, or newline). */
 export function quoteCsvCell(value: string): string {
   if (/[",\n\r]/.test(value)) {
@@ -137,7 +150,9 @@ export function rowsToCsv(rows: Record<string, string>[]): string {
   const headers = Array.from(headerSet);
   const lines = [headers.map(quoteCsvCell).join(",")];
   for (const row of rows) {
-    lines.push(headers.map((header) => quoteCsvCell(row[header] ?? "")).join(","));
+    lines.push(
+      headers.map((header) => quoteCsvCell(row[header] ?? "")).join(","),
+    );
   }
   return `\uFEFF${lines.join("\r\n")}`;
 }
@@ -171,7 +186,13 @@ export function downloadBlob(blob: Blob, filename: string): void {
  * reports export and the dashboard bulk-export actions (Billing, Points) used
  * to each hand-roll this same three-line sequence.
  */
-export function downloadCsv(rows: Record<string, string>[], filenamePrefix: string): void {
+export function downloadCsv(
+  rows: Record<string, string>[],
+  filenamePrefix: string,
+): void {
   const blob = new Blob([rowsToCsv(rows)], { type: "text/csv;charset=utf-8" });
-  downloadBlob(blob, `frapp-${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.csv`);
+  downloadBlob(
+    blob,
+    `frapp-${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.csv`,
+  );
 }

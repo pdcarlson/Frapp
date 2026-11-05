@@ -6,6 +6,7 @@ import { cn, getErrorMessage, initials } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useToast } from "@/lib/hooks/use-toast";
+import { permissionLabel } from "@/lib/permission-labels";
 
 export type MatrixRole = {
   id: string;
@@ -53,10 +54,13 @@ type Props = {
  *
  * **Rows group by module** (`4e` pin 3). The group is derived from the
  * permission string's prefix (`events:create` → Events) rather than from
- * `entry.key`, because the catalog's `key` is a display label and several
- * modules spell theirs differently from the permission namespace. A permission
- * with no prefix lands under "Chapter", which is where the ungrouped
- * chapter-wide permissions belong anyway.
+ * `entry.key`, because the catalog's `key` is the API constant's name
+ * (`EVENTS_CREATE`) and several modules spell theirs differently from the
+ * permission namespace. A permission with no prefix lands under "Chapter",
+ * which is where the ungrouped chapter-wide permissions belong anyway. A row
+ * reads as `permission-labels.ts` words it ("Create events"), never as the
+ * constant or the raw string; the tooltip repeats the words for a label the
+ * column truncates.
  *
  * **The marks take no opacity modifier.** `●` and `○` are characters, so
  * §6's 4.5:1 text floor applies rather than the 3:1 glyph one, and
@@ -166,7 +170,7 @@ export function RolesMatrix({
         title: `Couldn't update ${role.name}`,
         description: getErrorMessage(
           error,
-          "The permission was not changed. Retry, or check you still hold roles:manage.",
+          "The permission was not changed. Try again in a moment.",
         ),
         variant: "destructive",
       });
@@ -288,16 +292,16 @@ export function RolesMatrix({
                 <span
                   role="rowheader"
                   className="truncate pr-2"
-                  title={entry.permission}
+                  title={permissionLabel(entry.permission)}
                 >
-                  {entry.key || entry.permission}
+                  {permissionLabel(entry.permission)}
                 </span>
                 {columns.map((role) => {
                   const wildcard = role.permissions.includes("*");
                   const held =
                     wildcard || role.permissions.includes(entry.permission);
                   const locked = wildcard || !canManage;
-                  const label = `${entry.key || entry.permission} for ${role.name}`;
+                  const label = `${permissionLabel(entry.permission)} for ${role.name}`;
 
                   if (locked) {
                     return (
@@ -382,6 +386,12 @@ const MODULE_LABELS: Record<string, string> = {
   invoices: "Money",
   dues: "Money",
   points: "Money",
+  // The product's names for these, not the API namespace's.
+  chapter_docs: "Documents",
+  geofences: "Study zones",
+  "chapter-config": "Settings",
+  "chapter-directory": "Chapter directory",
+  service: "Service hours",
 };
 
 /**

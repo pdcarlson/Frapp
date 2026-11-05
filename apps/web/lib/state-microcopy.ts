@@ -27,18 +27,26 @@ export const stateMicrocopy = {
     offlineTitle: "Members unavailable offline",
     offlineDescription: "Reconnect to load the roster.",
     errorTitle: "Couldn't load members",
-    errorDescription: "Check your chapter access and API health.",
+    errorDescription: "Confirm your chapter access and retry.",
     supportErrorTitle: "Couldn't load roles and points",
     supportErrorDescription: "Filtering, sorting and assignment need both.",
   },
+  // Same split as `members` above: a filter or search that matches nothing is
+  // not an empty chapter. The `preview*` pair had no reader left.
   events: {
     loading: "Loading chapter events...",
     emptyTitle: "No events yet",
     emptyDescription:
       "Create your first chapter event to unlock attendance and point automation.",
-    previewTitle: "Showing preview event data",
-    previewDescription:
-      "Sign in to load live event scheduling and attendance records.",
+    filteredTitle: "No events match the filters",
+    filteredDescription: "Clear a filter to see more.",
+    // The title is built at the call site because it quotes the live query.
+    noMatchDescription: "Check the spelling, or widen the filters.",
+    offlineTitle: "Events workspace unavailable offline",
+    offlineDescription:
+      "Reconnect to load event schedules and attendance updates.",
+    errorTitle: "Couldn't load chapter events",
+    errorDescription: "Confirm your chapter access and retry.",
   },
   points: {
     loading: "Loading points ledger...",
@@ -56,7 +64,7 @@ export const stateMicrocopy = {
       "Your attendance, study sessions, and adjustments will appear here.",
     errorTitle: "Couldn't load the points ledger",
     errorDescription:
-      "Standings and transactions are unavailable, so none are shown. Verify your chapter access and API health, then retry.",
+      "Standings and transactions are unavailable, so none are shown. Confirm your chapter access and retry.",
   },
   billing: {
     loading: "Loading billing overview...",

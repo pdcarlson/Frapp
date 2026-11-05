@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { type SemesterArchive, type useSemesterRollover } from "@repo/hooks";
+import { formatDayRange } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -164,9 +165,7 @@ export function SettingsSemesterTab({
           <CardHeader>
             <CardTitle>Start a new semester</CardTitle>
             <CardDescription>
-              Archives the current leaderboard period with a label and date
-              range. Points keep accumulating. The leaderboard just resets its
-              default window.
+              Archives the current leaderboard period. Points are kept.
             </CardDescription>
           </CardHeader>
           <form onSubmit={startRollover}>
@@ -274,10 +273,6 @@ export function SettingsSemesterTab({
       <Card>
         <CardHeader>
           <CardTitle>Archived semesters</CardTitle>
-          <CardDescription>
-            Every rollover is preserved and viewable in reports and
-            leaderboards.
-          </CardDescription>
         </CardHeader>
         <CardContent>
           {semestersPending ? (
@@ -296,7 +291,8 @@ export function SettingsSemesterTab({
                 >
                   <span className="font-medium">{archive.label}</span>
                   <span className="text-muted-foreground">
-                    {archive.start_date} – {archive.end_date}
+                    {formatDayRange(archive.start_date, archive.end_date) ??
+                      `${archive.start_date} – ${archive.end_date}`}
                   </span>
                 </li>
               ))}
