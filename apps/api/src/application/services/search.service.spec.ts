@@ -74,7 +74,12 @@ describe('SearchService', () => {
 
     mockRbacService = {
       getEffectivePermissions: jest.fn().mockResolvedValue([]),
-      memberHasAnyPermission: jest.fn().mockResolvedValue(false),
+      // A caller who may browse backwork and does not manage events: the
+      // ordinary active member the fan-out tests assume.
+      memberHasAnyPermission: jest.fn(
+        async (_chapterId: string, _userId: string, permissions: string[]) =>
+          permissions.includes('backwork:upload'),
+      ),
     };
 
     mockChatBlocks = { listBlockedUserIds: jest.fn().mockResolvedValue([]) };
@@ -168,6 +173,38 @@ describe('SearchService', () => {
       expect(repo.searchEvents).toHaveBeenCalledWith('ch-1', 'meeting', 10);
       expect(repo.searchMembers).toHaveBeenCalledWith('ch-1', 'meeting', 10);
       expect(repo.searchMessages).toHaveBeenCalledWith(['pub'], 'meeting', 10);
+    });
+
+    describe('backwork permission (2026-11-05)', () => {
+      const resource = { id: 'bw-1', chapter_id: 'ch-1', title: 'Midterm 2' };
+
+      it('leaves backwork out for a caller with neither backwork:upload nor backwork:admin', async () => {
+        repo.searchBackwork.mockResolvedValue([resource]);
+        mockRbacService.memberHasAnyPermission.mockResolvedValue(false);
+
+        const result = await service.search('ch-1', 'user-1', 'midterm');
+
+        expect(result.backwork).toEqual([]);
+        // Not fetched and dropped: the scan never runs for such a caller.
+        expect(repo.searchBackwork).not.toHaveBeenCalled();
+        expect(mockRbacService.memberHasAnyPermission).toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+          ['backwork:upload', 'backwork:admin'],
+        );
+      });
+
+      it('lists backwork for a caller holding either permission', async () => {
+        repo.searchBackwork.mockResolvedValue([resource]);
+        mockRbacService.memberHasAnyPermission.mockImplementation(
+          async (_c: string, _u: string, permissions: string[]) =>
+            permissions.includes('backwork:admin'),
+        );
+
+        const result = await service.search('ch-1', 'user-1', 'midterm');
+
+        expect(result.backwork).toEqual([resource]);
+      });
     });
 
     it('lets a failed source propagate as the repository threw it', async () => {
@@ -554,7 +591,11 @@ describe('SearchService', () => {
         const result = await service.search('ch-1', 'user-1', 'exec');
 
         expect(result.events).toHaveLength(1);
-        expect(mockRbacService.memberHasAnyPermission).not.toHaveBeenCalled();
+        expect(mockRbacService.memberHasAnyPermission).not.toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+          expect.arrayContaining(['events:update']),
+        );
         expect(members.findByUserAndChapter).not.toHaveBeenCalled();
       });
     });

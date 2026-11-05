@@ -265,7 +265,10 @@ describe("DashboardShell", () => {
       </DashboardShell>,
     );
     const banner = screen.getByRole("banner");
-    expect(banner).toContainElement(screen.getByRole("combobox"));
+    // The field-shaped button that opens the Find dialog.
+    expect(banner).toContainElement(
+      screen.getByRole("button", { name: /^Find channels/ }),
+    );
     expect(
       screen.getByRole("button", { name: /Ask a question/i }),
     ).toBeInTheDocument();
