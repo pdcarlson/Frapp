@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { statusOf } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
@@ -49,6 +50,45 @@ export function useServiceEntries(
     },
     staleTime: 30_000,
     enabled: options?.enabled ?? true,
+  });
+}
+
+/**
+ * One service entry, as `GET /v1/service-entries/{id}` returns it, or `null`
+ * when the server answers that there is none for this viewer: what a chat
+ * hours card reads its live review status from.
+ *
+ * The route needs `members:view` and the Hours module, and then answers only
+ * the member who logged the entry and a `service:approve` holder; anyone else
+ * gets a 403. A caller that knows the viewer can't read it passes an empty id,
+ * which holds the request (see `canReadCardServiceEntry`). Under the list's
+ * `["service-entries"]` prefix, so a review or a delete from any screen
+ * refreshes it.
+ *
+ * A 403 or a 404 resolves to `null` rather than throwing. Both are answers (the
+ * entry was deleted, or the viewer lost a permission or the module was turned
+ * off), and a thrown refetch would keep the badge read before it, so a deleted
+ * entry would go on saying "Approved". Resolving also keeps an expected miss
+ * out of the query's retries and out of Sentry.
+ */
+export function useServiceEntry(id: string) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["service-entries", chapterId, "detail", id],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/service-entries/{id}", {
+        params: { path: { id } },
+      });
+      if (error) {
+        const status = statusOf(error);
+        if (status === 403 || status === 404) return null;
+        throw error;
+      }
+      return data;
+    },
+    staleTime: 30_000,
+    enabled: !!id,
   });
 }
 

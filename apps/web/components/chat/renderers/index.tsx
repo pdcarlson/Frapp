@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
+import type { NameResolver } from "@repo/hooks";
 import { AnnouncementCard } from "./announcement-card";
 import { ComingSoonCard } from "./coming-soon-card";
 import { EventCard } from "./event-card";
@@ -37,6 +38,12 @@ export interface MessageRendererProps {
    * those would have compiled clean. Now it does not.
    */
   viewerId: string;
+  /**
+   * The row's roster lookup (`MessageItemProps.nameFor`), for a card that
+   * names a member by id: the audit card's actor. Required for the reason the
+   * row's is, so a caller cannot regress that name to a bare id.
+   */
+  nameFor: NameResolver;
   isConfirmed: boolean;
   /**
    * The row's trailing markers, drawn after a plain message's last line. A card
@@ -65,6 +72,7 @@ export interface MessageRendererProps {
 export function MessageRenderer({
   message,
   viewerId,
+  nameFor,
   isConfirmed,
   onAct,
   trailing,
@@ -88,7 +96,7 @@ export function MessageRenderer({
     case "announcement":
       return <AnnouncementCard message={message} />;
     case "system_audit":
-      return <SystemAuditCard message={message} />;
+      return <SystemAuditCard message={message} nameFor={nameFor} />;
     case "loading":
       return <LoadingCard message={message} />;
     case "points":
@@ -104,7 +112,7 @@ export function MessageRenderer({
     case "event":
       return <EventCard message={message} isConfirmed={isConfirmed} />;
     case "hours":
-      return <HoursCard message={message} />;
+      return <HoursCard message={message} viewerId={viewerId} />;
     case "rush":
       return <RushCard message={message} isConfirmed={isConfirmed} />;
     case "dues":
