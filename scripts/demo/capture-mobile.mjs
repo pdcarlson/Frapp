@@ -51,7 +51,7 @@ import { pathToFileURL } from "node:url";
 
 import { LOCAL_DEMO_EMAIL, LOCAL_DEMO_PASSWORD, TEMPLATE_NAMESPACE, demoIds } from "./seed-demo.mjs";
 import { APP_STORE_PRESET, STORE_SCALE, storeSetProblems } from "./store-screenshots.mjs";
-import { composeStoreFrames } from "./store-frames.mjs";
+import { composeProblems, composeStoreFrames } from "./store-frames.mjs";
 
 const MOBILE_URL = process.env.MOBILE_URL ?? "http://localhost:3002";
 const OUT_ROOT = process.env.OUT_ROOT ?? "screenshots";
@@ -59,9 +59,9 @@ const APP_DIR = path.join(OUT_ROOT, "mobile-app");
 const REF_DIR = path.join(OUT_ROOT, "mobile-reference");
 
 const STORE = process.argv.includes("--store") || process.env.STORE === "1";
-for (const retired of ["--app-store", "--google-play"]) {
-  if (process.argv.includes(retired)) {
-    throw new Error(`${retired} is retired: --store captures once and frames both store sets.`);
+for (const [retired, env] of [["--app-store", "APP_STORE"], ["--google-play", "GOOGLE_PLAY"]]) {
+  if (process.argv.includes(retired) || process.env[env] === "1") {
+    throw new Error(`${retired} (${env}=1) is retired: --store captures once and frames both store sets.`);
   }
 }
 
@@ -635,24 +635,38 @@ async function captureReferenceBoard(browser) {
 /**
  * The demo seed puts each event at a UTC hour (`demo-seed.sql` § Events), so
  * the store run renders in UTC to show the 7:00 PM chapter meeting at 7:00 PM.
- * Chat and study times are minutes before the seed ran, so a run in the small
- * hours stamps the thread "3:00 AM". Seed and shoot inside this UTC window.
+ * Chat and study times are minutes before the seed ran, so a seed in the small
+ * hours stamps the thread "3:00 AM". Seed and shoot after this UTC hour, on
+ * the same UTC day. The run can only see its own clock, not the seed's.
  */
 const STORE_TIMEZONE = "UTC";
-const STORE_HOURS_UTC = { from: 13, to: 23 };
+const STORE_FROM_HOUR_UTC = 13;
 
 async function captureStoreSet(browser) {
   const rawDir = path.join(OUT_ROOT, "store-raw");
   const dirs = [rawDir, ...["app-store", "google-play"].map((f) => path.join(OUT_ROOT, f))];
   const clear = () => Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true })));
   await clear();
+
+  // Refuse the copy, and a frame list that has drifted from STORE_SCREENS,
+  // before spending a capture on them.
+  const planned = composeProblems(STORE_SCREENS.map((s) => s.slug));
+  if (planned.length) {
+    failures.push(...planned);
+    console.log("\nStore sets not written: the frames don't fit the screens, see below.");
+    return;
+  }
   await mkdir(rawDir, { recursive: true });
 
   const hour = new Date().getUTCHours();
-  if (hour < STORE_HOURS_UTC.from || hour > STORE_HOURS_UTC.to) {
+  if (hour < STORE_FROM_HOUR_UTC) {
     console.log(
-      `  warning: it is ${hour}:00 UTC. Chat and study times will read as the small hours; ` +
-        `re-seed and shoot between ${STORE_HOURS_UTC.from}:00 and ${STORE_HOURS_UTC.to}:59 UTC.`,
+      `  warning: it is ${hour}:00 UTC. If the demo was seeded today, chat and study times read as ` +
+        `the small hours; re-seed and shoot after ${STORE_FROM_HOUR_UTC}:00 UTC.`,
+    );
+  } else {
+    console.log(
+      `  note: chat and study times follow the seed's clock; seed after ${STORE_FROM_HOUR_UTC}:00 UTC today.`,
     );
   }
 
@@ -687,11 +701,21 @@ async function captureStoreSet(browser) {
 
   let sets = [];
   if (!problems.length) {
-    sets = await composeStoreFrames(browser, { rawDir, outRoot: OUT_ROOT });
-    for (const set of sets) {
-      for (const problem of storeSetProblems(set.preset, await read(set.files))) {
-        problems.push(`${set.preset.name}: ${problem}`);
+    try {
+      sets = await composeStoreFrames(browser, {
+        rawDir,
+        outRoot: OUT_ROOT,
+        capturedSlugs: shots.map((s) => s.slug),
+      });
+      for (const set of sets) {
+        for (const problem of storeSetProblems(set.preset, await read(set.files))) {
+          problems.push(`${set.preset.name}: ${problem}`);
+        }
       }
+    } catch (error) {
+      // A half-framed set is as uploadable by mistake as a half-captured one.
+      await clear();
+      throw error;
     }
   }
   failures.push(...problems.slice(screenFailures.length));

@@ -223,10 +223,11 @@ Supabase):
    in `apps/api/.env.local` before the API starts (the cloud sandbox's bring-up does not write
    it): without it the Host check-in screen shows "Code unavailable" instead of a QR, and that
    shot times out.
-2. Between 13:00 and 23:59 UTC, re-seed, so every unread badge and the demo data are fresh
-   (opening a channel marks it read): `bash scripts/demo/setup-demo.sh`. Chat and study times are
-   minutes before the seed ran and render in UTC, so a seed in the small hours stamps the thread
-   "3:00 AM"; the run warns when it starts outside that window.
+2. After 13:00 UTC, re-seed, so every unread badge and the demo data are fresh (opening a channel
+   marks it read): `bash scripts/demo/setup-demo.sh`, then shoot the same UTC day. Chat and study
+   times are minutes before the seed ran and render in UTC, so a seed in the small hours stamps the
+   thread "3:00 AM". The run warns when it starts before 13:00 UTC, but it can't see when the seed
+   ran, so seeding late is on you.
 3. From `apps/mobile`, start Expo web on the port the API's CORS list allows, clearing Metro's
    cache so no earlier flag value is inlined: `npx expo start --web --port 3002 --clear`. Wait for
    `http://localhost:3002` to answer 200.
@@ -240,8 +241,10 @@ It prints each folder it wrote, and exits non-zero if a screen lands on a route 
 requested (a lost session redirects to sign-in), if a screen's data never arrives, or if a file is
 the wrong size or (for Play) not an opaque 8-bit RGB PNG, and then deletes all three folders so
 there is no set with a gap to upload; re-run it. If any Ask surface is on screen it stops at once,
-with the same deletion. A caption that says "Signet", or ranking, award or price wording Play
-forbids, refuses the run before anything is framed.
+with the same deletion. A caption that says "Signet", or common wording that ranks the app or
+cites an award, price or promotion (which Play forbids), refuses the run before anything is
+captured, as does a frame list in `store-frames.mjs` that no longer matches the screens. The copy
+check is a word list, so read the captions before uploading.
 
 **Upload is the owner's step**, files in filename order, for the English (U.S.) localization:
 App Store Connect → the app → the version → iPhone 6.9" Display → drag in `app-store/`; Play Console
@@ -259,7 +262,8 @@ frame is its own shape around the same capture (§ 6.4).
 ("Add preview assets to showcase your app") takes JPEG or 24-bit PNG with no alpha, 320 to 3840 px
 per side, the long side at most twice the short one, and 2 to 8 phone screenshots. For promotion it
 prefers 9:16 with at least 1080 px on each side, which this size also meets. Screenshots may not
-carry text about rank, awards, price or promotions, and a set with text is per language. **Not read
+carry text that ranks the app in the store, cites awards, or quotes a price or promotion (a member's
+rank inside the app is a feature, not a store ranking), and a set with text is per language. **Not read
 from the page itself:** support.google.com is blocked from the cloud sandbox, so these rules come
 from search snippets of that page (2026-09-27, 2026-11-05). Replace this paragraph's source with the
 console's wording once the set is uploaded ([#2720](https://github.com/pdcarlson/Frapp/issues/2720)).

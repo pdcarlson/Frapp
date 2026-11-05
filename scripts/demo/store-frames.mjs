@@ -11,25 +11,31 @@
  * can hold the captions to the listing rules without one.
  *
  * Design: the owner picked direction A (charcoal) on 2026-11-05 from three
- * mocked directions. The palette, emblem and Figtree are the ones the Play
- * feature graphic uses (`scripts/lib/store-graphics.mjs`), so the icon,
- * feature graphic and screenshots read as one listing. A gold line runs
+ * mocked directions. The gold and the emblem are the brand mark's
+ * (`scripts/lib/brand-pixels.mjs`), as on the icon and the Play feature
+ * graphic, and the type is Figtree; the field is a warmer charcoal than the
+ * mark's `#1A1A1A`, so the phone's near-black screen still reads against it. A gold line runs
  * across the whole set so the store's row of frames reads as one piece.
  * Procedure: `docs/ops/deployment/mobile.md` § 6.4.
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { APP_STORE_PRESET, GOOGLE_PLAY_PRESET, STORE_SCALE } from "./store-screenshots.mjs";
+import { GOLD_HEX } from "../lib/brand-pixels.mjs";
+import {
+  APP_STORE_PRESET,
+  GOOGLE_PLAY_PRESET,
+  STORE_SCALE,
+} from "./store-screenshots.mjs";
 
 const FONT = "packages/theme/fonts/FigtreeVF.woff2";
 const EMBLEM = "packages/brand-assets/assets/signet-emblem-B-glyph.svg";
 
-/** The feature graphic's field, the emblem's gold, and the two text tones. */
+/** A warm charcoal field, the mark's gold, the two text tones and the app's screen. */
 export const FRAME_COLOURS = {
   field: "#161514",
-  gold: "#DDB844",
+  gold: GOLD_HEX,
   cream: "#F3EFE6",
   muted: "#A9A39A",
   screen: "#121110",
@@ -42,9 +48,10 @@ export const FRAME_COLOURS = {
  * `scale` sizes the card against the phone's width (default 1), `dy` nudges it
  * by a fraction of the frame height, and `rot` tilts it in degrees.
  *
- * Captions follow the listing rules: no ranking, award, price or promotion
- * text (Play), no "Signet" anywhere (ADR-25), and written the way a member
- * would say it.
+ * Captions follow the listing rules: nothing that ranks the app itself, no
+ * award, price or promotion text (Play), no "Signet" anywhere (ADR-25), and
+ * written the way a member would say it. A member's rank inside the app is
+ * a feature, not a store ranking.
  */
 export const STORE_FRAMES = [
   {
@@ -98,19 +105,42 @@ export const STORE_FRAMES = [
 
 /** The words a frame puts on screen, tags stripped, for the copy checks. */
 export function frameText(frame) {
-  return [frame.eyebrow, frame.title, frame.sub].join(" ").replace(/<[^>]+>/g, " ");
+  return [frame.eyebrow, frame.title, frame.sub]
+    .join(" ")
+    .replace(/<[^>]+>/g, " ");
 }
 
 /**
- * Play forbids rank, award, price and promotion text on a screenshot; ADR-25
- * keeps "Signet" off every surface. Why a frame's copy breaks either; empty
- * when it doesn't.
+ * Play forbids text that ranks the app, cites an award, or quotes a price or
+ * promotion on a screenshot; ADR-25 keeps "Signet" off every surface. Why a
+ * frame's copy breaks either; empty when it doesn't. A word list, so it
+ * catches the usual phrasings, not every one: the owner still reads the set.
  */
+const STORE_CLAIM = new RegExp(
+  [
+    String.raw`#\s?1\b`,
+    String.raw`\bno\.?\s?1\b`,
+    String.raw`\bnumber one\b`,
+    String.raw`\bbest\b`,
+    String.raw`\btop[- ](?:rated|ranked|\d+)\b`,
+    String.raw`\btop (?:\w+ )?apps?\b`,
+    String.raw`\baward`,
+    String.raw`\bapp of the (?:year|day)\b`,
+    String.raw`\b(?:editor'?s'?|editors) (?:choice|pick)\b`,
+    String.raw`\bpopular\b`,
+    String.raw`\bfree\b`,
+    String.raw`\bon sale\b`,
+    String.raw`\bdiscount`,
+    String.raw`% off`,
+    String.raw`\$\d`,
+  ].join("|"),
+  "i",
+);
 export function frameCopyProblems(frame) {
   const text = frameText(frame);
   const problems = [];
   if (/signet/i.test(text)) problems.push(`${frame.slug}: says "Signet"`);
-  if (/#\s?1\b|\bbest\b|\btop[- ]rated\b|\bapp of the year\b|\bpopular\b|\bfree\b|% off|\$\d/i.test(text)) {
+  if (STORE_CLAIM.test(text)) {
     problems.push(`${frame.slug}: ranking, award, price or promotion wording`);
   }
   return problems;
@@ -133,8 +163,18 @@ const ANDROID_STATUS = `<span>12:30</span><span class="icons">
  * phone runs off the bottom edge on purpose; the lifted card shows the detail.
  */
 export const FRAME_LAYOUTS = [
-  { preset: APP_STORE_PRESET, phoneWidth: 336, phoneTop: 0.315, status: IOS_STATUS },
-  { preset: GOOGLE_PLAY_PRESET, phoneWidth: 304, phoneTop: 0.335, status: ANDROID_STATUS },
+  {
+    preset: APP_STORE_PRESET,
+    phoneWidth: 336,
+    phoneTop: 0.315,
+    status: IOS_STATUS,
+  },
+  {
+    preset: GOOGLE_PLAY_PRESET,
+    phoneWidth: 304,
+    phoneTop: 0.335,
+    status: ANDROID_STATUS,
+  },
 ];
 
 const fileUrl = (p) => pathToFileURL(path.resolve(p)).href;
@@ -152,8 +192,7 @@ function wavePath(W, H, n) {
 /** The whole set as one strip of frames, so the gold line runs across them. */
 export function stripHtml(layout, rawDir, frames = STORE_FRAMES) {
   const { preset, phoneWidth: phoneW, status } = layout;
-  const W = preset.pixels.width / STORE_SCALE;
-  const H = preset.pixels.height / STORE_SCALE;
+  const { width: W, height: H } = preset.viewport;
   const RAW = APP_STORE_PRESET.pixels;
   const phoneTop = H * layout.phoneTop;
   const bezel = phoneW * 0.028;
@@ -163,7 +202,7 @@ export function stripHtml(layout, rawDir, frames = STORE_FRAMES) {
   const n = frames.length;
 
   const css = `
-@font-face { font-family: Figtree; src: url(${fileUrl(FONT)}); font-weight: 300 900; }
+@font-face { font-family: Figtree; src: url("${fileUrl(FONT)}"); font-weight: 300 900; }
 * { box-sizing: border-box; margin: 0; }
 body { width: ${W * n}px; height: ${H}px; overflow: hidden; background: ${c.field}; font-family: Figtree; }
 .strip { position: relative; display: flex; width: 100%; height: 100%; }
@@ -210,10 +249,12 @@ h1 em { font-style: normal; color: ${c.gold}; }
       // Moved up to fit (the shorter Play frame): blank the spot it was
       // lifted from, so the card is not drawn twice.
       const hole =
-        natural - top > 4 ? `<div class="hole" style="top:${srcTop}px;height:${H - srcTop}px"></div>` : "";
+        natural - top > 4
+          ? `<div class="hole" style="top:${srcTop}px;height:${H - srcTop}px"></div>`
+          : "";
       lifted = `${hole}<div class="callout" style="width:${outW}px;height:${h}px;top:${top}px;
         transform:translateX(-50%) rotate(${k0.rot ?? -1.2}deg);
-        background-image:url(${img});background-repeat:no-repeat;
+        background-image:url('${img}');background-repeat:no-repeat;
         background-position:${-RAW.width * k0.x * k}px ${-RAW.height * k0.y * k}px;
         background-size:${RAW.width * k}px auto;"></div>`;
     }
@@ -233,19 +274,41 @@ ${sections.join("\n")}
 }
 
 /**
+ * Why the frames can't be composed from these captures: copy that breaks the
+ * listing rules, or captured slugs that don't match the frames one for one (a
+ * frame with no capture renders a blank phone that still passes every size
+ * check). Empty when they can.
+ */
+export function composeProblems(capturedSlugs, frames = STORE_FRAMES) {
+  const problems = frames.flatMap(frameCopyProblems);
+  const want = frames.map((f) => f.slug).join(", ");
+  const got = capturedSlugs.join(", ");
+  if (want !== got)
+    problems.push(`frames are [${want}] but the captures are [${got}]`);
+  return problems;
+}
+
+/**
  * Frame every raw capture in `rawDir` for both stores, into
  * `<outRoot>/<preset.folder>/<slug>.png`. Returns one entry per store with the
  * files written; `capture-mobile.mjs` checks them with `storeSetProblems`.
  */
-export async function composeStoreFrames(browser, { rawDir, outRoot }) {
-  const copyProblems = STORE_FRAMES.flatMap(frameCopyProblems);
-  if (copyProblems.length) throw new Error(`Store frame copy refused:\n  ${copyProblems.join("\n  ")}`);
+export async function composeStoreFrames(
+  browser,
+  { rawDir, outRoot, capturedSlugs },
+) {
+  const problems = composeProblems(capturedSlugs);
+  if (problems.length)
+    throw new Error(`Store frames refused:\n  ${problems.join("\n  ")}`);
+  // A missing file renders as an empty phone, so check before framing.
+  await Promise.all(
+    STORE_FRAMES.map((f) => access(path.join(rawDir, `${f.slug}.png`))),
+  );
 
   const results = [];
   for (const layout of FRAME_LAYOUTS) {
     const { preset } = layout;
-    const W = preset.pixels.width / STORE_SCALE;
-    const H = preset.pixels.height / STORE_SCALE;
+    const { width: W, height: H } = preset.viewport;
     const dir = path.join(outRoot, preset.folder);
     await mkdir(dir, { recursive: true });
     // file:// so the page can load the captures, the font and the emblem.
@@ -261,7 +324,10 @@ export async function composeStoreFrames(browser, { rawDir, outRoot }) {
     const files = [];
     for (const [i, frame] of STORE_FRAMES.entries()) {
       const file = path.join(dir, `${frame.slug}.png`);
-      await page.screenshot({ path: file, clip: { x: i * W, y: 0, width: W, height: H } });
+      await page.screenshot({
+        path: file,
+        clip: { x: i * W, y: 0, width: W, height: H },
+      });
       files.push({ slug: frame.slug, file });
     }
     await page.close();
