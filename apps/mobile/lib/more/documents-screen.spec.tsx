@@ -21,6 +21,8 @@ let folderRows: unknown[] = [];
 let documentRows: unknown[] = [];
 let chapterId: string | null = "chapter-a";
 const download = vi.fn();
+const refetchFolders = vi.fn(async () => undefined);
+const refetchDocuments = vi.fn(async () => undefined);
 const LOADED = {
   data: [],
   isPending: false,
@@ -31,8 +33,16 @@ const LOADED = {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   usePermissionList: () => permissions,
-  useDocuments: () => ({ ...LOADED, data: documentRows }),
-  useDocumentFolders: () => ({ ...LOADED, data: folderRows }),
+  useDocuments: () => ({
+    ...LOADED,
+    data: documentRows,
+    refetch: refetchDocuments,
+  }),
+  useDocumentFolders: () => ({
+    ...LOADED,
+    data: folderRows,
+    refetch: refetchFolders,
+  }),
   useActiveChapterId: () => chapterId,
   useDocumentDownloadUrl: () => ({ mutateAsync: download }),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: vi.fn() }),
@@ -92,6 +102,8 @@ afterEach(() => {
   chapterId = "chapter-a";
   present.mockReset();
   download.mockReset();
+  refetchFolders.mockClear();
+  refetchDocuments.mockClear();
   // Back to the suite-wide stand-in (vitest.setup.ts), a browser dismissed at
   // once, after a spec that held one open.
   vi.mocked(WebBrowser.openBrowserAsync).mockResolvedValue({
@@ -432,5 +444,21 @@ describe("Documents states and rows", () => {
     expect(
       chips.findAll((node) => (node.type as unknown) === "ScrollView"),
     ).toHaveLength(1);
+  });
+});
+
+describe("Documents pull-to-refresh (#3385)", () => {
+  it("refreshes the folders and the documents list on a pull (#3385)", async () => {
+    const tree = render();
+    const control = tree.root.find((node) => node.props.refreshControl != null)
+      .props.refreshControl as React.ReactElement<{
+      refresh: () => Promise<unknown>;
+    }>;
+
+    await act(async () => {
+      await control.props.refresh();
+    });
+    expect(refetchFolders).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(refetchDocuments).toHaveBeenCalledWith({ cancelRefetch: true });
   });
 });

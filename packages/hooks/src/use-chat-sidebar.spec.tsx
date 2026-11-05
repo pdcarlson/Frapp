@@ -10,6 +10,7 @@ import {
   useSetSidebarFilter,
   useSetSidebarSectionCollapsed,
   useSidebarPreferences,
+  useSidebarPreferencesRefetch,
   type ChatSidebar,
 } from "./use-chat-sidebar";
 
@@ -74,6 +75,25 @@ describe("useChatSidebar", () => {
 
     expect(result.current.fetchStatus).toBe("idle");
     expect(GET).not.toHaveBeenCalled();
+  });
+});
+
+describe("useSidebarPreferencesRefetch (#3385)", () => {
+  // A pull skips a query that reports itself off, because `refetch` ignores
+  // `enabled`. Without `isEnabled` here, a claimless pull would send the read
+  // under an undefined chapter key.
+  it("reports the read as off without an active chapter, and on with one", () => {
+    const GET = vi.fn().mockResolvedValue({ data: stored, error: null });
+    const off = renderHook(() => useSidebarPreferencesRefetch(), {
+      wrapper: setup({ GET }, null).Wrapper,
+    });
+    const on = renderHook(() => useSidebarPreferencesRefetch(), {
+      wrapper: setup({ GET }).Wrapper,
+    });
+
+    expect(off.result.current.isEnabled).toBe(false);
+    expect(on.result.current.isEnabled).toBe(true);
+    expect(typeof on.result.current.refetch).toBe("function");
   });
 });
 
