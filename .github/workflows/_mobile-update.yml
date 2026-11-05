@@ -30,11 +30,23 @@ name: Mobile update
 # check: no `./.github/actions/…` action, and the steps that judge the tree
 # are inline shell. The guard and eas-cli are the deployed commit's own
 # publishing tools, as `eas build` is in `_mobile-build.yml`; the deployed
-# commit is an ancestor of `main` with green CI. `npm ci` and the pinned
-# eas-cli install (`scripts/eas.mjs`, which installs `_mobile-build.yml`'s pin
-# with `--ignore-scripts`) run before any step that names `EXPO_TOKEN`, and
-# only the publish step names it. The same honest limits as the store build
-# apply (`_mobile-build.yml`'s header, #3118, #3125).
+# commit is an ancestor of `main` with green CI. Both installs run before any
+# step that names `EXPO_TOKEN`, and neither runs an install script: `npm ci
+# --ignore-scripts` (the same install `mobile-plan` judges native code from,
+# so the two read one tree; the export needs no install script, checked
+# 2026-11-05), and the pinned eas-cli (`scripts/eas.mjs`, which installs
+# `_mobile-build.yml`'s pin with `--ignore-scripts`). Only the publish step
+# names the tokens, and `scripts/eas.mjs` hands each to its own tool: eas-cli
+# never sees `SENTRY_AUTH_TOKEN`, the source-map upload never sees
+# `EXPO_TOKEN`.
+#
+# Honest limit, wider than the store build's: `eas build` bundles on EAS's
+# worker, but `eas update` bundles here, so Metro, Babel and every transformer
+# in the deployed tree's `node_modules` run in the process that holds
+# `EXPO_TOKEN`, a token that can publish to every installed app. Those are
+# lockfile-pinned, reviewed dependencies, but a compromised one would see the
+# token. Exporting in a step without it and publishing with `--skip-bundler`
+# needs the guard reshaped (#3541, beside #3125's isolation work).
 #
 # ── Failure ─────────────────────────────────────────────────────────────────
 # Production is live and tagged before this starts, so nothing here rolls
@@ -117,8 +129,10 @@ jobs:
 
       # The guard's native check reads the installed tree, and the export
       # evaluates app.config.js through the project's own `expo`.
-      - name: Install dependencies
-        run: npm ci
+      # No install script runs: the export doesn't need one, and the plan's
+      # native check read a tree installed the same way.
+      - name: Install dependencies (no install scripts)
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       # `scripts/eas.mjs` installs `_mobile-build.yml`'s eas-cli pin into the
       # gitignored `.cache/eas-cli/` on first use. `--version` does that
@@ -140,6 +154,12 @@ jobs:
           if [ -n "$DIRTY" ]; then
             echo "::error::The install changed the tree, and the update would bundle the change:"
             printf '%s\n' "$DIRTY"
+            exit 1
+          fi
+          # A commit older than the guard (#3475) would run a bare `eas update`
+          # below. The plan refuses those too; this is the last line.
+          if [ ! -f scripts/eas-update.mjs ] || ! grep -q 'eas-update.mjs' scripts/eas.mjs; then
+            echo "::error::$DEPLOY_SHA predates the OTA guard (scripts/eas-update.mjs), so npm run eas -- update there is a bare eas update. Refusing to publish."
             exit 1
           fi
 

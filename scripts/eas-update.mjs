@@ -274,9 +274,29 @@ export function compareNativeInputs({ builds, git, headLock, isNative, head = "H
   return results;
 }
 
-function defaultGit(args) {
-  const r = spawnSync("git", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
-  return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? r.error?.message ?? "" };
+/** A git runner in `dir` that never throws: `(args) => { status, stdout, stderr }`. */
+export function gitIn(dir) {
+  return (args) => {
+    const r = spawnSync("git", args, { cwd: dir, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+    return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? r.error?.message ?? "" };
+  };
+}
+
+const defaultGit = gitIn(ROOT);
+
+/**
+ * Where the installed tree that `read` reads disagrees with `headLock`, so the native check can't
+ * trust it (`staleInstall`, reading npm's hidden `node_modules/.package-lock.json`). Empty when
+ * it matches.
+ */
+export function installProblems(read, headLock) {
+  let installed;
+  try {
+    installed = JSON.parse(read("node_modules/.package-lock.json"));
+  } catch {
+    installed = undefined;
+  }
+  return staleInstall(headLock, installed);
 }
 
 /**
@@ -358,13 +378,7 @@ export function productionChecks({
     errors.push(`Couldn't read ${LOCKFILE}: ${error.message}`);
     return { errors, notes };
   }
-  let installed;
-  try {
-    installed = JSON.parse(readFile("node_modules/.package-lock.json"));
-  } catch {
-    installed = undefined;
-  }
-  const stale = staleInstall(headLock, installed);
+  const stale = installProblems(readFile, headLock);
   if (stale.length) {
     errors.push(
       `node_modules doesn't match ${LOCKFILE}, so the native check can't trust it. Run \`npm ci\` first. ` +

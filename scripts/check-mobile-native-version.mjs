@@ -22,20 +22,14 @@
 // It reads the installed tree, so it runs after `npm ci`, and it needs the recorded builds'
 // commits (fetched when missing).
 
-import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseRegistry } from "./check-api-breaking-changes.mjs";
-import { APP_JSON, LOCKFILE, SHIPPED_BUILDS, compareNativeInputs, isNativePackage, staleInstall } from "./eas-update.mjs";
+import { APP_JSON, LOCKFILE, SHIPPED_BUILDS, compareNativeInputs, gitIn, installProblems, isNativePackage } from "./eas-update.mjs";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-
-function defaultGit(args) {
-  const r = spawnSync("git", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
-  return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? r.error?.message ?? "" };
-}
 
 /**
  * `{ status: "pass" | "warn" | "fail", lines: string[] }`. `git`, `readFile` and `isNative` are
@@ -43,7 +37,7 @@ function defaultGit(args) {
  */
 export function checkNativeVersion({
   baseSha,
-  git = defaultGit,
+  git = gitIn(ROOT),
   readFile = (p) => readFileSync(path.join(ROOT, p), "utf8"),
   isNative = (lockPath) => isNativePackage(path.join(ROOT, lockPath)),
 } = {}) {
@@ -62,13 +56,7 @@ export function checkNativeVersion({
   if (builds.length === 0) {
     return { status: "pass", lines: [`No store build of ${runtime} is recorded yet, so its native inputs are free to change.`] };
   }
-  let installed;
-  try {
-    installed = JSON.parse(readFile("node_modules/.package-lock.json"));
-  } catch {
-    installed = undefined;
-  }
-  const stale = staleInstall(headLock, installed);
+  const stale = installProblems(readFile, headLock);
   if (stale.length) {
     return { status: "fail", lines: [`node_modules doesn't match ${LOCKFILE}, so the native check can't trust it. Run \`npm ci\` first. First mismatch: ${stale[0]}.`] };
   }

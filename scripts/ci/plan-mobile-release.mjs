@@ -17,7 +17,13 @@
 //         to that version is refused.
 //       - Otherwise, a platform with a recorded build of the version gets an update, and a
 //         platform with none gets a store build (a new version, or a platform never shipped).
+//       - A platform that would get an update, from a commit older than the guard (a rollback to
+//         a pre-#3475 SHA): the plan refuses, because that commit's `npm run eas -- update` is a
+//         bare `eas update`.
 //   * anything else: nothing.
+//
+// A named platform now waits for this job too, so a malformed registry on the dispatched ref
+// stops it; CI's `api-contract-check` parses that file on every change.
 //
 // TRUST. This script is the trusted ref's (the dispatched `main`), and so is the registry it
 // reads. The shipped commit is a separate checkout (`DEPLOYED_DIR`) whose dependencies were
@@ -27,12 +33,11 @@
 //
 // Env: MOBILE_BUILD, DEPLOY_SHA, DEPLOYED_DIR (auto only), GITHUB_OUTPUT, GITHUB_STEP_SUMMARY.
 
-import { spawnSync } from "node:child_process";
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseRegistry } from "../check-api-breaking-changes.mjs";
-import { APP_JSON, LOCKFILE, compareNativeInputs, isNativePackage, staleInstall } from "../eas-update.mjs";
+import { APP_JSON, GUARD_PATH, LOCKFILE, compareNativeInputs, gitIn, installProblems, isNativePackage } from "../eas-update.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { latestReleaseTag } from "./lib/release-tag.mjs";
 import { REGISTRY_PATH } from "./record-shipped-builds.mjs";
@@ -52,7 +57,7 @@ export function platformValue(list) {
  * The plan for one run. `compare(builds)` is `compareNativeInputs` bound to the shipped commit.
  * Returns `{ ok: true, build, update, runtime, lines, warnings }` or `{ ok: false, error }`.
  */
-export function planMobileRelease({ mode, runtime, registry, compare }) {
+export function planMobileRelease({ mode, runtime, registry, compare, hasGuard = false }) {
   if (NAMED.has(mode)) {
     return { ok: true, build: mode, update: "none", runtime, lines: [`\`mobile_build\` is \`${mode}\`: a store build, no update.`], warnings: [] };
   }
@@ -92,14 +97,17 @@ export function planMobileRelease({ mode, runtime, registry, compare }) {
       lines.push(`${platform}: store build. No ${platform} build of ${runtime} is recorded in ${REGISTRY_PATH}, so an update would reach nothing.`);
     }
   }
+  if (update.length && !hasGuard) {
+    // The publish runs the shipped commit's own `npm run eas -- update`, and before #3475 that is
+    // a bare `eas update`: no eas.json env, no fences, a bundle that calls localhost.
+    return {
+      ok: false,
+      error:
+        `The shipped commit predates the OTA guard (${GUARD_PATH}), so publishing from it would run a bare, unsafe ` +
+        "`eas update`. Nothing was built or published; to build for the stores, dispatch again with mobile_build set to a platform.",
+    };
+  }
   return { ok: true, build: platformValue(build), update: platformValue(update), runtime, lines, warnings };
-}
-
-function gitIn(dir) {
-  return (args) => {
-    const r = spawnSync("git", args, { cwd: dir, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
-    return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? r.error?.message ?? "" };
-  };
 }
 
 /**
@@ -138,24 +146,19 @@ export function planFromCheckout({ mode, sha, deployedDir, registryText, git = g
   const read = (p) => readFileSync(path.join(deployedDir, p), "utf8");
   let runtime;
   let headLock;
-  let installed;
   try {
     runtime = JSON.parse(read(APP_JSON))?.expo?.version;
     headLock = JSON.parse(read(LOCKFILE));
   } catch (error) {
     return { ok: false, error: `Couldn't read the shipped commit's ${APP_JSON} or ${LOCKFILE}: ${error.message}` };
   }
-  try {
-    installed = JSON.parse(read("node_modules/.package-lock.json"));
-  } catch {
-    installed = undefined;
-  }
-  const stale = staleInstall(headLock, installed);
+  const stale = installProblems(read, headLock);
   if (stale.length) return { ok: false, error: `The shipped commit's install doesn't match its lockfile, so the native check can't trust it: ${stale[0]}.` };
   return planMobileRelease({
     mode,
     runtime,
     registry,
+    hasGuard: existsSync(path.join(deployedDir, GUARD_PATH)),
     compare: (builds) =>
       compareNativeInputs({ builds, git, headLock, isNative: (lockPath) => isNativePackage(path.join(deployedDir, lockPath)) }),
   });

@@ -11,12 +11,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { APP_JSON, APP_CONFIG, LOCKFILE, SHIPPED_BUILDS, compareNativeInputs, packageNameFromLockPath } from "../../eas-update.mjs";
-import { planFromCheckout, planMobileRelease, platformValue } from "../plan-mobile-release.mjs";
+import { main as planMain, planFromCheckout, planMobileRelease, platformValue } from "../plan-mobile-release.mjs";
 import { checkNativeVersion } from "../../check-mobile-native-version.mjs";
 import { USES_ANY_LOCAL_ACTION, runsInstall, workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const UPDATE_WORKFLOW = join(REPO_ROOT, ".github", "workflows", "_mobile-update.yml");
+const DEPLOY_WORKFLOW = join(REPO_ROOT, ".github", "workflows", "deploy-production.yml");
+const CI_WORKFLOW = join(REPO_ROOT, ".github", "workflows", "ci.yml");
 
 const SHA = "a".repeat(40);
 const IOS_SHA = "1".repeat(40);
@@ -95,7 +97,7 @@ describe("planMobileRelease", () => {
 
   it("auto updates a platform whose recorded build matches, and builds one with none recorded", () => {
     const reg = { builds: [entry("android", "0.9.2", "4", ANDROID_SHA), entry("ios", "0.9.1", "8", IOS_SHA)] };
-    const plan = planMobileRelease({ mode: "auto", runtime: "0.9.2", registry: reg, compare: same });
+    const plan = planMobileRelease({ mode: "auto", runtime: "0.9.2", registry: reg, compare: same, hasGuard: true });
     assert.deepEqual([plan.build, plan.update], ["ios", "android"]);
     assert.match(plan.lines.join("\n"), /No ios build of 0\.9\.2 is recorded/);
 
@@ -104,10 +106,11 @@ describe("planMobileRelease", () => {
       runtime: "0.9.2",
       registry: { builds: [entry("android", "0.9.2", "4", ANDROID_SHA), entry("ios", "0.9.2", "9", IOS_SHA)] },
       compare: same,
+      hasGuard: true,
     });
     assert.deepEqual([both.build, both.update], ["none", "all"]);
 
-    const fresh = planMobileRelease({ mode: "auto", runtime: "0.9.3", registry: reg, compare: same });
+    const fresh = planMobileRelease({ mode: "auto", runtime: "0.9.3", registry: reg, compare: same, hasGuard: true });
     assert.deepEqual([fresh.build, fresh.update], ["all", "none"], "a new version has nothing to update");
   });
 
@@ -136,6 +139,16 @@ describe("planMobileRelease", () => {
     assert.equal(planMobileRelease({ mode: "auto", runtime: undefined, registry: reg, compare: same }).ok, false);
   });
 
+  it("refuses an update from a commit older than the guard, whose publish would be a bare eas update", () => {
+    const reg = { builds: [entry("android", "0.9.0", "2", ANDROID_SHA)] };
+    const plan = planMobileRelease({ mode: "auto", runtime: "0.9.0", registry: reg, compare: same, hasGuard: false });
+    assert.equal(plan.ok, false);
+    assert.match(plan.error, /predates the OTA guard/);
+    // With nothing to update, a pre-guard commit still builds: no publish runs.
+    const build = planMobileRelease({ mode: "auto", runtime: "0.9.3", registry: reg, compare: same, hasGuard: false });
+    assert.deepEqual([build.ok, build.build, build.update], [true, "all", "none"]);
+  });
+
   it("names a platform set the way the jobs read it", () => {
     assert.equal(platformValue([]), "none");
     assert.equal(platformValue(["android"]), "android");
@@ -144,10 +157,14 @@ describe("planMobileRelease", () => {
 });
 
 describe("planFromCheckout", () => {
-  function checkout({ appVersion = "0.9.2", installed = HEAD_LOCK } = {}) {
+  function checkout({ appVersion = "0.9.2", installed = HEAD_LOCK, guard = true } = {}) {
     const dir = mkdtempSync(join(tmpdir(), "plan-mobile-"));
     mkdirSync(join(dir, "apps", "mobile"), { recursive: true });
-    mkdirSync(join(dir, "node_modules"), { recursive: true });
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    if (guard) writeFileSync(join(dir, "scripts", "eas-update.mjs"), "");
+    // expo-haptics carries native code in this tree; react doesn't.
+    mkdirSync(join(dir, "node_modules", "expo-haptics", "android"), { recursive: true });
+    mkdirSync(join(dir, "node_modules", "react"), { recursive: true });
     writeFileSync(join(dir, APP_JSON), JSON.stringify({ expo: { version: appVersion } }));
     writeFileSync(join(dir, LOCKFILE), JSON.stringify(HEAD_LOCK));
     writeFileSync(join(dir, "node_modules", ".package-lock.json"), JSON.stringify(installed));
@@ -190,6 +207,50 @@ describe("planFromCheckout", () => {
       rmSync(dir, { recursive: true, force: true });
       rmSync(stale, { recursive: true, force: true });
     }
+  });
+
+  it("judges native code from the shipped tree's own install, and refuses a pre-guard tree", () => {
+    const dir = checkout();
+    const old = checkout({ guard: false });
+    const reg = registry(entry("android", "0.9.2", "4", ANDROID_SHA));
+    try {
+      const moved = tagged(locksAt({ [ANDROID_SHA]: lock({ "expo-haptics": "57.0.1", react: "19.2.3" }) })).git;
+      const plan = planFromCheckout({ mode: "auto", sha: SHA, deployedDir: dir, registryText: reg, git: moved });
+      assert.deepEqual([plan.build, plan.update], ["all", "none"], "expo-haptics moved under 0.9.2");
+      assert.match(plan.lines[0], /expo-haptics 57\.0\.1 -> 57\.0\.3/);
+      const jsOnly = tagged(locksAt({ [ANDROID_SHA]: lock({ "expo-haptics": "57.0.3", react: "19.2.2" }) })).git;
+      const fine = planFromCheckout({ mode: "auto", sha: SHA, deployedDir: dir, registryText: reg, git: jsOnly });
+      assert.deepEqual([fine.build, fine.update], ["ios", "android"], "a JS-only move still updates");
+      const bare = planFromCheckout({ mode: "auto", sha: SHA, deployedDir: old, registryText: reg, git: tagged().git });
+      assert.match(bare.error, /predates the OTA guard/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(old, { recursive: true, force: true });
+    }
+  });
+
+  it("hands its verdict to the jobs as build= and update=, through the job outputs they read", () => {
+    const dir = mkdtempSync(join(tmpdir(), "plan-main-"));
+    try {
+      const out = join(dir, "out");
+      const summary = join(dir, "summary");
+      writeFileSync(out, "");
+      writeFileSync(summary, "");
+      const status = planMain({ MOBILE_BUILD: "android", DEPLOY_SHA: SHA, GITHUB_OUTPUT: out, GITHUB_STEP_SUMMARY: summary }, { registryText: registry() });
+      assert.equal(status, 0);
+      assert.equal(readFileSync(out, "utf8"), "build=android\nupdate=none\n");
+      const failed = planMain({ MOBILE_BUILD: "android", DEPLOY_SHA: SHA, GITHUB_OUTPUT: out, GITHUB_STEP_SUMMARY: summary }, { registryText: "{" });
+      assert.equal(failed, 1);
+      assert.match(readFileSync(summary, "utf8"), /No store build and no update/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    const job = workflowJobs(DEPLOY_WORKFLOW).find((j) => j.jobId === "mobile-plan");
+    const outputs = job.keys.get("outputs");
+    assert.equal(outputs.get("build"), "${{ steps.plan.outputs.build }}");
+    assert.equal(outputs.get("update"), "${{ steps.plan.outputs.update }}");
+    const step = workflowSteps(DEPLOY_WORKFLOW).find((s) => s.jobId === "mobile-plan" && s.name === "Plan the store build and the update");
+    assert.match(step.body, /^\s+id: plan\s*$/m);
   });
 
   it("a named platform reads no checkout", () => {
@@ -250,6 +311,23 @@ describe("checkNativeVersion", () => {
   });
 });
 
+describe("the check runs on every PR, judging the PR's own change", () => {
+  it("is a mobile-validate step after the install, with the test merge's first parent as the base", () => {
+    const steps = workflowSteps(CI_WORKFLOW).filter((s) => s.jobId === "mobile-validate");
+    const at = steps.findIndex((s) => s.name === "Native changes carry an expo.version bump");
+    assert.notEqual(at, -1, "mobile-validate has no native-version step");
+    const install = steps.findIndex((s) => /install: ci/.test(s.body));
+    assert.ok(install !== -1 && install < at, "it reads the installed tree, so it runs after npm ci");
+    assert.match(steps[at].body, /run: npm run check:mobile-native-version/);
+    assert.match(steps[at].body, /BASE_SHA: \$\{\{ github\.event_name == 'pull_request' && 'HEAD\^1' \|\| '' \}\}/);
+    assert.doesNotMatch(steps[at].body, /\bif:/, "a required check that skips passes");
+    const pkg = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8"));
+    assert.equal(pkg.scripts["check:mobile-native-version"], "node scripts/check-mobile-native-version.mjs");
+    const checkout = steps.find((s) => /actions\/checkout@/.test(s.body));
+    assert.match(checkout.body, /fetch-depth: 0/, "the base and the build commits must be reachable");
+  });
+});
+
 // ── The publishing workflow ─────────────────────────────────────────────────
 
 describe("_mobile-update.yml", () => {
@@ -277,6 +355,13 @@ describe("_mobile-update.yml", () => {
     const installs = all.map((s, i) => [s, i]).filter(([s]) => s.body.split("\n").some(runsInstall) || /scripts\/eas\.mjs --version/.test(s.body));
     assert.equal(installs.length, 2);
     for (const [, i] of installs) assert.ok(i < withToken[0][1], "every install runs before the token appears");
+  });
+
+  it("installs nothing that runs a script, and refuses a tree without the guard before the token appears", () => {
+    const install = steps().find((s) => s.name === "Install dependencies (no install scripts)");
+    assert.match(install.body, /run: npm ci --ignore-scripts/);
+    const confirm = steps().find((s) => s.name === "Confirm the tree is exactly the shipped commit");
+    assert.match(confirm.body, /\[ ! -f scripts\/eas-update\.mjs \]/);
   });
 
   it("publishes only through the guard, to the production channel, for the planned platform", () => {

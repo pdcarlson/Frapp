@@ -672,9 +672,11 @@ jobs:
       # native change under a version that has shipped would crash those
       # builds. Fails a PR that makes one without a bump; warns on a push, and
       # on a PR that didn't cause it (scripts/check-mobile-native-version.mjs).
+      # A PR's HEAD is its test merge, whose first parent is the base it was
+      # merged onto; the payload's base.sha can be older than that.
       - name: Native changes carry an expo.version bump
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && 'HEAD^1' || '' }}
         run: npm run check:mobile-native-version
 
       # What the binaries declare, read from the introspected config rather than

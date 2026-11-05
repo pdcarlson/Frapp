@@ -30,7 +30,7 @@ import {
 //   * The copies stay gone, in workflows and in the other composite actions.
 //   * The jobs that can't call a local action (they check out another commit
 //     first, so `./.github/actions/node-setup` would load from THAT tree; the
-//     three files in EXCEPTIONS) stay pinned to the same step (the setup-node
+//     files in EXCEPTIONS) stay pinned to the same step (the setup-node
 //     ref, Node version and cache opt-out), and stay exceptions only while the
 //     reason holds.
 //   * The action does exactly what its contract says and nothing more. Most
