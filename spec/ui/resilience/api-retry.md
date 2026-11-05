@@ -10,10 +10,14 @@ const RETRY_CONFIG = {
   baseDelay: 1000,         // 1 second
   maxDelay: 30_000,        // 30 seconds
   backoffMultiplier: 2,    // exponential: 1s, 2s, 4s
-  retryableStatusCodes: [408, 429, 500, 502, 503, 504], // intended; reads are status-blind today (#3141), writes never retry a 429 (§ Writes)
-  nonRetryableStatusCodes: [400, 401, 403, 404, 409, 422],
+  retryableStatusCodes: [408, 500, 502, 503, 504], // reads and writes never retry a 429 (§ Reads, § Writes)
+  nonRetryableStatusCodes: [400, 401, 403, 404, 409, 422, 429],
 };
 ```
+
+## Reads
+
+A read is retried when it failed in a way that may pass next time: a 5xx, a failure with no status (a dropped connection, a timeout), or an intermediary's 408, 499 or 460. A definitive client refusal (a 400, 401, 403, 404, 409, 422 or 429) is never retried: the same request gets the same answer, and the backoff only holds the error state back, by about 7 s for three retries. That holds for the throttler's 429 too, though a read is safe to repeat: once a caller is over the limit the throttler blocks it for `blockDuration`, which defaults to the window's 60 s `ttl` (`apps/api/src/app.module.ts`), so every attempt inside the backoff is refused again and counted. The SDK keeps no `Retry-After` to wait on instead. A 401 is not retried because the web client reads the Supabase session on every request (`apps/web/lib/providers/frapp-client-provider.tsx`) and `getSession` refreshes a token within 90 s of its expiry before returning it, so a retry would carry the same token. Web's default query retry is three more attempts through `isRetryableFailure` (`retryQuery`, `apps/web/lib/providers/query-provider.tsx`, #3141); mobile's default query retry is one more attempt whatever the status (`apps/mobile/lib/query-client.ts`). The rule assumes the API's status is honest, as § Writes does: until #3143, a guard's infrastructure failure answered as 401/403 fails a read at once instead of being retried.
 
 ## Writes
 
@@ -59,7 +63,7 @@ async function fetchWithRetry(fn, config = RETRY_CONFIG) {
 
 | Endpoint Category | Timeout | Retry | Notes |
 |-------------------|---------|-------|-------|
-| Read (GET) | 15s | 3x | Stale cache shown while retrying |
+| Read (GET) | 15s | Web 3x, transient failures only; mobile 1x (§ Reads) | Stale cache shown while retrying |
 | Write (POST/PATCH) | 20s | Web 2x, transient failures only; mobile 0x (§ Writes) | Optimistic UI + rollback |
 | File upload (signed URL) | 60s | 1x | Large payloads |
 | Webhook (POST /webhooks) | 30s | 0x | Server-initiated, not user-facing |

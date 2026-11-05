@@ -77,6 +77,33 @@ describe("SlashPalette", () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
+  it("says it is offline, with Retry, rather than loading forever, when the read can't run (#3160)", () => {
+    // A paused read never answers by itself, so the Loading panel would sit
+    // there with no way forward. README §4: state the offline check and offer
+    // the recovery.
+    const onRetry = vi.fn();
+    render(
+      <SlashPalette
+        open
+        isModuleEnabled={() => false}
+        status="offline"
+        onRetry={onRetry}
+        onSelect={noop}
+        onOpenChange={noop}
+      />,
+    );
+
+    expect(screen.getByText(/you're offline/i)).toBeInTheDocument();
+    expect(screen.queryByText(/loading commands/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText(/type a command/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("/event")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
   it("hides commands whose module is disabled when ready", () => {
     render(
       <SlashPalette
