@@ -23,7 +23,8 @@ export type UpdateCustomRoleInput = UpdateCustomRole;
  * The endpoint requires `chapter-config:view`, so callers rendered for
  * ordinary members (e.g. the member directory) should pass `enabled: false`
  * until the viewer's permission is confirmed — otherwise every mount fires a
- * guaranteed-403 request that the query client retries and refires on focus.
+ * guaranteed-403 request that the query client refires on focus (and that
+ * mobile's query client also retries once; web's does not retry a 403, #3141).
  */
 export function useCustomRoles(options?: { enabled?: boolean }) {
   const client = useFrappClient();
