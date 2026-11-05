@@ -47,6 +47,8 @@ export type RowMenuEntry =
       onSelect: () => void;
       destructive?: boolean;
       disabled?: boolean;
+      /** Id of the text explaining why the item is disabled. */
+      describedBy?: string;
     }
   | { type: "separator"; key: string }
   | { type: "label"; key: string; label: string };
@@ -99,6 +101,7 @@ function Entries({
           <Item
             key={entry.key}
             disabled={entry.disabled}
+            aria-describedby={entry.describedBy}
             onSelect={entry.onSelect}
             className={entry.destructive ? DESTRUCTIVE_ITEM_CLASS : undefined}
           >
@@ -129,8 +132,9 @@ export function RowMenu({
 }) {
   // Decided on every pointerdown, which React flushes before the browser fires
   // `contextmenu`, so a disabled trigger leaves that event to the browser
-  // instead of opening this menu. Every press decides afresh, so a verdict from
-  // an earlier right-click can never block a later long-press or menu key.
+  // instead of opening this menu. The verdict lasts for that one event and is
+  // cleared as it passes: Radix skips its long-press timer while the trigger is
+  // disabled, so a verdict left standing would swallow the next long-press.
   const [browserMenu, setBrowserMenu] = useState(false);
   const [buttonOpen, setButtonOpen] = useState(false);
 
@@ -187,6 +191,9 @@ export function RowMenu({
           setBrowserMenu(
             opensMenu && keepsBrowserMenu(event.target, event.currentTarget),
           );
+        }}
+        onContextMenu={() => {
+          if (browserMenu) setBrowserMenu(false);
         }}
         onKeyDown={(event) => {
           // The menu key and Shift+F10 fire `contextmenu` with no pointerdown

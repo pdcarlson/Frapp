@@ -106,8 +106,25 @@ vi.mock("@/lib/stores/chapter-store", () => ({
   ) => selector({ activeChapterId: mockChapterId.value }),
 }));
 
+// Honours backwork `permission` / `anyOf` against `mockPermissions`, with no
+// loading or offline branch: the real gate's states are `can-fallback.spec.tsx`'s
+// job. Any other permission (the notice's `billing:manage` link) passes.
 vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Can: ({
+    children,
+    permission,
+    anyOf,
+  }: {
+    children: React.ReactNode;
+    permission?: string;
+    anyOf?: readonly string[];
+  }) => {
+    const wanted = permission ? [permission] : (anyOf ?? []);
+    const allowed = wanted.some(
+      (p) => !p.startsWith("backwork:") || mockPermissions.value.includes(p),
+    );
+    return allowed ? <>{children}</> : null;
+  },
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -1024,7 +1041,13 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
 
     fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
     const item = async (name: string) => screen.findByRole("menuitem", { name });
-    for (const name of ["Rename Bram…", "Merge Bram into…", "Merge COGS into…", "Delete file…"]) {
+    for (const name of [
+      "Rename Bram…",
+      "Merge Bram into…",
+      "Name the COGS department…",
+      "Merge COGS into…",
+      "Delete file…",
+    ]) {
       expect(await item(name)).toHaveAttribute("aria-disabled", "true");
     }
     for (const name of ["Download", "Show only COGS 2120", "Show only Bram"]) {
@@ -1057,6 +1080,70 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
 
     await waitFor(() => expect(titles()).toHaveLength(2));
     expect(screen.getByRole("button", { name: /^professor$/i })).toBeInTheDocument();
+  });
+
+  it("ties a disabled row write to the notice, and gates the clean-up entry", async () => {
+    const user = userEvent.setup();
+    chapter.pastDue();
+    render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    const rename = await screen.findByRole("menuitem", { name: "Rename Bram…" });
+    const noticeId = rename.getAttribute("aria-describedby");
+    expect(noticeId).toBeTruthy();
+    expect(document.getElementById(noticeId!)).toHaveTextContent(/past due/i);
+    await user.keyboard("{Escape}");
+
+    await user.click(screen.getByRole("button", { name: /^more backwork options$/i }));
+    expect(
+      await screen.findByRole("menuitem", { name: /clean up professors and departments/i }),
+    ).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("shows the lapsed-chapter notice to an officer who cannot upload", () => {
+    mockPermissions.value = ["backwork:admin"];
+    chapter.pastDue();
+    render(<BackworkPage />);
+    expect(screen.getByText(/past due/i)).toBeInTheDocument();
+  });
+
+  it("does not delete when the chapter lapses while the confirm is open", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    await user.click(await screen.findByRole("menuitem", { name: "Delete file…" }));
+    const dialog = await screen.findByRole("dialog");
+    chapter.pastDue();
+    rerender(<BackworkPage />);
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+
+    await waitFor(() => expect(mockToast).toHaveBeenCalled());
+    expect(mockDeleteResource).not.toHaveBeenCalled();
+  });
+
+  it("keeps a dropped filter dropped when a file with its value comes back", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<BackworkPage />);
+
+    fireEvent.contextMenu(screen.getAllByRole("listitem")[0]!);
+    await user.click(await screen.findByRole("menuitem", { name: "Show only Bram" }));
+    resourcesQuery.data = LIBRARY.map((r) => ({ ...r, professor_id: "prof-thompson" }));
+    rerender(<BackworkPage />);
+    await waitFor(() => expect(titles()).toHaveLength(2));
+
+    resourcesQuery.data = LIBRARY;
+    rerender(<BackworkPage />);
+    await waitFor(() => expect(titles()).toHaveLength(2));
+  });
+
+  it("highlights the course when the search typed it joined", async () => {
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    await user.type(screen.getByLabelText("Search backwork"), "cogs2120");
+    await waitFor(() => expect(titles()).toEqual(["Cog Sci Homework 2"]));
+    const marks = Array.from(document.querySelectorAll("mark")).map((m) => m.textContent);
+    expect(marks).toEqual(expect.arrayContaining(["COGS", "2120"]));
   });
 
   it("says when the list hit the server's row cap", () => {

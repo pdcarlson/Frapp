@@ -362,6 +362,7 @@ Three of these exist to keep one state from impersonating another:
 | Loading | — | `Loading backwork...` |
 | Empty (no files at all) | `No backwork yet` | `Upload the first exam, homework or study guide to start the library.` |
 | Empty (search or filters match nothing) | `No files match` | `Try fewer words, or clear a filter.` Action: `Clear search and filters` |
+| Truncated (the list hit the server's 1,000-row cap, #3525) | — | `Showing the newest 1,000 files. Search and filters look only at these for now.` |
 | Error | `Couldn't load backwork` | `Confirm your chapter access and retry.` |
 | Offline | `Backwork unavailable offline` | `Reconnect to browse the coursework archive and download a resource.` |
 

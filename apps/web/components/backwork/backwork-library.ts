@@ -195,7 +195,8 @@ export type FilterOption = { value: string; label: string };
 
 type Options = ReturnType<typeof filterOptions>;
 
-const OPTION_FOR: Record<keyof LibraryFilters, keyof Options> = {
+/** Which `filterOptions` list each filter draws its choices from. */
+export const OPTION_FOR: Record<keyof LibraryFilters, keyof Options> = {
   course: "course",
   professorId: "professor",
   term: "term",

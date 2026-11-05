@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useSubscriptionGate } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
@@ -47,6 +48,10 @@ type RenameTarget = Target & { current: string };
  * A department's rename sets its full name (`PATCH` takes only `name`); its
  * code is what members typed on upload and stays as the row's label.
  *
+ * Rename and merge are paid-ops writes: each dialog's submit spreads the
+ * subscription gate, so a chapter that lapses while one is open cannot send it.
+ * The page's `SubscriptionNotice` explains the disabled control.
+ *
  * Delete is not offered here. From a row it would always fail, since that row
  * still references the entry; the drawer keeps delete for unused entries.
  */
@@ -56,6 +61,7 @@ export function useBackworkTaxonomyActions(): {
   dialogs: ReactNode;
 } {
   const { toast } = useToast();
+  const gate = useSubscriptionGate();
   const departmentsQuery = useDepartments();
   const professorsQuery = useProfessors();
   const departments = useMemo(
@@ -91,7 +97,7 @@ export function useBackworkTaxonomyActions(): {
 
   async function submitRename(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!renameTarget) return;
+    if (!renameTarget || !gate.allowed) return;
     const name = renameDraft.trim();
     if (!name || name === renameTarget.current) {
       setRenameTarget(null);
@@ -121,7 +127,7 @@ export function useBackworkTaxonomyActions(): {
   }
 
   async function submitMerge() {
-    if (!mergeTarget || !mergeSelection) return;
+    if (!mergeTarget || !mergeSelection || !gate.allowed) return;
     setMerging(true);
     try {
       const result =
@@ -209,7 +215,10 @@ export function useBackworkTaxonomyActions(): {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={renaming || !renameDraft.trim()}>
+              <Button
+                type="submit"
+                {...gate.controlProps(renaming || !renameDraft.trim())}
+              >
                 {renaming ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 Save
               </Button>
@@ -255,7 +264,7 @@ export function useBackworkTaxonomyActions(): {
             <Button
               variant="destructive"
               onClick={() => void submitMerge()}
-              disabled={!mergeSelection || merging}
+              {...gate.controlProps(!mergeSelection || merging)}
             >
               {merging ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Merge

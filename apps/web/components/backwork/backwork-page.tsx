@@ -1,6 +1,12 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Check,
   ChevronDown,
@@ -57,6 +63,7 @@ import {
 import {
   BACKWORK_LIST_CAP,
   NO_FILTERS,
+  OPTION_FOR,
   filterOptions,
   liveFilters,
   hasActiveFilters,
@@ -107,14 +114,6 @@ const CHIPS: { key: ChipKey; label: string; anyLabel: string }[] = [
   { key: "type", label: "Type", anyLabel: "Any type" },
   { key: "variant", label: "Copy", anyLabel: "Any copy" },
 ];
-
-const OPTION_KEY: Record<ChipKey, keyof ReturnType<typeof filterOptions>> = {
-  course: "course",
-  professorId: "professor",
-  term: "term",
-  type: "type",
-  variant: "variant",
-};
 
 /*
  * Columns at md and up. Below md a row stacks: title and course, then one
@@ -182,6 +181,17 @@ function FilterChip({
   );
 }
 
+/**
+ * A search for the joined course form ("cogs2120") hits that one word, which
+ * the course column spells as two; light both up.
+ */
+function courseHits(row: LibraryRow, hits: readonly string[]): readonly string[] {
+  const code = row.department?.code.toLowerCase();
+  const number = row.resource.course_number?.toLowerCase();
+  if (!code || !number || !hits.includes(`${code}${number}`)) return hits;
+  return [...hits, code, number];
+}
+
 export function BackworkPage() {
   const { toast } = useToast();
   // `POST /v1/backwork/upload-url` and `POST /v1/backwork` carry no `@FreeTier`,
@@ -190,6 +200,12 @@ export function BackworkPage() {
   // link are reads — `enforceSubscription` returns early for GET, so they
   // stay live.
   const gate = useSubscriptionGate();
+  // Read after an await (the delete confirm), when the render's `gate` may be
+  // stale: the chapter can lapse while the dialog is open.
+  const gateRef = useRef(gate);
+  useEffect(() => {
+    gateRef.current = gate;
+  });
   const { isOffline } = useNetwork();
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
 
@@ -239,6 +255,11 @@ export function BackworkPage() {
     () => queryLibrary(rows, deferredQuery, applied),
     [rows, deferredQuery, applied],
   );
+  // Write the pruned value back, so the dropped filter stays dropped instead
+  // of returning on its own when a file with that value comes back later.
+  // Set during render (React's "adjusting state when a prop changes"), so the
+  // stale value never paints.
+  if (applied !== filters && rows.length > 0) setFilters(applied);
   const narrowed = deferredQuery.trim() !== "" || hasActiveFilters(applied);
   const truncated = rows.length >= BACKWORK_LIST_CAP;
 
@@ -285,6 +306,14 @@ export function BackworkPage() {
       tone: "destructive",
     });
     if (!ok) return;
+    if (!gateRef.current.allowed) {
+      toast({
+        title: "Couldn't delete the file",
+        description: "This chapter can't make changes right now. The notice above says why.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
       await deleteResource.mutateAsync(row.resource.id);
       toast({ title: `Deleted "${row.title}"` });
@@ -302,6 +331,7 @@ export function BackworkPage() {
     // Rename, merge and delete are paid-ops writes like upload, so they go
     // dark with it on a lapsed chapter; the notice under the toolbar says why.
     const writeBlocked = !gate.allowed;
+    const describedBy = gate.controlProps()["aria-describedby"];
     const entries: RowMenuEntry[] = [
       {
         type: "item",
@@ -338,6 +368,7 @@ export function BackworkPage() {
           type: "item",
           key: "rename-professor",
           disabled: writeBlocked,
+          describedBy,
           label: `Rename ${professor.name}…`,
           icon: Pencil,
           onSelect: () =>
@@ -352,6 +383,7 @@ export function BackworkPage() {
           type: "item",
           key: "merge-professor",
           disabled: writeBlocked,
+          describedBy,
           label: `Merge ${professor.name} into…`,
           icon: Merge,
           onSelect: () =>
@@ -369,6 +401,7 @@ export function BackworkPage() {
           type: "item",
           key: "rename-department",
           disabled: writeBlocked,
+          describedBy,
           label: `Name the ${department.code} department…`,
           icon: Pencil,
           onSelect: () =>
@@ -383,6 +416,7 @@ export function BackworkPage() {
           type: "item",
           key: "merge-department",
           disabled: writeBlocked,
+          describedBy,
           label: `Merge ${department.code} into…`,
           icon: Merge,
           onSelect: () =>
@@ -406,6 +440,7 @@ export function BackworkPage() {
         icon: Trash2,
         destructive: true,
         disabled: writeBlocked,
+        describedBy,
         onSelect: () => void removeFile(row),
       },
     );
@@ -487,7 +522,7 @@ export function BackworkPage() {
               key={chip.key}
               label={chip.label}
               anyLabel={chip.anyLabel}
-              options={options[OPTION_KEY[chip.key]]}
+              options={options[OPTION_FOR[chip.key]]}
               value={applied[chip.key]}
               onChange={(value) => setFilter(chip.key, value)}
             />
@@ -526,7 +561,11 @@ export function BackworkPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[260px]">
-                <DropdownMenuItem onSelect={() => setCleanupOpen(true)}>
+                <DropdownMenuItem
+                  disabled={!gate.allowed}
+                  aria-describedby={gate.controlProps()["aria-describedby"]}
+                  onSelect={() => setCleanupOpen(true)}
+                >
                   <Pencil aria-hidden="true" />
                   Clean up professors and departments
                 </DropdownMenuItem>
@@ -555,8 +594,8 @@ export function BackworkPage() {
 
       {/*
         Disable, don't hide (§5 rule 4): the library stays browsable and
-        downloadable on a lapsed chapter, so only the upload flow goes dark and
-        it explains itself here. Silent offline on purpose: this explains a
+        downloadable on a lapsed chapter, so only its writes go dark, and they
+        explain themselves here. Silent offline on purpose: this explains a
         disabled control and has nothing of its own to retry
         (`can-fallback.spec.tsx`). Officers see it too: their row-menu rename,
         merge and delete are paid-ops writes that go dark with upload.
@@ -636,6 +675,7 @@ export function BackworkPage() {
               <span />
             </div>
             <ul className={denseListClassName}>
+              {/* eslint-disable-next-line react-hooks/refs -- `rowEntries` closes over `removeFile`, which reads `gateRef` after its confirm resolves, not during render */}
               {results.map(({ item: row, hits }) => (
                 <RowMenu
                   key={row.resource.id}
@@ -658,7 +698,7 @@ export function BackworkPage() {
                           {row.course ? (
                             <Highlighted
                               text={row.course}
-                              hits={hits}
+                              hits={courseHits(row, hits)}
                               className="font-mono text-caption tracking-[0.02em] text-foreground"
                             />
                           ) : null}

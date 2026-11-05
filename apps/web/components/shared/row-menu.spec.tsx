@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RowMenu, keepsBrowserMenu, type RowMenuEntry } from "./row-menu";
 
@@ -129,6 +129,23 @@ describe("RowMenu", () => {
     expect(await screen.findByRole("menu")).toBeInTheDocument();
   });
 
+  it("clears the browser-menu verdict once its event has passed", async () => {
+    // Radix skips its long-press timer while the trigger is disabled, so the
+    // verdict must not still stand when the next touch press lands.
+    render(<Row entries={entries} />);
+    selectTitle();
+    const title = screen.getByTestId("title");
+    fireEvent.pointerDown(title, { button: 2, pointerType: "mouse" });
+    fireEvent.contextMenu(title);
+    expect(screen.queryByRole("menu")).toBeNull();
+    window.getSelection()!.removeAllRanges();
+
+    // No pointerdown first, as on a device whose long-press only fires
+    // `contextmenu`: the trigger must already be live again.
+    fireEvent.contextMenu(title);
+    expect(await screen.findByRole("menu")).toBeInTheDocument();
+  });
+
   it("opens the row menu from a touch long-press even right after such a right-click", async () => {
     render(<Row entries={entries} />);
     selectTitle();
@@ -147,6 +164,26 @@ describe("RowMenu", () => {
     await user.click(screen.getByRole("button", { name: "More for Homework 2" }));
     const item = await screen.findByRole("menuitem", { name: "Download" });
     fireEvent.contextMenu(item);
+    expect(screen.getAllByRole("menu", { hidden: true })).toHaveLength(1);
+  });
+
+  it("does not stack the row menu from a long-press on an open ⋯ menu", async () => {
+    const user = userEvent.setup();
+    render(<Row entries={entries} />);
+    await user.click(screen.getByRole("button", { name: "More for Homework 2" }));
+    const item = await screen.findByRole("menuitem", { name: "Download" });
+
+    // Radix opens a touch long-press from a 700ms timer started on pointerdown,
+    // with no `contextmenu` event (iOS Safari fires none).
+    vi.useFakeTimers();
+    try {
+      fireEvent.pointerDown(item, { button: 0, pointerType: "touch" });
+      act(() => {
+        vi.advanceTimersByTime(800);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
     expect(screen.getAllByRole("menu", { hidden: true })).toHaveLength(1);
   });
 });

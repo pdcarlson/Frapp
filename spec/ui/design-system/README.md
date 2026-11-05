@@ -142,7 +142,7 @@ Do not collapse these into the verdict: `allowed` folds in `isPending` and `isOf
 
 **Use the shared primitive, not the raw hook.** `useSubscriptionGate` / `useGatedDialog` / `SubscriptionNotice` (`apps/web/components/shared/subscription-gate.tsx`) package the six things a correct gated control needs: the pending fold-in, the offline fold-in, the mid-flight revoke, the refusal to open, the `aria-describedby` / `title` wiring, and the notice. `useSubscriptionWriteState` remains the predicate underneath, for callers that need the verdict without a control. Pass your own busy flags to `controlProps(alsoDisabled)` rather than OR-ing them in afterwards — spreading the props and then writing your own `disabled` silently drops the gate.
 
-Every paid-ops write **affordance** in `apps/web` is mirrored except the rows the table below marks **not mirrored**: the chat slash commands, the backwork taxonomy drawer, the chat rush card and the Discord import wizard. Any new subscription-gated flow adopts the primitive rather than re-solving this per screen.
+Every paid-ops write **affordance** in `apps/web` is mirrored except the rows the table below marks **not mirrored**: the chat slash commands, the backwork taxonomy drawer's inline rename and delete, the chat rush card and the Discord import wizard. Any new subscription-gated flow adopts the primitive rather than re-solving this per screen.
 
 Beyond the backwork taxonomy drawer, the rush card and the Discord import wizard, two gaps are known, not overlooked (the first is the slash-command entries the table marks **not mirrored**):
 
@@ -160,7 +160,7 @@ A controller is subscription-gated only if `ChapterGuard` is in its guard chain 
 | Paid-ops controller | Writes | Web surfaces (all of them) |
 | --- | --- | --- |
 | `attendance` | 3 | `components/events/attendance-panel.tsx` · `components/chat/renderers/event-card.tsx` (check-in) |
-| `backwork` | 9 | `components/backwork/backwork-page.tsx` (toolbar Upload; row-menu rename, merge and delete file, disabled with the page's notice) · `components/backwork/backwork-upload-sheet.tsx` (upload) · `components/backwork/backwork-taxonomy-actions.tsx` (the rename and merge dialogs the row menu opens) · `components/backwork/backwork-taxonomy-drawer.tsx` (department/professor edit, delete, merge; **not mirrored**) |
+| `backwork` | 9 | `components/backwork/backwork-page.tsx` (toolbar Upload; row-menu rename, merge and delete file, disabled with the page's notice) · `components/backwork/backwork-upload-sheet.tsx` (upload) · `components/backwork/backwork-taxonomy-actions.tsx` (the rename and merge dialogs the row menu and the drawer open; submit gated) · `components/backwork/backwork-taxonomy-drawer.tsx` (its More-menu entry is gated, but its inline rename and delete are **not mirrored** if the chapter lapses while it is open) |
 | `chapter-document` | 6 | `components/documents/documents-page.tsx` (notice) · `components/documents/upload-document-dialog.tsx` (upload) · `components/documents/document-row.tsx` (delete) · `components/documents/folder-rail.tsx` and `components/documents/folder-management.tsx` (folder create, rename, reorder, delete) |
 | `event` | 3 | `components/events/events-page.tsx` (both create triggers) · `components/events/event-editor-dialog.tsx` · `components/events/event-detail-sheet.tsx` (edit + delete) · the `/event` slash command (`packages/chat-core/src/dispatch.ts`; **not mirrored**, see the slash-command gap above) |
 | `financial-invoice` | 3 (+1 exempt) | `components/billing/invoice-list.tsx` |

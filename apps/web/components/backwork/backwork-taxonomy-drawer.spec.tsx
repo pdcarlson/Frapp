@@ -1,7 +1,8 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { BackworkTaxonomyDrawer } from "./backwork-taxonomy-drawer";
+import { chapterSubscription } from "@/tests/chapter-subscription";
+import { networkMock } from "@/tests/network";
 
 const {
   mockToast,
@@ -13,7 +14,11 @@ const {
   mockUpdateProfessor,
   mockDeleteProfessor,
   mockMergeProfessors,
+  mockCurrentChapter,
+  mockOffline,
 } = vi.hoisted(() => ({
+  mockCurrentChapter: vi.fn(),
+  mockOffline: { value: false },
   mockToast: vi.fn(),
   departmentsData: {
     value: [
@@ -32,7 +37,10 @@ const {
   mockMergeProfessors: vi.fn().mockResolvedValue({ reassigned: 1 }),
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // The shared rename and merge dialogs read the subscription gate.
+  useCurrentChapter: () => mockCurrentChapter(),
   useDepartments: () => ({ data: departmentsData.value }),
   useProfessors: () => ({ data: professorsData.value }),
   useUpdateDepartment: () => ({ mutateAsync: mockUpdateDepartment }),
@@ -47,8 +55,14 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
+vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
+
+const { BackworkTaxonomyDrawer } = await import("./backwork-taxonomy-drawer");
+const chapter = chapterSubscription(mockCurrentChapter);
+
 beforeEach(() => {
   vi.clearAllMocks();
+  chapter.active();
   departmentsData.value = [
     { id: "dept-1", code: "CHEM", name: "Chemistry" },
     { id: "dept-2", code: "MATH", name: "Mathematics" },
@@ -210,6 +224,13 @@ describe("BackworkTaxonomyDrawer", () => {
       screen.getByText(/merge "chemistry"/i),
     ).toBeInTheDocument();
     // Merge is disabled until a target is picked.
+    expect(screen.getByRole("button", { name: /^merge$/i })).toBeDisabled();
+  });
+
+  it("keeps the shared merge dialog's submit shut on a lapsed chapter", async () => {
+    chapter.pastDue();
+    const user = await openDrawer();
+    await user.click(screen.getByRole("button", { name: /merge chemistry/i }));
     expect(screen.getByRole("button", { name: /^merge$/i })).toBeDisabled();
   });
 });

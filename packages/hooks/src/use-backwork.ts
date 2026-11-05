@@ -5,7 +5,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
- * The chapter's whole backwork list, unfiltered. `/backwork` searches and
+ * The chapter's backwork list, unfiltered and unpaginated, so PostgREST's
+ * `max_rows` (1000) caps it, newest first (#3525; `BACKWORK_LIST_CAP` in
+ * `apps/web/components/backwork/backwork-library.ts`). `/backwork` searches and
  * filters it in memory (`apps/web/components/backwork/backwork-library.ts`), so
  * this takes no filters: a server-filtered subset here would silently shrink
  * the search, the filter options and the file count built on it.
