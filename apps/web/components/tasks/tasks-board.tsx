@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, Loader2, Plus, Undo2 } from "lucide-react";
+import { CheckCircle2, Loader2, Plus, Trash2, Undo2 } from "lucide-react";
 import {
   useConfirmTask,
   useCreateTask,
@@ -729,18 +729,20 @@ function TaskTile({
             </>
           ) : null}
           {/*
-            Pushed to the trailing edge, so the tile's lifecycle actions lead
-            and Delete never reads as one of them; on a tile with nothing else
-            to do it sits alone at the corner rather than opening a row.
+            A square icon at the trailing edge, so the tile's lifecycle
+            actions lead and Delete never reads as one of them, and Confirm,
+            Reject and Delete fit one row of a narrow column. Named for the
+            task, since every tile has one.
           */}
           <Button
             size="toolbar"
             variant="quiet"
-            className="ml-auto"
+            className="ml-auto w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
+            aria-label={`Delete ${task.title}`}
             {...gate.controlProps()}
             onClick={onDelete}
           >
-            Delete
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
           </Button>
         </Can>
       </div>

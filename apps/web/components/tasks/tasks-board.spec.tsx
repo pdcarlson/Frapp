@@ -120,8 +120,9 @@ const completeButton = () =>
   screen.getByRole("button", { name: /mark complete/i });
 const confirmButton = () => screen.getByRole("button", { name: /^confirm$/i });
 const rejectButton = () => screen.getByRole("button", { name: /^reject$/i });
+// An icon on each tile, named for its task ("Delete Draft rush schedule").
 const deleteButtons = () =>
-  screen.getAllByRole("button", { name: /^delete$/i });
+  screen.getAllByRole("button", { name: /^delete /i });
 
 describe("TasksBoard subscription gating", () => {
   beforeEach(() => {
