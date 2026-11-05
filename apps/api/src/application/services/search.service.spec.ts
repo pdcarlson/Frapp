@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nestjs';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SearchService } from './search.service';
 import { RbacService } from './rbac.service';
@@ -10,6 +11,13 @@ import {
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import { Logger } from '@nestjs/common';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
 
 /**
  * `SearchService` decides what the caller may see; the queries are
@@ -669,6 +677,39 @@ describe('SearchService', () => {
         expect(loggedText(logged)).toContain(
           `search source "backwork" failed after the 500ms budget; ${TIMEOUT_LINE}`,
         );
+      } finally {
+        logged.mockRestore();
+        jest.useRealTimers();
+      }
+    });
+
+    it('reports a late failure to Sentry once, while the caller still gets the fallback', async () => {
+      jest.useFakeTimers();
+      captureException.mockClear();
+      const logged = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      try {
+        wireSources();
+        repo.searchBackwork.mockImplementation(() => failingAfter(1_000));
+
+        const promise = service.searchWithinBudget('ch-1', 'user-1', 'meeting');
+        await jest.advanceTimersByTimeAsync(500);
+        const outcome = await promise;
+        expect(outcome.results.backwork).toEqual([]);
+        expect(captureException).not.toHaveBeenCalled();
+
+        await jest.advanceTimersByTimeAsync(1_000);
+        expect(captureException).toHaveBeenCalledTimes(1);
+        expect(captureException.mock.calls[0]?.[1]).toMatchObject({
+          level: 'error',
+          tags: { caught_at: 'search-source-late-failure:backwork' },
+        });
+        expect(
+          (
+            captureException.mock.calls[0]?.[1] as { fingerprint: string[] }
+          ).fingerprint.slice(0, 2),
+        ).toEqual(['caught-failure', 'search-source-late-failure:backwork']);
       } finally {
         logged.mockRestore();
         jest.useRealTimers();

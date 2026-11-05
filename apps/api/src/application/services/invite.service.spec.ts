@@ -21,8 +21,10 @@ import {
   ConflictException,
   ForbiddenException,
   GoneException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { InviteService } from './invite.service';
 import { INVITE_REPOSITORY } from '#domain/repositories/invite.repository.interface';
 import type { IInviteRepository } from '#domain/repositories/invite.repository.interface';
@@ -53,6 +55,13 @@ import {
   userFixture,
 } from '#test/helpers/entity-fixtures';
 
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
+
 describe('InviteService', () => {
   let service: InviteService;
   let mockInviteRepo: jest.Mocked<IInviteRepository>;
@@ -75,6 +84,7 @@ describe('InviteService', () => {
   let chapterDefaultRoleId: string | null;
 
   beforeEach(async () => {
+    captureException.mockClear();
     mockInviteRepo = {
       findById: jest.fn(),
       findByToken: jest.fn(),
@@ -1297,6 +1307,63 @@ describe('InviteService', () => {
     );
   });
 
+  it('still redeems, and reports once, when the New Member Joined notification fails', async () => {
+    const invite: Invite = {
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    };
+    const memberRole: Role = roleFixture({
+      id: 'role-member',
+      name: 'Member',
+      system_key: SystemRoleKeys.MEMBER,
+      is_system: true,
+      display_order: 3,
+    });
+    const member: Member = memberFixture({
+      user_id: 'user-2',
+      role_ids: [memberRole.id],
+    });
+    mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(
+      '2026-01-01T00:00:00.000Z',
+    );
+    mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
+    mockMemberRepo.create.mockResolvedValue(member);
+    mockNotificationService.notifyChapter.mockRejectedValue(
+      new Error('roster read failed'),
+    );
+    const error = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    await expect(service.redeem('test-uuid', 'user-2')).resolves.toEqual({
+      chapterId: 'ch-1',
+      memberId: member.id,
+    });
+
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'roster read failed' }),
+      expect.objectContaining({
+        level: 'error',
+        tags: { caught_at: 'invite-redeem-new-member-notify-failed' },
+        fingerprint: [
+          'caught-failure',
+          'invite-redeem-new-member-notify-failed',
+          'Error',
+        ],
+      }),
+    );
+    error.mockRestore();
+  });
+
   it('should reject if invite not found', async () => {
     mockInviteRepo.findByToken.mockResolvedValue(null);
     const promise = service.redeem('test-uuid', 'user-2');
@@ -1435,10 +1502,29 @@ describe('InviteService', () => {
     mockRoleRepo.findByChapter.mockResolvedValue([]);
     mockMemberRepo.create.mockRejectedValue(insertError);
     mockInviteRepo.releaseClaim.mockRejectedValue(new Error('release failed'));
+    const error = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
 
     await expect(service.redeem('test-uuid', 'user-2')).rejects.toBe(
       insertError,
     );
+    expect(error).toHaveBeenCalledWith(
+      'Failed to release invite after membership insert failed: release failed',
+      expect.any(String),
+    );
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'release failed' }),
+      expect.objectContaining({
+        fingerprint: [
+          'caught-failure',
+          'invite-redeem-claim-release-failed',
+          'Error',
+        ],
+      }),
+    );
+    error.mockRestore();
   });
 
   it('does not claim the invite when role lookup fails (#1863)', async () => {

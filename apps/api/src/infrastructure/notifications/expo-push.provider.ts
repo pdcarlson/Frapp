@@ -6,6 +6,7 @@ import type {
   SendToUserResult,
 } from '#domain/adapters/notification.interface';
 import { enqueueSanitizedLog } from '../analytics/posthog-runtime';
+import { reportCaughtFailure } from '../observability/report-caught-failure';
 import { toReportableError } from '../observability/reportable-error';
 
 /**
@@ -188,12 +189,15 @@ export class ExpoPushProvider implements INotificationProvider {
     // once — exactly when log volume must stay bounded. The `provider:<name>`
     // code plus this line identify the failure class.
     const message = toReportableError(error).message;
-    this.logger.error(
-      `push_delivery provider error (${name}): ${redactPushTokens(
+    reportCaughtFailure(this.logger, {
+      level: 'warning',
+      site: 'expo-push-provider-error',
+      message: `push_delivery provider error (${name}): ${redactPushTokens(
         message,
         tokens,
       ).slice(0, MAX_ERROR_MESSAGE_LENGTH)}`,
-    );
+      tags: { error_name: name },
+    });
   }
 
   private countCode(tally: DeliveryTally, code: string): void {

@@ -20,6 +20,7 @@ import { IsOptional, IsString } from 'class-validator';
 import { Test } from '@nestjs/testing';
 import type { Response } from 'express';
 import request from 'supertest';
+import * as Sentry from '@sentry/nestjs';
 import { configureApp } from '../../bootstrap';
 import { AnalyticsService } from '../../application/services/analytics.service';
 import {
@@ -33,6 +34,15 @@ jest.mock('../../infrastructure/analytics/posthog-runtime', () => ({
   enqueueSanitizedLog: jest.fn(),
   captureSentryErrorCorrelated: jest.fn(),
 }));
+
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
+const captureMessage = jest.mocked(Sentry.captureMessage);
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const CHAPTER_ID = '22222222-2222-4222-8222-222222222222';
@@ -210,6 +220,8 @@ describe('FeatureEventInterceptor (#593)', () => {
   beforeEach(() => {
     track.mockReset();
     track.mockResolvedValue(undefined);
+    captureException.mockClear();
+    captureMessage.mockClear();
   });
 
   afterEach(() => {
@@ -322,11 +334,18 @@ describe('FeatureEventInterceptor (#593)', () => {
     expect(firstArgs(error)).toContainEqual(
       expect.stringContaining('could not be built: describer bug'),
     );
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        level: 'error',
+        fingerprint: ['caught-failure', 'feature-event-build-failed', 'Error'],
+      }),
+    );
   });
 
-  it('drops a property outside the allowlist and logs it', async () => {
-    const error = jest
-      .spyOn(Logger.prototype, 'error')
+  it('drops a property outside the allowlist and warns about it', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
       .mockImplementation(() => undefined);
     await request(server()).post('/v1/fe/undeclared').expect(201);
     expect(track.mock.calls[0][2]).toEqual(
@@ -334,8 +353,18 @@ describe('FeatureEventInterceptor (#593)', () => {
         properties: { feature: 'tasks', posted_to_chat: true },
       }),
     );
-    expect(error).toHaveBeenCalledWith(
+    expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('dropped undeclared properties: title'),
+    );
+    expect(captureMessage).toHaveBeenCalledTimes(1);
+    expect(captureMessage.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        level: 'warning',
+        fingerprint: [
+          'caught-failure',
+          'feature-event-undeclared-properties:task-created',
+        ],
+      }),
     );
   });
 
@@ -354,6 +383,17 @@ describe('FeatureEventInterceptor (#593)', () => {
     await new Promise((resolve) => setImmediate(resolve));
     expect(firstArgs(error)).toContainEqual(
       expect.stringContaining('was rejected: content key'),
+    );
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        level: 'error',
+        fingerprint: [
+          'caught-failure',
+          'feature-event-track-rejected',
+          'Error',
+        ],
+      }),
     );
   });
 

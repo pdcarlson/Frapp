@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { randomUUID } from 'node:crypto';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import { isForeignKeyViolation } from '#domain/constants/postgres-error-codes';
 import {
@@ -40,6 +41,11 @@ import {
   wholeChapterTargets,
 } from '#domain/utils/discord-mentions';
 import { parseRoleMapping } from '#domain/utils/discord-role-gates';
+import {
+  DiscordApiError,
+  DiscordImportStoppedError,
+  DiscordNotConfiguredError,
+} from '#domain/adapters/discord.interface';
 import { RbacService } from '../services/rbac.service';
 import type {
   DiscordImport,
@@ -98,6 +104,31 @@ export const MAX_WARNINGS = 50;
  */
 const WORKER_MAY_CONTINUE: DiscordImportStatus[] = ['ready', 'running'];
 
+/** Discord's answers for a bot that lost its token, access, or the resource. */
+const DISCORD_REFUSAL_STATUSES = new Set([401, 403, 404]);
+
+/**
+ * Whether an import ended on an expected stop rather than a fault: an
+ * admin-facing stop (`DiscordImportStoppedError`, thrown by this worker and by
+ * the bot export worker), the integration not configured, or Discord
+ * refusing the bot (a revoked token, missing permissions, a deleted channel).
+ * Everything else (the database, storage, the copy service, Discord timeouts
+ * and 5xx, and its integrity refusals, which carry no status) is a fault.
+ */
+function isExpectedStop(error: unknown): boolean {
+  if (
+    error instanceof DiscordImportStoppedError ||
+    error instanceof DiscordNotConfiguredError
+  ) {
+    return true;
+  }
+  return (
+    error instanceof DiscordApiError &&
+    error.status !== null &&
+    DISCORD_REFUSAL_STATUSES.has(error.status)
+  );
+}
+
 /**
  * Why an import stopped when the Frapp channel a Discord channel imports into
  * was deleted (#2922). An officer may delete any channel, one an import
@@ -112,9 +143,9 @@ const WORKER_MAY_CONTINUE: DiscordImportStatus[] = ['ready', 'running'];
 function targetDeleted(
   mapping: Pick<DiscordImportChannel, 'discord_channel_name'>,
   detail = 'was deleted',
-): Error {
+): DiscordImportStoppedError {
   const name = `#${mapping.discord_channel_name}`;
-  return new Error(
+  return new DiscordImportStoppedError(
     `The Frapp channel ${name} was importing into ${detail}, so the import stopped. To bring ${name} in, delete this import and import again.`,
   );
 }
@@ -189,14 +220,14 @@ export class DiscordImportWorkerService {
         this.logger.log(`Reaped ${reaped} expired Discord OAuth handshakes.`);
       }
     } catch (error) {
-      // Same reasoning as the import sweep: an unhandled rejection out of a
-      // `@Cron` takes the process down. A failed reap must cost one tick.
-      logThrowable(
-        this.logger,
-        'error',
-        'Discord OAuth state sweep failed',
+      // Same reasoning as the import sweep: a rejection out of a `@Cron`
+      // reaches only Nest's raw `logger.error`, never Sentry.
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'discord-oauth-state-sweep',
+        message: 'Discord OAuth state sweep failed',
         error,
-      );
+      });
     }
   }
 
@@ -204,21 +235,22 @@ export class DiscordImportWorkerService {
    * The tick.
    *
    * The try/catch is not decoration: this handler reaches storage and the
-   * database, and an unhandled rejection out of a `@Cron` under Node's default
-   * `--unhandled-rejections=throw` takes the API process down with it. A failed
-   * sweep must cost one tick, never the service.
+   * database. `@nestjs/schedule` catches a rejected `@Cron` and hands the raw
+   * throwable to Nest's `logger.error`, which reaches no alert and can print a
+   * PostgREST `details`. Caught here, a failed sweep costs one tick and reports
+   * to Sentry as `discord-import-sweep-tick`.
    */
   @Cron(CronExpression.EVERY_MINUTE)
   async handleImportSweep(): Promise<void> {
     try {
       await this.sweepImports(new Date());
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        'Discord import sweep failed; skipping this tick',
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'discord-import-sweep-tick',
+        message: 'Discord import sweep failed; skipping this tick',
         error,
-      );
+      });
     }
   }
 
@@ -252,12 +284,21 @@ export class DiscordImportWorkerService {
         // `String()` turned into "[object Object]" in the log and on the page,
         // and anything else that is not an `Error` still would.
         const message = toReportableError(error).message;
-        logThrowable(
-          this.logger,
-          'error',
-          `Discord import ${job.id} failed`,
-          error,
-        );
+        if (isExpectedStop(error)) {
+          logThrowable(
+            this.logger,
+            'warn',
+            `Discord import ${job.id} failed`,
+            error,
+          );
+        } else {
+          reportCaughtFailure(this.logger, {
+            level: 'error',
+            site: 'discord-import-job-failed',
+            message: `Discord import ${job.id} failed`,
+            error,
+          });
+        }
         await this.importRepo.updateIfStatus(
           job.id,
           job.chapter_id,
@@ -930,7 +971,7 @@ export class DiscordImportWorkerService {
       }
       // Checked here too, for a mapping saved before the service refused it.
       if (target.type === 'DM' || target.type === 'GROUP_DM') {
-        throw new Error(
+        throw new DiscordImportStoppedError(
           `Channel mapping for #${mapping.discord_channel_name} points at a direct message. Map the channels again, then restart the import.`,
         );
       }
@@ -943,7 +984,7 @@ export class DiscordImportWorkerService {
         mapping.mapping_action === 'create_new' &&
         !channelServesMergeKey(target, mapping)
       ) {
-        throw new Error(
+        throw new DiscordImportStoppedError(
           `The channel recorded for #${mapping.discord_channel_name} no longer has the readers its mapping asks for. Map the channels again, then restart the import.`,
         );
       }
@@ -958,7 +999,7 @@ export class DiscordImportWorkerService {
       throw targetDeleted(mapping);
     }
     if (mapping.mapping_action !== 'create_new' || !mapping.new_channel_name) {
-      throw new Error(
+      throw new DiscordImportStoppedError(
         `Channel mapping for #${mapping.discord_channel_name} has no target.`,
       );
     }

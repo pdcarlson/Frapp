@@ -1,6 +1,12 @@
 import { Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import type { FrappSupabaseClient } from '../database.types';
 import { SupabaseChatPushDispatchRepository } from './supabase-chat-push-dispatch.repository';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
 
 /**
  * The claim's half that lives in the repository: how an insert's outcome maps
@@ -55,6 +61,7 @@ function fakeClient(result: {
 
 describe('SupabaseChatPushDispatchRepository', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
   });
 
@@ -103,6 +110,31 @@ describe('SupabaseChatPushDispatchRepository', () => {
 
       await expect(repo.claim('m-1')).resolves.toBe('failed');
       expect(Logger.prototype.error).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a failed claim to Sentry once, grouped by site and not by message', async () => {
+      const { client } = fakeClient({
+        insert: { error: { code: '08006', message: 'connection failure' } },
+      });
+      const repo = new SupabaseChatPushDispatchRepository(client);
+
+      await expect(repo.claim('m-1')).resolves.toBe('failed');
+      await expect(repo.claim('m-2')).resolves.toBe('failed');
+
+      expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+      const context = jest.mocked(Sentry.captureException).mock
+        .calls[0]?.[1] as {
+        fingerprint: string[];
+        tags: Record<string, string>;
+      };
+      expect(context.fingerprint.slice(0, 2)).toEqual([
+        'caught-failure',
+        'chat-push-dispatch-claim-failed',
+      ]);
+      expect(context.tags).toEqual({
+        caught_at: 'chat-push-dispatch-claim-failed',
+      });
+      expect(JSON.stringify(context)).not.toContain('m-1');
     });
   });
 
