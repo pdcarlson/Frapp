@@ -40,6 +40,8 @@ Uploads accumulate junk departments and professors — typos, duplicate spelling
 
 Unique constraint on (chapter_id, file_hash). If the exact same file (by hash) has already been uploaded to the chapter, the API returns 409 Conflict with a reference to the existing resource.
 
+A flattened file is hashed as uploaded, after flattening (§ PDF Redaction). Flattening is deterministic, so the same PDF with the same boxes hashes the same and is caught; the same PDF boxed differently is a different file and is not. Bulk upload also skips a file already dropped into the same batch, by the original's hash.
+
 ## Storage
 
 Files are stored in Supabase Storage under `chapters/{chapter_id}/backwork/{resource_id}/{filename}`. The upload-URL step generates this chapter-scoped path server-side. On confirm, the API rejects any `storage_path` that does not start with `chapters/{chapter_id}/backwork/` (the caller's active chapter) so a client cannot register metadata that points outside its own chapter folder. Signed download URLs are only issued for resources already scoped to the active chapter.
@@ -57,17 +59,20 @@ The file-type allowlist is the `document` kind in `@repo/validation`, shared wit
 - Results are always scoped to the user's active chapter.
 - **Dashboard `/backwork`:** `useBackworkResources` is `enabled: !!chapterId`. With no chapter selected the page shows "No chapter selected", never a spinner. The resource list gates its spinner on `isLoading` or `fetchStatus === "paused"` (offline, no data); a disabled TanStack Query v5 stays `isPending` with `fetchStatus: "idle"` and must not be treated as in-flight or as an empty library.
 
-## PDF Redaction (Phase: v2)
+## PDF Redaction
 
-When uploading a Student Copy, the user can optionally redact personal information:
+Redaction ships with web bulk upload (`/backwork/upload`, #3499). PDFs only; the single-file upload sheet on `/backwork` still uploads as-is.
 
-1. The in-app viewer renders the PDF page-by-page.
-2. The user drags and resizes opaque black rectangles over areas to redact (name, student ID, handwriting, etc.).
-3. On confirm, the app **rasterizes** each page to a flat image with the redaction boxes baked in. This is effectively a screenshot — the underlying text and PDF metadata are destroyed.
-4. The rasterized version is what gets uploaded and stored. The original PDF is never sent to the server.
-5. The storage record is flagged as `is_redacted: true`.
+1. The person drops PDFs, or folders of PDFs, and works through them one at a time. The next two documents load in the background while they work on the current one, and finished ones flatten and upload behind them, so moving to the next document never waits.
+2. The editor renders each page. The person drags opaque black boxes over a name, student ID, or handwriting, and can move, resize, delete, undo, or copy one page's boxes to every page.
+3. A person reviews every document before it uploads. Nothing is submitted without them.
+4. A **Student Copy is always flattened**, and so is any document with a box on it. Flattening happens on the person's device: each page is rendered to an image with the boxes burned in, and a new PDF is built from those images, with no metadata and no form fields. Only the flattened file is uploaded; the original never leaves the browser. A Blank Copy or Answer Key with no boxes uploads as the original file.
+5. Text outside the boxes is kept as an invisible, searchable layer over the image. Any text item that touches a box (within 2 points) is dropped whole, so a box that clips part of a name drops the whole name. Rotated text and text on rotated pages is filtered the same way but not redrawn.
+6. The storage record is flagged `is_redacted: true` whenever the file was flattened.
 
-**Rationale:** Overlaying black boxes on an existing PDF does not prevent text selection of the underlying content. Rasterization ensures true redaction.
+**Rationale:** Overlaying black boxes on an existing PDF does not prevent text selection of the underlying content. Rendering to images ensures true redaction; the rebuilt text layer comes only from text the boxes don't touch, so search keeps working without carrying a redacted word.
+
+**Limits:** Text the source hides (white-on-white, or outside the visible page) and that no box touches is carried into the text layer, because the person can't see it to box it. A scanned page has no text to keep, so it stays image-only.
 
 ## AI Metadata Extraction (Phase: v3+)
 

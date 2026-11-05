@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download, Loader2, Upload } from "lucide-react";
+import Link from "next/link";
+import { Download, FolderUp, Loader2, Upload } from "lucide-react";
 import {
   selectDownloadUrl,
   useBackworkResource,
@@ -428,6 +429,13 @@ export function BackworkPage() {
           <>
             <Can permission="backwork:admin">
               <BackworkTaxonomyDrawer />
+            </Can>
+            <Can permission="backwork:upload">
+              <Button asChild size="toolbar" variant="secondary" className="gap-2">
+                <Link href="/backwork/upload">
+                  <FolderUp className="h-4 w-4" /> Bulk upload
+                </Link>
+              </Button>
             </Can>
             <Can permission="backwork:upload">
               {/*
