@@ -36,8 +36,10 @@ import { Can } from "@/components/shared/can";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
+  type SubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useAuthUserId } from "@/lib/auth/use-auth-user-id";
 import { useToast } from "@/lib/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -56,7 +58,7 @@ import {
   type BulkFields,
 } from "@/lib/backwork-bulk/fields";
 import { mustFlatten } from "@/lib/backwork-bulk/finish";
-import { getBulkSession, type Prepared, type Submission } from "./bulk-session";
+import { getBulkSession, type Prepared, type Submission } from "@/lib/backwork-bulk/session";
 
 /**
  * Backwork bulk upload (#3499): drop PDFs or folders, redact and describe each
@@ -71,6 +73,9 @@ import { getBulkSession, type Prepared, type Submission } from "./bulk-session";
  */
 export function BulkUploadPage() {
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
+  // Keyed on the account too: a batch never carries over to whoever signs in
+  // next in this tab (`session.ts`).
+  const authUserId = useAuthUserId();
   if (!activeChapterId) {
     return (
       <div className="space-y-6">
@@ -101,7 +106,7 @@ export function BulkUploadPage() {
         </div>
       }
     >
-      <BulkUploadWorkspace key={activeChapterId} chapterId={activeChapterId} />
+      <BulkUploadWorkspace key={`${authUserId ?? ""}:${activeChapterId}`} chapterId={activeChapterId} />
     </Can>
   );
 }
@@ -111,7 +116,7 @@ function BulkUploadWorkspace({ chapterId }: { chapterId: string }) {
   const gate = useSubscriptionGate();
   const requestUpload = useRequestBackworkUploadUrl();
   const confirmUpload = useConfirmBackworkUpload();
-  // The batch belongs to the chapter, not to this mount (`bulk-session.ts`):
+  // The batch belongs to the chapter, not to this mount (`session.ts`):
   // leaving and coming back shows the same list.
   const [session] = useState(() => getBulkSession(chapterId));
   const queue = session.queue;
@@ -124,7 +129,8 @@ function BulkUploadWorkspace({ chapterId }: { chapterId: string }) {
     return () => {
       session.setOnScreen(false);
       const pendingCount = queue.pendingUploads();
-      if (pendingCount > 0) {
+      // An ended batch (chapter switch, sign-out) uploads nothing more.
+      if (pendingCount > 0 && !session.ended()) {
         toast({
           title: `Finishing ${pendingCount} ${pendingCount === 1 ? "upload" : "uploads"}`,
           description: "They keep uploading while this tab is open. Come back to Bulk upload to check on them.",
@@ -237,6 +243,7 @@ function BulkUploadWorkspace({ chapterId }: { chapterId: string }) {
               items={snapshot.items}
               currentId={snapshot.currentId}
               onRetry={(id) => queue.retry(id)}
+              retryProps={gate.controlProps()}
               onRemove={(id) => queue.remove(id)}
             />
             <DropZone onFiles={addCollected} />
@@ -368,11 +375,14 @@ function QueueList({
   items,
   currentId,
   onRetry,
+  retryProps,
   onRemove,
 }: {
   items: readonly QueueItem<Prepared, Submission>[];
   currentId: string | null;
   onRetry: (id: string) => void;
+  /** A finish retry is an upload, so the subscription gate covers it. */
+  retryProps: ReturnType<SubscriptionGate["controlProps"]>;
   onRemove: (id: string) => void;
 }) {
   return (
@@ -395,7 +405,12 @@ function QueueList({
             {STATUS_LABEL[item.status]}
           </Badge>
           {item.status === "failed" && item.failedStage === "finish" ? (
-            <button type="button" className="shrink-0 font-semibold text-accent-text hover:underline" onClick={() => onRetry(item.id)}>
+            <button
+              type="button"
+              {...retryProps}
+              className="shrink-0 font-semibold text-accent-text hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
+              onClick={() => onRetry(item.id)}
+            >
               Retry
             </button>
           ) : null}

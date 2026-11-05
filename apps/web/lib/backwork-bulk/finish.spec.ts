@@ -202,6 +202,17 @@ describe("finishUpload", () => {
     expect(put).not.toHaveBeenCalled();
   });
 
+  it("doesn't flatten a document whose chapter is already gone", async () => {
+    const { deps, flatten } = harness();
+    deps.assertChapter = () => {
+      throw new Error("You switched chapters.");
+    };
+    await expect(run({ document_variant: "Student Copy" }, {}, deps)).rejects.toThrow(
+      /switched chapters/,
+    );
+    expect(flatten).not.toHaveBeenCalled();
+  });
+
   it("stops before filing anything once the chapter has changed", async () => {
     const { deps, put } = harness();
     let active = "c1";

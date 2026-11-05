@@ -19,10 +19,16 @@ import { BulkUploadQueue } from "@/lib/backwork-bulk/queue";
  * One bulk upload batch per chapter, kept for the life of the tab (#3499).
  *
  * The batch outlives the page on purpose. Submitted documents keep uploading
- * after a link click or a chapter switch, and coming back to Bulk upload shows
- * the same list, so a document that failed in the background can still be
- * retried from its row. Only a reload ends a batch, and while uploads are in
- * flight the tab asks before it closes.
+ * after a link click, and coming back to Bulk upload shows the same list, so
+ * a document that failed in the background can still be retried from its row
+ * without redacting it again. While anything in a batch would be lost, the
+ * tab asks before it closes or reloads.
+ *
+ * A batch ends with the identity it was made under: a chapter switch, a
+ * sign-out, or another account signing in in this tab (`endBulkSessions`,
+ * called from `FrappProvider` and from the chapter store). An ended batch
+ * frees its documents, stops uploading, and never warns or toasts again, so
+ * the next account never sees the last one's files.
  *
  * The page hands the session its current mutation hooks on every render
  * (`bind`); after the page unmounts the session keeps using the last ones,
@@ -52,7 +58,20 @@ export type BulkSession = {
   bind: (mutations: Mutations) => void;
   /** Whether the page is showing this batch; off it, failures become toasts. */
   setOnScreen: (onScreen: boolean) => void;
+  /** True once the batch has ended (see above); the page then shows a fresh one. */
+  ended: () => boolean;
+  end: () => void;
 };
+
+/** pdf.js and the flattener, loaded on first use and shared by every batch. */
+let pdfModule: Promise<typeof import("./pdf")> | undefined;
+function loadPdfModule() {
+  pdfModule ??= import("./pdf").catch((error: unknown) => {
+    pdfModule = undefined;
+    throw error;
+  });
+  return pdfModule;
+}
 
 function releasePrepared(prepared: Prepared) {
   for (const preview of prepared.previews.values()) {
@@ -65,12 +84,13 @@ function releasePrepared(prepared: Prepared) {
 function createSession(chapterId: string): BulkSession {
   let mutations: Mutations | null = null;
   let onScreen = false;
+  let ended = false;
   // Original hash -> the item holding it, for the in-batch duplicate check.
   const seenHashes = new Map<string, string>();
 
   const queue = new BulkUploadQueue<Prepared, Submission>({
     prepare: async (file, id) => {
-      const { loadPdf, renderPagePreview } = await import("@/lib/backwork-bulk/pdf");
+      const { loadPdf, renderPagePreview } = await loadPdfModule();
       const bytes = new Uint8Array(await file.arrayBuffer());
       const hash = await sha256Hex(bytes);
       // A duplicate only while the other copy is still in the batch: a
@@ -101,15 +121,17 @@ function createSession(chapterId: string): BulkSession {
       try {
         const bound = mutations;
         if (!bound) throw new Error("Bulk upload isn't ready yet. Retry this one.");
-        const { flattenPdf } = await import("@/lib/backwork-bulk/pdf");
+        const assertChapter = () => {
+          if (ended || useChapterStore.getState().activeChapterId !== chapterId) {
+            throw new Error("You switched chapters, so this one wasn't uploaded.");
+          }
+        };
+        const { flattenPdf } = await loadPdfModule();
         await finishUpload(job, {
-          // The API client sends whichever chapter is active now, so a batch
-          // only uploads while its own chapter is the active one.
-          assertChapter: () => {
-            if (useChapterStore.getState().activeChapterId !== chapterId) {
-              throw new Error("You switched chapters. Switch back to retry this one.");
-            }
-          },
+          // Policy, not plumbing: the bound mutations would still send this
+          // batch's chapter, but a batch never files anything once its
+          // chapter or account is no longer the one in use.
+          assertChapter,
           flatten: flattenPdf,
           requestUpload: (body) => bound.requestUpload.mutateAsync(body),
           put: ({ signedUrl, body }) =>
@@ -123,7 +145,7 @@ function createSession(chapterId: string): BulkSession {
           confirm: (body) => bound.confirmUpload.mutateAsync(body),
         });
       } catch (error) {
-        if (!onScreen) {
+        if (!onScreen && !ended) {
           toast({
             variant: "destructive",
             title: "A backwork upload failed",
@@ -147,17 +169,17 @@ function createSession(chapterId: string): BulkSession {
     },
   });
 
-  // Ask before the tab closes while anything submitted is still uploading,
-  // whether or not the page is open.
+  // Ask before the tab closes or reloads while anything in the batch would be
+  // lost, whether or not the page is open.
   let guarding = false;
   const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-  queue.subscribe(() => {
-    const pending = queue.pendingUploads() > 0;
-    if (pending === guarding || typeof window === "undefined") return;
-    guarding = pending;
-    if (pending) window.addEventListener("beforeunload", warn);
+  const guard = (on: boolean) => {
+    if (on === guarding || typeof window === "undefined") return;
+    guarding = on;
+    if (on) window.addEventListener("beforeunload", warn);
     else window.removeEventListener("beforeunload", warn);
-  });
+  };
+  queue.subscribe(() => guard(!ended && queue.unsaved() > 0));
 
   return {
     queue,
@@ -167,16 +189,40 @@ function createSession(chapterId: string): BulkSession {
     setOnScreen: (next) => {
       onScreen = next;
     },
+    ended: () => ended,
+    end: () => {
+      if (ended) return;
+      ended = true;
+      // Discarding publishes, and the guard listener above then lets go.
+      queue.discard();
+    },
   };
 }
 
 const sessions = new Map<string, BulkSession>();
+let watchingChapter = false;
 
 export function getBulkSession(chapterId: string): BulkSession {
+  // A chapter change ends every batch the moment the store moves, before the
+  // switcher's reload, so that reload doesn't stop on a leave prompt.
+  if (!watchingChapter) {
+    watchingChapter = true;
+    useChapterStore.subscribe((state, previous) => {
+      if (previous.activeChapterId && state.activeChapterId !== previous.activeChapterId) {
+        endBulkSessions();
+      }
+    });
+  }
   let session = sessions.get(chapterId);
-  if (!session) {
+  if (!session || session.ended()) {
     session = createSession(chapterId);
     sessions.set(chapterId, session);
   }
   return session;
+}
+
+/** Ends every batch in this tab: a chapter switch, sign-out, or account change. */
+export function endBulkSessions(): void {
+  for (const session of sessions.values()) session.end();
+  sessions.clear();
 }

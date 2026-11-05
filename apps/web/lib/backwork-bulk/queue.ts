@@ -155,6 +155,21 @@ export class BulkUploadQueue<P, S> {
     }
   }
 
+  /**
+   * Ends the batch: frees every loaded document and empties the list. An
+   * upload already running settles into nothing and frees its document then.
+   */
+  discard(): void {
+    this.closed = true;
+    for (const item of this.items) {
+      if (item.status !== "finishing" && item.prepared) {
+        this.options.release?.(item.prepared);
+      }
+    }
+    this.items = [];
+    this.publish();
+  }
+
   open(): void {
     this.closed = false;
     this.changed();
@@ -169,6 +184,13 @@ export class BulkUploadQueue<P, S> {
   pendingUploads(): number {
     return this.items.filter(
       (it) => it.status === "waiting" || it.status === "finishing",
+    ).length;
+  }
+
+  /** Items that would be lost if the tab went away: everything not uploaded yet. */
+  unsaved(): number {
+    return this.items.filter(
+      (it) => it.status !== "done" && !(it.status === "failed" && it.failedStage === "prepare"),
     ).length;
   }
 
@@ -290,12 +312,18 @@ export class BulkUploadQueue<P, S> {
         this.options.release?.(prepared);
         this.patch(item.id, { status: "done", prepared: undefined });
       },
-      (error: unknown) =>
+      (error: unknown) => {
+        // Discarded while it ran: nothing will retry it, so free it now.
+        if (!this.find(item.id)) {
+          this.options.release?.(prepared);
+          return;
+        }
         this.patch(item.id, {
           status: "failed",
           failedStage: "finish",
           error: this.describe(error, "finish"),
-        }),
+        });
+      },
     );
   }
 

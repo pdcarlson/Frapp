@@ -124,6 +124,9 @@ export async function finishUpload<Doc>(
 ): Promise<void> {
   // Decided again here rather than trusted from the submission alone, so a
   // Student Copy can't reach the upload unflattened through a stale flag.
+  // Checked before the flatten too, so a batch whose chapter is gone doesn't
+  // render every page only to be refused.
+  deps.assertChapter?.();
   const flatten = submission.flatten || mustFlatten(submission.fields, submission.boxes);
   let body = prepared.bytes;
   if (flatten) {

@@ -231,4 +231,50 @@ describe("BulkUploadQueue", () => {
     expect(queue.has(id)).toBe(false);
     expect(queue.has("nope")).toBe(false);
   });
+
+  it("leaves a failed upload's document and submission alone on close, ready to retry", async () => {
+    const h = harness();
+    h.queue.add([pdf("a.pdf")]);
+    h.prepares.get("a.pdf")!.resolve("A");
+    await flush();
+    h.queue.submit(h.idOf("a.pdf"), { title: "A" });
+    h.finishes.get("a.pdf")!.reject(new Error("Storage rejected the upload (500)."));
+    await flush();
+    h.queue.close();
+    expect(h.release).not.toHaveBeenCalled();
+    h.queue.open();
+    h.queue.retry(h.idOf("a.pdf"));
+    expect(h.status("a.pdf")).toBe("finishing");
+    expect(h.prepares.size).toBe(1);
+  });
+
+  it("counts everything not uploaded yet as unsaved, but not a file that never opened", async () => {
+    const h = harness();
+    h.queue.add(["a.pdf", "b.pdf", "c.pdf"].map(pdf));
+    h.prepares.get("a.pdf")!.resolve("A");
+    h.prepares.get("b.pdf")!.reject(new Error("damaged"));
+    await flush();
+    h.queue.submit(h.idOf("a.pdf"), { title: "A" });
+    expect(h.queue.unsaved()).toBe(2);
+    h.finishes.get("a.pdf")!.resolve();
+    await flush();
+    expect(h.queue.unsaved()).toBe(1);
+  });
+
+  it("discards the batch, freeing an upload's document once it settles", async () => {
+    const h = harness();
+    h.queue.add(["a.pdf", "b.pdf"].map(pdf));
+    h.prepares.get("a.pdf")!.resolve("A");
+    h.prepares.get("b.pdf")!.resolve("B");
+    await flush();
+    h.queue.submit(h.idOf("a.pdf"), { title: "A" });
+    h.queue.discard();
+    expect(h.queue.getSnapshot().items).toEqual([]);
+    expect(h.release).toHaveBeenCalledWith("B");
+    expect(h.release).not.toHaveBeenCalledWith("A");
+    h.finishes.get("a.pdf")!.reject(new Error("You switched chapters."));
+    await flush();
+    expect(h.release).toHaveBeenCalledWith("A");
+    expect(h.queue.getSnapshot().items).toEqual([]);
+  });
 });

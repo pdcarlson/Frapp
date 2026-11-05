@@ -10,6 +10,7 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useClaimChapterSync } from "@/lib/auth/use-claim-chapter-sync";
 import { wipeFirstChunkCache } from "@/lib/chat/first-chunk-wipe";
 import { clearCachedAccent } from "@/lib/theme/accent-cache";
+import { endBulkSessions } from "@/lib/backwork-bulk/session";
 
 /**
  * First value and same-value updates must not clear: those are hydrate /
@@ -41,6 +42,12 @@ import { clearCachedAccent } from "@/lib/theme/accent-cache";
  * merely unread. Its module needs no bundle carve-out of its own: it is a
  * cookie, so the clear is three lines of string handling with no dependency
  * behind it.
+ *
+ * Bulk backwork upload batches (`lib/backwork-bulk/session.ts`) live outside
+ * React for the life of the tab, so they end on the same two events: the next
+ * account must never see the last one's files, and an upload must never go
+ * out under someone else's token. The batch module also ends them itself the
+ * moment the chapter store moves, ahead of this effect.
  */
 function dropCacheWhenIdentityChanges(
   previousRef: { current: string | null | undefined },
@@ -52,6 +59,7 @@ function dropCacheWhenIdentityChanges(
   if (previous === undefined || previous === null) return;
   if (previous === next) return;
   queryClient.clear();
+  endBulkSessions();
   void wipeFirstChunkCache();
   clearCachedAccent();
 }

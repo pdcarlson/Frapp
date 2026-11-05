@@ -43,6 +43,26 @@ async function examPdf(): Promise<Uint8Array> {
   return doc.save();
 }
 
+/**
+ * One run, "Student: Jane Doe", with a drawn bar over just the name; a run
+ * placed off the left edge; and a question. Returns the bar in top-left units.
+ */
+async function partlyHiddenPdf(): Promise<{ bytes: Uint8Array; bar: Box }> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([612, 792]);
+  page.drawText("Student: Jane Doe", { x: 72, y: 720, size: 12, font });
+  const nameX = 72 + font.widthOfTextAtSize("Student: ", 12);
+  const nameWidth = font.widthOfTextAtSize("Jane Doe", 12) + 4;
+  page.drawRectangle({ x: nameX - 1, y: 714, width: nameWidth, height: 18, color: rgb(0, 0, 0) });
+  page.drawText("Off the edge", { x: -200, y: 650, size: 12, font });
+  page.drawText("Question 2.", { x: 72, y: 600, size: 12, font });
+  return {
+    bytes: await doc.save(),
+    bar: { x: nameX - 1, y: 792 - 732, width: nameWidth, height: 18 },
+  };
+}
+
 // Top-left page units: baselines at y = 792 - 720 = 72.
 const NAME_BOX: Box = { x: 116, y: 56, width: 70, height: 24 };
 const DRAWN_BAR: Box = { x: 296, y: 60, width: 100, height: 18 };
@@ -74,13 +94,13 @@ describe("pageTextLayer", () => {
  * everywhere except a flat black fill where `examPdf` draws its bar. It
  * records every read and fill, so the order and the units are checked too.
  */
-function renderedExam(scale: number) {
-  const bar = {
-    left: DRAWN_BAR.x * scale,
-    top: DRAWN_BAR.y * scale,
-    right: (DRAWN_BAR.x + DRAWN_BAR.width) * scale,
-    bottom: (DRAWN_BAR.y + DRAWN_BAR.height) * scale,
-  };
+function renderedExam(scale: number, bars: readonly Box[] = [DRAWN_BAR]) {
+  const flat = bars.map((b) => ({
+    left: b.x * scale,
+    top: b.y * scale,
+    right: (b.x + b.width) * scale,
+    bottom: (b.y + b.height) * scale,
+  }));
   const events: string[] = [];
   const fills: number[][] = [];
   const canvas: RenderedPage = {
@@ -99,8 +119,9 @@ function renderedExam(scale: number) {
           for (let col = 0; col < w; col += 1) {
             const px = x + col;
             const py = y + row;
-            const underBar =
-              px >= bar.left && px < bar.right && py >= bar.top && py < bar.bottom;
+            const underBar = flat.some(
+              (bar) => px >= bar.left && px < bar.right && py >= bar.top && py < bar.bottom,
+            );
             const v = underBar || px % 4 === 0 ? 0 : 255;
             data.set([v, v, v, 255], (row * w + col) * 4);
           }
@@ -135,6 +156,24 @@ describe("redactRenderedPage", () => {
     await redactRenderedPage(page, base, [NAME_BOX], 2, canvas);
     expect(events.lastIndexOf("read")).toBeLessThan(events.indexOf("fill"));
     expect(fills).toEqual([[232, 112, 141, 49]]);
+  });
+
+  it("drops a whole run when the page hides only part of it", async () => {
+    const { bytes, bar } = await partlyHiddenPdf();
+    const { page, base } = await firstPage(bytes);
+    const kept = await redactRenderedPage(page, base, [], 2, renderedExam(2, [bar]).canvas);
+    expect(kept.map((t) => t.str)).not.toContain("Student: Jane Doe");
+    expect(kept.map((t) => t.str)).toContain("Question 2.");
+  });
+
+  // pdf.js already leaves out a run wholly off the page; the clip in
+  // `redactRenderedPage` covers the cells of one that is only partly off.
+  it("drops text placed off the page, whatever ink is at the edge", async () => {
+    const { bytes } = await partlyHiddenPdf();
+    const { page, base } = await firstPage(bytes);
+    const kept = await redactRenderedPage(page, base, [], 2, renderedExam(2, []).canvas);
+    expect(kept.map((t) => t.str)).not.toContain("Off the edge");
+    expect(kept.map((t) => t.str)).toContain("Student: Jane Doe");
   });
 
   it("still burns the boxes when the text layer is off", async () => {
