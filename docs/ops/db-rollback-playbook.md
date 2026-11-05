@@ -2780,6 +2780,26 @@ drop index if exists public.chat_channels_dm_pair_key;
 alter table public.chat_channels drop constraint if exists chat_channels_dm_two_members;
 ```
 
+## Rollback default channel descriptions (20261105210000)
+
+* **Migration**: `20261105210000_default_channel_descriptions.sql`
+
+A data-only `update` that wrote a starting `description` into the four default channels where it was null (never set). No schema changed.
+
+**There is usually nothing to roll back.** Officers can change or clear any description in Chat admin, and the clients treat a blank one as absent. Keep the migration file in the tree whatever else is reverted ([§ 3) Undo one migration](#3-undo-one-migration)). To clear the starting lines anyway, do it in a later forward migration, and match the exact text on the same name and type pairs the migration touched, so an officer's own edit survives:
+
+```sql
+update chat_channels set description = null
+where (name = 'general' and type = 'PUBLIC'
+       and description = 'The whole chapter. Plans, questions, whatever''s going on.')
+   or (name = 'announcements' and type = 'PUBLIC'
+       and description = 'News from officers. Everyone gets notified.')
+   or (name = 'chapter-audit' and type = 'PUBLIC'
+       and description = 'Officer changes to dues, roles and settings, posted automatically.')
+   or (name = 'alumni' and type = 'ROLE_GATED'
+       and description = 'Alumni and actives keeping in touch.');
+```
+
 ## Rollback the role palette defaults (20261105200000)
 
 * **Migration**: `20261105200000_role_color_palette_defaults.sql`

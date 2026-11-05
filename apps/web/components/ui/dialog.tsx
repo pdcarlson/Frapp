@@ -145,6 +145,9 @@ DialogDescription.displayName = DialogPrimitive.Description.displayName
 export {
   Dialog,
   DialogTrigger,
+  // For a dialog that builds its own Content (the Find dialog) but owes §9's
+  // scrim, so the scrim is stated once.
+  DialogOverlay,
   DialogContent,
   DialogHeader,
   DialogFooter,
