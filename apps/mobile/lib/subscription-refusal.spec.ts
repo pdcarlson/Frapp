@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { RUSH_CARD_REFUSAL_COPY } from "@repo/hooks";
 import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
@@ -234,5 +235,26 @@ describe("SUBSCRIPTION_REFUSAL_COPY", () => {
       /may not be credited/i,
     );
     expect(new Set(all).size).toBe(all.length);
+  });
+});
+
+// A chat card web shares keeps its copy beside its rules in `@repo/hooks`
+// (`packages/hooks/src/rush-card.ts`), not in `./subscription-refusal`, and
+// mobile shows it as the card's refusal line. The store answers bind it all
+// the same, so the guard above runs on it here.
+describe("RUSH_CARD_REFUSAL_COPY, shown on the mobile rush card", () => {
+  const all = Object.values(RUSH_CARD_REFUSAL_COPY);
+
+  it("names no price, plan, purchase path or link", () => {
+    for (const copy of all) {
+      expect(copy).not.toMatch(PURCHASE_PATH);
+    }
+  });
+
+  it("points at an officer and never invites a retry", () => {
+    for (const copy of all) {
+      expect(copy).toMatch(/officer/i);
+      expect(copy).not.toMatch(INVITES_RETRY);
+    }
   });
 });

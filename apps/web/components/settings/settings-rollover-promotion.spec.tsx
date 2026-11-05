@@ -255,6 +255,24 @@ describe("semester rollover — New Member promotion (#285)", () => {
     ).toBeInTheDocument();
   });
 
+  // The member view sends the stored column as it is, `{}` for a chapter
+  // created without onboarding's seed; the archetype's word has to come from
+  // under it.
+  it("names the archetype's role when the config read is refused and no word is stored", () => {
+    permissions = ["semester:rollover", "roles:manage"];
+    mockOrgConfig.mockReturnValue(undefined as unknown as Record<string, unknown>);
+    const base = mockCurrentChapter() as { data: Record<string, unknown> };
+    mockCurrentChapter.mockReturnValue({
+      ...base,
+      data: { ...base.data, org_archetype: "nphc", vocabulary: {} },
+    });
+    render(<SettingsPage />);
+
+    expect(
+      screen.getByRole("switch", { name: /promote every aspirant to member/i }),
+    ).toBeInTheDocument();
+  });
+
   // #351 diff-review finding: naive `${pledgeTerm}s` concatenation broke for
   // an officer-typed override that is already plural or ends in "s" — the
   // vocab field is free text (settings-org-tab.tsx), not an enum.

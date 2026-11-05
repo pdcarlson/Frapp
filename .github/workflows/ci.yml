@@ -160,7 +160,9 @@ jobs:
       - name: Shared formatting package tests
         run: npm run test -w @repo/formatting
 
-      # Which organizations hide their Greek letters, and what setup fills in for them.
+      # Which organizations hide their Greek letters, and what setup fills in for them;
+      # `vocab()` and `memberViewVocabulary()`, which name a chapter's recruitment,
+      # new-member and class words on web and mobile's rush card.
       - name: Shared org-archetypes package tests
         run: npm run test -w @repo/org-archetypes
 
