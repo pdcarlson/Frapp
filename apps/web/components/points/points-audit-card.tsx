@@ -191,12 +191,19 @@ export function PointsAuditCard() {
             <SectionLabel id="points-audit-label">Audit</SectionLabel>
             {/*
               State, not policy narration: the two limits this chapter
-              enforces right now. Omitted rather than guessed when the config
-              is unreadable (see `policyKnown` above).
+              enforces right now, then the one fact a moved threshold makes
+              visible. A flag is written when the adjustment lands and never
+              re-checked (`spec/behavior/points.md` § Anti-Fraud), so after a
+              chapter moves the dial the list holds rows the current line
+              wouldn't flag. Omitted rather than guessed when the config is
+              unreadable (see `policyKnown` above).
             */}
             {policyKnown ? (
               <p className="text-caption text-muted-foreground">
                 {`Flags at ±${pointsPolicy.anomaly_threshold} points · ${pointsPolicy.adjustment_rate_limit_per_hour} adjustments per admin per hour`}
+                <span className="block">
+                  Each flag keeps the threshold it was raised under.
+                </span>
               </p>
             ) : null}
           </div>
@@ -289,7 +296,7 @@ export function PointsAuditCard() {
             {transactionsQuery.isError ? (
               <NestedError
                 title="Audit unavailable"
-                description="Couldn't load chapter transactions. Retry or confirm your points:view_all access."
+                description="Couldn't load chapter transactions. Confirm your chapter access and retry."
                 onRetry={() => void transactionsQuery.refetch()}
               />
             ) : rows.length === 0 ? (
@@ -339,7 +346,9 @@ export function PointsAuditCard() {
                       node: (
                         <time
                           dateTime={row.created_at}
-                          title={formatTimestampFull(row.created_at) ?? undefined}
+                          title={
+                            formatTimestampFull(row.created_at) ?? undefined
+                          }
                         >
                           {when}
                         </time>

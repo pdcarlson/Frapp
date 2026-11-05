@@ -411,7 +411,7 @@ describe("SettingsRolesTab", () => {
     );
     await user.type(screen.getByLabelText("Key"), "social_chair");
     await user.type(screen.getByLabelText("Label"), "Social Chair");
-    await user.click(screen.getByLabelText("new role events:create"));
+    await user.click(screen.getByLabelText("New role: Create events"));
     await user.click(screen.getByRole("button", { name: /create role/i }));
 
     expect(mockCreate).toHaveBeenCalledWith({
@@ -514,14 +514,16 @@ describe("SettingsRolesTab", () => {
     // The API rejects `*` on custom roles (400), so the chip must not render —
     // neither on existing roles nor in the create form.
     expect(
-      screen.queryByRole("checkbox", { name: /Pledge Educator \*/ }),
+      screen.queryByRole("checkbox", { name: /Pledge Educator: \*/ }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("checkbox", { name: "new role *" }),
+      screen.queryByRole("checkbox", { name: "New role: *" }),
     ).not.toBeInTheDocument();
     // Ordinary capabilities still render for both.
     expect(
-      screen.getByRole("checkbox", { name: "Pledge Educator members:view" }),
+      screen.getByRole("checkbox", {
+        name: "Pledge Educator: See the full directory",
+      }),
     ).toBeInTheDocument();
   });
 
@@ -543,7 +545,7 @@ describe("SettingsRolesTab", () => {
       />,
     );
     await user.click(
-      screen.getByRole("checkbox", { name: "Pledge Educator events:create" }),
+      screen.getByRole("checkbox", { name: "Pledge Educator: Create events" }),
     );
 
     expect(mockUpdate).toHaveBeenCalledWith({

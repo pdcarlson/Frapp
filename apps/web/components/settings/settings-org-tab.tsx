@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   ARCHETYPES,
@@ -9,10 +9,7 @@ import {
   orgHidesGreekLetters,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
-import {
-  CHAPTER_PROFILE_PERMISSIONS,
-  type PatchChapterConfig,
-} from "@repo/validation";
+import { type PatchChapterConfig } from "@repo/validation";
 import {
   FOUNDED_YEAR_MIN,
   latestFoundedYear,
@@ -104,7 +101,9 @@ export function SettingsOrgTab({
   const current = getArchetype(archetypeKey);
 
   const [profileDraft, setProfileDraft] = useState(profile);
-  const [greekLetters, setGreekLetters] = useState(branding.greek_letters ?? "");
+  const [greekLetters, setGreekLetters] = useState(
+    branding.greek_letters ?? "",
+  );
   const [designation, setDesignation] = useState(branding.designation ?? "");
   const [schoolShort, setSchoolShort] = useState(branding.school_short ?? "");
   const [foundedYear, setFoundedYear] = useState(
@@ -125,8 +124,11 @@ export function SettingsOrgTab({
   // object dependency re-ran these on any unrelated re-render (a logo upload
   // starting, another card saving) and threw away whatever the officer had
   // typed but not saved.
-  const { name: storedName, university: storedUniversity, donation_url: storedDonation } =
-    profile;
+  const {
+    name: storedName,
+    university: storedUniversity,
+    donation_url: storedDonation,
+  } = profile;
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seed profile draft from the chapter config query
     setProfileDraft({
@@ -140,7 +142,9 @@ export function SettingsOrgTab({
     setGreekLetters(branding.greek_letters ?? "");
     setDesignation(branding.designation ?? "");
     setSchoolShort(branding.school_short ?? "");
-    setFoundedYear(branding.founded_at != null ? String(branding.founded_at) : "");
+    setFoundedYear(
+      branding.founded_at != null ? String(branding.founded_at) : "",
+    );
   }, [
     branding.greek_letters,
     branding.designation,
@@ -193,9 +197,11 @@ export function SettingsOrgTab({
     const letters = text(greekLetters, branding.greek_letters);
     if (letters !== undefined) brandingDiff.greek_letters = letters;
     const designationValue = text(designation, branding.designation);
-    if (designationValue !== undefined) brandingDiff.designation = designationValue;
+    if (designationValue !== undefined)
+      brandingDiff.designation = designationValue;
     const schoolShortValue = text(schoolShort, branding.school_short);
-    if (schoolShortValue !== undefined) brandingDiff.school_short = schoolShortValue;
+    if (schoolShortValue !== undefined)
+      brandingDiff.school_short = schoolShortValue;
     if (foundedTrimmed && foundedValid) brandingDiff.founded_at = foundedNum;
     void onPatchConfig({ branding: brandingDiff });
   }
@@ -222,31 +228,14 @@ export function SettingsOrgTab({
     setPendingArchetype(null);
   }
 
-  const permissionHint = (permissions: readonly string[]) => (
+  // Says what the role can't do, never which permission key it lacks.
+  const readOnlyHint = (
     <p className="text-xs text-muted-foreground">
-      Editing chapter settings requires the{" "}
-      {permissions.map((permission, index) => (
-        <Fragment key={permission}>
-          {index > 0 ? " and " : null}
-          {/*
-            `--secondary` was an alias of `--card` (deleted, #3036) and this sits
-            in a `CardContent`, so `bg-secondary` here was 1.000:1 — a chip with
-            no chip. `--surface-1` is the step *below* the card, which is what
-            §4 already specifies for an input fill inside a card, and a recess
-            cannot invert the way a raised step can.
-          */}
-          <code className="rounded bg-surface-1 px-1 py-0.5">{permission}</code>
-        </Fragment>
-      ))}{" "}
-      {permissions.length > 1 ? "permissions." : "permission."}
+      Your role can&apos;t change chapter settings.
     </p>
   );
-  const manageHint = canManage
-    ? null
-    : permissionHint(["chapter-config:manage"]);
-  const profileHint = canEditProfile
-    ? null
-    : permissionHint(CHAPTER_PROFILE_PERMISSIONS);
+  const manageHint = canManage ? null : readOnlyHint;
+  const profileHint = canEditProfile ? null : readOnlyHint;
 
   return (
     <div className="space-y-6">
@@ -304,7 +293,9 @@ export function SettingsOrgTab({
           <CardFooter className="flex items-center justify-between gap-3">
             {profileHint ?? <span />}
             <Button type="submit" disabled={!canEditProfile || savingProfile}>
-              {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {savingProfile ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : null}
               Save profile
             </Button>
           </CardFooter>
@@ -391,7 +382,8 @@ export function SettingsOrgTab({
                     {foundedCleared
                       ? "A founded year can't be removed once saved. "
                       : null}
-                    Enter a year between {FOUNDED_YEAR_MIN} and {latestFoundedYear()}.
+                    Enter a year between {FOUNDED_YEAR_MIN} and{" "}
+                    {latestFoundedYear()}.
                   </p>
                 ) : null}
               </div>
@@ -403,7 +395,9 @@ export function SettingsOrgTab({
               type="submit"
               disabled={!canManage || savingConfig || !foundedValid}
             >
-              {savingConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {savingConfig ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : null}
               Save identity
             </Button>
           </CardFooter>
@@ -523,7 +517,9 @@ export function SettingsOrgTab({
           <CardFooter className="flex items-center justify-between gap-3">
             {manageHint ?? <span />}
             <Button type="submit" disabled={!canManage || savingConfig}>
-              {savingConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {savingConfig ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : null}
               Save vocabulary
             </Button>
           </CardFooter>
@@ -540,7 +536,8 @@ export function SettingsOrgTab({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Switch to {pendingArchetype ? getArchetype(pendingArchetype).label : ""}?
+              Switch to{" "}
+              {pendingArchetype ? getArchetype(pendingArchetype).label : ""}?
             </DialogTitle>
             <DialogDescription>
               This resets modules, the role pack, and vocabulary to{" "}
@@ -550,11 +547,16 @@ export function SettingsOrgTab({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setPendingArchetype(null)}>
+            <Button
+              variant="secondary"
+              onClick={() => setPendingArchetype(null)}
+            >
               Cancel
             </Button>
             <Button onClick={confirmArchetypeSwitch} disabled={savingConfig}>
-              {savingConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {savingConfig ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : null}
               Switch archetype
             </Button>
           </DialogFooter>

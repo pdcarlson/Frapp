@@ -66,7 +66,13 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { isStripeConfigured } from "@/lib/stripe";
 import { formatCurrency } from "@/lib/currency";
-import { asArray, cn, downloadCsv, getErrorMessage } from "@/lib/utils";
+import {
+  asArray,
+  cn,
+  downloadCsv,
+  getErrorMessage,
+  labelled,
+} from "@/lib/utils";
 
 /**
  * The chapter's invoices, as **one** list.
@@ -353,7 +359,7 @@ export function InvoiceList({ id }: { id?: string }) {
     } catch (error) {
       toast({
         title: "Couldn't create invoice",
-        description: getErrorMessage(error, "Retry or confirm billing:manage."),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -374,7 +380,7 @@ export function InvoiceList({ id }: { id?: string }) {
         title: "Couldn't update invoice",
         description: getErrorMessage(
           error,
-          "The status transition was rejected by the API.",
+          "The status didn't change. Try again in a moment.",
         ),
         variant: "destructive",
       });
@@ -702,7 +708,7 @@ export function InvoiceList({ id }: { id?: string }) {
         <NestedError
           sole
           title="Couldn't load invoices"
-          description="Verify your chapter access and API health, then retry."
+          description="Confirm your chapter access and retry."
           onRetry={() => void invoicesQuery.refetch()}
         />
       ) : filtered.length === 0 ? (
@@ -811,9 +817,7 @@ export function InvoiceList({ id }: { id?: string }) {
                     <p className="truncate text-caption text-muted-foreground">
                       {[
                         memberName,
-                        invoice.due_date
-                          ? `Due ${formatDay(invoice.due_date)}`
-                          : null,
+                        labelled("Due", formatDay(invoice.due_date)),
                         invoice.description || null,
                       ]
                         .filter(Boolean)

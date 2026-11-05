@@ -96,12 +96,6 @@ export const dashboardTableCheckboxClassName = [
 ].join(" ");
 
 /**
- * The `<th>`/`<td>` that hosts a row-select checkbox. Replaces the `w-10` these
- * cells used to pin; see the hit-area note above for why 48 and not 44.
- */
-export const dashboardCheckboxCellClassName = "w-12";
-
-/**
  * Wraps a `dashboardTableCheckboxClassName` input so the *tappable* area clears
  * §2's 44px floor on touch without changing the 24px box a pointer sees.
  */

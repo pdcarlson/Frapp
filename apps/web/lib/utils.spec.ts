@@ -7,6 +7,7 @@ import {
   getErrorMessage,
   guardDecimalDraft,
   guardIntDraft,
+  labelled,
   parseGuardedDecimal,
   parseGuardedInt,
 } from "./utils";
@@ -17,17 +18,32 @@ import {
  * local copies used `instanceof Error` and always showed the fallback; this
  * spec is the regression lock for that shape.
  */
+describe("labelled", () => {
+  it("puts the label before a formatted value", () => {
+    expect(labelled("Due", "Fri, Nov 6")).toBe("Due Fri, Nov 6");
+  });
+
+  it("drops out when the value didn't format, rather than printing null", () => {
+    expect(labelled("Due", null)).toBeNull();
+  });
+});
+
 describe("getErrorMessage", () => {
   const fallback = "Something went wrong. Please retry.";
 
   it("reads a string message on a plain object (openapi-fetch body)", () => {
     expect(
-      getErrorMessage({ message: "Role is already assigned.", statusCode: 409 }, fallback),
+      getErrorMessage(
+        { message: "Role is already assigned.", statusCode: 409 },
+        fallback,
+      ),
     ).toBe("Role is already assigned.");
   });
 
   it("still reads Error instances", () => {
-    expect(getErrorMessage(new Error("network down"), fallback)).toBe("network down");
+    expect(getErrorMessage(new Error("network down"), fallback)).toBe(
+      "network down",
+    );
   });
 
   it("uses the caller fallback when message is missing, empty, or not a string", () => {
@@ -37,7 +53,10 @@ describe("getErrorMessage", () => {
     expect(getErrorMessage({}, fallback)).toBe(fallback);
     expect(getErrorMessage({ message: "" }, fallback)).toBe(fallback);
     expect(
-      getErrorMessage({ message: ["lat must be a number", "lng too"] }, fallback),
+      getErrorMessage(
+        { message: ["lat must be a number", "lng too"] },
+        fallback,
+      ),
     ).toBe(fallback);
   });
 });
@@ -75,7 +94,9 @@ describe("downloadBlob", () => {
         throw new Error("blocked by extension");
       });
 
-    expect(() => downloadBlob(blob, "report.csv")).toThrow("blocked by extension");
+    expect(() => downloadBlob(blob, "report.csv")).toThrow(
+      "blocked by extension",
+    );
 
     expect(document.querySelector('a[download="report.csv"]')).toBeNull();
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
@@ -94,7 +115,9 @@ describe("downloadCsv", () => {
     const clickSpy = vi
       .spyOn(HTMLAnchorElement.prototype, "click")
       .mockImplementation(function (this: HTMLAnchorElement) {
-        expect(this.download).toMatch(/^frapp-invoices-\d{4}-\d{2}-\d{2}\.csv$/);
+        expect(this.download).toMatch(
+          /^frapp-invoices-\d{4}-\d{2}-\d{2}\.csv$/,
+        );
         expect(this.download).not.toMatch(/^signet-/);
       });
 
@@ -196,7 +219,9 @@ describe("cn with the Signet type scale", () => {
       expect(cn("text-muted-foreground", `text-${key}`)).toBe(
         `text-muted-foreground text-${key}`,
       );
-      expect(cn(`text-${key}`, "text-primary")).toBe(`text-${key} text-primary`);
+      expect(cn(`text-${key}`, "text-primary")).toBe(
+        `text-${key} text-primary`,
+      );
     }
   });
 
@@ -209,7 +234,10 @@ describe("cn with the Signet type scale", () => {
 
   it("keeps the crest's code label at caption size beside its tone", () => {
     expect(
-      cn("font-mono text-caption font-semibold tracking-[0.1em]", "text-primary"),
+      cn(
+        "font-mono text-caption font-semibold tracking-[0.1em]",
+        "text-primary",
+      ),
     ).toContain("text-caption");
   });
 });

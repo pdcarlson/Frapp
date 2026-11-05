@@ -243,10 +243,7 @@ export function TasksBoard() {
     } catch (error) {
       toast({
         title: "Couldn't confirm task",
-        description: getErrorMessage(
-          error,
-          "Only admins with tasks:manage can confirm completions.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -368,7 +365,7 @@ export function TasksBoard() {
         <NestedError
           sole
           title="Couldn't load tasks"
-          description="Confirm your chapter access and retry. Assignees see only their own tasks; admins need tasks:manage to see every task."
+          description="Confirm your chapter access and retry."
           onRetry={() => void tasksQuery.refetch()}
         />
       </div>

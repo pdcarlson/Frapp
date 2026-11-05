@@ -164,7 +164,7 @@ describe("ProfilePanel — quiet-hours timezone save (#687)", () => {
     mocks.updateSettings.isError = false;
   });
 
-  // The headline regression of this change. The Preferences card renders before
+  // The headline regression of this change. The Quiet hours section renders before
   // the settings query resolves, so the draft is empty — and mapping that absent
   // value to an explicit null would tell the server to CLEAR the member's stored
   // zone. Absent must stay absent so the PATCH omits the field.
@@ -554,7 +554,7 @@ describe("ProfilePanel — offline, then loading, then error, then the screen", 
   });
 });
 
-describe("ProfilePanel — the Preferences card has its own states", () => {
+describe("ProfilePanel — the Quiet hours section has its own states", () => {
   beforeEach(resetQueries);
 
   it("refuses to offer Save when the stored preferences could not be read", () => {

@@ -1,3 +1,4 @@
+import { permissionLabel } from "@/lib/permission-labels";
 import { describe, it, expect } from "vitest";
 import { formatDay, formatTimestampFull } from "@repo/formatting";
 import { CHAT_REPORT_QUEUE_PERMISSIONS } from "@repo/validation";
@@ -54,12 +55,15 @@ describe("CHAT_REPORT_TABS", () => {
 });
 
 describe("chatReportCopy.deniedDescription", () => {
-  it("names every permission the queue requires", () => {
-    // The copy restates the shared list in words; the gate itself reads the
-    // constant. If a permission is added to the queue, this fails until the
-    // explanation says so too.
+  it("names every permission the queue requires, in words", () => {
+    // The copy restates the shared list as the roles matrix words it; the
+    // gate itself reads the constant. If a permission is added to the queue,
+    // this fails until the explanation says so too.
     for (const permission of CHAT_REPORT_QUEUE_PERMISSIONS) {
-      expect(chatReportCopy.deniedDescription).toContain(permission);
+      expect(chatReportCopy.deniedDescription.toLowerCase()).toContain(
+        permissionLabel(permission).toLowerCase(),
+      );
+      expect(chatReportCopy.deniedDescription).not.toContain(permission);
     }
   });
 });

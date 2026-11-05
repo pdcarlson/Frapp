@@ -317,7 +317,7 @@ export function ServiceHoursPage() {
         title: "Couldn't approve entry",
         description: getErrorMessage(
           error,
-          "Requires service:approve, an active PENDING status, and an entry you did not submit yourself.",
+          "Only a pending entry someone else submitted can be approved.",
         ),
         variant: "destructive",
       });
@@ -453,7 +453,7 @@ export function ServiceHoursPage() {
         <PageHeader title="Service hours" />
         <ErrorState
           title="Couldn't load service entries"
-          description="Members see only their own entries; admins need service:approve to see every entry."
+          description="Confirm your chapter access and retry."
           onRetry={() => void entriesQuery.refetch()}
         />
       </>

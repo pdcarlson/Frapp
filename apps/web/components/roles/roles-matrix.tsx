@@ -6,7 +6,7 @@ import { cn, getErrorMessage, initials } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useToast } from "@/lib/hooks/use-toast";
-import { permissionLabel } from "@/components/roles/permission-labels";
+import { permissionLabel } from "@/lib/permission-labels";
 
 export type MatrixRole = {
   id: string;
@@ -169,7 +169,7 @@ export function RolesMatrix({
         title: `Couldn't update ${role.name}`,
         description: getErrorMessage(
           error,
-          "The permission was not changed. Retry, or check you still hold roles:manage.",
+          "The permission was not changed. Try again in a moment.",
         ),
         variant: "destructive",
       });

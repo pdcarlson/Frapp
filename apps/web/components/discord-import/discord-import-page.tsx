@@ -15,7 +15,6 @@ import { isDiscordImportClearable } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { SectionLabel } from "@/components/shared/section-label";
 import { PageHeader } from "@/components/layout/page-header";
 import {
@@ -191,19 +190,16 @@ export function DiscordImportPage() {
         Outside the `<Can>` so the permission-denied branch keeps the route's
         heading — the shell no longer supplies one (#2141). The denied card's
         `<CardTitle>` and the body's were that same title said twice, so both
-        are gone; the denied card's `CardHeader` held nothing else.
+        are gone, and so is the card that framed the one denied sentence.
       */}
       <PageHeader title="Discord import" />
       <Can
         permission="channels:manage"
         deniedFallback={
-          <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground">
-                Importing a Discord archive needs channel management permission.
-              </p>
-            </CardContent>
-          </Card>
+          <p className="text-sm text-muted-foreground">
+            Your role can&apos;t import Discord history. Ask your chapter
+            president for access.
+          </p>
         }
         // A paused permission read is not a denial (`writing.md` §7,
         // "Permission check offline"). Without this the screen-level gate fell
@@ -480,7 +476,7 @@ function DiscordImportList({
                     <p className="text-xs text-muted-foreground">
                       {formatDayTime(live.created_at)}
                       {/* A partial import says so (#2858). */}
-                      {live.messages_after
+                      {formatDay(live.messages_after)
                         ? ` · Messages since ${formatDay(live.messages_after)}`
                         : ""}
                     </p>

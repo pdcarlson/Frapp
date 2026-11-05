@@ -9,8 +9,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // assignee concept and no archive state, so there was no real mutation to
 // wire without inventing one.
 
-const { autoAbsentMutateAsync } = vi.hoisted(() => ({
+const { autoAbsentMutateAsync, access } = vi.hoisted(() => ({
   autoAbsentMutateAsync: vi.fn(),
+  access: {
+    permissions: ["events:update"] as string[],
+    subscription: "active",
+  },
 }));
 
 // Default `timeFilter` is "upcoming", which drops anything before "now" — a
@@ -30,15 +34,24 @@ const EVENTS = [
 
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => ({
-    data: { subscription_status: "active", past_due_since: null },
+    data: { subscription_status: access.subscription, past_due_since: null },
     isPending: false,
     isError: false,
   }),
   useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
-  useEvents: () => ({ data: EVENTS, isLoading: false, isError: false, refetch: vi.fn() }),
-  useAutoAbsent: () => ({ mutateAsync: autoAbsentMutateAsync, isPending: false }),
+  useEvents: () => ({
+    data: EVENTS,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+  useAutoAbsent: () => ({
+    mutateAsync: autoAbsentMutateAsync,
+    isPending: false,
+  }),
+  useMyPermissions: () => ({ data: { permissions: access.permissions } }),
   useNow: () => Date.now(),
 }));
 
@@ -54,7 +67,9 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 vi.mock("./event-detail-sheet", () => ({ EventDetailSheet: () => null }));
 
 const toastSpy = vi.fn();
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: toastSpy }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: toastSpy }),
+}));
 
 // The realtime subscription needs a QueryClientProvider and a Supabase
 // client; neither is part of what this file covers.
@@ -65,16 +80,36 @@ vi.mock("@/lib/realtime/use-realtime-table", () => ({
 import { EventsPage } from "./events-page";
 
 function selectChapterMeeting() {
-  return userEvent.setup().click(
-    screen.getByRole("checkbox", { name: /select chapter meeting/i }),
-  );
+  return userEvent
+    .setup()
+    .click(screen.getByRole("checkbox", { name: /select chapter meeting/i }));
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  access.permissions = ["events:update"];
+  access.subscription = "active";
 });
 
 describe("EventsPage bulk actions", () => {
+  it("offers no selection to a role that can't update events", () => {
+    // Auto-absent is `events:update` on the server: a member would only
+    // collect a 403 per event.
+    access.permissions = [];
+    render(<EventsPage />);
+    expect(screen.getByText("Chapter Meeting")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("keeps the bulk action disabled while the subscription blocks event writes", async () => {
+    access.subscription = "canceled";
+    render(<EventsPage />);
+    await selectChapterMeeting();
+    expect(
+      screen.getByRole("button", { name: /mark attendance complete/i }),
+    ).toBeDisabled();
+  });
+
   it("never renders Notify assignees or Archive selected — no real mutation exists for either", async () => {
     render(<EventsPage />);
     await selectChapterMeeting();
@@ -91,7 +126,9 @@ describe("EventsPage bulk actions", () => {
     autoAbsentMutateAsync.mockResolvedValue({ marked: 3 });
     const user = userEvent.setup();
     render(<EventsPage />);
-    await user.click(screen.getByRole("checkbox", { name: /select chapter meeting/i }));
+    await user.click(
+      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
+    );
 
     await user.click(
       screen.getByRole("button", { name: /mark attendance complete/i }),
@@ -105,7 +142,9 @@ describe("EventsPage bulk actions", () => {
     expect(autoAbsentMutateAsync).not.toHaveBeenCalled();
 
     await user.click(
-      within(dialog).getByRole("button", { name: /^mark attendance complete$/i }),
+      within(dialog).getByRole("button", {
+        name: /^mark attendance complete$/i,
+      }),
     );
 
     await waitFor(() =>
@@ -121,7 +160,9 @@ describe("EventsPage bulk actions", () => {
   it("cancelling the confirmation never calls the mutation", async () => {
     const user = userEvent.setup();
     render(<EventsPage />);
-    await user.click(screen.getByRole("checkbox", { name: /select chapter meeting/i }));
+    await user.click(
+      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
+    );
     await user.click(
       screen.getByRole("button", { name: /mark attendance complete/i }),
     );
@@ -138,13 +179,17 @@ describe("EventsPage bulk actions", () => {
     );
     const user = userEvent.setup();
     render(<EventsPage />);
-    await user.click(screen.getByRole("checkbox", { name: /select chapter meeting/i }));
+    await user.click(
+      screen.getByRole("checkbox", { name: /select chapter meeting/i }),
+    );
     await user.click(
       screen.getByRole("button", { name: /mark attendance complete/i }),
     );
     const dialog = screen.getByRole("dialog");
     await user.click(
-      within(dialog).getByRole("button", { name: /^mark attendance complete$/i }),
+      within(dialog).getByRole("button", {
+        name: /^mark attendance complete$/i,
+      }),
     );
 
     await waitFor(() =>

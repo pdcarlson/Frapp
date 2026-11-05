@@ -7,7 +7,13 @@ import {
   RolesGlyph,
   SearchGlyph,
 } from "@/components/events/chapter-ops-glyphs";
-import { useAutoAbsent, useEvents, useNow } from "@repo/hooks";
+import {
+  useAutoAbsent,
+  useEvents,
+  useMyPermissions,
+  useNow,
+} from "@repo/hooks";
+import { can } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -73,16 +79,6 @@ const TIME_FILTER_LABELS: Record<TimeFilter, string> = {
   all: "All events",
 };
 
-/*
- * A filtered or searched list that matches nothing is not an empty chapter.
- * "No events yet" over a chapter whose events are all in the past (the default
- * filter is Upcoming) told the officer something false. Same split and wording
- * as the Directory's (`writing.md` §7).
- */
-const FILTERED_EMPTY_TITLE = "No events match the filters";
-const FILTERED_EMPTY_DESCRIPTION = "Clear a filter to see more.";
-const SEARCH_EMPTY_DESCRIPTION = "Check the spelling, or widen the filters.";
-
 export function EventsPage() {
   const { isOffline } = useNetwork();
   const { toast } = useToast();
@@ -117,6 +113,16 @@ export function EventsPage() {
   );
   const eventsQuery = useEvents();
   const autoAbsent = useAutoAbsent();
+  // The bulk action posts auto-absent, which is `events:update` and paid-ops
+  // on the server, as in the attendance panel. A role without it gets no
+  // checkboxes at all, and a lapsed chapter's button explains itself. Read as
+  // a boolean rather than a `<Can>`: the checkboxes are a column on every
+  // row, and nothing here has a recovery path to offer while offline.
+  const { data: permissionsPayload } = useMyPermissions();
+  const canMarkAttendance = can(
+    "events:update",
+    permissionsPayload?.permissions,
+  );
   const { confirm, confirmDialog } = useConfirmDialog();
 
   // Live updates: any admin creating or editing an event in another tab
@@ -317,8 +323,8 @@ export function EventsPage() {
         <PageHeader title="Events" />
         <NestedOffline
           sole
-          title="Events workspace unavailable offline"
-          description="Reconnect to load event schedules and attendance updates."
+          title={stateMicrocopy.events.offlineTitle}
+          description={stateMicrocopy.events.offlineDescription}
           onRetry={() => {
             void eventsQuery.refetch();
           }}
@@ -342,8 +348,8 @@ export function EventsPage() {
         <PageHeader title="Events" />
         <NestedError
           sole
-          title="Couldn't load chapter events"
-          description="The events workflow needs a healthy API response. Verify your chapter access and retry."
+          title={stateMicrocopy.events.errorTitle}
+          description={stateMicrocopy.events.errorDescription}
           onRetry={() => void eventsQuery.refetch()}
         />
       </div>
@@ -495,7 +501,7 @@ export function EventsPage() {
           (#336): events have no assignee concept and no archive state, only
           delete, so there is no real mutation to call without inventing one.
         */}
-        {selectedEventIds.length > 0 ? (
+        {canMarkAttendance && selectedEventIds.length > 0 ? (
           <div className="flex flex-wrap items-center gap-2 rounded-md border border-accent-border bg-accent-subtle px-2 py-1.5">
             <p className="text-caption font-semibold text-accent-text">
               {selectedEventIds.length} selected
@@ -504,7 +510,7 @@ export function EventsPage() {
               size="toolbar"
               variant="secondary"
               className="sm:ml-auto"
-              disabled={autoAbsent.isPending}
+              {...eventWriteGate.controlProps(autoAbsent.isPending)}
               onClick={() => void markSelectedAttendanceComplete()}
             >
               Mark attendance complete
@@ -517,13 +523,16 @@ export function EventsPage() {
             <NestedEmpty
               sole
               title={`No match for “${searchText}”`}
-              description={SEARCH_EMPTY_DESCRIPTION}
+              description={stateMicrocopy.events.noMatchDescription}
             />
           ) : narrowed && events.length > 0 ? (
+            // "No events yet" over a chapter whose events are all past (the
+            // default filter is Upcoming) would tell the officer something
+            // false (`writing.md` §7).
             <NestedEmpty
               sole
-              title={FILTERED_EMPTY_TITLE}
-              description={FILTERED_EMPTY_DESCRIPTION}
+              title={stateMicrocopy.events.filteredTitle}
+              description={stateMicrocopy.events.filteredDescription}
             />
           ) : (
             <NestedEmpty
@@ -543,19 +552,21 @@ export function EventsPage() {
               section label and its count.
             */}
             <div className="flex min-h-9 items-center gap-1 pointer-coarse:min-h-11">
-              <label
-                className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
-              >
-                <input
-                  type="checkbox"
-                  aria-label="Select all visible events"
-                  className={dashboardTableCheckboxClassName}
-                  checked={allVisibleSelected}
-                  onChange={(event) =>
-                    toggleAllVisibleEvents(event.target.checked)
-                  }
-                />
-              </label>
+              {canMarkAttendance ? (
+                <label
+                  className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
+                >
+                  <input
+                    type="checkbox"
+                    aria-label="Select all visible events"
+                    className={dashboardTableCheckboxClassName}
+                    checked={allVisibleSelected}
+                    onChange={(event) =>
+                      toggleAllVisibleEvents(event.target.checked)
+                    }
+                  />
+                </label>
+              ) : null}
               <div className="min-w-0 px-2">
                 <SectionLabel
                   id="events-list-label"
@@ -605,22 +616,24 @@ export function EventsPage() {
                       isSelected && "bg-accent-subtle-hover text-accent-text",
                     )}
                   >
-                    <label
-                      className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
-                    >
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${eventName}`}
-                        className={dashboardTableCheckboxClassName}
-                        checked={isSelected}
-                        onChange={(eventValue) =>
-                          toggleEventSelection(
-                            eventId,
-                            eventValue.target.checked,
-                          )
-                        }
-                      />
-                    </label>
+                    {canMarkAttendance ? (
+                      <label
+                        className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${eventName}`}
+                          className={dashboardTableCheckboxClassName}
+                          checked={isSelected}
+                          onChange={(eventValue) =>
+                            toggleEventSelection(
+                              eventId,
+                              eventValue.target.checked,
+                            )
+                          }
+                        />
+                      </label>
+                    ) : null}
                     {/*
                       The row is the control: it opens the event's details,
                       the job the trailing "View details" button did. Its

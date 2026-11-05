@@ -29,7 +29,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
 import { formatDayTime } from "@repo/formatting";
-import { getErrorMessage, guardIntDraft, parseGuardedInt } from "@/lib/utils";
+import {
+  getErrorMessage,
+  guardIntDraft,
+  labelled,
+  parseGuardedInt,
+} from "@/lib/utils";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { buildJoinUrl } from "@/lib/invite-link";
 
@@ -473,7 +478,10 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                       {invite.token}
                     </p>
                     <p className="text-caption text-muted-foreground">
-                      {[invite.role, invite.expires_at ? `Expires ${formatDayTime(invite.expires_at)}` : null]
+                      {[
+                        invite.role,
+                        labelled("Expires", formatDayTime(invite.expires_at)),
+                      ]
                         .filter(Boolean)
                         .join(" · ")}
                     </p>

@@ -50,10 +50,7 @@ export function SettingsDangerTab({
     } catch (error) {
       toast({
         title: "Couldn't open billing portal",
-        description: getErrorMessage(
-          error,
-          "Confirm billing:manage permission and an active Stripe customer.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -75,8 +72,7 @@ export function SettingsDangerTab({
           permission="billing:manage"
           deniedFallback={
             <p className="text-sm text-muted-foreground">
-              Only users with <code>billing:manage</code> can open the Stripe
-              portal.
+              Your role can&apos;t open the billing portal.
             </p>
           }
         >

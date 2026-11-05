@@ -1,9 +1,5 @@
 import type { ChatReportReason, ChatReportStatus } from "@repo/hooks";
-import {
-  formatDay,
-  formatTimestampFull,
-  parseInstant,
-} from "@repo/formatting";
+import { formatDay, formatTimestampFull, parseInstant } from "@repo/formatting";
 
 /**
  * Words for the officer report queue (`chat-reports-card.tsx`), in one module
@@ -112,7 +108,7 @@ export const chatReportCopy = {
    * `chat-report-copy.spec.ts` fails if it stops naming one of them.
    */
   deniedDescription:
-    "Reviewing reported messages needs the members:view and channels:manage permissions. Ask your chapter president to grant access.",
+    "Reviewing reported messages needs a role that can see the full directory and manage channels and pins. Ask your chapter president for access.",
   noContent: "This message had no text.",
   detailsLabel: "Reporter's note",
   /**

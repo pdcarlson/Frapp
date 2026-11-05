@@ -69,7 +69,7 @@ export function SettingsPrivacyTab({
         </div>
         {!canManage ? (
           <p className="mt-3 text-xs text-muted-foreground">
-            Only users with <code>chapter-config:manage</code> can change this.
+            Your role can&apos;t change this.
           </p>
         ) : null}
       </CardContent>

@@ -36,7 +36,9 @@ describe("SettingsDuesTab", () => {
     expect(
       screen.getByRole("textbox", { name: /active member dues/i }),
     ).toHaveValue("850");
-    expect(screen.getByRole("textbox", { name: /late fee/i })).toHaveValue("25");
+    expect(screen.getByRole("textbox", { name: /late fee/i })).toHaveValue(
+      "25",
+    );
     expect(
       screen.getByRole("spinbutton", { name: /grace period/i }),
     ).toHaveValue(7);
@@ -55,7 +57,9 @@ describe("SettingsDuesTab", () => {
     expect(
       screen.queryByRole("spinbutton", { name: /number of installments/i }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("switch", { name: /allow installments/i }));
+    fireEvent.click(
+      screen.getByRole("switch", { name: /allow installments/i }),
+    );
     expect(
       screen.getByRole("spinbutton", { name: /number of installments/i }),
     ).toBeInTheDocument();
@@ -187,6 +191,53 @@ describe("SettingsDuesTab", () => {
       late_fee_cents: 3000,
       alumni_amount_cents: 1275,
     });
+  });
+
+  it("keeps whole cents for amounts floating point can't hold exactly", () => {
+    // 19.99 * 100 is 1998.9999999999998 in floating point: truncating it
+    // would bill a cent short on every invoice.
+    const onSave = vi.fn();
+    render(
+      <SettingsDuesTab
+        dues={DUES}
+        canManage
+        onSave={onSave}
+        pledgeTerm="New member"
+      />,
+    );
+    for (const [name, value] of [
+      [/active member dues/i, "19.99"],
+      [/new member dues/i, "4.35"],
+      [/late fee/i, "0.29"],
+    ] as const) {
+      fireEvent.change(screen.getByRole("textbox", { name }), {
+        target: { value },
+      });
+    }
+    fireEvent.click(screen.getByRole("button", { name: /save dues/i }));
+    expect(onSave).toHaveBeenCalledWith({
+      ...DUES,
+      active_amount_cents: 1999,
+      new_member_amount_cents: 435,
+      late_fee_cents: 29,
+    });
+  });
+
+  it("shows a stored amount with its cents as dollars and two decimals", () => {
+    render(
+      <SettingsDuesTab
+        dues={{ ...DUES, active_amount_cents: 4250, late_fee_cents: 1999 }}
+        canManage
+        onSave={() => {}}
+        pledgeTerm="New member"
+      />,
+    );
+    expect(
+      screen.getByRole("textbox", { name: /active member dues/i }),
+    ).toHaveValue("42.50");
+    expect(screen.getByRole("textbox", { name: /late fee/i })).toHaveValue(
+      "19.99",
+    );
   });
 
   // #351: the "new member" amount field's label reads in the chapter's own

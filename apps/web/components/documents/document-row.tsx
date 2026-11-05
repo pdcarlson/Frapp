@@ -11,7 +11,7 @@ import { compactControlClassName } from "@/components/shared/table-controls";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import type { ChapterDocument } from "@/components/documents/document-types";
 import { useToast } from "@/lib/hooks/use-toast";
-import { getErrorMessage } from "@/lib/utils";
+import { getErrorMessage, labelled } from "@/lib/utils";
 
 // Deliberately ungated: the signed link comes from `GET /v1/documents/:id`, and
 // `enforceSubscription` returns early for GET — a lapsed chapter can still read
@@ -120,12 +120,10 @@ export function DocumentRow({
       */}
         <p className="truncate text-caption text-muted">
           {[
-            doc.created_at ? `Uploaded ${formatDay(doc.created_at)}` : null,
+            labelled("Uploaded", formatDay(doc.created_at)),
             doc.folder,
             doc.document_type,
-            doc.effective_date
-              ? `Effective ${formatDay(doc.effective_date)}`
-              : null,
+            labelled("Effective", formatDay(doc.effective_date)),
             doc.description,
           ]
             .filter(Boolean)

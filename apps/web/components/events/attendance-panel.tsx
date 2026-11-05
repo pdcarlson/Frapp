@@ -240,7 +240,7 @@ export function AttendancePanel({
       <div role="status" aria-live="polite">
         <NestedError
           title="Attendance unavailable"
-          description="Couldn't load attendance for this event. Retry or confirm you have events:update or permission to view attendance."
+          description="Couldn't load attendance for this event. Confirm your chapter access and retry."
           onRetry={() => void attendanceQuery.refetch()}
         />
       </div>

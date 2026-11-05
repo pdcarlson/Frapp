@@ -693,7 +693,7 @@ export function StudyPage() {
           {geofences.length === 0 ? (
             <NestedEmpty
               title="No active study zones"
-              description="Ask a chapter admin with geofences:manage to add one."
+              description="Ask an officer who manages study zones to add one."
             />
           ) : (
             <div className="space-y-2">

@@ -176,7 +176,10 @@ function PresidencyClaimBanner() {
         </CardHeader>
         {eligible ? (
           <CardFooter className="flex justify-end">
-            <Button onClick={() => void handleClaim()} disabled={claimPresidency.isPending}>
+            <Button
+              onClick={() => void handleClaim()}
+              disabled={claimPresidency.isPending}
+            >
               {claimPresidency.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : null}
@@ -200,7 +203,10 @@ export function RolesAndPermissionsPage() {
   const deleteRole = useDeleteRole();
   const transferPresidency = useTransferPresidency();
 
-  const roles = useMemo(() => asArray<Role>(rolesQuery.data), [rolesQuery.data]);
+  const roles = useMemo(
+    () => asArray<Role>(rolesQuery.data),
+    [rolesQuery.data],
+  );
   const members = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
 
   const [activeRoleId, setActiveRoleId] = useState<string | null>(null);
@@ -377,8 +383,7 @@ export function RolesAndPermissionsPage() {
     disabled query, and inside `<Can>` a chapter is always active, which is the
     only thing these two are gated on.
   */
-  const paused =
-    rolesQuery.isPending && rolesQuery.fetchStatus === "paused";
+  const paused = rolesQuery.isPending && rolesQuery.fetchStatus === "paused";
 
   let body: ReactNode;
   /*
@@ -403,7 +408,7 @@ export function RolesAndPermissionsPage() {
     body = (
       <ErrorState
         title="Couldn't load roles"
-        description="Retry in a moment. This view requires the roles:manage permission."
+        description="Confirm your chapter access and retry."
         onRetry={retryQueries}
       />
     );
@@ -505,12 +510,14 @@ export function RolesAndPermissionsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">
-                {activeRole ? `Edit ${activeRole.name}` : "Select a role to edit"}
+                {activeRole
+                  ? `Edit ${activeRole.name}`
+                  : "Select a role to edit"}
               </CardTitle>
               <CardDescription>
                 Rename, recolour or reorder this role. Its permissions are set
-                in the matrix above. Changes take effect
-                on the next request for every member holding this role.
+                in the matrix above. Changes take effect on the next request for
+                every member holding this role.
               </CardDescription>
             </CardHeader>
             {activeRole ? (
@@ -715,15 +722,10 @@ export function RolesAndPermissionsPage() {
           />
         )}
         deniedFallback={
-          <Card>
-            <CardHeader>
-              <CardTitle>Roles &amp; Permissions</CardTitle>
-              <CardDescription>
-                Managing roles requires the <code>roles:manage</code>{" "}
-                permission. Ask your chapter president to grant access.
-              </CardDescription>
-            </CardHeader>
-          </Card>
+          <p className="text-sm text-muted-foreground">
+            Your role can&apos;t manage roles. Ask your chapter president for
+            access.
+          </p>
         }
       >
         {/*

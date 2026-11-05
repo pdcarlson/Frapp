@@ -6,9 +6,10 @@
  *
  * Two members stay distinct on purpose:
  * - {@link formatMinutesExact} — no rounding; interpolates the number as-is.
- *   Web service hours.
+ *   Web chat's hours card and the API's service-entry text.
  * - {@link formatMinutesRounded} — `Math.max(0, Math.round(minutes))`.
- *   Mobile service hours.
+ *   Service and study hours on both web and mobile (web's pages moved here
+ *   2026-11-05, so a member reads the same total on either).
  *
  * Do not fold either into {@link formatPaddedStopwatch} / {@link formatTimer}
  * or into {@link formatLocaleDateTime}.

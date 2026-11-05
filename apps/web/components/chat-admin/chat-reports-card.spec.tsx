@@ -1037,7 +1037,7 @@ describe("ChatReportsCard — the gate", () => {
 
     expect(
       screen.getByText(
-        /needs the members:view and channels:manage permissions/,
+        /needs a role that can see the full directory and manage channels/,
       ),
     ).toBeInTheDocument();
     expect(requestedStatuses).toEqual([]);
@@ -1050,7 +1050,7 @@ describe("ChatReportsCard — the gate", () => {
 
     const region = screen.getByRole("region", { name: "Reported messages" });
     expect(
-      within(region).getByText(/needs the members:view and channels:manage/),
+      within(region).getByText(/see the full directory and manage channels/),
     ).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });

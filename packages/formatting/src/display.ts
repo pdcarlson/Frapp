@@ -61,7 +61,10 @@ function weekdayName(at: Date): string {
 }
 
 /** `"Nov 6"`, or `"Nov 6, 2025"` outside the current year. */
-export function formatDay(value: unknown, now: Date = new Date()): string | null {
+export function formatDay(
+  value: unknown,
+  now: Date = new Date(),
+): string | null {
   const at = toDate(value);
   return at ? monthDay(at, now) : null;
 }
@@ -124,7 +127,10 @@ export function formatDayRange(start: unknown, end: unknown): string | null {
 /**
  * A list row's when: `"Today · 5:00 PM"`, `"Tomorrow · 5:00 PM"`, the weekday
  * within the coming week (`"Friday · 5:00 PM"`), otherwise
- * `"Nov 6 · 5:00 PM"`. Mobile's event row reads the same.
+ * `"Nov 6 · 5:00 PM"`, and `"Yesterday · 5:00 PM"` for the day before. Mobile's
+ * event row (`formatEventRowTime`) has its own copy that lacks the yesterday
+ * case and the out-of-year year, so the two differ there until mobile reads
+ * this one (FOLLOWUP_MOBILE_DATES).
  */
 export function formatRelativeDayTime(
   value: unknown,
@@ -144,7 +150,9 @@ export function formatRelativeDayTime(
 /**
  * A due date as a countdown: `"Due today"`, `"Due tomorrow"`, `"Due Friday"`
  * within the week, `"Due Nov 6"` beyond it, and `"Overdue by 2 days"` once it
- * has passed. Mobile's task subtitle reads the same.
+ * has passed. Mobile's task subtitle (`formatDueSubtitle`) is a separate copy
+ * that leaves the year off a date outside the current one, until mobile reads
+ * this one (FOLLOWUP_MOBILE_DATES).
  */
 export function formatDueLabel(
   value: unknown,

@@ -35,7 +35,11 @@ beforeEach(() => {
   Object.assign(roles, {
     data: [
       { id: "r1", name: "President", permissions: ["*"] },
-      { id: "r2", name: "Scholarship Chair", permissions: ["geofences:manage"] },
+      {
+        id: "r2",
+        name: "Scholarship Chair",
+        permissions: ["geofences:manage"],
+      },
       { id: "r3", name: "Member", permissions: ["members:view"] },
     ],
     isPending: false,
@@ -47,7 +51,9 @@ beforeEach(() => {
 async function openDrawer() {
   const user = userEvent.setup();
   render(<StudyZonesSettingsDrawer />);
-  await user.click(screen.getByRole("button", { name: /study zones settings/i }));
+  await user.click(
+    screen.getByRole("button", { name: /study zones settings/i }),
+  );
   return user;
 }
 
@@ -67,7 +73,9 @@ describe("the per-page settings drawer", () => {
     // `4c` pin 4: "Autosave, no Save button." The line is the only thing
     // telling the member their change stuck, so it is not optional furniture.
     expect(screen.getByText(/saved as you change/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^save$/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^save$/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("lists the roles that actually hold each geofence permission", async () => {
@@ -84,11 +92,16 @@ describe("the per-page settings drawer", () => {
     // A `geofences:*` permission added to the catalog later should surface
     // here without this component being edited; an unrelated one never should.
     Object.assign(catalog, {
-      data: [...CATALOG, { key: "Export zones", permission: "geofences:export" }],
+      data: [
+        ...CATALOG,
+        { key: "GEOFENCES_EXPORT", permission: "geofences:export" },
+      ],
     });
     await openDrawer();
 
-    expect(screen.getByText("Export zones")).toBeInTheDocument();
+    // In words, never the catalog's constant name.
+    expect(screen.getByText("Export geofences")).toBeInTheDocument();
+    expect(screen.queryByText("GEOFENCES_EXPORT")).not.toBeInTheDocument();
     expect(screen.queryByText("View members")).not.toBeInTheDocument();
   });
 
@@ -131,7 +144,9 @@ describe("the per-page settings drawer", () => {
     await openDrawer();
 
     // Never "no role holds this" — that is a claim, and the fetch failed.
-    expect(screen.queryByText(/no role holds this yet/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/no role holds this yet/i),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/couldn't load roles/i)).toBeInTheDocument();
   });
 });

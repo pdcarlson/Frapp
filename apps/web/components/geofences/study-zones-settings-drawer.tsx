@@ -1,5 +1,6 @@
 "use client";
 
+import { permissionLabel } from "@/lib/permission-labels";
 import { useMemo } from "react";
 import Link from "next/link";
 import { usePermissionsCatalog, useRoles } from "@repo/hooks";
@@ -52,7 +53,7 @@ export function StudyZonesSettingsDrawer() {
     ).filter((entry) => entry.permission?.startsWith("geofences:"));
     return entries.map((entry) => ({
       permission: entry.permission!,
-      label: entry.key || entry.permission!,
+      label: permissionLabel(entry.permission!),
     }));
   }, [catalogQuery.data]);
 

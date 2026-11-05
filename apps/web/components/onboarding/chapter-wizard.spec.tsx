@@ -67,13 +67,19 @@ vi.mock("@repo/org-archetypes", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/org-archetypes")>();
   return {
     ARCHETYPES: {
-      ifc: { key: "ifc", label: "IFC", short: "IFC", council: "Interfraternity" },
+      ifc: {
+        key: "ifc",
+        label: "IFC",
+        short: "IFC",
+        council: "Interfraternity",
+      },
     },
     getArchetype: (key: string) => ({ key: key || "ifc" }),
     orgDefaultAccent: actual.orgDefaultAccent,
     orgColorsFor: actual.orgColorsFor,
     orgHidesGreekLetters: actual.orgHidesGreekLetters,
     orgMarkFields: actual.orgMarkFields,
+    orgProfileFor: actual.orgProfileFor,
   };
 });
 
@@ -250,7 +256,9 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     fireEvent.change(screen.getByLabelText("Short name (optional)"), {
       target: { value: "FIJI" },
     });
-    fireEvent.click(screen.getByRole("switch", { name: /show greek letters/i }));
+    fireEvent.click(
+      screen.getByRole("switch", { name: /show greek letters/i }),
+    );
     create();
 
     await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
@@ -268,7 +276,9 @@ describe("ChapterWizard chapter mark (#2876)", () => {
       target: { value: "ΦΓΔ" },
     });
     expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("ΦΓΔ");
-    fireEvent.click(screen.getByRole("switch", { name: /show greek letters/i }));
+    fireEvent.click(
+      screen.getByRole("switch", { name: /show greek letters/i }),
+    );
     expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("TC");
   });
 
@@ -302,7 +312,9 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     gotoIdentityStep();
     const input = screen.getByLabelText("Logo (optional)") as HTMLInputElement;
     fireEvent.change(input, {
-      target: { files: [new File(["png"], "crest.png", { type: "image/png" })] },
+      target: {
+        files: [new File(["png"], "crest.png", { type: "image/png" })],
+      },
     });
     const clearValue = vi.spyOn(input, "value", "set");
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
@@ -315,7 +327,9 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     render(<ChapterWizard onComplete={() => {}} />);
     gotoIdentityStep();
     fireEvent.change(screen.getByLabelText("Logo (optional)"), {
-      target: { files: [new File(["png"], "crest.png", { type: "image/png" })] },
+      target: {
+        files: [new File(["png"], "crest.png", { type: "image/png" })],
+      },
     });
     create();
 
@@ -360,7 +374,9 @@ describe("ChapterWizard chapter mark (#2876)", () => {
       fireEvent.click(screen.getByRole("button", { name: /back/i }));
       await pickFiji();
 
-      expect(screen.getByLabelText("Short name (optional)")).toHaveValue("FIJI");
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+        "FIJI",
+      );
       // Neither the letters field nor the switch that would show them.
       expect(screen.queryByLabelText("Greek letters")).not.toBeInTheDocument();
       expect(
@@ -399,6 +415,82 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     });
   });
 
+  it("keeps FIJI's letters hidden when the founder edits the matched name", async () => {
+    // The row is FIJI's whatever the name field says next, so the letters and
+    // the switch stay away and the short name the row filled stays put.
+    directoryRows.current = [
+      {
+        id: "dir-fiji",
+        org_letters: "ΦΓΔ",
+        org_name: "Phi Gamma Delta",
+        archetype: "ifc",
+        chapter_designation: "Tau Nu",
+        university: "Rensselaer Polytechnic Institute",
+        university_short: "RPI",
+        founded_year: 1893,
+        default_colors: { accent: "#C9A56F" },
+      },
+    ];
+    try {
+      render(<ChapterWizard onComplete={() => {}} />);
+      fireEvent.change(screen.getByLabelText("Search the chapter directory"), {
+        target: { value: "Phi Gamma" },
+      });
+      fireEvent.click(await screen.findByText(/Phi Gamma Delta/));
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      fireEvent.change(screen.getByLabelText("Chapter / organization name"), {
+        target: { value: "Phi Gamma Delta Tau Nu" },
+      });
+
+      expect(screen.queryByLabelText("Greek letters")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("switch", { name: /show greek letters/i }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+        "FIJI",
+      );
+      expect(document.body.textContent).not.toContain("ΦΓΔ");
+      create();
+      await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
+      expect(onboardMutate.mock.calls[0]![0].branding).toMatchObject({
+        short_name: "FIJI",
+        show_greek_letters: false,
+      });
+    } finally {
+      directoryRows.current = [];
+    }
+  });
+
+  it("never overwrites a short name the founder typed, and never turns the letters back on", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    fireEvent.change(screen.getByLabelText("Short name (optional)"), {
+      target: { value: "Phi Gam" },
+    });
+    const name = screen.getByLabelText("Chapter / organization name");
+    fireEvent.change(name, { target: { value: "Phi Gamma Delta" } });
+    expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+      "Phi Gam",
+    );
+    expect(
+      screen.queryByRole("switch", { name: /show greek letters/i }),
+    ).not.toBeInTheDocument();
+
+    // Typing on past the match: the switch comes back for the new name, off.
+    fireEvent.change(name, { target: { value: "Phi Gamma Delta Colony" } });
+    expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+      "Phi Gam",
+    );
+    expect(
+      screen.getByRole("switch", { name: /show greek letters/i }),
+    ).not.toBeChecked();
+    // And back onto the match leaves the founder's short name alone.
+    fireEvent.change(name, { target: { value: "Phi Gamma Delta" } });
+    expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+      "Phi Gam",
+    );
+  });
+
   it("sets the accent from a swatch, without typing a hex", async () => {
     render(<ChapterWizard onComplete={() => {}} />);
     gotoIdentityStep();
@@ -406,7 +498,9 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     expect(screen.getByLabelText("Accent color")).toHaveValue("#1d2f6f");
     create();
     await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
-    expect(onboardMutate.mock.calls[0]![0].branding.colors.accent.toUpperCase()).toBe("#1D2F6F");
+    expect(
+      onboardMutate.mock.calls[0]![0].branding.colors.accent.toUpperCase(),
+    ).toBe("#1D2F6F");
   });
 
   it("uploads nothing when no logo was chosen", async () => {

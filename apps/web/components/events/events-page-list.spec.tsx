@@ -53,6 +53,7 @@ vi.mock("@repo/hooks", () => ({
     refetch: vi.fn(),
   }),
   useAutoAbsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useMyPermissions: () => ({ data: { permissions: ["events:update"] } }),
   useNow: () => Date.now(),
 }));
 

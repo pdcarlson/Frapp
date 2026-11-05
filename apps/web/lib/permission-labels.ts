@@ -9,7 +9,9 @@
  *
  * A permission this map doesn't know (a chapter's custom string, or a catalog
  * entry added later) reads from its own string instead, `"fines:waive"` as
- * "Waive fines", so a new row is never blank or a constant.
+ * "Waive fines", so a new row is never blank or a constant. A third segment
+ * qualifies the subject: a Discord import's per-role read gate
+ * `"channels:read:exec-board"` reads "Read exec board channels".
  */
 const LABELS: Record<string, string> = {
   "events:create": "Create events",
@@ -51,13 +53,17 @@ function words(text: string): string {
 export function permissionLabel(permission: string): string {
   const known = LABELS[permission];
   if (known) return known;
-  const colon = permission.indexOf(":");
-  if (colon === -1) {
+  if (!permission.includes(":")) {
     const plain = words(permission);
     return plain.charAt(0).toUpperCase() + plain.slice(1);
   }
-  const subject = words(permission.slice(0, colon));
-  const action = words(permission.slice(colon + 1));
+  const [subjectPart = "", actionPart = "", ...qualifier] =
+    permission.split(":");
+  const subject = words(subjectPart);
+  const action = words(actionPart);
   if (!action) return subject.charAt(0).toUpperCase() + subject.slice(1);
-  return `${action.charAt(0).toUpperCase()}${action.slice(1)} ${subject}`;
+  const object = [words(qualifier.join(" ")), subject]
+    .filter(Boolean)
+    .join(" ");
+  return `${action.charAt(0).toUpperCase()}${action.slice(1)} ${object}`;
 }

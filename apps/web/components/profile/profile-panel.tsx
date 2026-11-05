@@ -64,7 +64,7 @@ type CurrentUser = {
 /**
  * The quiet-hour fields `PATCH /v1/settings` accepts and this screen edits.
  *
- * `theme` is deliberately absent. See the Preferences card below. Picked from
+ * `theme` is deliberately absent. See the Quiet hours section below. Picked from
  * the contract's type, so renaming one of these fields there fails to compile
  * here rather than seeding an empty input.
  */
@@ -203,7 +203,7 @@ export function ProfilePanel() {
         <PageHeader title="Profile" />
         <NestedError
           title="Couldn't load your profile"
-          description="Sign in succeeded but we couldn't reach the API. Retry in a moment."
+          description="You're signed in, but Frapp couldn't be reached. Try again in a moment."
           onRetry={() => void userQuery.refetch()}
           sole
         />
@@ -325,7 +325,7 @@ export function ProfilePanel() {
   const displayName = storedName || "Your profile";
 
   /*
-   * The Preferences card is fed by a *second* query, so it needs a second set
+   * The Quiet hours section is fed by a *second* query, so it needs a second set
    * of states — it had none. A failed `/v1/settings` fetch rendered empty time
    * fields beside a live Save button, and because the submit maps an unloaded
    * field to `undefined` (so the PATCH omits it), pressing Save sent an empty

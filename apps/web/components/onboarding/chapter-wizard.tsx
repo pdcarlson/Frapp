@@ -19,6 +19,7 @@ import {
   orgDefaultAccent,
   orgHidesGreekLetters,
   orgMarkFields,
+  orgProfileFor,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import {
@@ -118,6 +119,10 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   const debouncedQuery = useDebouncedValue(rawQuery, 250);
 
   const [directoryId, setDirectoryId] = useState<string | null>(null);
+  // The organization the picked directory row names. A chapter that came
+  // from FIJI's row is FIJI whatever its name field says later, so its
+  // letters stay hidden even after the founder edits the name.
+  const [matchedOrgName, setMatchedOrgName] = useState<string | null>(null);
   const [archetype, setArchetype] = useState<ArchetypeKey>("ifc");
   const [identity, setIdentity] = useState<ChapterIdentityForm>(
     EMPTY_CHAPTER_IDENTITY,
@@ -145,6 +150,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   function applyDirectoryMatch(row: ChapterDirectoryResult) {
     const resolvedArchetype = getArchetype(row.archetype).key;
     setDirectoryId(row.id);
+    setMatchedOrgName(row.org_name ?? null);
     setArchetype(resolvedArchetype);
     const mark = orgMarkFields(row.org_name, identity.name, identity);
     setIdentity({
@@ -170,6 +176,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
 
   function startManualEntry() {
     setDirectoryId(null);
+    setMatchedOrgName(null);
     setArchetype("ifc");
     setIdentity({
       ...EMPTY_CHAPTER_IDENTITY,
@@ -184,6 +191,13 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
     const prev = STEP_ORDER[stepIndex - 1];
     if (prev) setStep(prev);
   }
+
+  // The organization whose rule hides the letters, by the picked row first,
+  // then by the name typed. Null when neither hides them.
+  const lettersHiddenBy =
+    [matchedOrgName, identity.name]
+      .find((name) => orgHidesGreekLetters(name))
+      ?.trim() ?? null;
 
   const identityValid = chapterIdentityIsValid(identity);
   // Gate "Create chapter" on the required Terms/Privacy acceptance as well as a
@@ -200,7 +214,10 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
         org_archetype: archetype,
         directory_id: directoryId ?? undefined,
         accept_terms_privacy: true,
-        branding: chapterIdentityBranding(identity),
+        branding: {
+          ...chapterIdentityBranding(identity),
+          ...(lettersHiddenBy ? { show_greek_letters: false } : {}),
+        },
       });
       const id =
         chapter && typeof chapter === "object" && "id" in chapter
@@ -416,6 +433,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
                   logo={logo}
                   onLogoChange={setLogo}
                   isManual={directoryId === null}
+                  lettersHiddenBy={lettersHiddenBy}
                   accepted={acceptedLegal}
                   onAcceptedChange={setAcceptedLegal}
                 />
@@ -500,20 +518,32 @@ function directoryRowTitle(row: ChapterDirectoryResult): string {
 }
 
 /**
- * The identity after the organization's name is typed: a profile's short name
- * and letters switch follow the name (`orgMarkFields`), as a directory match
- * applies them and as mobile's setup does. Without this, a founder who typed
- * "Phi Gamma Delta" by hand kept the letters switch on, and any letters they
- * had already entered would have reached the nav.
+ * The identity after the organization's name is typed. When the name comes to
+ * match an organization we hold a profile for, that profile applies once, as a
+ * directory match applies it: an organization that hides its letters (FIJI)
+ * turns the switch off, and its short name fills an empty short-name field.
+ * Any other keystroke changes the name alone, so typing on past a match never
+ * overwrites a short name the founder chose and never turns the letters back
+ * on by itself.
  */
 function withOrgName(
   identity: ChapterIdentityForm,
   name: string,
 ): ChapterIdentityForm {
+  const profile = orgProfileFor(name);
+  if (!profile || profile === orgProfileFor(identity.name)) {
+    return { ...identity, name };
+  }
   return {
     ...identity,
     name,
-    ...orgMarkFields(name, identity.name, identity),
+    shortName: identity.shortName.trim()
+      ? identity.shortName
+      : (profile.shortName ?? identity.shortName),
+    showGreekLetters:
+      profile.displaysGreekLetters === false
+        ? false
+        : identity.showGreekLetters,
   };
 }
 
@@ -621,9 +651,7 @@ function FindStep({
                   onSelect={() => onSelect(row)}
                   className="flex-col items-start gap-0.5 py-2"
                 >
-                  <span className="font-medium">
-                    {directoryRowTitle(row)}
-                  </span>
+                  <span className="font-medium">{directoryRowTitle(row)}</span>
                   <span className="text-xs text-muted-foreground">
                     {[row.chapter_designation, row.university]
                       .filter(Boolean)
@@ -740,6 +768,7 @@ function IdentityStep({
   logo,
   onLogoChange,
   isManual,
+  lettersHiddenBy,
   accepted,
   onAcceptedChange,
 }: {
@@ -748,6 +777,8 @@ function IdentityStep({
   logo: ChapterLogoUpload | null;
   onLogoChange: (next: ChapterLogoUpload | null) => void;
   isManual: boolean;
+  /** The organization that hides its letters (FIJI), or null. */
+  lettersHiddenBy: string | null;
   accepted: boolean;
   onAcceptedChange: (next: boolean) => void;
 }) {
@@ -793,7 +824,7 @@ function IdentityStep({
           fills them, and they stay stored and switched off, but setup never
           draws them. The short name stands in.
         */}
-        {orgHidesGreekLetters(identity.name) ? null : (
+        {lettersHiddenBy ? null : (
           <div className="space-y-1.5">
             <Label htmlFor="wiz-letters">Greek letters</Label>
             <Input
@@ -837,6 +868,7 @@ function IdentityStep({
         </div>
         <ChapterMarkFields
           identity={identity}
+          lettersHiddenBy={lettersHiddenBy}
           onSet={set}
           logo={logo}
           onLogoChange={onLogoChange}
@@ -1058,11 +1090,13 @@ function InviteStep({
  */
 function ChapterMarkFields({
   identity,
+  lettersHiddenBy,
   onSet,
   logo,
   onLogoChange,
 }: {
   identity: ChapterIdentityForm;
+  lettersHiddenBy: string | null;
   onSet: <K extends keyof ChapterIdentityForm>(
     key: K,
     value: ChapterIdentityForm[K],
@@ -1093,10 +1127,9 @@ function ChapterMarkFields({
   const branding = {
     short_name: identity.shortName,
     greek_letters: identity.greekLetters,
-    show_greek_letters: identity.showGreekLetters,
+    show_greek_letters: identity.showGreekLetters && !lettersHiddenBy,
   };
   const mark = resolveChapterMark({ logoUrl, branding, name: identity.name });
-  const lettersHidden = orgHidesGreekLetters(identity.name);
 
   return (
     <fieldset className="space-y-3 rounded-lg border border-border p-3 sm:col-span-2">
@@ -1104,8 +1137,8 @@ function ChapterMarkFields({
       <div className="flex items-center gap-3">
         <CrestTile mark={mark} />
         <p className="text-xs text-muted-foreground">
-          {lettersHidden
-            ? `${identity.name.trim()} doesn't display its Greek letters, so your logo or short name stands in for them.`
+          {lettersHiddenBy
+            ? `${lettersHiddenBy} doesn't display its Greek letters, so your logo or short name stands in for them.`
             : "How your chapter shows in the nav: your logo, else your short name, else your Greek letters."}
         </p>
       </div>
@@ -1163,7 +1196,7 @@ function ChapterMarkFields({
           ) : null}
         </div>
       </div>
-      {lettersHidden ? null : (
+      {lettersHiddenBy ? null : (
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor="wiz-show-letters" className="font-normal">
             Show Greek letters

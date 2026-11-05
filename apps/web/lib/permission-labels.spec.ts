@@ -18,6 +18,13 @@ describe("permissionLabel", () => {
     expect(permissionLabel("treasury")).toBe("Treasury");
   });
 
+  it("reads a Discord import's per-role read gate as the channels it opens", () => {
+    expect(permissionLabel("channels:read:exec")).toBe("Read exec channels");
+    expect(permissionLabel("channels:read:exec-board")).toBe(
+      "Read exec board channels",
+    );
+  });
+
   it("never prints the API constant's SCREAMING_SNAKE name", () => {
     for (const permission of [
       "events:create",

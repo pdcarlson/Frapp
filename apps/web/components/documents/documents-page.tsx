@@ -188,10 +188,7 @@ export function DocumentsPage() {
     } catch (error) {
       toast({
         title: "Couldn't delete document",
-        description: getErrorMessage(
-          error,
-          "Requires chapter_docs:manage. Retry or confirm your permissions.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     } finally {

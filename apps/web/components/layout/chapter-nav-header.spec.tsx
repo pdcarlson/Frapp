@@ -23,25 +23,23 @@ const {
   chaptersQuery,
   currentChapterQuery,
   permissionsQuery,
-} = vi.hoisted(
-  () => ({
-    // An officer by default, so the "Chapter settings" link has somewhere to
-    // go. `undefined` data is a permission read still in flight.
-    permissionsQuery: {
-      current: { data: { permissions: ["chapter-config:view"] } } as {
-        data: { permissions: string[] } | undefined;
-      },
+} = vi.hoisted(() => ({
+  // An officer by default, so the "Chapter settings" link has somewhere to
+  // go. `undefined` data is a permission read still in flight.
+  permissionsQuery: {
+    current: { data: { permissions: ["chapter-config:view"] } } as {
+      data: { permissions: string[] } | undefined;
     },
-    selectChapter: vi.fn(async () => true),
-    toast: vi.fn(),
-    chaptersQuery: {
-      current: { data: [] as unknown[], isSuccess: true },
-    },
-    currentChapterQuery: {
-      current: { data: undefined as unknown, isError: false },
-    },
-  }),
-);
+  },
+  selectChapter: vi.fn(async () => true),
+  toast: vi.fn(),
+  chaptersQuery: {
+    current: { data: [] as unknown[], isSuccess: true },
+  },
+  currentChapterQuery: {
+    current: { data: undefined as unknown, isError: false },
+  },
+}));
 
 vi.mock("@repo/hooks", () => ({
   useAccessibleChapters: () => chaptersQuery.current,
@@ -173,7 +171,10 @@ describe("ChapterNavHeader", () => {
       data: { permissions: ["members:view", "reports:export"] },
     };
     currentChapterQuery.current = {
-      data: { ...chapterPayload("Alpha Chapter"), enabled_modules: { reports: false } },
+      data: {
+        ...chapterPayload("Alpha Chapter"),
+        enabled_modules: { reports: false },
+      },
       isError: false,
     };
     const { unmount } = render(<ChapterNavHeader collapsed={false} />);
@@ -183,7 +184,10 @@ describe("ChapterNavHeader", () => {
     unmount();
 
     currentChapterQuery.current = {
-      data: { ...chapterPayload("Alpha Chapter"), enabled_modules: { reports: true } },
+      data: {
+        ...chapterPayload("Alpha Chapter"),
+        enabled_modules: { reports: true },
+      },
       isError: false,
     };
     render(<ChapterNavHeader collapsed={false} />);
@@ -410,6 +414,17 @@ describe("ChapterNavHeader chapter mark", () => {
   it("still shows Greek letters for a chapter that never touched the setting", () => {
     withBranding({ branding: { greek_letters: "ΣΦΕ" } });
     expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("ΣΦΕ");
+  });
+
+  it("never shows the letters of an organization that hides them, whatever the switch says", () => {
+    // A FIJI chapter created before the profile turned its letters off: the
+    // switch was never written, and the crest still falls to initials.
+    withBranding({
+      name: "Phi Gamma Delta",
+      branding: { greek_letters: "ΦΓΔ" },
+    });
+    expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("PG");
+    expect(screen.queryByText("ΦΓΔ")).not.toBeInTheDocument();
   });
 
   /*

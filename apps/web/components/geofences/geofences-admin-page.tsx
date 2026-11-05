@@ -11,7 +11,6 @@ import {
   useUpdateGeofence,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
-import { Card, CardDescription, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
@@ -175,7 +174,10 @@ export function GeofencesAdminPage() {
   // because a second `<Can>` on the same permission in one file makes
   // `can-fallback.spec.tsx`'s per-surface lookup ambiguous.
   const { data: permissionsPayload } = useMyPermissions();
-  const canManageZones = can("geofences:manage", permissionsPayload?.permissions);
+  const canManageZones = can(
+    "geofences:manage",
+    permissionsPayload?.permissions,
+  );
   const { confirm, confirmDialog } = useConfirmDialog();
   const geofencesQuery = useGeofences();
   const createGeofence = useCreateGeofence();
@@ -307,10 +309,7 @@ export function GeofencesAdminPage() {
     } catch (error) {
       toast({
         title: "Couldn't create study zone",
-        description: getErrorMessage(
-          error,
-          "Retry or confirm geofences:manage.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -473,7 +472,10 @@ export function GeofencesAdminPage() {
               placeholder={`30.286, -97.740\n30.287, -97.740\n30.287, -97.739`}
               required
             />
-            <p id="gf-coords-help" className="text-caption text-muted-foreground">
+            <p
+              id="gf-coords-help"
+              className="text-caption text-muted-foreground"
+            >
               At least three, one lat, lng pair per line. The shape closes on
               its own.
             </p>
@@ -492,7 +494,9 @@ export function GeofencesAdminPage() {
               />
             </div>
             <div className="grid gap-1">
-              <Label htmlFor="gf-points-per-interval">Points per interval</Label>
+              <Label htmlFor="gf-points-per-interval">
+                Points per interval
+              </Label>
               <Input
                 id="gf-points-per-interval"
                 type="number"
@@ -578,27 +582,15 @@ export function GeofencesAdminPage() {
       <Can
         permission="geofences:manage"
         deniedFallback={
-          <div className="min-h-40">
-            <Card>
-              <CardHeader>
-                <CardDescription>
-                  Managing study zones requires the <code>geofences:manage</code>{" "}
-                  permission. Ask your chapter president to grant access.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Your role can&apos;t manage study zones. Ask your chapter president
+            for access.
+          </p>
         }
         fallback={
-          <div className="min-h-40">
-            <Card>
-              <CardHeader>
-                <CardDescription>
-                  Checking your chapter permissions…
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Checking your chapter permissions…
+          </p>
         }
         offlineFallback={(retry) => (
           <PermissionsOfflineSurface

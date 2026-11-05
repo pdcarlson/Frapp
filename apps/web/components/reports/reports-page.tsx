@@ -17,14 +17,9 @@ import {
 } from "@repo/hooks";
 import type { MemberProfile } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
-import { formatWeekdayDay } from "@repo/formatting";
+import { formatDayTime } from "@repo/formatting";
 import { can } from "@repo/validation";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -103,7 +98,9 @@ function buildEventOptions(data: unknown): PickerOption[] {
       const name = String(event.name ?? "Untitled event");
       return {
         id,
-        label: [name, formatWeekdayDay(event.start_time)]
+        // The time as well as the day: two events can share a name and a
+        // date (a morning and an evening chapter meeting).
+        label: [name, formatDayTime(event.start_time)]
           .filter(Boolean)
           .join(" · "),
       };
@@ -503,7 +500,7 @@ export function ReportsPage() {
       const description =
         error instanceof Error
           ? error.message
-          : "The API rejected the request. Confirm reports:export and retry.";
+          : "Confirm your chapter access and retry.";
       // Both, deliberately: the toast reports the moment, and the panel keeps
       // saying so after the toast dismisses. A failed run that leaves the idle
       // copy on screen is a failure reported as "nothing has happened yet".
@@ -586,7 +583,7 @@ export function ReportsPage() {
         description:
           error instanceof Error
             ? error.message
-            : "The API rejected the request. Confirm reports:export and retry.",
+            : "Confirm your chapter access and retry.",
         variant: "destructive",
       });
     } finally {
@@ -612,28 +609,18 @@ export function ReportsPage() {
           />
         )}
         fallback={
-          <div className="min-h-40">
-            <Card aria-label="Reports permissions check">
-              <CardHeader>
-                <CardDescription>
-                  Checking your chapter permissions…
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </div>
+          <p
+            aria-label="Reports permissions check"
+            className="text-sm text-muted-foreground"
+          >
+            Checking your chapter permissions…
+          </p>
         }
         deniedFallback={
-          <div className="min-h-40">
-            <Card>
-              <CardHeader>
-                <CardDescription>
-                  Exporting chapter data requires the{" "}
-                  <code>reports:export</code> permission. Ask your chapter
-                  president to grant access.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Your role can&apos;t export chapter data. Ask your chapter president
+            for access.
+          </p>
         }
       >
         <div className="space-y-6">
