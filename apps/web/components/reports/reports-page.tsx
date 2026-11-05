@@ -56,6 +56,7 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, downloadCsv, getErrorMessage } from "@/lib/utils";
+import { ReportsFormSkeleton } from "@/components/reports/reports-skeleton";
 
 type ReportKind = "attendance" | "points" | "roster" | "service";
 
@@ -607,14 +608,7 @@ export function ReportsPage() {
             onRetry={retry}
           />
         )}
-        fallback={
-          <p
-            aria-label="Reports permissions check"
-            className="text-sm text-muted-foreground"
-          >
-            Checking your chapter permissions…
-          </p>
-        }
+        fallback={<ReportsFormSkeleton />}
         deniedFallback={
           <p className="text-sm text-muted-foreground">
             Your role can&apos;t export chapter data. Ask your chapter president

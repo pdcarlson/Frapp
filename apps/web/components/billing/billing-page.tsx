@@ -4,16 +4,14 @@ import { Suspense } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useCurrentUser, useInvoices } from "@repo/hooks";
 import { anyReadUncached } from "@/components/shared/async-states";
-import {
-  NestedLoading,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedOffline } from "@/components/shared/nested-states";
 import { PlanPanel } from "@/components/billing/plan-panel";
 import { PlanMatrix } from "@/components/billing/plan-matrix";
 import { InvoiceList } from "@/components/billing/invoice-list";
 import { subscriptionStatusKind } from "@/components/billing/invoice-status";
 import { useChapterSubscription } from "@/lib/hooks/use-subscription-write-state";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { PlanPanelSkeleton } from "@/components/billing/billing-skeleton";
 
 const INVOICES_ANCHOR = "invoices";
 
@@ -121,13 +119,11 @@ export function BillingPage() {
 
       {/*
         `PlanPanel` reads `?checkout=` via `useSearchParams`, which Next
-        requires under a Suspense boundary. The fallback is the nested loading
-        state rather than the whole-screen one, for the reason
-        `members-directory.tsx` gives at its own import: the whole-screen family
-        paints `--card`, and this route has one framed block left and it is not
-        a card.
+        requires under a Suspense boundary. The fallback is the panel's own
+        skeleton, in the panel's own `--surface-1` frame, so reading the param
+        does not swap a placeholder for the panel.
       */}
-      <Suspense fallback={<NestedLoading message="Loading plan..." />}>
+      <Suspense fallback={<PlanPanelSkeleton />}>
         <PlanPanel invoicesHref={`#${INVOICES_ANCHOR}`} />
       </Suspense>
 

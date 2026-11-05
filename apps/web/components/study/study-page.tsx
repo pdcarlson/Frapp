@@ -31,7 +31,6 @@ import { denseListClassName } from "@/components/shared/table-controls";
 import {
   ErrorState,
   anyReadUncached,
-  LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
 import {
@@ -50,6 +49,7 @@ import {
   creditedSeconds,
   selectActiveSession,
 } from "@/components/study/credited-time";
+import { StudyPageSkeleton } from "@/components/study/study-skeleton";
 
 type Geofence = {
   id: string;
@@ -540,11 +540,7 @@ export function StudyPage() {
   }
 
   if (geofencesQuery.isPending || sessionsQuery.isPending) {
-    return (
-      <>
-        <LoadingState message="Loading study zones..." />
-      </>
-    );
+    return <StudyPageSkeleton />;
   }
 
   if (geofencesQuery.isError || sessionsQuery.isError) {

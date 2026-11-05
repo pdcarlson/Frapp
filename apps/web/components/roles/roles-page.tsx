@@ -38,9 +38,9 @@ import {
   EmptyState,
   ErrorState,
   anyReadUncached,
-  LoadingState,
   OfflineState,
   PermissionsOfflineSurface,
+  Skeleton,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { RolesGlyph } from "@/components/layout/nav-glyphs";
@@ -56,6 +56,8 @@ import {
 } from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { signetDarkTokens } from "@repo/theme/signet";
+import { SectionSkeleton } from "@/components/shared/page-skeletons";
+import { SettingsListCard } from "@/components/settings/settings-skeleton";
 
 type Role = {
   id: string;
@@ -403,7 +405,15 @@ export function RolesAndPermissionsPage() {
       />
     );
   } else if (rolesQuery.isLoading || paused) {
-    body = <LoadingState message="Loading roles and permissions..." />;
+    body = (
+      <SectionSkeleton label="Loading roles and permissions">
+        <Skeleton className="h-4 w-32" />
+        <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
+          <SettingsListCard rows={4} />
+          <SettingsListCard rows={2} />
+        </div>
+      </SectionSkeleton>
+    );
   } else if (rolesQuery.isError) {
     body = (
       <ErrorState
