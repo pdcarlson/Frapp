@@ -11,7 +11,6 @@ import {
   Text,
   View,
 } from "react-native";
-import Svg, { Circle, Path, Rect } from "react-native-svg";
 import {
   useActiveChapterId,
   useConfirmAvatar,
@@ -21,6 +20,7 @@ import {
 import { onlineManager } from "@tanstack/react-query";
 import { SignetTokens } from "@repo/theme/signet";
 import { usePressFeedback } from "@/components/list-section";
+import { CameraGlyph } from "@/components/service-hours/camera-glyph";
 import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
 import { pickAndSetProfilePhoto } from "@/lib/more/profile-photo";
 import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -32,6 +32,8 @@ const BADGE_GLYPH_SIZE = 16;
 export const CHOOSE_PHOTO = "Choose photo";
 export const REMOVE_PHOTO = "Remove photo";
 export const REMOVE_PHOTO_CONFIRM_TITLE = "Remove your profile photo?";
+export const NO_CHAPTER_PHOTO_NOTE =
+  "Choose a chapter from More → Switch chapter to add a photo.";
 
 /**
  * s15's identity avatar, with the photo in it, and the control that changes
@@ -50,6 +52,19 @@ export const REMOVE_PHOTO_CONFIRM_TITLE = "Remove your profile photo?";
  * rules). The screen has no toast, so a refusal or a failure is a line under
  * the avatar, cleared by the next attempt. A success shows itself in the
  * avatar, so it is only announced to a screen reader.
+ *
+ * ## Choosing needs a chapter; removing doesn't
+ *
+ * The upload routes (`avatar-url`, `avatar/confirm`) carry `ChapterGuard`,
+ * since the photo is stored under a chapter. `DELETE /v1/users/me/avatar`
+ * carries none: the photo is the member's own, and a member with no active
+ * chapter (they left their only one, or haven't picked one) can still take
+ * it down. So without a chapter the avatar offers Remove photo alone, and the
+ * choice says why Choose photo isn't in it.
+ *
+ * One change at a time: while an upload or a removal runs the avatar takes no
+ * tap, so a second one can't start another pick, or a removal racing an
+ * upload that is still confirming.
  */
 export function ProfilePhoto({
   photoUrl,
@@ -93,6 +108,7 @@ export function ProfilePhoto({
   );
 
   async function change() {
+    if (!chapterId) return;
     setBusy(true);
     setNote(null);
     const result = await pickAndSetProfilePhoto({
@@ -127,49 +143,65 @@ export function ProfilePhoto({
   }
 
   function openChoices() {
+    if (busy) return;
     // With nothing to remove there is nothing to choose between.
     if (!photoUrl) {
       void change();
       return;
     }
+    // Without a chapter there is only Remove, and the choice says why.
+    const canChoose = !!chapterId;
+    const message = canChoose ? undefined : NO_CHAPTER_PHOTO_NOTE;
     if (Platform.OS === "ios") {
+      const options = canChoose
+        ? [CHOOSE_PHOTO, REMOVE_PHOTO, "Cancel"]
+        : [REMOVE_PHOTO, "Cancel"];
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: [CHOOSE_PHOTO, REMOVE_PHOTO, "Cancel"],
-          destructiveButtonIndex: 1,
-          cancelButtonIndex: 2,
+          options,
+          message,
+          destructiveButtonIndex: options.indexOf(REMOVE_PHOTO),
+          cancelButtonIndex: options.indexOf("Cancel"),
           userInterfaceStyle: "dark",
         },
         (index) => {
-          if (index === 0) void change();
-          if (index === 1) confirmRemove();
+          if (options[index] === CHOOSE_PHOTO) void change();
+          if (options[index] === REMOVE_PHOTO) confirmRemove();
         },
       );
       return;
     }
     Alert.alert(
       "Profile photo",
-      undefined,
+      message,
       [
         { text: "Cancel", style: "cancel" },
         { text: REMOVE_PHOTO, style: "destructive", onPress: confirmRemove },
-        { text: CHOOSE_PHOTO, onPress: () => void change() },
+        ...(canChoose
+          ? [{ text: CHOOSE_PHOTO, onPress: () => void change() }]
+          : []),
       ],
       { cancelable: true },
     );
   }
 
-  const canEdit = !!chapterId && !busy;
+  // Something to do: a photo to add needs a chapter, a photo to remove
+  // doesn't.
+  const available = !!chapterId || !!photoUrl;
 
   return (
     <View style={styles.wrap}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={
-          photoUrl ? "Change profile photo" : "Add profile photo"
+          !photoUrl
+            ? "Add profile photo"
+            : chapterId
+              ? "Change profile photo"
+              : "Remove profile photo"
         }
-        accessibilityState={{ disabled: !chapterId, busy }}
-        disabled={!canEdit}
+        accessibilityState={{ disabled: !available, busy }}
+        disabled={!available || busy}
         onPress={openChoices}
         // A round ripple the avatar's size on Android; the avatar dims while
         // held on iOS, as an image button does there. The row lift
@@ -205,65 +237,31 @@ export function ProfilePhoto({
             </View>
           ) : null}
         </View>
+        {/* The camera says a photo can be chosen, so it goes with Choose. */}
         {chapterId ? (
-          <View style={styles.badge}>
-            <CameraGlyph color={brand.accentOnPrimary} />
+          <View
+            style={styles.badge}
+            // Decorative: the avatar's label names the control.
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <CameraGlyph
+              color={brand.accentOnPrimary}
+              size={BADGE_GLYPH_SIZE}
+            />
           </View>
         ) : null}
       </Pressable>
-      {!chapterId ? (
-        <Text style={styles.note}>
-          Choose a chapter from More → Switch chapter to add a photo.
-        </Text>
-      ) : note ? (
+      {/* A refusal or failure is the latest news, so it goes first; without
+          a chapter it can only be a removal that failed. */}
+      {note ? (
         <Text style={styles.note} accessibilityLiveRegion="polite">
           {note}
         </Text>
+      ) : !chapterId ? (
+        <Text style={styles.note}>{NO_CHAPTER_PHOTO_NOTE}</Text>
       ) : null}
     </View>
-  );
-}
-
-/**
- * The badge's camera: s20's "Add photo proof" camera in iconography.md §1's
- * recipe (a 1.6 stroke on a 24 grid, the body filled with its own hue).
- * Decorative: the avatar's label names the control.
- */
-function CameraGlyph({ color }: { color: string }) {
-  return (
-    <Svg
-      width={BADGE_GLYPH_SIZE}
-      height={BADGE_GLYPH_SIZE}
-      viewBox="0 0 24 24"
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-    >
-      <Rect
-        x={3.5}
-        y={6.5}
-        width={17}
-        height={13}
-        rx={3}
-        stroke={color}
-        strokeWidth={1.6}
-        fill={tint(color, 0.16)}
-      />
-      <Circle
-        cx={12}
-        cy={13}
-        r={3.4}
-        stroke={color}
-        strokeWidth={1.6}
-        fill="none"
-      />
-      <Path
-        d="M8.5 6.5L10 4h4l1.5 2.5"
-        stroke={color}
-        strokeWidth={1.6}
-        fill="none"
-        strokeLinejoin="round"
-      />
-    </Svg>
   );
 }
 

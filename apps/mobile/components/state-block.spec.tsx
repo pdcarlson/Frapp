@@ -2,12 +2,13 @@
 import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
-import { Text } from "react-native";
+import { AccessibilityInfo, Text } from "react-native";
 import {
   cancelAnimation,
   useReducedMotion,
   withRepeat,
 } from "react-native-reanimated";
+import { NavigationContext } from "expo-router/react-navigation";
 import { describe, expect, it, vi } from "vitest";
 import { ChapterGlyph, DocumentsGlyph } from "@/components/more/more-glyphs";
 import { signetDarkTokens } from "@repo/theme/signet";
@@ -368,7 +369,8 @@ describe("SkeletonBlock's pulse", () => {
     );
 
   // The suite's Reanimated resolves an animation to its target at once, so a
-  // running pulse reads as its low point.
+  // running pulse reads as its low point. No screen around it, as in a
+  // sheet (which renders above the navigators), so nothing pauses it.
   it("pulses between full and half opacity, for as long as it is up", () => {
     vi.mocked(withRepeat).mockClear();
     const tree = render(<SkeletonBlock width="60%" height={12} />);
@@ -384,6 +386,9 @@ describe("SkeletonBlock's pulse", () => {
 
   it("holds still at full opacity under the system's reduced motion", () => {
     vi.mocked(useReducedMotion).mockReturnValue(true);
+    vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValueOnce(
+      true,
+    );
     vi.mocked(withRepeat).mockClear();
     try {
       const tree = render(<SkeletonBlock width="60%" height={12} />);
@@ -393,6 +398,82 @@ describe("SkeletonBlock's pulse", () => {
     } finally {
       vi.mocked(useReducedMotion).mockReturnValue(false);
     }
+  });
+
+  // Reanimated's `useReducedMotion` is the setting at launch. A member who
+  // turns Reduce Motion on mid-session gets a still skeleton at once, and one
+  // who turned it on before this block mounted gets one too.
+  it("follows Reduce Motion as it changes, not as it was at launch", () => {
+    const listeners = vi.mocked(AccessibilityInfo.addEventListener);
+    listeners.mockClear();
+    const tree = render(<SkeletonBlock width="60%" height={12} />);
+    expect(blockStyle(tree).opacity).toBe(0.5);
+
+    const [event, changed] = listeners.mock.calls.at(-1)! as unknown as [
+      string,
+      (enabled: boolean) => void,
+    ];
+    expect(event).toBe("reduceMotionChanged");
+
+    vi.mocked(cancelAnimation).mockClear();
+    act(() => changed(true));
+    expect(blockStyle(tree).opacity).toBe(1);
+    expect(vi.mocked(cancelAnimation)).toHaveBeenCalledTimes(1);
+
+    act(() => changed(false));
+    expect(blockStyle(tree).opacity).toBe(0.5);
+  });
+
+  it("reads the setting when it mounts", async () => {
+    vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValueOnce(
+      true,
+    );
+    let tree!: ReactTestRenderer;
+    await act(async () => {
+      tree = create(
+        <FrappThemeProvider>
+          <SkeletonBlock width="60%" height={12} />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(blockStyle(tree).opacity).toBe(1);
+  });
+
+  // Tab screens stay mounted after the member leaves them, so a skeleton on
+  // one kept animating with nobody watching.
+  it("pauses while its screen is out of view, and picks up on return", () => {
+    let focused = true;
+    const handlers: Record<string, Set<() => void>> = {
+      focus: new Set(),
+      blur: new Set(),
+    };
+    const navigation = {
+      isFocused: () => focused,
+      addListener: (event: "focus" | "blur", handler: () => void) => {
+        handlers[event]!.add(handler);
+        return () => handlers[event]!.delete(handler);
+      },
+    };
+    const emit = (event: "focus" | "blur") => {
+      focused = event === "focus";
+      for (const handler of [...handlers[event]!]) handler();
+    };
+    const tree = render(
+      <NavigationContext.Provider value={navigation as never}>
+        <SkeletonBlock width="60%" height={12} />
+      </NavigationContext.Provider>,
+    );
+    expect(blockStyle(tree).opacity).toBe(0.5);
+
+    vi.mocked(cancelAnimation).mockClear();
+    act(() => emit("blur"));
+    expect(blockStyle(tree).opacity).toBe(1);
+    expect(vi.mocked(cancelAnimation)).toHaveBeenCalledTimes(1);
+
+    vi.mocked(withRepeat).mockClear();
+    act(() => emit("focus"));
+    expect(blockStyle(tree).opacity).toBe(0.5);
+    expect(vi.mocked(withRepeat)).toHaveBeenCalledTimes(1);
   });
 });
 

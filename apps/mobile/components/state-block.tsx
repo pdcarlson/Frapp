@@ -1,5 +1,14 @@
-import { type ComponentType, ReactNode, useEffect } from "react";
 import {
+  type ComponentType,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import {
+  AccessibilityInfo,
   type DimensionValue,
   Pressable,
   StyleSheet,
@@ -15,6 +24,7 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
+import { NavigationContext } from "expo-router/react-navigation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterGlyph } from "@/components/more/more-glyphs";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -72,7 +82,8 @@ type StateBlockProps = {
  * highlight `#332E26` at 50%, 260px background-size, 1.4s linear, phase-shared
  * across blocks) once a gradient dependency lands. Nearest pattern used: the
  * neutral blocks at the specified shapes, pulsing between full and half
- * opacity, and still under reduced motion.
+ * opacity, still under reduced motion, and paused while their screen is out
+ * of view.
  *
  * The card is `surface1`, not the empty and error cards' `card`: a skeleton
  * stands in for a list, and the grouped lists it becomes (`ListSection`) are
@@ -136,8 +147,15 @@ const PULSE_HALF_MS = 600;
  *
  * Each block runs its own pulse on the UI thread. Blocks that mount together
  * start together, which keeps a skeleton's blocks in step without a shared
- * clock. Under the system's reduced-motion setting the block holds still at
- * full opacity, as it drew before the pulse.
+ * clock. The block holds still at full opacity, as it drew before the pulse:
+ *
+ * - under the system's reduced-motion setting, followed live
+ *   ({@link useReduceMotion}), so turning it on mid-session stops a pulse
+ *   already running;
+ * - while its screen is out of view ({@link useScreenInView}). Tab screens stay
+ *   mounted after the member leaves them, and a query paused offline keeps
+ *   its skeleton up for as long as the device is offline, so without this a
+ *   blurred tab's blocks animated on the UI thread with nobody watching.
  */
 export function SkeletonBlock({
   width,
@@ -151,11 +169,13 @@ export function SkeletonBlock({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const reduceMotion = useReducedMotion();
+  const reduceMotion = useReduceMotion();
+  const inView = useScreenInView();
+  const still = reduceMotion || !inView;
   const opacity = useSharedValue(1);
 
   useEffect(() => {
-    if (reduceMotion) {
+    if (still) {
       opacity.set(1);
       return;
     }
@@ -170,7 +190,7 @@ export function SkeletonBlock({
       ),
     );
     return () => cancelAnimation(opacity);
-  }, [reduceMotion, opacity]);
+  }, [still, opacity]);
 
   const pulse = useAnimatedStyle(() => ({ opacity: opacity.get() }));
 
@@ -184,6 +204,64 @@ export function SkeletonBlock({
       ]}
     />
   );
+}
+
+/**
+ * The system's reduced-motion setting, as it is now. Reanimated's
+ * `useReducedMotion` is the setting the app launched with and never changes,
+ * so it only seeds the first frame here, before the system answers;
+ * `AccessibilityInfo` reports the setting when the block mounts, and its
+ * `reduceMotionChanged` every change after.
+ */
+function useReduceMotion(): boolean {
+  const atLaunch = useReducedMotion();
+  // Seeded with the launch value, so an answer that matches it re-renders
+  // nothing.
+  const [now, setNow] = useState(atLaunch);
+
+  useEffect(() => {
+    // A change heard before the first read answers is newer than that read.
+    let heard = false;
+    const subscription = AccessibilityInfo.addEventListener(
+      "reduceMotionChanged",
+      (enabled) => {
+        heard = true;
+        setNow(enabled);
+      },
+    );
+    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (!heard) setNow(enabled);
+    });
+    return () => {
+      heard = true;
+      subscription.remove();
+    };
+  }, []);
+
+  return now;
+}
+
+/**
+ * Whether the screen this block is on is the one in view: `false` from its
+ * navigator's `blur` until its `focus`. A block with no screen around it (in a
+ * sheet, which renders above the navigators, or a component outside them)
+ * has no blur to wait for and counts as in view.
+ */
+function useScreenInView(): boolean {
+  const navigation = useContext(NavigationContext);
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      if (!navigation) return () => {};
+      const offFocus = navigation.addListener("focus", onChange);
+      const offBlur = navigation.addListener("blur", onChange);
+      return () => {
+        offFocus();
+        offBlur();
+      };
+    },
+    [navigation],
+  );
+  return useSyncExternalStore(subscribe, () => navigation?.isFocused() ?? true);
 }
 
 /**
@@ -204,9 +282,10 @@ export function EmptyState({
 }: {
   title?: string;
   /**
-   * A short fact, when the title needs one (a search names its query). Never a
-   * line saying what the screen is for (`writing.md` §1): a title alone is a
-   * whole empty state.
+   * A line the title can't carry: why the view is empty, or what to do next
+   * (a search names its query, a filter says how to widen it). Never one
+   * that restates what the screen is for: without one the title stands
+   * alone (`writing.md` §4, as amended 2026-11-05).
    */
   body?: string;
   /**
@@ -215,9 +294,11 @@ export function EmptyState({
    *
    * The More hub's glyphs (`components/more/more-glyphs.tsx`) are the
    * transcribed per-feature set, and Documents, Directory and the no-chapter
-   * state pass theirs. TODO-DESIGN: the rest of the per-feature set (tasks,
-   * dues, study and Chat home's states still pass a character). Nearest
-   * pattern used: the accent-tinted tile with a text glyph.
+   * state pass theirs; a search or filter that matched nothing passes
+   * `SearchGlyph`. TODO-DESIGN: the rest of the per-feature set (tasks, dues,
+   * study, service hours and Chat home's no-channels state still pass a
+   * character). Nearest pattern used: the accent-tinted tile with a text
+   * glyph.
    */
   glyph?: string | ComponentType<{ color: string }>;
   /** The optional CTA, drawn below the body: an {@link EmptyStateAction}. */

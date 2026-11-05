@@ -323,6 +323,16 @@ vi.mock("expo-web-browser", () => ({
   openBrowserAsync: vi.fn().mockResolvedValue({ type: "dismiss" }),
 }));
 
+// expo-router's own copy of React Navigation, which app code reaches only as
+// `expo-router/react-navigation`: Metro refuses an app import of
+// `@react-navigation/*` since SDK 56. Its real module graph doesn't parse here,
+// for the reason the `expo-router` mock above gives. Only the screen's
+// navigation context is stood in. Unprovided it reads `undefined`, as it does
+// in a sheet on a device, and a spec that needs a screen provides one.
+vi.mock("expo-router/react-navigation", () => ({
+  NavigationContext: React.createContext(undefined),
+}));
+
 vi.mock("expo-font", () => ({
   useFonts: vi.fn(() => [true, null]),
   loadAsync: vi.fn().mockResolvedValue(undefined),

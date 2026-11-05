@@ -295,4 +295,113 @@ describe("ProfilePhoto", () => {
       "Choose a chapter from More → Switch chapter to add a photo.",
     );
   });
+
+  // DELETE /v1/users/me/avatar carries no ChapterGuard: only adding a photo
+  // needs a chapter, so a member without one can still take theirs down.
+  it("still removes a photo without a chapter, and says why Choose isn't offered", async () => {
+    state.chapterId = null;
+    const tree = render("https://signed/photo");
+
+    expect(avatar(tree).props.disabled).toBe(false);
+    expect(avatar(tree).props.accessibilityState).toEqual({
+      disabled: false,
+      busy: false,
+    });
+    expect(avatar(tree).props.accessibilityLabel).toBe("Remove profile photo");
+    expect(texts(tree)).toContain(
+      "Choose a chapter from More → Switch chapter to add a photo.",
+    );
+
+    await tapAvatar(tree);
+    const [options] = vi.mocked(ActionSheetIOS.showActionSheetWithOptions).mock
+      .calls[0]!;
+    expect(options.options).toEqual(["Remove photo", "Cancel"]);
+    expect(options.destructiveButtonIndex).toBe(0);
+    expect(options.cancelButtonIndex).toBe(1);
+    expect(options.message).toBe(
+      "Choose a chapter from More → Switch chapter to add a photo.",
+    );
+
+    await pickSheetOption("Remove photo");
+    await act(async () => {
+      alertButtons().find((button) => button.text === "Remove")!.onPress!();
+    });
+    expect(state.remove).toHaveBeenCalledTimes(1);
+    expect(state.pick).not.toHaveBeenCalled();
+  });
+
+  it("offers Remove alone, with the reason, in Android's alert without a chapter", async () => {
+    state.chapterId = null;
+    const platform = Platform as { OS: string };
+    platform.OS = "android";
+    try {
+      const tree = render("https://signed/photo");
+      await tapAvatar(tree);
+
+      const [, message] = vi.mocked(Alert.alert).mock.calls[0]!;
+      expect(message).toBe(
+        "Choose a chapter from More → Switch chapter to add a photo.",
+      );
+      expect(alertButtons().map((button) => button.text)).toEqual([
+        "Cancel",
+        "Remove photo",
+      ]);
+    } finally {
+      platform.OS = "ios";
+    }
+  });
+
+  // While an upload or a removal runs, the avatar takes no second tap: one
+  // would start a second pick, or a removal racing an upload still confirming.
+  it("takes no second tap while an upload runs", async () => {
+    let finish!: (value: unknown) => void;
+    state.pick.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const tree = render(null);
+
+    await tapAvatar(tree);
+    expect(state.pick).toHaveBeenCalledTimes(1);
+    expect(avatar(tree).props.disabled).toBe(true);
+    expect(avatar(tree).props.accessibilityState).toEqual({
+      disabled: false,
+      busy: true,
+    });
+
+    await tapAvatar(tree);
+    expect(state.pick).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finish({ status: "updated" });
+    });
+    expect(avatar(tree).props.disabled).toBe(false);
+  });
+
+  it("takes no second tap while a removal runs", async () => {
+    let finish!: (value: unknown) => void;
+    state.remove.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const tree = render("https://signed/photo");
+
+    await tapAvatar(tree);
+    await pickSheetOption("Remove photo");
+    await act(async () => {
+      alertButtons().find((button) => button.text === "Remove")!.onPress!();
+    });
+    expect(state.remove).toHaveBeenCalledTimes(1);
+    expect(avatar(tree).props.disabled).toBe(true);
+
+    await tapAvatar(tree);
+    expect(ActionSheetIOS.showActionSheetWithOptions).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finish({});
+    });
+    expect(avatar(tree).props.disabled).toBe(false);
+  });
 });

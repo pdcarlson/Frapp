@@ -96,6 +96,7 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
   }),
 }));
 
+import { ListRow } from "@/components/list-section";
 import { MemberDetailSheet } from "./member-detail-sheet";
 
 const dismiss = vi.fn();
@@ -427,6 +428,53 @@ describe("MemberDetailSheet Block row (#2257)", () => {
     state.viewer = null;
     const tree = render(ADA);
     expect(blockRows(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * The sheet's facts are `ListRow`'s detail rows, as s15's are: the label the
+ * quiet half and the value the one a member reads (the owner's design review,
+ * 2026-11-04). A chapter's custom field, whose label can run long, too.
+ */
+describe("MemberDetailSheet fact rows", () => {
+  const CARA = "44444444-4444-4444-8444-444444444444";
+  const LONG_LABEL = "Emergency contact name and phone number";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+    state.blockStatus = "ready";
+    state.blocked = new Set();
+    state.blockPaused = false;
+    PROFILES[CARA] = {
+      ...profile(CARA, "Cara"),
+      custom_fields: [
+        {
+          field_id: "f-1",
+          label: LONG_LABEL,
+          type: "text",
+          value: "Jordan Lee, 555-0100",
+        },
+      ] as never[],
+    };
+  });
+
+  it("draws Email, Role, Joined and each custom field as detail rows", () => {
+    const tree = render(CARA);
+    const rows = tree.root.findAllByType(ListRow);
+    const variantOf = (label: string) =>
+      rows.find((row) => row.props.label === label)?.props.variant;
+
+    expect(variantOf("Email")).toBe("detail");
+    expect(variantOf("Role")).toBe("detail");
+    expect(variantOf("Joined")).toBe("detail");
+    expect(variantOf(LONG_LABEL)).toBe("detail");
+    expect(
+      rows.find((row) => row.props.label === LONG_LABEL)?.props.value,
+    ).toBe("Jordan Lee, 555-0100");
+    // The actions stay default rows: their label names what a tap does.
+    expect(variantOf("Message")).toBeUndefined();
     act(() => tree.unmount());
   });
 });

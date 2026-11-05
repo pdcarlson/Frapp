@@ -1,20 +1,35 @@
 import Svg, { Circle, Path } from "react-native-svg";
+import { MORE_GLYPH_SIZE, STROKE_WIDTH } from "@/components/more/more-glyphs";
 import { tint } from "@/lib/theme";
 
 /**
- * The magnifier, for a search that matched nothing. Geometry is web's
- * `SearchGlyph` (`apps/web/components/layout/nav-glyphs.tsx`), so one intent
- * draws one shape on both surfaces (`spec/ui/design-system/iconography.md`
- * §6.2), in the §1 recipe the More hub's glyphs use: a 1.6px stroke on a 24px
- * grid, the lens filled with its own hue at 16%, the handle stroke-only.
+ * iconography.md §1's emphasis fill. A copy of `more-glyphs.tsx`'s private
+ * `EMPHASIS_FILL_ALPHA`: see the recipe note below.
+ */
+const EMPHASIS_FILL_ALPHA = 0.16;
+
+/**
+ * The magnifier, for a search or a filter that matched nothing. Geometry is
+ * web's `SearchGlyph` (`apps/web/components/layout/nav-glyphs.tsx`), so one
+ * intent draws one shape on both surfaces
+ * (`spec/ui/design-system/iconography.md` §6.2).
  *
- * It replaces the "⌕" character the More screens' no-results tiles drew,
- * which Figtree doesn't carry, so Android drew it from a fallback font. Chat
- * home's channel search still passes the character.
+ * The recipe is iconography.md §1 as the More hub's glyphs draw it, and it
+ * lives in `components/more/more-glyphs.tsx`: its `paint()` (a body filled
+ * with its own hue at `EMPHASIS_FILL_ALPHA`, stroked at `STROKE_WIDTH` with
+ * round joins; a detail stroke-only with round caps and joins) and its
+ * `Frame` (a 24 grid at `MORE_GLYPH_SIZE`, hidden from screen readers).
+ * `paint` and `Frame` aren't exported, so this matches them by hand: the
+ * lens is the body, the handle the detail. A change to that recipe has to
+ * reach this file too, until the recipe moves out of `more-glyphs.tsx` into a
+ * module both import.
+ *
+ * It replaces the "⌕" character the empty-state tiles drew, which Figtree
+ * doesn't carry, so Android drew it from a fallback font.
  */
 export function SearchGlyph({
   color,
-  size = 20,
+  size = MORE_GLYPH_SIZE,
 }: {
   color: string;
   size?: number;
@@ -32,16 +47,18 @@ export function SearchGlyph({
         cx={10.5}
         cy={10.5}
         r={6.2}
-        fill={tint(color, 0.16)}
+        fill={tint(color, EMPHASIS_FILL_ALPHA)}
         stroke={color}
-        strokeWidth={1.6}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinejoin="round"
       />
       <Path
         d="M15.2 15.2l4.3 4.3"
         fill="none"
         stroke={color}
-        strokeWidth={1.6}
+        strokeWidth={STROKE_WIDTH}
         strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </Svg>
   );

@@ -46,6 +46,7 @@ import {
   UnreadBadge,
 } from "@/components/chat/channel-row";
 import { usePressFeedback } from "@/components/list-section";
+import { SearchGlyph } from "@/components/search-glyph";
 import {
   EmptyState,
   EmptyStateAction,
@@ -409,7 +410,7 @@ export default function ChatHomeScreen() {
 
           {arranged.emptiedByFilters ? (
             <EmptyState
-              glyph="⌕"
+              glyph={SearchGlyph}
               // No title: writing.md § Arrange the channel list gives this
               // state none, and web shows none either.
               body={NO_MATCHING_CHANNELS}

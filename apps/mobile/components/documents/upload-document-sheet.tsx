@@ -298,7 +298,6 @@ export const UploadDocumentSheet = forwardRef<
             <Text style={styles.label}>Folder</Text>
             <FilterChips
               accessibilityLabel="Folder"
-              wrap
               selected={folder}
               onSelect={(value) => {
                 if (!draftHeld) setChosenFolder(value);

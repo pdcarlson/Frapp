@@ -22,13 +22,15 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * `chipTextSelected` style blocks and near-identical `Pressable` maps around
  * them, which is exactly the duplication those components were added to stop.
  *
- * ## One row that scrolls, not rows that wrap
+ * ## One row that scrolls, on the screens that ask for it
  *
  * A chapter's folders wrapped into three rows of tall chips on s12 and pushed
- * the first document halfway down the screen. On a screen the chips are one
- * row that scrolls sideways, bleeding to the screen edge so a cut-off chip
- * says there is more. A sheet, where the chips are a form field among others
- * and a sideways scroll would fight the sheet's own pan, passes `wrap`.
+ * the first document halfway down the screen. So s12 and s13 pass `scroll`,
+ * and their chips are one row that scrolls sideways, bleeding to the screen
+ * edge so a cut-off chip says there is more. Without it the chips wrap, as
+ * they always did: that is what a sheet wants, where the chips are a form
+ * field among others and a sideways scroll would fight the sheet's own pan,
+ * and it is the default so a sheet needs no prop to keep it.
  *
  * ## Compact, with a 44pt touch target
  *
@@ -107,16 +109,22 @@ export function Chip({
 }
 
 /**
- * The row the chips sit in: a sideways scroller by default, or a wrapping row
- * for a sheet (`wrap`). Either way it pads itself by the chips' touch slop
- * and takes that back with a negative margin, so the slop is inside its
- * bounds and the layout around it doesn't move.
+ * The row the chips sit in: a wrapping row by default, or a sideways scroller
+ * for a screen that passes `scroll`. Either way it pads itself by the chips'
+ * touch slop and takes that back with a negative margin, so the slop is
+ * inside its bounds and the layout around it doesn't move.
  */
-function ChipRow({ wrap, children }: { wrap: boolean; children: ReactNode }) {
+function ChipRow({
+  scroll,
+  children,
+}: {
+  scroll: boolean;
+  children: ReactNode;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
-  if (wrap) {
+  if (!scroll) {
     return (
       <View style={[styles.slop, styles.wrapOuter, styles.wrapRow]}>
         {children}
@@ -127,7 +135,12 @@ function ChipRow({ wrap, children }: { wrap: boolean; children: ReactNode }) {
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      // A tap on a chip lands while the search field still has the keyboard.
+      // Lets a chip take a tap while a search field holds the keyboard, as
+      // far as this scroller decides: every ScrollView above it decides too.
+      // On s13 the FlatList above it also passes "handled", so the tap lands.
+      // On s12 ScreenShell's ScrollView keeps the default and takes the first
+      // tap to close the keyboard, so the chip needs a second one until the
+      // shell (frozen here) passes "handled" itself.
       keyboardShouldPersistTaps="handled"
       style={styles.scroller}
       contentContainerStyle={[styles.slop, styles.scrollRow]}
@@ -142,15 +155,19 @@ export function FilterChips({
   selected,
   onSelect,
   accessibilityLabel,
-  wrap = false,
+  scroll = false,
   trailing,
 }: {
   chips: readonly FilterChip[];
   selected: string | null;
   onSelect: (value: string | null) => void;
   accessibilityLabel?: string;
-  /** Wrap onto more rows instead of scrolling sideways: for a sheet. */
-  wrap?: boolean;
+  /**
+   * One row that scrolls sideways instead of rows that wrap: for a screen
+   * whose chips would otherwise push its list down (s12, s13). A sheet leaves
+   * it off.
+   */
+  scroll?: boolean;
   /**
    * A control drawn after the tabs, in the same row but outside the tab list
    * (Directory's Filters chip).
@@ -161,11 +178,11 @@ export function FilterChips({
   const styles = createStyles(tokens);
 
   return (
-    <ChipRow wrap={wrap}>
+    <ChipRow scroll={scroll}>
       <View
         accessibilityRole="tablist"
         accessibilityLabel={accessibilityLabel}
-        style={wrap ? [styles.wrapRow, styles.wrapTabs] : styles.tabs}
+        style={scroll ? styles.tabs : [styles.wrapRow, styles.wrapTabs]}
       >
         {chips.map((chip) => (
           <Chip
@@ -203,7 +220,7 @@ export function ToggleChips<K extends string>({
   onToggle: (key: K, next: boolean) => void;
 }) {
   return (
-    <ChipRow wrap>
+    <ChipRow scroll={false}>
       {chips.map((chip) => (
         <Chip
           key={chip.key}

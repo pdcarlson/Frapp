@@ -165,6 +165,41 @@ describe("ListRow — detail", () => {
     expect(value.fontSize).toBe(label.fontSize);
     expect(value.fontFamily).not.toBe(label.fontFamily);
   });
+
+  // A chapter's custom-field label has no length limit. Sized to its text
+  // with nothing to stop it, a long one took the whole row and squeezed the
+  // value to no width; it stops at half the row and wraps there instead.
+  it("wraps a long label at half the row and keeps the value's width", () => {
+    const longLabel = "Emergency contact name and phone number";
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ListRow variant="detail" label={longLabel} value="Jordan Lee" />
+        </FrappThemeProvider>,
+      );
+    });
+    const flat = (style: unknown) =>
+      Object.assign({}, ...[style].flat()) as Record<string, unknown>;
+    const labelText = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === longLabel,
+    );
+    const valueText = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        node.props.children === "Jordan Lee",
+    );
+    const labelColumn = flat(labelText.parent!.props.style);
+
+    expect(labelColumn.maxWidth).toBe("50%");
+    expect(labelColumn.flexShrink).toBe(1);
+    expect(labelColumn.flex).toBe(0);
+    // No line cap on the label, so it wraps rather than clipping.
+    expect(labelText.props.numberOfLines).toBeUndefined();
+    // The value takes the rest of the row, whatever the label measures.
+    expect(flat(valueText.props.style).flex).toBe(1);
+  });
 });
 
 describe("usePressFeedback", () => {

@@ -152,6 +152,7 @@ function chips(tree: ReactTestRenderer) {
   ) as {
     chips: { value: string; count: number | null }[];
     onSelect: (value: string) => void;
+    scroll?: boolean;
     trailing: React.ReactElement<{
       label: string;
       on: boolean;
@@ -217,6 +218,13 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
     expect(listed(tree)).toEqual(["Charles Whitmore III"]);
     // A filtered list isn't the chapter's total, so the chip drops its count.
     expect(countOf(tree, "alumni")).toBeNull();
+  });
+
+  // One row that scrolls sideways, with the Filters chip at its end, rather
+  // than FilterChips' default wrapping row, which is the sheets'.
+  it("puts its chips on one sideways-scrolling row", () => {
+    const tree = render();
+    expect(chips(tree).scroll).toBe(true);
   });
 
   // The owner's design review, 2026-11-04: the three fields used to stack

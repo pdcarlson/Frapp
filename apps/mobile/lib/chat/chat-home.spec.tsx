@@ -186,6 +186,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import ChatHomeScreen from "@/app/(tabs)/index";
 import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
+import { SearchGlyph } from "@/components/search-glyph";
 import {
   EmptyState,
   EmptyStateAction,
@@ -606,6 +607,8 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     // writing.md § Arrange the channel list gives this state no title, and
     // every string it shows lives in `@repo/hooks`; web shows none either.
     expect(empty.props.title).toBeUndefined();
+    // The search glyph, not the "⌕" character Figtree doesn't carry.
+    expect(empty.props.glyph).toBe(SearchGlyph);
     expect(
       tree.root.findAll(
         (node) =>

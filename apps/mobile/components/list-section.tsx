@@ -290,10 +290,14 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
     },
     // A detail row sizes its label to its text and gives the rest of the row
-    // to the value, the half that runs long (an email address).
+    // to the value, the half that runs long (an email address). The label
+    // stops at half the row and wraps there, so a long one (a chapter's
+    // custom field has no length limit) never takes the row and leaves the
+    // value no width.
     rowTextDetail: {
       flex: 0,
-      flexShrink: 0,
+      flexShrink: 1,
+      maxWidth: "50%",
     },
     rowLabelDetail: {
       ...typeRole({

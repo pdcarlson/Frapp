@@ -40,6 +40,11 @@ export const reactNativeStub = {
     // An overlay moves a screen reader's focus onto itself as it appears
     // (spec/ui/mobile/patterns.md § Overlays).
     sendAccessibilityEvent: vi.fn(),
+    // The skeleton's pulse follows the Reduce Motion setting live
+    // (`components/state-block.tsx`). Off by default; a spec flips it, or
+    // runs the listener a block registered.
+    isReduceMotionEnabled: vi.fn().mockResolvedValue(false),
+    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
   },
   // Enough of the styling/layout surface for Signet token factories and
   // component tests; string stand-ins render fine under react-test-renderer.

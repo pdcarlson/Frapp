@@ -23,8 +23,9 @@ import { FilterChips, ToggleChips } from "./filter-chips";
 
 /**
  * The chip row s12 and s13 draw (the owner's design review, 2026-11-04): one
- * row that scrolls sideways on a screen, compact chips with a 44pt touch target,
- * and the press feedback every list row has.
+ * row that scrolls sideways on a screen that asks for it, compact chips with a
+ * 44pt touch target, and the press feedback every list row has. Without the
+ * ask the chips wrap, as the sheets want.
  */
 
 function render(node: React.ReactElement): ReactTestRenderer {
@@ -48,9 +49,9 @@ const FOLDERS = [
 ];
 
 describe("FilterChips", () => {
-  it("scrolls one row sideways on a screen, bleeding to its edge", () => {
+  it("scrolls one row sideways when asked, bleeding to the screen's edge", () => {
     const tree = render(
-      <FilterChips chips={FOLDERS} selected={null} onSelect={vi.fn()} />,
+      <FilterChips chips={FOLDERS} selected={null} onSelect={vi.fn()} scroll />,
     );
     const scroller = tree.root.find(
       (node) => (node.type as unknown) === "ScrollView",
@@ -66,13 +67,20 @@ describe("FilterChips", () => {
     ).toBe(signetDarkTokens.spacing.lg);
   });
 
-  it("wraps instead, for a sheet", () => {
+  // The sheets (s21's folder, the new-task sheet's due date) pass nothing
+  // and keep the wrapping row, where a sideways scroll would fight the
+  // sheet's own pan.
+  it("wraps by default, for a sheet", () => {
     const tree = render(
-      <FilterChips chips={FOLDERS} selected={null} onSelect={vi.fn()} wrap />,
+      <FilterChips chips={FOLDERS} selected={null} onSelect={vi.fn()} />,
     );
     expect(
       tree.root.findAll((node) => (node.type as unknown) === "ScrollView"),
     ).toHaveLength(0);
+    const tablist = tree.root.find(
+      (node) => node.props.accessibilityRole === "tablist",
+    );
+    expect(flatten(tablist.props.style).flexWrap).toBe("wrap");
   });
 
   // The board's chips are about 34pt; the touch target is still 44, through
@@ -80,7 +88,7 @@ describe("FilterChips", () => {
   // the touch.
   it("draws compact chips with a 44pt touch target", () => {
     const tree = render(
-      <FilterChips chips={FOLDERS} selected={null} onSelect={vi.fn()} />,
+      <FilterChips chips={FOLDERS} selected={null} onSelect={vi.fn()} scroll />,
     );
     const { minimum } = signetDarkTokens.touch;
     for (const chip of chips(tree)) {

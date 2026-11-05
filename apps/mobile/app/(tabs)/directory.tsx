@@ -79,9 +79,10 @@ export default function DirectoryScreen() {
   // same `useAlumni` params. Filters persist across a tab switch (the fields
   // are only shown on the Alumni tab, but staying applied means returning to
   // it doesn't silently drop what was typed). Held as one object, rather than
-  // three parallel `useState`s, so `hasAlumniFilters` and the `useAlumni` call
-  // below can both derive from the exact same value instead of two
-  // hand-written copies of "is any filter set" drifting apart.
+  // three parallel `useState`s, so `hasAlumniFilters`, the Filters chip's
+  // count and the `useAlumni` call below all derive from the same value, by
+  // the one rule in `countSetFilters`, instead of hand-written copies of "is
+  // any filter set" drifting apart.
   const [alumniFilterInputs, setAlumniFilterInputs] = useState({
     gradYear: "",
     city: "",
@@ -102,12 +103,10 @@ export default function DirectoryScreen() {
   // that are set, so a filter left on while the fields are folded away still
   // shows; the count reads the typed values, so it moves with the keystroke.
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const alumniFilterCount = Object.values(alumniFilters).filter(Boolean).length;
-  const hasAlumniFilters = Boolean(
-    deferredAlumniFilters.graduation_year ||
-    deferredAlumniFilters.city ||
-    deferredAlumniFilters.company,
-  );
+  const alumniFilterCount = countSetFilters(alumniFilters);
+  // The deferred value, as the query reads: this picks the empty state for
+  // the list that query returns.
+  const hasAlumniFilters = countSetFilters(deferredAlumniFilters) > 0;
 
   const membersQuery = useMembers();
   const alumniQuery = useAlumni(deferredAlumniFilters);
@@ -173,6 +172,7 @@ export default function DirectoryScreen() {
       {isSearching ? null : (
         <FilterChips
           accessibilityLabel="Actives or alumni"
+          scroll
           selected={tab}
           onSelect={(value) => setTab((value as Tab) ?? "actives")}
           chips={[
@@ -357,6 +357,11 @@ export function MemberRow({
       </View>
     </Pressable>
   );
+}
+
+/** How many of the alumni filters hold a value: a new key counts with no edit here. */
+function countSetFilters(filters: Record<string, string | undefined>): number {
+  return Object.values(filters).filter(Boolean).length;
 }
 
 /** Rows the directory would draw, without the map-and-sort of a full select. */

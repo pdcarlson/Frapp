@@ -2,6 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import * as WebBrowser from "expo-web-browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
@@ -43,6 +44,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import DocumentsScreen from "@/app/(tabs)/documents";
+import { FilterChips } from "@/components/filter-chips";
 import { ListRow } from "@/components/list-section";
 import { DocumentsGlyph } from "@/components/more/more-glyphs";
 import { SearchGlyph } from "@/components/search-glyph";
@@ -273,5 +275,61 @@ describe("Documents states and rows", () => {
       settle({ downloadUrl: "https://signed/bylaws" });
     });
     expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
+  });
+
+  // A tap on another row while one is opening used to be dropped without a
+  // sign. Now the latest tap wins: the spinner moves, and the first row's
+  // URL, landing late, opens nothing.
+  it("lets a tap on another row win while the first is still opening", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+    ];
+    const settle: Record<string, (value: unknown) => void> = {};
+    download.mockImplementation(
+      (id: string) =>
+        new Promise((resolve) => {
+          settle[id] = resolve;
+        }),
+    );
+    const openBrowser = vi.mocked(WebBrowser.openBrowserAsync);
+    openBrowser.mockClear();
+    const tree = render();
+    const rows = () => tree.root.findAllByType(ListRow);
+
+    await act(async () => {
+      rows()[0]!.props.onPress();
+    });
+    await act(async () => {
+      rows()[1]!.props.onPress();
+    });
+    expect(download).toHaveBeenCalledTimes(2);
+    expect(rows().map((row) => row.props.busy)).toEqual([false, true]);
+
+    await act(async () => {
+      settle.d1!({ downloadUrl: "https://signed/bylaws" });
+    });
+    expect(openBrowser).not.toHaveBeenCalled();
+    expect(rows().map((row) => row.props.busy)).toEqual([false, true]);
+
+    await act(async () => {
+      settle.d2!({ downloadUrl: "https://signed/minutes" });
+    });
+    expect(openBrowser).toHaveBeenCalledTimes(1);
+    expect(openBrowser).toHaveBeenCalledWith("https://signed/minutes");
+    expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
+  });
+
+  // Folder chips scroll sideways here (one row, not three), which is an
+  // opt-in: FilterChips wraps by default, for the sheets.
+  it("puts its folder chips on one sideways-scrolling row", () => {
+    folderRows = [{ id: "f1", name: "Bylaws", sort_order: 0 }];
+    const tree = render();
+    const chips = tree.root.findByType(FilterChips);
+
+    expect(chips.props.scroll).toBe(true);
+    expect(
+      chips.findAll((node) => (node.type as unknown) === "ScrollView"),
+    ).toHaveLength(1);
   });
 });
