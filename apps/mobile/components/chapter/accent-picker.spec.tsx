@@ -7,10 +7,10 @@ import {
   ORG_PROFILES,
   orgColorsFor,
   orgDefaultAccent,
-  orgMarkFields,
   orgProfileFor,
 } from "@repo/org-archetypes";
 import { FrappThemeProvider } from "@/lib/theme";
+import { flatStyle } from "@/test/flat-style";
 import { AccentPicker, parseTypedHex, type AccentPickerProps } from "./accent-picker";
 
 function render(props: Partial<AccentPickerProps> = {}) {
@@ -19,7 +19,12 @@ function render(props: Partial<AccentPickerProps> = {}) {
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <AccentPicker value="#A6192E" onChange={onChange} {...props} />
+        <AccentPicker
+          value="#A6192E"
+          onChange={onChange}
+          focusColor={FOCUS}
+          {...props}
+        />
       </FrappThemeProvider>,
     );
   });
@@ -41,8 +46,28 @@ const byLabel = (tree: ReactTestRenderer, label: string) =>
   );
 
 const FIJI = orgColorsFor("Phi Gamma Delta");
+/** A purple stand-in for the caller's focus color, unlike any token. */
+const FOCUS = "#CB9FFF";
 
 describe("AccentPicker", () => {
+  it("focuses the hex field as it opens, and edges it in the caller's color while focused", () => {
+    const { tree } = render();
+    act(() => byLabel(tree, "Custom color").props.onPress());
+    const field = () =>
+      tree.root.find(
+        (node) =>
+          node.type === ("TextInput" as unknown) &&
+          node.props.accessibilityLabel === "Custom color hex",
+      );
+    // "Custom color…" was the tap asking to type; no second tap to focus.
+    expect(field().props.autoFocus).toBe(true);
+    expect(flatStyle(field().props.style).borderColor).not.toBe(FOCUS);
+    act(() => field().props.onFocus());
+    expect(flatStyle(field().props.style).borderColor).toBe(FOCUS);
+    act(() => field().props.onBlur());
+    expect(flatStyle(field().props.style).borderColor).not.toBe(FOCUS);
+  });
+
   it("offers the organization's colors before the presets", () => {
     const { tree } = render({ orgColors: FIJI });
     const labels = swatches(tree).map((node) => node.props.accessibilityLabel);
@@ -139,7 +164,12 @@ describe("AccentPicker", () => {
     let tree!: ReactTestRenderer;
     const picker = (orgColors: readonly { name: string; hex: string }[]) => (
       <FrappThemeProvider>
-        <AccentPicker value={FIJI[0]!.hex} onChange={onChange} orgColors={orgColors} />
+        <AccentPicker
+          value={FIJI[0]!.hex}
+          onChange={onChange}
+          orgColors={orgColors}
+          focusColor={FOCUS}
+        />
       </FrappThemeProvider>
     );
     act(() => {
@@ -159,7 +189,12 @@ describe("AccentPicker", () => {
     act(() =>
       tree.update(
         <FrappThemeProvider>
-          <AccentPicker value={military.hex} onChange={onChange} orgColors={[]} />
+          <AccentPicker
+            value={military.hex}
+            onChange={onChange}
+            orgColors={[]}
+            focusColor={FOCUS}
+          />
         </FrappThemeProvider>,
       ),
     );
@@ -171,7 +206,12 @@ describe("AccentPicker", () => {
     act(() =>
       tree.update(
         <FrappThemeProvider>
-          <AccentPicker value={kappa[0]!.hex} onChange={onChange} orgColors={[]} />
+          <AccentPicker
+            value={kappa[0]!.hex}
+            onChange={onChange}
+            orgColors={[]}
+            focusColor={FOCUS}
+          />
         </FrappThemeProvider>,
       ),
     );
@@ -194,7 +234,11 @@ describe("AccentPicker", () => {
     act(() =>
       tree.update(
         <FrappThemeProvider>
-          <AccentPicker value="#123456" onChange={() => {}} />
+          <AccentPicker
+            value="#123456"
+            onChange={() => {}}
+            focusColor={FOCUS}
+          />
         </FrappThemeProvider>,
       ),
     );
@@ -239,22 +283,5 @@ describe("org profiles", () => {
     expect(orgDefaultAccent("Phi Gamma Delta")).toBe(FIJI[0]!.hex);
     expect(FIJI[0]!.name).toBe("Royal Purple");
     expect(orgProfileFor("Phi Gamma Delta")?.displaysGreekLetters).toBe(false);
-  });
-
-  it("hides FIJI's letters on a match, and undoes that for the next row", () => {
-    const founder = { shortName: "", showGreekLetters: true };
-    const fiji = orgMarkFields("Phi Gamma Delta", "", founder);
-    expect(fiji).toEqual({ shortName: "FIJI", showGreekLetters: false });
-    // Picked FIJI by mistake, then Sigma Phi Epsilon: back to the founder's.
-    expect(orgMarkFields("Sigma Phi Epsilon", "Phi Gamma Delta", fiji)).toEqual(
-      founder,
-    );
-    // A short name the founder typed themselves stays.
-    expect(
-      orgMarkFields("Sigma Phi Epsilon", "", {
-        shortName: "SigEp",
-        showGreekLetters: false,
-      }),
-    ).toEqual({ shortName: "SigEp", showGreekLetters: false });
   });
 });

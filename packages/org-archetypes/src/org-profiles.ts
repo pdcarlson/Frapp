@@ -455,49 +455,8 @@ export function orgDefaultAccent(
   return orgColorsFor(orgName)[0]?.hex;
 }
 
-/** The two chapter-mark fields a directory match can set from a profile. */
+/** The two chapter-mark fields an organization's profile can set in setup. */
 export type OrgMarkFields = { shortName: string; showGreekLetters: boolean };
-
-/**
- * The short name and letters switch a wizard should hold after a directory
- * match on `orgName`. The directory row carries Greek letters for every
- * organization, so for one that doesn't display them (FIJI) the profile turns
- * them off and fills the short name. For any other organization the
- * founder's own choice stands, except what an earlier match's profile set:
- * picking FIJI by mistake, then another row, must not leave "FIJI" and the
- * letters off behind.
- *
- * Mobile's setup reads this; web's reads `orgMarkFieldsFor`, which never
- * replaces a typed short name. Mobile moving over and this being deleted is
- * #3421.
- */
-export function orgMarkFields(
-  orgName: string | null | undefined,
-  previousOrgName: string | null | undefined,
-  current: OrgMarkFields,
-): OrgMarkFields {
-  const profile = orgProfileFor(orgName);
-  if (profile?.displaysGreekLetters === false || profile?.shortName) {
-    return {
-      shortName: profile.shortName ?? current.shortName,
-      showGreekLetters:
-        profile.displaysGreekLetters === false
-          ? false
-          : current.showGreekLetters,
-    };
-  }
-  const previous = orgProfileFor(previousOrgName);
-  return {
-    shortName:
-      previous?.shortName && current.shortName === previous.shortName
-        ? ""
-        : current.shortName,
-    showGreekLetters:
-      previous?.displaysGreekLetters === false
-        ? true
-        : current.showGreekLetters,
-  };
-}
 
 /** The profile a setup form's organization name stands for. */
 function markProfileFor(
@@ -523,8 +482,8 @@ function markProfileFor(
  *   profile, and turns the switch off when it hides its letters. A short name
  *   the founder typed is never replaced.
  *
- * Web's setup reads this. Mobile's still reads `orgMarkFields`, which replaces
- * a typed short name on a match (#3421).
+ * Both setups read this, web's wizard and mobile's create-chapter, so the
+ * same name leaves both forms holding the same short name and switch.
  */
 export function orgMarkFieldsFor(
   nextName: string | null | undefined,

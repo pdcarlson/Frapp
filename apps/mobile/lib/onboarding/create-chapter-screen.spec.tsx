@@ -5,8 +5,12 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { useRouter } from "expo-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Share } from "react-native";
+import { ReduceMotion } from "react-native-reanimated";
 import type { ChapterDirectoryResult } from "@repo/hooks";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { flatStyle } from "@/test/flat-style";
 
 /**
  * Chapter setup (#3351): find, confirm, color, then the live moment, the push
@@ -80,6 +84,20 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: vi.fn() }));
 
+// The founder's new chapter is purple, so a setup control that follows the
+// chapter accent instead of house gold shows up as purple.
+vi.mock("@/lib/chapter-branding", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/chapter-branding")>();
+  return {
+    ...actual,
+    useChapterBranding: () => ({
+      ...actual.useChapterBranding(),
+      accent: "#CB9FFF",
+    }),
+  };
+});
+
 import CreateChapter, { SETUP_TITLES } from "@/app/(auth)/create-chapter";
 
 type Node = ReactTestRenderer["root"];
@@ -113,6 +131,15 @@ const SIGEP_ROW: ChapterDirectoryResult = {
   org_letters: "ΣΦΕ",
   org_name: "Sigma Phi Epsilon",
   chapter_designation: "New York Alpha",
+};
+
+/** An organization with no short name and letters it shows. */
+const SIGMA_NU_ROW: ChapterDirectoryResult = {
+  ...FIJI_ROW,
+  id: "dir-sigma-nu",
+  org_letters: "ΣΝ",
+  org_name: "Sigma Nu",
+  chapter_designation: "Delta Delta",
 };
 
 async function settle(): Promise<void> {
@@ -287,6 +314,19 @@ describe("chapter setup — step order", () => {
     expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
   });
 
+  it("draws its ‹ Back row in house gold, not the chapter's accent", async () => {
+    const { root } = await render();
+    const backInk = () =>
+      flatStyle(control(root, "Back")!.findByType("Text" as never).props.style)
+        .color;
+    // `gold.askText` on find, confirm and color: `(auth)` has no chapter.
+    expect(backInk()).toBe(signetDarkTokens.color.gold.askText);
+    await pickRow(root, "Phi Gamma Delta");
+    expect(backInk()).toBe(signetDarkTokens.color.gold.askText);
+    await press(root, "Continue");
+    expect(backInk()).toBe(signetDarkTokens.color.gold.askText);
+  });
+
   it("steps back from color to confirm to find", async () => {
     const { root } = await render();
     await pickRow(root, "Phi Gamma Delta");
@@ -431,6 +471,195 @@ describe("chapter setup — Greek letters", () => {
     expect(lettersSwitch(root)).toBeUndefined();
   });
 
+  // The match web's setup makes (`orgHidingGreekLettersIn`), not only the
+  // directory's exact name. The letters are typed under another name first,
+  // with the switch on, so the switch going off is the name's doing
+  // (`orgMarkFieldsFor`), which also fills the empty short name.
+  it.each(["FIJI", "Phi Gamma Delta (FIJI)", "phi gamma delta tau nu"])(
+    "hides the letters for %s typed by hand, and sends them off",
+    async (orgName) => {
+      const { root } = await render();
+      await press(root, "Not in our directory?");
+      typeInto(root, "Organization", "Delta Tau");
+      typeInto(root, "School", "Rensselaer Polytechnic Institute");
+      await press(root, "More details (optional)");
+      typeInto(root, "Greek letters", "ΦΓΔ");
+      expect(lettersSwitch(root)?.props.value).toBe(true);
+
+      typeInto(root, "Organization", orgName);
+      expect(lettersSwitch(root)).toBeUndefined();
+      expect(inputValues(root)).not.toContain("Greek letters");
+      expect(allText(root)).toContain(
+        `["Phi Gamma Delta"," doesn't display its Greek letters`,
+      );
+      expect(allText(root)).not.toContain("ΦΓΔ");
+      expect(inputValues(root)).toContain('["Short name","FIJI"]');
+
+      await act(async () => {
+        radios(root)[0].props.onPress();
+      });
+      await press(root, "Continue");
+      expect(allText(root)).not.toContain("ΦΓΔ");
+      await press(root, "agree");
+      await act(async () => {
+        primary(root).props.onPress();
+      });
+      await settle();
+      const body = onboard.mock.calls[0]?.[0] as {
+        branding: { show_greek_letters?: boolean; short_name?: string };
+      };
+      expect(body.branding.show_greek_letters).toBe(false);
+      expect(body.branding.short_name).toBe("FIJI");
+      expect(allText(root)).not.toContain("ΦΓΔ");
+    },
+  );
+
+  /** Submit from the confirm step of a match, and return what was sent. */
+  async function submitMatch(root: Node): Promise<SentBranding> {
+    await press(root, "Continue");
+    expect(allText(root)).not.toContain("ΦΓΔ");
+    await press(root, "agree");
+    await act(async () => {
+      primary(root).props.onPress();
+    });
+    await settle();
+    expect(allText(root)).not.toContain("ΦΓΔ");
+    return (onboard.mock.calls[0]?.[0] as { branding: SentBranding })
+      .branding;
+  }
+
+  type SentBranding = { show_greek_letters?: boolean; short_name?: string };
+
+  // FIJI's row is FIJI whatever its name field says later, as on web: typing
+  // the chapter onto the name keeps the short name, and a name that no longer
+  // names FIJI at all still hides the letters.
+  it.each(["Phi Gamma Delta Tau Nu", "Phi Gamma Delt", "Tau Nu Chapter"])(
+    "keeps FIJI's row hidden and its short name when the name becomes %s",
+    async (orgName) => {
+      const { root } = await render();
+      await pickRow(root, "Phi Gamma Delta");
+      await press(root, "Edit details");
+      typeInto(root, "Organization", orgName);
+
+      expect(inputValues(root)).toContain(`["Organization","${orgName}"]`);
+      expect(inputValues(root)).toContain('["Short name","FIJI"]');
+      expect(lettersSwitch(root)).toBeUndefined();
+      expect(inputValues(root)).not.toContain("ΦΓΔ");
+      expect(allText(root)).toContain(
+        `["Phi Gamma Delta"," doesn't display its Greek letters`,
+      );
+      expect(allText(root)).not.toContain("ΦΓΔ");
+
+      const sent = await submitMatch(root);
+      expect(sent.show_greek_letters).toBe(false);
+      expect(sent.short_name).toBe("FIJI");
+    },
+  );
+
+  // Another organization's row renamed to FIJI changes the name alone, as on
+  // web, so its switch is still on: the last-line guard keeps the letters
+  // off what is drawn and sent.
+  it("hides the letters when another row's name is changed to FIJI", async () => {
+    const { root } = await render();
+    await pickRow(root, "Sigma Phi Epsilon");
+    await press(root, "Edit details");
+    typeInto(root, "Greek letters", "ΦΓΔ");
+    typeInto(root, "Organization", "FIJI");
+    expect(lettersSwitch(root)).toBeUndefined();
+    expect(inputValues(root)).not.toContain("ΦΓΔ");
+
+    const sent = await submitMatch(root);
+    expect(sent.show_greek_letters).toBe(false);
+  });
+
+  // A pick undoes what the row picked before it set, however that row's name
+  // was edited in between: the edit changed the name alone, so the earlier
+  // row's organization is the one being left (`directoryMatchMarkFields`).
+  it("undoes FIJI's short name and switch when a renamed FIJI row gives way to another", async () => {
+    directoryRows = [FIJI_ROW, SIGMA_NU_ROW];
+    const { root } = await render();
+    await pickRow(root, "Phi Gamma Delta");
+    await press(root, "Edit details");
+    typeInto(root, "Organization", "Tau Nu Chapter");
+    expect(inputValues(root)).toContain('["Short name","FIJI"]');
+    await press(root, "Back");
+    expect(title(root)).toBe(SETUP_TITLES.find);
+
+    await pickRow(root, "ΣΝ · Sigma Nu");
+    await press(root, "Edit details");
+    expect(inputValues(root)).toContain('["Short name",""]');
+    expect(lettersSwitch(root)?.props.value).toBe(true);
+    expect(allText(root)).not.toContain("doesn't display its Greek letters");
+
+    const sent = await submitMatch(root);
+    expect(sent.short_name).toBeUndefined();
+    expect(sent.show_greek_letters).toBeUndefined();
+  });
+
+  it("fills FIJI's short name when FIJI's row follows another row renamed FIJI", async () => {
+    const { root } = await render();
+    await pickRow(root, "Sigma Phi Epsilon");
+    await press(root, "Edit details");
+    typeInto(root, "Organization", "FIJI");
+    await press(root, "Back");
+
+    await pickRow(root, "Phi Gamma Delta");
+    await press(root, "Edit details");
+    expect(inputValues(root)).toContain('["Short name","FIJI"]');
+    expect(lettersSwitch(root)).toBeUndefined();
+
+    const sent = await submitMatch(root);
+    expect(sent.short_name).toBe("FIJI");
+    expect(sent.show_greek_letters).toBe(false);
+  });
+
+  // Entering the chapter by hand forgets the row picked before: an unrelated
+  // organization typed after FIJI's row is that organization's alone.
+  it("forgets FIJI's row on manual entry", async () => {
+    const { root } = await render();
+    await pickRow(root, "Phi Gamma Delta");
+    await press(root, "Back");
+    await press(root, "Not in our directory?");
+    typeInto(root, "Organization", "Sigma Nu");
+    typeInto(root, "School", "Rensselaer Polytechnic Institute");
+    await press(root, "More details (optional)");
+
+    expect(lettersSwitch(root)?.props.value).toBe(true);
+    expect(inputValues(root)).toContain('["Short name",""]');
+    expect(allText(root)).not.toContain("doesn't display its Greek letters");
+
+    await act(async () => {
+      radios(root)[0].props.onPress();
+    });
+    await press(root, "Continue");
+    await press(root, "agree");
+    await act(async () => {
+      primary(root).props.onPress();
+    });
+    await settle();
+    const sent = (onboard.mock.calls[0]?.[0] as { branding: SentBranding })
+      .branding;
+    expect(sent.show_greek_letters).toBeUndefined();
+    expect(sent.short_name).toBeUndefined();
+  });
+
+  it("fills the short name when FIJI is typed by hand, and leaves a typed one", async () => {
+    const { root } = await render();
+    await press(root, "Not in our directory?");
+    await press(root, "More details (optional)");
+    typeInto(root, "Organization", "FIJI");
+    expect(inputValues(root)).toContain('["Short name","FIJI"]');
+
+    // Leaving FIJI undoes its short name; a short name the founder typed
+    // stays when the name comes back to FIJI.
+    typeInto(root, "Organization", "Sigma Nu");
+    expect(inputValues(root)).toContain('["Short name",""]');
+    typeInto(root, "Short name", "TN");
+    typeInto(root, "Organization", "FIJI");
+    expect(inputValues(root)).toContain('["Short name","TN"]');
+    expect(lettersSwitch(root)).toBeUndefined();
+  });
+
   it("sends FIJI's branding with the letters switched off", async () => {
     const { root } = await render();
     await createFromMatch(root);
@@ -570,5 +799,268 @@ describe("chapter setup — push primer for the founder", () => {
     await createFromMatch(root);
     await press(root, "Continue");
     expect(title(root)).toBe(SETUP_TITLES.invite);
+  });
+
+  it("draws no line over the card, which makes its own case", async () => {
+    pushAvailable = true;
+    permission = { granted: false };
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.primer);
+    expect(allText(root)).not.toContain("start posting");
+  });
+});
+
+/** A Pressable's resting fill. */
+const fillOf = (pressable: Node | undefined): unknown =>
+  flatStyle(pressable?.props.style).backgroundColor;
+
+/**
+ * The invite step's one gold button is the invite: `Create invite link`,
+ * then `Share invite`. Leaving is the quiet line under it. The copy says what
+ * a link is, one person within a day, not a link for the whole chapter.
+ */
+describe("chapter setup — invite", () => {
+  async function toInvite(): Promise<Node> {
+    const { root } = await render();
+    await createFromMatch(root);
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.invite);
+    return root;
+  }
+
+  it("leads with Create invite link in gold, with Skip for now quiet under it", async () => {
+    const root = await toInvite();
+
+    expect(fillOf(control(root, "Create invite link"))).toBe(
+      signetDarkTokens.color.gold.house,
+    );
+    expect(fillOf(control(root, "Skip for now"))).toBeUndefined();
+    expect(allText(root)).toContain(
+      "Each link lets one person join and expires after 24 hours.",
+    );
+    expect(allText(root)).not.toContain("Anyone with this link");
+    expect(allText(root)).not.toContain("land in #general");
+
+    await press(root, "Skip for now");
+    expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
+  });
+
+  it("turns the gold button into Share invite once a link exists", async () => {
+    const root = await toInvite();
+    await press(root, "Create invite link");
+
+    expect(allText(root)).toContain("tok123");
+    expect(fillOf(control(root, "Share invite"))).toBe(
+      signetDarkTokens.color.gold.house,
+    );
+    await press(root, "Share invite");
+    expect(Share.share).toHaveBeenCalledWith({
+      message: expect.stringContaining("tok123"),
+    });
+    expect(control(root, "Go to chat")).toBeDefined();
+  });
+
+  it("makes another link without leaving, since each one lets one person in", async () => {
+    const root = await toInvite();
+    await press(root, "Create invite link");
+    createInvite.mockResolvedValueOnce({ token: "tok456" });
+
+    await press(root, "Create another link");
+    expect(createInvite).toHaveBeenCalledTimes(2);
+    expect(allText(root)).toContain("tok456");
+  });
+});
+
+/**
+ * The identity form moves down itself on Return instead of dropping the
+ * keyboard after every field, and capitalizes names as names.
+ */
+describe("chapter setup — identity fields", () => {
+  const focused: string[] = [];
+
+  async function renderWithFocus(): Promise<Node> {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <QueryClientProvider client={queryClient}>
+          <FrappThemeProvider>
+            <CreateChapter />
+          </FrappThemeProvider>
+        </QueryClientProvider>,
+        {
+          // A field's ref, so moving focus can be seen.
+          createNodeMock: (element) => ({
+            focus: () =>
+              focused.push(
+                String(
+                  (element.props as { accessibilityLabel?: string })
+                    .accessibilityLabel,
+                ),
+              ),
+          }),
+        },
+      );
+    });
+    await settle();
+    return tree.root;
+  }
+
+  function field(root: Node, label: string): Node {
+    const input = root
+      .findAllByType("TextInput" as never, { deep: true })
+      .find((i) => i.props.accessibilityLabel === label);
+    if (!input) throw new Error(`No field "${label}"`);
+    return input;
+  }
+
+  beforeEach(() => {
+    focused.length = 0;
+  });
+
+  it("chains Return through every field drawn, and ends on Done", async () => {
+    const root = await renderWithFocus();
+    await pickRow(root, "Sigma Phi Epsilon");
+    await press(root, "Edit details");
+
+    const order = [
+      "Organization",
+      "School",
+      "Chapter",
+      "Short name",
+      "Greek letters",
+      "School short name",
+    ];
+    for (const [index, label] of order.entries()) {
+      const input = field(root, label);
+      expect(input.props.returnKeyType).toBe("next");
+      act(() => {
+        input.props.onSubmitEditing();
+      });
+      expect(focused[index]).toBe(
+        index + 1 < order.length ? order[index + 1] : "Founded",
+      );
+    }
+    const last = field(root, "Founded");
+    expect(last.props.returnKeyType).toBe("done");
+    expect(last.props.maxLength).toBe(4);
+  });
+
+  it("skips the letters field for an organization that hides its letters", async () => {
+    const root = await renderWithFocus();
+    await pickRow(root, "Phi Gamma Delta");
+    await press(root, "Edit details");
+
+    // FIJI draws no letters field, so Return on Short name goes on to the
+    // next field that is drawn rather than to one that isn't there.
+    expect(
+      root
+        .findAllByType("TextInput" as never, { deep: true })
+        .some((i) => i.props.accessibilityLabel === "Greek letters"),
+    ).toBe(false);
+    const shortName = field(root, "Short name");
+    expect(shortName.props.returnKeyType).toBe("next");
+    act(() => {
+      shortName.props.onSubmitEditing();
+    });
+    expect(focused).toEqual(["School short name"]);
+  });
+
+  it("skips a field the step hides: by hand with details closed, School is last", async () => {
+    const root = await renderWithFocus();
+    await press(root, "Not in our directory?");
+
+    expect(field(root, "Organization").props.returnKeyType).toBe("next");
+    expect(field(root, "School").props.returnKeyType).toBe("done");
+    // No line between the title and the fields.
+    expect(allText(root)).not.toContain("next officer finds it");
+  });
+
+  it("capitalizes names as names", async () => {
+    const root = await renderWithFocus();
+    await press(root, "Not in our directory?");
+    await press(root, "More details");
+
+    for (const label of ["Organization", "School", "Chapter"]) {
+      expect(field(root, label).props.autoCapitalize).toBe("words");
+    }
+    expect(field(root, "Short name").props.autoCapitalize).toBe("characters");
+  });
+
+  it("edges the field being typed in, in house gold", async () => {
+    const root = await renderWithFocus();
+    await press(root, "Not in our directory?");
+    const borderOf = () =>
+      Object.assign(
+        {},
+        ...(
+          field(root, "Organization").props.style as (Record<
+            string,
+            unknown
+          > | null)[]
+        ).filter(Boolean),
+      ).borderColor;
+
+    expect(borderOf()).toBe(signetDarkTokens.color.border.input);
+    act(() => {
+      field(root, "Organization").props.onFocus();
+    });
+    expect(borderOf()).toBe(signetDarkTokens.color.gold.askText);
+  });
+
+  it("opens the find step on the field, with no line restating its placeholder", async () => {
+    const root = await renderWithFocus();
+
+    expect(allText(root)).not.toContain("fill in the rest");
+    expect(field(root, "Search the chapter directory").props.placeholder).toBe(
+      "Organization or school",
+    );
+  });
+});
+
+/**
+ * Each step fades in, and the mark zooms in on the live step, but neither
+ * moves for a member who reduces motion: the reanimated mock keeps the
+ * setting each builder was given.
+ */
+describe("chapter setup — motion", () => {
+  function entering(root: Node): { reduceMotionMode?: string }[] {
+    return root
+      .findAllByType("Animated.View" as never, { deep: true })
+      .map((view) => view.props.entering as { reduceMotionMode?: string });
+  }
+  const stepFade = expect.objectContaining({
+    animation: "FadeIn",
+    durationMs: signetDarkTokens.motion.duration.standard,
+    reduceMotionMode: ReduceMotion.System,
+  });
+
+  it("fades every step in, and holds still for reduced motion", async () => {
+    const { root } = await render();
+    expect(entering(root)).toEqual([stepFade]);
+
+    await pickRow(root, "Phi Gamma Delta");
+    await press(root, "Continue");
+    expect(title(root)).toBe(SETUP_TITLES.color);
+    expect(entering(root)).toEqual([stepFade]);
+
+    await press(root, "agree");
+    await act(async () => {
+      primary(root).props.onPress();
+    });
+    await settle();
+    // The mark's zoom above the step, then the step's fade.
+    expect(title(root)).toBe("FIJI is live");
+    expect(entering(root)).toEqual([
+      expect.objectContaining({
+        animation: "ZoomIn",
+        reduceMotionMode: ReduceMotion.System,
+      }),
+      stepFade,
+    ]);
   });
 });

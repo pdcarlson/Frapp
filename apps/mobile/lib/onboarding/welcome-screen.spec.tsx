@@ -4,7 +4,9 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { flatStyle } from "@/test/flat-style";
 
 /**
  * #2299. s03 is the first screen after joining a chapter, for a new member and
@@ -203,5 +205,85 @@ describe("s03 welcome, screen rules (#3352)", () => {
             .includes(p),
       );
     expect(outside).toHaveLength(1);
+  });
+});
+
+/**
+ * One gold button on s03. While the primer asks, its "Turn on" is the gold
+ * one and "Go to chat" is the outlined Secondary under it, as the board draws
+ * s03; with no primer, "Go to chat" is the step forward and takes the gold.
+ */
+describe("s03 welcome, one gold button", () => {
+  const goToChat = (root: Node) =>
+    root
+      .findAllByType("Pressable" as never, { deep: true })
+      .find((pressable) =>
+        pressable
+          .findAllByType("Text" as never, { deep: true })
+          .some((text) => text.props.children === "Go to chat"),
+      );
+
+  /** A Pressable's resting fill. */
+  const fill = (pressable: Node | undefined): unknown =>
+    flatStyle(pressable?.props.style).backgroundColor;
+
+  beforeEach(() => {
+    pushAvailable = false;
+    permission = null;
+  });
+
+  it("outlines Go to chat while the primer's Turn on is the gold button", async () => {
+    pushAvailable = true;
+    permission = { granted: false };
+    const { root } = await render();
+
+    expect(fill(turnOn(root))).toBe(signetDarkTokens.color.gold.house);
+    expect(fill(goToChat(root))).toBe(signetDarkTokens.color.surface.card);
+  });
+
+  it("makes Go to chat the gold button when there is no primer", async () => {
+    const { root } = await render();
+
+    expect(fill(goToChat(root))).toBe(signetDarkTokens.color.gold.house);
+  });
+
+  it("spins under the same label while it leaves, rather than renaming itself", async () => {
+    completeOnboarding.mockReturnValueOnce(new Promise(() => {}));
+    const { root } = await render();
+    act(() => {
+      void goToChat(root)?.props.onPress();
+    });
+
+    const button = root
+      .findAllByType("Pressable" as never, { deep: true })
+      .find((pressable) => pressable.props.accessibilityLabel === "Go to chat");
+    expect(button?.props.accessibilityState).toEqual({
+      disabled: true,
+      busy: true,
+    });
+    expect(texts(root).some((t) => t.includes("Opening chat"))).toBe(false);
+  });
+
+  it("spins under the same label as the outlined button, while the primer shows", async () => {
+    pushAvailable = true;
+    permission = { granted: false };
+    completeOnboarding.mockReturnValueOnce(new Promise(() => {}));
+    const { root } = await render();
+    act(() => {
+      void goToChat(root)?.props.onPress();
+    });
+
+    const button = root
+      .findAllByType("Pressable" as never, { deep: true })
+      .find((pressable) => pressable.props.accessibilityLabel === "Go to chat");
+    // Still the outlined one: Turn on keeps the gold.
+    expect(fill(button)).toBe(signetDarkTokens.color.surface.card);
+    expect(button?.props.accessibilityState).toEqual({
+      disabled: true,
+      busy: true,
+    });
+    expect(
+      button?.findAllByType("ActivityIndicator" as never, { deep: true }),
+    ).toHaveLength(1);
   });
 });

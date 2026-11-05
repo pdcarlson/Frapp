@@ -18,9 +18,9 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
+import Animated from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   isDeadInviteError,
@@ -36,11 +36,17 @@ import { chapterInitials } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChoiceRow } from "@/components/auth/choice-row";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
+import { BackRow } from "@/components/back-row";
 import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
+import {
+  OnboardingFieldLabel,
+  OnboardingTextInput,
+} from "@/components/onboarding/onboarding-field";
 import {
   ONBOARDING_COLUMN_WIDTH,
   OnboardingPrimaryButton,
 } from "@/components/onboarding/onboarding-primary-button";
+import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
 import { useAuthSession } from "@/lib/auth-session";
@@ -53,7 +59,9 @@ import {
 } from "@/lib/onboarding/invite-token";
 import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { useSelectChapter } from "@/lib/select-chapter";
+import { successHaptic } from "@/lib/haptics";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
+import { stepFadeIn } from "@/lib/onboarding/step-fade";
 import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -233,7 +241,8 @@ export default function JoinChapter() {
   // This cannot strand the screen, and the reason is worth keeping: a
   // successful redeem always reaches `router.replace`, because everything
   // between the two is total. `selectChapter` catches its own failures and
-  // returns a boolean rather than throwing (`lib/select-chapter.ts`), and
+  // returns a boolean rather than throwing (`lib/select-chapter.ts`),
+  // `successHaptic` swallows its own failures (`lib/haptics.ts`), and
   // `consumeRememberedInviteToken` / `redeemChapterId` are pure. If any of
   // those grows a throw path, the catch would leave `isSuccess` true on a
   // mounted screen and lock every control — including this one.
@@ -285,7 +294,7 @@ export default function JoinChapter() {
   }, [submitting, view]);
 
   // Android's back button steps back inside this screen before leaving it:
-  // it closes the Account menu, then steps back a view, as the chevron does.
+  // it closes the Account menu, then steps back a view, as `‹ Back` does.
   // On the question itself it is left alone.
   useBackToClose(focused && menuVisible, closeMenu);
   useBackToClose(focused && !menuVisible && view !== "choose", stepBack);
@@ -390,6 +399,10 @@ export default function JoinChapter() {
         terms.redeemBody(extracted),
       );
       consumeRememberedInviteToken();
+      // The member is in: the one tap setup gives a chapter going live, so
+      // joining one feels like it landed. Best effort, and silent where the
+      // device can't (`lib/haptics.ts`).
+      successHaptic();
       const chapterId = redeemChapterId(result);
       if (chapterId) {
         await selectChapter(chapterId);
@@ -405,41 +418,48 @@ export default function JoinChapter() {
     }
   }
 
+  const accountButton = (
+    <OnboardingPressable
+      accessibilityRole="button"
+      accessibilityLabel="Account"
+      accessibilityHint="Sign out or delete your account."
+      accessibilityState={{ expanded: menuVisible, disabled: submitting }}
+      disabled={submitting}
+      hitSlop={8}
+      onPress={() => {
+        setAccountOpen((open) => !open);
+      }}
+      quiet
+      style={styles.accountButton}
+    >
+      <Text style={styles.accountButtonText}>Account</Text>
+    </OnboardingPressable>
+  );
+
+  // The board's s02 `‹ Back` row, in house gold (`BackRow`), with the
+  // Account menu at its far end. The question has nothing to step back to,
+  // so it draws Account alone, in the same place.
   const header = (
     <View style={styles.header}>
       {view !== "choose" ? (
-        <Pressable
-          accessibilityRole="button"
+        <BackRow
+          house
+          label="Back"
           accessibilityLabel={
             view === "confirm" ? "Back to the invite" : "Back to the choices"
           }
-          accessibilityState={{ disabled: submitting }}
           disabled={submitting}
-          hitSlop={8}
           onPress={stepBack}
-          style={styles.backButton}
-        >
-          <Text style={styles.backGlyph}>‹</Text>
-        </Pressable>
+          trailing={accountButton}
+        />
       ) : (
-        <View />
+        <View style={styles.headerRow}>{accountButton}</View>
       )}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Account"
-        accessibilityHint="Sign out or delete your account."
-        accessibilityState={{ expanded: menuVisible, disabled: submitting }}
-        disabled={submitting}
-        hitSlop={8}
-        onPress={() => {
-          setAccountOpen((open) => !open);
-        }}
-        style={styles.accountButton}
-      >
-        <Text style={styles.accountButtonText}>Account</Text>
-      </Pressable>
     </View>
   );
+
+  // Each view fades in (`stepFadeIn`, as setup's steps do).
+  const entering = stepFadeIn(tokens);
 
   return (
     // Safe area on every edge (#3345): `(auth)` renders with `headerShown:
@@ -476,12 +496,15 @@ export default function JoinChapter() {
             {header}
 
             {view === "choose" ? (
-              <View style={styles.body}>
+              // At the top, like the other two views, so the title doesn't
+              // jump from mid-screen to the top on the first tap. No line
+              // under it: the two answers already say how a member gets in.
+              <Animated.View
+                key="choose"
+                entering={entering}
+                style={styles.stepBody}
+              >
                 <Text style={styles.title}>{JOIN_CHOICE_TITLE}</Text>
-                <Text style={styles.subtitle}>
-                  Members join with an invite from an officer. The first officer
-                  sets the chapter up.
-                </Text>
 
                 <View style={styles.choices}>
                   <ChoiceRow
@@ -506,24 +529,27 @@ export default function JoinChapter() {
                     }}
                   />
                 </View>
-              </View>
+              </Animated.View>
             ) : view === "invite" ? (
-              <View style={styles.stepBody}>
+              <Animated.View
+                key="invite"
+                entering={entering}
+                style={styles.stepBody}
+              >
                 <Text style={styles.title}>{JOIN_INVITE_TITLE}</Text>
                 <Text style={styles.subtitle}>
                   Paste the invite link or code your officer sent. Invites work
                   once and expire after 24 hours.
                 </Text>
 
-                <Text style={styles.inputLabel}>Invite</Text>
-                <TextInput
+                <OnboardingFieldLabel>Invite</OnboardingFieldLabel>
+                <OnboardingTextInput
                   value={token}
                   onChangeText={(value) => {
                     setToken(value);
                     setError(null);
                   }}
                   placeholder="Paste invite or link"
-                  placeholderTextColor={tokens.color.text.muted}
                   autoCapitalize="none"
                   autoCorrect={false}
                   autoComplete="off"
@@ -536,15 +562,19 @@ export default function JoinChapter() {
                   editable={!submitting}
                   returnKeyType="next"
                   onSubmitEditing={handleContinue}
-                  style={styles.input}
+                  style={styles.inviteInput}
                 />
 
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
                 <Text style={styles.hintText}>{OAUTH_MEMBERSHIP_HINT}</Text>
-              </View>
+              </Animated.View>
             ) : (
-              <View style={styles.stepBody}>
+              <Animated.View
+                key="confirm"
+                entering={entering}
+                style={styles.stepBody}
+              >
                 <Text style={styles.title}>
                   {chapter
                     ? confirmTitle(chapter.chapter_name)
@@ -639,7 +669,7 @@ export default function JoinChapter() {
                 ) : null}
 
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
-              </View>
+              </Animated.View>
             )}
           </ScrollView>
 
@@ -683,7 +713,12 @@ export default function JoinChapter() {
               >
                 {email ? `Signed in as ${email}` : "Your account"}
               </Text>
-              <Pressable
+              {/*
+                The onboarding press (`OnboardingPressable`), lifting a rung
+                while held as `ListRow` does. A disabled row dims as a whole;
+                it has no fill of its own, so that dims just its label.
+              */}
+              <OnboardingPressable
                 accessibilityRole="button"
                 accessibilityState={{ disabled: submitting }}
                 disabled={submitting}
@@ -691,34 +726,28 @@ export default function JoinChapter() {
                   setAccountOpen(false);
                   void handleSignOut();
                 }}
+                rippleColor={styles.menuRipple.color}
+                heldStyle={styles.menuRowPressed}
+                disabledStyle={styles.disabled}
                 style={styles.menuRow}
               >
-                <Text
-                  style={[
-                    styles.menuRowText,
-                    submitting ? styles.disabled : null,
-                  ]}
-                >
-                  Sign out
-                </Text>
-              </Pressable>
-              <Pressable
+                <Text style={styles.menuRowText}>Sign out</Text>
+              </OnboardingPressable>
+              <OnboardingPressable
                 accessibilityRole="button"
                 accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
                 accessibilityState={{ disabled: submitting, busy: deleting }}
                 disabled={submitting}
                 onPress={handleDeleteAccount}
+                rippleColor={styles.menuRipple.color}
+                heldStyle={styles.menuRowPressed}
+                disabledStyle={styles.disabled}
                 style={styles.menuRow}
               >
-                <Text
-                  style={[
-                    styles.menuRowDestructive,
-                    submitting ? styles.disabled : null,
-                  ]}
-                >
+                <Text style={styles.menuRowDestructive}>
                   {deleting ? "Deleting account…" : "Delete account"}
                 </Text>
-              </Pressable>
+              </OnboardingPressable>
             </View>
           </>
         ) : null}
@@ -749,21 +778,16 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.background,
     },
     header: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
       minHeight: tokens.touch.minimum,
       marginTop: tokens.spacing.sm,
     },
-    backButton: {
-      minWidth: tokens.touch.minimum,
-      minHeight: tokens.touch.minimum,
-      justifyContent: "center",
-    },
-    backGlyph: {
-      fontSize: 30,
-      lineHeight: 32,
-      color: tokens.color.text.foreground,
+    // The question's header: Account alone, where `BackRow` puts it on the
+    // other two views, with the row's own bottom margin so nothing under it
+    // moves between views.
+    headerRow: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      marginBottom: tokens.spacing.sm,
     },
     accountButton: {
       minHeight: tokens.touch.minimum,
@@ -773,17 +797,6 @@ function createStyles(tokens: SignetTokens) {
     accountButtonText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.mutedForeground,
-    },
-    // Centred in the space under the header while it fits; the scroll view
-    // takes over when it does not.
-    body: {
-      flexGrow: 1,
-      justifyContent: "center",
-      width: "100%",
-      maxWidth: ONBOARDING_COLUMN_WIDTH,
-      alignSelf: "center",
-      gap: tokens.spacing.md,
-      paddingVertical: tokens.spacing.xl,
     },
     title: {
       ...typeRole(tokens.typography.role.headline),
@@ -795,8 +808,8 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
     },
-    // The invite and confirm steps sit at the top, under the back chevron,
-    // with their button pinned below (#3348 screen rules).
+    // Every view sits at the top, under the header, with the invite and
+    // confirm steps' button pinned below (#3348 screen rules).
     stepBody: {
       width: "100%",
       maxWidth: ONBOARDING_COLUMN_WIDTH,
@@ -846,23 +859,9 @@ function createStyles(tokens: SignetTokens) {
       paddingHorizontal: tokens.spacing.xl,
       paddingVertical: tokens.spacing.lg,
     },
-    inputLabel: {
-      ...typeRole(tokens.typography.role.label),
-      letterSpacing: 0.3,
-      textTransform: "uppercase",
-      color: tokens.color.text.muted,
-    },
-    input: {
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-      minHeight: tokens.touch.button,
-      ...typeRole(tokens.typography.role.body),
+    // An invite is a token, so it reads in mono, on the shared field.
+    inviteInput: {
       fontFamily: MONO_FONT_FAMILY,
-      color: tokens.color.text.foreground,
     },
     errorText: {
       ...typeRole(tokens.typography.role.caption),
@@ -873,9 +872,10 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
       textAlign: "center",
     },
-    // Mirrors `ListRow`'s disabled treatment: a control that cannot respond has
-    // to look like it, or a user on a slow delete taps a dead full-strength
-    // button and concludes the app has frozen.
+    // The Account menu's rows, while a join or a deletion is in flight
+    // (`submitting`): each row dims as a whole, to 0.5. A control that cannot
+    // respond has to look like it, or a user on a slow delete taps a dead
+    // full-strength button and concludes the app has frozen.
     disabled: {
       opacity: 0.5,
     },
@@ -901,6 +901,8 @@ function createStyles(tokens: SignetTokens) {
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.surface1,
+      // Keeps a row's Android ripple inside the rounded corners.
+      overflow: "hidden",
     },
     menuCaption: {
       paddingHorizontal: tokens.spacing.lg,
@@ -913,6 +915,14 @@ function createStyles(tokens: SignetTokens) {
       minHeight: tokens.touch.minimum,
       paddingHorizontal: tokens.spacing.lg,
       justifyContent: "center",
+    },
+    // `ListRow`'s press feedback: the ripple on Android, one rung up the
+    // surface ladder on iOS.
+    menuRowPressed: {
+      backgroundColor: tokens.color.surface.card,
+    },
+    menuRipple: {
+      color: tint(tokens.color.text.foreground, 0.12),
     },
     menuRowText: {
       ...typeRole(tokens.typography.role.label),

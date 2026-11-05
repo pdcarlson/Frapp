@@ -242,7 +242,16 @@ export default function MoreScreen() {
             leading={<ChapterGlyph color={accent} />}
             value={chapterName}
             accessibilityHint="Opens the list of chapters you belong to."
-            onPress={() => router.push("/(auth)/chapter-picker")}
+            onPress={() =>
+              // `from` is how the picker knows More is under it, and so
+              // draws `‹ More`: a link that opens it has sign-in under it
+              // instead (`app/(auth)/chapter-picker.tsx`). Object form, the
+              // shape `lib/routes.spec.ts` matches when a param is involved.
+              router.push({
+                pathname: "/(auth)/chapter-picker",
+                params: { from: "more" },
+              })
+            }
           />
         )}
       </ListSection>

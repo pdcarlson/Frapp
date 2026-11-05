@@ -4,7 +4,9 @@ import { act } from "react";
 import { BackHandler, Platform } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FrappThemeProvider } from "@/lib/theme";
+import { signetDarkTokens } from "@repo/theme/signet";
+import { FrappThemeProvider, tint } from "@/lib/theme";
+import { flatStyle } from "@/test/flat-style";
 import {
   OAUTH_MEMBERSHIP_HINT,
   signInProviderLayout,
@@ -37,6 +39,12 @@ vi.mock("@/lib/auth-session", () => ({
     signInWithPassword: auth.signInWithPassword,
     signOut: vi.fn(),
   }),
+}));
+
+// A purple stand-in for a chapter's accent, so a back row that lost `house`
+// paints purple and fails, rather than crashing for want of a QueryClient.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({ accent: "#CB9FFF" }),
 }));
 
 import SignIn from "@/app/(auth)/sign-in";
@@ -74,21 +82,17 @@ function pressableLabelled(root: Node, label: string): Node {
   return found;
 }
 
-/** Flattens the style arrays the screen passes, which the mock leaves alone. */
-function flat(style: unknown): Record<string, unknown> {
-  if (Array.isArray(style)) {
-    return Object.assign({}, ...style.map(flat));
-  }
-  return (style ?? {}) as Record<string, unknown>;
-}
-
-/** Buttons drawn with a fill: the one the screen leads with. */
+/**
+ * Buttons drawn in the light fill: the one the screen leads with. The others
+ * are Secondary buttons on the card fill (components.md § Buttons).
+ */
 function filledLabels(root: Node): string[] {
   return root
     .findAll(
       (node) =>
         isHost(node, "Pressable") &&
-        flat(node.props.style).backgroundColor !== undefined,
+        flatStyle(node.props.style).backgroundColor ===
+          signetDarkTokens.color.text.foreground,
     )
     .flatMap((pressable) =>
       pressable
@@ -205,6 +209,29 @@ describe("sign-in providers on iOS", () => {
     expect(filledLabels(tree.root)).toEqual(["Continue with Apple"]);
     expect(hasHint(tree.root)).toBe(true);
   });
+
+  it("presses the light button as the gold one presses, and not while it runs", async () => {
+    const tree = render();
+    const lead = () =>
+      tree.root.find(
+        (node) =>
+          isHost(node, "Pressable") &&
+          flatStyle(node.props.style).backgroundColor ===
+            signetDarkTokens.color.text.foreground,
+      );
+    const held = () => flatStyle(lead().props.style, true);
+
+    expect(held().opacity).toBe(0.85);
+    expect(lead().props.android_ripple).toEqual({ color: expect.any(String) });
+
+    // Never settles, so the sign-in stays in flight.
+    auth.signInWithOAuthProvider.mockReturnValue(new Promise(() => {}));
+    await act(async () => {
+      lead().props.onPress();
+    });
+    expect(lead().props.android_ripple).toBeUndefined();
+    expect(held().opacity).toBe(0.55);
+  });
 });
 
 describe("the email form", () => {
@@ -226,6 +253,57 @@ describe("the email form", () => {
     });
     expect(buttonLabels(tree.root)).toContain("Continue with Google");
     expect(buttonLabels(tree.root)).not.toContain("Sign in");
+  });
+
+  it("draws its ‹ Back row in house gold: (auth) has no chapter accent", () => {
+    const tree = render();
+    act(() => {
+      pressableLabelled(tree.root, "Continue with email").props.onPress();
+    });
+    const back = tree.root.find(
+      (node) =>
+        isHost(node, "Pressable") &&
+        node.props.accessibilityLabel === "Back to sign-in options",
+    );
+    const text = back.find((node) => isHost(node, "Text"));
+    expect(text.props.children).toBe("‹ Back");
+    expect(flatStyle(text.props.style).color).toBe(
+      signetDarkTokens.color.gold.askText,
+    );
+  });
+
+  it("marks the chosen mode in house gold, as the flow's other selections are", () => {
+    const tree = render();
+    act(() => {
+      pressableLabelled(tree.root, "Continue with email").props.onPress();
+    });
+    const gold = signetDarkTokens.color.gold;
+    const look = (label: string) => {
+      const chip = pressableLabelled(tree.root, label);
+      const text = chip.find((node) => isHost(node, "Text"));
+      return {
+        fill: flatStyle(chip.props.style).backgroundColor,
+        ink: flatStyle(text.props.style).color,
+        selected: chip.props.accessibilityState?.selected,
+      };
+    };
+    const chosen = {
+      fill: tint(gold.house),
+      ink: gold.askText,
+      selected: true,
+    };
+
+    expect(look("Password")).toEqual(chosen);
+    expect(look("Magic link")).toEqual(
+      expect.objectContaining({ selected: false }),
+    );
+    expect(look("Magic link").ink).not.toBe(gold.askText);
+
+    act(() => {
+      pressableLabelled(tree.root, "Magic link").props.onPress();
+    });
+    expect(look("Magic link")).toEqual(chosen);
+    expect(look("Password").fill).not.toBe(tint(gold.house));
   });
 });
 
@@ -297,7 +375,16 @@ describe("Android back on the email form", () => {
     act(() => {
       latestBackHandler()();
     });
-    expect(buttonLabels(tree.root)).toContain("Signing in...");
+    // Still the form: its button spins, named for what is running.
+    const primary = tree.root.find(
+      (node) =>
+        isHost(node, "Pressable") &&
+        node.props.accessibilityLabel === "Signing in…",
+    );
+    expect(primary.props.accessibilityState).toEqual({
+      disabled: true,
+      busy: true,
+    });
     expect(buttonLabels(tree.root)).not.toContain("Continue with email");
   });
 });

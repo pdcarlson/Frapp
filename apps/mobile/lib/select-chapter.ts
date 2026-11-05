@@ -1,6 +1,30 @@
 import { useCallback } from "react";
 import { useActivateChapter } from "@repo/hooks";
+import { statusOf } from "@repo/api-sdk";
 import { getSupabaseClient } from "./supabase";
+
+export interface SelectChapterOptions {
+  /**
+   * Called once step 1's answer has come back, before the refresh: from here
+   * the server holds `chapterId` whatever the result says. So a `false` result
+   * after this call means the server moved and the token in hand didn't. A
+   * `false` with no call means the activate wasn't confirmed: almost always
+   * nothing changed, but an activate the server applied whose answer was lost
+   * on the way back looks the same, and nothing here can tell them apart. Only
+   * the chapter picker needs the difference (`app/(auth)/chapter-picker.tsx`);
+   * join and chapter setup call with the id alone. Keep it to bookkeeping: it
+   * runs inside a selection that otherwise never throws.
+   */
+  onActivated?: () => void;
+  /**
+   * Called when the server answers step 1 with a refusal (403: the caller
+   * isn't a member of `chapterId`, `ChapterService.setActiveChapter`), before
+   * the `false` comes back. Nothing moved, and a retry can't succeed, which is
+   * what tells it apart from a `false` for being offline. The same rules as
+   * `onActivated`: only the picker passes it, and it is bookkeeping.
+   */
+  onRefused?: () => void;
+}
 
 /**
  * Single entry point for choosing the caller's active chapter on mobile.
@@ -33,17 +57,24 @@ export function useSelectChapter() {
   const activateChapter = useActivateChapter();
 
   return useCallback(
-    async (chapterId: string): Promise<boolean> => {
+    async (
+      chapterId: string,
+      options?: SelectChapterOptions,
+    ): Promise<boolean> => {
       const supabase = getSupabaseClient();
       if (!supabase) return false;
 
       try {
         await activateChapter.mutateAsync(chapterId);
-      } catch {
+      } catch (caught) {
         // Nothing happened server-side, so the member is exactly where they
-        // started and a retry is safe.
+        // started and a retry is safe. (Short of an answer lost on the way
+        // back after the server applied it, which nothing here can see.) A
+        // 403 is the server saying no, which a retry won't change.
+        if (statusOf(caught) === 403) options?.onRefused?.();
         return false;
       }
+      options?.onActivated?.();
 
       // `refreshSession` reports failure BOTH ways, so both have to be handled.
       //
@@ -72,7 +103,9 @@ export function useSelectChapter() {
         // the token in hand still carries the old claim, so the switch has not
         // taken effect — but the next token issuance will pick the new chapter
         // up. Nothing local was written either way, so `x-chapter-id` never
-        // disagrees with the token and no request 403s in the meantime.
+        // disagrees with the token and no request 403s in the meantime. A
+        // caller that has to tell this apart from a refused activate passes
+        // `onActivated`, which has already run by now.
         return false;
       }
 
