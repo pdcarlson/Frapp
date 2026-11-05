@@ -103,11 +103,13 @@ describe("FindBar", () => {
     channelsQuery.current = { data: [] };
   });
 
-  it("advertises the binding it actually wires", () => {
-    // components.md §7 bans a keybinding hint that is not wired. The palette
-    // this replaced advertised ⌘K; this field must advertise ⌘F.
+  it("carries no keyboard hint", () => {
+    // The ⌘F / esc keycap was removed (2026-11-05); the binding below still
+    // works, it just is not advertised. The palette this replaced advertised
+    // ⌘K, which this field never binds (components.md §7).
     render(<FindBar />);
-    expect(screen.getByText("⌘F")).toBeInTheDocument();
+    expect(screen.queryByText("⌘F")).not.toBeInTheDocument();
+    expect(screen.queryByText("esc")).not.toBeInTheDocument();
     expect(screen.queryByText(/⌘K/)).not.toBeInTheDocument();
   });
 
