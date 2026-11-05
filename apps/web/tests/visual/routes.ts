@@ -62,7 +62,8 @@ export const DASHBOARD_ROUTES = [
  * as its own piece of work. Its 375px measurement is by hand for now.
  */
 export const PRE_AUTH_ROUTES = [
-  { route: "/", expectUrl: /\/$/ },
+  // `/` is a gate since 2026-11-05: signed out, it redirects to the form.
+  { route: "/", expectUrl: /\/sign-in$/ },
   { route: "/sign-in", expectUrl: /\/sign-in$/ },
   { route: "/sign-up", expectUrl: /\/sign-up$/ },
   { route: "/no-access", expectUrl: /\/no-access$/ },

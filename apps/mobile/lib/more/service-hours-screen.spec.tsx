@@ -94,18 +94,26 @@ let isPending = false;
 let viewerUserId: string | null = "user-1";
 let chapterId: string | null = "chapter-a";
 let entries: unknown[] = [];
-const useServiceEntries = vi.fn<(...args: unknown[]) => unknown>(() => ({
-  data: entries,
-  isPending: false,
-  isError: false,
-  isSuccess: true,
-}));
+const viewerRefetch = vi.fn(() => Promise.resolve());
+const entriesRefetch = vi.fn(() => Promise.resolve());
+const useServiceEntries = vi.fn<(...args: unknown[]) => unknown>(
+  (...args: unknown[]) => ({
+    data: entries,
+    isPending: false,
+    isError: false,
+    isSuccess: true,
+    // A real result reports its own `enabled`, which the screen gates on the
+    // viewer's id.
+    isEnabled: (args[2] as { enabled?: boolean } | undefined)?.enabled,
+    refetch: entriesRefetch,
+  }),
+);
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useViewerUserId: () => viewerUserId,
   useActiveChapterId: () => chapterId,
-  useCurrentUser: () => ({ isError: false }),
+  useCurrentUser: () => ({ isError: false, refetch: viewerRefetch }),
   useServiceEntries: (...args: unknown[]) => useServiceEntries(...args),
   useCreateServiceEntry: () => ({ mutate, isPending }),
   useRequestServiceProofUploadUrl: () => ({ mutateAsync: requestProofUrl }),
@@ -168,8 +176,7 @@ const modal = (tree: ReactTestRenderer) =>
 
 const pressable = (tree: ReactTestRenderer, text: string) =>
   tree.root.find(
-    (node) =>
-      node.type === ("Pressable" as never) && drawnText(node) === text,
+    (node) => node.type === ("Pressable" as never) && drawnText(node) === text,
   );
 
 /** The sheet's primary action. */
@@ -235,7 +242,6 @@ function rerender(tree: ReactTestRenderer) {
 }
 
 describe("Service hours on a subscription refusal (#2410)", () => {
-
   it("explains the refusal and withdraws Submit", () => {
     failure = REFUSED;
     const tree = render();
@@ -394,6 +400,44 @@ describe("Service hours reads only the viewer's entries", () => {
     viewerUserId = null;
     const tree = render();
     expectViewerScopedReads(useServiceEntries.mock.calls, null);
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * #3385. A pull refetches what the screen reads, through the ScrollView's
+ * `refreshControl` that `ScreenShell` draws.
+ */
+describe("Service hours pull to refresh (#3385)", () => {
+  beforeEach(() => {
+    viewerRefetch.mockClear();
+    entriesRefetch.mockClear();
+  });
+
+  async function pull(tree: ReactTestRenderer) {
+    const scroll = tree.root.find(
+      (node) =>
+        node.type === ("ScrollView" as never) && !!node.props.refreshControl,
+    );
+    await act(async () => {
+      await scroll.props.refreshControl.props.refresh();
+    });
+  }
+
+  it("refreshes the viewer and their service entries on a pull (#3385)", async () => {
+    const tree = render();
+    await pull(tree);
+    expect(viewerRefetch).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(entriesRefetch).toHaveBeenCalledWith({ cancelRefetch: true });
+    act(() => tree.unmount());
+  });
+
+  it("leaves the entries alone on a pull while the viewer is unknown", async () => {
+    viewerUserId = null;
+    const tree = render();
+    await pull(tree);
+    expect(viewerRefetch).toHaveBeenCalledTimes(1);
+    expect(entriesRefetch).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 });
@@ -949,7 +993,8 @@ describe("Log service hours photo proof", () => {
     requestId: "req_path",
   };
 
-  const sentBody = () => mutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+  const sentBody = () =>
+    mutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
 
   const addRow = (tree: ReactTestRenderer) =>
     tree.root.find(
@@ -1138,7 +1183,10 @@ describe("Log service hours photo proof", () => {
 
   it("retries a failed create with the bytes already sent", async () => {
     failure = FAILED;
-    uploadProofPhoto.mockResolvedValue({ status: "uploaded", storagePath: PATH });
+    uploadProofPhoto.mockResolvedValue({
+      status: "uploaded",
+      storagePath: PATH,
+    });
     const tree = render();
     fill(tree);
     await attach(tree);
@@ -1312,7 +1360,10 @@ describe("Log service hours photo proof", () => {
 
   it("uploads again when the API turns the held path down", async () => {
     failure = PATH_REFUSED;
-    uploadProofPhoto.mockResolvedValue({ status: "uploaded", storagePath: PATH });
+    uploadProofPhoto.mockResolvedValue({
+      status: "uploaded",
+      storagePath: PATH,
+    });
     const tree = render();
     fill(tree);
     await attach(tree);
@@ -1331,7 +1382,10 @@ describe("Log service hours photo proof", () => {
   it("starts a new sheet when the member switches chapter", async () => {
     // A held path is minted under the chapter it was sent from.
     failure = FAILED;
-    uploadProofPhoto.mockResolvedValue({ status: "uploaded", storagePath: PATH });
+    uploadProofPhoto.mockResolvedValue({
+      status: "uploaded",
+      storagePath: PATH,
+    });
     const tree = render();
     fill(tree);
     await attach(tree);

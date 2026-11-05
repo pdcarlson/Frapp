@@ -96,22 +96,30 @@ const mutateAsync = vi.fn(async () => {
   throw failure;
 });
 
-let chapterId = "chapter-1";
+let chapterId: string | null = "chapter-1";
+
+/** Each query's `refetch`, kept across renders so a pull can be asserted on. */
+const refetch = vi.hoisted(() => ({
+  viewer: vi.fn(async () => undefined),
+  tasks: vi.fn(async () => undefined),
+  points: vi.fn(async () => undefined),
+  leaderboard: vi.fn(async () => undefined),
+}));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => chapterId,
   useViewerUserId: () => "user-1",
-  useCurrentUser: () => ({ isError: false }),
+  useCurrentUser: () => ({ isError: false, refetch: refetch.viewer }),
   useTasks: () => ({
     data: TASKS,
     isPending: false,
     isError: false,
     isFetching: false,
-    refetch: vi.fn(),
+    refetch: refetch.tasks,
   }),
-  useMyPoints: () => ({ data: undefined }),
-  useLeaderboard: () => ({ data: undefined }),
+  useMyPoints: () => ({ data: undefined, refetch: refetch.points }),
+  useLeaderboard: () => ({ data: undefined, refetch: refetch.leaderboard }),
   usePermissionList: () => [],
   useUpdateTaskStatus: () => ({ mutateAsync }),
 }));
@@ -142,8 +150,7 @@ vi.mock("@/lib/haptics", () => ({
 import TasksScreen from "@/app/(tabs)/tasks";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
-const refocus = (expoRouter as unknown as { __refocus: () => void })
-  .__refocus;
+const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -188,9 +195,10 @@ describe("A task in flight", () => {
     failure = FAILED;
     let release!: () => void;
     mutateAsync.mockImplementationOnce(
-      () => new Promise<never>((_resolve, reject) => {
-        release = () => reject(FAILED);
-      }),
+      () =>
+        new Promise<never>((_resolve, reject) => {
+          release = () => reject(FAILED);
+        }),
     );
     const tree = render();
     await tapRow(tree);
@@ -213,7 +221,9 @@ describe("A task in flight", () => {
 
     expect(row(tree).props.onToggle).toBeDefined();
     expect(host().props.accessibilityState).toMatchObject({ busy: false });
-    expect(StyleSheet.flatten(host().props.style)).not.toHaveProperty("opacity");
+    expect(StyleSheet.flatten(host().props.style)).not.toHaveProperty(
+      "opacity",
+    );
     act(() => tree.unmount());
   });
 });
@@ -231,7 +241,9 @@ describe("Task status toggle on a gate refusal (#2710)", () => {
     expect(screenText(tree)).toContain(copy);
     // The guard's own words: a checkout instruction the store declaration
     // forbids in the app, or a Settings → Modules instruction for an officer.
-    expect(screenText(tree)).not.toContain((error as { message: string }).message);
+    expect(screenText(tree)).not.toContain(
+      (error as { message: string }).message,
+    );
     // Every row, not just the one tapped: each would refuse the same way.
     expect(rows(tree)).toHaveLength(2);
     for (const each of rows(tree)) expect(each.props.onToggle).toBeUndefined();
@@ -250,7 +262,9 @@ describe("Task status toggle on a gate refusal (#2710)", () => {
     expect(row(tree).props.onToggle).toBeUndefined();
     act(() => appStateListener()("active"));
 
-    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
+    expect(screenText(tree)).not.toContain(
+      SUBSCRIPTION_REFUSAL_COPY.taskStatus,
+    );
     for (const each of rows(tree)) expect(each.props.onToggle).toBeDefined();
     act(() => tree.unmount());
   });
@@ -281,7 +295,9 @@ describe("Task status toggle on a gate refusal (#2710)", () => {
     const tree = render();
     await tapRow(tree);
 
-    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
+    expect(screenText(tree)).not.toContain(
+      SUBSCRIPTION_REFUSAL_COPY.taskStatus,
+    );
     expect(screenText(tree)).not.toContain(MODULE_REFUSAL_COPY.taskStatus);
     expect(row(tree).props.onToggle).toBeDefined();
     act(() => tree.unmount());
@@ -408,5 +424,50 @@ describe("Tasks board rows", () => {
   it("marks only the first row of a group as first", () => {
     const tree = render();
     expect(rows(tree).map((r) => r.props.isFirst)).toEqual([true, false]);
+  });
+});
+
+describe("Tasks board pull-to-refresh", () => {
+  it("refreshes the board, the viewer, the points and the leaderboard on a pull (#3385)", async () => {
+    for (const each of Object.values(refetch)) each.mockClear();
+    const tree = render();
+    // The ScrollView stand-in is a string, so it never renders the control it
+    // is handed: the pull is the control element's own `refresh`.
+    const control = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "ScrollView" && node.props.refreshControl,
+    ).props.refreshControl as React.ReactElement<{
+      refresh: () => Promise<unknown>;
+    }>;
+
+    await act(async () => {
+      await control.props.refresh();
+    });
+
+    for (const each of Object.values(refetch)) {
+      expect(each).toHaveBeenCalledTimes(1);
+      expect(each).toHaveBeenCalledWith({ cancelRefetch: true });
+    }
+    act(() => tree.unmount());
+  });
+
+  it("leaves the board out of a pull with no chapter, since its read has no gate (#3385)", async () => {
+    for (const each of Object.values(refetch)) each.mockClear();
+    chapterId = null;
+    const tree = render();
+    const control = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "ScrollView" && node.props.refreshControl,
+    ).props.refreshControl as React.ReactElement<{
+      refresh: () => Promise<unknown>;
+    }>;
+
+    await act(async () => {
+      await control.props.refresh();
+    });
+
+    expect(refetch.tasks).not.toHaveBeenCalled();
+    expect(refetch.viewer).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
   });
 });

@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { cardFilledContainers } from "@/tests/card-surfaces";
@@ -14,8 +20,9 @@ import { networkMock } from "@/tests/network";
  * `can-fallback.spec.tsx` pins.
  */
 
-const { mockOffline, reads } = vi.hoisted(() => ({
+const { mockOffline, reads, updateChannel } = vi.hoisted(() => ({
   mockOffline: { value: false },
+  updateChannel: { mutateAsync: (() => Promise.resolve()) as (...args: unknown[]) => Promise<unknown> },
   reads: {
     channels: {} as Record<string, unknown>,
     categories: {} as Record<string, unknown>,
@@ -36,7 +43,10 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useRoles: () => ({ data: [] }),
     useMemberDisplayNames: () => ({ nameFor: () => null }),
     useCreateChannel: mutation,
-    useUpdateChannel: mutation,
+    useUpdateChannel: () => ({
+      mutateAsync: (...args: unknown[]) => updateChannel.mutateAsync(...args),
+      isPending: false,
+    }),
     useDeleteChannel: mutation,
     useCreateCategory: mutation,
     useUpdateCategory: mutation,
@@ -92,6 +102,7 @@ function settled(data: unknown) {
     data,
     isPending: false,
     isLoading: false,
+    isSuccess: true,
     isError: false,
     fetchStatus: "idle",
     refetch: vi.fn(),
@@ -432,5 +443,141 @@ describe("ChatAdminPage — a channel's pins", () => {
     expect(
       screen.getByRole("heading", { level: 4, name: "Pinned messages (0)" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ChatAdminPage — saving a channel", () => {
+  it("leaves a never-set description alone when another field is saved", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).not.toHaveProperty("description");
+  });
+
+  it("sends the description once the officer has typed one", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.change(document.getElementById("ca-description")!, {
+      target: { value: "  The whole chapter.  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).toMatchObject({ description: "The whole chapter." });
+  });
+
+  it("sends an empty description when the officer clears one", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    reads.channels = settled([
+      { ...CHANNELS[0], description: "Old words." },
+      ...CHANNELS.slice(1),
+    ]);
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.change(document.getElementById("ca-description")!, {
+      target: { value: "   " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).toMatchObject({ description: "" });
+  });
+
+  it("doesn't send an untouched draft over a description that arrived on refetch", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    const { rerender } = render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    reads.channels = settled([
+      { ...CHANNELS[0], description: "The whole chapter." },
+      ...CHANNELS.slice(1),
+    ]);
+    rerender(<ChatAdminPage initialChannelId="ch-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).not.toHaveProperty("description");
+  });
+});
+
+describe("ChatAdminPage — opened from a channel start", () => {
+  it("selects ?channel= and puts the cursor in its description", () => {
+    render(<ChatAdminPage initialChannelId="ch-2" />);
+
+    expect(screen.getByRole("button", { name: /^#exec/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(document.activeElement).toBe(
+      document.getElementById("ca-description"),
+    );
+  });
+
+  it("waits for the channel list when the page is opened cold", () => {
+    reads.channels = {
+      data: undefined,
+      isPending: true,
+      isLoading: true,
+      isSuccess: false,
+      isError: false,
+      fetchStatus: "fetching",
+      refetch: vi.fn(),
+    };
+    const { rerender } = render(<ChatAdminPage initialChannelId="ch-2" />);
+
+    reads.channels = settled(CHANNELS);
+    rerender(<ChatAdminPage initialChannelId="ch-2" />);
+
+    expect(screen.getByRole("button", { name: /^#exec/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(document.activeElement).toBe(
+      document.getElementById("ca-description"),
+    );
+  });
+
+  it("doesn't take the cursor back to the description on a later pick", () => {
+    const { rerender } = render(<ChatAdminPage initialChannelId="ch-2" />);
+
+    // The opened channel goes away (deleted), so the editor unmounts; the
+    // next pick mounts it afresh.
+    reads.channels = settled(CHANNELS.filter((c) => c.id !== "ch-2"));
+    rerender(<ChatAdminPage initialChannelId="ch-2" />);
+    const general = screen.getByRole("button", { name: /^#general/ });
+    general.focus();
+    fireEvent.click(general);
+
+    expect(document.activeElement).not.toBe(
+      document.getElementById("ca-description"),
+    );
+  });
+
+  it("selects nothing for a channel id it doesn't know", () => {
+    render(<ChatAdminPage initialChannelId="nope" />);
+
+    expect(screen.getByRole("button", { name: /^#exec/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 });

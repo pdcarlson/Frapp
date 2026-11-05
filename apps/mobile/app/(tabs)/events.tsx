@@ -9,6 +9,7 @@ import {
   PressableRow,
   SectionHeader,
 } from "@/components/list-section";
+import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import {
   EmptyState,
@@ -67,6 +68,8 @@ export default function EventsScreen() {
     [eventsQuery.data, now],
   );
 
+  const refresh = useRefetchAll([eventsQuery]);
+
   function openEvent(eventId: string) {
     // Object form, because s07 now takes a param. Covered by the `pathname:`
     // matcher in `lib/routes.spec.ts`.
@@ -83,10 +86,10 @@ export default function EventsScreen() {
     if (eventsQuery.isPending) return <SkeletonLines lines={2} showTile />;
 
     if (eventsQuery.isError) {
-      // Explicit retry for the same reason Chat home carries one: this is a
-      // tab that stays mounted and the shell's ScrollView has no
-      // RefreshControl. C8 (#998) wired `onlineManager`, so a connectivity
-      // blip recovers on its own; a server error still needs this.
+      // An explicit retry as well as the pull (#3385): a button is the
+      // recovery a member sees without knowing the gesture. C8 (#998) wired
+      // `onlineManager`, so a connectivity blip recovers on its own; a server
+      // error still needs one of the two.
       return (
         <ErrorState
           title="Couldn't load events"
@@ -145,6 +148,7 @@ export default function EventsScreen() {
   return (
     <ScreenShell
       title="Events"
+      refresh={refresh}
       headerAction={
         // No pill in a build without Ask (#2259) — see `app/(tabs)/index.tsx`.
         isAskAvailable() ? (
