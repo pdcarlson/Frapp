@@ -30,7 +30,10 @@ function render(element: React.ReactElement): ReactTestRenderer {
   return tree;
 }
 
-/** The flattened style of `node`; the suite's stub `flatten` is the identity. */
+/**
+ * The flattened style of `node`. A private copy of the stub's
+ * `StyleSheet.flatten`, which merges arrays too (#3441 folds these copies).
+ */
 const flat = (node: ReactTestInstance): Record<string, unknown> =>
   Object.assign({}, ...[node.props.style].flat(Infinity).filter(Boolean));
 

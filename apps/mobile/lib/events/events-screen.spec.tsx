@@ -1,12 +1,13 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
-import type { TextStyle } from "react-native";
+import { StyleSheet, type TextStyle } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { formatEventDateBlock } from "@/lib/events/format";
+import { expectRoundedRipple } from "@/test/pressable-row";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -66,20 +67,13 @@ function render(): ReactTestRenderer {
   return tree;
 }
 
-/**
- * The flattened style of the one `Text` that draws exactly `text`. Flattened
- * here because the suite's react-native stub makes `StyleSheet.flatten` the
- * identity.
- */
+/** The flattened style of the one `Text` that draws exactly `text`. */
 function styleOf(tree: ReactTestRenderer, text: string): TextStyle {
   const [node] = tree.root
     .findAllByType("Text" as never)
     .filter((candidate) => candidate.props.children === text);
   if (!node) throw new Error(`no Text draws ${JSON.stringify(text)}`);
-  return Object.assign(
-    {},
-    ...[node.props.style].flat(Infinity).filter(Boolean),
-  ) as TextStyle;
+  return StyleSheet.flatten(node.props.style) as TextStyle;
 }
 
 const skeletons = (tree: ReactTestRenderer) =>
@@ -155,15 +149,21 @@ describe("Event card", () => {
         node.props.accessibilityLabel === "Open Chapter meeting" &&
         typeof node.props.style === "function",
     );
-    const held = Object.assign(
-      {},
-      ...[card.props.style({ pressed: true })].flat(Infinity).filter(Boolean),
-    );
+    const held = StyleSheet.flatten(card.props.style({ pressed: true }));
 
     // The suite's stub is iOS: the card lifts one rung up the surface ladder.
     expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
     expect(held).not.toHaveProperty("opacity");
-    expect(card.props.android_ripple?.color).toBeDefined();
+    // The ripple is rounded by a parent clip with the card's radius
+    // (`PressableRow`); the card's own `overflow` would leave it square.
+    const { clip } = expectRoundedRipple(
+      card,
+      signetDarkTokens.radius.cardLarge,
+    );
+    // The card has no margins, so the clip adds none and the card stays put.
+    expect(Object.keys(clip).filter((key) => key.startsWith("margin"))).toEqual(
+      [],
+    );
   });
 
   it("paints Mandatory as a danger status and points in the accent", () => {

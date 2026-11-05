@@ -1,11 +1,33 @@
 /** @vitest-environment jsdom */
-import { describe, expect, it } from "vitest";
+import React from "react";
+import { act } from "react";
+import { create, type ReactTestRenderer } from "react-test-renderer";
+import { describe, expect, it, vi } from "vitest";
+
+// A purple chapter's accent, deliberately not house gold, so a glyph that
+// slipped back to a `gold.*` token would show up in an assertion.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({
+    accent: "#CB9FFF",
+    accentPrimary: "#8E4EC6",
+    accentOnPrimary: "#FFFFFF",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
+    logoUrl: null,
+    chapterName: null,
+    textMark: null,
+  }),
+}));
+import { signetDarkTokens } from "@repo/theme/signet";
+import { FrappThemeProvider } from "@/lib/theme";
+import { expectRoundedRipple } from "@/test/pressable-row";
 import {
   formatDueDate,
   formatEventTime,
   isDueUrgent,
   selectNextEvent,
   selectNextTask,
+  UpNextStrip,
 } from "./up-next-strip";
 
 /**
@@ -306,5 +328,95 @@ describe("isDueUrgent", () => {
 
   it("is false on an unparseable date rather than defaulting to alarm", () => {
     expect(isDueUrgent("banana", NOW)).toBe(false);
+  });
+});
+
+describe("UpNextStrip rows", () => {
+  const VIEWER = "viewer-1";
+
+  function renderStrip(): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <UpNextStrip
+            events={[
+              {
+                id: "e1",
+                name: "Chapter meeting",
+                location: "Great Hall",
+                start_time: at(2026, 7, 16, 18),
+              },
+            ]}
+            tasks={[
+              {
+                id: "t1",
+                title: "Ride-share list",
+                due_date: "2026-08-17",
+                status: "TODO",
+                assignee_id: VIEWER,
+              },
+            ]}
+            viewerUserId={VIEWER}
+            now={NOW}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  function rows(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) => (node.type as unknown as string) === "Pressable",
+    );
+  }
+
+  it("leads the event with the accent calendar and the task with the muted check", () => {
+    const [eventRow, taskRow] = rows(renderStrip());
+
+    // The Events tab glyph is a Rect body; the Tasks one a Circle.
+    const calendar = eventRow!.find(
+      (node) => (node.type as unknown as string) === "Rect",
+    );
+    const check = taskRow!.find(
+      (node) => (node.type as unknown as string) === "Circle",
+    );
+    expect(calendar.props.stroke).toBe("#CB9FFF");
+    expect(check.props.stroke).toBe(signetDarkTokens.color.text.muted);
+    for (const svg of [eventRow!, taskRow!].map((row) =>
+      row.find((node) => (node.type as unknown as string) === "Svg"),
+    )) {
+      expect(svg.props.width).toBe(20);
+    }
+  });
+
+  it("gives both rows the shared list-row press feedback", () => {
+    for (const row of rows(renderStrip())) {
+      expect(row.props.android_ripple?.color).toMatch(/^rgba\(/);
+      // The suite's react-native stub runs as iOS.
+      expect(row.props.style({ pressed: true })).toContainEqual({
+        backgroundColor: signetDarkTokens.color.surface.card,
+      });
+      expect(row.props.style({ pressed: false })).toContain(null);
+    }
+  });
+
+  // Each row pads itself by `sm` and bleeds it into the screen gutter, as
+  // Chat home's channel rows do, so the glyph stays on the gutter line and the
+  // press lift clears it. The bleed sits on the clip that rounds the ripple
+  // (`PressableRow`), so the row is where it was.
+  it("bleeds each row's padding into the screen gutter, inside a rounded clip", () => {
+    const all = rows(renderStrip());
+    expect(all).toHaveLength(2);
+    for (const row of all) {
+      const { clip, resting } = expectRoundedRipple(
+        row,
+        signetDarkTokens.radius.control,
+      );
+      expect(resting.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
+      expect(clip.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
+      expect(resting).not.toHaveProperty("marginHorizontal");
+    }
   });
 });
