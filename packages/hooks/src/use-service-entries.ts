@@ -119,7 +119,12 @@ export function useCreateServiceEntry() {
 export function useRequestServiceProofUploadUrl() {
   const client = useFrappClient();
   return useMutation({
-    mutationFn: async (body: { filename: string; content_type: string }) => {
+    mutationFn: async (body: {
+      filename: string;
+      content_type: string;
+      /** Declared so the API's own size check answers with a readable 400. */
+      size_bytes?: number;
+    }) => {
       const { data, error } = await client.POST(
         "/v1/service-entries/proof-upload-url",
         { body },

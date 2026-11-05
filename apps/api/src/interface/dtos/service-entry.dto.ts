@@ -10,7 +10,10 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
+import {
+  POINTS_ADJUSTMENT_MAX,
+  SERVICE_DESCRIPTION_MAX_LENGTH,
+} from '@repo/validation';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
 
 export class CreateServiceEntryDto {
@@ -35,7 +38,7 @@ export class CreateServiceEntryDto {
 
   @ApiProperty({ description: 'Description of the service performed' })
   @IsString()
-  @MaxLength(2000)
+  @MaxLength(SERVICE_DESCRIPTION_MAX_LENGTH)
   description: string;
 
   @ApiPropertyOptional({
