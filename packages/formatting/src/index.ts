@@ -18,3 +18,13 @@ export { dayDelta } from "./calendar-days";
 export { formatMinutesExact, formatMinutesRounded } from "./minutes";
 export { formatBytes } from "./bytes";
 export { localIsoDate } from "./local-date";
+export {
+  formatDay,
+  formatDayRange,
+  formatDayTime,
+  formatDayTimeRange,
+  formatDueLabel,
+  formatRelativeDayTime,
+  formatTimestampFull,
+  formatWeekdayDay,
+} from "./display";

@@ -101,11 +101,10 @@ const HAND_ROLLED =
  * | `start_date` / `end_date` | `semester_archives` | `initial_schema.sql:442` |
  * | `effective_date` | `chapter_documents` | `20260831220000_chapter_documents_metadata.sql:24` |
  *
- * The last three have no formatter call today — `service-page.tsx` and
- * `settings-semester-tab.tsx` interpolate them raw, which is a cosmetic
- * inconsistency rather than this defect. They are listed anyway, because the
- * obvious future tidy-up is to wrap them in the shared helper, and reaching
- * for `formatLocaleDate` is exactly how the two fixed sites got it wrong.
+ * Every one of them now renders through the house display helpers
+ * (`formatDay`, `formatDayRange`), which read a bare date at local noon. They
+ * stay listed because reaching for `formatLocaleDate` is exactly how the two
+ * fixed sites got it wrong.
  *
  * `\b` boundaries make the bare `date` entry safe next to `due_date`: the
  * `date` in `due_date` is preceded by a word character, so it does not match.
@@ -279,7 +278,9 @@ describe("date display goes through the right @repo/formatting member", () => {
       import { formatLocaleDate } from "@repo/formatting";
       formatLocaleDate(entry.date)
     `;
-    expect(wrongMemberCalls(boundary)).toEqual(["formatLocaleDate(entry.date)"]);
+    expect(wrongMemberCalls(boundary)).toEqual([
+      "formatLocaleDate(entry.date)",
+    ]);
 
     // The other two members share `instant.ts`'s `parseInstant`, so they carry
     // the identical bare-date defect and are watched too.

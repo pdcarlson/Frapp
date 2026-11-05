@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Download, Loader2, Trash2 } from "lucide-react";
 import { selectDownloadUrl, useDocument } from "@repo/hooks";
-import { formatBareDate, formatLocaleDate } from "@repo/formatting";
+import { formatDay } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
 import { DocumentsGlyph } from "@/components/documents/resources-glyphs";
@@ -11,7 +11,7 @@ import { compactControlClassName } from "@/components/shared/table-controls";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import type { ChapterDocument } from "@/components/documents/document-types";
 import { useToast } from "@/lib/hooks/use-toast";
-import { getErrorMessage } from "@/lib/utils";
+import { getErrorMessage, labelled } from "@/lib/utils";
 
 // Deliberately ungated: the signed link comes from `GET /v1/documents/:id`, and
 // `enforceSubscription` returns early for GET — a lapsed chapter can still read
@@ -120,12 +120,10 @@ export function DocumentRow({
       */}
         <p className="truncate text-caption text-muted">
           {[
-            `Uploaded ${formatLocaleDate(doc.created_at)}`,
+            labelled("Uploaded", formatDay(doc.created_at)),
             doc.folder,
             doc.document_type,
-            doc.effective_date
-              ? `Effective ${formatBareDate(doc.effective_date)}`
-              : null,
+            labelled("Effective", formatDay(doc.effective_date)),
             doc.description,
           ]
             .filter(Boolean)
@@ -142,7 +140,7 @@ export function DocumentRow({
           offering one per row.
         */}
           <Button
-            variant="ghost"
+            variant="quiet"
             size="icon"
             className={compactControlClassName}
             aria-label={`Delete ${doc.title}`}

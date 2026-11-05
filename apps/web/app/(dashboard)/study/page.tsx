@@ -1,7 +1,7 @@
 import { StudyPage } from "@/components/study/study-page";
 
 export const metadata = {
-  title: "Study session",
+  title: "Study hours",
 };
 
 export default function Study() {

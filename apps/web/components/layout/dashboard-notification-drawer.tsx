@@ -18,7 +18,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { formatLocaleDateTime as formatTime } from "@repo/formatting";
+import { formatRelativeDayTime } from "@repo/formatting";
 import { asArray } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
@@ -261,7 +261,7 @@ export function DashboardNotificationDrawer({
                         </p>
                       ) : null}
                       <p className="mt-2 text-xs text-muted-foreground">
-                        {formatTime(notification.created_at)}
+                        {formatRelativeDayTime(notification.created_at)}
                       </p>
                     </Link>
                   </li>

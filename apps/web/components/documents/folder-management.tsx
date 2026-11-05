@@ -133,10 +133,7 @@ export function useFolderManagement({
       // verbatim — the fallback is for the network-failure case only.
       toast({
         title: renaming ? "Couldn't rename folder" : "Couldn't create folder",
-        description: getErrorMessage(
-          error,
-          "Requires chapter_docs:manage. Retry or confirm your permissions.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     } finally {
@@ -169,10 +166,7 @@ export function useFolderManagement({
     } catch (error) {
       toast({
         title: "Couldn't delete folder",
-        description: getErrorMessage(
-          error,
-          "Requires chapter_docs:manage. Retry or confirm your permissions.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     } finally {
@@ -226,10 +220,7 @@ export function useFolderManagement({
         description:
           applied > 0
             ? "Some folders moved before this failed. The list below shows the order that saved."
-            : getErrorMessage(
-                error,
-                "Requires chapter_docs:manage. Retry or confirm your permissions.",
-              ),
+            : getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
       void refetchFolders();
