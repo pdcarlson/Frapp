@@ -40,10 +40,10 @@ Three things already pointed the same way:
   `Reload`, `Try again`, `Back to chat`, `Transfer presidency`, `Start new semester` — is sentence
   case. These four rows were the document's only Title Case strings.
 
-**What this rule does NOT already describe, stated so nobody reads it as settled everywhere.** Two
-Title Case controls ship on the web dashboard today — `New Event`
-(`apps/web/components/events/events-page.tsx`) and `Open Documents`
-(`apps/web/components/layout/ask-pill.tsx`) — and
+**What this rule does NOT already describe, stated so nobody reads it as settled everywhere.** One
+Title Case control ships on the web dashboard today — `Open Documents`
+(`apps/web/components/layout/ask-pill.tsx`); `/events`' `New Event` became `New event` in November
+2026 — and
 [`../web-dashboard/reference/web-framework.dc.html`](../web-dashboard/reference/web-framework.dc.html),
 which outranks written docs on the web surface
 ([`../web-dashboard/README.md` § Sources and precedence](../web-dashboard/README.md#sources-and-precedence)),
@@ -195,15 +195,19 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 |---|---|---|
 | Loading | — | `Loading chapter events...` |
 | Empty | `No events yet` | `Create your first chapter event to unlock attendance and point automation.` |
+| Empty (filtered) | `No events match the filters` | `Clear a filter to see more.` |
+| Empty (search) | `No match for “{query}”` | `Check the spelling, or widen the filters.` |
 | Error | `Couldn't load chapter events` | `The events workflow needs a healthy API response. Verify your chapter access and retry.` |
 | Offline | `Events workspace unavailable offline` | `Reconnect to load event schedules and attendance updates.` |
+
+`No events yet` shows only when the chapter has no events at all. Under a filter that hides every event (the default Upcoming, once every event is past), the page says the filters matched nothing instead (2026-11-05).
 
 ### Attendance (dashboard)
 
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading attendance...` |
-| Empty | `No attendance records yet` | `Once members check in — or you record attendance manually — they'll show up here.` |
+| Empty | `No attendance records yet` | `Once members check in, or you record attendance manually, they'll show up here.` |
 | Error | `Attendance unavailable` | `Couldn't load attendance for this event. Retry or confirm you have events:update or permission to view attendance.` |
 
 ### Points (dashboard)
@@ -222,10 +226,11 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading audit transactions...` |
-| Empty (flagged only) | `No flagged transactions in this window` | `Large single adjustments (\|amount\| ≥ 100) will appear here automatically.` |
+| Empty (flagged only) | `No flagged transactions in this window` | `Single adjustments of \|amount\| ≥ {threshold} are flagged here automatically.`, or `Large single adjustments are flagged here automatically.` when the chapter's threshold can't be read |
 | Empty (filtered) | `No transactions match this filter` | `Try relaxing the category or member filter.` |
 | Error | `Audit unavailable` | `Couldn't load chapter transactions. Retry or confirm your points:view_all access.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can view the chapter's transaction log.` |
+| Permission denied | `Audit` (the section label) | `Seeing every transaction needs points:view_all.` |
 
 ### Roles & Permissions (dashboard)
 
@@ -282,7 +287,7 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading service entries...` |
-| Empty queue | `No pending entries` | `Approved or rejected entries appear in the History card below.` |
+| Empty queue | `No pending entries` | `Approved or rejected entries appear under History.` |
 | Empty history | `No service activity yet` | `Log your first service entry to build up chapter service hours.` |
 | Error | `Couldn't load service entries` | `Members see only their own entries; admins need service:approve to see every entry.` |
 | Offline | `Service hours unavailable offline` | `Reconnect to log hours and review the approval queue.` |
@@ -356,7 +361,7 @@ Three of these exist to keep one state from impersonating another:
 | Empty zones | `No active study zones` | `Ask a chapter admin with geofences:manage to add one.` |
 | Empty history | `No sessions logged yet` | `Start a tracked session inside a study zone to start earning study points.` |
 | Error | `Couldn't load study data` | `Confirm your chapter access and retry.` |
-| Offline | `Study hours unavailable offline` | `Reconnect to start a session — tracking needs a live location check.` |
+| Offline | `Study hours unavailable offline` | `Reconnect to start a session. Tracking needs a live location check.` |
 | Paused (tab hidden) | `Paused (tab hidden)` (badge) | Surfaced live while the timer is paused by the Page Visibility API. |
 
 ### Subscription refused (mobile, cross-surface)
