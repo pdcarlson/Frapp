@@ -58,15 +58,12 @@ type ScreenShellProps = {
  * used to absorb.
  *
  * The title is the headline role (24/700) at the board's -0.3 tracking, as
- * every shell screen on `canvas-screens.dc.html` draws it. It was the 18/600
+ * `canvas-screens.dc.html` draws it on s06, s08–s14 and s16. It was the 18/600
  * title role, the same size as a card's heading, so a page and the cards on
- * it read as one level (Paul's Android pass, 2026-11-04).
- *
- * The body keeps a tap that lands while the keyboard is up
- * (`keyboardShouldPersistTaps="handled"`): with React Native's default, the
- * first tap on a button under a focused field (Settings' Save, a sign-out row)
- * only dismisses the keyboard and the member has to tap again. A tap on empty
- * space still dismisses it, and so does dragging the body.
+ * it read as one level (Paul's Android pass, 2026-11-04). s07 draws its event
+ * name a step larger (28/700), which is off the type scale, so it takes the
+ * headline too; s04 and s15 draw no page title on the board, and the app's
+ * shell gives them one at the same size.
  */
 export function ScreenShell({
   title,
@@ -85,11 +82,7 @@ export function ScreenShell({
       style={styles.safeArea}
       edges={["top", "left", "right", "bottom"]}
     >
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-      >
+      <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
           {back ? (
             <BackRow

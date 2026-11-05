@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -62,17 +62,7 @@ export function BackRow({
         // The drawn row is a 16pt line of text; the slop brings the target to
         // the 44pt minimum without moving the title down.
         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        onPress={() => {
-          // The shell keeps a tap that lands while the keyboard is up
-          // (components/screen-shell.tsx), so this row can be pressed with a
-          // field still focused. These routes are hidden tabs that stay
-          // mounted, so leaving would keep that field focused, and the
-          // keyboard up, over the next screen, and a field that saves on
-          // blur (Settings' quiet hours) would never save. Dismissing first
-          // blurs it.
-          Keyboard.dismiss();
-          router.navigate(href);
-        }}
+        onPress={() => router.navigate(href)}
         style={({ pressed }) => (pressed ? styles.pressed : null)}
       >
         <Text style={styles.text}>{`‹ ${label}`}</Text>

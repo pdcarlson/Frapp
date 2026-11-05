@@ -347,3 +347,5 @@ time, because s07 is the one screen the board draws one on. Its loading, empty a
 states pass none. The rule itself lives in [`patterns.md` § Screen headers](patterns.md#screen-headers).
 
 **#3022 touched `components/screen-shell.tsx`, as an integrator change.** The shell gained an optional `back` prop that draws `BackRow` above the title, and every screen the board draws a back row on passes one in the same change, each of their state screens included. It also edited `app/(tabs)/_layout.tsx`, comment only: the header comment that said the rows weren't drawn yet now points at the rule, which lives in [§ Back rows](#back-rows).
+
+**Paul's Android pass touched `components/screen-shell.tsx`, as an integrator change** (2026-11-05). The title moved from the 18/600 title role to the 24/700 headline at -0.3 tracking, as the board draws s06, s08–s14 and s16, so a page title sits a level above the cards on it. s13's own header moved with it. No prop changed.

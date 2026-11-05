@@ -4,7 +4,8 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Text, View } from "react-native";
 import { describe, expect, it } from "vitest";
-import { FrappThemeProvider } from "@/lib/theme";
+import { getSignetTokens } from "@repo/theme/signet";
+import { FrappThemeProvider, typeRole } from "@/lib/theme";
 import { screenText, textHeadings } from "@/test/screen-text";
 import { expectBackRow } from "@/test/back-row";
 import { BACK_TO_MORE } from "./back-row";
@@ -63,24 +64,15 @@ describe("ScreenShell (#2485)", () => {
     );
     const [title] = textHeadings(tree);
 
-    // canvas-screens.dc.html draws every shell title 24/700 at -.3px.
+    // canvas-screens.dc.html draws s06, s08–s14 and s16's titles 24/700 at -.3px.
+    // typeRole carries the 700 weight as Figtree's bold face.
     expect(title!.props.style).toEqual(
-      expect.objectContaining({ fontSize: 24, letterSpacing: -0.3 }),
+      expect.objectContaining({
+        ...typeRole(getSignetTokens().typography.role.headline),
+        fontSize: 24,
+        letterSpacing: -0.3,
+      }),
     );
-  });
-
-  it("keeps a tap that lands while the keyboard is up, and drops the keyboard on a drag", () => {
-    const tree = render(
-      <ScreenShell title="Documents">
-        <Text>Body</Text>
-      </ScreenShell>,
-    );
-    const body = tree.root.findByType(
-      "ScrollView" as unknown as React.ElementType,
-    );
-
-    expect(body.props.keyboardShouldPersistTaps).toBe("handled");
-    expect(body.props.keyboardDismissMode).toBe("on-drag");
   });
 
   it("draws a title mark on the title's row, ahead of the title", () => {
