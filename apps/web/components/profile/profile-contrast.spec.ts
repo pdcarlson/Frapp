@@ -193,7 +193,7 @@ describe("the pre-auth screens have no tenant, so nothing on them takes the acce
   });
 
   it("keeps the gold footer links above the gate", () => {
-    // "New here? Join your chapter" and s02's "‹ Back" are `--accent-text`.
+    // The pre-auth footer links ("Create an account", "Join your chapter") are `--accent-text`.
     for (const seed of SEEDS) {
       expect(
         ratio(accentRolesFor(seed)["--accent-text"]!, SURFACE.background),

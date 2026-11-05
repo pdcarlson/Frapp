@@ -18,9 +18,10 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
-import SignInPage from "@/app/sign-in/page";
-import SignUpPage from "@/app/sign-up/page";
-import NoAccessPage from "@/app/no-access/page";
+import SignInPage from "@/app/(auth)/sign-in/page";
+import SignUpPage from "@/app/(auth)/sign-up/page";
+import NoAccessPage from "@/app/(auth)/no-access/page";
+import { AuthFrame } from "@/components/auth/auth-frame";
 
 /**
  * The three pre-auth screens this can render without a session or a chapter.
@@ -48,22 +49,30 @@ describe("every pre-auth screen has exactly one typographic anchor", () => {
 });
 
 describe("the mark", () => {
-  it("is drawn in house gold on the entry screen, never the accent slot", () => {
+  it("is drawn once, by the frame, in house gold rather than the accent slot", () => {
     // `brand-identity.md` §2: "The mark and logo MUST NOT take the chapter
     // accent — ever." On these routes `--primary` happens to hold the baked
     // default seed, because `useChapterTheme()` mounts inside `DashboardShell`
     // and pre-auth renders outside it — so the two look identical today and
     // would diverge the moment anything mounted the bridge higher.
-    const { container } = render(<SignInPage />);
-    const mark = container.querySelector(".signet-mark");
-    expect(mark).not.toBeNull();
-    expect(mark!.getAttribute("data-field")).toBe("#1A1A1A");
-    expect(mark!.getAttribute("data-gold")).toBe("#DDB844");
-    expect(mark!.querySelector("img")?.getAttribute("src")).toContain(
+    //
+    // Since 2026-11-05 the lockup belongs to the signed-out frame, not to a
+    // screen, so it heads sign-in and sign-up alike.
+    const { container } = render(
+      <AuthFrame>
+        <SignUpPage />
+      </AuthFrame>,
+    );
+    const marks = container.querySelectorAll(".signet-mark");
+    expect(marks).toHaveLength(1);
+    const mark = marks[0]!;
+    expect(mark.getAttribute("data-field")).toBe("#1A1A1A");
+    expect(mark.getAttribute("data-gold")).toBe("#DDB844");
+    expect(mark.querySelector("img")?.getAttribute("src")).toContain(
       "signet-emblem-B.png",
     );
-    expect(mark!.getAttribute("aria-hidden")).toBe("true");
-    expect(mark!.className).not.toMatch(/\bbg-primary\b/);
+    expect(mark.getAttribute("aria-hidden")).toBe("true");
+    expect(mark.className).not.toMatch(/\bbg-primary\b/);
   });
 
   it("leaves the primary button on the accent slot, which is the right call", () => {
@@ -76,10 +85,36 @@ describe("the mark", () => {
     expect(container.querySelector("button.bg-primary")).not.toBeNull();
   });
 
-  it("is omitted on a screen reached from the entry screen", () => {
-    // s02 draws no mark. It belongs to the screen a member arrives on.
-    const { container } = render(<SignUpPage />);
+  it("is not drawn again by a screen inside the frame", () => {
+    const { container } = render(<SignInPage />);
     expect(container.querySelector(".signet-mark")).toBeNull();
+  });
+});
+
+describe("sign-in and sign-up are one page with different fields", () => {
+  it("keeps the frame's one <main> and the form's one <h1> on both", () => {
+    for (const Page of [SignInPage, SignUpPage]) {
+      const { container, unmount } = render(
+        <AuthFrame>
+          <Page />
+        </AuthFrame>,
+      );
+      expect(container.querySelectorAll("main")).toHaveLength(1);
+      expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+      unmount();
+    }
+  });
+
+  it("offers the invite route from sign-in, where `/` now sends a visitor", () => {
+    render(<SignInPage />);
+    expect(
+      screen.getByRole("link", { name: "Join your chapter" }).getAttribute("href"),
+    ).toBe("/join");
+  });
+
+  it("draws no back link on sign-up; the footer is the way across", () => {
+    render(<SignUpPage />);
+    expect(screen.queryByRole("link", { name: "Back" })).toBeNull();
   });
 });
 
