@@ -740,7 +740,7 @@ function ArchetypeStep({
                 FOCUS_RING,
                 isActive
                   ? "border-accent-border bg-accent-subtle-hover text-accent-text"
-                  : "border-border hover:bg-accent-subtle",
+                  : "border-border hover:bg-card-hover",
               )}
             >
               {/*
@@ -987,7 +987,7 @@ function InviteStep({
               aria-label="Copy invite link"
             >
               {copied ? (
-                <Check className="h-4 w-4 text-primary" />
+                <Check className="h-4 w-4" />
               ) : (
                 <Copy className="h-4 w-4" />
               )}

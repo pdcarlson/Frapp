@@ -213,7 +213,7 @@ function ScopeTab({
         "rounded-md px-2 py-1 text-caption font-semibold transition-colors",
         selected
           ? "bg-accent-subtle text-accent-text"
-          : "text-muted-foreground hover:bg-accent-subtle hover:text-accent-text",
+          : "text-muted-foreground hover:bg-card-hover hover:text-foreground",
         // components.md §3's single disabled recipe — card fill, neutral
         // hairline, `--disabled` text — matching `button.tsx`, which bans
         // `opacity-50` by name because it dims label and fill equally and lands
@@ -267,9 +267,7 @@ function ChatSearchResults({
   }
   if (isPending) {
     return (
-      <p className="px-3 py-4 text-caption text-muted-foreground">
-        Searching…
-      </p>
+      <p className="px-3 py-4 text-caption text-muted-foreground">Searching…</p>
     );
   }
   // An erroring source fails the whole request as a 500 (only slowness
@@ -329,7 +327,7 @@ function ChatSearchResults({
                 onClick={() => onPick(hit)}
                 className={cn(
                   "block w-full px-3 py-3 text-left text-caption transition-colors",
-                  "hover:bg-accent-subtle hover:text-accent-text",
+                  "hover:bg-card-hover hover:text-foreground",
                   FOCUS_RING,
                 )}
               >

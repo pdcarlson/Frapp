@@ -23,7 +23,6 @@ import {
   canEditMessage,
   EDITED_MARKER,
   isCardMessage,
-  isOwnMessage,
   showsEditedMarker,
 } from "@repo/chat-core/message-actions";
 import { MessageRenderer } from "./renderers";
@@ -62,9 +61,10 @@ export interface MessageItemProps {
   avatarUrl?: string;
   /**
    * The palette color of the author's highest-ranked colored role (#3485),
-   * from `useMemberDisplayNames().roleColorFor`. Paints the author's name on
-   * someone else's row; the viewer's own name stays in the chapter accent.
-   * `undefined` or `null` keeps the plain foreground.
+   * from `useMemberDisplayNames().roleColorFor`. Paints the author's name on every
+   * row, the viewer's own included: a name is never drawn in the chapter
+   * accent (`foundations.md` §6). `undefined` or `null` keeps the plain
+   * foreground.
    */
   authorColor?: string | null;
   /**
@@ -81,7 +81,7 @@ export interface MessageItemProps {
    * the member's own uuid, read back to them as somebody else.
    *
    * `null` is not a third answer to fall back to: this id decides whether the
-   * author line says "You" in the chapter accent (`components.md` §11) and
+   * author line says "You" (`components.md` §11) and
    * whether Edit and Delete are offered. So a row cannot be drawn before it is
    * in hand — `MessageTimeline` holds its skeleton until then, and this type is
    * what stops a later caller from quietly reopening the hole.
@@ -218,9 +218,11 @@ export interface MessageItemProps {
  * draws a 32px avatar and an author line (name, then the time of day); a
  * follow-on row draws only its body, with its own time held in the avatar
  * gutter until the row is hovered, focused or tapped. The viewer's own name
- * reads "You" in `--accent-text`, which replaced the self bubble's accent fill
- * as the way a member spots their own run. (The Pinned marker and the viewer's
- * reacted chip take the accent too, on anyone's row.)
+ * reads "You", which replaced the self bubble's accent fill as the way a member
+ * spots their own run. It wears the same role color or foreground as anyone's
+ * name: since 2026-11-05 no name and no Pinned marker takes the chapter accent
+ * (`foundations.md` §6). The viewer's own reacted chip keeps it, because that
+ * chip is a control they switched on.
  *
  * It replaced two §11 bubble shapes, self (right, accent fill, caption below)
  * and incoming (left, card fill, caption above). Everything those carried has a
@@ -258,10 +260,6 @@ export function MessageItem({
   isTapRevealed,
   onToggleTapReveal,
 }: MessageItemProps) {
-  // `isOwnMessage` checks the sender before comparing: an imported archive row
-  // has no `sender_id`, and `null === null` would otherwise offer Edit and
-  // Delete on every imported message.
-  const isMine = isOwnMessage(message, viewerId);
   // Resolved for every sender including the viewer: the label says "You" for its
   // own row, but the avatar still needs the initials — falling through to a uuid
   // slice there would draw `11` next to "You" beside `AC` next to "Alice Chen".
@@ -445,7 +443,9 @@ export function MessageItem({
     if (!showActions || isEditing) return;
     if (
       event.target instanceof Element &&
-      event.target.closest("button, a, input, textarea, select, [role='button']")
+      event.target.closest(
+        "button, a, input, textarea, select, [role='button']",
+      )
     ) {
       return;
     }
@@ -496,7 +496,9 @@ export function MessageItem({
         <QuotedMessage
           className="border-l-0 pl-0"
           author={
-            replyParent ? resolveAuthorLabel(replyParent, nameFor, viewerId) : null
+            replyParent
+              ? resolveAuthorLabel(replyParent, nameFor, viewerId)
+              : null
           }
           preview={replyParent ? replyPreviewText(replyParent) : null}
           hidden={hiddenParent}
@@ -540,7 +542,7 @@ export function MessageItem({
       >
         {edited ? <span>{EDITED_MARKER}</span> : null}
         {pinned ? (
-          <span className="inline-flex items-center gap-1 text-accent-text">
+          <span className="inline-flex items-center gap-1">
             <PinGlyph className="h-3.5 w-3.5" />
             Pinned
           </span>
@@ -623,96 +625,100 @@ export function MessageItem({
    * `:hover`/`:focus-within` reach nothing on a coarse pointer (#1193), so
    * `isTapRevealed` is the third way in, driven by `handleRowTap`.
    */
-  const actions = showActions && !isEditing ? (
-    <div
-      // A labelled group rather than a bare `div`: these controls all act on
-      // one message, and without the grouping a screen reader announces
-      // "Reply, Save, Edit, Delete" with nothing saying what they belong to —
-      // on a virtualized list of them. Not `role="toolbar"`, which would
-      // promise arrow-key roving this does not implement.
-      role="group"
-      aria-label="Message actions"
-      className={cn(
-        "absolute right-4 top-0 z-10 flex -translate-y-1/2 items-center gap-0.5",
-        // Wraps rather than spilling past the row's left edge: on a coarse
-        // pointer every icon is 44px, and nine of them (your own message) are
-        // wider than a 375px thread, where the scroller would clip the first.
-        "max-w-[calc(100%-2rem)] flex-wrap justify-end",
-        "rounded-[10px] border border-border bg-card p-0.5",
-        "transition-opacity",
-        "group-hover/message:pointer-events-auto group-hover/message:opacity-100",
-        "group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100",
-        // Coarse-pointer path: a tap on the row sets `isTapRevealed`, since
-        // `:hover`/`:focus-within` never fire there. Kept as a JS-driven
-        // class rather than a `pointer-coarse:` variant so the same row also
-        // works from a stylus or a mouse click, and so "tapping elsewhere
-        // dismisses this" (the parent list's single `tapRevealedId`) has
-        // something to key off.
-        isTapRevealed
-          ? "pointer-events-auto opacity-100"
-          : "pointer-events-none opacity-0",
-      )}
-    >
-      <ReactionQuickPick
-        reactions={shownReactions}
-        viewerId={viewerId}
-        onReact={(emoji) => onReact(message.id, emoji)}
-        onUnreact={(emoji) => onUnreact(message.id, emoji)}
-      />
-      {/*
+  const actions =
+    showActions && !isEditing ? (
+      <div
+        // A labelled group rather than a bare `div`: these controls all act on
+        // one message, and without the grouping a screen reader announces
+        // "Reply, Save, Edit, Delete" with nothing saying what they belong to —
+        // on a virtualized list of them. Not `role="toolbar"`, which would
+        // promise arrow-key roving this does not implement.
+        role="group"
+        aria-label="Message actions"
+        className={cn(
+          "absolute right-4 top-0 z-10 flex -translate-y-1/2 items-center gap-0.5",
+          // Wraps rather than spilling past the row's left edge: on a coarse
+          // pointer every icon is 44px, and nine of them (your own message) are
+          // wider than a 375px thread, where the scroller would clip the first.
+          "max-w-[calc(100%-2rem)] flex-wrap justify-end",
+          "rounded-[10px] border border-border bg-card p-0.5",
+          "transition-opacity",
+          "group-hover/message:pointer-events-auto group-hover/message:opacity-100",
+          "group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100",
+          // Coarse-pointer path: a tap on the row sets `isTapRevealed`, since
+          // `:hover`/`:focus-within` never fire there. Kept as a JS-driven
+          // class rather than a `pointer-coarse:` variant so the same row also
+          // works from a stylus or a mouse click, and so "tapping elsewhere
+          // dismisses this" (the parent list's single `tapRevealedId`) has
+          // something to key off.
+          isTapRevealed
+            ? "pointer-events-auto opacity-100"
+            : "pointer-events-none opacity-0",
+        )}
+      >
+        <ReactionQuickPick
+          reactions={shownReactions}
+          viewerId={viewerId}
+          onReact={(emoji) => onReact(message.id, emoji)}
+          onUnreact={(emoji) => onUnreact(message.id, emoji)}
+        />
+        {/*
         `iconography.md`'s chat table maps "Reply to a message" to `ThreadGlyph`.
         It stages an inline reply in the composer.
       */}
-      {onReply ? (
-        <button
-          type="button"
-          className={ACTION_BAR_BUTTON}
-          aria-label="Reply"
-          title="Reply"
-          onClick={() => onReply(message)}
-        >
-          <ThreadGlyph className="h-4 w-4" />
-        </button>
-      ) : null}
-      {onToggleBookmark ? (
-        <button
-          type="button"
-          className={cn(ACTION_BAR_BUTTON, isBookmarked && ACTION_BAR_BUTTON_ON)}
-          // A toggle announces its state, and its name stays put: a screen
-          // reader otherwise hears one button swapped for another in the slot.
-          aria-pressed={!!isBookmarked}
-          aria-label="Save"
-          title={isBookmarked ? "Saved" : "Save"}
-          onClick={() => onToggleBookmark(message.id, !isBookmarked)}
-        >
-          <BookmarkGlyph className="h-4 w-4" active={isBookmarked} />
-        </button>
-      ) : null}
-      {canEdit ? (
-        <button
-          type="button"
-          className={ACTION_BAR_BUTTON}
-          ref={editTriggerRef}
-          aria-label="Edit"
-          title="Edit"
-          onClick={startEdit}
-        >
-          <Pencil className="h-4 w-4" aria-hidden="true" />
-        </button>
-      ) : null}
-      {canDelete ? (
-        <button
-          type="button"
-          className={ACTION_BAR_BUTTON}
-          aria-label="Delete"
-          title="Delete"
-          onClick={() => onDelete?.(message.id)}
-        >
-          <Trash2 className="h-4 w-4" aria-hidden="true" />
-        </button>
-      ) : null}
-    </div>
-  ) : null;
+        {onReply ? (
+          <button
+            type="button"
+            className={ACTION_BAR_BUTTON}
+            aria-label="Reply"
+            title="Reply"
+            onClick={() => onReply(message)}
+          >
+            <ThreadGlyph className="h-4 w-4" />
+          </button>
+        ) : null}
+        {onToggleBookmark ? (
+          <button
+            type="button"
+            className={cn(
+              ACTION_BAR_BUTTON,
+              isBookmarked && ACTION_BAR_BUTTON_ON,
+            )}
+            // A toggle announces its state, and its name stays put: a screen
+            // reader otherwise hears one button swapped for another in the slot.
+            aria-pressed={!!isBookmarked}
+            aria-label="Save"
+            title={isBookmarked ? "Saved" : "Save"}
+            onClick={() => onToggleBookmark(message.id, !isBookmarked)}
+          >
+            <BookmarkGlyph className="h-4 w-4" active={isBookmarked} />
+          </button>
+        ) : null}
+        {canEdit ? (
+          <button
+            type="button"
+            className={ACTION_BAR_BUTTON}
+            ref={editTriggerRef}
+            aria-label="Edit"
+            title="Edit"
+            onClick={startEdit}
+          >
+            <Pencil className="h-4 w-4" aria-hidden="true" />
+          </button>
+        ) : null}
+        {canDelete ? (
+          <button
+            type="button"
+            className={ACTION_BAR_BUTTON}
+            aria-label="Delete"
+            title="Delete"
+            onClick={() => onDelete?.(message.id)}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+    ) : null;
 
   /**
    * The inline editor that takes the body's place in the row.
@@ -928,15 +934,10 @@ export function MessageItem({
               className="flex min-w-0 items-baseline gap-2 leading-5"
             >
               <span
-                className={cn(
-                  "truncate text-sm font-semibold",
-                  isMine ? "text-accent-text" : "text-foreground",
-                )}
+                className="truncate text-sm font-semibold text-foreground"
                 // A literal from the role palette, which is contrast-checked
                 // against these surfaces (`@repo/validation` role-colors).
-                style={
-                  !isMine && authorColor ? { color: authorColor } : undefined
-                }
+                style={authorColor ? { color: authorColor } : undefined}
               >
                 {authorLabel}
               </span>
@@ -993,7 +994,12 @@ export function MessageItem({
                 {onDiscard ? (
                   <button
                     type="button"
-                    className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+                    className={cn(
+                      CHIP.base,
+                      CHIP.neutral,
+                      CHIP_HIT_AREA,
+                      "gap-1",
+                    )}
                     onClick={() => onDiscard(message.client_message_id)}
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />

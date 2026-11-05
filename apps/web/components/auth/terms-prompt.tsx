@@ -143,14 +143,16 @@ export function TermsPrompt() {
               <Button
                 type="button"
                 variant="ghost"
-                className="w-full text-destructive"
+                className="w-full text-destructive hover:text-destructive"
                 disabled={busy}
                 onClick={() => {
                   setError(null);
                   void deleteFlow.start();
                 }}
               >
-                {deleteFlow.isDeleting ? "Deleting account…" : "Delete account…"}
+                {deleteFlow.isDeleting
+                  ? "Deleting account…"
+                  : "Delete account…"}
               </Button>
             </form>
           </div>

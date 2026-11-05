@@ -34,7 +34,12 @@ export function PointsCard({ message }: PointsCardProps) {
 
   return (
     <Card className={cn(MESSAGE_CARD)}>
-      <div className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}>
+      <div
+        className={cn(
+          EYEBROW,
+          "flex items-center gap-1.5 text-muted-foreground",
+        )}
+      >
         <PointsGlyph className="h-4 w-4" /> Points
       </div>
       <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-base">

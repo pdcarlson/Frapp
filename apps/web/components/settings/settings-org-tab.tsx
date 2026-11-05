@@ -438,10 +438,10 @@ export function SettingsOrgTab({
                     archetype is the same shape as `/documents`' selected
                     folder — but `bg-primary/5` was a raw opacity wash of the
                     chapter hex, which README §2 bans outright, and at 5% it
-                    was invisible besides. The recipe is §2's two card-seated
-                    states, the one `shared/table-contrast.spec.ts` pins:
-                    hover `accent-3`, selected `accent-4` plus `accent-11`
-                    text. `border-primary/40` on hover went with it — the
+                    was invisible besides. Selected is `accent-4` plus
+                    `accent-11` text, because a picked option is a control the
+                    member switched on; hover is the neutral `--card-hover`
+                    (`foundations.md` §6, 2026-11-05). `border-primary/40` on hover went with it — the
                     border swap is `FOCUS_RING`'s job, and using it for hover
                     too left focus and hover indistinguishable on a card.
                   */
@@ -450,7 +450,7 @@ export function SettingsOrgTab({
                     FOCUS_RING,
                     isCurrent
                       ? "border-accent-border bg-accent-subtle-hover text-accent-text"
-                      : "border-border hover:bg-accent-subtle",
+                      : "border-border hover:bg-card-hover",
                     !canManage && !isCurrent && "cursor-not-allowed opacity-60",
                   )}
                 >
