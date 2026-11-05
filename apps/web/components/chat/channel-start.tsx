@@ -98,7 +98,7 @@ export function ChannelStart({
         <ChannelMark
           channel={channel}
           className="h-8 w-8"
-          hashClassName="text-[32px] font-bold leading-none"
+          hashClassName="text-display font-bold leading-none"
         />
       </div>
       {/* `h3`: under the channel name's `h2` in the header, which sits under
