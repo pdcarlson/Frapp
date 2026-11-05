@@ -177,3 +177,25 @@ describe("ScreenShell back-row action (#3387)", () => {
     expect(back.parent!.props.style).toMatchObject({ flexDirection: "row" });
   });
 });
+
+describe("ScreenShell refresh (#3385)", () => {
+  it("draws a refresh control on its scroll view only when given a refresh", () => {
+    const refreshControl = (tree: ReactTestRenderer) =>
+      tree.root.findByType("ScrollView" as unknown as React.ElementType).props
+        .refreshControl;
+
+    const without = render(
+      <ScreenShell title="Tasks">
+        <View />
+      </ScreenShell>,
+    );
+    const withRefresh = render(
+      <ScreenShell title="Tasks" refresh={() => Promise.resolve()}>
+        <View />
+      </ScreenShell>,
+    );
+
+    expect(refreshControl(without)).toBeUndefined();
+    expect(refreshControl(withRefresh)).toBeTruthy();
+  });
+});

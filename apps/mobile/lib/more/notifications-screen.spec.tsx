@@ -55,6 +55,9 @@ const NOTIFICATIONS = [
 /** What the inbox query returns; a spec sets `data` for an inbox of its own. */
 const inbox = vi.hoisted(() => ({ data: null as unknown[] | null }));
 
+/** The inbox query's `refetch`, kept stable so a spec can assert on a pull. */
+const refetchInbox = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => "chapter-1",
@@ -63,7 +66,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isError: false,
     isFetching: false,
     data: inbox.data ?? NOTIFICATIONS,
-    refetch: vi.fn(),
+    refetch: refetchInbox,
   }),
   useMarkNotificationRead: () => ({ mutateAsync: vi.fn() }),
 }));
@@ -137,6 +140,37 @@ describe("Notifications back row (#3022)", () => {
 
   it("draws ‹ Chat, the screen the bell opens it from", () => {
     expectBackRow(render(), "Chat", "/");
+  });
+});
+
+/**
+ * #3385. A pull on the inbox refetches the notifications it lists, replacing a
+ * refetch already in flight.
+ */
+describe("Notifications pull to refresh (#3385)", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    refetchInbox.mockClear();
+  });
+
+  it("refreshes the notifications on a pull (#3385)", async () => {
+    // The control is a prop of the shell's scroll view, not a rendered
+    // child, so the pull is its `refresh`.
+    const scroll = render().root.findByType(
+      "ScrollView" as unknown as React.ElementType,
+    );
+    const control = scroll.props.refreshControl as React.ReactElement<{
+      refresh: () => Promise<unknown>;
+    }>;
+
+    await act(async () => {
+      await control.props.refresh();
+    });
+
+    expect(refetchInbox).toHaveBeenCalledTimes(1);
+    expect(refetchInbox).toHaveBeenCalledWith({ cancelRefetch: true });
   });
 });
 
