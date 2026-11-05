@@ -38,8 +38,8 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * There is no local write on selection — see `lib/select-chapter.ts`. Because
  * the gate exempts this route, it will not push the member back out when a
  * switch lands, so every exit here is explicit: back to (or into) `(tabs)` on
- * success, to sign-in on sign-out. Nothing waits on a redirect that may never
- * come.
+ * success, and from the Current row whether or not its re-select succeeds; to
+ * sign-in on sign-out. Nothing waits on a redirect that may never come.
  */
 export default function ChapterPicker() {
   const { tokens } = useFrappTheme();
@@ -109,13 +109,22 @@ export default function ChapterPicker() {
   }
 
   async function handleSelect(nextChapterId: string) {
+    // The row marked Current: the chapter the token in hand is on already.
+    const alreadyOn = nextChapterId === currentChapterId;
     setPendingId(nextChapterId);
     setSelectError(null);
 
     try {
       const ok = await selectChapter(nextChapterId);
 
-      if (!ok) {
+      // A failed re-select of the chapter the member is already on leaves
+      // anyway. Requests are checked against the token's claim, so the tabs
+      // underneath work just as they did before the tap; the re-assert, which
+      // keeps the next token on that chapter too, is best-effort. An error
+      // here would strand a member who is offline on the one chapter they
+      // are already in, and a picker a link opened has no row out but Sign
+      // out. Any other row keeps the error: its switch hasn't happened.
+      if (!ok && !alreadyOn) {
         // Nothing local was written, so retrying is safe and nothing needs
         // undoing.
         setSelectError(
@@ -232,7 +241,9 @@ export default function ChapterPicker() {
                 // as on any row: `Current` reads the token's claim, which can
                 // lag the active chapter the server holds (a switch on web, or
                 // a switch here whose refresh failed), and selecting it again
-                // is what puts the server back on the chapter shown.
+                // is what puts the server back on the chapter shown. Unlike
+                // the other rows, it leaves even when that fails (see
+                // `handleSelect`).
                 const isCurrent = membership.chapter_id === currentChapterId;
                 return (
                   <ChoiceRow

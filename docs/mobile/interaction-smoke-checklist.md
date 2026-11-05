@@ -78,7 +78,7 @@ in the S2 nav restructure (#957) — see
 | Notifications (`/(tabs)/notifications`) | `‹ Chat` above the title | Lands on Chat home |
 | Chat thread | Retry failed upload | Requeues retry state + feedback |
 | Chat thread | Queue message | Queues message + feedback |
-| Chapter picker | Chapter row, the one marked Current included (multi-chapter account only) | Activates, refreshes the session, lands in the tabs |
+| Chapter picker | Chapter row, the one marked Current included (multi-chapter account only) | Activates, refreshes the session, lands in the tabs. Offline, the Current row still lands in the tabs; another row shows "Could not switch chapters" and stays |
 | Chapter picker (More → Switch chapter) | `‹ More` above the title, and again while a switch is running | Lands on the More tab; while a switch runs it is dimmed and does nothing. Opened from a `frapp://chapter-picker` link, the picker draws no row |
 | Study hours | Study zone row (2+ zones) | Opens the zone picker sheet; picking one closes it and updates the card |
 | Study hours | Start session (location not yet granted) | Opens the **primer sheet first**, never the OS prompt — "Not now" dismisses quietly |

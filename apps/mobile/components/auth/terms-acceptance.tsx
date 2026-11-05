@@ -23,11 +23,19 @@ const TERMS_LINK_SLOP = { top: 12, bottom: 12, left: 6, right: 6 };
  * inside a chapter yet.
  *
  * The two documents sit on one line under it, each a 20pt line with 12pt of
- * slop above and below, which makes the 44pt minimum. The gap between the row
- * and the links is that same 12, so a link's slop ends where the row does: a
- * tap at the row's bottom edge ticks the box rather than opening a document.
- * With an 8pt gap the slop reached 4pt into the row, and won there: the links
- * are later siblings, which are hit-tested first.
+ * slop above and below, which makes the 44pt minimum. Two gaps keep that slop
+ * off its neighbours, since a later sibling is hit-tested first and so wins
+ * any overlap:
+ * - Between the row and the links, the gap is that same 12, so a link's slop
+ *   ends where the row does: a tap at the row's bottom edge ticks the box
+ *   rather than opening a document. With an 8pt gap the slop reached 4pt into
+ *   the row.
+ * - Between lines, when large text wraps the links onto two, the gap is 24,
+ *   the top and bottom slop together, so one line's slop ends where the
+ *   next's begins. With 8 they overlapped by 4pt, and a tap on the bottom of
+ *   `Terms of Service` could open the Privacy Policy under it. Along a line,
+ *   the 8pt gap either side of the `·` already clears each link's 6pt side
+ *   slop.
  */
 export function TermsAcceptance({
   accepted,
@@ -147,7 +155,10 @@ function createStyles(tokens: SignetTokens) {
       flexDirection: "row",
       flexWrap: "wrap",
       alignItems: "center",
-      gap: tokens.spacing.sm,
+      // A wrapped line sits a whole slop's height (top and bottom) under the
+      // one above, so their slop meets without overlapping (see above).
+      rowGap: TERMS_LINK_SLOP.top + TERMS_LINK_SLOP.bottom,
+      columnGap: tokens.spacing.sm,
       // Lines the links up under the label, past the box and its gap.
       paddingLeft: 24 + tokens.spacing.md,
     },

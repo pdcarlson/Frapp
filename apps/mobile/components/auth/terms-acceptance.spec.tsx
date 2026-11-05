@@ -12,8 +12,9 @@ import { TermsAcceptance } from "./terms-acceptance";
 /**
  * The Terms checkbox join, setup and the Terms prompt share (#2302), drawn as
  * components.md § Checkbox draws one: a 24pt box that ticks, inside a 44pt
- * row, with the two documents on one line of 44pt targets under it. It was a
- * 44pt square that filled solid gold with no check.
+ * row, with the two documents on one line of 44pt targets under it, whose
+ * slop reaches neither the row nor, when large text wraps them, each other. It
+ * was a 44pt square that filled solid gold with no check.
  */
 
 type Node = ReactTestRenderer["root"];
@@ -124,6 +125,27 @@ describe("TermsAcceptance", () => {
     expect(gap).toBeGreaterThan(0);
     for (const link of links) {
       expect(link.props.hitSlop.top).toBeLessThanOrEqual(gap);
+    }
+  });
+
+  it("keeps a wrapped line's slop out of the line above it", () => {
+    const { tree } = render(false);
+    const links = tree.root.findAll(
+      (node: Node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "link",
+    );
+    const line = flat(links[0]!.parent!.props.style);
+
+    // Large text wraps the links onto two lines. One line's bottom slop and
+    // the next one's top slop have to fit in the gap between them, or the
+    // later line (hit-tested first) takes the bottom of the link above it.
+    expect(line.flexWrap).toBe("wrap");
+    for (const link of links) {
+      const { top, bottom, left, right } = link.props.hitSlop;
+      expect(line.rowGap).toBeGreaterThanOrEqual(top + bottom);
+      // Along a line, each side's slop stays inside the gap before the `·`.
+      expect(line.columnGap).toBeGreaterThanOrEqual(Math.max(left, right));
     }
   });
 });

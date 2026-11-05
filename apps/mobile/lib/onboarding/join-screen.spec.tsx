@@ -9,6 +9,7 @@ import * as Linking from "expo-linking";
 import * as Haptics from "expo-haptics";
 import { ReduceMotion } from "react-native-reanimated";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import {
   DELETE_ACCOUNT_FAILURE_BODY,
@@ -250,6 +251,15 @@ function textOf(children: unknown): string {
   }
   if (Array.isArray(children)) return children.map(textOf).join("");
   return "";
+}
+
+/** Resolves a `({ pressed }) => style` the way Pressable would. */
+function flat(style: unknown, pressed = false): Record<string, unknown> {
+  if (typeof style === "function") return flat(style({ pressed }), pressed);
+  if (Array.isArray(style)) {
+    return Object.assign({}, ...style.map((item) => flat(item, pressed)));
+  }
+  return (style ?? {}) as Record<string, unknown>;
 }
 
 function allText(root: Node): string {
@@ -1353,6 +1363,29 @@ describe("join screen — polish", () => {
     typeToken(tree.root, "invite-token-9");
     continueToConfirm(tree.root);
     expect(labelled(tree.root, "Back to the invite")).toBeDefined();
+  });
+
+  it("lifts an Account menu row a rung while held, and dims it to 0.5 while disabled", () => {
+    const tree = render();
+    openAccount(tree.root);
+    for (const label of ["Sign out", "Delete account"]) {
+      const row = control(tree.root, label)!;
+      // `ListRow`'s press on iOS (the suite's platform): one rung up the
+      // surface ladder, with no dim.
+      expect(flat(row.props.style, true).backgroundColor).toBe(
+        signetDarkTokens.color.surface.card,
+      );
+      expect(flat(row.props.style, true).opacity).toBeUndefined();
+    }
+
+    // A deletion running locks both rows, at `ListRow`'s disabled dim.
+    isPending = true;
+    const locked = render();
+    for (const label of ["Sign out", "Deleting account"]) {
+      const row = control(locked.root, label)!;
+      expect(row.props.disabled).toBe(true);
+      expect(flat(row.props.style, false).opacity).toBe(0.5);
+    }
   });
 
   it("fades each view in, and holds still for reduced motion", async () => {

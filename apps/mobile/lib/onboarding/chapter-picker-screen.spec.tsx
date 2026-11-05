@@ -15,7 +15,8 @@ import { drawnText } from "@/test/screen-text";
  * anchored under it, so "something to go back to" doesn't mean More. The row
  * goes back rather than opening More again, and holds while a switch runs. The
  * chapter that's open now is marked, and a tap on it selects it again like any
- * row, since the mark reads a token claim that can lag the server.
+ * row, since the mark reads a token claim that can lag the server; unlike any
+ * other row, it leaves even when that fails.
  *
  * Here, not beside the screen: a spec under `app/` is a route module and
  * ships in the bundle (`lib/routes.spec.ts`).
@@ -118,8 +119,14 @@ describe("chapter picker, opened from More", () => {
   it("draws ‹ More, which goes back to the tabs underneath", () => {
     const tree = render();
     const back = moreRow(tree.root)!;
+    const column = tree.root.findByType("ScrollView" as never);
 
     expect(drawnText(back)).toBe("‹ More");
+    // At the top of the column, where every screen opened from More puts its
+    // row and title, rather than floating above a centred list.
+    expect(
+      Object.assign({}, ...column.props.contentContainerStyle).justifyContent,
+    ).toBe("flex-start");
     act(() => {
       back.props.onPress();
     });
@@ -211,6 +218,33 @@ describe("chapter picker, opened from More", () => {
     });
     expect(selectChapter).toHaveBeenCalledWith("chapter-tau-nu");
     expect(router.back).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves from the Current row even when selecting it again fails", async () => {
+    // Offline, say. The token in hand is on that chapter already, so the
+    // tabs work as before; an error here would strand the member on it.
+    selectChapter.mockResolvedValueOnce(false);
+    const tree = render();
+
+    await act(async () => {
+      rowFor(tree.root, "FIJI Tau Nu").props.onPress();
+    });
+    expect(selectChapter).toHaveBeenCalledWith("chapter-tau-nu");
+    expect(router.back).toHaveBeenCalledTimes(1);
+    expect(drawnText(tree.root)).not.toContain("Could not switch chapters");
+  });
+
+  it("stays, with the error, when a switch to another chapter fails", async () => {
+    selectChapter.mockResolvedValueOnce(false);
+    const tree = render();
+
+    await act(async () => {
+      rowFor(tree.root, "Sigma Phi Epsilon").props.onPress();
+    });
+    expect(selectChapter).toHaveBeenCalledWith("chapter-eta");
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(drawnText(tree.root)).toContain("Could not switch chapters");
   });
 
   it("still switches to another chapter, then goes back", async () => {
