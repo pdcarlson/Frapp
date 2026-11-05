@@ -22,7 +22,7 @@
   1. **This ADR and the naming rule.** The naming rule in [`spec/ui/brand-identity.md`](../../ui/brand-identity.md) § 1 is its one canonical statement, and the specs and the skill that restated it now link to it.
   2. **The mobile binary.** This step is first because it is the beta's critical path, and each binary stays as shipped until its user updates.
      - *Code:*
-       - `expo.name`, the three iOS permission strings, and the in-app copy. That includes the `Settings → Frapp → …` recovery paths, which must match `expo.name` in the same build.
+       - `expo.name`, the three iOS permission strings, and the in-app copy. That includes the Settings recovery paths to the app's location switch, which must match `expo.name` in the same build. One helper, `apps/mobile/lib/study/location-settings-path.ts`, returns every form of the path, and `scripts/ci/__tests__/frapp-naming.test.mjs` pins each form to `expo.name`; the Location rows of [`writing.md` § Study session (mobile, s10)](../../ui/design-system/writing.md#study-session-mobile-s10) state the paths. *(Corrected 2026-11-05: this said `Settings → Frapp → …`, which is right only on iOS before 18. The path differs by OS and by iOS version, because iOS 18 put each app's page under an Apps row and the app installs from iOS 16.4, so the Start card and the location primer now name the member's own.)*
        - The local study-pause notification, the Stripe PaymentSheet merchant fallback, the calendar-export filename and PRODID, and the listing paste in `apps/mobile/store/README.md`.
      - *Specs:*
        - `spec/behavior/study-sessions.md` (the study-pause notification).
