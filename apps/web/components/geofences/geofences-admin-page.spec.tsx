@@ -418,4 +418,14 @@ describe("GeofencesAdminPage study-rule guard (#2206)", () => {
     await waitFor(() => expect(mockUpdateMutate).toHaveBeenCalledTimes(1));
     expect(mockUpdateMutate.mock.calls[0]![0].body.min_session_minutes).toBe(0);
   });
+
+  it("saves from the panel footer's Save changes, outside the form", async () => {
+    // The footer is pinned below the scrolling body, so the button reaches
+    // its form through `form=`. Drop that and Save does nothing.
+    render(<GeofencesAdminPage />);
+    await userEvent.click(editButton());
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(mockUpdateMutate).toHaveBeenCalledTimes(1));
+  });
 });
