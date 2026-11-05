@@ -209,9 +209,13 @@ the viewport every screen is captured at. Apple's
 (read 2026-09-22) list it among the accepted 6.9" iPhone sizes, alongside 1290 × 2796 and
 1260 × 2736, and require a 6.5" set only when no 6.9" set is provided; smaller iPhone sizes are
 scaled from the larger set. `app.json` sets `ios.supportsTablet: false`, so no iPad set applies.
-**Not yet confirmed in the console:** #2454 asks for the sizes App Store Connect states at upload to
-be recorded here, so replace this paragraph's source with the console's wording once uploaded.
-Google Play's size is § 6.5.
+**What the console took (2026-11-05), which overrides the paragraph above.** App Store Connect's
+screenshot slot is now *iPhone with Dynamic Island (medium display)*, the 6.1"/6.3" size, and it
+rejected the 1320 × 2868 set. It lists 1179 × 2556, 1206 × 2622 and their landscape twins, and it
+took **1206 × 2622**. Its dialog then said it uses that one set for every iPhone display size. The upload was a
+scale-to-cover and center crop of the 1320 × 2868 frames. The pipeline still renders 1320 × 2868,
+so scale the output the same way until it renders 1206 × 2622 itself
+([#2454](https://github.com/pdcarlson/Frapp/issues/2454)). Google Play's size is § 6.5.
 
 **Procedure**, on a machine or cloud sandbox with the local stack running (API on `:3001`, local
 Supabase):
@@ -247,7 +251,7 @@ captured, as does a frame list in `store-frames.mjs` that no longer matches the 
 check is a word list, so read the captions before uploading.
 
 **Upload is the owner's step**, files in filename order, for the English (U.S.) localization:
-App Store Connect → the app → the version → iPhone 6.9" Display → drag in `app-store/`; Play Console
+App Store Connect → the app → the version → iPhone with Dynamic Island (medium display) → drag in the 1206 × 2622 set; Play Console
 → the app → Main store listing → Phone screenshots → `google-play/` (needs the developer account,
 #2556). `screenshots/` is gitignored and the PNGs are not committed; regenerate them with the
 procedure above rather than keeping copies.

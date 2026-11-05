@@ -14,7 +14,7 @@ The owner approved renders of the real app on Expo web as the screens (2026-09-2
 no longer wait on a device build or on `preview` (#2415), and picked a framed design for both
 stores (2026-11-05): `node scripts/demo/capture-mobile.mjs --store` signs in to the local demo
 chapter, captures seven screens once, and frames them with a caption in the feature graphic's
-charcoal and gold, into `screenshots/app-store/` (1320 × 2868, the 6.9" iPhone size) and
+charcoal and gold, into `screenshots/app-store/` (1320 × 2868; the console took 1206 × 2622 instead, see § 6.4) and
 `screenshots/google-play/` (1242 × 2208). No Ask screen, because this binary has none (#2259),
 and no Dues screen, because a populated ledger shows the Stripe footer § Review notes keeps from
 App Review. The procedure, the captions, and where the sizes come from are in
@@ -53,10 +53,8 @@ header is centered: on an iPhone the product page shows only its middle (about 6
 width, and the top three quarters above the app card), so the first, left-aligned version
 lost its headline there and was replaced the same day.
 
-**App Store screenshot slot.** The version page's screenshot slot is now *iPhone with Dynamic
-Island (medium display)*. It rejected the 1320 × 2868 set and took **1206 × 2622**
-(2026-11-05). It also lists 1179 × 2556 and both landscape sizes. App Store Connect scales
-that one set down to every other iPhone size.
+**App Store screenshot size.** The console took 1206 × 2622 on 2026-11-05, not the
+pipeline's 1320 × 2868: [`mobile.md` § 6.4](../../../docs/ops/deployment/mobile.md#64-store-screenshots).
 
 **The product is Frapp** ([ADR-25](../../../spec/architecture/adr/adr-25.md),
 2026-09-23). The App Store **listing** name is **`Frapp: Chapter Hub`**. The
@@ -272,7 +270,7 @@ the work; the detail lives there, not here.
 
 | # | Risk | Kind |
 | --- | --- | --- |
-| [#2454](https://github.com/pdcarlson/Frapp/issues/2454) | **No screenshots uploaded.** Filed 2026-09-21 because the gate's only tracker was #2196 §4, and #2196 was closed as completed with every box unticked. Since 2026-11-05 both stores' framed sets come from `capture-mobile.mjs --store` (see the note at the top of this file); what remains is the owner's upload and confirming the accepted size in the console | hard gate |
+| [#2454](https://github.com/pdcarlson/Frapp/issues/2454) | **No screenshots uploaded.** Filed 2026-09-21 because the gate's only tracker was #2196 §4, and #2196 was closed as completed with every box unticked. Since 2026-11-05 both stores' framed sets come from `capture-mobile.mjs --store` (see the note at the top of this file); the owner uploaded both on 2026-11-05, and the App Store slot took 1206 × 2622, not 1320 × 2868 (`mobile.md` § 6.4); what remains is the pipeline rendering that size itself in the console | hard gate |
 | [#2415](https://github.com/pdcarlson/Frapp/issues/2415) | EAS `preview` holds only `SENTRY_AUTH_TOKEN`. It no longer owns the screenshot route (#2454 shoots from Expo web), but a `preview` build still cannot sign in. Its other half, no Stripe key in `production`, stopped gating submission on 2026-09-21: this listing no longer claims card payments, so that key is a product decision rather than a blocker. Neither half now gates submission, which ships the `production` build | no longer a gate (2026-09-22) |
 | [#2195](https://github.com/pdcarlson/Frapp/issues/2195) | Apple Developer trader status (EU DSA) — **probably already done, and only needs confirming.** #2195 was filed 2026-09-13 off a banner reading "Developers must provide their trader status to submit new apps", which gates submission itself rather than only EU availability. The dialog it sends you to *is* the trader-status dialog, and § As submitted records answering it the next day, 2026-09-14, on the "I don't plan to distribute in the EU" limb. So the action has very likely been taken and the issue is stale. Confirm the banner is gone from the Apps page and close #2195; do not re-answer the dialog, because re-picking is how you end up declaring trader and publishing a home address on an EU listing | confirm, then close |
 | [#2308](https://github.com/pdcarlson/Frapp/issues/2308) / [#2309](https://github.com/pdcarlson/Frapp/issues/2309) | The App Review login exists in `frapp-prod` (created 2026-09-17 and marked for the seed on 2026-09-24, #2309), but its chapter is seeded only on the day of submission, because the check-in event goes stale 43 to 67 hours after a seed (#2478 § D). Until that seed runs, the reviewer signs in to no chapter. The seed is ready: `scripts/demo/seed-demo.mjs --reviewer` targets a hosted project, and its `auth` → `sql` → `storage` → `verify` path passed end to end on staging on 2026-09-23 at `69e0021` (output in [#2537](https://github.com/pdcarlson/Frapp/pull/2537); staging was cleaned afterwards). Changes made after that run, which reached `main` in the follow-up PR that links back to #2537 rather than in #2537 itself, were verified against the local stack, unit tests and the `pglite-migrations` check only: `sql` (a guard that runs between its deletes, and a refusal to adopt a login that other rows reference), `storage` (`--remove` clears the chapter's folder in every bucket, and refuses while the chapter exists) and `verify` (a stricter staleness check). Applying it to production is the owner's step, [`demo-data.md` § Production (App Review)](../../../docs/guides/demo-data.md#production-app-review) | hard gate |
@@ -367,17 +365,16 @@ Officers get what they need on their feet: take attendance at the door with a QR
 >
 > Two in-app strings were fixed in the same pass for the same reason, and a bug behind one of them: the Service hours tile promised review and approval, the invite-failure message sent officers to a directory with no invite affordance, and `GET /v1/service-entries` was read unscoped — which handed a `service:approve` holder the whole chapter's entries under a screen that says "you've logged". `lib/more/service-hours-screen.spec.tsx` and `lib/more/profile-screen.spec.tsx` pin the fix.
 
-Members join by invite. Your chapter's officers send you an invite link; open it on your phone and you are in.
+Frapp is invite-only. Your chapter's officers create the chapter on the web and send you an invite link; open it on your phone and you are in.
 
-> **Changed 2026-11-05, for the Play listing first; the App Store copy follows with the next iOS
-> version.** This read "Frapp is invite-only. Your chapter's officers create the chapter on the web
+> **Changed 2026-11-05, in both consoles** (Play first, then App Store Connect the same day). This read "Frapp is invite-only. Your chapter's officers create the chapter on the web
 > and send you an invite link". Neither half holds: the app has its own create-chapter flow
 > (`app/(auth)/create-chapter.tsx`, the founding wizard, reached from the join screen's "I'm starting
 > our chapter" and from More), and `POST /v1/chapters/onboard` needs only a signed-in account, so a
 > founder needs no invite. What is invite-only is joining an existing chapter.
 
 Features
-- Chapter channels and direct messages
+- Chapter channels and direct messages your chapter has started
 - Events with QR check-in and attendance
 - Study hours with chapter study zones
 - Points, house rank and service hours
@@ -413,8 +410,8 @@ Features
 > **Widened 2026-11-05.** The 0.9.1 store builds (EAS iOS build 8 and Android build 3, both from
 > `cca52dec` per their EAS build records) contain #2773, as does Android build 2 (`ea9bc12`): the directory's
 > Message action (`components/directory/member-detail-sheet.tsx`) starts a DM. So the bullet now
-> reads "Chapter channels and direct messages", on Play first and on the App Store with the next
-> iOS version.
+> reads "Chapter channels and direct messages", on Play and in App Store Connect, both
+> entered by the owner on 2026-11-05.
 
 ## Keywords (iOS, 100 chars)
 
@@ -674,10 +671,15 @@ Where each answer comes from:
   wrong on both halves: the client path is `POST /v1/analytics/events` via
   `lib/analytics-provider.tsx`, **and no screen in the iOS binary calls it** —
   `AnalyticsContext` has no product consumer. The PostHog RN SDK (key present in
-  `production` per #2415) sends only `$identify`, `$groupidentify` and
-  `$feature_flag_called`: `captureAppLifecycleEvents` is false and there is no
-  autocapture. So the row is justified by **server-side** events, not by client
-  telemetry — keep it, but do not defend it with a mechanism the binary does not run.
+  `production` per #2415) sends `$identify`, `$groupidentify`,
+  `$feature_flag_called` and, since #3382, one `$screen` per route visit (named by
+  route template, never an id) plus the app lifecycle events
+  (`captureAppLifecycleEvents` is on: Installed, Updated, Opened, Became Active,
+  Backgrounded), all keyed to the same pseudonym and none while the chapter is opted
+  out. There is still no autocapture. So the row is justified by **server-side**
+  feature events **and** by those client screen and lifecycle events, both Analytics
+  only; the declared category does not change ([`observability.md` § Route
+  views](../../../spec/behavior/observability.md#route-views)).
 - **Crash and Performance Data** are Sentry. What switches Sentry on is
   `EXPO_PUBLIC_SENTRY_DSN`, **not** the `EXPO_PUBLIC_SENTRY_ENVIRONMENT` that `eas.json`
   sets: `app/_layout.tsx` calls `Sentry.init` only inside `if (sentryDsn)`, and the
