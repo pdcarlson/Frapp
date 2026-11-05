@@ -1,4 +1,5 @@
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
+import { isTransientCheckInFailure } from "@repo/hooks";
 import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
@@ -36,13 +37,19 @@ export type CheckInOutcome =
       message: string;
       /**
        * Whether the refusal was of this one attempt rather than of the member,
-       * so it says nothing about the next code they send: the code itself was
-       * refused ({@link CHECK_IN_CODE_REFUSED_MESSAGE}), or the request never
-       * got a real answer (no connection, a server fault, the rate limit).
-       * `false` for everything a typed code would meet as well: where the
-       * member is (the zone, a missing or refused location), the event's
-       * window, their eligibility. s18 clears an attempt-only line when the
-       * member turns to typing a code, and keeps the rest.
+       * so it says nothing about the next code they send. `true` when the
+       * code itself was refused (the server's
+       * {@link CHECK_IN_CODE_REFUSED_MESSAGE} 403, or a 400 from the API's
+       * validation of the scanned `token` field), and when the request may go
+       * through if sent again (`@repo/hooks`' `isTransientCheckInFailure`:
+       * no connection, a 5xx, an intermediary's 408/499/460, the rate
+       * limit's 429). `false` for everything a typed code would meet as
+       * well: where the member is (the zone, a missing or refused location),
+       * the event's window, their eligibility, an event that doesn't exist,
+       * and an environment with no check-in codes (the API's 503 for a
+       * missing signing secret, which every check-in carrying a code meets,
+       * typed or scanned). s18 clears an attempt-only line when the member
+       * turns to typing a code, and keeps the rest.
        */
       attemptOnly: boolean;
     };
@@ -60,6 +67,14 @@ export const CHECK_IN_LOCATION_DENIED_COPY =
  */
 export const CHECK_IN_CODE_REFUSED_MESSAGE =
   "That check-in code is not valid for this event, or it has expired";
+
+/**
+ * The scanned code's field in the API's check-in body (`CheckInDto`). Its
+ * validation refusals are class-validator's own messages, which start with
+ * the property's name ("token must be shorter than or equal to 256
+ * characters"); a spec reads the DTO to keep that true.
+ */
+export const CHECK_IN_TOKEN_FIELD = "token";
 
 export const ALREADY_CHECKED_IN_COPY =
   "You're already checked in for this event.";
@@ -81,22 +96,42 @@ export function checkInSuccess(
 }
 
 /**
+ * Whether the server refused the code this attempt sent, rather than the
+ * member: as stale, screenshotted or another event's (a 403), or as no code
+ * at all (a 400 whose every validation line is about the scanned `token`).
+ */
+function refusesTheCode(error: unknown): boolean {
+  const status = statusOf(error);
+  if (status === 403) {
+    return serverMessageOf(error) === CHECK_IN_CODE_REFUSED_MESSAGE;
+  }
+  if (status !== 400) return false;
+  const { message } = (error ?? {}) as { message?: unknown };
+  return (
+    Array.isArray(message) &&
+    message.length > 0 &&
+    message.every(
+      (line) =>
+        typeof line === "string" &&
+        line.startsWith(`${CHECK_IN_TOKEN_FIELD} `),
+    )
+  );
+}
+
+/**
  * Whether a failure was of this attempt alone (see the `error` variant's
  * `attemptOnly`). A request with no HTTP status either never reached the
  * server, which `fetch` reports as a `TypeError`, or failed on the device
  * before it was sent, which is the location step: its refused-permission copy
  * and the location service's own errors are plain `Error`s, and those are
- * about the member's phone, so they stay.
+ * about the member's phone, so they stay. That is the one place this departs
+ * from the shared rule, which counts every status-less failure as no answer.
  */
 function isAttemptOnly(error: unknown): boolean {
-  const status = statusOf(error);
-  if (status === undefined) {
+  if (statusOf(error) === undefined) {
     return !(error instanceof Error) || error instanceof TypeError;
   }
-  if (status >= 500 || status === 429) return true;
-  return (
-    status === 403 && serverMessageOf(error) === CHECK_IN_CODE_REFUSED_MESSAGE
-  );
+  return refusesTheCode(error) || isTransientCheckInFailure(error);
 }
 
 /**

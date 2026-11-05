@@ -8,7 +8,8 @@
  * throttle, and a pile of 409s behind the one request that actually won.
  *
  * Kept out of the screen so the rule can be tested without a camera, a render
- * tree, or a fake timer. The screen holds one of these in a ref.
+ * tree, or a fake timer. The screen holds one per event in a ref, and a typed
+ * code claims it too, so a double tap on the manual sheet sends one check-in.
  *
  * The latch releases only when the caller says so — after the server has
  * answered, success or failure. Releasing on a timer instead would reintroduce

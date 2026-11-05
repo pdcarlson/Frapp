@@ -4,6 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
+import { CHECK_IN_CODES_UNCONFIGURED_MESSAGE } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText, textHeadings } from "@/test/screen-text";
 
@@ -67,11 +68,29 @@ const { __refocus: refocus, __blur: blur } = expoRouter as unknown as {
 const ROTATES_IN_MS = 20_000;
 
 /**
- * The mint hook's result for a request that started at `requestedAt` on the
- * phone's clock (`useMintCheckInToken`).
+ * How long after it was asked for a code may be drawn as live: its rotation,
+ * one more window, less the time a member needs to scan it.
  */
-function mintedAt(
-  requestedAt: number,
+const LIVE_FOR_MS = ROTATES_IN_MS + 30_000 - 10_000;
+
+/**
+ * The phone's two clocks, as the screen reads them (`deviceNow` in
+ * `@repo/hooks`): `performance.now()` and `Date.now()`, which the specs move
+ * together or apart.
+ */
+const clock = { monotonic: 0, wall: 0 };
+/** Time passes, on both clocks. */
+const advance = (ms: number) => {
+  clock.monotonic += ms;
+  clock.wall += ms;
+};
+
+/**
+ * The mint hook's result for a request that started `ago` ms ago on both of
+ * the phone's clocks (`useMintCheckInToken`).
+ */
+function mintedAgo(
+  ago: number,
   response: Record<string, unknown> = {},
 ): Record<string, unknown> {
   return {
@@ -83,7 +102,7 @@ function mintedAt(
         rotatesInMs: ROTATES_IN_MS,
         ...response,
       },
-      requestedAt,
+      requestedAt: { monotonic: clock.monotonic - ago, wall: clock.wall - ago },
     },
     error: null,
     isPending: false,
@@ -92,13 +111,6 @@ function mintedAt(
     refetch: vi.fn(),
   };
 }
-
-/**
- * The last moment a code asked for at `requestedAt` may be drawn as live:
- * its rotation, one more window, less the time a member needs to scan it.
- */
-const liveUntil = (requestedAt: number) =>
-  requestedAt + ROTATES_IN_MS + 30_000 - 10_000;
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -135,13 +147,20 @@ describe("Host check-in's title (#2485)", () => {
   });
 });
 
-describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
+describe("Host check-in while the room fills", () => {
+  let clockSpies: { mockRestore: () => void }[] = [];
   beforeEach(() => {
+    clock.monotonic = 5_000_000;
+    clock.wall = Date.parse("2026-11-05T19:00:00Z");
+    clockSpies = [
+      vi.spyOn(performance, "now").mockImplementation(() => clock.monotonic),
+      vi.spyOn(Date, "now").mockImplementation(() => clock.wall),
+    ];
     vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
       eventId: "evt-1",
     });
     hooks.event = EVENT;
-    hooks.token = mintedAt(Date.now());
+    hooks.token = mintedAgo(0);
     hooks.attendance = [
       { status: "PRESENT" },
       { status: "LATE" },
@@ -149,6 +168,9 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
     ];
     hooks.mintCalls = [];
     hooks.attendanceCalls = [];
+  });
+  afterEach(() => {
+    for (const spy of clockSpies) spy.mockRestore();
   });
 
   const lastCall = (calls: unknown[][]) => calls[calls.length - 1];
@@ -213,7 +235,7 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
     // The poll stops while the screen is out of sight, so a code cached then
     // can be minutes old on the way back. Drawn at once with its live dot, a
     // member scanning it would be refused.
-    hooks.token = { ...mintedAt(Date.now() - 5 * 60_000), isFetching: true };
+    hooks.token = { ...mintedAgo(5 * 60_000), isFetching: true };
     const tree = render();
     expect(tree.root.findAllByType("QRCode" as never)).toHaveLength(0);
     const text = screenText(tree);
@@ -228,7 +250,7 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
     ).toHaveLength(1);
 
     // The refetch focus started lands.
-    hooks.token = mintedAt(Date.now());
+    hooks.token = mintedAgo(0);
     act(() =>
       tree.update(
         <FrappThemeProvider>
@@ -245,37 +267,25 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
     expect(tree.root.findAllByType("QRCode" as never)).toHaveLength(1);
 
     act(() => blur());
-    const later = Date.now() + 2 * 60_000;
-    const clock = vi.spyOn(Date, "now").mockReturnValue(later);
-    try {
-      act(() => refocus());
-      expect(tree.root.findAllByType("QRCode" as never)).toHaveLength(0);
-    } finally {
-      clock.mockRestore();
-    }
+    advance(2 * 60_000);
+    act(() => refocus());
+    expect(tree.root.findAllByType("QRCode" as never)).toHaveLength(0);
     act(() => tree.unmount());
   });
 
-  describe("on the phone's own clock", () => {
-    const NOW = Date.parse("2026-11-05T19:00:00Z");
-    let clock: ReturnType<typeof vi.spyOn>;
-    beforeEach(() => {
-      clock = vi.spyOn(Date, "now").mockReturnValue(NOW);
-    });
-    afterEach(() => clock.mockRestore());
-
+  describe("on the phone's own clocks", () => {
     const qrCount = (tree: ReactTestRenderer) =>
       tree.root.findAllByType("QRCode" as never).length;
 
     it("draws a code that will still redeem for a scan, and not one that won't", () => {
       // The server keeps accepting a code for a window after it rotates, but a
       // member still has to scan it, get a fix and post.
-      hooks.token = mintedAt(NOW - liveUntil(0) + 1);
+      hooks.token = mintedAgo(LIVE_FOR_MS - 1);
       const inside = render();
       expect(qrCount(inside)).toBe(1);
       act(() => inside.unmount());
 
-      hooks.token = mintedAt(NOW - liveUntil(0));
+      hooks.token = mintedAgo(LIVE_FOR_MS);
       const past = render();
       expect(qrCount(past)).toBe(0);
       act(() => past.unmount());
@@ -284,7 +294,7 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
     it("keeps drawing a code past its rotation while the next is on its way", () => {
       // 5s past the rotation: still 15s of redeeming left, so the screen
       // doesn't blank between rotations.
-      hooks.token = { ...mintedAt(NOW - ROTATES_IN_MS - 5_000), isFetching: true };
+      hooks.token = { ...mintedAgo(ROTATES_IN_MS + 5_000), isFetching: true };
       const tree = render();
       expect(qrCount(tree)).toBe(1);
       expect(screenText(tree)).toContain("0:00");
@@ -295,7 +305,7 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
       // `expiresAt` is the server's clock. A phone 45s fast would read it as
       // long gone; one far slow, as hours away. Neither moves the countdown.
       for (const expiresAt of ["2000-01-01T00:00:00Z", "2099-01-01T00:00:00Z"]) {
-        hooks.token = mintedAt(NOW, { expiresAt });
+        hooks.token = mintedAgo(0, { expiresAt });
         const tree = render();
         expect(screenText(tree)).toContain("0:20");
         act(() => tree.unmount());
@@ -303,17 +313,16 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
     });
 
     it("blanks a code that ran out while the officer was away, until the new one lands", () => {
-      hooks.token = mintedAt(NOW);
       const tree = render();
       expect(qrCount(tree)).toBe(1);
 
       act(() => blur());
-      clock.mockReturnValue(liveUntil(NOW));
+      advance(LIVE_FOR_MS);
       act(() => refocus());
       expect(qrCount(tree)).toBe(0);
       expect(screenText(tree)).not.toContain("Rotates in");
 
-      hooks.token = mintedAt(liveUntil(NOW));
+      hooks.token = mintedAgo(0);
       act(() =>
         tree.update(
           <FrappThemeProvider>
@@ -324,6 +333,47 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
       expect(qrCount(tree)).toBe(1);
       expect(screenText(tree)).toContain("0:20");
       act(() => tree.unmount());
+    });
+
+    describe("while the screen is up", () => {
+      // Only the screen's half-second tick is faked; the clocks are the
+      // spies above.
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+      const tick = () => act(() => vi.advanceTimersByTime(500));
+
+      it("keeps its countdown and its bound when the wall clock steps back", () => {
+        // A network time correction or a manual change. Judged on the wall
+        // clock alone, the code would read two minutes younger: drawn live,
+        // and counting down, long after the server stopped taking it.
+        const tree = render();
+        advance(15_000);
+        clock.wall -= 2 * 60_000;
+        tick();
+        expect(qrCount(tree)).toBe(1);
+        expect(screenText(tree)).toContain("0:05");
+
+        advance(LIVE_FOR_MS - 15_000);
+        tick();
+        expect(qrCount(tree)).toBe(0);
+        act(() => tree.unmount());
+      });
+
+      it("blanks the code it showed before the phone slept", () => {
+        // Android's monotonic clock stops while the phone sleeps; the wall
+        // clock doesn't. Judged on the monotonic clock alone, a code that
+        // died while the screen was off would be drawn live on waking.
+        const tree = render();
+        clock.wall += 2 * 60_000;
+        tick();
+        expect(qrCount(tree)).toBe(0);
+        expect(screenText(tree)).not.toContain("Rotates in");
+        act(() => tree.unmount());
+      });
     });
   });
 
@@ -360,7 +410,21 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
     ).not.toHaveLength(0);
     act(() => transient.unmount());
 
+    // An intermediary's bare 503 is transient too.
     hooks.token = { ...hooks.token, error: { statusCode: 503 } };
+    const unavailable = render();
+    expect(screenText(unavailable)).toContain("didn't load");
+    expect(
+      unavailable.root.findAll(
+        (node) => node.props.accessibilityLabel === "Try again",
+      ),
+    ).not.toHaveLength(0);
+    act(() => unavailable.unmount());
+
+    hooks.token = {
+      ...hooks.token,
+      error: { statusCode: 503, message: CHECK_IN_CODES_UNCONFIGURED_MESSAGE },
+    };
     const unconfigured = render();
     expect(screenText(unconfigured)).toContain("aren't set up");
     expect(

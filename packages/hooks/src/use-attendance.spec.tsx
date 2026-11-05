@@ -5,9 +5,14 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFrappClient } from "@repo/api-sdk";
 import {
+  CHECK_IN_CODES_UNCONFIGURED_MESSAGE,
   CHECK_IN_TOKEN_FALLBACK_POLL_MS,
   CHECK_IN_TOKEN_MIN_POLL_MS,
   checkInTokenRefetchMs,
+  deviceNow,
+  elapsedSince,
+  isCheckInCodesUnconfigured,
+  isTransientCheckInFailure,
   useAttendance,
   useCheckIn,
   useMintCheckInToken,
@@ -117,10 +122,10 @@ describe("useAttendance", () => {
   });
 
   /**
-   * s22's "N checked in" (#20 of the 2026-11 polish pass). Nothing pushes a
-   * roster change, so a host screen that never re-read it showed the count
-   * from when it opened for the whole meeting. The query's own option is read
-   * off the cache rather than by waiting out a real interval.
+   * s22's "N checked in". Nothing pushes a roster change, so a host screen
+   * that never re-read it showed the count from when it opened for the whole
+   * meeting. The query's own option is read off the cache rather than by
+   * waiting out a real interval.
    */
   describe("refetchInterval", () => {
     const optionsOf = (eventId: string) =>
@@ -180,10 +185,10 @@ describe("useAttendance", () => {
 });
 
 /**
- * s22's rotating code. The screen measures everything on the phone's own clock
- * from when the request was sent, and it is asked for again when it rotates,
- * so a code on display is replaced as its window opens rather than up to a
- * poll interval later.
+ * s22's rotating code. The screen measures everything on the phone's own
+ * clocks from when the request was sent, and it is asked for again when it
+ * rotates, so a code on display is replaced as its window opens rather than up
+ * to a poll interval later.
  */
 describe("useMintCheckInToken", () => {
   let queryClient: QueryClient;
@@ -214,15 +219,39 @@ describe("useMintCheckInToken", () => {
     expiresAt: "2026-11-05T12:00:30.000Z",
   };
 
-  it("stamps the request's start, which is never later than the mint", async () => {
-    let sentAt = 0;
+  /** A mint whose window has `rotatesInMs` left, as the GET resolves it. */
+  const minted = (rotatesInMs: number) => ({
+    data: { ...MINTED, rotatesInMs },
+    error: null,
+  });
+
+  /** A failed GET, as openapi-fetch resolves it: the API's error body. */
+  const refused = (error: unknown) => ({ data: undefined, error });
+
+  /** Runs `test` on fake timers, which fake both of the device's clocks. */
+  async function withFakeTimers(test: () => Promise<void>) {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await test();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  const advance = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  it("stamps the request's start on both clocks, which is never later than the mint", async () => {
+    let sentAt = deviceNow();
     const mockGet = vi.fn().mockImplementation(async () => {
-      sentAt = Date.now();
+      sentAt = deviceNow();
       // The trip back: a stamp taken on arrival would be this much later.
       await new Promise((resolve) => setTimeout(resolve, 25));
-      return { data: { ...MINTED, rotatesInMs: 20_000 }, error: null };
+      return minted(20_000);
     });
-    const before = Date.now();
+    const before = deviceNow();
     const { result } = renderHook(() => useMintCheckInToken("event-123"), {
       wrapper: createWrapper({ GET: mockGet }),
     });
@@ -232,71 +261,260 @@ describe("useMintCheckInToken", () => {
       ...MINTED,
       rotatesInMs: 20_000,
     });
-    expect(result.current.data?.requestedAt).toBeGreaterThanOrEqual(before);
-    expect(result.current.data?.requestedAt).toBeLessThanOrEqual(sentAt);
+    const requestedAt = result.current.data!.requestedAt;
+    expect(requestedAt.wall).toBeGreaterThanOrEqual(before.wall);
+    expect(requestedAt.wall).toBeLessThanOrEqual(sentAt.wall);
+    expect(requestedAt.monotonic).toBeGreaterThanOrEqual(before.monotonic);
+    expect(requestedAt.monotonic).toBeLessThanOrEqual(sentAt.monotonic);
   });
 
-  it("asks for the next code when this one rotates, not a poll later", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      const mockGet = vi
-        .fn()
-        .mockResolvedValue({
-          data: { ...MINTED, rotatesInMs: 7_000 },
-          error: null,
-        });
+  it("asks for the next code when this one rotates, not a poll later", () =>
+    withFakeTimers(async () => {
+      const mockGet = vi.fn().mockResolvedValue(minted(7_000));
       renderHook(() => useMintCheckInToken("event-123"), {
         wrapper: createWrapper({ GET: mockGet }),
       });
       await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
 
       // Before the rotation: the code on screen is the current one.
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(6_000);
-      });
+      await advance(6_000);
       expect(mockGet).toHaveBeenCalledTimes(1);
 
       // Just past it (7s, plus the half-second slack).
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(2_000);
-      });
+      await advance(2_000);
       expect(mockGet).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }));
+
+  it("keeps to the rotation when the wall clock steps back after the mint", () =>
+    // A network time correction, or a manual change. Timed off the wall clock
+    // alone, the next request would wait two minutes longer.
+    withFakeTimers(async () => {
+      const mockGet = vi.fn().mockResolvedValue(minted(7_000));
+      const { rerender } = renderHook(() => useMintCheckInToken("event-123"), {
+        wrapper: createWrapper({ GET: mockGet }),
+      });
+      await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+
+      await advance(3_000);
+      vi.setSystemTime(Date.now() - 120_000);
+      // The host screen re-renders twice a second, and each render re-reads
+      // the interval.
+      rerender();
+      await advance(5_000);
+      expect(mockGet).toHaveBeenCalledTimes(2);
+    }));
+
+  it("asks at once when the phone slept past the rotation", () =>
+    // Android's monotonic clock stops while the phone sleeps; the wall clock
+    // doesn't. Timed off the monotonic clock alone, the code that died while
+    // the screen was off would wait out its whole window again.
+    withFakeTimers(async () => {
+      const mockGet = vi.fn().mockResolvedValue(minted(7_000));
+      const { rerender } = renderHook(() => useMintCheckInToken("event-123"), {
+        wrapper: createWrapper({ GET: mockGet }),
+      });
+      await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+
+      vi.setSystemTime(Date.now() + 120_000);
+      rerender();
+      await advance(1_500);
+      expect(mockGet).toHaveBeenCalledTimes(2);
+    }));
+
+  it("asks again on the fallback poll after a refetch that may go through next time", () =>
+    // A failed refetch keeps the last code, whose rotation is past. Timed off
+    // it, the screen would ask every second for as long as the venue's
+    // network is down.
+    withFakeTimers(async () => {
+      const mockGet = vi
+        .fn()
+        .mockResolvedValueOnce(minted(7_000))
+        .mockResolvedValueOnce(refused({ statusCode: 502, message: "Bad Gateway" }))
+        .mockResolvedValue(minted(30_000));
+      const { result } = renderHook(() => useMintCheckInToken("event-123"), {
+        wrapper: createWrapper({ GET: mockGet }),
+      });
+      await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+
+      await advance(7_600);
+      expect(mockGet).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(result.current.isError).toBe(true));
+
+      await advance(5_000);
+      expect(mockGet).toHaveBeenCalledTimes(2);
+
+      await advance(5_500);
+      expect(mockGet).toHaveBeenCalledTimes(3);
+    }));
+
+  it("stops asking after a refusal that asking again won't fix", () =>
+    withFakeTimers(async () => {
+      for (const refusal of [
+        { statusCode: 403, message: "Forbidden" },
+        { statusCode: 503, message: CHECK_IN_CODES_UNCONFIGURED_MESSAGE },
+      ]) {
+        queryClient.clear();
+        const mockGet = vi.fn().mockResolvedValue(refused(refusal));
+        const { result, unmount } = renderHook(
+          () => useMintCheckInToken("event-123"),
+          { wrapper: createWrapper({ GET: mockGet }) },
+        );
+        await waitFor(() => expect(result.current.isError).toBe(true));
+
+        await advance(35_000);
+        expect(mockGet).toHaveBeenCalledTimes(1);
+        unmount();
+      }
+    }));
 
   describe("checkInTokenRefetchMs", () => {
-    const result = (rotatesInMs: unknown, requestedAt = 1_000_000) => ({
-      response: { ...MINTED, rotatesInMs },
-      requestedAt,
+    const AT = { monotonic: 50_000, wall: 1_000_000 };
+    /** `ms` after `AT` on both clocks. */
+    const after = (ms: number) => ({
+      monotonic: AT.monotonic + ms,
+      wall: AT.wall + ms,
+    });
+    const success = (rotatesInMs: unknown) => ({
+      status: "success" as const,
+      error: null,
+      data: { response: { ...MINTED, rotatesInMs }, requestedAt: AT },
+    });
+    const failed = (error: unknown) => ({
+      ...success(20_000),
+      status: "error" as const,
+      error,
     });
 
     it("waits until just after the rotation, counted from the request's start", () => {
-      expect(checkInTokenRefetchMs(result(20_000), false, 1_005_000)).toBe(
-        15_500,
-      );
+      expect(checkInTokenRefetchMs(success(20_000), after(5_000))).toBe(15_500);
+    });
+
+    it("counts the larger of the two clocks' readings", () => {
+      // The wall clock stepped back two minutes: the monotonic one still
+      // reads 5s.
+      expect(
+        checkInTokenRefetchMs(success(20_000), {
+          monotonic: AT.monotonic + 5_000,
+          wall: AT.wall - 115_000,
+        }),
+      ).toBe(15_500);
+      // The phone slept for two minutes: the wall clock still reads them.
+      expect(
+        checkInTokenRefetchMs(success(20_000), {
+          monotonic: AT.monotonic + 1_000,
+          wall: AT.wall + 120_000,
+        }),
+      ).toBe(CHECK_IN_TOKEN_MIN_POLL_MS);
     });
 
     it("polls on the fallback with nothing to time from", () => {
-      expect(checkInTokenRefetchMs(undefined, false, 0)).toBe(
-        CHECK_IN_TOKEN_FALLBACK_POLL_MS,
-      );
-      expect(checkInTokenRefetchMs(result(undefined), false, 0)).toBe(
-        CHECK_IN_TOKEN_FALLBACK_POLL_MS,
-      );
-      // A failed refetch keeps the old data, whose rotation is long past;
-      // timing off it would retry every second.
-      expect(checkInTokenRefetchMs(result(20_000), true, 9_999_999)).toBe(
+      expect(
+        checkInTokenRefetchMs(
+          { status: "pending", error: null, data: undefined },
+          AT,
+        ),
+      ).toBe(CHECK_IN_TOKEN_FALLBACK_POLL_MS);
+      expect(checkInTokenRefetchMs(success(undefined), AT)).toBe(
         CHECK_IN_TOKEN_FALLBACK_POLL_MS,
       );
     });
 
+    it("polls on the fallback after a failure that may go through next time", () => {
+      // The last data's rotation is long past; timing off it would retry
+      // every second.
+      for (const error of [
+        new TypeError("Network request failed"),
+        { statusCode: 502 },
+        { statusCode: 408 },
+        { statusCode: 429 },
+      ]) {
+        expect(checkInTokenRefetchMs(failed(error), after(9_999_999))).toBe(
+          CHECK_IN_TOKEN_FALLBACK_POLL_MS,
+        );
+      }
+    });
+
+    it("stops after a refusal", () => {
+      for (const error of [
+        { statusCode: 403, message: "Forbidden" },
+        { statusCode: 404, message: "Event not found" },
+        { statusCode: 503, message: CHECK_IN_CODES_UNCONFIGURED_MESSAGE },
+      ]) {
+        expect(checkInTokenRefetchMs(failed(error), AT)).toBe(false);
+      }
+    });
+
     it("never asks again sooner than the minimum", () => {
-      expect(checkInTokenRefetchMs(result(20_000), false, 5_000_000)).toBe(
+      expect(checkInTokenRefetchMs(success(20_000), after(4_000_000))).toBe(
         CHECK_IN_TOKEN_MIN_POLL_MS,
       );
     });
+  });
+});
+
+describe("elapsedSince", () => {
+  it("reads the larger of the two clocks", () => {
+    const since = { monotonic: 100, wall: 1_000 };
+    expect(elapsedSince(since, { monotonic: 600, wall: 1_200 })).toBe(500);
+    expect(elapsedSince(since, { monotonic: 200, wall: 9_000 })).toBe(8_000);
+  });
+});
+
+/**
+ * Which failures of a check-in, or of a code request, may go through when
+ * asked again later. s22's poll asks again only after one of these, and s18
+ * clears its line when the member turns to typing a code.
+ */
+describe("isTransientCheckInFailure", () => {
+  it("is the shared rule for no real answer, plus the rate limit", () => {
+    for (const error of [
+      new TypeError("Network request failed"),
+      undefined,
+      { statusCode: 500 },
+      { statusCode: 502 },
+      { statusCode: 503, message: "Service Unavailable" },
+      { statusCode: 408 },
+      { statusCode: 499 },
+      { statusCode: 460 },
+      { statusCode: 429, message: "ThrottlerException: Too Many Requests" },
+    ]) {
+      expect(isTransientCheckInFailure(error)).toBe(true);
+    }
+  });
+
+  it("is not a refusal, or an environment with no check-in codes", () => {
+    for (const error of [
+      { statusCode: 400, message: "Bad Request" },
+      { statusCode: 401 },
+      { statusCode: 403, message: "Forbidden" },
+      { statusCode: 404 },
+      { statusCode: 503, message: CHECK_IN_CODES_UNCONFIGURED_MESSAGE },
+    ]) {
+      expect(isTransientCheckInFailure(error)).toBe(false);
+    }
+  });
+});
+
+/**
+ * The message is read from the API's source by
+ * `apps/mobile/lib/events/check-in-outcome.spec.ts`: this package has no Node
+ * types to read a file with.
+ */
+describe("isCheckInCodesUnconfigured", () => {
+  it("is matched on the status and the message together", () => {
+    expect(
+      isCheckInCodesUnconfigured({
+        statusCode: 503,
+        message: CHECK_IN_CODES_UNCONFIGURED_MESSAGE,
+      }),
+    ).toBe(true);
+    expect(isCheckInCodesUnconfigured({ statusCode: 503 })).toBe(false);
+    expect(
+      isCheckInCodesUnconfigured({
+        statusCode: 500,
+        message: CHECK_IN_CODES_UNCONFIGURED_MESSAGE,
+      }),
+    ).toBe(false);
   });
 });
 

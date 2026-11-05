@@ -5,10 +5,14 @@ import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import QRCode from "react-native-qrcode-svg";
 import {
   countCheckedIn,
+  deviceNow,
+  elapsedSince,
+  isCheckInCodesUnconfigured,
   useAttendance,
   useEvent,
   useMintCheckInToken,
   usePermissionList,
+  type DeviceInstant,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
@@ -55,9 +59,9 @@ import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
  * ## Live only while it is on screen
  *
  * `host-check-in` is a `Tabs.Screen`, which stays mounted after the officer
- * leaves. The code and the count poll only while this screen has focus, so a
- * screen nobody is looking at doesn't mint a code every 10 seconds for the
- * rest of the session.
+ * leaves. The code and the count are asked for only while this screen has
+ * focus, so a screen nobody is looking at doesn't keep minting codes and
+ * reading the roster for the rest of the session.
  *
  * That leaves a cached code behind, and an officer who comes back minutes
  * later would see it drawn at once, live dot and all, while the fresh one is
@@ -66,17 +70,24 @@ import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
  * ({@link SCAN_MARGIN_MS}), and the blank card stands in until the new one
  * lands.
  *
- * ## One clock: the phone's, from when the code was asked for
+ * ## The phone's clocks, from when the code was asked for
  *
  * The server signs window `floor(t / 30s)` and accepts the current window and
  * the previous one, so a code minted at `m` is current until the window
  * boundary (`m + rotatesInMs`) and redeems for one window after it. Every time
- * here is measured on this phone's clock from when the request *started*,
- * which is never later than the mint, plus the response's `rotatesInMs`
- * (`selectMintedToken`'s `rotatesAt`). So the countdown, the rotation refetch
- * (`useMintCheckInToken`) and the live bound each fall at or before the real
- * moment, never after it, and none of them compares the server's clock with
- * the phone's: a phone whose clock is off shows the same countdown.
+ * here is the time elapsed on this phone since the request *started*, which is
+ * never later than the mint, against the response's `rotatesInMs`. Elapsed
+ * time is the larger reading of the phone's two clocks (`elapsedSince` in
+ * `@repo/hooks`), so neither a step of its wall clock nor a sleep, which stops
+ * Android's monotonic one, can make a code look younger than it is. So the
+ * countdown (`rotatesInMs - elapsed`) and the live bound fall at or before
+ * the real moment, never after it, and neither compares the server's clock
+ * with the phone's: a phone whose clock is off shows the same countdown.
+ *
+ * The rotation refetch (`useMintCheckInToken`) is the one time that falls
+ * after the computed rotation, on purpose: it asks half a second later,
+ * because the computed rotation is early by the request's trip to the server
+ * and asking exactly then could get the old window's code back.
  */
 
 /** Until the body has measured itself: the size the screen always drew. */
@@ -101,24 +112,29 @@ const ATTENDANCE_POLL_MS = 10_000;
  * phone and decode it, s18 may need a location fix (a cold one at the
  * "balanced" accuracy it asks for takes a few seconds), and the check-in then
  * has to reach the server. Ten seconds covers that on poor venue Wi-Fi. A code
- * is drawn as live only until `rotatesAt + window - margin`; while the screen
- * is up the rotation refetch replaces it within a round trip of `rotatesAt`,
- * so the margin only ever blanks a code left over from an earlier visit.
+ * is drawn as live only while less than `rotatesInMs + window - margin` has
+ * elapsed since it was asked for. While the screen is up, the rotation
+ * refetch normally replaces it within a round trip of its rotation, so the
+ * margin blanks a code left over from an earlier visit or from before the
+ * phone slept, and, on a focused screen, one whose refetches keep failing:
+ * after a failed refetch the next try is 10s later, so two failures in a row
+ * run past it.
  */
 const SCAN_MARGIN_MS = 10_000;
 
 /**
- * The time, re-read every half second while `active`. The token itself comes
- * from the server; this only animates the countdown and ages the cached code.
- * It is re-read before paint when the screen comes back, so the first frame
- * of a return is never judged against the time the officer left.
+ * The time on both of the phone's clocks, re-read every half second while
+ * `active`. The token itself comes from the server; this only animates the
+ * countdown and ages the cached code. It is re-read before paint when the
+ * screen comes back, so the first frame of a return is never judged against
+ * the time the officer left.
  */
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
+function useNow(active: boolean): DeviceInstant {
+  const [now, setNow] = useState(deviceNow);
 
   useLayoutEffect(() => {
     if (!active) return;
-    const tick = () => setNow(Date.now());
+    const tick = () => setNow(deviceNow());
     tick();
     const id = setInterval(tick, 500);
     return () => clearInterval(id);
@@ -166,17 +182,18 @@ export default function HostCheckInScreen() {
     () => selectMintedToken(tokenQuery.data),
     [tokenQuery.data],
   );
+  const age = cached ? elapsedSince(cached.requestedAt, now) : 0;
   // The code to draw: the cached one only while it will still redeem for a
   // scan (see `SCAN_MARGIN_MS`). Past that the screen shows the blank card it
   // shows while loading, and the refetch focus started replaces it.
   const minted =
     cached &&
-    now < cached.rotatesAt + CHECK_IN_TOKEN_WINDOW_MS - SCAN_MARGIN_MS
+    age < cached.rotatesInMs + CHECK_IN_TOKEN_WINDOW_MS - SCAN_MARGIN_MS
       ? cached
       : null;
-  // Counted down on the phone's clock alone: no `expiresAt - now`, which
+  // Counted down on the phone's clocks alone: no `expiresAt - now`, which
   // would put the phone's clock error on screen.
-  const remaining = minted ? minted.rotatesAt - now : 0;
+  const remaining = minted ? minted.rotatesInMs - age : 0;
   const checkedIn = countCheckedIn(attendance);
 
   const [bodyWidth, setBodyWidth] = useState<number | null>(null);
@@ -195,16 +212,10 @@ export default function HostCheckInScreen() {
           ),
         );
 
-  // The API's error bodies carry `statusCode`; anything else stays null so the
-  // copy below falls through to the transient wording rather than guessing.
-  const tokenStatus = ((): number | null => {
-    // `unknown` first: TanStack types the error as `Error`, but what actually
-    // lands here is the API's JSON body, which is not an Error instance.
-    const raw = tokenQuery.error as unknown;
-    if (!raw || typeof raw !== "object") return null;
-    const code = (raw as { statusCode?: unknown }).statusCode;
-    return typeof code === "number" ? code : null;
-  })();
+  // The API's own 503 for a missing signing secret, matched on its message
+  // (the same match that stops the hook's poll). A bare 503 from an
+  // intermediary is transient, so it gets the transient wording and a retry.
+  const unconfigured = isCheckInCodesUnconfigured(tokenQuery.error);
 
   return (
     <SafeAreaView
@@ -255,22 +266,22 @@ export default function HostCheckInScreen() {
         <View style={styles.stateWrap}>
           {/*
             Two genuinely different causes, and the screen must not assert the
-            wrong one. A 503 means the environment has no signing secret and no
-            amount of waiting fixes it, so it offers no retry; anything else (a
-            network blip, a 5xx) is transient, and both the button and the 10s
-            poll can clear it. Naming "not configured" for a dropped request
-            would send an officer to chase an infra problem that does not exist.
+            wrong one. The unconfigured 503 means the environment has no signing
+            secret and no amount of waiting fixes it, so it offers no retry and
+            the hook stops asking; anything else gets a retry, and a failure
+            that may go through next time (a network blip, a 5xx) is asked
+            again on the hook's 10s poll too. Naming "not configured" for a
+            dropped request would send an officer to chase an infra problem that
+            does not exist.
           */}
           <ErrorState
             title="Code unavailable"
             body={
-              tokenStatus === 503
+              unconfigured
                 ? "Rotating check-in codes aren't set up for this environment. Members can still check in from the event."
                 : "The code didn't load. Members can still check in from the event."
             }
-            onRetry={
-              tokenStatus === 503 ? undefined : () => void tokenQuery.refetch()
-            }
+            onRetry={unconfigured ? undefined : () => void tokenQuery.refetch()}
             isRetrying={tokenQuery.isFetching}
           />
         </View>

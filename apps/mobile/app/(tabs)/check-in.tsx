@@ -36,7 +36,7 @@ import {
   isPlausibleManualCode,
   parseCheckInCode,
 } from "@/lib/events/check-in-code";
-import { createScanLatch } from "@/lib/events/scan-latch";
+import { createScanLatch, type ScanLatch } from "@/lib/events/scan-latch";
 import {
   CHECK_IN_LOCATION_DENIED_COPY,
   checkInFailure,
@@ -84,9 +84,13 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * screen has focus.
  */
 
+/**
+ * What the screen says about the event it is on. Whether a check-in is on its
+ * way is not here: it is kept per event (`sending`), so it can be true of an
+ * event the screen has left and comes back to.
+ */
 type Status =
   | { kind: "idle" }
-  | { kind: "submitting" }
   /**
    * `checkInSuccess`'s words, and the event they are about, both fixed when
    * the check-in was sent. The panel draws these rather than whatever event
@@ -99,8 +103,9 @@ type Status =
     })
   /**
    * `attemptOnly` is `checkInFailure`'s: the line is about this one attempt
-   * (the code it sent, or a request that got no real answer), not about the
-   * member, so it clears when they turn to typing a code (see `openManual`).
+   * (the code it sent, or a request that may go through if sent again), not
+   * about the member, so it clears when they turn to typing a code (see
+   * `openManual`).
    * `foreign` marks the scanner's "different event" line, which is
    * attempt-only too, and which `handleBarcode` reports once per code.
    */
@@ -178,11 +183,50 @@ export default function CheckInScreen() {
   const focused = useIsFocused();
   const [torchOn, setTorchOn] = useState(false);
   const [manualCode, setManualCode] = useState("");
-  // The event a check-in is on its way for, if any; see the reset below.
-  const [inFlightFor, setInFlightFor] = useState<string | null>(null);
 
   /**
-   * What the screen holds belongs to one event.
+   * The check-in on its way for each event, keyed by event, holding its
+   * request's number.
+   *
+   * The tab instance is reused, so a check-in sent for one event can still be
+   * on its way when the screen is on another, and the member can come back to
+   * the first before it answers. So whether a check-in is on its way is kept
+   * per event, and so is the latch that lets one through at a time
+   * (`latchFor`): event A's check-in in flight never switches B's scanner or
+   * manual Check in off, and when it settles it clears only its own mark and
+   * releases only A's latch, never a hold that B's own check-in has. Coming
+   * back to A while it is still on its way shows it as sending, and its answer
+   * lands; once it has settled, wherever the screen was, nothing is left
+   * sending.
+   *
+   * Slots in this one screen rather than a screen remounted per event
+   * (`key={eventId}`): a remount would restart the camera session on a
+   * `frapp://` move and pull the manual sheet's modal out from under
+   * `useSheetVisit` mid-presentation, and the record of what is on its way
+   * would still have to live above it, for the event the member comes back
+   * to. Everything else the screen holds is only ever the current event's: a
+   * result for an event the screen has left is dropped, so the status, the
+   * typed code and the foreign-code memory are simply reset on a move (below).
+   */
+  const [sending, setSending] = useState<ReadonlyMap<string, number>>(
+    () => new Map(),
+  );
+  const lastRequestRef = useRef(0);
+  // `useRef` rather than state: a latch change must never trigger a render, or
+  // the camera remounts mid-scan.
+  const latchesRef = useRef(new Map<string, ScanLatch>());
+  const latchFor = useCallback((id: string) => {
+    let latch = latchesRef.current.get(id);
+    if (!latch) {
+      latch = createScanLatch();
+      latchesRef.current.set(id, latch);
+    }
+    return latch;
+  }, []);
+  const sendingHere = sending.has(eventId);
+
+  /**
+   * What the screen says belongs to one event.
    *
    * The tab instance is reused, so `eventId` can change under it: a member
    * leaves one event's scanner and opens the next (where the focus reset
@@ -193,16 +237,13 @@ export default function CheckInScreen() {
    * otherwise greet the member here, in the scanner and in the manual sheet,
    * and the last event's code would sit in the field ready to send. So they
    * are reset during the render that changes the event, before anything of
-   * the old one is drawn. The one thing kept is a check-in still on its way
-   * for the event the screen is now on (it left this event and came back
-   * before it answered): that one shows as sending, and its answer lands.
+   * the old one is drawn. A check-in on its way for the event the screen is
+   * now on needs nothing here: `sending` is per event, so it shows.
    */
   const [shownEventId, setShownEventId] = useState(eventId);
   if (shownEventId !== eventId) {
     setShownEventId(eventId);
-    setStatus(
-      inFlightFor === eventId ? { kind: "submitting" } : { kind: "idle" },
-    );
+    setStatus({ kind: "idle" });
     setManualCode("");
   }
 
@@ -249,11 +290,11 @@ export default function CheckInScreen() {
     }, [dismissSheet]),
   );
 
-  const checkIn = useCheckIn();
+  // One mutation, used only to send. Its `isPending` follows its latest call,
+  // whichever event that was for, so nothing here reads it: `sending` and the
+  // latches are per event.
+  const { mutateAsync: sendCheckIn } = useCheckIn();
 
-  // One latch for the life of the screen. `useRef` rather than state: a latch
-  // change must never trigger a render, or the camera remounts mid-scan.
-  const latchRef = useRef(createScanLatch());
   // Last foreign-event code already reported — see `handleBarcode`.
   const reportedForeignRef = useRef<string | null>(null);
   // Forgotten as soon as its line leaves the screen, by whatever path (the
@@ -315,23 +356,33 @@ export default function CheckInScreen() {
    * made in one place: the success branch below is where the screen marks the
    * moment, for the member who sees it, feels it, and hears it.
    *
+   * It claims the event's latch before anything else, with the code it sends
+   * (`claim`), and returns if a check-in for this event already holds it. That
+   * is synchronous, so it holds where a render would come too late: the camera
+   * hands over a code many times a second, and a double tap on the sheet's
+   * button lands its second press before the re-render that disables it.
+   *
    * A result that lands after the screen has moved to another event is
    * dropped, success or failure: it is about an event the member is no longer
    * looking at, and drawing it would confirm (or refuse) the wrong one. A
-   * dropped result touches nothing: the move already reset the screen to the
-   * event it is on now (see `shownEventId`), and a status, or a code typed
-   * since, belongs to that event.
+   * dropped result touches nothing of the event on screen: the move already
+   * reset the screen to it (see `shownEventId`), and a status, or a code typed
+   * since, belongs to that event. It clears only its own event's `sending`
+   * mark and latch.
    */
   const submit = useCallback(
-    async (payload: { token?: string; manualCode?: string }) => {
+    async (payload: { token?: string; manualCode?: string }, claim: string) => {
       const submittedFor = eventId;
+      const latch = latchFor(submittedFor);
+      if (!latch.accept(claim)) return;
+      const request = ++lastRequestRef.current;
       const eventName = event?.name ?? null;
       const outcome = checkInSuccess(event?.point_value);
-      setStatus({ kind: "submitting" });
-      setInFlightFor(submittedFor);
+      setStatus({ kind: "idle" });
+      setSending((current) => new Map(current).set(submittedFor, request));
       try {
         const fix = await resolveLocation();
-        await checkIn.mutateAsync({ eventId: submittedFor, ...payload, ...fix });
+        await sendCheckIn({ eventId: submittedFor, ...payload, ...fix });
         if (eventIdRef.current !== submittedFor) return;
         setStatus({ ...outcome, eventId: submittedFor, eventName });
         setManualCode("");
@@ -353,13 +404,18 @@ export default function CheckInScreen() {
         if (eventIdRef.current !== submittedFor) return;
         setStatus(failureStatus(error));
       } finally {
-        setInFlightFor(null);
+        setSending((current) => {
+          if (current.get(submittedFor) !== request) return current;
+          const next = new Map(current);
+          next.delete(submittedFor);
+          return next;
+        });
         // Released on both paths so a failed scan can be retried. A latch that
         // stayed closed after an error would strand the member on a dead screen.
-        latchRef.current.release();
+        latch.release();
       }
     },
-    [checkIn, dismissSheet, event, eventId, resolveLocation],
+    [dismissSheet, event, eventId, latchFor, resolveLocation, sendCheckIn],
   );
 
   const handleBarcode = useCallback(
@@ -390,13 +446,14 @@ export default function CheckInScreen() {
         return;
       }
 
-      if (!latchRef.current.accept(raw)) return;
       // The manual field is gated a few lines below; the scan has to be too.
-      // A scan submits immediately rather than latching, so without this a
-      // member at the door with no signal gets a spinner that never resolves
-      // and a decoder that has already been switched off.
+      // A scan submits immediately, so without this a member at the door with
+      // no signal gets a spinner that never resolves and a decoder that has
+      // already been switched off. Checked before `submit` claims the latch:
+      // a claim with no request behind it would never be released, and the
+      // scanner would drop every code after the member reconnected.
       if (writeBlockedReasonRef.current !== null) return;
-      void submit({ token: parsed.token });
+      void submit({ token: parsed.token }, raw);
     },
     [eventId, submit],
   );
@@ -407,10 +464,12 @@ export default function CheckInScreen() {
     void requestCameraPermission();
   }, [cameraPermission, requestCameraPermission]);
 
+  // Gated on this event's own state only: a check-in on its way for another
+  // event leaves both armed (see `sending`).
   const scanning =
     eventLoaded &&
     !manualOpen &&
-    status.kind !== "submitting" &&
+    !sendingHere &&
     status.kind !== "success" &&
     status.kind !== "blocked";
 
@@ -418,19 +477,19 @@ export default function CheckInScreen() {
     !eventLoaded ||
     !isPlausibleManualCode(manualCode) ||
     writeBlockedReason !== null ||
-    status.kind === "submitting" ||
-    status.kind === "blocked" ||
-    checkIn.isPending;
+    sendingHere ||
+    status.kind === "blocked";
 
   const openManual = () => {
     // The sheet shows only lines that stay true of the code the member is
     // about to type. A line about the last attempt (`attemptOnly`: the
-    // scanned code was refused as stale or another event's, or the request
-    // got no real answer) says nothing about a fresh code, so it clears. A
-    // line about the member stays: where they are (the zone, their
-    // location), that they're already checked in here, or a refusal that is
-    // why the sheet's button is off. The screen already dropped whatever
-    // belonged to an earlier event (`shownEventId`).
+    // scanned code was refused as stale, malformed or another event's, or
+    // the request may go through if sent again) says nothing about a fresh
+    // code, so it clears. A line about the member or the environment stays:
+    // where they are (the zone, their location), that they're already
+    // checked in here, that check-in codes aren't set up here, or a refusal
+    // that is why the sheet's button is off. The screen already dropped
+    // whatever belonged to an earlier event (`shownEventId`).
     setStatus((current) =>
       current.kind === "error" && current.attemptOnly
         ? { kind: "idle" }
@@ -497,10 +556,14 @@ export default function CheckInScreen() {
         until a check-in lands, and the panel fills it. TalkBack announces a
         change inside a live region it already knows; a region that mounts
         with its content already in it isn't reliably read out, and Android
-        hears the success only through this.
+        hears the success only through this. `collapsable={false}` keeps it a
+        real Android view: a View that only lays out is flattened away by the
+        renderer, and its live region with it. Empty, it draws nothing and
+        takes no space.
       */}
       <View
         accessibilityLiveRegion="polite"
+        collapsable={false}
         style={status.kind === "success" ? styles.successBody : null}
       >
         {status.kind === "success" ? (
@@ -618,7 +681,7 @@ export default function CheckInScreen() {
                 : "Code rotates every 30s, so a screenshot goes stale quickly."}
             </Text>
 
-            {status.kind === "submitting" ? (
+            {sendingHere ? (
               <View style={styles.statusRow}>
                 <ActivityIndicator color={tokens.color.text.muted} />
                 <Text style={styles.statusText}>Checking you in…</Text>
@@ -690,13 +753,11 @@ export default function CheckInScreen() {
           ref={sheetRef}
           code={manualCode}
           onChangeCode={setManualCode}
-          onSubmit={() => void submit({ manualCode })}
-          // `checkIn.isPending` as well as the local status: `setStatus` is
-          // asynchronous, so a fast double-tap can land a second press before
-          // the re-render disables the control. The mutation's own pending
-          // flag closes that window.
+          // A fast double tap can land a second press before the re-render
+          // disables the control; `submit`'s latch claim drops it.
+          onSubmit={() => void submit({ manualCode }, manualCode)}
           submitDisabled={manualSubmitDisabled}
-          submitting={status.kind === "submitting"}
+          submitting={sendingHere}
           notices={manualNotices}
           accessibilityHint={writeBlockedReason ?? undefined}
           onAnimate={sheet.onAnimate}

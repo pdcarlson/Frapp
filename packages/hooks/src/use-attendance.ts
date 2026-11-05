@@ -1,6 +1,11 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  isRetryableFailure,
+  serverMessageOf,
+  statusOf,
+} from "@repo/api-sdk";
 import { useFrappClient } from "./use-frapp-client";
 
 export interface AttendanceOptions {
@@ -95,21 +100,88 @@ export function useCheckIn() {
 }
 
 /**
+ * The API's 503 for an environment with no signing secret for check-in codes
+ * (`AttendanceService.requireTokenSecret`). Minting a code meets it, and so
+ * does every check-in that carries a code, scanned or typed. It has no `code`
+ * (`@repo/api-sdk`'s `codeOf`), so the message identifies it;
+ * `apps/mobile/lib/events/check-in-outcome.spec.ts` reads it from the API's
+ * source so the two can't drift apart in silence.
+ */
+export const CHECK_IN_CODES_UNCONFIGURED_MESSAGE =
+  "Rotating check-in codes are not configured for this environment";
+
+/** Whether a failure is {@link CHECK_IN_CODES_UNCONFIGURED_MESSAGE}'s 503. */
+export function isCheckInCodesUnconfigured(error: unknown): boolean {
+  return (
+    statusOf(error) === 503 &&
+    serverMessageOf(error) === CHECK_IN_CODES_UNCONFIGURED_MESSAGE
+  );
+}
+
+/**
+ * Whether a failed check-in or code request may go through when asked again
+ * later, for s22's poll and s18's sheet alike.
+ *
+ * "No real answer" is `@repo/api-sdk`'s `isRetryableFailure`, the one shared
+ * rule: no status at all (a dropped connection), a 5xx, or an intermediary's
+ * 408/499/460. Two changes to it, both about waiting rather than repeating at
+ * once. The rate limit's 429 is added: the shared rule counts it definitive
+ * because an immediate repeat is refused too, but it lifts by itself. And the
+ * unconfigured 503 is taken out: no amount of asking supplies a missing
+ * secret.
+ */
+export function isTransientCheckInFailure(error: unknown): boolean {
+  if (isCheckInCodesUnconfigured(error)) return false;
+  return isRetryableFailure(error) || statusOf(error) === 429;
+}
+
+/**
+ * A moment on this device, read off both of its clocks.
+ *
+ * Neither clock alone measures how long ago something happened. The wall
+ * clock (`Date.now()`) can step: a network time correction or a manual change
+ * moves it by seconds or minutes, and a step back would make a code look
+ * younger by the size of the step. The monotonic clock (`performance.now()`)
+ * never steps, but on Android it stops while the phone sleeps: React Native
+ * reads it off `std::chrono::steady_clock`, which there is `CLOCK_MONOTONIC`,
+ * so after the screen has been off it reads as if no time had passed.
+ * {@link elapsedSince} takes the larger of the two, so either failure can
+ * only make a code look older than it is.
+ */
+export interface DeviceInstant {
+  monotonic: number;
+  wall: number;
+}
+
+export function deviceNow(): DeviceInstant {
+  return { monotonic: performance.now(), wall: Date.now() };
+}
+
+/** How long ago `since` was: the larger reading (see {@link DeviceInstant}). */
+export function elapsedSince(since: DeviceInstant, now: DeviceInstant): number {
+  return Math.max(now.monotonic - since.monotonic, now.wall - since.wall);
+}
+
+/**
  * What `useMintCheckInToken` resolves to: the server's response, untouched,
- * and when this device sent the request, on its own clock.
+ * and when this device sent the request.
  *
  * `requestedAt` is stamped before the request leaves, so it is never later
- * than the mint. Adding the response's `rotatesInMs` to it gives a rotation
- * time on this device's clock that is never later than the real one, with no
- * comparison against the server's clock, which a phone's can be well off.
- * Receipt time would err the other way, by the response's whole trip.
+ * than the mint. The response's `rotatesInMs`, less the time elapsed since
+ * `requestedAt`, is what is left of the code's current window, counted on
+ * this device with no comparison against the server's clock, which a phone's
+ * can be well off. It is never more than the real time left. Receipt time
+ * would err the other way, by the response's whole trip.
  */
 export interface MintedCheckInTokenResult {
   response: unknown;
-  requestedAt: number;
+  requestedAt: DeviceInstant;
 }
 
-/** Until a response says when it rotates, and after a failed request. */
+/**
+ * Until a response says when it rotates, and after a failed request that may
+ * go through next time ({@link isTransientCheckInFailure}).
+ */
 export const CHECK_IN_TOKEN_FALLBACK_POLL_MS = 10_000;
 /**
  * How long after the computed rotation to ask again. The computed time is
@@ -130,22 +202,37 @@ function rotatesInMsOf(response: unknown): number | null {
 }
 
 /**
- * How long to wait before asking for the next code: until just after the
- * current one rotates. Exported for the spec; the hook hands it to TanStack as
- * a `refetchInterval` function, which is re-read after every fetch.
+ * How long to wait before asking for the next code, or `false` for not on a
+ * timer: just after the current one rotates; on the fallback poll while there
+ * is nothing to time from, or after a failure that may go through next time;
+ * and not at all after one that won't (a 403 for a member who isn't an
+ * officer, the unconfigured 503). Exported for the spec; the hook hands it
+ * TanStack's query state as a `refetchInterval` function, which is re-read
+ * after every fetch and every render.
  */
 export function checkInTokenRefetchMs(
-  result: MintedCheckInTokenResult | undefined,
-  failed: boolean,
-  now: number,
-): number {
-  const rotatesInMs = result ? rotatesInMsOf(result.response) : null;
-  if (failed || !result || rotatesInMs === null) {
-    return CHECK_IN_TOKEN_FALLBACK_POLL_MS;
+  state: {
+    data: MintedCheckInTokenResult | undefined;
+    status: "pending" | "error" | "success";
+    error: unknown;
+  },
+  now: DeviceInstant,
+): number | false {
+  // A failed refetch keeps the last data, whose rotation is past: timing off
+  // it would ask again every second.
+  if (state.status === "error") {
+    return isTransientCheckInFailure(state.error)
+      ? CHECK_IN_TOKEN_FALLBACK_POLL_MS
+      : false;
   }
+  const result = state.data;
+  const rotatesInMs = result ? rotatesInMsOf(result.response) : null;
+  if (!result || rotatesInMs === null) return CHECK_IN_TOKEN_FALLBACK_POLL_MS;
   return Math.max(
     CHECK_IN_TOKEN_MIN_POLL_MS,
-    result.requestedAt + rotatesInMs + CHECK_IN_TOKEN_ROTATION_SLACK_MS - now,
+    rotatesInMs +
+      CHECK_IN_TOKEN_ROTATION_SLACK_MS -
+      elapsedSince(result.requestedAt, now),
   );
 }
 
@@ -153,13 +240,16 @@ export function checkInTokenRefetchMs(
  * The rotating code for the host display (s22).
  *
  * Officer-only (`events:update`) and 503s where the environment has no signing
- * secret, so callers must render both states. Asked for again when the code
- * rotates, timed off the response's own `rotatesInMs` rather than a fixed
- * poll, so a screen on display shows each new code as its window opens. The
+ * secret, so callers must render both states. Asked for again half a second
+ * after the code rotates (see {@link CHECK_IN_TOKEN_ROTATION_SLACK_MS}), timed
+ * off the response's own `rotatesInMs` rather than a fixed poll, so a screen
+ * on display shows each new code just after its window opens: about one
+ * request per 30s window, plus one each time the screen regains focus. The
  * server still owns the boundary: the client only counts down to the moment
- * the server named, on the device's clock (see
+ * the server named, on the device's clocks (see
  * {@link MintedCheckInTokenResult}). A 10s poll stands in while there is no
- * answer to time from.
+ * answer to time from, and after a failure that may go through next time; a
+ * refusal stops the timer ({@link checkInTokenRefetchMs}).
  *
  * `staleTime: 0` and no structural sharing of a stale token — a code that is one
  * window old is still redeemable, so a slightly late refetch degrades to "the
@@ -170,7 +260,7 @@ export function useMintCheckInToken(eventId: string, enabled = true) {
   return useQuery({
     queryKey: ["attendance", eventId, "check-in-token"],
     queryFn: async (): Promise<MintedCheckInTokenResult> => {
-      const requestedAt = Date.now();
+      const requestedAt = deviceNow();
       const { data, error } = await client.GET(
         "/v1/events/{eventId}/attendance/check-in-token",
         { params: { path: { eventId } } },
@@ -180,15 +270,11 @@ export function useMintCheckInToken(eventId: string, enabled = true) {
     },
     enabled: enabled && !!eventId,
     staleTime: 0,
-    refetchInterval: (query) =>
-      checkInTokenRefetchMs(
-        query.state.data,
-        query.state.status === "error",
-        Date.now(),
-      ),
+    refetchInterval: (query) => checkInTokenRefetchMs(query.state, deviceNow()),
     refetchOnWindowFocus: true,
     // A 403 (not an officer) or 503 (unconfigured) will not fix itself by
-    // asking again on a timer.
+    // asking again, and a transient failure is asked again by the fallback
+    // poll, not at once.
     retry: false,
   });
 }

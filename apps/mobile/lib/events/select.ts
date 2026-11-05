@@ -11,6 +11,7 @@
  * detail selector, and a route file importing another route file would drag a
  * whole screen component into the scanner's bundle.
  */
+import type { DeviceInstant } from "@repo/hooks";
 import { isCurrentOrUpcoming, sortEventsByStart } from "./format";
 
 export interface EventRow {
@@ -108,13 +109,21 @@ export interface MintedCheckInToken {
   qrPayload: string;
   manualCode: string;
   /**
-   * When the code rotates, on this device's clock: the request's start plus
-   * the server's `rotatesInMs`. Never later than the real rotation, since the
-   * request left before the mint, and never compared with the server's clock
-   * (its `expiresAt`), which a phone's can be well off.
+   * When this device asked for the code, on both of its clocks
+   * (`useMintCheckInToken`'s `requestedAt`): never later than the mint.
    */
-  rotatesAt: number;
+  requestedAt: DeviceInstant;
+  /**
+   * What the server said was left of the code's window when it minted it.
+   * Counted down from `requestedAt` on this device (`elapsedSince`), it ends
+   * at or before the real rotation, and it is never compared with the
+   * server's clock (its `expiresAt`), which a phone's can be well off.
+   */
+  rotatesInMs: number;
 }
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
 
 /**
  * The s22 mint result (`useMintCheckInToken`: the response and when it was
@@ -132,14 +141,22 @@ export function selectMintedToken(data: unknown): MintedCheckInToken | null {
   if (
     !qrPayload ||
     !manualCode ||
-    typeof rotatesInMs !== "number" ||
-    !Number.isFinite(rotatesInMs) ||
-    typeof requestedAt !== "number" ||
-    !Number.isFinite(requestedAt)
+    !isFiniteNumber(rotatesInMs) ||
+    !isRecord(requestedAt) ||
+    !isFiniteNumber(requestedAt.monotonic) ||
+    !isFiniteNumber(requestedAt.wall)
   ) {
     return null;
   }
-  return { qrPayload, manualCode, rotatesAt: requestedAt + rotatesInMs };
+  return {
+    qrPayload,
+    manualCode,
+    requestedAt: {
+      monotonic: requestedAt.monotonic,
+      wall: requestedAt.wall,
+    },
+    rotatesInMs,
+  };
 }
 
 export function selectEventDetail(data: unknown): EventDetail | null {
