@@ -48,7 +48,8 @@ export function useBackworkResource(id: string) {
 /**
  * `enabled` lets a caller outside the library skip the read: the route is
  * behind `backwork:upload` / `backwork:admin`, so for anyone else it can only
- * 403 (and the web client retries a failure three times).
+ * 403, which the query client refires on focus. The web client no longer
+ * retries a 403 (#3141).
  */
 export function useDepartments(options: { enabled?: boolean } = {}) {
   const client = useFrappClient();

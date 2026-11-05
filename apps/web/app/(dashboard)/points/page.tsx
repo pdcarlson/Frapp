@@ -112,9 +112,10 @@ export default function PointsPage() {
   const { nameFor, refetch: refetchRoster } = useMemberDisplayNames();
 
   // The roster gates nothing, at either scope. It feeds one column, and a query
-  // stays `isLoading` across its whole retry sequence — with `retry: 3` and
-  // 1s/2s/4s backoff, waiting on it would hide a board that is already in memory
-  // for the better part of ten seconds and then show the fallback labels anyway.
+  // stays `isLoading` across its whole retry sequence. The query provider
+  // retries a 5xx or a dropped request three times with 1s/2s/4s backoff, so
+  // waiting on it would hide a board that is already in memory for the better
+  // part of ten seconds and then show the fallback labels anyway.
   // Rows render as soon as their totals arrive and names land when they land;
   // the unresolved label is a real, permanent state for departed members, so an
   // unnamed row is never a broken-looking one.
