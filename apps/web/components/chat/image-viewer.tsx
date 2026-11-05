@@ -210,7 +210,10 @@ function OpenImageViewer({
             // and iOS Safari may not fire `click` at all on a plain element.
             className="fixed inset-0 z-50 flex items-center justify-center p-4 focus:outline-none sm:px-16 sm:py-14"
             onPointerDown={(event) => {
-              pressedBackdrop.current = event.target === event.currentTarget;
+              // The primary button only: a right-click there opens the
+              // browser's menu and shouldn't also close the viewer.
+              pressedBackdrop.current =
+                event.button === 0 && event.target === event.currentTarget;
             }}
             onPointerUp={(event) => {
               const fromBackdrop = pressedBackdrop.current;
