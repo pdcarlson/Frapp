@@ -47,6 +47,10 @@ const ALLOWED: Record<string, string> = {
     "turns show_greek_letters off for an organization that hides its letters (FIJI) before the crest goes through resolveChapterMark",
   "apps/mobile/app/(auth)/create-chapter.tsx":
     "the mobile wizard's input for the field",
+  "apps/mobile/lib/chapter-branding.ts":
+    "turns show_greek_letters off for an organization that hides its letters (FIJI) before Chat home's mark goes through chapterTextMark",
+  "apps/api/src/application/services/invite.service.ts":
+    "turns show_greek_letters off for an organization that hides its letters (FIJI) before the invite preview's mark_text goes through chapterTextMark",
 };
 
 /**

@@ -3733,7 +3733,7 @@ export interface components {
         InvitePreviewResponseDto: {
             chapter_name: string;
             university: string;
-            /** @description The chapter's text mark: its short name, else its Greek letters if it shows them, else null. Never letters the chapter hides. */
+            /** @description The chapter's text mark: its short name, else its Greek letters if it shows them, else null. Never letters the chapter hides, nor those of an organization that never displays them (such as Phi Gamma Delta), whatever the chapter's stored switch says (#3421). */
             mark_text: string | null;
             accent_color: string | null;
             /** @description The inviter's display name, or null when it can't be read. */

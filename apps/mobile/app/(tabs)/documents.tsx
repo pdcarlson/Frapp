@@ -236,7 +236,8 @@ export default function DocumentsScreen() {
 
       {canUpload ? (
         <UploadDocumentSheet
-          // A new sheet per chapter: a retry the sheet holds after a failed
+          // A new sheet per chapter: a kept draft belongs to the chapter it
+          // was started in, and a retry the sheet holds after a failed
           // confirm names a path minted under the chapter it was sent from.
           key={chapterId ?? "no-chapter"}
           ref={uploadSheetRef}
