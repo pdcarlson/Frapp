@@ -48,7 +48,7 @@ export function deleteImportConfirmation(row: ImportRow): ConfirmRequest {
     title: row.guild_name
       ? `Delete the import from ${row.guild_name}?`
       : "Delete this Discord import?",
-    description: `${removes} It then deletes the channels it created, and any it merged into that another deleted import created, once they hold nothing. The roles and read permissions it created stay. This cannot be undone.`,
+    description: `${removes} It then deletes the channels it created, and any it merged into that another deleted import created, once they hold nothing, and the categories it created once they are empty. The roles and read permissions it created stay. This cannot be undone.`,
     confirmLabel: "Delete import",
     tone: "destructive",
   };
