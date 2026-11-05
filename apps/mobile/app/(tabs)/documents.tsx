@@ -17,6 +17,8 @@ import { UploadGlyph } from "@/components/documents/document-glyphs";
 import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
 import { FilterChips, SearchField } from "@/components/filter-chips";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import { DocumentsGlyph } from "@/components/more/more-glyphs";
+import { SearchGlyph } from "@/components/search-glyph";
 import {
   EmptyState,
   ErrorState,
@@ -146,13 +148,19 @@ export default function DocumentsScreen() {
     }
     if (rows.length === 0) {
       return (
+        // A title alone when the library or folder is empty: the screen is
+        // the documents list, and a line saying so told the member nothing.
+        // A search that matched nothing names the query, and the folder it
+        // searched in when one is picked, since the search stays inside it.
         <EmptyState
-          glyph="⌸"
+          glyph={deferredSearch ? SearchGlyph : DocumentsGlyph}
           title={deferredSearch ? "No matches" : "Nothing filed here yet"}
           body={
-            deferredSearch
-              ? `No document title matches “${deferredSearch}”.`
-              : "Documents the chapter uploads show up here."
+            !deferredSearch
+              ? undefined
+              : folder
+                ? `Nothing in ${folder} matches “${deferredSearch}”.`
+                : `No document title matches “${deferredSearch}”.`
           }
         />
       );
@@ -165,7 +173,9 @@ export default function DocumentsScreen() {
             label={row.title}
             description={row.meta}
             accessibilityHint="Opens in your browser."
-            disabled={openingId !== null}
+            // Only the row being opened shows it. The others stay as they
+            // are: `open` ignores a second tap until this one settles.
+            busy={row.id === openingId}
             onPress={() => void open(row.id)}
           />
         ))}

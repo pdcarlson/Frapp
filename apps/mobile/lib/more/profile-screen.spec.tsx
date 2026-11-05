@@ -3,6 +3,8 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { signetDarkTokens } from "@repo/theme/signet";
+import { ListRow } from "@/components/list-section";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
@@ -199,6 +201,37 @@ describe("Profile Edit (#3387)", () => {
         (node) => (node.type as unknown) === "BottomSheetModal",
       ),
     ).toHaveLength(0);
+    tree.unmount();
+  });
+});
+
+/**
+ * The owner's design review, 2026-11-04. The stat cards sit on the same
+ * step as the Details list below them, and each Details row is a fact (label
+ * quiet, value bright), not a row that opens something.
+ */
+describe("Profile stat cards and Details", () => {
+  it("draws the stat cards in the Details list's tone", () => {
+    const tree = render();
+    const label = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "points",
+    );
+    const card = Object.assign({}, ...[label.parent!.props.style].flat());
+    expect(card.backgroundColor).toBe(signetDarkTokens.color.surface.surface1);
+    tree.unmount();
+  });
+
+  it("sets every Details row as a fact row", () => {
+    const tree = render();
+    const rows = tree.root.findAllByType(ListRow);
+    expect(rows.map((row) => row.props.label)).toEqual([
+      "Email",
+      "Graduation",
+      "City",
+      "Company",
+    ]);
+    for (const row of rows) expect(row.props.variant).toBe("detail");
     tree.unmount();
   });
 });

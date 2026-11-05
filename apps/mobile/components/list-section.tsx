@@ -1,5 +1,6 @@
 import { ReactNode, useMemo } from "react";
 import {
+  ActivityIndicator,
   Platform,
   Pressable,
   type PressableAndroidRippleConfig,
@@ -91,9 +92,10 @@ export function listRowHint(
  * returns nothing, since the ripple is already the signal.
  *
  * The default lift is `surface.card`: a row on the screen background rises two
- * steps to it, and a `ListRow` on its `surface1` group one. A row that is
- * itself a card (a task, the profile card) passes `onCard` and lifts to
- * `surface.popover` instead: a card lifted to its own colour shows nothing.
+ * steps to it, and a `ListRow` on its `surface1` group, or the More profile
+ * card, one. A row that is itself a `surface.card` card (a task) passes
+ * `onCard` and lifts to `surface.popover` instead: a card lifted to its own
+ * colour shows nothing.
  */
 export type PressFeedback = {
   ripple: PressableAndroidRippleConfig;
@@ -143,7 +145,27 @@ export type ListRowProps = {
   accessibilityValue?: string;
   /** Renders the label in the destructive hue. Does not itself confirm anything. */
   destructive?: boolean;
+  /**
+   * The row can't be used now: the label greys out and the chevron goes. For a
+   * row that is unavailable, not for one that is working (`busy`).
+   */
   disabled?: boolean;
+  /**
+   * The row's own action is running (a document opening, a DM being started).
+   * The label keeps its colour and a small spinner takes the chevron's slot,
+   * so only the tapped row changes and nothing reflows. It takes no second
+   * press while busy. `disabled` used to stand in for this, which greyed the
+   * row out as if it were unavailable, and on Documents greyed every row at
+   * once with nothing marking the one that was opening.
+   */
+  busy?: boolean;
+  /**
+   * `detail` is a read-only fact row, as s15 draws Profile's Details: the label
+   * is the quiet half (regular weight, muted) and the value the one a member
+   * reads (foreground, at the label's weight). The default row is the other
+   * way round, because there the label names what a tap does.
+   */
+  variant?: "default" | "detail";
 };
 
 export function ListRow({
@@ -157,18 +179,22 @@ export function ListRow({
   accessibilityValue,
   destructive = false,
   disabled = false,
+  busy = false,
+  variant = "default",
 }: ListRowProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const feedback = usePressFeedback();
+  const detail = variant === "detail";
 
   const content = (
     <View style={styles.row}>
       {leading}
-      <View style={styles.rowText}>
+      <View style={[styles.rowText, detail ? styles.rowTextDetail : null]}>
         <Text
           style={[
             styles.rowLabel,
+            detail ? styles.rowLabelDetail : null,
             destructive ? styles.rowLabelDestructive : null,
             disabled ? styles.rowLabelDisabled : null,
           ]}
@@ -179,9 +205,22 @@ export function ListRow({
           <Text style={styles.rowDescription}>{description}</Text>
         ) : null}
       </View>
-      {value ? <Text style={styles.rowValue}>{value}</Text> : null}
+      {value ? (
+        <Text style={detail ? styles.rowValueDetail : styles.rowValue}>
+          {value}
+        </Text>
+      ) : null}
       {trailing}
-      {onPress && !disabled ? <Text style={styles.chevron}>›</Text> : null}
+      {onPress && busy ? (
+        // In the chevron's slot, so nothing else on the row moves.
+        <ActivityIndicator
+          size="small"
+          color={tokens.color.text.muted}
+          style={styles.trailingSlot}
+        />
+      ) : onPress && !disabled ? (
+        <Text style={styles.chevron}>›</Text>
+      ) : null}
     </View>
   );
 
@@ -200,12 +239,12 @@ export function ListRow({
           : undefined
       }
       accessibilityHint={listRowHint(description, accessibilityHint)}
-      accessibilityState={{ disabled }}
-      disabled={disabled}
+      accessibilityState={{ disabled, busy }}
+      disabled={disabled || busy}
       onPress={onPress}
       // `usePressFeedback`: a ripple on Android, bounded by the row because
       // `ListSection` clips its children, and a one-rung lift on iOS.
-      android_ripple={disabled ? undefined : feedback.ripple}
+      android_ripple={disabled || busy ? undefined : feedback.ripple}
       style={({ pressed }) => feedback.lift(pressed)}
     >
       {content}
@@ -250,6 +289,19 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
     },
+    // A detail row sizes its label to its text and gives the rest of the row
+    // to the value, the half that runs long (an email address).
+    rowTextDetail: {
+      flex: 0,
+      flexShrink: 0,
+    },
+    rowLabelDetail: {
+      ...typeRole({
+        ...tokens.typography.role.label,
+        weight: tokens.typography.weight.regular,
+      }),
+      color: tokens.color.text.mutedForeground,
+    },
     rowLabelDestructive: {
       color: tokens.color.semantic.destructive,
     },
@@ -265,9 +317,18 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
       flexShrink: 0,
     },
+    rowValueDetail: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+      flex: 1,
+      textAlign: "right",
+    },
     chevron: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.muted,
+      flexShrink: 0,
+    },
+    trailingSlot: {
       flexShrink: 0,
     },
   });

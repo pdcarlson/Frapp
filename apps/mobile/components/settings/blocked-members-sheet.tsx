@@ -24,6 +24,7 @@ import {
 } from "@repo/chat-core/block-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListSection } from "@/components/list-section";
+import { DirectoryGlyph } from "@/components/more/more-glyphs";
 import {
   SheetGrabber,
   SheetHeader,
@@ -113,7 +114,7 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
         />
       ) : rows.length === 0 ? (
         <EmptyState
-          glyph="⊘"
+          glyph={DirectoryGlyph}
           title={BLOCKED_MEMBERS_EMPTY_TITLE}
           body={BLOCKED_MEMBERS_EMPTY_BODY}
         />

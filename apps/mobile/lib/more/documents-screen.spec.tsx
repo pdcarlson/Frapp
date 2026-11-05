@@ -17,7 +17,9 @@ import { screenText } from "@/test/screen-text";
 
 let permissions: string[] = [];
 let folderRows: unknown[] = [];
+let documentRows: unknown[] = [];
 let chapterId: string | null = "chapter-a";
+const download = vi.fn();
 const LOADED = {
   data: [],
   isPending: false,
@@ -28,10 +30,10 @@ const LOADED = {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   usePermissionList: () => permissions,
-  useDocuments: () => LOADED,
+  useDocuments: () => ({ ...LOADED, data: documentRows }),
   useDocumentFolders: () => ({ ...LOADED, data: folderRows }),
   useActiveChapterId: () => chapterId,
-  useDocumentDownloadUrl: () => ({ mutateAsync: vi.fn() }),
+  useDocumentDownloadUrl: () => ({ mutateAsync: download }),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useConfirmDocumentUpload: () => ({ mutateAsync: vi.fn() }),
 }));
@@ -41,6 +43,10 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import DocumentsScreen from "@/app/(tabs)/documents";
+import { ListRow } from "@/components/list-section";
+import { DocumentsGlyph } from "@/components/more/more-glyphs";
+import { SearchGlyph } from "@/components/search-glyph";
+import { EmptyState } from "@/components/state-block";
 
 const present = vi.fn();
 const mounted: ReactTestRenderer[] = [];
@@ -78,8 +84,10 @@ const sheets = (tree: ReactTestRenderer) =>
 afterEach(() => {
   permissions = [];
   folderRows = [];
+  documentRows = [];
   chapterId = "chapter-a";
   present.mockReset();
+  download.mockReset();
   act(() => {
     for (const tree of mounted.splice(0)) tree.unmount();
   });
@@ -186,9 +194,84 @@ describe("Documents upload (#3399)", () => {
   it("no longer sends anyone to the web dashboard", () => {
     const tree = render();
 
-    expect(screenText(tree)).toContain(
-      "Documents the chapter uploads show up here.",
-    );
+    expect(screenText(tree)).toContain("Nothing filed here yet");
     expect(screenText(tree)).not.toContain("web dashboard");
+  });
+});
+
+/**
+ * The owner's design review, 2026-11-04: the empty states draw the More
+ * hub's glyphs rather than a fallback-font character and don't narrate, and
+ * opening one document marks that row alone.
+ */
+describe("Documents states and rows", () => {
+  const emptyState = (tree: ReactTestRenderer) =>
+    tree.root.findByType(EmptyState);
+
+  it("says the library is empty with a title and the Documents glyph alone", () => {
+    const state = emptyState(render());
+
+    expect(state.props.glyph).toBe(DocumentsGlyph);
+    expect(state.props.title).toBe("Nothing filed here yet");
+    expect(state.props.body).toBeUndefined();
+  });
+
+  it("names the query, and the folder it searched, when a search matches nothing", () => {
+    folderRows = [{ id: "f1", name: "Bylaws", sort_order: 0 }];
+    const tree = render();
+    const search = () =>
+      tree.root.find(
+        (node) =>
+          node.props.accessibilityLabel === "Search documents by title" &&
+          typeof node.props.onChangeText === "function",
+      );
+
+    act(() => search().props.onChangeText("budget"));
+    expect(emptyState(tree).props.glyph).toBe(SearchGlyph);
+    expect(emptyState(tree).props.body).toBe(
+      "No document title matches “budget”.",
+    );
+
+    act(() => {
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Filter by folder" &&
+            typeof node.props.onSelect === "function",
+        )
+        .props.onSelect("Bylaws");
+    });
+    expect(emptyState(tree).props.body).toBe(
+      "Nothing in Bylaws matches “budget”.",
+    );
+  });
+
+  it("marks only the opening row busy, and greys out none", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+    ];
+    let settle!: (value: unknown) => void;
+    download.mockReturnValue(
+      new Promise((resolve) => {
+        settle = resolve;
+      }),
+    );
+    const tree = render();
+    const rows = () => tree.root.findAllByType(ListRow);
+
+    await act(async () => {
+      rows()[0]!.props.onPress();
+    });
+    expect(rows().map((row) => row.props.busy)).toEqual([true, false]);
+    expect(rows().map((row) => row.props.disabled)).toEqual([
+      undefined,
+      undefined,
+    ]);
+
+    await act(async () => {
+      settle({ downloadUrl: "https://signed/bylaws" });
+    });
+    expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
   });
 });

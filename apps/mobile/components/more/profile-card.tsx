@@ -42,8 +42,9 @@ export function ProfileCard({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  // The card sits on the card step, so its iOS lift is to the popover.
-  const feedback = usePressFeedback({ onCard: true });
+  // The card is `surface1`, like the ListSections under it, so its iOS lift
+  // is the default one step, to `card`.
+  const feedback = usePressFeedback();
   // A photo that fails to load (an expired signed URL, no network) falls back
   // to initials rather than an empty circle. The failure is remembered per
   // read, not per URL, for the reason `components/profile/profile-photo.tsx`
@@ -116,7 +117,9 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      // The More list's tone, so the card and the rows under it read as one
+      // surface (s09). It was the warmer `card`, a step browner than them.
+      backgroundColor: tokens.color.surface.surface1,
       // Bounds the Android ripple to the card's rounded corners.
       overflow: "hidden",
     },
@@ -145,8 +148,9 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
     },
+    // `ListRow`'s chevron, so the two on More are the same size.
     chevron: {
-      ...typeRole(tokens.typography.role.title),
+      ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.muted,
     },
   });

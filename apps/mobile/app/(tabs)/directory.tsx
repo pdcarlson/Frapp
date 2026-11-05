@@ -16,8 +16,10 @@ import {
   SkeletonLines,
 } from "@/components/state-block";
 import { BACK_TO_MORE, BackRow } from "@/components/back-row";
-import { FilterChips, SearchField } from "@/components/filter-chips";
+import { Chip, FilterChips, SearchField } from "@/components/filter-chips";
 import { usePressFeedback } from "@/components/list-section";
+import { DirectoryGlyph } from "@/components/more/more-glyphs";
+import { SearchGlyph } from "@/components/search-glyph";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import {
   type DirectoryRow,
@@ -94,6 +96,13 @@ export default function DirectoryScreen() {
     [alumniFilterInputs],
   );
   const deferredAlumniFilters = useDeferredValue(alumniFilters);
+  // The three fields sit behind a Filters chip rather than always stacking
+  // under the tabs, where they pushed the alumni list down by three field
+  // heights before a member had typed anything. The chip counts the fields
+  // that are set, so a filter left on while the fields are folded away still
+  // shows; the count reads the typed values, so it moves with the keystroke.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const alumniFilterCount = Object.values(alumniFilters).filter(Boolean).length;
   const hasAlumniFilters = Boolean(
     deferredAlumniFilters.graduation_year ||
     deferredAlumniFilters.city ||
@@ -170,10 +179,30 @@ export default function DirectoryScreen() {
             { value: "actives", label: "Actives", count: activesCount },
             { value: "alumni", label: "Alumni", count: alumniCount },
           ]}
+          trailing={
+            tab === "alumni" ? (
+              <Chip
+                accessibilityRole="button"
+                accessibilityState={{ expanded: filtersOpen }}
+                accessibilityLabel={
+                  alumniFilterCount > 0
+                    ? `Filters, ${alumniFilterCount} set`
+                    : "Filters"
+                }
+                label={
+                  alumniFilterCount > 0
+                    ? `Filters · ${alumniFilterCount}`
+                    : "Filters"
+                }
+                on={filtersOpen}
+                onPress={() => setFiltersOpen((open) => !open)}
+              />
+            ) : null
+          }
         />
       )}
 
-      {isSearching || tab !== "alumni" ? null : (
+      {isSearching || tab !== "alumni" || !filtersOpen ? null : (
         <View style={styles.alumniFilters}>
           <SearchField
             value={alumniFilterInputs.gradYear}
@@ -223,26 +252,28 @@ export default function DirectoryScreen() {
     if (isSearching) {
       return (
         <EmptyState
-          glyph="⌕"
+          glyph={SearchGlyph}
           title="No matches"
           body={`Nobody in this chapter matches “${deferredQuery}”.`}
         />
       );
     }
+    // writing.md § Alumni's no-results row, with "filter" for its "field":
+    // the fields are behind a chip named Filters here.
     if (tab === "alumni" && hasAlumniFilters) {
       return (
         <EmptyState
-          glyph="⌕"
-          title="No alumni match these filters"
-          body="Graduation year, city, and company are self-reported — try loosening a filter."
+          glyph={SearchGlyph}
+          title="No alumni match the filters"
+          body="Clear a filter to see more."
         />
       );
     }
+    // A title alone: there is nothing to do about an empty roster from here.
     return (
       <EmptyState
-        glyph="☺"
+        glyph={DirectoryGlyph}
         title={tab === "actives" ? "No actives yet" : "No alumni yet"}
-        body="Members appear here once they join the chapter."
       />
     );
   }

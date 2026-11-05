@@ -250,10 +250,15 @@ export const MemberDetailSheet = forwardRef<
                 <ListRow
                   label="Message"
                   description={messageRowDescription(messageRow)}
+                  // Busy while the DM opens, so the row keeps its look and
+                  // shows a spinner; disabled only while the block list
+                  // can't vouch for a DM yet, which is the row being
+                  // unavailable rather than working.
+                  busy={
+                    messageRow.kind === "ready" && dmPending.has(detail.userId)
+                  }
                   disabled={
-                    messageRow.kind === "ready"
-                      ? dmPending.has(detail.userId)
-                      : messageRow.kind !== "retry"
+                    messageRow.kind !== "ready" && messageRow.kind !== "retry"
                   }
                   onPress={() => {
                     if (messageRow.kind === "retry") blockList.retry();
@@ -264,8 +269,13 @@ export const MemberDetailSheet = forwardRef<
             ) : null}
 
             <ListSection>
-              <ListRow label="Email" value={detail.email ?? "Not set"} />
               <ListRow
+                variant="detail"
+                label="Email"
+                value={detail.email ?? "Not set"}
+              />
+              <ListRow
+                variant="detail"
                 label="Role"
                 value={
                   rolesStillLoading
@@ -275,7 +285,11 @@ export const MemberDetailSheet = forwardRef<
                       : "—"
                 }
               />
-              <ListRow label="Joined" value={detail.joinedLabel ?? "—"} />
+              <ListRow
+                variant="detail"
+                label="Joined"
+                value={detail.joinedLabel ?? "—"}
+              />
             </ListSection>
 
             {detail.customFields.length > 0 ? (
@@ -285,6 +299,7 @@ export const MemberDetailSheet = forwardRef<
                   {detail.customFields.map((field) => (
                     <ListRow
                       key={field.fieldId}
+                      variant="detail"
                       label={field.label}
                       value={field.value}
                     />

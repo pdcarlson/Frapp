@@ -3,7 +3,13 @@ import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { Text } from "react-native";
+import {
+  cancelAnimation,
+  useReducedMotion,
+  withRepeat,
+} from "react-native-reanimated";
 import { describe, expect, it, vi } from "vitest";
+import { ChapterGlyph, DocumentsGlyph } from "@/components/more/more-glyphs";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, tint } from "@/lib/theme";
 
@@ -280,7 +286,7 @@ describe("SkeletonLines", () => {
   it("draws content-shaped blocks rather than a spinner", () => {
     const tree = render(<SkeletonLines lines={3} />);
     const blocks = tree.root
-      .findAllByType("View" as unknown as React.ComponentType)
+      .findAllByType("Animated.View" as unknown as React.ComponentType)
       .map((node) => flatten(node.props.style))
       .filter((style) => typeof style.width === "string");
 
@@ -315,7 +321,8 @@ describe("SkeletonLines", () => {
     // takes the control radius, text lines the chip radius (TODO-DESIGN: 6).
     const drawn = blocks.map((block) =>
       flatten(
-        block.findByType("View" as unknown as React.ComponentType).props.style,
+        block.findByType("Animated.View" as unknown as React.ComponentType)
+          .props.style,
       ),
     );
     expect(drawn[0]!.borderRadius).toBe(signetDarkTokens.radius.control);
@@ -336,5 +343,79 @@ describe("SkeletonLines", () => {
 
     expect(style.alignItems).toBe("flex-start");
     expect(style.alignSelf).toBe("stretch");
+  });
+
+  // A skeleton stands in for a list, and the grouped lists it becomes are
+  // `surface1`: on `card` the screen changed tone when its rows landed.
+  it("sits on the list tone, while the empty and error cards keep §10's card", () => {
+    const { surface1, card } = signetDarkTokens.color.surface;
+    expect(cardStyle(render(<SkeletonLines />)).backgroundColor).toBe(surface1);
+    expect(cardStyle(render(<EmptyState title="None" />)).backgroundColor).toBe(
+      card,
+    );
+    expect(
+      cardStyle(render(<ErrorState title="Failed" body="Retry." />))
+        .backgroundColor,
+    ).toBe(card);
+  });
+});
+
+describe("SkeletonBlock's pulse", () => {
+  const blockStyle = (tree: ReactTestRenderer) =>
+    flatten(
+      tree.root.findByType("Animated.View" as unknown as React.ComponentType)
+        .props.style,
+    );
+
+  // The suite's Reanimated resolves an animation to its target at once, so a
+  // running pulse reads as its low point.
+  it("pulses between full and half opacity, for as long as it is up", () => {
+    vi.mocked(withRepeat).mockClear();
+    const tree = render(<SkeletonBlock width="60%" height={12} />);
+
+    expect(blockStyle(tree).opacity).toBe(0.5);
+    // Forever (-1), and back and forth rather than snapping to the top.
+    expect(vi.mocked(withRepeat)).toHaveBeenCalledWith(0.5, -1, true);
+
+    vi.mocked(cancelAnimation).mockClear();
+    act(() => tree.unmount());
+    expect(vi.mocked(cancelAnimation)).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds still at full opacity under the system's reduced motion", () => {
+    vi.mocked(useReducedMotion).mockReturnValue(true);
+    vi.mocked(withRepeat).mockClear();
+    try {
+      const tree = render(<SkeletonBlock width="60%" height={12} />);
+
+      expect(blockStyle(tree).opacity).toBe(1);
+      expect(vi.mocked(withRepeat)).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(useReducedMotion).mockReturnValue(false);
+    }
+  });
+});
+
+describe("EmptyState's glyph", () => {
+  // The More hub's duotone glyphs, in the chapter accent, rather than a
+  // character Figtree doesn't carry.
+  it("draws a glyph component in the chapter accent", () => {
+    const tree = render(<EmptyState glyph={DocumentsGlyph} title="Nothing yet" />);
+    const glyph = tree.root.findByType(DocumentsGlyph);
+
+    expect(glyph.props.color).toBe("#F4CB63");
+    expect(texts(tree)).toEqual(["Nothing yet"]);
+  });
+
+  it("draws a title alone, with no body line, when it is given no body", () => {
+    const tree = render(<EmptyState glyph={DocumentsGlyph} title="Nothing yet" />);
+    expect(
+      tree.root.findAllByType("Text" as unknown as React.ComponentType),
+    ).toHaveLength(1);
+  });
+
+  it("points the no-chapter state at the Switch chapter row's glyph", () => {
+    const tree = render(<NoChapterState noun="the directory" />);
+    expect(tree.root.findAllByType(ChapterGlyph)).toHaveLength(1);
   });
 });

@@ -306,6 +306,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             selected={dueDate}
             onSelect={(value) => value && setDueDate(value)}
             accessibilityLabel="Due date"
+            wrap
           />
 
           <Pressable

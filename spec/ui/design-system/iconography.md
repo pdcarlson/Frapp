@@ -176,6 +176,7 @@ The same file's `NotificationsGlyph` (bell, clapper stroke-only; s09 and web
 `NotificationsGlyph`) is drawn by Chat home's inbox bell
 (`components/chat/notifications-bell.tsx`), in `text.foreground` with the
 neutral fill, since the More row it was drawn for moved there (#3362).
+The More screens' empty-state tiles (`EmptyState` in `components/state-block.tsx`) reuse the same file's glyphs for the screen they sit on, in the chapter accent: `DocumentsGlyph` on s12, `DirectoryGlyph` on s13 and the Blocked members sheet, `NotificationsGlyph` on s14's inbox, and `ChapterGlyph` on the no-chapter card. A search or filter that finds nothing draws `SearchGlyph` (`components/search-glyph.tsx`, web's search geometry: a lens with its body filled, the handle stroke-only). s15's avatar badge draws a camera (`CameraGlyph`, local to `components/profile/profile-photo.tsx`) in the accent's on-colour.
 Chat home's UP NEXT rows (`components/chat/up-next-strip.tsx`) reuse the tab bar's `EventsGlyph` (focused, in the chapter accent) and `TasksGlyph` (unfocused, `text.muted`) from §6.1 at 20px, to tell the event from the task.
 
 ### 6.2 Web Dashboard shell (Signet duotone)

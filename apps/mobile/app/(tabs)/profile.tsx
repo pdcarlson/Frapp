@@ -185,15 +185,24 @@ export default function ProfileScreen() {
 
       <SectionHeader>Details</SectionHeader>
       <ListSection>
-        <ListRow label="Email" value={email ?? "Not set"} />
+        <ListRow variant="detail" label="Email" value={email ?? "Not set"} />
         <ListRow
+          variant="detail"
           label="Graduation"
           value={
             profile?.graduationYear ? String(profile.graduationYear) : "Not set"
           }
         />
-        <ListRow label="City" value={profile?.currentCity ?? "Not set"} />
-        <ListRow label="Company" value={profile?.currentCompany ?? "Not set"} />
+        <ListRow
+          variant="detail"
+          label="City"
+          value={profile?.currentCity ?? "Not set"}
+        />
+        <ListRow
+          variant="detail"
+          label="Company"
+          value={profile?.currentCompany ?? "Not set"}
+        />
       </ListSection>
 
       {profile?.bio ? (
@@ -234,7 +243,8 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      // The Details list's tone, as s15 draws both in one.
+      backgroundColor: tokens.color.surface.surface1,
       padding: tokens.spacing.lg,
       alignItems: "center",
       gap: tokens.spacing.xs,

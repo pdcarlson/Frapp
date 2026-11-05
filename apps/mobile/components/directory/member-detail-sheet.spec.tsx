@@ -271,12 +271,15 @@ describe("MemberDetailSheet Message action (#2773)", () => {
       row.props.onPress();
     });
     expect(state.mutateAsync).toHaveBeenCalledTimes(1);
-    expect(messageRows(tree)[0].props.disabled).toBe(true);
+    // Working, not unavailable: a spinner in the chevron's place, and the
+    // label keeps its colour (`ListRow`'s `busy`, not `disabled`).
+    expect(messageRows(tree)[0].props.busy).toBe(true);
+    expect(messageRows(tree)[0].props.disabled).toBe(false);
 
     await act(async () => {
       pending.resolve({ id: "dm-ada" });
     });
-    expect(messageRows(tree)[0].props.disabled).toBe(false);
+    expect(messageRows(tree)[0].props.busy).toBe(false);
     act(() => tree.unmount());
   });
 
@@ -289,7 +292,7 @@ describe("MemberDetailSheet Message action (#2773)", () => {
       messageRows(tree)[0].props.onPress();
     });
     act(() => tree.update(sheet(BOB)));
-    expect(messageRows(tree)[0].props.disabled).toBe(false);
+    expect(messageRows(tree)[0].props.busy).toBe(false);
 
     await act(async () => {
       pending.resolve({ id: "dm-ada" });
@@ -361,10 +364,10 @@ describe("MemberDetailSheet Message action (#2773)", () => {
       messageRows(tree)[0].props.onPress();
     });
 
-    // Back on Ada while both are out: her row is still disabled, and a tap
+    // Back on Ada while both are out: her row is still busy, and a tap
     // sends nothing.
     act(() => tree.update(sheet(ADA)));
-    expect(messageRows(tree)[0].props.disabled).toBe(true);
+    expect(messageRows(tree)[0].props.busy).toBe(true);
     await act(async () => {
       messageRows(tree)[0].props.onPress();
     });
@@ -375,12 +378,12 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     await act(async () => {
       ada.resolve({ id: "dm-ada" });
     });
-    expect(messageRows(tree)[0].props.disabled).toBe(true);
+    expect(messageRows(tree)[0].props.busy).toBe(true);
 
     await act(async () => {
       bob.resolve({ id: "dm-bob" });
     });
-    expect(messageRows(tree)[0].props.disabled).toBe(false);
+    expect(messageRows(tree)[0].props.busy).toBe(false);
     act(() => tree.unmount());
   });
 });

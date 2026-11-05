@@ -86,6 +86,87 @@ describe("ListRow — press feedback", () => {
   });
 });
 
+describe("ListRow — busy", () => {
+  function renderRow(props: ListRowProps) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ListRow {...props} />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  // A row whose action is running is working, not unavailable: it keeps its
+  // label colour, swaps the chevron for a spinner, and takes no second press.
+  it("keeps the label's colour and puts a spinner where the chevron was", () => {
+    const tree = renderRow({ label: "Bylaws", onPress: vi.fn(), busy: true });
+    const label = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "Bylaws",
+    );
+    const color = Object.assign({}, ...[label.props.style].flat()).color;
+
+    expect(color).toBe(signetDarkTokens.color.text.foreground);
+    expect(
+      tree.root.findAll(
+        (node) => (node.type as unknown) === "ActivityIndicator",
+      ),
+    ).toHaveLength(1);
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" && node.props.children === "›",
+      ),
+    ).toHaveLength(0);
+
+    const row = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    expect(row.props.disabled).toBe(true);
+    expect(row.props.accessibilityState).toEqual({
+      disabled: false,
+      busy: true,
+    });
+  });
+});
+
+describe("ListRow — detail", () => {
+  // s15 draws a fact row with the label quiet and the value bright: the
+  // default row's emphasis the other way round.
+  it("mutes the label at regular weight and sets the value at the label's weight", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ListRow variant="detail" label="Email" value="pc@rpi.edu" />
+        </FrappThemeProvider>,
+      );
+    });
+    const styleOf = (text: string) => {
+      const node = tree.root.find(
+        (candidate) =>
+          (candidate.type as unknown) === "Text" &&
+          candidate.props.children === text,
+      );
+      return Object.assign({}, ...[node.props.style].flat()) as Record<
+        string,
+        unknown
+      >;
+    };
+    const label = styleOf("Email");
+    const value = styleOf("pc@rpi.edu");
+    const { text } = signetDarkTokens.color;
+
+    expect(label.color).toBe(text.mutedForeground);
+    expect(value.color).toBe(text.foreground);
+    expect(value.fontSize).toBe(label.fontSize);
+    expect(value.fontFamily).not.toBe(label.fontFamily);
+  });
+});
+
 describe("usePressFeedback", () => {
   function feedbackOn(
     os: string,

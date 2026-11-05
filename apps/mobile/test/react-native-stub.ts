@@ -28,6 +28,10 @@ export const reactNativeStub = {
   Alert: {
     alert: vi.fn(),
   },
+  // s15's photo choices are iOS's own action sheet (Android takes an Alert).
+  ActionSheetIOS: {
+    showActionSheetWithOptions: vi.fn(),
+  },
   // Outcomes a sighted member reads off the screen are announced to VoiceOver
   // through this, because `accessibilityLiveRegion` is Android-only. A spec
   // asserting on it clears it itself (`clearMocks` is off, see the config).
