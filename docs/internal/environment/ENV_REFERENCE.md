@@ -422,8 +422,8 @@ is unavailable in that state and the sign-in screen says so.
 > Google Service Account) so no machine holds it, or name a local copy with
 > `serviceAccountKeyPath` in `submit.production.android` (eas-cli has no `--key` flag).
 > `apps/mobile/play-service-account.json` stays gitignored in case a local copy is ever
-> used; it must never be committed. No such key exists yet — it
-> becomes real when Play submission is set up (#938). Of the iOS submit identifiers, only
+> used; it must never be committed. The key is uploaded to the EAS project's credentials
+> (2026-11-05, #2556), and no local copy is kept. Of the iOS submit identifiers, only
 > `ascAppId` is in `eas.json` (`submit.production.ios`, since #3111): the App Store Connect
 > app's Apple ID, which is not a secret and which a non-interactive submit can't run without.
 > `appleId` and `appleTeamId` are not, so the file carries no placeholders; an interactive
