@@ -18,6 +18,10 @@ import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { SubscriptionExempt } from '../decorators/subscription.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -112,6 +116,7 @@ export class FinancialInvoiceController {
   @Post()
   @RequirePermissions(SystemPermissions.BILLING_MANAGE)
   @ApiOperation({ summary: 'Create a member invoice' })
+  @FeatureEvent('invoice-created')
   async create(
     @CurrentChapterId() chapterId: string,
     @Body() dto: CreateFinancialInvoiceDto,
@@ -137,6 +142,12 @@ export class FinancialInvoiceController {
   @Post(':id/status')
   @RequirePermissions(SystemPermissions.BILLING_MANAGE)
   @ApiOperation({ summary: 'Transition invoice status (OPEN, PAID, VOID)' })
+  @FeatureEvent(
+    'invoice-status-changed',
+    ({ body }: FeatureEventInput<TransitionInvoiceStatusDto>) => ({
+      status: body.status,
+    }),
+  )
   async transitionStatus(
     @CurrentChapterId() chapterId: string,
     @Param('id') id: string,
@@ -153,6 +164,9 @@ export class FinancialInvoiceController {
     summary:
       'Create or reuse a Stripe PaymentIntent for paying your own OPEN invoice',
   })
+  // Counts payment-sheet opens: reusing a live intent answers 2xx again and
+  // the result carries no reuse flag to tell it apart.
+  @FeatureEvent('invoice-payment-started')
   async createPaymentIntent(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,

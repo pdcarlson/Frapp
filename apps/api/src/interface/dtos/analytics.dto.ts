@@ -44,8 +44,8 @@ export class ScalarsOnlyConstraint implements ValidatorConstraintInterface {
 export class TrackEventDto {
   @ApiProperty({
     description:
-      'Behavioral event name in kebab-case, e.g. "opened-channel", "ran-slash-command". Must describe behavior, never content.',
-    example: 'opened-channel',
+      'Behavioral event name in kebab-case, e.g. "search-completed", "outbox-queued". Must describe behavior, never content.',
+    example: 'search-completed',
   })
   @IsString()
   @MaxLength(100)

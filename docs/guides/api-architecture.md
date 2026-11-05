@@ -117,6 +117,10 @@ Interceptors:
   applied per-controller/per-route via `@UseInterceptors` — see
   [`.claude/skills/api-development/SKILL.md`](../../.claude/skills/api-development/SKILL.md)
   § "Auth and guard chain" for where.
+- **FeatureEventInterceptor** — global (`APP_INTERCEPTOR` in `AnalyticsModule`), a no-op
+  unless the handler carries `@FeatureEvent`; then it sends that PostHog event after the
+  handler succeeds. Adding one to a new route:
+  [`observability.md` § Feature Events](../../spec/behavior/observability.md#feature-events).
 
 ### Rate limiting
 

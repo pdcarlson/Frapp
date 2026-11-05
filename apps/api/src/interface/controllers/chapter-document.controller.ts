@@ -25,6 +25,11 @@ import { RequirePermissions } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+  hasText,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -81,6 +86,14 @@ export class ChapterDocumentController {
   @Post()
   @RequirePermissions(SystemPermissions.CHAPTER_DOCS_UPLOAD)
   @ApiOperation({ summary: 'Confirm upload with metadata' })
+  @FeatureEvent(
+    'document-uploaded',
+    ({ body }: FeatureEventInput<ConfirmDocumentUploadDto>) => ({
+      // Both are free text, so only their presence is sent.
+      has_document_type: hasText(body.document_type),
+      has_folder: hasText(body.folder),
+    }),
+  )
   async confirmUpload(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -181,6 +194,7 @@ export class ChapterDocumentController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get document with download URL' })
+  @FeatureEvent('document-viewed')
   async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
     return this.chapterDocumentService.findById(id, chapterId);
   }

@@ -3315,8 +3315,8 @@ export interface components {
         };
         TrackEventDto: {
             /**
-             * @description Behavioral event name in kebab-case, e.g. "opened-channel", "ran-slash-command". Must describe behavior, never content.
-             * @example opened-channel
+             * @description Behavioral event name in kebab-case, e.g. "search-completed", "outbox-queued". Must describe behavior, never content.
+             * @example search-completed
              */
             name: string;
             /** @description Chapter the event is attributed to (enables the opt-out gate) */

@@ -5,8 +5,8 @@
  * `ctx.track()`/`track()` call site risks a typo quietly splitting one event
  * into two names.
  *
- * Kebab-case to match the existing client-event convention (`opened-channel`,
- * the `activation-*` funnel names in
+ * Kebab-case to match the other event names (`outbox-queued`, the
+ * `activation-*` funnel names in
  * `apps/api/src/domain/constants/activation-milestones.ts`).
  *
  * Every property passed alongside this event must be behavioral, never

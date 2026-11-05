@@ -25,6 +25,10 @@ import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { SubscriptionExempt } from '../decorators/subscription.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -102,6 +106,15 @@ export class ChatReportController {
   // Declared rather than inferred: without it the generated SDK types this
   // response `never` (the #1049 defect).
   @ApiCreatedResponse({ type: ChatReportDto })
+  // `reason` is the closed `CHAT_REPORT_REASONS` set; `details` is the
+  // reporter's free text and never leaves. A repeat while the report is open
+  // returns it with nothing to tell it apart, so it counts again.
+  @FeatureEvent(
+    'message-reported',
+    ({ result }: FeatureEventInput<CreateChatReportDto, ChatReportDto>) => ({
+      reason: result.reason,
+    }),
+  )
   async fileReport(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,

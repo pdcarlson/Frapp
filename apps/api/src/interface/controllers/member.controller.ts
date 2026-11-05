@@ -36,6 +36,10 @@ import {
   MemberRosterEntryDto,
 } from '../dtos/member-profile.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
+import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
 
 @ApiTags('Members')
 @ApiBearerAuth()
@@ -115,6 +119,11 @@ export class MemberController {
 
   @Patch('me/onboarding')
   @ApiOperation({ summary: 'Update onboarding status' })
+  @FeatureEvent(
+    'member-onboarding-completed',
+    ({ body }: FeatureEventInput<UpdateOnboardingDto>) =>
+      body.has_completed_onboarding === true ? {} : null,
+  )
   async updateOnboarding(
     @CurrentMember() member: { id: string },
     @Body() dto: UpdateOnboardingDto,

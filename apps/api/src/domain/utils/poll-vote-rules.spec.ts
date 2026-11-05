@@ -1,7 +1,11 @@
 import {
+  cardPollChoiceMode,
+  cardPollOptionIds,
+  cardVoteSelection,
   isPollClosed,
   validateCardPollVote,
   validateIndexedPollVote,
+  type CardPollPayload,
 } from './poll-vote-rules';
 
 const NOW = new Date('2026-08-14T12:00:00.000Z');
@@ -173,5 +177,42 @@ describe('poll vote rules', () => {
         now: NOW,
       }),
     ).toEqual({ reason: 'closed' });
+  });
+});
+
+describe('reading a chat poll card and its vote', () => {
+  it("lists the card's string option ids, none for absent options, and null for options that aren't a list", () => {
+    expect(
+      cardPollOptionIds({ options: [{ id: 'a' }, { id: 2 }, {}, { id: 'b' }] }),
+    ).toEqual(['a', 'b']);
+    expect(cardPollOptionIds({})).toEqual([]);
+    expect(
+      cardPollOptionIds({ options: null } as unknown as CardPollPayload),
+    ).toEqual([]);
+    expect(
+      cardPollOptionIds({ options: 'a,b' } as unknown as CardPollPayload),
+    ).toBeNull();
+    expect(
+      cardPollOptionIds({ options: {} } as unknown as CardPollPayload),
+    ).toBeNull();
+  });
+
+  it('holds a card with no choice mode, or single, to one choice, and anything else to none', () => {
+    expect(cardPollChoiceMode({})).toBe('single');
+    expect(cardPollChoiceMode({ choice_mode: 'single' })).toBe('single');
+    expect(cardPollChoiceMode({ choice_mode: 'multi' })).toBe('multi');
+    expect(
+      cardPollChoiceMode({
+        choice_mode: 'ranked',
+      } as unknown as CardPollPayload),
+    ).toBe('multi');
+  });
+
+  it('reads one selected id or several, ignoring anything but strings', () => {
+    expect(cardVoteSelection({ option_id: 'a' })).toEqual(['a']);
+    expect(cardVoteSelection({ option_id: ['a', 3, 'b'] })).toEqual(['a', 'b']);
+    expect(cardVoteSelection({ option_id: [] })).toEqual([]);
+    expect(cardVoteSelection({})).toEqual([]);
+    expect(cardVoteSelection(undefined)).toEqual([]);
   });
 });

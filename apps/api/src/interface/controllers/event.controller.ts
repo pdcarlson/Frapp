@@ -26,6 +26,10 @@ import { RequirePermissions } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -70,6 +74,20 @@ export class EventController {
   @RequirePermissions(SystemPermissions.EVENTS_CREATE)
   @ApiOperation({ summary: 'Create an event' })
   @ApiCreatedResponse({ type: CreateEventResponseDto })
+  // From the created parent row, where the server has applied its defaults
+  // (`point_value` 10, `is_mandatory` false). A recurring create is one event.
+  @FeatureEvent(
+    'event-created',
+    ({
+      result,
+    }: FeatureEventInput<CreateEventDto, CreateEventResponseDto>) => ({
+      is_mandatory: result.is_mandatory,
+      is_recurring: result.recurrence_rule != null,
+      has_check_in_zone: result.check_in_zone != null,
+      has_point_value: result.point_value > 0,
+      posted_to_chat: result.card_posted === true,
+    }),
+  )
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') createdBy: string,
@@ -105,6 +123,9 @@ export class EventController {
   @Get(':id/ics')
   @ApiOperation({ summary: 'Download .ics calendar file for an event' })
   @ApiProduces('text/calendar')
+  // A `@Res()` handler resolves to undefined after sending, which still
+  // reaches the interceptor's `next`; a throw before `res.send` records nothing.
+  @FeatureEvent('event-calendar-downloaded')
   async getIcs(
     @CurrentChapterId() chapterId: string,
     @Param('id') id: string,
