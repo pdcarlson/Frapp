@@ -1,4 +1,11 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
@@ -99,7 +106,9 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 
 const { TasksBoard } = await import("./tasks-board");
 
@@ -111,8 +120,9 @@ const completeButton = () =>
   screen.getByRole("button", { name: /mark complete/i });
 const confirmButton = () => screen.getByRole("button", { name: /^confirm$/i });
 const rejectButton = () => screen.getByRole("button", { name: /^reject$/i });
+// An icon on each tile, named for its task ("Delete Draft rush schedule").
 const deleteButtons = () =>
-  screen.getAllByRole("button", { name: /^delete$/i });
+  screen.getAllByRole("button", { name: /^delete /i });
 
 describe("TasksBoard subscription gating", () => {
   beforeEach(() => {
@@ -146,6 +156,10 @@ describe("TasksBoard subscription gating", () => {
       screen.queryByRole("button", { name: /^confirm$/i }),
     ).not.toBeInTheDocument();
     expect(rejectButton()).toBeEnabled();
+    // The missing control is explained on the tile it is missing from.
+    expect(
+      screen.getByText("You can't confirm your own task."),
+    ).toBeInTheDocument();
   });
 
   it("keeps the disabled Confirmed indicator on your own awarded task", () => {
@@ -180,6 +194,8 @@ describe("TasksBoard subscription gating", () => {
     expect(
       screen.queryByRole("button", { name: /^confirm$/i }),
     ).not.toBeInTheDocument();
+    // Unresolved viewer: "your own task" would be a guess (#1346).
+    expect(screen.queryByText(/can't confirm your own task/i)).toBeNull();
   });
 
   it("still offers Confirm on someone else's completed task", () => {
@@ -250,8 +266,8 @@ describe("TasksBoard subscription gating", () => {
 
     expect(trigger()).toBeDisabled();
     expect(startButton()).toBeDisabled();
-    // Scoped to the notice: the OVERDUE column description also says "past
-    // due", and matching that would pass with no gate at all.
+    // Scoped to the notice: an overdue tile's due line ("Overdue by …") sits
+    // on the same board, and matching board text would pass with no gate.
     expect(screen.getByRole("status")).toHaveTextContent(/past due/i);
   });
 
@@ -438,7 +454,7 @@ describe("TasksBoard point reward guard (#2206)", () => {
   async function openCreate() {
     render(<TasksBoard />);
     await userEvent.click(trigger());
-    return screen.getByLabelText(/point reward/i);
+    return screen.getByLabelText(/^points \(optional\)$/i);
   }
 
   it("keeps the last whole number through a negative or a decimal", async () => {
@@ -468,5 +484,63 @@ describe("TasksBoard point reward guard (#2206)", () => {
 
     await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
     expect(createTaskMutate.mock.calls[0]![0].point_reward).toBeUndefined();
+  });
+});
+
+describe("TasksBoard flush layout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    tasksRef.current = TASKS;
+    currentUserRef.current = { id: ME };
+    chapter.active();
+  });
+
+  it("draws each column as a labelled section on the page surface", () => {
+    const { container } = render(<TasksBoard />);
+
+    for (const [name, count] of [
+      ["To do", "1"],
+      ["In progress", "1"],
+      ["Awaiting confirmation", "1"],
+      ["Overdue", "0"],
+    ] as const) {
+      const section = screen.getByRole("region", { name });
+      expect(within(section).getByText(count)).toBeInTheDocument();
+    }
+    expect(
+      within(screen.getByRole("region", { name: "Overdue" })).getByText(
+        "Nothing overdue",
+      ),
+    ).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  it("drops the narration the board used to carry", () => {
+    render(<TasksBoard />);
+
+    expect(screen.queryByText(/admins create and confirm/i)).toBeNull();
+    expect(screen.queryByText(/assignee is working on it/i)).toBeNull();
+    expect(screen.queryByText(/another admin has to/i)).toBeNull();
+  });
+
+  it("prints the due date in the house shape, never a numeric date", () => {
+    tasksRef.current = [
+      { ...TASKS[0], due_date: "2020-01-01", status: "OVERDUE" as const },
+    ];
+    render(<TasksBoard />);
+
+    const due = screen.getByText(/^Overdue by \d+ days$/);
+    expect(due).toHaveClass("text-destructive-text");
+    expect(screen.queryByText(/\d+\/\d+\/\d{4}/)).toBeNull();
+  });
+
+  it("keeps the empty board on the page surface", () => {
+    tasksRef.current = [];
+    const { container } = render(<TasksBoard />);
+
+    expect(
+      screen.getByRole("heading", { name: "No tasks yet" }),
+    ).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
   });
 });

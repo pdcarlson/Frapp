@@ -391,7 +391,7 @@ function TaxonomyRow({
         />
         <Button
           size="icon"
-          variant="ghost"
+          variant="quiet"
           className="h-8 w-8 shrink-0"
           onClick={() => void save()}
           disabled={saving}
@@ -405,7 +405,7 @@ function TaxonomyRow({
         </Button>
         <Button
           size="icon"
-          variant="ghost"
+          variant="quiet"
           className="h-8 w-8 shrink-0"
           onClick={() => {
             setDraft(row.name);
@@ -426,7 +426,7 @@ function TaxonomyRow({
       <div className="flex shrink-0 gap-1">
         <Button
           size="icon"
-          variant="ghost"
+          variant="quiet"
           className="h-8 w-8"
           onClick={() => {
             // Resync rather than trusting whatever `draft` held from a
@@ -443,7 +443,7 @@ function TaxonomyRow({
         </Button>
         <Button
           size="icon"
-          variant="ghost"
+          variant="quiet"
           className="h-8 w-8"
           onClick={() => onMerge(entity, row.id, row.name)}
           aria-label={`Merge ${row.name}`}
@@ -452,7 +452,7 @@ function TaxonomyRow({
         </Button>
         <Button
           size="icon"
-          variant="ghost"
+          variant="quiet"
           className="h-8 w-8"
           onClick={async () => {
             // The spinner covers only the actual delete request — not

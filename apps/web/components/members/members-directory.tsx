@@ -47,6 +47,8 @@ import {
   dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
+  dashboardToolbarSearchClassName,
+  dashboardToolbarSearchGlyphClassName,
   denseListClassName,
 } from "@/components/shared/table-controls";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -642,14 +644,14 @@ export function MembersDirectory() {
             <Label htmlFor="member-search" className="sr-only">
               Search members
             </Label>
-            <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
             <Input
               id="member-search"
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search members"
-              className="h-11 pl-9"
+              className={dashboardToolbarSearchClassName}
             />
           </div>
           <select
@@ -712,7 +714,7 @@ export function MembersDirectory() {
         */}
           <InviteMemberDialog
             trigger={
-              <Button className="gap-2">
+              <Button size="toolbar" className="gap-2">
                 <InviteGlyph className="h-4 w-4" />
                 Invite member
               </Button>
