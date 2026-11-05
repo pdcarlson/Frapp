@@ -74,7 +74,6 @@ type PointTransactionRow = {
   created_at: string;
 };
 
-
 export default function PointsPage() {
   const { isOffline } = useNetwork();
   const [window, setWindow] = useState<"all" | "semester" | "month">("all");
@@ -84,9 +83,13 @@ export default function PointsPage() {
   const [semesterArchiveId, setSemesterArchiveId] = useState("");
   const [leaderboardSearch, setLeaderboardSearch] = useState("");
   const [transactionSearch, setTransactionSearch] = useState("");
-  const [amountFilter, setAmountFilter] = useState<"all" | "positive" | "negative">("all");
+  const [amountFilter, setAmountFilter] = useState<
+    "all" | "positive" | "negative"
+  >("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState<
+    string[]
+  >([]);
   // `POST /v1/points/adjust` is paid-ops. The dialog gates its own fields, but
   // `open` is owned here, so §5 rule 1 — refuse to open onto a doomed form —
   // has to be enforced at this trigger (#841).
@@ -126,10 +129,8 @@ export default function PointsPage() {
       : [];
   }, [leaderboardQuery.data]);
 
-
   const summary = summaryQuery.data as
-    | { balance?: number; transactions?: PointTransactionRow[] }
-    | undefined;
+    { balance?: number; transactions?: PointTransactionRow[] } | undefined;
   const transactions = useMemo(() => {
     return Array.isArray(summary?.transactions) ? summary.transactions : [];
   }, [summary]);
@@ -219,13 +220,23 @@ export default function PointsPage() {
   /* eslint-disable react-hooks/set-state-in-effect -- reset selection when the visible transaction set changes */
   useEffect(() => {
     setSelectedTransactionIds([]);
-  }, [window, semesterArchiveId, transactionSearch, amountFilter, categoryFilter]);
+  }, [
+    window,
+    semesterArchiveId,
+    transactionSearch,
+    amountFilter,
+    categoryFilter,
+  ]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const transactionIds = filteredTransactions.map((transaction) => transaction.id);
+  const transactionIds = filteredTransactions.map(
+    (transaction) => transaction.id,
+  );
   const allTransactionsSelected =
     transactionIds.length > 0 &&
-    transactionIds.every((transactionId) => selectedTransactionIds.includes(transactionId));
+    transactionIds.every((transactionId) =>
+      selectedTransactionIds.includes(transactionId),
+    );
 
   function exportSelectedTransactionsCsv() {
     const rows = filteredTransactions
@@ -256,9 +267,7 @@ export default function PointsPage() {
 
   function toggleTransaction(id: string, checked: boolean) {
     if (checked) {
-      setSelectedTransactionIds((previous) => [
-        ...new Set([...previous, id]),
-      ]);
+      setSelectedTransactionIds((previous) => [...new Set([...previous, id])]);
       return;
     }
     setSelectedTransactionIds((previous) =>
@@ -471,7 +480,7 @@ export default function PointsPage() {
                 type="search"
                 value={leaderboardSearch}
                 onChange={(event) => setLeaderboardSearch(event.target.value)}
-                placeholder="Search by member name"
+                placeholder="Search members"
                 className={dashboardToolbarSearchClassName}
               />
             </div>
@@ -541,10 +550,7 @@ export default function PointsPage() {
             </SectionLabel>
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative w-full sm:w-48">
-                <Label
-                  htmlFor="points-transaction-search"
-                  className="sr-only"
-                >
+                <Label htmlFor="points-transaction-search" className="sr-only">
                   Search transactions
                 </Label>
                 <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
@@ -553,7 +559,7 @@ export default function PointsPage() {
                   type="search"
                   value={transactionSearch}
                   onChange={(event) => setTransactionSearch(event.target.value)}
-                  placeholder="Search descriptions"
+                  placeholder="Search transactions"
                   className={dashboardToolbarSearchClassName}
                 />
               </div>
@@ -727,7 +733,10 @@ export default function PointsPage() {
         onOpenChange={adjustDialog.setOpen}
         onCloseAutoFocus={adjustDialog.contentProps.onCloseAutoFocus}
         onAdjusted={async () => {
-          await Promise.all([leaderboardQuery.refetch(), summaryQuery.refetch()]);
+          await Promise.all([
+            leaderboardQuery.refetch(),
+            summaryQuery.refetch(),
+          ]);
         }}
       />
     </div>

@@ -662,7 +662,7 @@ function TaskTile({
           <Badge className="ml-1">+{task.point_reward} pts</Badge>
         ) : null}
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         {/*
           The inline status controls are writes too
           (`PATCH /v1/tasks/:id/status`), so they mirror the same gate as
@@ -728,9 +728,15 @@ function TaskTile({
               </Button>
             </>
           ) : null}
+          {/*
+            Pushed to the trailing edge, so the tile's lifecycle actions lead
+            and Delete never reads as one of them; on a tile with nothing else
+            to do it sits alone at the corner rather than opening a row.
+          */}
           <Button
             size="toolbar"
             variant="quiet"
+            className="ml-auto"
             {...gate.controlProps()}
             onClick={onDelete}
           >

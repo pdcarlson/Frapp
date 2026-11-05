@@ -480,7 +480,7 @@ describe("PointsPage leaderboard naming (#1197)", () => {
 
   const board = () => within(screen.getByRole("region", { name: "Leaderboard" }));
   const userCell = (text: string) => board().getByText(text);
-  const search = () => screen.getByPlaceholderText("Search by member name");
+  const search = () => screen.getByPlaceholderText("Search members");
 
   const BOARD = [
     { user_id: ALICE, total: 42 },
