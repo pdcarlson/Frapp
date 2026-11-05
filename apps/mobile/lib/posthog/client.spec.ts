@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import PostHog from "posthog-react-native";
 import {
   applyAnalyticsIdentity,
+  applyAnalyticsOptOut,
   bindPostHogAdapterForTests,
+  captureRouteView,
   isAnalyticsCaptureOptedOut,
   isPostHogReady,
 } from "@repo/observability/identified-posthog";
@@ -54,6 +56,23 @@ describe("initMobilePostHog", () => {
       expect(reload).toHaveBeenCalledTimes(1);
     } finally {
       reload.mockRestore();
+    }
+  });
+
+  // #3382: a route view is `screen(template)`, and nothing while opted out.
+  it("sends a route view as screen(template) only once opted in", () => {
+    const screen = vi.spyOn(PostHog.prototype, "screen");
+    try {
+      vi.stubEnv("EXPO_PUBLIC_POSTHOG_KEY", "phc_test_write_only");
+      initMobilePostHog();
+      captureRouteView("/chat-thread");
+      expect(screen).not.toHaveBeenCalled();
+      applyAnalyticsOptOut(false);
+      captureRouteView("/chat-thread");
+      expect(screen).toHaveBeenCalledTimes(1);
+      expect(screen).toHaveBeenCalledWith("/chat-thread");
+    } finally {
+      screen.mockRestore();
     }
   });
 });

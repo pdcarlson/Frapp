@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useEffect, useMemo } from "react";
+import { usePathname } from "expo-router";
 import {
   useFrappClient,
   useActiveChapterId,
@@ -10,6 +11,7 @@ import {
 } from "@repo/validation";
 import {
   applyAnalyticsOptOut,
+  captureRouteView,
   namedAnalyticsEventBody,
 } from "@repo/observability/identified-posthog";
 
@@ -28,6 +30,9 @@ import {
  * (`$identify`, the `sentry-error-correlated` marker). Once a payload has
  * loaded, only an explicit `true` opts out (`spec/behavior/data-retention.md`
  * #analytics-events-pseudonymous).
+ *
+ * Each route is recorded once as a `$screen` named by its route template
+ * (#3382), from the same gate, so an opted-out chapter sends none.
  */
 type TrackFn = (name: string, properties?: AnalyticsProperties) => void;
 
@@ -43,6 +48,16 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     applyAnalyticsOptOut(optedOut);
   }, [optedOut]);
+
+  // One `$screen` per route, as its template (#3382). Declared after the
+  // opt-out effect so the SDK gate `captureRouteView` checks is already
+  // current when this runs, and keyed on `optedOut` so the first route is
+  // recorded once the chapter read opts in. expo-router's pathname drops params and groups, so Chat home is
+  // `/` and a thread is `/chat-thread`, never its channel id.
+  const pathname = usePathname();
+  useEffect(() => {
+    if (pathname) captureRouteView(pathname);
+  }, [optedOut, pathname]);
 
   const track = useCallback<TrackFn>(
     (name, properties) => {

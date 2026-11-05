@@ -56,6 +56,13 @@ export function initMobilePostHog(): void {
         properties as Parameters<PostHog["capture"]>[1],
       );
     },
+    routeView(path) {
+      if (isAnalyticsCaptureOptedOut()) return;
+      // `path` is already a route template (#3382). `screen()` also
+      // registers it as `$screen_name` for the session, so later events
+      // carry the template, never a raw id.
+      void client.screen(path);
+    },
     getSessionId: () => client.getSessionId() || undefined,
     getReplayId: () => undefined,
     getDistinctId: () => client.getDistinctId() || undefined,

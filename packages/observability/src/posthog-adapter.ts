@@ -4,6 +4,7 @@ import {
 } from "./policy";
 import { isPseudonymHex, type AnalyticsIdentity } from "./correlation";
 import { validatedChapterGroupId, validatedDistinctId } from "./identity";
+import { analyticsRouteTemplate } from "./analytics-path";
 
 /**
  * The surface tests fake and production wraps. Specs bind a memory adapter
@@ -19,6 +20,12 @@ export interface PostHogAdapter {
   optInCapturing(): void;
   stopSessionRecording(): void;
   capture(event: string, properties?: Record<string, unknown>): void;
+  /**
+   * Record that a page or screen was opened, as the platform's own view event:
+   * `$pageview` on web, `$screen` on mobile. `path` is already a route
+   * template ({@link captureRouteView}).
+   */
+  routeView(path: string): void;
   getSessionId(): string | undefined;
   getReplayId(): string | undefined;
   getDistinctId(): string | undefined;
@@ -40,7 +47,8 @@ export type MemoryPostHogCall =
   | { type: "optIn" }
   | { type: "stopSessionRecording" }
   | { type: "reloadFeatureFlags" }
-  | { type: "capture"; event: string; properties?: Record<string, unknown> };
+  | { type: "capture"; event: string; properties?: Record<string, unknown> }
+  | { type: "routeView"; path: string };
 
 export function createMemoryPostHogAdapter(): {
   adapter: PostHogAdapter;
@@ -78,6 +86,9 @@ export function createMemoryPostHogAdapter(): {
     },
     capture(event, properties) {
       calls.push({ type: "capture", event, properties });
+    },
+    routeView(path) {
+      calls.push({ type: "routeView", path });
     },
     getSessionId: () => sessionId,
     getReplayId: () => (recording ? sessionId : undefined),
@@ -149,6 +160,21 @@ export function applyAnalyticsOptOut(next: boolean): void {
     return;
   }
   adapter.optInCapturing();
+}
+
+/**
+ * A page or screen view (#3382), sent straight from the SDK like `$identify`.
+ * Nothing while the chapter is opted out, and the path goes as a route
+ * template ({@link analyticsRouteTemplate}): no query, no host, no record id.
+ * Each `AnalyticsProvider` calls it on every route change, and again when the
+ * opt-out lifts, so the screen a member is on when the chapter read answers
+ * is counted.
+ */
+export function captureRouteView(path: string): void {
+  if (optedOut) return;
+  const template = analyticsRouteTemplate(path);
+  if (!template) return;
+  currentAdapter()?.routeView(template);
 }
 
 /**

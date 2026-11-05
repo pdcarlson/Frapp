@@ -7,6 +7,7 @@ import {
   applyObservabilityIdentity,
   namedAnalyticsEventBody,
   bindPostHogAdapterForTests,
+  captureRouteView,
   captureSentryErrorCorrelated,
   createMemoryPostHogAdapter,
   getPostHogReplayId,
@@ -346,6 +347,38 @@ describe("sentry-error-correlated marker", () => {
         (c) => c.type === "capture" && c.event.includes("exception"),
       ),
     ).toBe(false);
+  });
+});
+
+describe("captureRouteView", () => {
+  it("sends the route as a template", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    captureRouteView(`/events/${UUID}?tab=rsvp`);
+    expect(memory.calls).toEqual([
+      { type: "routeView", path: "/events/[id]" },
+    ]);
+  });
+
+  it("sends nothing while the chapter is opted out, and again once it opts in", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    applyAnalyticsOptOut(true);
+    captureRouteView("/chat");
+    expect(memory.calls.some((c) => c.type === "routeView")).toBe(false);
+
+    applyAnalyticsOptOut(false);
+    captureRouteView("/chat");
+    expect(memory.calls.filter((c) => c.type === "routeView")).toEqual([
+      { type: "routeView", path: "/chat" },
+    ]);
+  });
+
+  it("sends nothing for a value that is not a path", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    captureRouteView("mailto:a@b.c");
+    expect(memory.calls).toEqual([]);
   });
 });
 

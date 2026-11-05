@@ -8,6 +8,7 @@ import React, {
   useMemo,
   useRef,
 } from "react";
+import { usePathname } from "next/navigation";
 import {
   useFrappClient,
   useActiveChapterId,
@@ -19,6 +20,7 @@ import {
 } from "@repo/validation";
 import {
   applyAnalyticsOptOut,
+  captureRouteView,
   namedAnalyticsEventBody,
 } from "@repo/observability/identified-posthog";
 
@@ -51,7 +53,8 @@ import {
  * `track` posts named product events to the API only. PostHog JS does **not**
  * capture those names — the API adapter already forwards them, and a second
  * `posthog.capture` would double-count. The JS SDK is identify / groups /
- * flags / replay-gates / the `sentry-error-correlated` marker.
+ * flags / replay-gates / the `sentry-error-correlated` marker / one
+ * `$pageview` per route, recorded as its route template (#3382).
  *
  * `track` is fire-and-forget: a failed event must never disrupt the UI.
  *
@@ -89,6 +92,17 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     applyAnalyticsOptOut(optedOut);
   }, [optedOut]);
+
+  // One `$pageview` per route, as its template (#3382). Declared after the
+  // opt-out effect so the SDK gate `captureRouteView` checks is already
+  // current when this runs, and keyed on `optedOut` so the first route is
+  // recorded once the chapter read opts in. Lives here, not in a child: a
+  // child's effects run before this provider's, while the gate still holds
+  // the previous answer.
+  const pathname = usePathname();
+  useEffect(() => {
+    if (pathname) captureRouteView(pathname);
+  }, [optedOut, pathname]);
 
   const track = useCallback<TrackFn>(
     (name, properties) => {

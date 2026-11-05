@@ -33,6 +33,7 @@ export {
   getPostHogReplayId,
   isProductFlagEnabled,
   captureSentryErrorCorrelated,
+  captureRouteView,
 } from "./posthog-adapter";
 export type {
   PostHogAdapter,

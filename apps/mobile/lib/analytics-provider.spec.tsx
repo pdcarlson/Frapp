@@ -1,7 +1,12 @@
 /** @vitest-environment jsdom */
 import { useContext } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { usePathname } from "expo-router";
+import {
+  bindPostHogAdapterForTests,
+  createMemoryPostHogAdapter,
+} from "@repo/observability/identified-posthog";
 
 const harness = vi.hoisted(() => ({
   post: vi.fn(),
@@ -21,7 +26,11 @@ vi.mock("@repo/observability/identified-posthog", async (importOriginal) => {
     await importOriginal<typeof import("@repo/observability/identified-posthog")>();
   return {
     ...actual,
-    applyAnalyticsOptOut: (...args: unknown[]) => harness.optOut(...args),
+    // Recorded, then applied for real, so the route-view gate moves with it.
+    applyAnalyticsOptOut: (next: boolean) => {
+      harness.optOut(next);
+      actual.applyAnalyticsOptOut(next);
+    },
   };
 });
 
@@ -143,5 +152,63 @@ describe("mobile AnalyticsProvider", () => {
     mountProvider(false);
     fireEvent.click(screen.getByRole("button", { name: "send" }));
     expect(harness.post).not.toHaveBeenCalled();
+  });
+});
+
+// #3382: one `$screen` per route, as its template, only once opted in.
+describe("mobile AnalyticsProvider screen views", () => {
+  let memory: ReturnType<typeof createMemoryPostHogAdapter>;
+  const screens = () =>
+    memory.calls.flatMap((c) => (c.type === "routeView" ? [c.path] : []));
+  const tree = () => (
+    <AnalyticsProvider>
+      <TrackButton eventName="logged-hours" />
+    </AnalyticsProvider>
+  );
+  const atPath = (path: string) => vi.mocked(usePathname).mockReturnValue(path);
+
+  beforeEach(() => {
+    harness.activeChapter = "chap-mobile";
+    harness.chapter.mockReset();
+    harness.optOut.mockReset();
+    memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+  });
+
+  afterEach(() => {
+    bindPostHogAdapterForTests(null);
+    vi.mocked(usePathname).mockReturnValue("/");
+  });
+
+  it("records the first screen once the chapter read opts in", () => {
+    atPath("/");
+    harness.chapter.mockReturnValue({ data: undefined });
+    const view = render(tree());
+    expect(screens()).toEqual([]);
+
+    harness.chapter.mockReturnValue({ data: { analytics_opt_out: false } });
+    view.rerender(tree());
+    expect(screens()).toEqual(["/"]);
+
+    view.rerender(tree());
+    expect(screens()).toEqual(["/"]);
+  });
+
+  it("records each navigation", () => {
+    atPath("/");
+    harness.chapter.mockReturnValue({ data: { analytics_opt_out: false } });
+    const view = render(tree());
+    atPath("/chat-thread");
+    view.rerender(tree());
+    expect(screens()).toEqual(["/", "/chat-thread"]);
+  });
+
+  it("records nothing for a chapter that opted out", () => {
+    atPath("/events");
+    harness.chapter.mockReturnValue({ data: { analytics_opt_out: true } });
+    const view = render(tree());
+    atPath("/event-details");
+    view.rerender(tree());
+    expect(screens()).toEqual([]);
   });
 });

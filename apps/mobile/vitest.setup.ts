@@ -459,6 +459,7 @@ vi.mock("posthog-react-native", () => {
     optIn() {}
     stopSessionRecording() {}
     capture() {}
+    async screen() {}
     getSessionId() {
       return "";
     }

@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { POSTHOG_EXCEPTION_AUTOCAPTURE } from "@repo/observability";
-import { buildMobilePostHogInitOptions } from "./config";
+import {
+  applyAnalyticsOptOut,
+  bindPostHogAdapterForTests,
+} from "@repo/observability/identified-posthog";
+import { buildMobilePostHogInitOptions, mobilePostHogBeforeSend } from "./config";
 
 const HEX = "a".repeat(64);
 const CHAPTER_HEX = "b".repeat(64);
@@ -11,6 +15,7 @@ const DEEP_LINK_WITH_TOKEN = "frapp://join?token=invite-token-secret";
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.resetModules();
+  bindPostHogAdapterForTests(null);
 });
 
 describe("Expo PostHog write-only credentials", () => {
@@ -29,13 +34,13 @@ describe("Expo PostHog write-only credentials", () => {
 });
 
 describe("RN init options the app ships", () => {
-  it("keeps autocapture, lifecycle, push, and replay off", () => {
+  it("keeps autocapture, push, and replay off, with lifecycle on (#3382)", () => {
     const options = buildMobilePostHogInitOptions({ environment: "preview" });
     expect(options.errorTracking?.autocapture).toBe(
       POSTHOG_EXCEPTION_AUTOCAPTURE,
     );
     expect(options.errorTracking?.autocapture).toBe(false);
-    expect(options.captureAppLifecycleEvents).toBe(false);
+    expect(options.captureAppLifecycleEvents).toBe(true);
     expect(options.enableSessionReplay).toBe(false);
     expect(options.personProfiles).toBe("identified_only");
     expect(options.sessionReplayConfig?.maskAllTextInputs).toBe(true);
@@ -55,14 +60,41 @@ describe("RN init options the app ships", () => {
     expect(options.enableSessionReplay).toBe(false);
   });
 
-  it("wires the identified sanitizer, not landing's drop-$set helper", async () => {
+  it("wires the opt-out gate around the identified sanitizer", async () => {
     vi.resetModules();
-    const { sanitizeIdentifiedPostHogCapture, sanitizeAnonymousPostHogCapture } =
-      await import("@repo/observability/next");
-    const { buildMobilePostHogInitOptions: build } = await import("./config");
+    const { buildMobilePostHogInitOptions: build, mobilePostHogBeforeSend } =
+      await import("./config");
     const options = build({ environment: "preview" });
-    expect(options.before_send).toBe(sanitizeIdentifiedPostHogCapture);
-    expect(options.before_send).not.toBe(sanitizeAnonymousPostHogCapture);
+    expect(options.before_send).toBe(mobilePostHogBeforeSend);
+    // Identified, not landing's drop-`$set` helper: `$set` survives.
+    expect(
+      mobilePostHogBeforeSend({ event: "$identify", $set: { distinct_id: HEX } })
+        ?.$set,
+    ).toEqual({ distinct_id: HEX });
+  });
+
+  // #3382: lifecycle events fire from the SDK's storage load, before its own
+  // queued opt-out, so the app's flag has to drop them here.
+  it("drops every SDK event while the app holds the chapter opted out", () => {
+    applyAnalyticsOptOut(true);
+    expect(
+      mobilePostHogBeforeSend({ event: "Application Installed", properties: {} }),
+    ).toBeNull();
+    expect(
+      mobilePostHogBeforeSend({ event: "$screen", properties: {} }),
+    ).toBeNull();
+    applyAnalyticsOptOut(false);
+    expect(
+      mobilePostHogBeforeSend({ event: "$screen", properties: {} }),
+    ).not.toBeNull();
+  });
+
+  it("reduces Application Opened's deep link to its path", () => {
+    const opened = mobilePostHogBeforeSend({
+      event: "Application Opened",
+      properties: { url: DEEP_LINK_WITH_TOKEN },
+    });
+    expect(JSON.stringify(opened)).not.toContain("invite-token-secret");
   });
 
   it("path-only-reduces join-token URLs on identify and capture", () => {

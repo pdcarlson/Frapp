@@ -58,6 +58,13 @@ export function initWebPostHog(): void {
       if (isAnalyticsCaptureOptedOut()) return;
       posthog.capture(event, properties);
     },
+    routeView(path) {
+      if (isAnalyticsCaptureOptedOut()) return;
+      // `path` is already a route template (#3382). Setting both URL
+      // properties keeps posthog-js from filling them from
+      // `window.location`, the same shape landing sends.
+      posthog.capture("$pageview", { $pathname: path, $current_url: path });
+    },
     getSessionId: () => posthog.get_session_id() || undefined,
     getReplayId: () =>
       posthog.sessionRecordingStarted()

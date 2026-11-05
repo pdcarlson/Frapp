@@ -110,6 +110,12 @@ hex `$groups`. Landing still uses the anonymous sanitizer that drops `$set`.
 **Correction (2026-09-10):** identified PostHog RN on mobile uses the same
 helper as `before_send` (`posthog-react-native` core CaptureEvent matches
 the web envelope; the helper is DOM-free). Replay stays off.
+**Correction (2026-11-05):** web and mobile now send route views from the
+SDK (#3382): web a hand-captured `$pageview`, mobile `screen()`, each naming
+the route's template (`analyticsRouteTemplate`: path-only, record-id
+segments as `[id]`), never a raw id. Mobile also turns on app lifecycle
+events. Both stay inside the chapter opt-out; `capture_pageview` and
+autocapture stay off. Rule: `spec/behavior/observability.md` § Route views.
 **Correction (2026-09-09):** `apps/landing` initializes anonymous Sentry
 (`NEXT_PUBLIC_LANDING_SENTRY_DSN` → `frapp-landing`) and PostHog JS for
 path-only pageviews and CTA clicks. No identity call, no alias, no chapter
