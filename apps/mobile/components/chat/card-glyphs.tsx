@@ -1,9 +1,9 @@
 import { Path } from "react-native-svg";
-import { ServiceGlyph } from "@/components/more/more-glyphs";
 import {
   GlyphFrame,
   glyphPaint,
   STROKE_WIDTH,
+  TabGlyph,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
 
@@ -18,25 +18,17 @@ import {
  * `CardEyebrow` draws: the primary silhouette carries the stroke's own hue at
  * low opacity, and the detail strokes stay stroke-only.
  *
- * The event and task cards draw the Events and Tasks tab glyphs themselves.
- * The hours card's heart is the More hub's `ServiceGlyph`, adapted below
- * rather than drawn a second time.
+ * Points and Service hours draw the shared nav set (iconography.md §1.1)
+ * through `TabGlyph`, the same shapes as web's cards (an accent eyebrow lifts
+ * the silhouette like a focused tab; web's cards draw it at rest, a
+ * difference that predates the nav set); the others below keep the stroke
+ * recipe. The event and task cards draw the Events and Tasks tab glyphs
+ * themselves.
  */
 
-/** Points — the star. */
+/** Points: the nav set's trophy, as the web sidebar and web's card draw it. */
 export function PointsGlyph(props: TabGlyphProps) {
-  const { stroke, fill } = glyphPaint(props);
-  return (
-    <GlyphFrame size={props.size}>
-      <Path
-        d="M12 3.5l2.3 4.9 5.2.6-3.9 3.6 1.1 5.2-4.7-2.7-4.7 2.7 1.1-5.2-3.9-3.6 5.2-.6z"
-        fill={fill}
-        stroke={stroke}
-        strokeWidth={STROKE_WIDTH}
-        strokeLinejoin="round"
-      />
-    </GlyphFrame>
-  );
+  return <TabGlyph name="points" {...props} />;
 }
 
 /** Announcement — the megaphone, its sound arc stroke-only. */
@@ -111,13 +103,7 @@ export function AuditGlyph(props: TabGlyphProps) {
   );
 }
 
-/** Service hours — the More hub's heart, in the eyebrow's props. */
-export function ServiceHoursGlyph({ focused, accent, muted, size }: TabGlyphProps) {
-  return (
-    <ServiceGlyph
-      color={focused ? accent : muted}
-      neutral={!focused}
-      size={size}
-    />
-  );
+/** Service hours: the nav set's hand-heart, the More hub's shape, lifted when focused like its sibling eyebrows. */
+export function ServiceHoursGlyph(props: TabGlyphProps) {
+  return <TabGlyph name="service" {...props} />;
 }

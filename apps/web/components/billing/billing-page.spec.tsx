@@ -92,26 +92,21 @@ beforeEach(() => {
 });
 
 describe("the route is flush on the shell", () => {
-  it("names itself once, in the main pane", () => {
+  it("leaves the route's h1 to the top bar, on every path", () => {
+    // The title lives in the top bar (`top-bar.tsx`), which the shell renders
+    // around every path, offline included. A page h1 would be a second one.
     render(<BillingPage />);
-
-    const headings = screen.getAllByRole("heading", { level: 1 });
-    expect(headings).toHaveLength(1);
-    expect(headings[0]).toHaveTextContent("Billing");
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
   });
 
-  it("keeps the heading on the offline path too", () => {
-    // The shell no longer supplies a title (#2141), so a page that mounts one
-    // only on its success path loses it exactly when the member is most lost.
+  it("draws no h1 on the offline path either", () => {
     networkState.isOffline = true;
     invoicesQuery.data = undefined;
     invoicesQuery.isPending = true;
     invoicesQuery.fetchStatus = "paused";
     render(<BillingPage />);
 
-    expect(
-      screen.getByRole("heading", { level: 1, name: "Billing" }),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
   });
 
   it("carries none of the narration the cards used to wrap", () => {
@@ -137,7 +132,10 @@ describe("the route is flush on the shell", () => {
       "data-invoices-href",
       "#invoices",
     );
-    expect(screen.getByTestId("invoice-list")).toHaveAttribute("id", "invoices");
+    expect(screen.getByTestId("invoice-list")).toHaveAttribute(
+      "id",
+      "invoices",
+    );
   });
 });
 
@@ -205,9 +203,7 @@ describe("the offline path (#1621)", () => {
     render(<BillingPage />);
 
     expect(screen.getByTestId("invoice-list")).toBeInTheDocument();
-    expect(
-      screen.queryByText(/unavailable offline/i),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/unavailable offline/i)).not.toBeInTheDocument();
   });
 
   it("shows the offline screen when the invoice read is uncached", () => {

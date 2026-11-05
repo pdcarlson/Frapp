@@ -23,6 +23,10 @@ import { CHIP } from "@/components/chat/chip";
  * and a route supplies only its sections — the second page to want one must
  * not draw its own 400px panel.
  *
+ * Since the page title moved to the top bar (2026-11-05) the gear can no
+ * longer sit beside it: it sits at the trailing edge of the route's
+ * `PageActions` row, with the route's other actions.
+ *
  * **400px, and it is a `Sheet`.** The board draws the drawer as an in-layout
  * right rail beside `<main>`, dimming the page rather than scrimming it, and
  * says it "takes the right slot like Ask and Notifications". Notifications is

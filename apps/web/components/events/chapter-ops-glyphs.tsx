@@ -2,8 +2,9 @@
  * Signet duotone glyphs for the Chapter Ops family — events, tasks, study
  * hours, service hours and study zones.
  *
- * Recipe and the shared `Svg` / `stroke` / `detail` / `fillProps` primitives:
- * `components/ui/duotone.tsx` (`spec/ui/design-system/iconography.md` §1). The
+ * Every glyph here draws the shared two-tone set (`@repo/theme/nav-glyphs`,
+ * `spec/ui/design-system/iconography.md` §1.1) except the re-exported
+ * `SearchGlyph`, which keeps the §1 stroke recipe until #3491. The
  * intent → glyph map lives in `iconography.md` §6.2.4 and MUST be updated in
  * the same PR as any change here (§6.3).
  *
@@ -31,8 +32,9 @@
  * button is furniture; the thing the row is *about* is an intent.
  */
 
-import { Svg, detail, stroke, fillProps } from "@/components/ui/duotone";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
+import { NavGlyph } from "@/components/layout/nav-glyphs";
 
 export {
   DirectoryGlyph,
@@ -51,16 +53,10 @@ export type ChapterOpsGlyphProps = DuotoneGlyphProps;
  * An event's schedule row.
  *
  * Replaces Lucide's `Clock3` on the event detail sheet, where it sits beside
- * the date row's `EventsGlyph` — so the two are drawn on one grid rather than
- * borrowed from two packs. The face is the silhouette and the hands are
- * detail, which keeps the duotone split on the shape a reader actually
- * identifies the glyph by.
+ * the date row's `EventsGlyph` and the Study zones and Points rows, so it is
+ * drawn from the same shared two-tone set (`@repo/theme/nav-glyphs`, Phosphor
+ * `clock`) rather than a second recipe.
  */
-export function ScheduleGlyph({ className, active }: ChapterOpsGlyphProps) {
-  return (
-    <Svg className={className}>
-      <circle cx="12" cy="12" r="8.2" {...stroke} {...fillProps(active)} />
-      <path d="M12 7.4V12l3.2 1.9" {...detail} />
-    </Svg>
-  );
+export function ScheduleGlyph(props: ChapterOpsGlyphProps) {
+  return <NavGlyph paths={NAV_GLYPHS.schedule} {...props} />;
 }

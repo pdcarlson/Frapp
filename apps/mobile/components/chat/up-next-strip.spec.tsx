@@ -1,7 +1,11 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import {
+  create,
+  type ReactTestInstance,
+  type ReactTestRenderer,
+} from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 
 // A purple chapter's accent, deliberately not house gold, so a glyph that
@@ -375,15 +379,14 @@ describe("UpNextStrip rows", () => {
   it("leads the event with the accent calendar and the task with the muted check", () => {
     const [eventRow, taskRow] = rows(renderStrip());
 
-    // The Events tab glyph is a Rect body; the Tasks one a Circle.
-    const calendar = eventRow!.find(
-      (node) => (node.type as unknown as string) === "Rect",
+    // Each tab glyph is two filled Paths; the second is the full-strength
+    // outline, so its fill is the glyph's hue.
+    const outline = (row: ReactTestInstance) =>
+      row.findAll((node) => (node.type as unknown as string) === "Path")[1]!;
+    expect(outline(eventRow!).props.fill).toBe("#CB9FFF");
+    expect(outline(taskRow!).props.fill).toBe(
+      signetDarkTokens.color.text.muted,
     );
-    const check = taskRow!.find(
-      (node) => (node.type as unknown as string) === "Circle",
-    );
-    expect(calendar.props.stroke).toBe("#CB9FFF");
-    expect(check.props.stroke).toBe(signetDarkTokens.color.text.muted);
     for (const svg of [eventRow!, taskRow!].map((row) =>
       row.find((node) => (node.type as unknown as string) === "Svg"),
     )) {

@@ -41,7 +41,7 @@ import {
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { denseListClassName } from "@/components/shared/table-controls";
-import { PageHeader } from "@/components/layout/page-header";
+import { PageActions } from "@/components/layout/page-actions";
 import { StudyZonesSettingsDrawer } from "@/components/geofences/study-zones-settings-drawer";
 import { can } from "@repo/validation";
 import { Can } from "@/components/shared/can";
@@ -403,8 +403,9 @@ export function GeofencesAdminPage() {
   }
 
   /*
-   * `4c` pin 1: the gear sits beside the page title and "shows only for roles
-   * that hold that page's manage permission". "New study zone" sits beside it,
+   * `4c` pin 1: the gear "shows only for roles that hold that page's manage
+   * permission". It sits in the route's `PageActions` row (the title it was
+   * drawn beside is in the top bar now), and "New study zone" sits beside it,
    * so the route has one toolbar row, on the same boolean.
    *
    * **Read through `can()` rather than a second `<Can>`.** The screen-level
@@ -563,22 +564,12 @@ export function GeofencesAdminPage() {
 
   return (
     <>
-      {/*
-        Outside the `<Can>` so the permission-denied, permission-pending and
-        offline branches keep the route's heading — the shell no longer supplies
-        one (#2141).
-      */}
-      <PageHeader
-        title="Study zones"
-        actions={
-          canManageZones ? (
-            <>
-              <StudyZonesSettingsDrawer />
-              {createZone}
-            </>
-          ) : null
-        }
-      />
+      {canManageZones ? (
+        <PageActions>
+          <StudyZonesSettingsDrawer />
+          {createZone}
+        </PageActions>
+      ) : null}
       <Can
         permission="geofences:manage"
         deniedFallback={

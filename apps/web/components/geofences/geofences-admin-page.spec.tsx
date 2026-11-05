@@ -270,15 +270,13 @@ describe("GeofencesAdminPage layout", () => {
     );
   });
 
-  it("puts New study zone in the title row, titled in sentence case", () => {
+  it("puts New study zone in the action row, with no page h1", () => {
     render(<GeofencesAdminPage />);
 
-    const heading = screen.getByRole("heading", { level: 1 });
-    expect(heading).toHaveTextContent("Study zones");
+    // The title, "Settings › Study zones", is the top bar's (`top-bar.tsx`).
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
     expect(
-      within(heading.parentElement!).getByRole("button", {
-        name: /new study zone/i,
-      }),
+      screen.getByRole("button", { name: /new study zone/i }),
     ).toBeInTheDocument();
   });
 });

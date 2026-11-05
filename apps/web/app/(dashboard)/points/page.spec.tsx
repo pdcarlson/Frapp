@@ -109,7 +109,6 @@ vi.mock("@/lib/stores/chapter-store", () => ({
     selector({ activeChapterId: "chap-1" }),
 }));
 
-
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
@@ -121,7 +120,8 @@ vi.mock("@/lib/providers/network-provider", () => ({
 
 const { downloadCsvSpy } = vi.hoisted(() => ({ downloadCsvSpy: vi.fn() }));
 vi.mock("@/lib/utils", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/utils")>("@/lib/utils");
+  const actual =
+    await vi.importActual<typeof import("@/lib/utils")>("@/lib/utils");
   return { ...actual, downloadCsv: downloadCsvSpy };
 });
 
@@ -176,8 +176,12 @@ function expectNoFabricatedData() {
   expect(screen.queryByText(/preview-user-/)).not.toBeInTheDocument();
   expect(screen.queryByText(/Preview balance/)).not.toBeInTheDocument();
   expect(screen.queryByText(/186 points/)).not.toBeInTheDocument();
-  expect(screen.queryByText("Chapter Meeting check-in")).not.toBeInTheDocument();
-  expect(screen.queryByText("Library geofence session")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("Chapter Meeting check-in"),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("Library geofence session"),
+  ).not.toBeInTheDocument();
   expect(screen.queryByText("Late arrival adjustment")).not.toBeInTheDocument();
 }
 
@@ -195,7 +199,9 @@ describe("PointsPage failure states", () => {
 
     render(<PointsPage />);
 
-    expect(screen.getByText("Couldn't load the points ledger")).toBeInTheDocument();
+    expect(
+      screen.getByText("Couldn't load the points ledger"),
+    ).toBeInTheDocument();
     expectNoFabricatedData();
   });
 
@@ -204,7 +210,9 @@ describe("PointsPage failure states", () => {
 
     render(<PointsPage />);
 
-    expect(screen.getByText("Couldn't load the points ledger")).toBeInTheDocument();
+    expect(
+      screen.getByText("Couldn't load the points ledger"),
+    ).toBeInTheDocument();
     expectNoFabricatedData();
   });
 
@@ -213,8 +221,12 @@ describe("PointsPage failure states", () => {
 
     render(<PointsPage />);
 
-    expect(screen.queryByRole("button", { name: /Adjust points/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Export selected/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Adjust points/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Export selected/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("retries both reads from the error state", () => {
@@ -242,7 +254,9 @@ describe("PointsPage failure states", () => {
 
     render(<PointsPage />);
 
-    expect(screen.getByText("Points ledger unavailable offline")).toBeInTheDocument();
+    expect(
+      screen.getByText("Points ledger unavailable offline"),
+    ).toBeInTheDocument();
     expectNoFabricatedData();
   });
 
@@ -294,15 +308,14 @@ describe("PointsPage failure states", () => {
       },
     ],
   ] as const)(
-    "titles the %s state Points and draws it in the nested family, not a card",
+    "draws the %s state in the nested family, not a card, under no page h1",
     (_state, overrides) => {
       setQueries(overrides);
 
       const { container } = render(<PointsPage />);
 
-      expect(
-        screen.getByRole("heading", { level: 1, name: "Points" }),
-      ).toBeInTheDocument();
+      // The route's h1 is the top bar's (`top-bar.tsx`), on every path.
+      expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
       expect(cardFilledContainers(container)).toEqual([]);
     },
   );
@@ -349,7 +362,9 @@ describe("PointsPage success state", () => {
     expect(screen.getByRole("definition")).toHaveTextContent("42 points");
     expect(screen.getByText("Founders Day check-in")).toBeInTheDocument();
     expect(screen.getByText("+12")).toBeInTheDocument();
-    expect(screen.queryByText("Couldn't load the points ledger")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Couldn't load the points ledger"),
+    ).not.toBeInTheDocument();
   });
 
   it("sits flush on the page surface: no card, sectioned lists", () => {
@@ -374,7 +389,7 @@ describe("PointsPage success state", () => {
     const { container } = render(<PointsPage />);
 
     expect(cardFilledContainers(container)).toEqual([]);
-    expect(screen.getByRole("heading", { level: 1, name: "Points" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
     for (const name of ["Leaderboard", "My transactions"]) {
       const section = screen.getByRole("region", { name });
       expect(within(section).getByRole("list")).toHaveClass(
@@ -384,8 +399,12 @@ describe("PointsPage success state", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     // The narration the summary card and the two list cards carried is gone.
     expect(screen.queryByText(/Track chapter ranking/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Current ranking for selected/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Most recent point activity/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Current ranking for selected/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Most recent point activity/),
+    ).not.toBeInTheDocument();
   });
 
   it("labels a transaction's category and dates it in the house shape", () => {
@@ -446,9 +465,12 @@ describe("PointsPage success state", () => {
     });
 
     render(<PointsPage />);
-    fireEvent.change(screen.getByLabelText(/filter transactions by category/i), {
-      target: { value: "ACADEMIC" },
-    });
+    fireEvent.change(
+      screen.getByLabelText(/filter transactions by category/i),
+      {
+        target: { value: "ACADEMIC" },
+      },
+    );
 
     expect(screen.getByText("Dean's list")).toBeInTheDocument();
     expect(screen.queryByText("Library session")).not.toBeInTheDocument();
@@ -460,11 +482,12 @@ describe("PointsPage success state", () => {
     render(<PointsPage />);
 
     expect(screen.getByText("No leaderboard entries")).toBeInTheDocument();
-    expect(screen.getByText("No transactions in this window")).toBeInTheDocument();
+    expect(
+      screen.getByText("No transactions in this window"),
+    ).toBeInTheDocument();
     expectNoFabricatedData();
   });
 });
-
 
 describe("PointsPage leaderboard naming (#1197)", () => {
   const ALICE = "8f14e45f-ceea-467a-9f1c-1a2b3c4d5e6f";
@@ -478,7 +501,8 @@ describe("PointsPage leaderboard naming (#1197)", () => {
     setQueries({ leaderboard: { data: rows }, roster: { names } });
   }
 
-  const board = () => within(screen.getByRole("region", { name: "Leaderboard" }));
+  const board = () =>
+    within(screen.getByRole("region", { name: "Leaderboard" }));
   const userCell = (text: string) => board().getByText(text);
   const search = () => screen.getByPlaceholderText("Search members");
 
@@ -576,7 +600,9 @@ describe("PointsPage leaderboard naming (#1197)", () => {
     // Present in Alice's uuid (`8f14…`, `9f1c`), absent from every name. Under
     // the old unguarded id match this returned her row with nothing on screen
     // containing "f1".
-    expect(screen.getByText("No members match that search")).toBeInTheDocument();
+    expect(
+      screen.getByText("No members match that search"),
+    ).toBeInTheDocument();
   });
 
   it("still finds a named member by a pasted user id", () => {
@@ -597,8 +623,12 @@ describe("PointsPage leaderboard naming (#1197)", () => {
     render(<PointsPage />);
     fireEvent.change(search(), { target: { value: "nobody" } });
 
-    expect(screen.getByText("No members match that search")).toBeInTheDocument();
-    expect(screen.queryByText("No leaderboard entries")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("No members match that search"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("No leaderboard entries"),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps the empty-board copy when the board really is empty", () => {
@@ -626,7 +656,9 @@ describe("PointsPage leaderboard naming (#1197)", () => {
 
     render(<PointsPage />);
 
-    expect(screen.queryByText("Loading points ledger...")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Loading points ledger..."),
+    ).not.toBeInTheDocument();
     expect(userCell("Member 8f14e4")).toBeInTheDocument();
     expect(screen.getByRole("definition")).toHaveTextContent("42 points");
     expect(screen.getByRole("button", { name: /Adjust points/ })).toBeEnabled();
@@ -645,7 +677,9 @@ describe("PointsPage leaderboard naming (#1197)", () => {
 
     render(<PointsPage />);
 
-    expect(screen.queryByText("Couldn't load the points ledger")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Couldn't load the points ledger"),
+    ).not.toBeInTheDocument();
     expect(userCell("Member 8f14e4")).toBeInTheDocument();
     expect(userCell("42")).toBeInTheDocument();
   });
@@ -661,7 +695,6 @@ describe("PointsPage leaderboard naming (#1197)", () => {
     expect(rosterRefetch).toHaveBeenCalledTimes(1);
   });
 });
-
 
 describe("PointsPage subscription gating", () => {
   // `POST /v1/points/adjust` is paid-ops. `PointsAdjustmentDialog` gates its own
@@ -810,9 +843,12 @@ describe("PointsPage transaction bulk actions", () => {
     selectFirstTransaction();
     expect(screen.getByText(/1 transaction selected/i)).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText(/filter transactions by category/i), {
-      target: { value: "FINE" },
-    });
+    fireEvent.change(
+      screen.getByLabelText(/filter transactions by category/i),
+      {
+        target: { value: "FINE" },
+      },
+    );
 
     expect(
       screen.queryByText(/transaction.*selected/i),
@@ -842,7 +878,9 @@ describe("PointsPage archived period picker (#377)", () => {
     render(<PointsPage />);
 
     const picker = screen.getByLabelText(/view an archived semester/i);
-    expect(screen.getByRole("option", { name: "Fall 2025" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Fall 2025" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("option", { name: "Spring 2026" }),
     ).toBeInTheDocument();
