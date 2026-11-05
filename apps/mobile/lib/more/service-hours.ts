@@ -45,6 +45,9 @@ const STATUSES: ReadonlySet<string> = new Set<ServiceEntryStatus>([
  * chapter accent (`spec/ui/design-system/components.md` §5). Pending is not
  * yet settled, so it is the warning. Exhaustive, so a status added to
  * `@repo/hooks` fails to compile here rather than painting as one of these.
+ * The chat hours card (`components/chat/hours-card.tsx`) has its own copy of
+ * this mapping; moving it onto this one is
+ * [#3455](https://github.com/pdcarlson/Frapp/issues/3455).
  */
 export function serviceStatusHue(
   status: ServiceEntryStatus,

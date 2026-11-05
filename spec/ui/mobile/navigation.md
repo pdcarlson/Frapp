@@ -171,9 +171,10 @@ surfaces themselves were still unbuilt then and landed as their own slices.
 *Corrected 2026-11-05 (this sentence used to call them still unbuilt):* all three have
 since shipped as photo-library picks, s15's avatar photo (#2897), s21's upload (#3399)
 and, last, s20's proof attachment (2026-11-05), each dated below. What is still unbuilt
-is the file half of the last two: a PDF or Office file on s21 and a PDF on s20 need
-`expo-document-picker`, which can only ship in a store build
-([#3401](https://github.com/pdcarlson/Frapp/issues/3401) adds it for documents).
+is the file half of the last two: a PDF or Office file on s21 needs
+`expo-document-picker`, which can only ship in a store build, and
+[#3401](https://github.com/pdcarlson/Frapp/issues/3401) adds it there and decides
+whether s20's proof takes a PDF from Files too.
 
 **Both were removed again** (#2296) — the three surfaces were still unbuilt a month
 later, and the declarations were not merely premature but actively harmful. The
@@ -231,11 +232,12 @@ same PR (ruled non-material by the owner, 2026-11-04).
 *2026-11-05:* s20's photo proof (`lib/more/service-proof.ts`) is the fifth caller,
 through `pickImage` and the PUT half of the same pipeline, attaching a photo to a
 service entry. Like the fourth it needs no native change and ships over the air, and
-`photosPermission` can only widen in a store build, so #3401 must name service proof
-alongside documents. The privacy policy's permissions clause names it in the same
-change, moving only the page's pin on the #3395 precedent. Whether that edit is
-material is still open in [#3424](https://github.com/pdcarlson/Frapp/issues/3424); the
-outcomes are in [`legal.md` § Acceptance record](../../behavior/legal.md#acceptance-record).
+`photosPermission` can only widen in a store build, so
+[#3401](https://github.com/pdcarlson/Frapp/issues/3401) widens it to name service-hour
+proof alongside document uploads, with the store records. The privacy policy's
+permissions clause names it in the same change, moving only the page's pin on the
+#3395 precedent; whether that edit is material, and what each ruling does, is
+[`legal.md` § Acceptance record](../../behavior/legal.md#acceptance-record)'s.
 
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`

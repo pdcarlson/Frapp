@@ -103,8 +103,9 @@ export const DOCUMENT_TITLE_MAX_LENGTH = 255;
 
 /**
  * What a member says they did on a service entry
- * (`service_entries.description`), on web and mobile s20. The API refuses a
- * longer one, and the phone's field stops at it.
+ * (`service_entries.description`), on web and mobile s20. The API's
+ * `CreateServiceEntryDto` refuses a longer one, and s20's field stops at it.
+ * Web's service dialog doesn't apply it yet (#3456).
  */
 export const SERVICE_DESCRIPTION_MAX_LENGTH = 2_000;
 

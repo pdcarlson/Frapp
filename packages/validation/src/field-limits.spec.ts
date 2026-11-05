@@ -17,8 +17,9 @@ describe("field-limits", () => {
   });
 
   it("keeps the service description ceiling at the value the DTO and s20 share", () => {
-    // `CreateServiceEntryDto` refuses past it and the phone's field caps at
-    // it, so a change here moves both, and every client's limit with them.
+    // `CreateServiceEntryDto` refuses past it and the phone's s20 field caps
+    // at it, so a change here moves both. Web's service dialog doesn't read
+    // it yet (#3456).
     expect(SERVICE_DESCRIPTION_MAX_LENGTH).toBe(2_000);
   });
 

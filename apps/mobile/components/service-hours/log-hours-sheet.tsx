@@ -77,13 +77,10 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## The entry outlives a close, not a Cancel
  *
- * A swipe or a tap on the scrim closes the sheet and keeps the entry for the
- * next visit; Cancel gives it up, and so does a save. The rule s19 and s21
- * follow (`spec/ui/mobile/screens.md`); s15's Edit sheet doesn't, and says
- * why. Cancel is held while a save runs: the save can't be called back, so a
- * Cancel then would clear an entry that gets filed anyway, or one whose
- * failure no visit hears of. A swipe still closes the sheet mid-save and
- * keeps the entry.
+ * The sheets' keep-the-draft rule (`spec/ui/mobile/patterns.md` § Bottom
+ * sheets, "A draft outlives a close"): a swipe or scrim close keeps the entry
+ * for the next visit, Cancel or a save gives it up, and Cancel is held while
+ * a save runs. What is particular to s20 is its date, below.
  *
  * A kept entry reads its date chip against the day it is filed (`now` moves
  * with the host's clock, which re-reads when the sheet opens and when the app

@@ -547,14 +547,13 @@ Advertising Data, Browsing History, Search History.
 > collected for *App Functionality* and linked to the member, so the row's values don't
 > change. The privacy policy's permissions clause (`apps/landing/app/privacy/page.tsx`)
 > names it, as #3399's did for documents, and on that precedent the edit moved only
-> the page's pin. Whether it is material is still open in
-> [#3424](https://github.com/pdcarlson/Frapp/issues/3424);
-> [`legal.md` § Acceptance record](../../../spec/behavior/legal.md#acceptance-record)
-> holds that status and what each ruling does. The iOS
-> purpose string (`app.json`'s `photosPermission`) doesn't name it: it can only widen
-> in a store build, and [#3401](https://github.com/pdcarlson/Frapp/issues/3401), which
-> widens it for documents, must name service proof too. Deploy the landing before
-> submitting a binary that carries s20's photo row.
+> the page's pin. Whether that edit is material, and what each ruling does:
+> [`legal.md` § Acceptance record](../../../spec/behavior/legal.md#acceptance-record).
+> The iOS purpose string (`app.json`'s `photosPermission`) doesn't name it: it can only
+> widen in a store build, and
+> [#3401](https://github.com/pdcarlson/Frapp/issues/3401) widens it to name document
+> uploads and service-hour proof and updates the store records to match. Deploy the
+> landing before submitting a binary that carries s20's photo row.
 >
 > ‡ **`Linked: No` on Crash Data and Performance Data is wrong, and this table's own
 > reasoning is what proves it (owner action — console change).** Found 2026-09-21. The

@@ -68,11 +68,11 @@ import {
  *
  * ## The draft outlives a close, not a Cancel
  *
- * A swipe or a tap on the scrim closes the sheet and keeps the draft for the
- * next visit: tapping the dimmed screen to put the keyboard away is a common
- * habit, and it must not cost the member what they typed. Cancel gives the
- * draft up, and so does a successful create. The same rule s20 and s21 follow
- * (`spec/ui/mobile/screens.md`); s15's Edit sheet doesn't, and says why.
+ * The sheets' keep-the-draft rule (`spec/ui/mobile/patterns.md` § Bottom
+ * sheets, "A draft outlives a close"): a swipe or scrim close keeps the draft
+ * for the next visit, Cancel or a successful create gives it up, and Cancel
+ * is held while a create runs. What is particular to s19 is its due chip and
+ * its chapter, below.
  *
  * A kept draft reads its due chip against the day it is filed (`at` moves
  * with the host's clock, which re-reads on tab focus and on a return to the

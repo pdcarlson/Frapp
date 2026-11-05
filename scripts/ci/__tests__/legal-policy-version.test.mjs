@@ -33,9 +33,8 @@
 //   Naming the document-photo upload as a photo-library use was ruled
 //   non-material on 2026-11-04 too (#3399), so it moved only the Privacy pin.
 //   Naming the service-hour proof photo (s20, 2026-11-05) moved only the
-//   Privacy pin as well, on that precedent. Whether that is material is still
-//   open in #3424 (spec/behavior/legal.md § Acceptance record holds the
-//   outcomes).
+//   Privacy pin as well, on that precedent; whether that is material, and
+//   what each ruling does, is spec/behavior/legal.md § Acceptance record's.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
 // `#domain/constants/legal` (`'test-version'`, `'current-version'`) can't

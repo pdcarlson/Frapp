@@ -13,8 +13,9 @@ import { DOCUMENT_TITLE_MAX_LENGTH } from "@repo/validation";
  * #3399. s21, rendered: nothing is sent until Upload, Upload sends the title
  * and folder chosen, a gate withdraws Upload while a failure keeps the photo
  * for another try, a swipe or scrim close keeps the draft until Cancel or an
- * upload that files it, and a sheet closed mid-upload keeps its draft until
- * the upload settles. The wire steps are pinned in
+ * upload that files it, Cancel is held while an upload runs, a kept folder
+ * that is gone files where a fresh sheet would, and a sheet closed mid-upload
+ * keeps its draft until the upload settles. The wire steps are pinned in
  * `lib/more/document-upload.spec.ts`.
  */
 
@@ -657,11 +658,46 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(screenText(tree)).toContain("Choose a photo");
   });
 
-  it("keeps the draft when Cancel is pressed mid-upload", async () => {
+  it("holds Cancel while an upload runs, in a reopened visit too", async () => {
     const tree = render();
     await choose(tree);
     const settle = heldUpload();
+
+    // A Cancel in the same batch as Upload, before `uploading` reaches a
+    // render, does nothing either.
+    await act(async () => {
+      uploadButton(tree).props.onPress();
+      pressable(tree, "Cancel").props.onPress();
+    });
+    expect(dismiss).not.toHaveBeenCalled();
+    expect(pressable(tree, "Cancel").props.disabled).toBe(true);
+
+    // Swiped away and opened again while the upload runs: still held.
+    closed(tree);
+    open(tree);
+    expect(pressable(tree, "Cancel").props.disabled).toBe(true);
+    expect(screenText(tree)).toContain("IMG_2041.jpg");
+
+    await settle({ status: "uploaded", title: "IMG_2041.jpg" });
+    expect(pressable(tree, "Cancel").props.disabled).toBe(false);
+  });
+
+  it("gives Cancel back when an upload fails, and Cancel then drops the draft", async () => {
+    const tree = render();
+    await choose(tree);
+    act(() => {
+      titleInput(tree).props.onChangeText("Minutes — Aug 14");
+    });
+    const settle = heldUpload();
     await pressUpload(tree);
+    expect(pressable(tree, "Cancel").props.disabled).toBe(true);
+
+    await settle({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+      final: false,
+    });
+    expect(pressable(tree, "Cancel").props.disabled).toBe(false);
 
     act(() => {
       pressable(tree, "Cancel").props.onPress();
@@ -669,14 +705,10 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(dismiss).toHaveBeenCalledTimes(1);
     closed(tree);
     open(tree);
-    expect(screenText(tree)).toContain("IMG_2041.jpg");
-
-    await settle({
-      status: "refused",
-      reason: "Couldn't upload that photo. Try again in a moment.",
-      final: false,
-    });
-    expect(screenText(tree)).toContain("IMG_2041.jpg");
+    expect(screenText(tree)).toContain("Choose a photo");
+    expect(screenText(tree)).not.toContain("IMG_2041.jpg");
+    expect(screenText(tree)).not.toContain("Try again in a moment.");
+    expect(titleInput(tree).props.value).toBe("");
   });
 
   it("opens the library once for two taps on Choose", async () => {
@@ -842,6 +874,115 @@ describe("UploadDocumentSheet (#3399)", () => {
     });
     expect(titleInput(tree).props.editable).toBe(true);
     expect(screenText(tree)).not.toContain(RETRY_KEEPS_DRAFT);
+  });
+
+  describe("a folder that is gone by the next visit", () => {
+    const sheet = (
+      folders: readonly { id: string; name: string }[],
+      initialFolder: string | null = null,
+    ) => (
+      <FrappThemeProvider>
+        <UploadDocumentSheet
+          ref={ref}
+          folders={folders}
+          initialFolder={initialFolder}
+          onUploaded={onUploaded}
+        />
+      </FrappThemeProvider>
+    );
+
+    function mount(
+      folders: readonly { id: string; name: string }[],
+      initialFolder: string | null = null,
+    ) {
+      let tree!: ReactTestRenderer;
+      act(() => {
+        tree = create(sheet(folders, initialFolder), {
+          createNodeMock: (element) =>
+            (element.type as unknown) === "BottomSheetModal"
+              ? { dismiss, present: vi.fn() }
+              : null,
+        });
+      });
+      mounted.push(tree);
+      open(tree);
+      return tree;
+    }
+
+    /** Picks a photo, taps `folder`, then swipes the sheet away. */
+    async function keep(tree: ReactTestRenderer, folder: string) {
+      await choose(tree);
+      act(() => {
+        pressable(tree, folder).props.onPress();
+      });
+      closed(tree);
+    }
+
+    async function uploadedFolder(tree: ReactTestRenderer) {
+      uploadDocumentPhoto.mockResolvedValue({
+        status: "uploaded",
+        title: "IMG_2041.jpg",
+      });
+      await pressUpload(tree);
+      return (uploadDocumentPhoto.mock.lastCall?.[1] as { folder: unknown })
+        .folder;
+    }
+
+    it("files a kept folder that was deleted at None", async () => {
+      const tree = mount(FOLDERS);
+      await keep(tree, "Bylaws");
+
+      act(() => {
+        tree.update(sheet([{ id: "f1", name: "Minutes" }]));
+      });
+      open(tree);
+      expect(folderChips(tree).props.selected).toBe(null);
+      expect(await uploadedFolder(tree)).toBe(null);
+    });
+
+    it("falls back to s12's filter when the kept folder was renamed", async () => {
+      const tree = mount(FOLDERS, "Minutes");
+      await keep(tree, "Bylaws");
+
+      // "Bylaws" became "Governance" while the sheet was away.
+      act(() => {
+        tree.update(
+          sheet(
+            [
+              { id: "f1", name: "Minutes" },
+              { id: "f2", name: "Governance" },
+            ],
+            "Minutes",
+          ),
+        );
+      });
+      open(tree);
+      expect(folderChips(tree).props.selected).toBe("Minutes");
+      expect(await uploadedFolder(tree)).toBe("Minutes");
+    });
+
+    it("files at None when s12's filter names a deleted folder too", async () => {
+      const tree = mount(FOLDERS, "Bylaws");
+      await choose(tree);
+
+      act(() => {
+        tree.update(sheet([{ id: "f1", name: "Minutes" }], "Bylaws"));
+      });
+      expect(folderChips(tree).props.selected).toBe(null);
+      expect(await uploadedFolder(tree)).toBe(null);
+    });
+
+    it("sends no folder once the last one is deleted and no chips draw", async () => {
+      const tree = mount(FOLDERS, "Bylaws");
+      await keep(tree, "Bylaws");
+
+      act(() => {
+        tree.update(sheet([], "Bylaws"));
+      });
+      open(tree);
+      expect(screenText(tree)).not.toContain("Folder");
+      expect(await uploadedFolder(tree)).toBe(null);
+    });
   });
 
   it("draws no folder chips when the chapter has no folders", () => {
