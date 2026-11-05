@@ -71,13 +71,27 @@ import {
  * draft up, and so does a successful create. The same rule s20 and s21 follow
  * (`spec/ui/mobile/screens.md`).
  *
+ * The due date is held as the chip it was picked from, not as a date, so a
+ * draft kept overnight still means what its chip says: "Today" is the day the
+ * sheet is open, not the day it was typed (`at` moves with the host's clock).
+ * s20 holds its date as days back for the same reason.
+ *
  * ## A create can outlive its visit
  *
  * The close after a create goes through `useSheetVisit`: a member who swipes
  * the sheet away mid-create would otherwise have `dismiss()` called on a
  * closed modal, which leaves the next `present()` drawing nothing (#3405), and
  * a sheet reopened since would be closed under them.
+ *
+ * The draft is read-only while the create runs, and Cancel is held: the
+ * create can't be called back, so a Cancel then would clear a draft that gets
+ * filed anyway. A swipe still closes the sheet and keeps it. A create that
+ * lands clears only what it sent, so nothing typed in a visit reopened since
+ * goes with it.
  */
+
+/** The due chip a new draft starts on. */
+const DEFAULT_DUE_ID = "today";
 
 /** A list has no natural height, so the picker snaps rather than sizing to content. */
 const PICKER_SNAP_POINTS = ["70%"];
@@ -137,7 +151,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
 
     const [title, setTitle] = useState("");
     const [pointsInput, setPointsInput] = useState("");
-    const [dueDate, setDueDate] = useState(() => localIsoDate(at));
+    // The chip's id (`DuePreset.id`), resolved against today's presets below.
+    const [dueId, setDueId] = useState(DEFAULT_DUE_ID);
     // Defaults to the viewer, so the common case needs no picker interaction.
     const [assigneeId, setAssigneeId] = useState<string | null>(null);
     const [titleFocused, setTitleFocused] = useState(false);
@@ -182,6 +197,14 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           ? memberFallbackLabel(effectiveAssigneeId)
           : "Member"));
 
+    // A chip today's presets no longer offer (a kept "Friday" once Friday
+    // has come) falls back to Today: on the Friday that is the day it meant,
+    // and over the weekend the Friday it meant has passed.
+    const duePreset =
+      presets.find((preset) => preset.id === dueId) ?? presets[0];
+    const dueDate = duePreset?.date ?? localIsoDate(at);
+    const pending = createTask.isPending;
+
     const draft = {
       title,
       dueDate,
@@ -190,20 +213,19 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     };
     const body = validateNewTask(draft);
     const pointsInvalid = parsePointReward(pointsInput).kind === "invalid";
-    const canSubmit =
-      body !== null && !createTask.isPending && refusal === null;
+    const canSubmit = body !== null && !pending && refusal === null;
 
-    /** Gives the draft up: Cancel, and a create that saved it. */
+    /** Gives the draft up: Cancel. */
     const reset = useCallback(() => {
       setTitle("");
       setPointsInput("");
-      setDueDate(localIsoDate(at));
+      setDueId(DEFAULT_DUE_ID);
       setAssigneeId(null);
       setSearch("");
       setSubmitFailed(false);
       setRefusal(null);
       setTitleFocused(false);
-    }, [at]);
+    }, []);
 
     /**
      * A swipe or scrim close: only what belongs to the visit goes. The draft
@@ -232,6 +254,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setSubmitFailed(false);
       setRefusal(null);
       const sentFrom = visit();
+      const sent = { title, pointsInput, dueId, assigneeId };
       createTask.mutate(body, {
         onSuccess: () => {
           const wasSelf = body.assignee_id === viewerUserId;
@@ -239,8 +262,19 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           // rules), felt once the task exists.
           successHaptic();
           // The draft was saved, so it goes whichever visit is on screen:
-          // keeping it would invite a duplicate.
-          reset();
+          // keeping it would invite a duplicate. Field by field, and only
+          // where it still holds what was sent: anything else on screen is
+          // the member's next task, not this one.
+          setTitle((current) => (current === sent.title ? "" : current));
+          setPointsInput((current) =>
+            current === sent.pointsInput ? "" : current,
+          );
+          setDueId((current) =>
+            current === sent.dueId ? DEFAULT_DUE_ID : current,
+          );
+          setAssigneeId((current) =>
+            current === sent.assigneeId ? null : current,
+          );
           // A sheet closed and reopened since is the member's new visit, and
           // the create doesn't close it under them.
           if (isSameVisit(sentFrom)) dismiss();
@@ -269,7 +303,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       canSubmit,
       createTask,
       viewerUserId,
-      reset,
+      title,
+      pointsInput,
+      dueId,
+      assigneeId,
       dismiss,
       visit,
       isSameVisit,
@@ -298,7 +335,11 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         onDismiss={closed}
       >
         <BottomSheetView style={styles.body}>
-          <SheetHeader title="New task" onCancel={cancel} />
+          <SheetHeader
+            title="New task"
+            onCancel={cancel}
+            cancelDisabled={pending}
+          />
 
           {/* The focus ring is the wrapper, not the field — see the header. It
               tracks real focus rather than "has text", which would leave the
@@ -309,6 +350,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               onChangeText={setTitle}
               onFocus={() => setTitleFocused(true)}
               onBlur={() => setTitleFocused(false)}
+              // Read-only while the create runs: it sent what was typed when
+              // Create was pressed, and its success clears that.
+              editable={!pending}
               placeholder="Collect ride-share forms"
               placeholderTextColor={tokens.color.text.muted}
               accessibilityLabel="Task title"
@@ -333,6 +377,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               <BottomSheetTextInput
                 value={pointsInput}
                 onChangeText={setPointsInput}
+                editable={!pending}
                 placeholder="pts"
                 placeholderTextColor={tokens.color.text.muted}
                 accessibilityLabel="Point reward"
@@ -344,11 +389,13 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
 
           <FilterChips
             chips={presets.map((preset) => ({
-              value: preset.date,
+              value: preset.id,
               label: preset.label,
             }))}
-            selected={dueDate}
-            onSelect={(value) => value && setDueDate(value)}
+            selected={duePreset?.id ?? null}
+            onSelect={(value) => {
+              if (value !== null && !pending) setDueId(value);
+            }}
             accessibilityLabel="Due date"
           />
 
@@ -356,6 +403,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             accessibilityRole="button"
             accessibilityLabel={`Assignee: ${assigneeLabel}`}
             accessibilityHint="Choose who this task is for."
+            accessibilityState={{ disabled: pending }}
+            disabled={pending}
             onPress={() => {
               setSearch("");
               pickerRef.current?.present();

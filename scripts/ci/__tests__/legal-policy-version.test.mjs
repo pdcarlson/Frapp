@@ -32,6 +32,9 @@
 //   2026-11-04 (#3395), so it moved only the Privacy pin.
 //   Naming the document-photo upload as a photo-library use was ruled
 //   non-material on 2026-11-04 too (#3399), so it moved only the Privacy pin.
+//   Naming the service-hour proof photo (s20, 2026-11-05) moved only the
+//   Privacy pin as well, on that precedent, but the owner hasn't ruled on it
+//   yet: if it is material, the date and the constant move instead.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
 // `#domain/constants/legal` (`'test-version'`, `'current-version'`) can't
@@ -70,7 +73,7 @@ export const PINNED_PAGES = {
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",
     lastUpdated: "September 2026",
-    fingerprint: "3dc11b28b3ee095a",
+    fingerprint: "52c6da839f70a037",
   },
   ferpa: {
     path: "apps/landing/app/ferpa/page.tsx",

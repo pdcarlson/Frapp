@@ -39,6 +39,7 @@ import {
 import {
   RECEIPT_REQUIRED_COPY,
   pickProofPhoto,
+  proofPathRefusedOf,
   receiptRequiredOf,
   uploadProofPhoto,
 } from "@/lib/more/service-proof";
@@ -78,19 +79,30 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * A swipe or a tap on the scrim closes the sheet and keeps the entry for the
  * next visit; Cancel gives it up, and so does a save. The rule s19 and s21
- * follow (`spec/ui/mobile/screens.md`).
+ * follow (`spec/ui/mobile/screens.md`). Cancel is held while a save runs:
+ * the save can't be called back, so a Cancel then would clear an entry that
+ * gets filed anyway, or one whose failure no visit hears of. A swipe still
+ * closes the sheet mid-save and keeps the entry.
  *
  * ## The photo goes up on Submit
  *
  * Picking only reads the photo on the device. Submit mints the signed URL,
  * PUTs the bytes, then posts the entry with their `proof_path`, as web's log
  * dialog does and as s21 uploads on Upload: a member who removes the photo,
- * picks another or cancels leaves no object in the bucket, and nothing
- * collects one that no entry claims (#2197). Uploading at pick time would make
- * Submit faster by one PUT and leave an orphan behind every change of mind.
- * The row shows "Uploading…" while the PUT runs. Once the bytes are up they
- * stay claimed for this photo, so a create that fails after them retries with
- * the same path instead of a second copy.
+ * picks another or cancels before submitting leaves no object in the bucket,
+ * and nothing collects one that no entry claims (#2197). Uploading at pick
+ * time would make Submit faster by one PUT and leave an orphan behind every
+ * change of mind. The row shows "Uploading…" while the PUT runs.
+ *
+ * Once the bytes are up they stay claimed for this photo, so a create that
+ * fails after them retries with the same path instead of a second copy. That
+ * is also the one way an orphan is still left: bytes uploaded for a create
+ * that failed, then given up (Remove, another photo, Cancel), stay in the
+ * bucket until an orphan sweep exists (#2197). The held path is dropped when
+ * the API turns it down (`proofPathRefusedOf`), so the next Submit uploads
+ * afresh rather than resending a path that can't win; the host also mounts a
+ * new sheet per chapter, because the path is minted under the chapter it was
+ * sent from.
  *
  * ## Proof the chapter requires
  *
@@ -166,6 +178,10 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
     // Set the moment Submit sends, before `isPending` reaches a render: two
     // taps handled in one batch both see the same render's `canSubmit`.
     const sending = useRef(false);
+    // Bumped each time the entry is given up, so an upload that finishes
+    // after a Cancel (one handled before the held Cancel reached a render)
+    // doesn't go on to file it.
+    const entryGeneration = useRef(0);
 
     /**
      * The attached photo, and its storage path once its bytes are up. The
@@ -201,6 +217,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
 
     /** Gives the entry up: Cancel, and a save that filed it. */
     const clearEntry = () => {
+      entryGeneration.current += 1;
       setDescription("");
       setMinutes(DEFAULT_DURATION_MINUTES);
       setDaysAgo(0);
@@ -263,13 +280,14 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
         send(proofPath ? { ...entry, proof_path: proofPath } : entry, sentFrom);
         return;
       }
-      void uploadThenSend(proof.image, entry, sentFrom);
+      void uploadThenSend(proof.image, entry, sentFrom, entryGeneration.current);
     };
 
     const uploadThenSend = async (
       image: PickedImage,
       entry: { date: string; duration_minutes: number; description: string },
       sentFrom: number,
+      generation: number,
     ) => {
       setUploading(true);
       const put = await uploadProofPhoto(image, (body) =>
@@ -284,8 +302,12 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
         else setProofError(put.reason);
         return;
       }
-      // Held against the photo it was sent for, so a Cancel while the PUT
-      // ran stays cancelled. The entry is still sent: Submit was pressed.
+      // The entry was given up while the PUT ran: nothing is filed. The
+      // bytes stay in the bucket unclaimed (#2197); see the header.
+      if (entryGeneration.current !== generation) {
+        sending.current = false;
+        return;
+      }
       setProof((current) =>
         current?.image === image
           ? { image, storagePath: put.storagePath }
@@ -316,6 +338,18 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
         },
         onError: (error) => {
           sending.current = false;
+          // The API turned the held path down (another chapter's, or no
+          // object behind it): drop it, so the next Submit uploads the photo
+          // again instead of resending a path that can't win. Whatever visit
+          // is on screen, since the path is wrong in all of them.
+          const sentPath = body.proof_path;
+          if (sentPath && proofPathRefusedOf(error)) {
+            setProof((current) =>
+              current?.storagePath === sentPath
+                ? { image: current.image }
+                : current,
+            );
+          }
           // A visit that has ended doesn't latch its outcome into the next
           // one: the member would reopen to a refusal nothing on screen
           // caused, with Submit already withdrawn.
@@ -363,7 +397,11 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
         onDismiss={closed}
       >
         <BottomSheetView style={styles.body}>
-          <SheetHeader title="Log service hours" onCancel={cancel} />
+          <SheetHeader
+            title="Log service hours"
+            onCancel={cancel}
+            cancelDisabled={pending}
+          />
 
           {/* One adjustable control to a screen reader, which swipes it up
               and down; the two buttons stay for touch. */}

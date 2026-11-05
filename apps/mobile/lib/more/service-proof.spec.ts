@@ -1,6 +1,7 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
 import {
+  SERVICE_RECEIPT_REQUIRED_CODE,
   SERVICE_RECEIPT_REQUIRED_MESSAGE,
   moduleDisabledMessage,
 } from "@repo/validation";
@@ -10,6 +11,7 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import {
   PROOF_SIZE_REFUSAL,
   pickProofPhoto,
+  proofPathRefusedOf,
   receiptRequiredOf,
   uploadProofPhoto,
 } from "./service-proof";
@@ -18,8 +20,8 @@ import {
  * s20's photo proof. What these pin: the pick sends nothing, the upload mints
  * on the proof route's body and PUTs the bytes, a gate only an officer can
  * lift comes back `final` in the member's words while every other failure
- * stays retryable, and the receipt-policy 400 is recognised by its exact
- * message and nothing looser.
+ * stays retryable, and the receipt-policy 400 is recognised by its code, not
+ * by its words.
  */
 
 const picker = vi.mocked(ImagePicker);
@@ -154,20 +156,62 @@ describe("uploadProofPhoto", () => {
 });
 
 describe("receiptRequiredOf", () => {
-  it("recognises the receipt policy's 400", () => {
+  /** What `AllExceptionsFilter` sends for the receipt policy's throw. */
+  const receiptMissing = (statusCode: number, code?: string) => ({
+    ...wireError(statusCode, SERVICE_RECEIPT_REQUIRED_MESSAGE),
+    ...(code === undefined ? {} : { code }),
+  });
+
+  it("recognises the receipt policy's 400 by its code", () => {
+    // The literal, not the constant: an installed build keeps matching what
+    // it shipped with, so renaming the code must fail here first.
     expect(
-      receiptRequiredOf(wireError(400, SERVICE_RECEIPT_REQUIRED_MESSAGE)),
+      receiptRequiredOf(receiptMissing(400, "service_entry.receipt_required")),
+    ).toBe(true);
+    expect(SERVICE_RECEIPT_REQUIRED_CODE).toBe("service_entry.receipt_required");
+  });
+
+  it("recognises it whatever the message says", () => {
+    expect(
+      receiptRequiredOf({
+        ...receiptMissing(400, SERVICE_RECEIPT_REQUIRED_CODE),
+        message: "Attach a receipt to log these hours.",
+      }),
     ).toBe(true);
   });
 
   it.each([
     ["another 400", wireError(400, "description is required")],
+    ["the same words on a 400 without the code", receiptMissing(400)],
     [
-      "the same words on another status",
-      wireError(403, SERVICE_RECEIPT_REQUIRED_MESSAGE),
+      "the code on another status",
+      receiptMissing(403, SERVICE_RECEIPT_REQUIRED_CODE),
     ],
     ["a network error", new Error("Network request failed")],
   ])("ignores %s", (_label, error) => {
     expect(receiptRequiredOf(error)).toBe(false);
+  });
+});
+
+describe("proofPathRefusedOf", () => {
+  it.each([
+    "proof_path must be a storage path within the chapter service-proof folder",
+    "proof_path does not reference an uploaded proof file",
+  ])("reads the create's 400 %j as the path refused", (message) => {
+    expect(proofPathRefusedOf(wireError(400, message))).toBe(true);
+  });
+
+  it.each([
+    [
+      "the receipt policy's 400",
+      {
+        ...wireError(400, SERVICE_RECEIPT_REQUIRED_MESSAGE),
+        code: SERVICE_RECEIPT_REQUIRED_CODE,
+      },
+    ],
+    ["a server failure", wireError(500, "Internal server error")],
+    ["a network error", new Error("Network request failed")],
+  ])("leaves the path alone on %s", (_label, error) => {
+    expect(proofPathRefusedOf(error)).toBe(false);
   });
 });

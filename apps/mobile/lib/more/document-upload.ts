@@ -3,17 +3,18 @@ import { MAX_UPLOAD_LABEL } from "@repo/validation";
 import {
   pickImage,
   uploadFailureReason,
-  uploadPickedImage,
   type ImagePickResult,
   type PickedImage,
   type RequestSignedUpload,
   type UploadedImage,
 } from "@/lib/chat/attachment-upload";
-import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import {
-  SUBSCRIPTION_REFUSAL_COPY,
-  subscriptionRefusalOf,
-} from "@/lib/subscription-refusal";
+  gateRefusalOf,
+  uploadPickedImageGated,
+  type GateCopy,
+} from "@/lib/chat/gated-upload";
+import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
+import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 
 /**
  * s21: put a photo into the chapter library from the phone (#3399).
@@ -115,16 +116,14 @@ export function documentTitle(typed: string, image: PickedImage): string {
 }
 
 /**
- * The member's sentence for a gate refusal, or `null` for any other failure.
- * Both routes sit under the documents controller's
- * `@RequireModule('documents')` and, with no `@FreeTier`, under the
- * subscription gate.
+ * The member's sentences for a gate refusal. Both routes sit under the
+ * documents controller's `@RequireModule('documents')` and, with no
+ * `@FreeTier`, under the subscription gate.
  */
-function gateRefusal(error: unknown): string | null {
-  if (subscriptionRefusalOf(error)) return SUBSCRIPTION_REFUSAL_COPY.document;
-  if (moduleRefusalOf(error)) return MODULE_REFUSAL_COPY.document;
-  return null;
-}
+const DOCUMENT_GATE_COPY: GateCopy = {
+  subscription: SUBSCRIPTION_REFUSAL_COPY.document,
+  module: MODULE_REFUSAL_COPY.document,
+};
 
 /**
  * Upload a picked photo and file it, or, given `sent` from a refusal whose
@@ -143,22 +142,12 @@ export async function uploadDocumentPhoto(
   const folder = retry ? retry.folder : draft.folder;
   let stored = retry?.uploaded;
   if (!stored) {
-    // `uploadPickedImage` turns a refused mint into a sentence, so the error
-    // itself is caught on its way out to tell a gate from a failure.
-    let gated: string | null = null;
-    const put = await uploadPickedImage(image, async (body) => {
-      try {
-        return await mutations.requestUploadUrl(body);
-      } catch (error) {
-        gated = gateRefusal(error);
-        throw error;
-      }
-    });
-    if (put.status !== "uploaded") {
-      return gated !== null
-        ? { status: "refused", reason: gated, final: true }
-        : { status: "refused", reason: put.reason, final: false };
-    }
+    const put = await uploadPickedImageGated(
+      image,
+      mutations.requestUploadUrl,
+      DOCUMENT_GATE_COPY,
+    );
+    if (put.status !== "uploaded") return put;
     stored = put.image;
   }
 
@@ -172,7 +161,7 @@ export async function uploadDocumentPhoto(
     });
     return { status: "uploaded", title };
   } catch (error) {
-    const reason = gateRefusal(error);
+    const reason = gateRefusalOf(error, DOCUMENT_GATE_COPY);
     return {
       status: "refused",
       reason: reason ?? uploadFailureReason(error),

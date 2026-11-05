@@ -308,7 +308,7 @@ Officers get what they need on their feet: take attendance at the door with a QR
 > | post to the right channel | **partly ships — kept, reworded** | An officer holding `announcements:post` gets a live composer in the read-only `#announcements` channel, and that send fans an URGENT push chapter-wide: `chat-thread.tsx` `canSend={canSend && channelCanPost}` off the server's `can_post`. But **creating or organising channels is web-only** (`useCreateChannel`'s only consumer is `apps/web/components/chat-admin/`), so "the right channel" overclaimed. Now "post an announcement every member gets" |
 > | invite members with a link | **partial — dropped** | `useCreateInvite` has exactly one consumer in `apps/mobile`, the one-time founding wizard (`app/(auth)/create-chapter.tsx`), reachable only while the account belongs to **zero** chapters. An officer of an existing chapter has no invite affordance, the role is hardcoded `Member`, and the link points at the web app. Invites are already covered honestly by the invite-only paragraph below |
 > | assign roles and permissions | **web only** | `components/directory/member-detail-sheet.tsx` renders a read-only `Role` value row; no mutation is imported. The editor is `apps/web/components/roles/` |
-> | track service and study hours | **web only** | No approve control on iOS — Service hours' only mutation is `useCreateServiceEntry`, in its log sheet (`components/service-hours/log-hours-sheet.tsx`), and `approve_service_entry`'s single non-test caller is reached from the web page. Officer-wide *study* tracking exists nowhere: `study.controller.ts`'s list has no admin branch at all |
+> | track service and study hours | **web only** | No approve control on iOS — Service hours' log sheet (`components/service-hours/log-hours-sheet.tsx`) holds its only two mutations, `useCreateServiceEntry` and the proof photo's `useRequestServiceProofUploadUrl`, neither of which approves anything, and `approve_service_entry`'s single non-test caller is reached from the web page. Officer-wide *study* tracking exists nowhere: `study.controller.ts`'s list has no admin branch at all |
 > | see who has paid | **web only** | Both mobile `useInvoices` call sites pass the viewer's id, and `selectInvoiceRows` filters to it. The chapter ledger is `apps/web/components/billing/invoice-list.tsx` |
 >
 > Two in-app strings were fixed in the same pass for the same reason, and a bug behind one of them: the Service hours tile promised review and approval, the invite-failure message sent officers to a directory with no invite affordance, and `GET /v1/service-entries` was read unscoped — which handed a `service:approve` holder the whole chapter's entries under a screen that says "you've logged". `lib/more/service-hours-screen.spec.tsx` and `lib/more/profile-screen.spec.tsx` pin the fix.
@@ -545,10 +545,13 @@ Advertising Data, Browsing History, Search History.
 > row lets a member attach a library photo to a service entry
 > (`lib/more/service-proof.ts`, the same pipeline). It is a *Photos or Videos* item
 > collected for *App Functionality* and linked to the member, so the row's values don't
-> change. Neither the privacy policy's permissions clause
-> (`apps/landing/app/privacy/page.tsx`) nor the iOS purpose string (`app.json`'s
-> `photosPermission`) names it yet: both are owner calls, made before the build that
-> carries it is submitted.
+> change. The privacy policy's permissions clause (`apps/landing/app/privacy/page.tsx`)
+> names it, as #3399's did for documents; the owner hasn't ruled yet whether that edit
+> is material (the #3395 call), so until then it moved only the page's pin. The iOS
+> purpose string (`app.json`'s `photosPermission`) doesn't name it: it can only widen
+> in a store build, and [#3401](https://github.com/pdcarlson/Frapp/issues/3401), which
+> widens it for documents, must name service proof too. Deploy the landing before
+> submitting a binary that carries s20's photo row.
 >
 > ‡ **`Linked: No` on Crash Data and Performance Data is wrong, and this table's own
 > reasoning is what proves it (owner action — console change).** Found 2026-09-21. The

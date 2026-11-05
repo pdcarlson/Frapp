@@ -222,6 +222,14 @@ widen in a store build: #3401 does that with `expo-document-picker`, and the sto
 records with it. The privacy policy is a web page, so it names the new use in the
 same PR (ruled non-material by the owner, 2026-11-04).
 
+*2026-11-05:* s20's photo proof (`lib/more/service-proof.ts`) is the fifth caller,
+through `pickImage` and the PUT half of the same pipeline, attaching a photo to a
+service entry. Like the fourth it needs no native change and ships over the air, and
+`photosPermission` can only widen in a store build, so #3401 must name service proof
+alongside documents. The privacy policy's permissions clause names it in the same
+change; the owner hasn't yet ruled whether that edit is material (the #3395 call), so
+for now it moved only the page's pin.
+
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`
 key at all**. Each of those three is load-bearing:

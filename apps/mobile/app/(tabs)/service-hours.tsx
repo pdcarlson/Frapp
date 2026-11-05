@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
+  useActiveChapterId,
   useCurrentUser,
   useServiceEntries,
   useViewerUserId,
@@ -58,6 +59,7 @@ export default function ServiceHoursScreen() {
   // (`ScreenShell` is a bare ScrollView). The C3 ruling, as dues and tasks
   // already apply it.
   const viewerQuery = useCurrentUser();
+  const chapterId = useActiveChapterId();
   const entriesQuery = useServiceEntries(viewerUserId ?? undefined, undefined, {
     enabled: !!viewerUserId,
   });
@@ -170,7 +172,13 @@ export default function ServiceHoursScreen() {
       <SectionHeader>History</SectionHeader>
       {renderList()}
 
-      <LogHoursSheet ref={sheetRef} now={now} />
+      <LogHoursSheet
+        // A new sheet per chapter: a photo path the sheet holds after a
+        // failed create names a path minted under the chapter it was sent from.
+        key={chapterId ?? "no-chapter"}
+        ref={sheetRef}
+        now={now}
+      />
     </ScreenShell>
   );
 }

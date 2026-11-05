@@ -8,8 +8,7 @@ import { HeaderAddButton } from "./header-add-button";
 
 /**
  * The "+" tile s08 draws for New task, shared with Service hours' Log service
- * hours so the two creation actions look and press the same (finding 34 of
- * the 2026-11 polish audit).
+ * hours so the two creation actions look and press the same.
  */
 
 vi.mock("@/lib/chapter-branding", () => ({

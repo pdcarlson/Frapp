@@ -71,10 +71,18 @@ export function SheetHeader({
   title,
   onCancel,
   cancelLabel = "Cancel",
+  cancelDisabled = false,
 }: {
   title: string;
   onCancel: () => void;
   cancelLabel?: string;
+  /**
+   * Holds Cancel while a save is in flight, on a sheet whose Cancel gives the
+   * draft up: the save can't be called back, so a Cancel then would clear
+   * the draft and file it anyway, or lose it with no word if the save
+   * failed. A swipe still closes such a sheet, keeping the draft.
+   */
+  cancelDisabled?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -86,10 +94,16 @@ export function SheetHeader({
           visual — the #939 ruling. */}
       <Pressable
         accessibilityRole="button"
+        accessibilityState={cancelDisabled ? { disabled: true } : undefined}
+        disabled={cancelDisabled}
         onPress={onCancel}
         hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
       >
-        <Text style={styles.cancel}>{cancelLabel}</Text>
+        <Text
+          style={[styles.cancel, cancelDisabled ? styles.cancelDisabled : null]}
+        >
+          {cancelLabel}
+        </Text>
       </Pressable>
     </View>
   );
@@ -269,6 +283,9 @@ function createStyles(tokens: SignetTokens) {
     cancel: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.muted,
+    },
+    cancelDisabled: {
+      opacity: 0.5,
     },
     primaryButton: {
       marginTop: tokens.spacing.sm,

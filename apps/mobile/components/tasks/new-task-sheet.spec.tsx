@@ -63,6 +63,7 @@ const FAILED = {
 const TRY_AGAIN = "That didn't save. Your task is still here — try again.";
 
 let failure: unknown = REFUSED;
+let createPending = false;
 const mutate = vi.fn(
   (_body: unknown, options: { onError: (error: unknown) => void }) =>
     options.onError(failure),
@@ -72,7 +73,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useViewerUserId: () => "user-1",
   useChapterRoster: () => ({ data: [] }),
-  useCreateTask: () => ({ mutate, isPending: false }),
+  useCreateTask: () => ({ mutate, isPending: createPending }),
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -116,6 +117,7 @@ function submitTask(tree: ReactTestRenderer) {
 beforeEach(() => {
   mutate.mockClear();
   successHaptic.mockReset();
+  createPending = false;
 });
 
 describe("New task on a subscription refusal (#2297)", () => {
@@ -238,22 +240,24 @@ describe("New task after a gate refusal", () => {
 describe("New task draft across visits", () => {
   /** Stands in for gorhom's modal instance, so a spec can see `dismiss()`. */
   const dismiss = vi.fn();
+  const ref = React.createRef<never>();
+  const sheetAt = (now: Date) => (
+    <FrappThemeProvider>
+      <NewTaskSheet ref={ref} now={now} />
+    </FrappThemeProvider>
+  );
 
-  function renderWithRef(): ReactTestRenderer {
-    const ref = React.createRef<never>();
+  function renderWithRef(
+    now = new Date("2026-09-27T12:00:00Z"),
+  ): ReactTestRenderer {
     let tree!: ReactTestRenderer;
     act(() => {
-      tree = create(
-        <FrappThemeProvider>
-          <NewTaskSheet ref={ref} now={new Date("2026-09-27T12:00:00Z")} />
-        </FrappThemeProvider>,
-        {
-          createNodeMock: (element) =>
-            (element.type as unknown) === "BottomSheetModal"
-              ? { dismiss, present: vi.fn() }
-              : null,
-        },
-      );
+      tree = create(sheetAt(now), {
+        createNodeMock: (element) =>
+          (element.type as unknown) === "BottomSheetModal"
+            ? { dismiss, present: vi.fn() }
+            : null,
+      });
     });
     // What gorhom reports as `present()` starts bringing the sheet up.
     act(() => sheetModal(tree).props.onAnimate(-1, 0));
@@ -355,6 +359,106 @@ describe("New task draft across visits", () => {
 
     expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.task);
     expect(createButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  const titleField = (tree: ReactTestRenderer) =>
+    tree.root.find((node) => node.props.accessibilityLabel === "Task title");
+  const pointsField = (tree: ReactTestRenderer) =>
+    tree.root.find((node) => node.props.accessibilityLabel === "Point reward");
+  const assigneeRow = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        /^Assignee: /.test(String(node.props.accessibilityLabel)),
+    );
+  const cancelButton = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) && drawnText(node) === "Cancel",
+    );
+  const chip = (tree: ReactTestRenderer, label: string) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) && drawnText(node) === label,
+    );
+  const sentBody = () =>
+    mutate.mock.calls.at(-1)?.[0] as { title: string; due_date: string };
+
+  it("holds the draft and Cancel still while a create is in flight", () => {
+    mutate.mockImplementationOnce(() => {});
+    const tree = renderWithRef();
+    typeTitle(tree);
+    act(() => createButton(tree).props.onPress());
+    createPending = true;
+    act(() => tree.update(sheetAt(new Date("2026-09-27T12:00:00Z"))));
+
+    expect(titleField(tree).props.editable).toBe(false);
+    expect(pointsField(tree).props.editable).toBe(false);
+    expect(assigneeRow(tree).props.disabled).toBe(true);
+    expect(cancelButton(tree).props.disabled).toBe(true);
+    act(() => chip(tree, "Tomorrow").props.onPress());
+    expect(chip(tree, "Today").props.accessibilityState).toEqual({
+      selected: true,
+    });
+
+    createPending = false;
+    act(() => tree.update(sheetAt(new Date("2026-09-27T12:00:00Z"))));
+    expect(titleField(tree).props.editable).toBe(true);
+    expect(cancelButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("clears only what it sent when a create lands in a reopened visit", () => {
+    let succeed = () => {};
+    mutate.mockImplementationOnce((_body, options) => {
+      succeed = (options as unknown as { onSuccess: () => void }).onSuccess;
+    });
+    const tree = renderWithRef();
+    typeTitle(tree);
+    act(() => createButton(tree).props.onPress());
+    act(() => sheetModal(tree).props.onDismiss());
+    act(() => sheetModal(tree).props.onAnimate(-1, 0)); // reopened
+    // The member's next task, typed into the reopened sheet.
+    act(() => titleField(tree).props.onChangeText("Book the venue"));
+    act(() => succeed());
+
+    expect(titleValue(tree)).toBe("Book the venue");
+    act(() => tree.unmount());
+  });
+
+  // 2026-09-28 is a Monday.
+  const monday = new Date(2026, 8, 28, 12);
+  const tuesday = new Date(2026, 8, 29, 12);
+
+  it("keeps a kept draft's Today meaning today", () => {
+    const tree = renderWithRef(monday);
+    typeTitle(tree);
+    act(() => sheetModal(tree).props.onDismiss());
+
+    // The host re-reads its clock the next day and reopens the sheet.
+    act(() => tree.update(sheetAt(tuesday)));
+    act(() => sheetModal(tree).props.onAnimate(-1, 0));
+
+    expect(chip(tree, "Today").props.accessibilityState).toEqual({
+      selected: true,
+    });
+    act(() => createButton(tree).props.onPress());
+    expect(sentBody().due_date).toBe("2026-09-29");
+    act(() => tree.unmount());
+  });
+
+  it("keeps a kept draft's other chip relative too", () => {
+    const tree = renderWithRef(monday);
+    typeTitle(tree);
+    act(() => chip(tree, "Tomorrow").props.onPress());
+    act(() => sheetModal(tree).props.onDismiss());
+
+    act(() => tree.update(sheetAt(tuesday)));
+    act(() => sheetModal(tree).props.onAnimate(-1, 0));
+
+    act(() => createButton(tree).props.onPress());
+    expect(sentBody().due_date).toBe("2026-09-30");
     act(() => tree.unmount());
   });
 });

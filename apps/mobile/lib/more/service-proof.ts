@@ -1,20 +1,20 @@
-import { serverMessageOf, statusOf } from "@repo/api-sdk";
+import { codeOf, statusOf } from "@repo/api-sdk";
 import {
   MAX_UPLOAD_LABEL,
-  SERVICE_RECEIPT_REQUIRED_MESSAGE,
+  SERVICE_RECEIPT_REQUIRED_CODE,
 } from "@repo/validation";
 import {
   pickImage,
-  uploadPickedImage,
   type ImagePickResult,
   type PickedImage,
   type RequestSignedUpload,
 } from "@/lib/chat/attachment-upload";
-import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import {
-  SUBSCRIPTION_REFUSAL_COPY,
-  subscriptionRefusalOf,
-} from "@/lib/subscription-refusal";
+  uploadPickedImageGated,
+  type GateCopy,
+} from "@/lib/chat/gated-upload";
+import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
+import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 
 /**
  * s20's photo proof: the "Add photo proof" row on the Log service hours sheet
@@ -26,7 +26,8 @@ import {
  * returned `storage_path` as the create's `proof_path`. The pick and the PUT
  * are `lib/chat/attachment-upload.ts`'s, the pipeline chat, the profile photo,
  * the chapter logo and s21's documents already share, so a fix there reaches
- * this too. Gated on the `proof` upload kind, the list the API checks.
+ * this too, and a refused mint is told apart by `lib/chat/gated-upload.ts`,
+ * as s21's is. Gated on the `proof` upload kind, the list the API checks.
  *
  * Photos only, like s21: a PDF needs `expo-document-picker`, a native module
  * no store build carries yet.
@@ -70,50 +71,57 @@ export type ProofUploadResult =
    */
   | { status: "refused"; reason: string; final: boolean };
 
-/** The member's sentence for a gate refusal, or `null` for any other failure. */
-function gateRefusal(error: unknown): string | null {
-  if (subscriptionRefusalOf(error))
-    return SUBSCRIPTION_REFUSAL_COPY.serviceHours;
-  if (moduleRefusalOf(error)) return MODULE_REFUSAL_COPY.serviceHours;
-  return null;
-}
+/**
+ * The member's sentences for a gate refusal: the mint route sits under the
+ * same `@RequireModule('hours')` and subscription gate as the create.
+ */
+const PROOF_GATE_COPY: GateCopy = {
+  subscription: SUBSCRIPTION_REFUSAL_COPY.serviceHours,
+  module: MODULE_REFUSAL_COPY.serviceHours,
+};
 
 /** Mint a signed URL and PUT the picked photo to it. Never rejects. */
 export async function uploadProofPhoto(
   image: PickedImage,
   requestUploadUrl: RequestSignedUpload,
 ): Promise<ProofUploadResult> {
-  // `uploadPickedImage` turns a refused mint into a sentence, so the error
-  // itself is caught on its way out to tell a gate from a failure.
-  let gated: string | null = null;
-  const put = await uploadPickedImage(image, async (body) => {
-    try {
-      return await requestUploadUrl(body);
-    } catch (error) {
-      gated = gateRefusal(error);
-      throw error;
-    }
-  });
-  if (put.status === "uploaded") {
-    return { status: "uploaded", storagePath: put.image.storagePath };
-  }
-  return gated !== null
-    ? { status: "refused", reason: gated, final: true }
-    : { status: "refused", reason: put.reason, final: false };
+  const put = await uploadPickedImageGated(
+    image,
+    requestUploadUrl,
+    PROOF_GATE_COPY,
+  );
+  return put.status === "uploaded"
+    ? { status: "uploaded", storagePath: put.image.storagePath }
+    : put;
 }
 
 /**
  * Was this create refused because the chapter requires proof?
  *
- * The API says so with a 400 whose message is
- * `SERVICE_RECEIPT_REQUIRED_MESSAGE` and no `code`, so the message is the
- * only stable field; the constant is shared with the service that throws it.
- * A member can't read the `wf_hours_receipt` workflow beforehand: the chapter
- * config route needs `chapter-config:view`.
+ * The API says so with a 400 carrying `SERVICE_RECEIPT_REQUIRED_CODE`. The
+ * code, never the message: this build is matched against whatever the API
+ * sends for as long as it stays installed, and the message is English copy
+ * that may be reworded. A member can't read the `wf_hours_receipt` workflow
+ * beforehand: the chapter config route needs `chapter-config:view`.
  */
 export function receiptRequiredOf(error: unknown): boolean {
   return (
-    statusOf(error) === 400 &&
-    serverMessageOf(error) === SERVICE_RECEIPT_REQUIRED_MESSAGE
+    statusOf(error) === 400 && codeOf(error) === SERVICE_RECEIPT_REQUIRED_CODE
   );
+}
+
+/**
+ * Was this create, sent with a `proof_path`, refused over that path?
+ *
+ * Any 400 but the receipt policy's. The sheet's own checks keep the other
+ * fields inside what the API accepts, so a 400 to a create carrying proof is
+ * `ServiceEntryService.assertValidProofPath` turning the path down: minted
+ * under another chapter, or naming no object in the bucket. Retrying with the
+ * same path can never win, so the sheet drops it and the next Submit uploads
+ * the photo again. Read by status, not by the API's sentences, which carry no
+ * code and may be reworded; at worst a 400 for some other reason costs one
+ * extra upload.
+ */
+export function proofPathRefusedOf(error: unknown): boolean {
+  return statusOf(error) === 400 && !receiptRequiredOf(error);
 }

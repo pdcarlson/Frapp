@@ -166,14 +166,16 @@ export default function TasksScreen() {
 
       inFlight.current.add(row.id);
       setPendingId(row.id);
-      // The confirming tap (`spec/ui/mobile/README.md` § Native-feel rules),
-      // felt as the row is marked done, because the write is optimistic. Only
-      // a tap that completes the task: no other rung earns it.
-      if (sequence[sequence.length - 1] === "COMPLETED") successHaptic();
       try {
         for (const status of sequence) {
           await updateStatus.mutateAsync({ id: row.id, body: { status } });
         }
+        // The confirming action (`spec/ui/mobile/README.md` § Native-feel
+        // rules), felt once the server holds the task done: a TODO row
+        // writes two rungs, the first only draws it in progress, and a gate
+        // can refuse either. Only a sequence that completes the task earns
+        // it.
+        if (sequence[sequence.length - 1] === "COMPLETED") successHaptic();
       } catch (error) {
         // The hook has already reverted its own write and invalidated, so the
         // row redraws at whatever the server actually holds. A gate refusal

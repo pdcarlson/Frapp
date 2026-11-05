@@ -9,6 +9,7 @@ import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import {
+  SERVICE_RECEIPT_REQUIRED_CODE,
   SERVICE_RECEIPT_REQUIRED_MESSAGE,
   moduleDisabledMessage,
 } from "@repo/validation";
@@ -89,6 +90,7 @@ const mutate = vi.fn(failNow);
 let isPending = false;
 
 let viewerUserId: string | null = "user-1";
+let chapterId: string | null = "chapter-a";
 let entries: unknown[] = [];
 const useServiceEntries = vi.fn<(...args: unknown[]) => unknown>(() => ({
   data: entries,
@@ -100,6 +102,7 @@ const useServiceEntries = vi.fn<(...args: unknown[]) => unknown>(() => ({
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useViewerUserId: () => viewerUserId,
+  useActiveChapterId: () => chapterId,
   useCurrentUser: () => ({ isError: false }),
   useServiceEntries: (...args: unknown[]) => useServiceEntries(...args),
   useCreateServiceEntry: () => ({ mutate, isPending }),
@@ -215,7 +218,19 @@ beforeEach(() => {
   entries = [];
   writeBlockedReason = null;
   viewerUserId = "user-1";
+  chapterId = "chapter-a";
 });
+
+/** Re-renders the screen, as a hook's new value would. */
+function rerender(tree: ReactTestRenderer) {
+  act(() =>
+    tree.update(
+      <FrappThemeProvider>
+        <ServiceHoursScreen />
+      </FrappThemeProvider>,
+    ),
+  );
+}
 
 describe("Service hours on a subscription refusal (#2410)", () => {
 
@@ -394,8 +409,8 @@ describe("Service hours back row (#3022)", () => {
 });
 
 /**
- * s20 on the shared sheet chrome, with the board's stepper (finding 26 of the
- * 2026-11 polish audit). The duration is never typed, so Android's full
+ * s20 on the shared sheet chrome, with the board's stepper. The duration is
+ * never typed, so Android's full
  * keyboard never opens for it, and the date can be a recent day rather than
  * always today.
  */
@@ -645,6 +660,30 @@ describe("Log service hours sheet", () => {
     act(() => tree.unmount());
   });
 
+  it("holds Cancel while a save is in flight, and a swipe still keeps the entry", () => {
+    // The save can't be called back: a Cancel then would clear an entry that
+    // gets filed anyway, or one whose failure no visit hears of.
+    mutate.mockImplementation(() => {});
+    const tree = render();
+    expect(cancelButton(tree).props.disabled).toBe(false);
+    submitEntry(tree);
+    isPending = true;
+    rerender(tree);
+
+    expect(cancelButton(tree).props.disabled).toBe(true);
+    expect(cancelButton(tree).props.accessibilityState).toEqual({
+      disabled: true,
+    });
+
+    act(() => modal(tree).props.onDismiss());
+    act(() => modal(tree).props.onAnimate(-1, 0)); // reopened
+    expect(descriptionField(tree).props.value).toBe("Food bank");
+    isPending = false;
+    rerender(tree);
+    expect(cancelButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
   it("sends one entry however often Submit is pressed mid-save", () => {
     mutate.mockImplementation(() => {});
     const tree = render();
@@ -659,8 +698,7 @@ describe("Log service hours sheet", () => {
 });
 
 /**
- * Drawn like Dues and Study, with no narrating meta (finding 33 of the 2026-11
- * polish audit).
+ * Drawn like Dues and Study, with no narrating meta.
  */
 describe("Service hours summary and history", () => {
   const entry = (overrides: Record<string, unknown>) => ({
@@ -691,6 +729,20 @@ describe("Service hours summary and history", () => {
     entries = [entry({})];
     const tree = render();
     expect(screenText(tree)).not.toMatch(/pending|review/i);
+    act(() => tree.unmount());
+  });
+
+  it("shows each title whole rather than clamped", () => {
+    // The row can't be opened, so it is the only place to read a rejected
+    // entry's whole description.
+    const long = "Food bank shift. ".repeat(40).trim();
+    entries = [entry({ description: long })];
+    const tree = render();
+    const title = tree.root
+      .findAllByType("Text" as never)
+      .find((node) => node.props.children === long);
+    expect(title).toBeDefined();
+    expect(title?.props.numberOfLines).toBeUndefined();
     act(() => tree.unmount());
   });
 
@@ -728,8 +780,18 @@ describe("Log service hours photo proof", () => {
   const RECEIPT_MISSING = {
     statusCode: 400,
     error: "Bad Request",
+    code: SERVICE_RECEIPT_REQUIRED_CODE,
     message: SERVICE_RECEIPT_REQUIRED_MESSAGE,
     requestId: "req_receipt",
+  };
+
+  /** What `assertValidProofPath` throws for a path from another chapter. */
+  const PATH_REFUSED = {
+    statusCode: 400,
+    error: "Bad Request",
+    message:
+      "proof_path must be a storage path within the chapter service-proof folder",
+    requestId: "req_path",
   };
 
   const sentBody = () => mutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
@@ -909,6 +971,146 @@ describe("Log service hours photo proof", () => {
 
     act(() => pressable(tree, "Cancel").props.onPress());
     expect(screenText(tree)).not.toContain("receipt.jpg");
+    act(() => tree.unmount());
+  });
+
+  it("reads the same words without the code as an ordinary failure", () => {
+    // The code is the contract: matching the English sentence would break
+    // every installed build the day it is reworded.
+    failure = { ...RECEIPT_MISSING, code: undefined };
+    const tree = render();
+    submitEntry(tree);
+
+    expect(screenText(tree)).toContain(TRY_AGAIN);
+    expect(screenText(tree)).not.toContain(RECEIPT_REQUIRED_COPY);
+    expect(addRow(tree).props.accessibilityLabel).toBe(
+      "Add photo proof, optional",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("asks for proof for one visit only", () => {
+    // An officer may have turned the workflow off by the next one.
+    failure = RECEIPT_MISSING;
+    const tree = render();
+    submitEntry(tree);
+    expect(submitButton(tree).props.disabled).toBe(true);
+
+    act(() => modal(tree).props.onDismiss());
+    act(() => modal(tree).props.onAnimate(-1, 0)); // reopened
+
+    expect(screenText(tree)).not.toContain(RECEIPT_REQUIRED_COPY);
+    expect(addRow(tree).props.accessibilityLabel).toBe(
+      "Add photo proof, optional",
+    );
+    expect(submitButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it.each([
+    [
+      "a gate refusal",
+      {
+        status: "refused",
+        reason: SUBSCRIPTION_REFUSAL_COPY.serviceHours,
+        final: true,
+      },
+    ],
+    [
+      "a failed upload",
+      {
+        status: "refused",
+        reason: "Couldn't upload that photo. Try again in a moment.",
+        final: false,
+      },
+    ],
+  ])(
+    "doesn't carry %s that lands after the sheet closed into the next visit",
+    async (_label, result) => {
+      let settle: (value: unknown) => void = () => {};
+      uploadProofPhoto.mockImplementationOnce(
+        () => new Promise((resolve) => (settle = resolve)),
+      );
+      const tree = render();
+      fill(tree);
+      await attach(tree);
+      act(() => submitButton(tree).props.onPress());
+      act(() => modal(tree).props.onDismiss());
+      act(() => modal(tree).props.onAnimate(-1, 0)); // reopened
+      await act(async () => settle(result));
+
+      expect(screenText(tree)).not.toContain(result.reason);
+      expect(submitButton(tree).props.disabled).toBe(false);
+      act(() => tree.unmount());
+    },
+  );
+
+  it("holds Cancel while the photo uploads", async () => {
+    uploadProofPhoto.mockImplementationOnce(() => new Promise(() => {}));
+    const tree = render();
+    fill(tree);
+    await attach(tree);
+    act(() => submitButton(tree).props.onPress());
+
+    expect(screenText(tree)).toContain("Uploading…");
+    expect(pressable(tree, "Cancel").props.disabled).toBe(true);
+    act(() => tree.unmount());
+  });
+
+  it("files nothing when the entry was given up while the photo uploaded", async () => {
+    // A Cancel handled before the held Cancel reached a render.
+    let finish: (value: unknown) => void = () => {};
+    uploadProofPhoto.mockImplementationOnce(
+      () => new Promise((resolve) => (finish = resolve)),
+    );
+    const tree = render();
+    fill(tree);
+    await attach(tree);
+    const cancel = pressable(tree, "Cancel");
+    act(() => {
+      submitButton(tree).props.onPress();
+      cancel.props.onPress();
+    });
+    await act(async () => finish({ status: "uploaded", storagePath: PATH }));
+
+    expect(mutate).not.toHaveBeenCalled();
+    expect(successHaptic).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("uploads again when the API turns the held path down", async () => {
+    failure = PATH_REFUSED;
+    uploadProofPhoto.mockResolvedValue({ status: "uploaded", storagePath: PATH });
+    const tree = render();
+    fill(tree);
+    await attach(tree);
+    await act(async () => submitButton(tree).props.onPress());
+    expect(screenText(tree)).toContain(TRY_AGAIN);
+    // The photo stays; only its path goes.
+    expect(screenText(tree)).toContain("receipt.jpg");
+
+    await act(async () => submitButton(tree).props.onPress());
+
+    expect(uploadProofPhoto).toHaveBeenCalledTimes(2);
+    expect(mutate).toHaveBeenCalledTimes(2);
+    act(() => tree.unmount());
+  });
+
+  it("starts a new sheet when the member switches chapter", async () => {
+    // A held path is minted under the chapter it was sent from.
+    failure = FAILED;
+    uploadProofPhoto.mockResolvedValue({ status: "uploaded", storagePath: PATH });
+    const tree = render();
+    fill(tree);
+    await attach(tree);
+    await act(async () => submitButton(tree).props.onPress());
+    expect(screenText(tree)).toContain(TRY_AGAIN);
+
+    chapterId = "chapter-b";
+    rerender(tree);
+
+    expect(screenText(tree)).not.toContain("receipt.jpg");
+    expect(screenText(tree)).not.toContain(TRY_AGAIN);
     act(() => tree.unmount());
   });
 });

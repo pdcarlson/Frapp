@@ -2,7 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
 import { AppState } from "react-native";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -241,11 +241,17 @@ describe("Task status toggle on a gate refusal (#2710)", () => {
 
 /**
  * Marking a task done is a confirming action (`spec/ui/mobile/README.md`
- * § Native-feel rules), felt at the tap because the toggle is optimistic.
+ * § Native-feel rules), felt once the writes have landed: a TODO row writes
+ * two rungs, and a gate can refuse either.
  */
 describe("Task status toggle haptic", () => {
+  afterEach(() => {
+    mutateAsync.mockImplementation(async () => {
+      throw failure;
+    });
+  });
+
   it("taps once when a member marks a task done", async () => {
-    failure = FAILED;
     mutateAsync.mockImplementation(async () => undefined as never);
     const tree = render();
     await tapRow(tree);
@@ -253,17 +259,14 @@ describe("Task status toggle haptic", () => {
     expect(mutateAsync).toHaveBeenCalledTimes(2);
     expect(successHaptic).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
-    mutateAsync.mockImplementation(async () => {
-      throw failure;
-    });
   });
 
-  it("taps at the tap, before the writes land", async () => {
-    let release = () => {};
+  it("waits for both rungs to land", async () => {
+    const releases: (() => void)[] = [];
     mutateAsync.mockImplementation(
       () =>
         new Promise<never>((resolve) => {
-          release = () => resolve(undefined as never);
+          releases.push(() => resolve(undefined as never));
         }),
     );
     const tree = render();
@@ -271,14 +274,25 @@ describe("Task status toggle haptic", () => {
       (row(tree).props.onToggle as () => void)();
     });
 
-    expect(successHaptic).toHaveBeenCalledTimes(1);
-    // Both rungs of the TODO ladder.
-    await act(async () => release());
-    await act(async () => release());
+    expect(successHaptic).not.toHaveBeenCalled();
+    // The first rung only draws the row in progress.
+    await act(async () => releases[0]?.());
+    expect(successHaptic).not.toHaveBeenCalled();
+    await act(async () => releases[1]?.());
     expect(successHaptic).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
-    mutateAsync.mockImplementation(async () => {
-      throw failure;
-    });
+  });
+
+  it.each([
+    ["a gate refusal", () => REFUSED],
+    ["an ordinary failure", () => FAILED],
+  ])("stays still when the completion meets %s", async (_label, error) => {
+    failure = error();
+    const tree = render();
+    await tapRow(tree);
+
+    expect(mutateAsync).toHaveBeenCalled();
+    expect(successHaptic).not.toHaveBeenCalled();
+    act(() => tree.unmount());
   });
 });
