@@ -22,10 +22,11 @@ import type { ChatMessage } from "./types";
  * `isCardMessage` reads this list. Web's renderer switch
  * (`apps/web/components/chat/renderers/index.tsx`) is a second statement of it,
  * and `registry.spec.tsx` there fails if the two disagree, which is what keeps
- * a kind from being a card on screen and editable here. Mobile draws
- * `poll`, `event` and `task` as cards today and every other kind as text, but
- * a card's body lives in `payload`, so its `content` is not the member's words
- * to edit whichever way a client happens to draw it.
+ * a kind from being a card on screen and editable here. Mobile draws most
+ * of these as cards too (`cardFor` in
+ * `apps/mobile/components/chat/thread-message-row.tsx`) and the rest as text,
+ * but a card's body lives in `payload`, so its `content` is not the member's
+ * words to edit whichever way a client happens to draw it.
  */
 export const CARD_KINDS: ReadonlySet<string> = new Set([
   "poll",

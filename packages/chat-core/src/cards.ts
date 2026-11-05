@@ -1,14 +1,26 @@
-import type { EventPayload, TaskPayload } from "./integrations/payloads";
+import type {
+  EventPayload,
+  HoursPayload,
+  PointsPayload,
+  SystemAuditPayload,
+  TaskPayload,
+} from "./integrations/payloads";
 import type { ChatMessage } from "./types";
 
-export type { EventPayload, TaskPayload };
+export type {
+  EventPayload,
+  HoursPayload,
+  PointsPayload,
+  SystemAuditPayload,
+  TaskPayload,
+};
 
 /**
- * Readers for the server-originated card kinds, shared by web's renderers
+ * Readers for the chat card kinds, shared by web's renderers
  * (`apps/web/components/chat/renderers/`) and mobile's
  * (`apps/mobile/components/chat/`), so both surfaces decide "is this payload
  * drawable" the same way. `readPollPayload` in `./polls` is the same idea for
- * the one member-authored card.
+ * the poll.
  *
  * Each reader is defensive: a malformed row returns `null`, and the renderer
  * falls back to the message's `content` string rather than blanking the
@@ -89,4 +101,152 @@ export function readTaskPayload(message: ChatMessage): TaskPayload | null {
     point_reward: finiteNumber(r.point_reward),
     created_at: typeof r.created_at === "string" ? r.created_at : "",
   };
+}
+
+/**
+ * A `kind:"points"` payload, or `null` without both names, the reason and a
+ * finite amount. `category` is `"FINE"` only when the row says so; the ids
+ * default to empty.
+ */
+export function readPointsPayload(message: ChatMessage): PointsPayload | null {
+  const r = recordOf(message);
+  const amount = r ? finiteNumber(r.amount) : null;
+  if (
+    !r ||
+    amount === null ||
+    typeof r.actor_name !== "string" ||
+    typeof r.recipient_name !== "string" ||
+    typeof r.reason !== "string"
+  ) {
+    return null;
+  }
+  return {
+    actor_user_id: typeof r.actor_user_id === "string" ? r.actor_user_id : "",
+    actor_name: r.actor_name,
+    recipient_user_id:
+      typeof r.recipient_user_id === "string" ? r.recipient_user_id : "",
+    recipient_name: r.recipient_name,
+    amount,
+    category: r.category === "FINE" ? "FINE" : "MANUAL",
+    reason: r.reason,
+    transaction_id:
+      typeof r.transaction_id === "string" ? r.transaction_id : "",
+    created_at: typeof r.created_at === "string" ? r.created_at : "",
+  };
+}
+
+/** How a points card states its change, the same words on every surface. */
+export interface PointsChange {
+  /** A deduction: a negative amount, or a `FINE` row. */
+  fine: boolean;
+  verb: "granted" | "deducted";
+  /** "to" the recipient of a grant, "from" the one fined. */
+  preposition: "to" | "from";
+  /**
+   * "+5 points", "−1 point". The minus is U+2212, the typographic sign, not
+   * the hyphen the ledger stores.
+   */
+  amount: string;
+}
+
+export function pointsChange(payload: PointsPayload): PointsChange {
+  const fine = payload.amount < 0 || payload.category === "FINE";
+  const magnitude = Math.abs(payload.amount);
+  return {
+    fine,
+    verb: fine ? "deducted" : "granted",
+    preposition: fine ? "from" : "to",
+    amount: `${fine ? "−" : "+"}${magnitude} ${
+      magnitude === 1 ? "point" : "points"
+    }`,
+  };
+}
+
+/**
+ * A `kind:"hours"` payload, or `null` without the entry and member ids, the
+ * member's name, the description, the date and a finite duration. `status` is
+ * always the creation-time `"PENDING"` (`HoursPayload`): a card takes the
+ * review status from the entry itself, never from this.
+ */
+export function readHoursPayload(message: ChatMessage): HoursPayload | null {
+  const r = recordOf(message);
+  const duration = r ? finiteNumber(r.duration_minutes) : null;
+  if (
+    !r ||
+    duration === null ||
+    typeof r.entry_id !== "string" ||
+    typeof r.user_id !== "string" ||
+    typeof r.user_name !== "string" ||
+    typeof r.description !== "string" ||
+    typeof r.date !== "string"
+  ) {
+    return null;
+  }
+  return {
+    entry_id: r.entry_id,
+    user_id: r.user_id,
+    user_name: r.user_name,
+    duration_minutes: duration,
+    description: r.description,
+    date: r.date,
+    status: "PENDING",
+    created_at: typeof r.created_at === "string" ? r.created_at : "",
+  };
+}
+
+/**
+ * A `kind:"system_audit"` payload, or `null` without a non-empty `action`.
+ *
+ * `null` is the common case, not only a malformed one: the server's own
+ * notices ("This poll has closed.", an invite accepted, the chapter welcome)
+ * are `system_audit` rows with no payload at all, and their `content` is the
+ * sentence to show. Only the `#chapter-audit` mirror
+ * (`ChatBridgeWorkerService`) writes the payload. `diff` is a plain object or
+ * `{}`, and an actor that isn't a string is `null` (a system-originated row).
+ */
+export function readSystemAuditPayload(
+  message: ChatMessage,
+): SystemAuditPayload | null {
+  const r = recordOf(message);
+  if (!r || typeof r.action !== "string" || r.action.trim() === "") {
+    return null;
+  }
+  const diff = r.diff;
+  return {
+    action: r.action,
+    actor_user_id: typeof r.actor_user_id === "string" ? r.actor_user_id : null,
+    diff:
+      diff && typeof diff === "object" && !Array.isArray(diff)
+        ? (diff as Record<string, unknown>)
+        : {},
+  };
+}
+
+/**
+ * An audit card's last line: the fields the change touched, or that it
+ * touched none. One copy so web's and mobile's cards say the same.
+ */
+export function auditChangeSummary(payload: SystemAuditPayload): string {
+  const fields = Object.keys(payload.diff);
+  return fields.length > 0
+    ? `Changed: ${fields.join(", ")}`
+    : "No field changes recorded";
+}
+
+/**
+ * The text of a `kind:"announcement"` card, or `null` when there is none.
+ *
+ * `content` first, not `payload.body`. `/announce` writes the same words to
+ * both, but `content` is what a push, a search hit and the channel preview
+ * show, and `kind:"announcement"` is not server-only: a client could send a
+ * `payload.body` that differs from it, and the card would then say something
+ * the notification didn't. The body is the fallback for a row whose `content`
+ * is empty.
+ */
+export function readAnnouncementBody(message: ChatMessage): string | null {
+  if (typeof message.content === "string" && message.content.trim() !== "") {
+    return message.content;
+  }
+  const body = recordOf(message)?.body;
+  return typeof body === "string" && body.trim() !== "" ? body : null;
 }
