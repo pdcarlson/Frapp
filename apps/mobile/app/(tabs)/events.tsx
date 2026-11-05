@@ -1,9 +1,10 @@
 import { useMemo, useRef } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useActiveChapterId, useEvents, useNowDate } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { PressableRow } from "@/components/list-section";
 import { ScreenShell } from "@/components/screen-shell";
 import {
   EmptyState,
@@ -21,7 +22,7 @@ import {
   resolveCheckInWindow,
 } from "@/lib/events/format";
 import { selectEventRows, type EventRow } from "@/lib/events/select";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s06 — Events list (`canvas-screens.dc.html:195`).
@@ -151,20 +152,15 @@ function EventRowCard({
   const isOpen = window.state === "open";
 
   return (
-    <Pressable
+    <PressableRow
       accessibilityRole="button"
       accessibilityLabel={`Open ${event.name}`}
       accessibilityHint="View event details and check in."
       onPress={onPress}
-      // Press feedback per platform, as `ListRow` does it: Android gets a
-      // bounded ripple of the foreground at 12%, clipped to the card's corners
-      // by `overflow: hidden`; iOS has no ripple, so the card lifts one rung
-      // up the surface ladder while it is held.
-      android_ripple={{ color: styles.ripple.color }}
-      style={({ pressed }) => [
-        styles.card,
-        pressed && Platform.OS !== "android" ? styles.pressed : null,
-      ]}
+      // The card is itself a card, so it lifts to `surface.popover` on iOS;
+      // `PressableRow` rounds its Android ripple to the card's corners.
+      onCard
+      style={styles.card}
     >
       {date ? (
         <View style={styles.dateBlock}>
@@ -196,7 +192,7 @@ function EventRowCard({
           </View>
         ) : null}
       </View>
-    </Pressable>
+    </PressableRow>
   );
 }
 
@@ -210,16 +206,6 @@ function createStyles(tokens: SignetTokens, accent: string) {
       borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
-      // Bounds the Android ripple to the rounded card.
-      overflow: "hidden",
-    },
-    pressed: {
-      backgroundColor: tokens.color.surface.popover,
-    },
-    // Not a style a view takes: the ripple's color, kept in the factory so it
-    // derives from a token, as in `list-section.tsx`.
-    ripple: {
-      color: tint(tokens.color.text.foreground, 0.12),
     },
     dateBlock: {
       // 52 as drawn. No spacing token sits near it, and the column has to

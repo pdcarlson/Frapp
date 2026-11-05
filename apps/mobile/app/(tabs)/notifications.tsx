@@ -10,7 +10,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_CHAT } from "@/components/back-row";
-import { SectionHeader } from "@/components/list-section";
+import { SectionHeader, usePressFeedback } from "@/components/list-section";
 import {
   EmptyState,
   ErrorState,
@@ -25,7 +25,10 @@ import {
 import { NOTIFICATION_FALLBACK_PATHNAME } from "@/lib/notifications/targets";
 import { asRoute } from "@/lib/href";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
+import {
+  type ChapterBranding,
+  useChapterBranding,
+} from "@/lib/chapter-branding";
 
 /**
  * s14 — Notifications (`canvas-screens.dc.html:474`).
@@ -202,6 +205,7 @@ export function NotificationListRow({
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
+  const feedback = usePressFeedback();
 
   return (
     <Pressable
@@ -209,14 +213,11 @@ export function NotificationListRow({
       accessibilityLabel={row.title}
       accessibilityHint={row.isUnread ? "Marks this as read." : undefined}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.row,
-        row.isUnread ? null : styles.rowRead,
-        pressed ? styles.pressed : null,
-      ]}
+      android_ripple={feedback.ripple}
+      style={({ pressed }) => [styles.row, feedback.lift(pressed)]}
     >
       <View style={row.isUnread ? styles.dot : styles.dotSpacer} />
-      <View style={styles.rowText}>
+      <View style={[styles.rowText, row.isUnread ? null : styles.rowRead]}>
         <Text style={styles.rowTitle}>{row.title}</Text>
         {row.body ? <Text style={styles.rowBody}>{row.body}</Text> : null}
         <Text style={styles.rowMeta}>
@@ -241,15 +242,20 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       color: tokens.color.semantic.warning,
       paddingHorizontal: tokens.spacing.xs,
     },
+    // Padded on both sides so the dot sits inset from the section caption, as
+    // drawn, and the press lift clears the text. No radius: the hairline
+    // under each row would meet a rounded corner.
     row: {
       flexDirection: "row",
       gap: tokens.spacing.md,
       paddingVertical: tokens.spacing.md,
+      paddingHorizontal: tokens.spacing.sm,
       minHeight: tokens.touch.minimum,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: tokens.color.border.hairline,
     },
-    // Read rows recede rather than disappear, as drawn.
+    // Read rows recede rather than disappear, as drawn. On the text, not the
+    // row, so the press lift behind a read row is as strong as any other.
     rowRead: {
       opacity: 0.7,
     },
@@ -278,9 +284,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     rowMeta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
-    },
-    pressed: {
-      opacity: 0.6,
     },
   });
 }

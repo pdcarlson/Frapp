@@ -17,6 +17,7 @@ import {
 } from "@/components/state-block";
 import { BACK_TO_MORE, BackRow } from "@/components/back-row";
 import { FilterChips, SearchField } from "@/components/filter-chips";
+import { gutterBleed, usePressFeedback } from "@/components/list-section";
 import { screenTitleStyle } from "@/components/screen-shell";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import {
@@ -295,6 +296,7 @@ export function MemberRow({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const feedback = usePressFeedback();
 
   return (
     <Pressable
@@ -310,7 +312,11 @@ export function MemberRow({
           : undefined
       }
       onPress={onPress}
-      style={styles.row}
+      android_ripple={onPress ? feedback.ripple : undefined}
+      style={({ pressed }) => [
+        styles.row,
+        onPress ? feedback.lift(pressed) : null,
+      ]}
     >
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>{row.initials}</Text>
@@ -358,6 +364,8 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       gap: tokens.spacing.md,
       paddingVertical: tokens.spacing.md,
+      // A square row: hairlines split the list, so no radius.
+      ...gutterBleed(tokens, { rounded: false }),
       minHeight: tokens.touch.minimum,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: tokens.color.border.hairline,

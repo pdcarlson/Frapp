@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import {
   dayDelta,
@@ -8,7 +8,12 @@ import {
 } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
+import {
+  type ChapterBranding,
+  useChapterBranding,
+} from "@/lib/chapter-branding";
+import { gutterBleed, PressableRow } from "@/components/list-section";
+import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
 
 /**
  * The UP NEXT strip at the top of Chat home (s04).
@@ -21,7 +26,11 @@ import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding
  *
  * Drawn at `canvas-screens.dc.html:117-131`: an `UP NEXT` eyebrow, then two
  * rows separated by a hairline, each a glyph + title + `· context` with a
- * trailing time. The event's trailing time is gold; an imminent task due date is
+ * trailing time. The glyphs are the Events and Tasks tab glyphs at the drawn
+ * 20pt: the board draws exactly that geometry, the calendar in the accent and
+ * the check in the inactive tab's muted paint, so each row says at a glance
+ * whether it is an event or a task (a dot said neither). The event's trailing
+ * time is the chapter accent; an imminent task due date is
  * `semantic.destructive`, which is the drawn `#F85149` — **not** the mention red
  * `#E5484D`, which `foundations.md:67` reserves for direct address alone.
  *
@@ -30,6 +39,9 @@ import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding
  * rather than an empty-state card — it is chrome above the real content, and an
  * "everything is clear" card would push the channel list down to say nothing.
  */
+
+/** The board draws the strip's glyphs at 20 (the tab bar's are 24). */
+const UP_NEXT_GLYPH_SIZE = 20;
 
 /** Minimal shapes — the generated SDK types for these routes infer as `never`. */
 interface UpNextEvent {
@@ -231,7 +243,7 @@ export function UpNextStrip({
       <Text style={styles.eyebrow}>UP NEXT</Text>
 
       {event ? (
-        <Pressable
+        <PressableRow
           accessibilityRole="button"
           accessibilityLabel={`${event.name}, ${formatEventTime(event.start_time, at)}`}
           accessibilityHint="Open event details."
@@ -245,9 +257,14 @@ export function UpNextStrip({
               params: { id: event.id },
             })
           }
-          style={({ pressed }) => [styles.row, pressed ? styles.pressed : null]}
+          style={styles.row}
         >
-          <View style={styles.eventGlyph} />
+          <EventsGlyph
+            focused
+            accent={brand.accent}
+            muted={tokens.color.text.muted}
+            size={UP_NEXT_GLYPH_SIZE}
+          />
           <Text numberOfLines={1} style={styles.rowText}>
             <Text style={styles.rowTitle}>{event.name}</Text>
             {event.location ? (
@@ -257,20 +274,25 @@ export function UpNextStrip({
           <Text style={styles.eventTime}>
             {formatEventTime(event.start_time, at)}
           </Text>
-        </Pressable>
+        </PressableRow>
       ) : null}
 
       {event && task ? <View style={styles.divider} /> : null}
 
       {task ? (
-        <Pressable
+        <PressableRow
           accessibilityRole="button"
           accessibilityLabel={`${task.title}, ${formatDueDate(task.due_date, at)}`}
           accessibilityHint="Open the task board."
           onPress={() => router.push("/tasks")}
-          style={({ pressed }) => [styles.row, pressed ? styles.pressed : null]}
+          style={styles.row}
         >
-          <View style={styles.taskGlyph} />
+          <TasksGlyph
+            focused={false}
+            accent={brand.accent}
+            muted={tokens.color.text.muted}
+            size={UP_NEXT_GLYPH_SIZE}
+          />
           <Text numberOfLines={1} style={styles.rowText}>
             <Text style={styles.rowTitle}>{task.title}</Text>
             <Text style={styles.rowContext}>{" · task"}</Text>
@@ -282,7 +304,7 @@ export function UpNextStrip({
           >
             {formatDueDate(task.due_date, at)}
           </Text>
-        </Pressable>
+        </PressableRow>
       ) : null}
     </View>
   );
@@ -306,25 +328,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       // The strip's rows are drawn tighter than a standalone control, so the
       // 44pt floor is met by minHeight rather than by padding.
       minHeight: tokens.touch.minimum,
-    },
-    pressed: {
-      opacity: 0.6,
-    },
-    // TODO-DESIGN: the Canvas draws a duotone calendar and check-circle here.
-    // `components/tab-glyphs.tsx` owns the four tab glyphs only, and inventing
-    // two more off-recipe is worse than a neutral placeholder — the nearest
-    // pattern is the tinted dot the check-in card uses (canvas s07).
-    eventGlyph: {
-      width: 9,
-      height: 9,
-      borderRadius: tokens.radius.chip,
-      backgroundColor: brand.accent,
-    },
-    taskGlyph: {
-      width: 9,
-      height: 9,
-      borderRadius: tokens.radius.chip,
-      backgroundColor: tokens.color.text.muted,
+      ...gutterBleed(tokens),
     },
     rowText: {
       flex: 1,
