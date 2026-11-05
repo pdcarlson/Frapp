@@ -28,12 +28,8 @@ import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectTaskRows, type TaskRowModel } from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
-import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
-import {
-  SUBSCRIPTION_REFUSAL_COPY,
-  subscriptionRefusalOf,
-} from "@/lib/subscription-refusal";
 import { nextTapSequence } from "@/lib/tasks/transitions";
+import { taskStatusGateRefusal } from "@/lib/tasks/status-refusal";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -179,11 +175,8 @@ export default function TasksScreen() {
         // row redraws at whatever the server actually holds. A gate refusal
         // also says why and withdraws the toggles; anything else, a permission
         // 403 included, stays the quiet revert it always was, with the retap.
-        if (subscriptionRefusalOf(error)) {
-          setRefusal(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
-        } else if (moduleRefusalOf(error)) {
-          setRefusal(MODULE_REFUSAL_COPY.taskStatus);
-        }
+        const gate = taskStatusGateRefusal(error);
+        if (gate) setRefusal(gate);
       } finally {
         inFlight.current.delete(row.id);
         setPendingId(null);

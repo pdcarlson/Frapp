@@ -7,7 +7,9 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import type { TaskPayload } from "@repo/chat-core/cards";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
+import { moduleDisabledMessage } from "@repo/validation";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
+import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 
 /**
  * The mobile chat task card (#3185). Which controls show is
@@ -291,6 +293,41 @@ describe("TaskCard — actions", () => {
     const text = screenText(tree);
     expect(text).toContain(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
     expect(text).not.toContain("complete checkout");
+    // Withdrawn, not left to collect the same refusal again (`writing.md`).
+    const start = button(tree, "Start");
+    expect(start.props.disabled).toBe(true);
+    expect(start.props.accessibilityHint).toBe(
+      SUBSCRIPTION_REFUSAL_COPY.taskStatus,
+    );
+  });
+
+  it("withdraws the controls on a module refusal too", async () => {
+    updateStatus.mockRejectedValue({
+      statusCode: 403,
+      error: "Forbidden",
+      message: moduleDisabledMessage("tasks"),
+    });
+    const tree = render(ASSIGNEE);
+    await press(tree, "Start");
+    expect(screenText(tree)).toContain(MODULE_REFUSAL_COPY.taskStatus);
+    expect(button(tree, "Start").props.disabled).toBe(true);
+  });
+
+  it("sends one write for two taps in the same frame", async () => {
+    let finish!: () => void;
+    updateStatus.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const tree = render(ASSIGNEE);
+    await act(async () => {
+      const start = button(tree, "Start");
+      start.props.onPress();
+      start.props.onPress();
+    });
+    expect(updateStatus).toHaveBeenCalledTimes(1);
+    await act(async () => finish());
   });
 
   it("relays any other refusal", async () => {
@@ -303,6 +340,8 @@ describe("TaskCard — actions", () => {
     const tree = render("admin-2");
     await press(tree, "Confirm");
     expect(screenText(tree)).toContain("Task has already been confirmed");
+    // Not a gate's refusal, so the member can try again.
+    expect(button(tree, "Confirm").props.disabled).toBe(false);
   });
 
   it("can't be pressed while a write would be lost, and says why", () => {

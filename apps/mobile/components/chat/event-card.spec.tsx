@@ -10,6 +10,7 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
+import { formatEventWindow } from "@/lib/events/format";
 
 /**
  * The mobile chat event card (#3185): the snapshot, the officer-only count,
@@ -30,6 +31,7 @@ const state = vi.hoisted(() => ({
 }));
 const checkIn = vi.hoisted(() => vi.fn());
 const requireForegroundFix = vi.hoisted(() => vi.fn());
+const refetchEvent = vi.hoisted(() => vi.fn());
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -42,8 +44,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useEvent: (id: string) => {
     state.eventIds.push(id);
     return id
-      ? { data: state.event, isError: state.eventError }
-      : { data: undefined, isError: false };
+      ? {
+          data: state.event,
+          isError: state.eventError,
+          refetch: () => refetchEvent(),
+        }
+      : { data: undefined, isError: false, refetch: () => refetchEvent() };
   },
   useCheckIn: () => ({ mutateAsync: checkIn, isPending: false }),
   useCurrentChapter: () => ({
@@ -190,6 +196,7 @@ beforeEach(() => {
   state.eventIds = [];
   checkIn.mockReset().mockResolvedValue({});
   requireForegroundFix.mockReset();
+  refetchEvent.mockReset().mockResolvedValue({ data: undefined });
 });
 
 describe("EventCard — the snapshot", () => {
@@ -200,6 +207,16 @@ describe("EventCard — the snapshot", () => {
     expect(text).toContain("Great Hall");
     expect(text).toContain("+10 pts");
     expect(text).toContain("Mandatory");
+  });
+
+  it("draws when it is in the viewer's own time, not the server's sentence", () => {
+    const text = screenText(render());
+    // The formatter's own zone cases are `lib/events/format.spec.ts`'s; here,
+    // that the card draws its line and not the UTC-built `content`.
+    expect(text).toContain(
+      formatEventWindow(PAYLOAD.start_time, PAYLOAD.end_time, state.now),
+    );
+    expect(text).not.toContain("New event:");
   });
 
   it("leaves out what the payload doesn't carry", () => {
@@ -294,6 +311,30 @@ describe("EventCard — Check in", () => {
     expect(button(render(), "Check in").props.disabled).toBe(true);
     state.eventError = true;
     expect(button(render(), "Check in").props.disabled).toBe(false);
+  });
+
+  it("asks about the zone again on the tap when the read failed", async () => {
+    state.event = undefined;
+    state.eventError = true;
+    refetchEvent.mockResolvedValue({
+      data: { ...EVENT_ROW, check_in_zone: [[1, 2]] },
+    });
+    requireForegroundFix.mockResolvedValue({ lat: 42.73, lng: -73.68 });
+    await press(render(), "Check in");
+    expect(refetchEvent).toHaveBeenCalledOnce();
+    expect(checkIn).toHaveBeenCalledWith({
+      eventId: "evt-1",
+      lat: 42.73,
+      lng: -73.68,
+    });
+  });
+
+  it("sends no position when the second read fails too; the server decides", async () => {
+    state.event = undefined;
+    state.eventError = true;
+    await press(render(), "Check in");
+    expect(requireForegroundFix).not.toHaveBeenCalled();
+    expect(checkIn).toHaveBeenCalledWith({ eventId: "evt-1" });
   });
 
   it("reads a 409 as already checked in", async () => {

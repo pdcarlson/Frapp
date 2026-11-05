@@ -107,8 +107,15 @@ export function EventCard({
     setSubmitting(true);
     setOutcome(null);
     try {
+      // A failed read left the zone unknown, so ask once more on the tap:
+      // sending no position to a zoned event gets a refusal written for web's
+      // card ("use the Frapp mobile app"), which reads wrong here.
+      const zoned = eventQuery.isError
+        ? (selectEventDetail((await eventQuery.refetch()).data)
+            ?.hasCheckInZone ?? false)
+        : needsLocation;
       // The check-in DTO takes lat/lng only; spreading accuracy would 400.
-      const position = needsLocation
+      const position = zoned
         ? latLngOf(await requireForegroundFix(CHECK_IN_LOCATION_DENIED_COPY))
         : {};
       await checkIn.mutateAsync({ eventId: payload.event_id, ...position });
@@ -147,8 +154,10 @@ export function EventCard({
           />
           <CardTitle>{payload.name}</CardTitle>
           <CardMeta
+            items={[formatEventWindow(payload.start_time, payload.end_time, now)]}
+          />
+          <CardMeta
             items={[
-              formatEventWindow(payload.start_time, payload.end_time, now),
               payload.location ? (
                 <CardMetaWithGlyph
                   glyph={
@@ -157,14 +166,18 @@ export function EventCard({
                   text={payload.location}
                 />
               ) : null,
+            ]}
+          />
+          <CardMeta
+            items={[
               payload.point_value ? (
                 <PointsChip points={payload.point_value} />
               ) : null,
+              canViewAttendance && checkedIn !== null
+                ? `${checkedIn} checked in`
+                : null,
             ]}
           />
-          {canViewAttendance && checkedIn !== null ? (
-            <CardMeta items={[`${checkedIn} checked in`]} />
-          ) : null}
         </>
       }
     >

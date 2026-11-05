@@ -21,6 +21,7 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { readTaskPayload } from "@repo/chat-core/cards";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Can } from "@/components/shared/can";
 import { can } from "@repo/validation";
 import { parseBareDateLocalMidnight, parseInstant } from "@repo/formatting";
 import {
@@ -124,6 +125,20 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // No control until the live task is read (#2065): acting on the snapshot
   // offered Start on tasks already in progress or done.
   const controls = taskCardControls({ live, isAssignee, canManage });
+  const memberControls = controls.filter(
+    (control) => control === "start" || control === "complete",
+  );
+  // Confirm, Confirmed and Reject are worked out as if `tasks:manage` were
+  // held, and `<Can>` decides: it tells a check that couldn't run from a
+  // denial (design-system README §4, §5 rule 4), so an officer offline with
+  // nothing cached gets the offline chip and Retry where the control would
+  // be, rather than no control and no reason. Reachable for an assignee, whose
+  // task is read either way.
+  const managerControls = taskCardControls({
+    live,
+    isAssignee,
+    canManage: true,
+  }).filter((control) => control !== "start" && control !== "complete");
   const actionsDisabled =
     !isConfirmed ||
     updateStatus.isPending ||
@@ -176,8 +191,10 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           <Badge variant="outline">+{payload.point_reward} pts</Badge>
         ) : null}
       </div>
-      {controls.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-2">
+      {memberControls.length > 0 || managerControls.length > 0 ? (
+        // `empty:hidden`: a denied `<Can>` leaves the row with nothing in it,
+        // and an empty row would still add its margin to the card.
+        <div className="mt-3 flex flex-wrap gap-2 empty:hidden">
           {controls.includes("start") ? (
             <Button
               size="sm"
@@ -214,57 +231,68 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
               Mark complete
             </Button>
           ) : null}
-          {controls.includes("confirm") || controls.includes("confirmed") ? (
-            // `confirmed` is a disabled indicator, not an action: an admin
-            // sees that the completion was confirmed.
-            <Button
-              size="sm"
-              {...gate.controlProps(
-                actionsDisabled || controls.includes("confirmed"),
-              )}
-              onClick={() =>
-                confirmTask.mutate(
-                  payload.task_id,
-                  onFailure(
-                    "Couldn't confirm task",
-                    "Only admins with tasks:manage can confirm completions.",
-                  ),
-                )
-              }
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              {controls.includes("confirmed") ? "Confirmed" : "Confirm"}
-            </Button>
-          ) : null}
-          {controls.includes("reject") ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              {...gate.controlProps(actionsDisabled)}
-              onClick={() =>
-                rejectTask.mutate(
-                  { id: payload.task_id },
-                  onFailure(
-                    "Couldn't reject task",
-                    "Only admins with tasks:manage can reject completions.",
-                  ),
-                )
-              }
-            >
-              <Undo2 className="h-4 w-4" />
-              Reject
-            </Button>
+          {managerControls.length > 0 ? (
+            <Can permission="tasks:manage">
+              {managerControls.includes("confirm") ||
+              managerControls.includes("confirmed") ? (
+                // `confirmed` is a disabled indicator, not an action: an admin
+                // sees that the completion was confirmed.
+                <Button
+                  size="sm"
+                  {...gate.controlProps(
+                    actionsDisabled || managerControls.includes("confirmed"),
+                  )}
+                  onClick={() =>
+                    confirmTask.mutate(
+                      payload.task_id,
+                      onFailure(
+                        "Couldn't confirm task",
+                        "Only admins with tasks:manage can confirm completions.",
+                      ),
+                    )
+                  }
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  {managerControls.includes("confirmed")
+                    ? "Confirmed"
+                    : "Confirm"}
+                </Button>
+              ) : null}
+              {managerControls.includes("reject") ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  {...gate.controlProps(actionsDisabled)}
+                  onClick={() =>
+                    rejectTask.mutate(
+                      { id: payload.task_id },
+                      onFailure(
+                        "Couldn't reject task",
+                        "Only admins with tasks:manage can reject completions.",
+                      ),
+                    )
+                  }
+                >
+                  <Undo2 className="h-4 w-4" />
+                  Reject
+                </Button>
+              ) : null}
+            </Can>
           ) : null}
           {/*
             The notice belongs to the action row, not the card: a timeline of
             task cards would otherwise repeat the same chapter-wide sentence
             under every one, including cards this viewer could never act on.
+            Hence `controls`, which counts a manager control only once the
+            permission is known to be held.
           */}
-          <SubscriptionNotice
-            gate={gate}
-            feature="task actions"
-            className="mb-0 w-full"
-          />
+          {controls.length > 0 ? (
+            <SubscriptionNotice
+              gate={gate}
+              feature="task actions"
+              className="mb-0 w-full"
+            />
+          ) : null}
         </div>
       ) : null}
     </Card>

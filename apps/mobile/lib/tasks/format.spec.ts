@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatDoneSubtitle,
+  formatDueDate,
   formatDueSubtitle,
   formatPointsChip,
   isDueUrgent,
@@ -65,6 +66,25 @@ describe("formatDueSubtitle", () => {
     expect(formatDueSubtitle(null, NOW)).toBeNull();
     expect(formatDueSubtitle("not-a-date", NOW)).toBeNull();
     expect(formatDueSubtitle("", NOW)).toBeNull();
+  });
+});
+
+describe("formatDueDate", () => {
+  it("draws the plain date, whatever the countdown would say", () => {
+    expect(formatDueDate("2026-08-18")).toBe("Due Aug 18");
+    expect(formatDueDate("2026-08-14")).toBe("Due Aug 14");
+  });
+
+  it("keeps a bare date on its own day west of Greenwich", () => {
+    inZone("America/Los_Angeles", () => {
+      expect(formatDueDate("2026-08-22")).toBe("Due Aug 22");
+    });
+  });
+
+  it("returns null for a date it can't read", () => {
+    expect(formatDueDate(null)).toBeNull();
+    expect(formatDueDate("")).toBeNull();
+    expect(formatDueDate("soon")).toBeNull();
   });
 });
 

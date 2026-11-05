@@ -60,10 +60,16 @@ vi.mock("@/lib/hooks/use-toast", () => ({
 }));
 
 // `canManage` flips whether <Can permission="tasks:manage"> renders its children.
+// `gateMounts` records each mount, so a case can tell the card handed a control
+// to the gate (whose offline branch `can-fallback.spec.tsx` covers) from one
+// that never drew it.
 let canManage = false;
+const gateMounts: string[] = [];
 vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: ReactNode }) =>
-    canManage ? <>{children}</> : null,
+  Can: ({ children, permission }: { children: ReactNode; permission: string }) => {
+    gateMounts.push(permission);
+    return canManage ? <>{children}</> : null;
+  },
 }));
 
 const ASSIGNEE = "assignee-1";
@@ -340,6 +346,27 @@ describe("TaskCard", () => {
     expect(
       screen.queryByRole("button", { name: /reject/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("leaves the admin controls to the permission gate, not a plain denial", () => {
+    // An assignee's task is read whatever their permissions, so when the check
+    // can't run (offline, nothing cached) the gate must get the chance to say
+    // so with its offline chip, rather than the card dropping Reject unseen
+    // (design-system README §4, §5 rule 4). Denied here: nothing is drawn, and
+    // the empty action row hides itself.
+    gateMounts.length = 0;
+    mockUseTask.mockReturnValue(
+      liveTask({ status: "COMPLETED", stored_status: "COMPLETED" }),
+    );
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+
+    expect(gateMounts).toContain("tasks:manage");
+    expect(
+      screen.queryByRole("button", { name: /reject/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("disables actions while the chat row is unconfirmed", () => {

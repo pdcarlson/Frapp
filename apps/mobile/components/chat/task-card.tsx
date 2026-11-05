@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { TaskPayload } from "@repo/chat-core/cards";
 import { serverMessageOf } from "@repo/api-sdk";
 import {
@@ -21,12 +21,8 @@ import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { TasksGlyph } from "@/components/tab-glyphs";
 import { StatusChip } from "@/components/status-chip";
 import { useConnection } from "@/lib/connection/use-connection";
-import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
-import {
-  SUBSCRIPTION_REFUSAL_COPY,
-  subscriptionRefusalOf,
-} from "@/lib/subscription-refusal";
-import { formatDueSubtitle, parseTaskDate } from "@/lib/tasks/format";
+import { formatDueDate, formatDueSubtitle } from "@/lib/tasks/format";
+import { taskStatusGateRefusal } from "@/lib/tasks/status-refusal";
 import { useFrappTheme } from "@/lib/theme";
 import {
   CardActions,
@@ -58,10 +54,12 @@ import {
  * rejects a completion, never their own (#1056). The writes are the shared
  * hooks, which update the cache optimistically and roll back on refusal.
  *
- * Mobile has no toast, so a refusal is a line on the card, gate refusals in
- * the board's own words (`SUBSCRIPTION_REFUSAL_COPY`/`MODULE_REFUSAL_COPY`).
- * None of these writes has an outbox, so they are disabled while a write
- * would be lost (`useConnection().writeBlockedReason`).
+ * Mobile has no toast, so a refusal is a line on the card. A gate refusal is
+ * in the board's own words (`taskStatusGateRefusal`) and withdraws the
+ * controls, as the board's does (`writing.md`): pressing again would only
+ * fetch the same refusal. Any other refusal relays the server's message and
+ * leaves them to retry. None of these writes has an outbox, so they are
+ * disabled while a write would be lost (`useConnection().writeBlockedReason`).
  */
 export function TaskCard({
   payload,
@@ -94,28 +92,40 @@ export function TaskCard({
   const updateStatus = useUpdateTaskStatus();
   const confirmTask = useConfirmTask();
   const rejectTask = useRejectTask();
-  const [refusal, setRefusal] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<{
+    text: string;
+    /** A gate's: the controls stay withdrawn rather than invite a retry. */
+    gate: boolean;
+  } | null>(null);
   const pending =
     updateStatus.isPending || confirmTask.isPending || rejectTask.isPending;
+  // The hooks' `isPending` reaches React a tick after the press, so two taps
+  // in one frame would both send; the ref is set before the first await.
+  const inFlight = useRef(false);
 
   /** Runs one write; a refusal lands on the card, the hook has rolled back. */
   const act = async (write: () => Promise<unknown>, fallback: string) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setRefusal(null);
     try {
       await write();
     } catch (error) {
-      if (subscriptionRefusalOf(error)) {
-        setRefusal(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
-      } else if (moduleRefusalOf(error)) {
-        setRefusal(MODULE_REFUSAL_COPY.taskStatus);
-      } else {
-        setRefusal(serverMessageOf(error) ?? fallback);
-      }
+      const gate = taskStatusGateRefusal(error);
+      setRefusal(
+        gate
+          ? { text: gate, gate: true }
+          : { text: serverMessageOf(error) ?? fallback, gate: false },
+      );
+    } finally {
+      inFlight.current = false;
     }
   };
 
-  const disabled = !frame.isConfirmed || pending || writeBlockedReason !== null;
-  const hint = writeBlockedReason ?? undefined;
+  const blockedReason =
+    writeBlockedReason ?? (refusal?.gate ? refusal.text : null);
+  const disabled = !frame.isConfirmed || pending || blockedReason !== null;
+  const hint = blockedReason ?? undefined;
 
   return (
     <ChatCardShell
@@ -136,8 +146,10 @@ export function TaskCard({
           />
           <CardTitle>{payload.title}</CardTitle>
           <CardMeta
+            items={[`${payload.assigner_name} → ${payload.assignee_name}`]}
+          />
+          <CardMeta
             items={[
-              `${payload.assigner_name} → ${payload.assignee_name}`,
               dueLine(payload.due_date, live, now),
               payload.point_reward ? (
                 <PointsChip points={payload.point_reward} />
@@ -222,7 +234,9 @@ export function TaskCard({
           ) : null}
         </CardActions>
       ) : null}
-      {refusal ? <CardNote text={refusal} tone="error" /> : null}
+      {refusal ? (
+        <CardNote text={refusal.text} tone={refusal.gate ? "muted" : "error"} />
+      ) : null}
     </ChatCardShell>
   );
 }
@@ -257,10 +271,7 @@ function dueLine(
   live: LiveTask | null,
   now: Date,
 ): string | null {
-  if (live && live.status !== "COMPLETED") {
-    return formatDueSubtitle(dueDate, now);
-  }
-  const due = parseTaskDate(dueDate);
-  if (!due) return null;
-  return `Due ${due.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+  return live && live.status !== "COMPLETED"
+    ? formatDueSubtitle(dueDate, now)
+    : formatDueDate(dueDate);
 }

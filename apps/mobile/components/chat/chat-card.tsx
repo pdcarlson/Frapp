@@ -224,9 +224,13 @@ export function CardTitle({ children }: { children: ReactNode }) {
 }
 
 /**
- * The muted line of facts under the title, joined with a middle dot as web's
+ * One muted line of facts under the title, joined with a middle dot as web's
  * cards join theirs. Falsy items are dropped, so a caller can pass optional
- * facts inline.
+ * facts inline, and a line with none draws nothing.
+ *
+ * A card draws several lines rather than one long one, grouped so each fits a
+ * phone: a wrapped line would start with a stray dot. An item too long for
+ * the line, such as a long location, wraps inside itself.
  */
 export function CardMeta({ items }: { items: ReactNode[] }) {
   const styles = useCardStyles();
@@ -242,7 +246,7 @@ export function CardMeta({ items }: { items: ReactNode[] }) {
             <Text style={[styles.metaLine, styles.metaSeparator]}>·</Text>
           ) : null}
           {typeof item === "string" ? (
-            <Text style={styles.metaLine}>{item}</Text>
+            <Text style={[styles.metaLine, styles.metaShrink]}>{item}</Text>
           ) : (
             item
           )}
@@ -264,7 +268,7 @@ export function CardMetaWithGlyph({
   return (
     <View style={styles.metaGlyphItem}>
       {glyph}
-      <Text style={styles.metaLine}>{text}</Text>
+      <Text style={[styles.metaLine, styles.metaShrink]}>{text}</Text>
     </View>
   );
 }
@@ -424,11 +428,16 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     metaItem: {
       flexDirection: "row",
       alignItems: "center",
+      flexShrink: 1,
     },
     metaGlyphItem: {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.xs,
+      flexShrink: 1,
+    },
+    metaShrink: {
+      flexShrink: 1,
     },
     metaLine: {
       ...typeRole(tokens.typography.role.caption),
