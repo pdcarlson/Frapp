@@ -181,14 +181,17 @@ function TopBarTitle({ pageTitle }: { pageTitle: PageTitle }) {
           <Link
             href={parent.href}
             className={cn(
-              "shrink-0 rounded-[6px] px-0.5 text-label font-medium text-muted-foreground transition hover:text-foreground",
+              // `hidden` below `sm`, not just inside the `sr-only` wrapper: a
+              // visually hidden link is still a tab stop, and a keyboard user
+              // would land on a focus ring they cannot see.
+              "hidden shrink-0 rounded-[6px] px-0.5 text-label font-medium text-muted-foreground transition hover:text-foreground sm:inline",
               FOCUS_RING_SHELL,
             )}
           >
             {parent.label}
           </Link>
           <ChevronRight
-            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+            className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground sm:block"
             aria-hidden="true"
           />
         </>
