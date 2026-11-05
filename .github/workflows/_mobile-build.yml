@@ -3,9 +3,10 @@ name: Mobile build
 # Build the commit production serves for the stores, upload it without
 # releasing it, and record what was uploaded (#3111). A reusable workflow:
 # `on: workflow_call` only, and its one caller is `deploy-production.yml`'s
-# `mobile` job, which runs only when the operator chose a platform in the
-# `mobile_build` input, and only after a `full`, non-dry-run ship whose
-# deploy and tag both succeeded. Paul chose this opt-in shape on 2026-10-01
+# `mobile` job, which runs only when its `mobile-plan` job names a platform:
+# the one the operator chose in the `mobile_build` input, or, under `auto`,
+# each platform no OTA update can reach. Only after a `full`, non-dry-run
+# ship whose deploy and tag both succeeded. Paul chose this opt-in shape on 2026-10-01
 # over building on every ship: most ships don't touch the app, every iOS
 # release is another App Review cycle, and EAS meters builds.
 #
