@@ -335,7 +335,7 @@ export function AlumniDirectory() {
                     .join(", ")}
                   className={cn(
                     "flex min-h-9 min-w-0 flex-1 items-start gap-2.5 rounded-md px-2 py-1 text-left transition-colors",
-                    "pointer-coarse:min-h-11 hover:bg-accent-subtle hover:text-foreground",
+                    "pointer-coarse:min-h-11 hover:bg-card-hover hover:text-foreground",
                     FOCUS_RING_OFFSET,
                   )}
                 >
