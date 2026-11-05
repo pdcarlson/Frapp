@@ -71,13 +71,8 @@ export function screenTitleStyle(tokens: SignetTokens) {
  * header (#2485), so the shell also takes the top safe-area inset the header
  * used to absorb.
  *
- * The title is the headline role (24/700) at the board's -0.3 tracking, as
- * `canvas-screens.dc.html` draws it on s06, s08–s14 and s16. It was the 18/600
- * title role, the same size as a card's heading, so a page and the cards on
- * it read as one level (Paul's Android pass, 2026-11-04). s07 draws its event
- * name a step larger (28/700), which is off the type scale, so it takes the
- * headline too; s04 and s15 draw no page title on the board, and the app's
- * shell gives them one at the same size.
+ * The title draws in `screenTitleStyle`. Which role it takes, and why, lives in
+ * spec/ui/mobile/patterns.md § Screen headers.
  */
 export function ScreenShell({
   title,
