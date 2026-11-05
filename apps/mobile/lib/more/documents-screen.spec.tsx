@@ -90,6 +90,11 @@ afterEach(() => {
   chapterId = "chapter-a";
   present.mockReset();
   download.mockReset();
+  // Back to the suite-wide stand-in (vitest.setup.ts), a browser dismissed at
+  // once, after a spec that held one open.
+  vi.mocked(WebBrowser.openBrowserAsync).mockResolvedValue({
+    type: "dismiss",
+  } as WebBrowser.WebBrowserResult);
   act(() => {
     for (const tree of mounted.splice(0)) tree.unmount();
   });
@@ -318,6 +323,51 @@ describe("Documents states and rows", () => {
     expect(openBrowser).toHaveBeenCalledTimes(1);
     expect(openBrowser).toHaveBeenCalledWith("https://signed/minutes");
     expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
+  });
+
+  // Once a document's browser is on its way up, a tap that reaches another
+  // row does nothing. iOS refuses a second presentation, and that refusal
+  // would show "couldn't be opened" over the document that did open.
+  it("starts no second browser while the first is still being presented", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+    ];
+    download.mockImplementation(async (id: string) => ({
+      downloadUrl: `https://signed/${id}`,
+    }));
+    const openBrowser = vi.mocked(WebBrowser.openBrowserAsync);
+    openBrowser.mockClear();
+    let dismiss!: () => void;
+    openBrowser.mockImplementation(() =>
+      openBrowser.mock.calls.length === 1
+        ? new Promise((resolve) => {
+            dismiss = () =>
+              resolve({ type: "dismiss" } as WebBrowser.WebBrowserResult);
+          })
+        : Promise.reject(new Error("Another web browser is already open")),
+    );
+    const tree = render();
+    const rows = () => tree.root.findAllByType(ListRow);
+
+    await act(async () => {
+      rows()[0]!.props.onPress();
+    });
+    expect(openBrowser).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      rows()[1]!.props.onPress();
+    });
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(openBrowser).toHaveBeenCalledTimes(1);
+    expect(screenText(tree)).not.toContain("couldn't be opened");
+    expect(rows().map((row) => row.props.busy)).toEqual([true, false]);
+
+    await act(async () => {
+      dismiss();
+    });
+    expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
+    expect(screenText(tree)).not.toContain("couldn't be opened");
   });
 
   // Folder chips scroll sideways here (one row, not three), which is an

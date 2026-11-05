@@ -21,8 +21,7 @@ const EMPHASIS_FILL_ALPHA = 0.16;
  * `Frame` (a 24 grid at `MORE_GLYPH_SIZE`, hidden from screen readers).
  * `paint` and `Frame` aren't exported, so this matches them by hand: the
  * lens is the body, the handle the detail. A change to that recipe has to
- * reach this file too, until the recipe moves out of `more-glyphs.tsx` into a
- * module both import.
+ * reach this file too, until both draw from one definition (#3428).
  *
  * It replaces the "⌕" character the empty-state tiles drew, which Figtree
  * doesn't carry, so Android drew it from a fallback font.

@@ -140,7 +140,7 @@ function ChipRow({
       // On s13 the FlatList above it also passes "handled", so the tap lands.
       // On s12 ScreenShell's ScrollView keeps the default and takes the first
       // tap to close the keyboard, so the chip needs a second one until the
-      // shell (frozen here) passes "handled" itself.
+      // shell passes "handled" itself (#3427).
       keyboardShouldPersistTaps="handled"
       style={styles.scroller}
       contentContainerStyle={[styles.slop, styles.scrollRow]}

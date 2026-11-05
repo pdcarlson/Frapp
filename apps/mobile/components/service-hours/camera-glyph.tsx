@@ -3,9 +3,10 @@ import { tint } from "@/lib/theme";
 
 /**
  * The camera on s20's "Add photo proof" row, transcribed from
- * `canvas-screens.dc.html` s20: the duotone body (the stroke color at 10%
- * behind a 1.6 stroke), the lens, and the viewfinder bump. The color arrives
- * as a prop so it follows the chapter accent rather than the drawn gold.
+ * `canvas-screens.dc.html` s20: the duotone body (the stroke color at 16%,
+ * iconography.md §1's emphasis fill, where the canvas draws 10%, behind a 1.6
+ * stroke), the lens, and the viewfinder bump. The color arrives as a prop so
+ * it follows the chapter accent rather than the drawn gold.
  */
 export function CameraGlyph({
   color,
@@ -24,7 +25,7 @@ export function CameraGlyph({
         rx={3}
         stroke={color}
         strokeWidth={1.6}
-        fill={tint(color, 0.1)}
+        fill={tint(color, 0.16)}
       />
       <Circle
         cx={12}
@@ -39,6 +40,7 @@ export function CameraGlyph({
         stroke={color}
         strokeWidth={1.6}
         fill="none"
+        strokeLinecap="round"
         strokeLinejoin="round"
       />
     </Svg>

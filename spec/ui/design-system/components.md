@@ -225,7 +225,7 @@ Standard card chrome (card fill, neutral hairline), centered stack:
 | Slot | Spec |
 | ---- | ---- |
 | Icon tile | 44px, radius 14, fill `accent-3`, feature glyph in `accent-11` ([iconography.md](iconography.md)) |
-| Title | 16.5px / 700 `#EDEAE3`, 12px below tile |
+| Title | 16.5px / 700 `#EDEAE3`, 12px below tile; a filtered-to-nothing state inside a list may leave it out ([writing.md](writing.md) §4) |
 | Body (optional) | one line, 14.5px `#A9A399`, max-width ~220px; only when it says something the title doesn't ([writing.md](writing.md) §4, amended 2026-11-05) |
 | CTA (optional) | Tinted button, 44px, radius 12, 14px below |
 

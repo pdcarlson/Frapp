@@ -45,6 +45,7 @@ vi.mock("@/lib/more/profile-photo", () => ({
   pickAndSetProfilePhoto: (...args: unknown[]) => state.pick(...args),
 }));
 
+import { CameraGlyph } from "@/components/service-hours/camera-glyph";
 import { ProfilePhoto } from "./profile-photo";
 
 function photo(photoUrl: string | null, fetchedAt = 1) {
@@ -284,6 +285,26 @@ describe("ProfilePhoto", () => {
     expect(
       Object.assign({}, ...[badge.props.style].flat()).backgroundColor,
     ).toBe("#8E4EC6");
+    expect(badge.findAllByType(CameraGlyph)).toHaveLength(1);
+  });
+
+  // The camera says a photo can be chosen. Without a chapter the avatar still
+  // takes a tap (it offers Remove photo), but Choose isn't there, so neither
+  // is the badge.
+  it("draws no camera badge without a chapter, though the avatar can still remove", () => {
+    state.chapterId = null;
+    const tree = render("https://signed/photo");
+
+    expect(avatar(tree).props.disabled).toBe(false);
+    expect(avatar(tree).findAllByType(CameraGlyph)).toHaveLength(0);
+    expect(
+      avatar(tree).findAll(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          Object.assign({}, ...[node.props.style].flat()).position ===
+            "absolute",
+      ),
+    ).toHaveLength(0);
   });
 
   it("cannot add a photo without a chapter, and says why", () => {

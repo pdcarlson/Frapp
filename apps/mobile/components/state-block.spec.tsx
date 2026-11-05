@@ -439,9 +439,8 @@ describe("SkeletonBlock's pulse", () => {
     expect(blockStyle(tree).opacity).toBe(1);
   });
 
-  // Tab screens stay mounted after the member leaves them, so a skeleton on
-  // one kept animating with nobody watching.
-  it("pauses while its screen is out of view, and picks up on return", () => {
+  /** A screen's navigation, as far as a block reads it: focus, blur, and now. */
+  function screenNavigation() {
     let focused = true;
     const handlers: Record<string, Set<() => void>> = {
       focus: new Set(),
@@ -458,6 +457,13 @@ describe("SkeletonBlock's pulse", () => {
       focused = event === "focus";
       for (const handler of [...handlers[event]!]) handler();
     };
+    return { navigation, handlers, emit };
+  }
+
+  // Tab screens stay mounted after the member leaves them, so a skeleton on
+  // one kept animating with nobody watching.
+  it("pauses while its screen is out of view, and picks up on return", () => {
+    const { navigation, emit } = screenNavigation();
     const tree = render(
       <NavigationContext.Provider value={navigation as never}>
         <SkeletonBlock width="60%" height={12} />
@@ -474,6 +480,67 @@ describe("SkeletonBlock's pulse", () => {
     act(() => emit("focus"));
     expect(blockStyle(tree).opacity).toBe(0.5);
     expect(vi.mocked(withRepeat)).toHaveBeenCalledTimes(1);
+  });
+
+  // A skeleton is several blocks, and screens mount and unmount them all
+  // session. A block that kept its listeners after unmounting would be called
+  // on every tab change and Reduce Motion toggle from then on.
+  it("lets go of its screen's focus and blur when it unmounts", () => {
+    const { navigation, handlers } = screenNavigation();
+    const tree = render(
+      <NavigationContext.Provider value={navigation as never}>
+        <SkeletonBlock width="60%" height={12} />
+      </NavigationContext.Provider>,
+    );
+    expect(handlers.focus!.size).toBe(1);
+    expect(handlers.blur!.size).toBe(1);
+
+    act(() => tree.unmount());
+    expect(handlers.focus!.size).toBe(0);
+    expect(handlers.blur!.size).toBe(0);
+  });
+
+  it("stops listening for Reduce Motion when it unmounts", () => {
+    const listeners = vi.mocked(AccessibilityInfo.addEventListener);
+    listeners.mockClear();
+    const tree = render(<SkeletonBlock width="60%" height={12} />);
+    const index = listeners.mock.calls.findIndex(
+      ([event]) => (event as string) === "reduceMotionChanged",
+    );
+    expect(index).toBeGreaterThanOrEqual(0);
+    // The stub hands each listener a fresh subscription.
+    const subscription = listeners.mock.results[index]!.value as {
+      remove: () => void;
+    };
+    expect(vi.mocked(subscription.remove)).not.toHaveBeenCalled();
+
+    act(() => tree.unmount());
+    expect(vi.mocked(subscription.remove)).toHaveBeenCalledTimes(1);
+  });
+
+  // The first read is asked as the block mounts. A member who turns Reduce
+  // Motion on before it answers has said something newer than the answer.
+  it("keeps a change it heard over a first read that answers after it", async () => {
+    let answer!: (enabled: boolean) => void;
+    vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const listeners = vi.mocked(AccessibilityInfo.addEventListener);
+    listeners.mockClear();
+    const tree = render(<SkeletonBlock width="60%" height={12} />);
+    const [, changed] = listeners.mock.calls.find(
+      ([event]) => (event as string) === "reduceMotionChanged",
+    )! as unknown as [string, (enabled: boolean) => void];
+
+    act(() => changed(true));
+    expect(blockStyle(tree).opacity).toBe(1);
+
+    await act(async () => {
+      answer(false);
+    });
+    expect(blockStyle(tree).opacity).toBe(1);
   });
 });
 

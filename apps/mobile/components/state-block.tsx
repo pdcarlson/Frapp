@@ -285,7 +285,8 @@ export function EmptyState({
    * A line the title can't carry: why the view is empty, or what to do next
    * (a search names its query, a filter says how to widen it). Never one
    * that restates what the screen is for: without one the title stands
-   * alone (`writing.md` §4, as amended 2026-11-05).
+   * alone. A filtered-to-nothing state inside a list may instead pass this
+   * with no title (`writing.md` §4, as amended 2026-11-05).
    */
   body?: string;
   /**
