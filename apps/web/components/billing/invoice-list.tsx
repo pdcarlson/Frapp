@@ -51,10 +51,12 @@ import {
 import {
   dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
-  dashboardToolbarHeightClassName,
   dashboardTableCheckboxClassName,
+  dashboardToolbarSearchClassName,
+  dashboardToolbarSearchGlyphClassName,
   denseListClassName,
 } from "@/components/shared/table-controls";
+import { SearchGlyph } from "@/components/layout/nav-glyphs";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -433,13 +435,16 @@ export function InvoiceList({ id }: { id?: string }) {
           Invoices
         </SectionLabel>
         <div className="flex flex-wrap items-center gap-2">
-          <Input
-            aria-label="Search invoices or members"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search invoice or member"
-            className={`${dashboardToolbarHeightClassName} w-full sm:w-56`}
-          />
+          <div className="relative w-full sm:w-64">
+            <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
+            <Input
+              aria-label="Search invoices or members"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search invoice or member"
+              className={dashboardToolbarSearchClassName}
+            />
+          </div>
           <select
             aria-label="Invoice status filter"
             value={statusFilter}
@@ -479,7 +484,11 @@ export function InvoiceList({ id }: { id?: string }) {
           <Can permission="billing:manage">
             <Dialog {...createDialog.dialogProps}>
               <DialogTrigger asChild>
-                <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
+                <Button
+                  size="toolbar"
+                  className="gap-2"
+                  {...gate.controlProps()}
+                >
                   <Plus className="h-4 w-4" />
                   Create invoice
                 </Button>
@@ -654,10 +663,7 @@ export function InvoiceList({ id }: { id?: string }) {
       ) : null}
 
       {canManage ? (
-        <OverdueSummary
-          failed={overdueReadFailed}
-          count={overdue.length}
-        />
+        <OverdueSummary failed={overdueReadFailed} count={overdue.length} />
       ) : null}
 
       {selectedIds.length > 0 ? (
@@ -671,7 +677,11 @@ export function InvoiceList({ id }: { id?: string }) {
             already get an automatic notification, and there is no
             manual-remind endpoint to call.
           */}
-          <Button size="sm" variant="secondary" onClick={exportSelectedCsv}>
+          <Button
+            size="toolbar"
+            variant="secondary"
+            onClick={exportSelectedCsv}
+          >
             Export CSV
           </Button>
         </div>
@@ -822,7 +832,7 @@ export function InvoiceList({ id }: { id?: string }) {
                     ) : null}
                     {canPay(invoice) ? (
                       <Button
-                        size="sm"
+                        size="toolbar"
                         onClick={() =>
                           setPayingInvoice({
                             id: invoice.id,
@@ -842,26 +852,33 @@ export function InvoiceList({ id }: { id?: string }) {
                     */}
                     {canManage && invoice.status === "DRAFT" ? (
                       <Button
-                        size="sm"
+                        size="toolbar"
                         variant="secondary"
                         {...gate.controlProps(transitioningId === invoice.id)}
                         onClick={() => void transition(invoice, "OPEN")}
                       >
-                        Send (mark OPEN)
+                        Send
                       </Button>
                     ) : null}
                     {canManage && invoice.status === "OPEN" ? (
                       <>
+                        {/*
+                          Secondary, not primary: a list of open invoices is
+                          one Mark paid per row, and a column of filled
+                          buttons is louder than the rows they act on. Void
+                          is quiet beside it, the way Delete is on Tasks.
+                        */}
                         <Button
-                          size="sm"
+                          size="toolbar"
+                          variant="secondary"
                           {...gate.controlProps(transitioningId === invoice.id)}
                           onClick={() => void transition(invoice, "PAID")}
                         >
                           Mark paid
                         </Button>
                         <Button
-                          size="sm"
-                          variant="secondary"
+                          size="toolbar"
+                          variant="quiet"
                           {...gate.controlProps(transitioningId === invoice.id)}
                           onClick={() => void transition(invoice, "VOID")}
                         >
@@ -898,13 +915,7 @@ export function InvoiceList({ id }: { id?: string }) {
  * surface with the hairline that `components.md` §2 makes the load-bearing
  * edge.
  */
-function OverdueSummary({
-  failed,
-  count,
-}: {
-  failed: boolean;
-  count: number;
-}) {
+function OverdueSummary({ failed, count }: { failed: boolean; count: number }) {
   if (!failed && count === 0) return null;
 
   /*
