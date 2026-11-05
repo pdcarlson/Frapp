@@ -360,6 +360,7 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
 
 describe("s13's member rows", () => {
   const ROW: DirectoryRow = {
+    memberId: "m-u-1",
     userId: "u-1",
     displayName: "Marcus Reid",
     initials: "MR",
@@ -429,6 +430,7 @@ describe("s13's loading state", () => {
         <FrappThemeProvider>
           <MemberRow
             row={{
+              memberId: "m-1",
               userId: "u-1",
               displayName: "Marcus Reid",
               initials: "MR",
