@@ -62,9 +62,8 @@ export function useRefetchAll(
 
 /**
  * The spinner tracks the member's pull, not the queries' `isFetching`: a
- * focus or reconnect refetch running underneath must not drag the spinner
- * down on its own, and a pull that finds a refetch already in flight still
- * shows it is working until that one lands.
+ * focus or reconnect refetch running underneath must not put the spinner up
+ * on its own, and it stays up until every read the pull sent has settled.
  */
 export function usePullToRefresh(refresh: ScreenRefresh): {
   refreshing: boolean;
