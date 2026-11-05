@@ -58,6 +58,13 @@ jest.mock('@repo/chapter-theme', () => ({
 jest.mock('#domain/constants/legal', () => ({
   LEGAL_POLICY_VERSION: 'test-version',
 }));
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
+
+import * as Sentry from '@sentry/nestjs';
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
@@ -514,12 +521,12 @@ describe('ChapterOnboardingService', () => {
     );
   });
 
-  it('still onboards, and warns, when the directory request insert fails', async () => {
+  it('still onboards, and logs at error level, when the directory request insert fails', async () => {
     // The repository throws on a PostgREST error now, so `onboard`'s catch is
     // the only thing between a failed backfill row and a 500 for a chapter
     // that already exists.
-    const warned = jest
-      .spyOn(service['logger'], 'warn')
+    const logged = jest
+      .spyOn(service['logger'], 'error')
       .mockImplementation(() => undefined);
     requestInsert.mockRejectedValueOnce(
       new SupabaseQueryError({ message: 'boom' }),
@@ -533,8 +540,9 @@ describe('ChapterOnboardingService', () => {
       }),
     ).resolves.toMatchObject({ id: 'ch-1' });
 
-    expect(warned).toHaveBeenCalledWith(
+    expect(logged).toHaveBeenCalledWith(
       'Failed to record chapter directory request: boom',
+      expect.stringMatching(/\n\s+at /),
     );
   });
 
@@ -652,6 +660,41 @@ describe('ChapterOnboardingService', () => {
       expect(logged).toHaveBeenCalledWith(
         'Failed to provision archetype custom fields: boom',
         expect.stringMatching(/\n\s+at /),
+      );
+    });
+
+    it('reports a failed seed to Sentry once, grouped by its site', async () => {
+      const captureException = jest.mocked(Sentry.captureException);
+      captureException.mockClear();
+      jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
+      seedFields([
+        {
+          id: 'cf_1',
+          label: 'Major',
+          type: 'text',
+          required: true,
+          visibleTo: 'chapter',
+        },
+      ]);
+      fieldsUpsert.mockRejectedValueOnce(
+        new SupabaseQueryError({ message: 'boom' }),
+      );
+
+      await expect(
+        service.onboard('user-1', directoryDto),
+      ).resolves.toMatchObject({ id: 'ch-1' });
+
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException.mock.calls[0]?.[1]).toEqual(
+        expect.objectContaining({
+          level: 'error',
+          fingerprint: expect.arrayContaining([
+            'caught-failure',
+            'onboarding-custom-field-seed',
+          ]),
+        }),
       );
     });
 

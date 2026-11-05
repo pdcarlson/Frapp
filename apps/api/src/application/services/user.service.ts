@@ -29,6 +29,7 @@ import {
 } from '#domain/constants/storage';
 import { ProfilePhotoUrlService } from './profile-photo-url.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /**
  * How old an unconfirmed upload in a member's folder must be before a photo
@@ -238,12 +239,12 @@ export class UserService {
     try {
       await this.storageProvider.deleteFiles(PROFILES_BUCKET, paths);
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Could not delete ${paths.length} old profile photo(s) for user ${userId}`,
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'profile-photo-delete-failed',
+        message: `Could not delete ${paths.length} old profile photo(s) for user ${userId}`,
         error,
-      );
+      });
     }
   }
 }

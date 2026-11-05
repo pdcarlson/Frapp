@@ -12,6 +12,7 @@ import {
 import {
   DISCORD_BOT_GATEWAY,
   DISCORD_MESSAGE_PAGE_LIMIT,
+  DiscordImportStoppedError,
   type IDiscordBotGateway,
 } from '#domain/adapters/discord.interface';
 import {
@@ -248,7 +249,7 @@ export class DiscordExportWorkerService {
     // another chapter's server.
     const connection = await this.connectionRepo.findByChapter(job.chapter_id);
     if (!connection) {
-      throw new Error(
+      throw new DiscordImportStoppedError(
         'This chapter no longer has a Discord server connected, so the import cannot continue. Reconnect Discord and start a new import.',
       );
     }
@@ -259,7 +260,7 @@ export class DiscordExportWorkerService {
     // mid-import, and in both cases the honest outcome is to stop rather than
     // quietly import a different server's history under the old job's consent.
     if (job.guild_id && job.guild_id !== guildId) {
-      throw new Error(
+      throw new DiscordImportStoppedError(
         `This import was created for Discord server ${job.guild_id}, but the chapter is now connected to ${guildId}. Start a new import for the current server.`,
       );
     }
@@ -650,7 +651,7 @@ export class DiscordExportWorkerService {
       // are counted apart: this slice's tally never saw them.
       totals.tally = tallyMessageContent(totals.tally, rawPage);
       if (isLikelyMissingMessageContentIntent(totals.tally)) {
-        throw new Error(
+        throw new DiscordImportStoppedError(
           missingMessageContentIntentError({
             thisRun: totals.imported - job.imported_messages,
             earlierRuns: job.imported_messages,
@@ -797,7 +798,9 @@ export class DiscordExportWorkerService {
       return;
     }
     if (intent === 'disabled') {
-      throw new Error(messageContentIntentOffError(alreadyImported));
+      throw new DiscordImportStoppedError(
+        messageContentIntentOffError(alreadyImported),
+      );
     }
     if (intent === null) {
       this.logger.warn(
@@ -950,7 +953,9 @@ export class DiscordExportWorkerService {
         // avoid elsewhere (see the manifest-paging note in the repository), and
         // quietly dropping attachments once a chapter is full would tell the
         // admin their history imported when it did not.
-        throw new Error(archiveQuotaMessage(error, job.source));
+        throw new DiscordImportStoppedError(
+          archiveQuotaMessage(error, job.source),
+        );
       }
       throw error;
     }

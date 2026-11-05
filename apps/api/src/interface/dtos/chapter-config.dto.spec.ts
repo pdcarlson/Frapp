@@ -154,3 +154,33 @@ describe('PatchChapterConfigDto — explicit null on nested blocks (#1817)', () 
     );
   });
 });
+
+/**
+ * The 2026-11-05 prod incident. With class fields emitted
+ * (`useDefineForClassFields`, the ES2022+ default), the pipe built every DTO
+ * with an own `undefined` for each optional key the request left out, and the
+ * config PATCH's branding merge stored their absence: a Save mark sending
+ * `{ short_name, show_greek_letters }` wiped the chapter's accent, letters,
+ * designation, school and founding year. The service now skips `undefined`
+ * too, but every other reader of a DTO assumes it holds only what was sent.
+ */
+describe('PatchChapterConfigDto — keys the request did not send', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const metadata: ArgumentMetadata = {
+    type: 'body',
+    metatype: PatchChapterConfigDto,
+  };
+
+  it('carries only the branding keys the request sent', async () => {
+    const result = (await pipe.transform(
+      { branding: { short_name: 'FIJI', show_greek_letters: false } },
+      metadata,
+    )) as PatchChapterConfigDto;
+
+    expect(Object.keys(result)).toEqual(['branding']);
+    expect(Object.keys(result.branding ?? {}).sort()).toEqual([
+      'short_name',
+      'show_greek_letters',
+    ]);
+  });
+});

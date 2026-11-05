@@ -43,6 +43,7 @@ import { ChannelAccessService } from './channel-access.service';
 import { ChatBlockService } from './chat-block.service';
 import { isFromBlockedSender } from './chat-block-mask';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 const CHAT_BUCKET = 'chat';
 
@@ -283,12 +284,12 @@ export class ChatAttachmentService {
         // Best effort. If even this fails the message keeps a count it cannot
         // satisfy, so say so loudly rather than losing it inside the original
         // error the caller is about to see.
-        logThrowable(
-          this.logger,
-          'error',
-          `Failed to clear attachment_count on message ${messageId} (channel ${channelId}) after a failed attachment write`,
-          cleanupError,
-        );
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'chat-attachment-count-clear',
+          message: `Failed to clear attachment_count on message ${messageId} (channel ${channelId}) after a failed attachment write`,
+          error: cleanupError,
+        });
       }
       throw error;
     }

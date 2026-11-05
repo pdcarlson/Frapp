@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import * as Sentry from '@sentry/nestjs';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
@@ -13,6 +14,11 @@ import {
 } from './chat-bridge-worker.service';
 import { reopenDelayMs } from './worker-subscription';
 import { fakeRealtime } from '#test/helpers/fake-realtime';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
 
 type Lookup = () => Promise<string | null>;
 type Insert = (
@@ -74,12 +80,38 @@ describe('ChatBridgeWorkerService.handleAuditRow', () => {
     return mod.get(ChatBridgeWorkerService);
   }
 
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function errorSpy(service: ChatBridgeWorkerService) {
+    return jest
+      .spyOn(
+        (
+          service as unknown as {
+            logger: { error: (...args: unknown[]) => void };
+          }
+        ).logger,
+        'error',
+      )
+      .mockImplementation(() => undefined);
+  }
+
   function warnSpy(service: ChatBridgeWorkerService) {
     return jest.spyOn(
       (service as unknown as { logger: { warn: (...args: unknown[]) => void } })
         .logger,
       'warn',
     );
+  }
+
+  /** The Sentry fingerprint's site, for each capture so far. */
+  function reportedSites(): unknown[] {
+    return jest
+      .mocked(Sentry.captureException)
+      .mock.calls.map(
+        (call) => (call[1] as { fingerprint: string[] }).fingerprint[1],
+      );
   }
 
   it('posts a system_audit message when the channel exists', async () => {
@@ -122,31 +154,42 @@ describe('ChatBridgeWorkerService.handleAuditRow', () => {
     expect(repos.insertCalls).toHaveLength(0);
   });
 
-  it('warns and skips the insert when the channel lookup fails', async () => {
+  it('reports and skips the insert when the channel lookup fails', async () => {
     const repos = buildRepos(() =>
       Promise.reject(new SupabaseQueryError({ message: 'lookup boom' })),
     );
     const service = await instantiate(repos);
-    const warn = warnSpy(service);
+    const error = errorSpy(service);
     await expect(service.handleAuditRow(baseRow)).resolves.toBeUndefined();
     expect(repos.messages.insertIdempotent).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0]?.[0])).toContain(
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0]?.[0])).toContain(
       'chapter-audit channel lookup failed for chapter chap-1',
     );
+    expect(reportedSites()).toEqual([
+      'chat-bridge-audit-channel-lookup-failed',
+    ]);
   });
 
-  it('warns and does not throw when the insert fails', async () => {
+  it('reports once and does not throw when inserts keep failing', async () => {
     const repos = buildRepos(auditChannel, () =>
       Promise.reject(new SupabaseQueryError({ message: 'boom' })),
     );
     const service = await instantiate(repos);
-    const warn = warnSpy(service);
+    const error = errorSpy(service);
     await expect(service.handleAuditRow(baseRow)).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0]?.[0])).toContain(
+    await expect(
+      service.handleAuditRow({ ...baseRow, id: 'audit-2' }),
+    ).resolves.toBeUndefined();
+    expect(error).toHaveBeenCalledTimes(2);
+    expect(String(error.mock.calls[0]?.[0])).toContain(
       'system_audit insert failed for audit audit-1',
     );
+    // One event for the outage, not one per audit row.
+    expect(reportedSites()).toEqual(['chat-bridge-audit-insert-failed']);
+    expect(
+      JSON.stringify(jest.mocked(Sentry.captureException).mock.calls),
+    ).not.toContain('audit-1');
   });
 
   describe('one mirror per audit row (#2846)', () => {

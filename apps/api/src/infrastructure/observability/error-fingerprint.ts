@@ -66,6 +66,23 @@ const CODE_KEYED = new Set(['NonErrorThrowable', 'SupabaseQueryError']);
  * ordinary error's stack already tells it apart.
  */
 export function errorFingerprint(reported: Error): string[] | undefined {
+  const chain = causeChain(reported);
+  if (chain.length < 2 && !CODE_KEYED.has(reported.name)) {
+    return undefined;
+  }
+  return ['{{ default }}', ...chain.map(partOf)];
+}
+
+/**
+ * One `kind[:code]` part per error in the chain, for a caller that replaces
+ * Sentry's default grouping instead of extending it: `reportCaughtFailure`
+ * groups by the site that caught the error, then by what was caught.
+ */
+export function errorChainParts(reported: Error): string[] {
+  return causeChain(reported).map(partOf);
+}
+
+function causeChain(reported: Error): Error[] {
   const chain: Error[] = [];
   for (
     let current: unknown = reported;
@@ -74,8 +91,5 @@ export function errorFingerprint(reported: Error): string[] | undefined {
   ) {
     chain.push(current);
   }
-  if (chain.length < 2 && !CODE_KEYED.has(reported.name)) {
-    return undefined;
-  }
-  return ['{{ default }}', ...chain.map(partOf)];
+  return chain;
 }
