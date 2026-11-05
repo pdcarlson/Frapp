@@ -50,6 +50,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AccentSwatches } from "@/components/settings/accent-swatches";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { CrestTile } from "@/components/layout/crest-tile";
@@ -846,8 +847,13 @@ function IdentityStep({
           the #920 slice-9 cutover removed the second brand colour; five would
           leave this one alone beside an empty cell at `sm:` and above.
         */}
-        <div className="space-y-1.5 sm:col-span-2">
+        <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="wiz-color-accent">Accent color</Label>
+          <AccentSwatches
+            value={identity.colorAccent}
+            orgName={identity.name}
+            onPick={(hex) => set("colorAccent", hex)}
+          />
           <div className="flex items-center gap-2">
             <input
               id="wiz-color-accent"

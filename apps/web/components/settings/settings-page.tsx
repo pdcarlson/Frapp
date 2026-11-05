@@ -615,6 +615,7 @@ function SettingsPageContent() {
               draft={accentDraft}
               canEditProfile={canEditProfile}
               updateChapter={updateChapter}
+              orgName={chapter?.name}
             />
           </TabsContent>
 

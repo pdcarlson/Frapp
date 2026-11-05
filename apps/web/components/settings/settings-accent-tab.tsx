@@ -20,6 +20,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { AccentSwatches } from "@/components/settings/accent-swatches";
+import { EYEBROW } from "@/components/ui/typography";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -109,9 +111,15 @@ export function SettingsAccentTab({
   draft,
   canEditProfile,
   updateChapter,
+  orgName,
 }: {
   draft: AccentDraft;
   canEditProfile: boolean;
+  /**
+   * The chapter's name, which is its organization's on the directory path:
+   * its official colors lead the swatches.
+   */
+  orgName?: string | null;
   /**
    * The page's instance, shared with the profile save: one `isPending` covers
    * both writes to `PATCH /v1/chapters/current`, as it did before the split.
@@ -268,6 +276,13 @@ export function SettingsAccentTab({
       </CardHeader>
       <form onSubmit={saveAccent}>
         <CardContent className="space-y-4">
+          <AccentSwatches
+            value={accentDraftHex}
+            orgName={orgName}
+            onPick={draft.update}
+            disabled={!canEditProfile}
+          />
+          <p className={`${EYEBROW} text-muted-foreground`}>Custom color</p>
           <div className="flex flex-wrap items-center gap-4">
             <Input
               type="color"

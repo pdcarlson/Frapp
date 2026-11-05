@@ -71,6 +71,7 @@ vi.mock("@repo/org-archetypes", async (importOriginal) => {
     },
     getArchetype: (key: string) => ({ key: key || "ifc" }),
     orgDefaultAccent: actual.orgDefaultAccent,
+    orgColorsFor: actual.orgColorsFor,
     orgHidesGreekLetters: actual.orgHidesGreekLetters,
     orgMarkFields: actual.orgMarkFields,
   };
@@ -396,6 +397,16 @@ describe("ChapterWizard chapter mark (#2876)", () => {
       short_name: "FIJI",
       show_greek_letters: false,
     });
+  });
+
+  it("sets the accent from a swatch, without typing a hex", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    fireEvent.click(screen.getByRole("button", { name: "Navy" }));
+    expect(screen.getByLabelText("Accent color")).toHaveValue("#1d2f6f");
+    create();
+    await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
+    expect(onboardMutate.mock.calls[0]![0].branding.colors.accent.toUpperCase()).toBe("#1D2F6F");
   });
 
   it("uploads nothing when no logo was chosen", async () => {
