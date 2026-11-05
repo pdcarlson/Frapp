@@ -269,11 +269,13 @@ vi.mock("react-native-gesture-handler", () => {
   };
 });
 
-// Only the chat image viewer animates directly (the sheets' own use is behind
-// the `@gorhom/bottom-sheet` mock). A shared value is a plain box read and
-// written through `get`/`set`, the React Compiler-safe accessors the viewer
-// uses. An animated style re-runs its updater on every read, the way the UI
-// thread does, so a spec that runs a gesture callback can read the result.
+// The chat image viewer and the skeleton blocks' pulse animate directly (the
+// sheets' own use is behind the `@gorhom/bottom-sheet` mock). A shared value is
+// a plain box read and written through `get`/`set`, the React Compiler-safe
+// accessors both use. An animated style re-runs its updater on every read, the
+// way the UI thread does, so a spec that runs a gesture callback can read the
+// result. An animation resolves to its target at once, so a pulse reads as its
+// low point; `useReducedMotion` is a mock a spec can flip.
 vi.mock("react-native-reanimated", () => ({
   default: { Image: "Animated.Image", View: "Animated.View" },
   useSharedValue: <T>(initial: T) =>
@@ -299,6 +301,13 @@ vi.mock("react-native-reanimated", () => ({
       }),
     }),
   withTiming: <T>(value: T) => value,
+  withRepeat: vi.fn(<T>(value: T) => value),
+  cancelAnimation: vi.fn(),
+  useReducedMotion: vi.fn(() => false),
+  Easing: {
+    ease: (t: number) => t,
+    inOut: (easing: (t: number) => number) => easing,
+  },
   // Entering animations are builders: each modifier returns the builder.
   ZoomIn: (() => {
     const builder: Record<string, unknown> = {};
@@ -332,6 +341,16 @@ vi.mock("@gorhom/bottom-sheet", () => ({
 
 vi.mock("expo-web-browser", () => ({
   openBrowserAsync: vi.fn().mockResolvedValue({ type: "dismiss" }),
+}));
+
+// expo-router's own copy of React Navigation, which app code reaches only as
+// `expo-router/react-navigation`: Metro refuses an app import of
+// `@react-navigation/*` since SDK 56. Its real module graph doesn't parse here,
+// for the reason the `expo-router` mock above gives. Only the screen's
+// navigation context is stood in. Unprovided it reads `undefined`, as it does
+// in a sheet on a device, and a spec that needs a screen provides one.
+vi.mock("expo-router/react-navigation", () => ({
+  NavigationContext: React.createContext(undefined),
 }));
 
 vi.mock("expo-font", () => ({

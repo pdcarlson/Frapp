@@ -217,7 +217,7 @@ This section specs the **anatomy** of the three visual variants — one family, 
 ### Skeleton (loading)
 
 - **Content-shaped:** the skeleton mirrors the layout it becomes — same blocks, same radii. No spinner-in-a-box.
-- Shimmer: linear gradient 90°, elevated `#2A2621` at 25%/75% and highlight `#332E26` at 50%; background-size 260px; sweep 1.4s linear infinite, phase-shared across blocks. The highlight moved from `#38312A` with the greenfield shell ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)) to match the framework board. **Mobile transcribes this value by hand** (`apps/mobile/components/state-block.tsx`'s `SkeletonLines`, and `apps/mobile/components/card-list-skeleton.tsx` for a card over a list, s10 and s11; both are static until the shimmer lands) rather than reading `--skeleton-highlight`, so the two drift unless both move together. The amplitude cost that change carries is measured in [`../web-dashboard/tokens.md`](../web-dashboard/tokens.md) L-01.
+- Shimmer: linear gradient 90°, elevated `#2A2621` at 25%/75% and highlight `#332E26` at 50%; background-size 260px; sweep 1.4s linear infinite, phase-shared across blocks. The highlight moved from `#38312A` with the greenfield shell ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)) to match the framework board. **Mobile does not draw the shimmer yet** (2026-11-05 correction): it has no gradient primitive, so `apps/mobile/components/state-block.tsx` pulses a skeleton's blocks together as a stand-in (one opacity animation per skeleton, so the blocks stay in phase), holds it still under reduced motion (followed as the setting changes) and while the skeleton's screen is out of view, and carries a `TODO-DESIGN:` naming these values. `apps/mobile/components/card-list-skeleton.tsx` (a card over a list, s10 and s11) draws its own blocks and stays static until [#3453](https://github.com/pdcarlson/Frapp/issues/3453) moves it onto `SkeletonBlock`. When it does draw the sweep it will carry them by hand rather than reading `--skeleton-highlight`, so the two drift unless both move together. The amplitude cost that change carries is measured in [`../web-dashboard/tokens.md`](../web-dashboard/tokens.md) L-01.
 - Shapes: text lines 13px tall, radius 6, varied widths (~45–70%); avatars stay circles; control-sized blocks 44px, radius 12.
 - Skeletons are neutral only — never accent, never semantic.
 - Show on first load only; background refetches keep stale content in place ([resilience](../resilience/README.md)).
@@ -229,8 +229,8 @@ Standard card chrome (card fill, neutral hairline), centered stack:
 | Slot | Spec |
 | ---- | ---- |
 | Icon tile | 44px, radius 14, fill `accent-3`, feature glyph in `accent-11` ([iconography.md](iconography.md)) |
-| Title | 16.5px / 700 `#EDEAE3`, 12px below tile |
-| Body | one line, 14.5px `#A9A399`, max-width ~220px |
+| Title | 16.5px / 700 `#EDEAE3`, 12px below tile; a state inside a list or panel under its own heading may leave it out ([writing.md](writing.md) §4) |
+| Body (optional) | one line, 14.5px `#A9A399`, max-width ~220px; only when it says something the title doesn't ([writing.md](writing.md) §4, amended 2026-11-05) |
 | CTA (optional) | Tinted button, 44px, radius 12, 14px below |
 
 Empty is inviting, never alarming: accent + neutral only, no semantic color, no blame in copy ([writing.md](writing.md)).

@@ -7,7 +7,7 @@ import {
 } from "@/lib/chapter-branding";
 import { initialsFor } from "@/lib/chat/display-name";
 import { gutterBleed, PressableRow } from "@/components/list-section";
-import { SkeletonBlock } from "@/components/state-block";
+import { SkeletonBlock, SkeletonPulse } from "@/components/state-block";
 import {
   HIDE_CONVERSATION_LABEL,
   countsAddressMember,
@@ -246,8 +246,9 @@ const SKELETON_TITLE_WIDTHS = ["42%", "28%", "55%", "36%", "48%"] as const;
  * Chat home's loading state: a section caption and channel-shaped rows on the
  * row's own geometry, so the real list replaces it in place rather than
  * pushing in under a spinner (components.md §10: content-shaped, no
- * spinner-in-a-box). Static, like every skeleton here until the shimmer
- * lands (`components/state-block.tsx`).
+ * spinner-in-a-box). Its blocks pulse together, as every skeleton's do
+ * until the shimmer lands: one `SkeletonPulse` drives them all, still under
+ * reduced motion and while Chat is out of view (`components/state-block.tsx`).
  */
 export function ChannelListSkeleton({ rows = 5 }: { rows?: number }) {
   const { tokens } = useFrappTheme();
@@ -262,25 +263,30 @@ export function ChannelListSkeleton({ rows = 5 }: { rows?: number }) {
       accessibilityLabel="Loading channels"
       style={styles.skeletonList}
     >
-      <View style={styles.skeletonCaption}>
-        <SkeletonBlock
-          width={tokens.spacing["3xl"]}
-          height={tokens.spacing.sm}
-        />
-      </View>
-      {Array.from({ length: rows }, (_, index) => (
-        <View key={index} style={styles.row}>
-          <SkeletonBlock width={tokens.spacing.md} height={tokens.spacing.lg} />
-          <View style={styles.skeletonTitle}>
-            <SkeletonBlock
-              width={
-                SKELETON_TITLE_WIDTHS[index % SKELETON_TITLE_WIDTHS.length]
-              }
-              height={tokens.spacing.md}
-            />
-          </View>
+      <SkeletonPulse>
+        <View style={styles.skeletonCaption}>
+          <SkeletonBlock
+            width={tokens.spacing["3xl"]}
+            height={tokens.spacing.sm}
+          />
         </View>
-      ))}
+        {Array.from({ length: rows }, (_, index) => (
+          <View key={index} style={styles.row}>
+            <SkeletonBlock
+              width={tokens.spacing.md}
+              height={tokens.spacing.lg}
+            />
+            <View style={styles.skeletonTitle}>
+              <SkeletonBlock
+                width={
+                  SKELETON_TITLE_WIDTHS[index % SKELETON_TITLE_WIDTHS.length]
+                }
+                height={tokens.spacing.md}
+              />
+            </View>
+          </View>
+        ))}
+      </SkeletonPulse>
     </View>
   );
 }

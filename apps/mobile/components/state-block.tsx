@@ -1,12 +1,34 @@
-import { ReactNode } from "react";
 import {
+  type ComponentType,
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import {
+  AccessibilityInfo,
   type DimensionValue,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import Animated, {
+  cancelAnimation,
+  Easing,
+  type SharedValue,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
+import { NavigationContext } from "expo-router/react-navigation";
 import { SignetTokens } from "@repo/theme/signet";
+import { ChapterGlyph } from "@/components/more/more-glyphs";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -49,25 +71,40 @@ type StateBlockProps = {
 /**
  * Loading.
  *
- * §10 asks for a content-shaped shimmer — "no spinner-in-a-box" — and this is
- * content-shaped but **not** animated. The specified sweep is a 90° linear
- * gradient, and there is no gradient primitive in this app: `expo-linear-gradient`
- * is not a dependency and `package.json` is frozen, so adding one is an
- * integrator PR rather than part of a screen slice.
+ * §10 asks for a content-shaped shimmer — "no spinner-in-a-box". This is
+ * content-shaped, and its blocks pulse their opacity together
+ * ({@link SkeletonPulse}), but it is **not** the shimmer. The specified sweep
+ * is a 90° linear gradient, and there is no gradient primitive in this app:
+ * `expo-linear-gradient` is not a dependency and `package.json` is frozen, so
+ * adding one is an integrator PR rather than part of a screen slice. A pulse
+ * needs nothing but Reanimated, which is already here, and it is enough to
+ * read as loading rather than as a grey card that looks the same on every
+ * screen.
  *
  * TODO-DESIGN: shimmer sweep per components.md §10 (elevated at 25%/75%,
  * highlight `#332E26` at 50%, 260px background-size, 1.4s linear, phase-shared
- * across blocks) once a gradient dependency lands. Nearest pattern used: static
- * neutral blocks at the specified shapes.
+ * across blocks) once a gradient dependency lands. Nearest pattern used: the
+ * neutral blocks at the specified shapes, pulsing together between full and
+ * half opacity ({@link SkeletonPulse}), still under reduced motion, and paused
+ * while their screen is out of view.
+ *
+ * The card takes the tone of what it turns into, so a screen doesn't change
+ * tone when its content lands: `card` (the default, as the empty and error
+ * cards) where the skeleton stands in for cards (task rows, event cards, the
+ * Ask answer), `list` (`surface1`) where it stands in for a grouped list
+ * (`ListSection`).
  */
 export function SkeletonLines({
   lines = 3,
   showTile = false,
+  tone = "card",
 }: {
   /** Text rows to draw. Widths cycle through the ~45–70% range §10 specifies. */
   lines?: number;
   /** Draw a leading control-sized block, for a list whose rows carry an avatar. */
   showTile?: boolean;
+  /** The tone of what the skeleton turns into: `card` cards, or a `list` (`ListSection`). */
+  tone?: "card" | "list";
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -83,56 +120,195 @@ export function SkeletonLines({
       accessible
       accessibilityRole="progressbar"
       accessibilityLabel="Loading"
-      style={styles.card}
+      style={[styles.card, tone === "list" ? styles.listCard : null]}
     >
       {/* Left-aligned inside the centred card, as the rows they stand for. */}
-      <View style={styles.skeletonStack}>
-        {showTile ? (
-          <SkeletonBlock
-            width={tokens.touch.minimum}
-            height={tokens.touch.minimum}
-            radius={tokens.radius.control}
-          />
-        ) : null}
-        {Array.from({ length: lines }, (_, index) => (
-          <SkeletonBlock
-            key={index}
-            width={widths[index % widths.length]}
-            height={tokens.spacing.md}
-          />
-        ))}
-      </View>
+      <SkeletonPulse>
+        <View style={styles.skeletonStack}>
+          {showTile ? (
+            <SkeletonBlock
+              width={tokens.touch.minimum}
+              height={tokens.touch.minimum}
+              radius={tokens.radius.control}
+            />
+          ) : null}
+          {Array.from({ length: lines }, (_, index) => (
+            <SkeletonBlock
+              key={index}
+              width={widths[index % widths.length]}
+              height={tokens.spacing.md}
+            />
+          ))}
+        </View>
+      </SkeletonPulse>
     </View>
   );
 }
 
+/** The pulse's low point and its half-cycle: 1 → 0.5 → 1 every 1.2s. */
+const PULSE_FLOOR = 0.5;
+const PULSE_HALF_MS = 600;
+
 /**
- * One skeleton block, unframed. {@link SkeletonLines} draws its tile and lines
- * with it, and a list whose loading shape is its own rows (Chat home's
- * `ChannelListSkeleton`) places them directly, so when the shimmer lands it
- * lands here once for both.
+ * The pulse a skeleton's blocks share. Everything inside it that draws a
+ * {@link SkeletonBlock} reads one opacity, so a skeleton of twenty blocks
+ * makes one reduced-motion subscription, one pair of focus and blur
+ * listeners and one animation, and its blocks are in step by construction.
+ * {@link SkeletonLines} wraps its blocks in one, and a list whose loading
+ * shape is its own rows (Chat home's `ChannelListSkeleton`) wraps them itself.
+ *
+ * The pulse runs on the UI thread. It holds still at full opacity, as the
+ * blocks drew before there was a pulse:
+ *
+ * - under the system's reduced-motion setting, followed live
+ *   ({@link useReduceMotion}), so turning it on mid-session stops a pulse
+ *   already running;
+ * - while its screen is out of view ({@link useScreenInView}). Tab screens stay
+ *   mounted after the member leaves them, and a query paused offline keeps
+ *   its skeleton up for as long as the device is offline, so without this a
+ *   blurred tab's skeleton animated on the UI thread with nobody watching.
  */
-export function SkeletonBlock({
-  width,
-  height,
-  radius,
-}: {
+export function SkeletonPulse({ children }: { children: ReactNode }) {
+  const reduceMotion = useReduceMotion();
+  const inView = useScreenInView();
+  const still = reduceMotion || !inView;
+  const opacity = useSharedValue(1);
+
+  useEffect(() => {
+    if (still) {
+      opacity.set(1);
+      return;
+    }
+    opacity.set(
+      withRepeat(
+        withTiming(PULSE_FLOOR, {
+          duration: PULSE_HALF_MS,
+          easing: Easing.inOut(Easing.ease),
+        }),
+        -1,
+        true,
+      ),
+    );
+    return () => cancelAnimation(opacity);
+  }, [still, opacity]);
+
+  return (
+    <SkeletonPulseContext.Provider value={opacity}>
+      {children}
+    </SkeletonPulseContext.Provider>
+  );
+}
+
+/** The opacity of the {@link SkeletonPulse} a block sits in, if any. */
+const SkeletonPulseContext = createContext<SharedValue<number> | null>(null);
+
+type SkeletonBlockProps = {
   width: DimensionValue;
   height: number;
   /** Defaults to a text line's radius; a control-sized block passes `radius.control`. */
   radius?: number;
-}) {
+};
+
+/**
+ * One skeleton block, unframed. {@link SkeletonLines} draws its tile and lines
+ * with it, and a list whose loading shape is its own rows places them
+ * directly, so the block's look lives here once for both, and so will the
+ * shimmer when it lands.
+ *
+ * It takes its opacity from the {@link SkeletonPulse} around it. A block
+ * placed with none brings its own, so it still pulses, at the cost of its own
+ * subscriptions.
+ */
+export function SkeletonBlock(props: SkeletonBlockProps) {
+  const pulse = useContext(SkeletonPulseContext);
+  if (pulse === null) {
+    return (
+      <SkeletonPulse>
+        <SkeletonBlock {...props} />
+      </SkeletonPulse>
+    );
+  }
+  return <PulsedBlock {...props} opacity={pulse} />;
+}
+
+function PulsedBlock({
+  width,
+  height,
+  radius,
+  opacity,
+}: SkeletonBlockProps & { opacity: SharedValue<number> }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const pulse = useAnimatedStyle(() => ({ opacity: opacity.get() }));
+
   return (
-    <View
+    <Animated.View
       style={[
         styles.skeletonBlock,
         { width, height },
         radius === undefined ? null : { borderRadius: radius },
+        pulse,
       ]}
     />
   );
+}
+
+/**
+ * The system's reduced-motion setting, as it is now. Reanimated's
+ * `useReducedMotion` is the setting the app launched with and never changes,
+ * so it only seeds the first frame here, before the system answers;
+ * `AccessibilityInfo` reports the setting when the pulse mounts, and its
+ * `reduceMotionChanged` every change after.
+ */
+function useReduceMotion(): boolean {
+  const atLaunch = useReducedMotion();
+  // Seeded with the launch value, so an answer that matches it re-renders
+  // nothing.
+  const [now, setNow] = useState(atLaunch);
+
+  useEffect(() => {
+    // A change heard before the first read answers is newer than that read.
+    let heard = false;
+    const subscription = AccessibilityInfo.addEventListener(
+      "reduceMotionChanged",
+      (enabled) => {
+        heard = true;
+        setNow(enabled);
+      },
+    );
+    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (!heard) setNow(enabled);
+    });
+    return () => {
+      heard = true;
+      subscription.remove();
+    };
+  }, []);
+
+  return now;
+}
+
+/**
+ * Whether the screen this skeleton is on is the one in view: `false` from its
+ * navigator's `blur` until its `focus`. A skeleton with no screen around it (in a
+ * sheet, which renders above the navigators, or a component outside them)
+ * has no blur to wait for and counts as in view.
+ */
+function useScreenInView(): boolean {
+  const navigation = useContext(NavigationContext);
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      if (!navigation) return () => {};
+      const offFocus = navigation.addListener("focus", onChange);
+      const offBlur = navigation.addListener("blur", onChange);
+      return () => {
+        offFocus();
+        offBlur();
+      };
+    },
+    [navigation],
+  );
+  return useSyncExternalStore(subscribe, () => navigation?.isFocused() ?? true);
 }
 
 /**
@@ -150,38 +326,54 @@ export function EmptyState({
   body,
   glyph = "+",
   action,
-}: Omit<StateBlockProps, "title"> & {
+}: {
   title?: string;
   /**
-   * A single character standing in for the drawn feature glyph.
-   *
-   * TODO-DESIGN: §10 calls for a duotone feature glyph from iconography.md.
-   * The app's only transcribed glyph set is the four tab icons
-   * (`components/tab-glyphs.tsx`); the per-feature set has not been drawn into
-   * code. Nearest pattern used: the accent-tinted tile with a text glyph.
+   * A line the title can't carry: why the view is empty, or what to do next
+   * (a search names its query, a filter says how to widen it). Never one
+   * that restates what the screen is for: without one the title stands
+   * alone. A filtered-to-nothing state inside a list may instead pass this
+   * with no title (`writing.md` §4, as amended 2026-11-05).
    */
-  glyph?: string;
+  body?: string;
+  /**
+   * The tile's feature glyph: a duotone glyph component, drawn in the chapter
+   * accent (§10, iconography.md), or a single character standing in for one.
+   *
+   * The More hub's glyphs (`components/more/more-glyphs.tsx`) are the
+   * transcribed per-feature set, and Documents, Directory and the no-chapter
+   * state pass theirs; a search or filter that matched nothing passes
+   * `SearchGlyph`. TODO-DESIGN: the rest of the per-feature set (tasks, dues,
+   * study, service hours and Chat home's no-channels state still pass a
+   * character). Nearest pattern used: the accent-tinted tile with a text
+   * glyph.
+   */
+  glyph?: string | ComponentType<{ color: string }>;
   /** The optional CTA, drawn below the body: an {@link EmptyStateAction}. */
   action?: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
+  const GlyphComponent = typeof glyph === "string" ? null : glyph;
 
   return (
     <View style={styles.card}>
-      {/* The tile is decoration standing in for a drawn glyph: hidden from
-          screen readers, so VoiceOver doesn't read "⌕" or "plus" before the
-          words. */}
+      {/* The tile is decoration: hidden from screen readers, so VoiceOver
+          doesn't read a stand-in character ("plus") before the words. */}
       <View
         style={[styles.tile, { backgroundColor: tint(accent) }]}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        <Text style={[styles.glyph, { color: accent }]}>{glyph}</Text>
+        {typeof glyph === "string" ? (
+          <Text style={[styles.glyph, { color: accent }]}>{glyph}</Text>
+        ) : GlyphComponent ? (
+          <GlyphComponent color={accent} />
+        ) : null}
       </View>
       {title ? <Text style={styles.title}>{title}</Text> : null}
-      <Text style={styles.body}>{body}</Text>
+      {body ? <Text style={styles.body}>{body}</Text> : null}
       {action}
     </View>
   );
@@ -290,7 +482,8 @@ export function ErrorState({
 export function NoChapterState({ noun }: { noun: string }) {
   return (
     <EmptyState
-      glyph="⌂"
+      // The Switch chapter row's own glyph, since that row is the way out.
+      glyph={ChapterGlyph}
       title="No chapter selected"
       body={`Choose a chapter from More → Switch chapter to see ${noun}.`}
     />
@@ -299,6 +492,8 @@ export function NoChapterState({ noun }: { noun: string }) {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    // The empty and error cards stay on `card`: §10 specs a state that
+    // replaces a screen as `--card`, and web's state cards paint it too.
     card: {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
@@ -307,6 +502,11 @@ function createStyles(tokens: SignetTokens) {
       padding: tokens.spacing.lg,
       gap: tokens.spacing.sm,
       alignItems: "center",
+    },
+    // A skeleton that turns into a `ListSection` takes its tone
+    // (`SkeletonLines`'s `tone="list"`).
+    listCard: {
+      backgroundColor: tokens.color.surface.surface1,
     },
     errorCard: {
       // The sanctioned semantic border, and the only one in the family.

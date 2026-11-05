@@ -24,11 +24,10 @@ const ROW_TITLE_WIDTHS = ["55%", "40%", "48%", "62%"] as const;
  * geometry instead: the card's radius, padding and button height, the
  * section caption, and rows at the list row's height with its dividers.
  *
- * Static and neutral, like every skeleton here until the shimmer lands (the
- * gradient dependency `state-block.tsx` documents). This is the second mobile
- * skeleton beside `SkeletonLines`, and components.md §10 names both, so the
- * shimmer has to land in both until #3453 moves these blocks onto the
- * `SkeletonBlock` #3447 adds, so that it lands once.
+ * Static and neutral. `SkeletonLines` pulses through `SkeletonBlock`; this
+ * file draws its own blocks, so it stays still until #3453 moves it onto
+ * `SkeletonBlock`, and the shimmer (the gradient dependency `state-block.tsx`
+ * documents) then lands once for both.
  *
  * TODO-DESIGN: shimmer sweep per components.md §10 (elevated at 25%/75%,
  * highlight `#332E26` at 50%, 260px background-size, 1.4s linear, phase-shared

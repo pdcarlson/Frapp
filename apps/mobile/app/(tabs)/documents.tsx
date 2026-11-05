@@ -17,6 +17,8 @@ import { UploadGlyph } from "@/components/documents/document-glyphs";
 import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
 import { FilterChips, SearchField } from "@/components/filter-chips";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import { DocumentsGlyph } from "@/components/more/more-glyphs";
+import { SearchGlyph } from "@/components/search-glyph";
 import {
   EmptyState,
   ErrorState,
@@ -114,28 +116,45 @@ export default function DocumentsScreen() {
     [documentsQuery.data],
   );
 
+  // The latest tap's number, and whether a browser is already on its way up.
+  const latestOpen = useRef(0);
+  const presenting = useRef(false);
+
   async function open(id: string) {
-    // One at a time: iOS rejects a second presentation while one is showing,
-    // which is a rejection worth not provoking rather than reporting.
-    if (openingId) return;
+    // One browser at a time: iOS rejects a second presentation while one is
+    // showing, which is a rejection worth not provoking rather than reporting.
+    if (presenting.current) return;
+    // Before that, the latest tap wins. A tap on another row while one is
+    // still fetching its signed URL moves the spinner to that row, and the
+    // earlier row's URL is dropped when it lands rather than opened over the
+    // document the member asked for since.
+    const tap = ++latestOpen.current;
+    const isLatest = () => tap === latestOpen.current;
     setOpenFailed(false);
     setOpeningId(id);
     try {
       const url = selectDownloadUrl(await openDocument.mutateAsync(id));
+      if (!isLatest()) return;
       if (!url) {
         setOpenFailed(true);
         return;
       }
-      await WebBrowser.openBrowserAsync(url);
+      presenting.current = true;
+      try {
+        await WebBrowser.openBrowserAsync(url);
+      } finally {
+        presenting.current = false;
+      }
     } catch {
-      setOpenFailed(true);
+      if (isLatest()) setOpenFailed(true);
     } finally {
-      setOpeningId(null);
+      if (isLatest()) setOpeningId(null);
     }
   }
 
   function renderList() {
-    if (documentsQuery.isPending) return <SkeletonLines lines={4} />;
+    if (documentsQuery.isPending)
+      return <SkeletonLines lines={4} tone="list" />;
     if (documentsQuery.isError) {
       return (
         <ErrorState
@@ -148,13 +167,19 @@ export default function DocumentsScreen() {
     }
     if (rows.length === 0) {
       return (
+        // A title alone when the library or folder is empty: the screen is
+        // the documents list, and a line saying so told the member nothing.
+        // A search that matched nothing names the query, and the folder it
+        // searched in when one is picked, since the search stays inside it.
         <EmptyState
-          glyph="⌸"
+          glyph={deferredSearch ? SearchGlyph : DocumentsGlyph}
           title={deferredSearch ? "No matches" : "Nothing filed here yet"}
           body={
-            deferredSearch
-              ? `No document title matches “${deferredSearch}”.`
-              : "Documents the chapter uploads show up here."
+            !deferredSearch
+              ? undefined
+              : folder
+                ? `Nothing in ${folder} matches “${deferredSearch}”.`
+                : `No document title matches “${deferredSearch}”.`
           }
         />
       );
@@ -167,7 +192,9 @@ export default function DocumentsScreen() {
             label={row.title}
             description={row.meta}
             accessibilityHint="Opens in your browser."
-            disabled={openingId !== null}
+            // Only the row being opened shows it. The others stay as they
+            // are and take a tap, which moves the spinner to them (`open`).
+            busy={row.id === openingId}
             onPress={() => void open(row.id)}
           />
         ))}
@@ -207,6 +234,7 @@ export default function DocumentsScreen() {
       {folders.length > 0 ? (
         <FilterChips
           accessibilityLabel="Filter by folder"
+          scroll
           selected={folder}
           onSelect={setFolder}
           chips={[
