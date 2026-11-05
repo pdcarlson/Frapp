@@ -637,6 +637,12 @@ Advertising Data, Browsing History, Search History.
 > written in the table above, because this table is the record of what was entered on
 > 2026-09-14 — the `‡` marks them as answers to correct in the console, not values to
 > edit here. Nothing in CI can see the console, so this footnote is the only reminder.
+>
+> **Done: the console reads Linked: Yes on both (checked 2026-11-05).** The owner's
+> screenshots of App Privacy that day show all eleven data types in the table above, each
+> linked to the user, and its product page preview has only a "Data Linked to You" section,
+> so nothing is declared as tracking. Crash Data and Performance Data are both
+> App Functionality, linked. Photos or Videos (†) is still declared.
 
 Where each answer comes from:
 
