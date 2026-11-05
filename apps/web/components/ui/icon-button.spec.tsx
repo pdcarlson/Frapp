@@ -13,7 +13,7 @@ describe("IconButton", () => {
     expect(button).toHaveAttribute("title", "Download Bylaws");
   });
 
-  it("lets a caller's title win, which is how the offline reason shows", () => {
+  it("adds a caller's title after the label, which is how the offline reason shows", () => {
     render(
       <IconButton
         label="Delete Bylaws"
@@ -24,8 +24,13 @@ describe("IconButton", () => {
       </IconButton>,
     );
     const button = screen.getByRole("button", { name: "Delete Bylaws" });
-    expect(button).toHaveAttribute("title", "Reconnect to make changes.");
+    expect(button).toHaveAttribute(
+      "title",
+      "Delete Bylaws. Reconnect to make changes.",
+    );
     expect(button).toBeDisabled();
+    // Disabled still takes the pointer, or the tooltip never shows.
+    expect(button.className).toContain("disabled:pointer-events-auto");
   });
 
   it("keeps the label's tooltip when a gate spreads title: undefined", () => {

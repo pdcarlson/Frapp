@@ -1,5 +1,5 @@
 import { useDeferredValue, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text } from "react-native";
+import { StyleSheet, Text } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import * as WebBrowser from "expo-web-browser";
 import {
@@ -12,6 +12,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
+import { IconButton } from "@/components/icon-button";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { UploadGlyph } from "@/components/documents/document-glyphs";
 import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
@@ -207,19 +208,16 @@ export default function DocumentsScreen() {
       back={BACK_TO_MORE}
       backAction={
         canUpload ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Upload document"
-            accessibilityHint="Opens a sheet to upload a photo to the library."
-            hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
+          <IconButton
+            label="Upload document"
+            hint="Opens a sheet to upload a photo to the library."
             onPress={() => {
               setUploadedTitle(null);
               uploadSheetRef.current?.present();
             }}
-            style={({ pressed }) => (pressed ? styles.pressed : null)}
           >
             <UploadGlyph color={accent} />
-          </Pressable>
+          </IconButton>
         ) : undefined
       }
       title="Documents"
@@ -280,9 +278,6 @@ export default function DocumentsScreen() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    pressed: {
-      opacity: 0.6,
-    },
     uploadedNote: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,

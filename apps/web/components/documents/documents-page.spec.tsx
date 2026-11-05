@@ -221,6 +221,19 @@ describe("DocumentsPage subscription gating", () => {
     }
   });
 
+  // components.md § Icon-only actions: Download and Delete are glyphs, named
+  // for the document, with the name as the tooltip.
+  it("draws the row's download and delete as icons named for the document", () => {
+    chapter.active();
+    render(<DocumentsPage />);
+
+    for (const name of ["Download Chapter bylaws", "Delete Chapter bylaws"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveAttribute("title", name);
+      expect(button.textContent).toBe("");
+    }
+  });
+
   it("never gates reading the library", () => {
     // `enforceSubscription` returns early for GET, so downloads and the folder
     // filters keep working for a lapsed chapter.
@@ -1170,9 +1183,10 @@ describe("DocumentsPage offline write gating", () => {
       "title",
       "Reconnect to make changes.",
     );
+    // An icon-only control keeps its name ahead of the reason.
     expect(deleteButton()).toHaveAttribute(
       "title",
-      "Reconnect to make changes.",
+      "Delete Chapter bylaws. Reconnect to make changes.",
     );
     expect(uploadTrigger()).not.toHaveAttribute("aria-describedby");
     // Finding 3: the page-level SubscriptionNotice sits outside the dialog

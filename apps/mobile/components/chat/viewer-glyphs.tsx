@@ -6,7 +6,7 @@ import { Frame, paint } from "@/components/more/more-glyphs";
  * The image viewer's own controls (`image-viewer.tsx`): share and the two
  * step chevrons (`spec/ui/design-system/iconography.md` §6.1.4). Its close
  * is the app-wide `CloseGlyph` in `components/control-glyphs.tsx`, drawn at
- * this file's 24. They are control furniture, a verb on a button, so they draw only the stroke
+ * {@link VIEWER_GLYPH_SIZE}. They are control furniture, a verb on a button, so they draw only the stroke
  * recipe's detail strokes, with no silhouette fill. Drawn from
  * `more-glyphs.tsx`'s `Frame` and `paint`, so a change to the recipe reaches
  * them too.
@@ -16,7 +16,9 @@ import { Frame, paint } from "@/components/more/more-glyphs";
  * arrow out of it, Android's three joined nodes.
  */
 
-const SIZE = 24;
+/** Every viewer control draws at this size, the close × included. */
+export const VIEWER_GLYPH_SIZE = 24;
+const SIZE = VIEWER_GLYPH_SIZE;
 
 interface ViewerGlyphProps {
   color: string;

@@ -19,11 +19,17 @@ import { cn } from "@/lib/utils";
  *   `title` too.
  *
  * `label` is required, so there is no way to write an icon-only control with
- * nothing to announce. A caller's own `title` wins over the label, which is
- * how `gate.controlProps()` gets "Reconnect to make changes." onto a disabled
- * control. It returns `title: undefined` when online, and that falls back to
- * the label rather than wiping it, which a bare `title=` before the spread
- * would have done.
+ * nothing to announce. A caller's own `title` is added after the label, never
+ * in place of it: `gate.controlProps()` puts "Reconnect to make changes." on
+ * a control it disables, and the tooltip has to say both what the glyph is and
+ * why it's off. Online the gate passes `title: undefined`, which leaves the
+ * label alone rather than wiping it, as a bare `title=` before the spread
+ * would have.
+ *
+ * Disabled, it still takes the pointer. Button's shared disabled recipe sets
+ * `pointer-events: none`, which stops the hover that shows a native tooltip,
+ * so a gated row was left as grey glyphs nobody could identify. The
+ * `disabled` attribute already blocks the click.
  *
  * Paint defaults to `quiet`: a row action sits in the text's own tone and
  * lights up on hover, so a column of them never outshines the row.
@@ -51,8 +57,12 @@ const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
       variant={variant}
       size="icon"
       aria-label={label}
-      title={title ?? label}
-      className={cn(size === "row" && compactControlClassName, className)}
+      title={title ? `${label}. ${title}` : label}
+      className={cn(
+        "disabled:pointer-events-auto disabled:cursor-not-allowed",
+        size === "row" && compactControlClassName,
+        className,
+      )}
       {...props}
     />
   ),

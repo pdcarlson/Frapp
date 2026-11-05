@@ -10,9 +10,11 @@ import { Pressable, StyleSheet } from "react-native";
  * announce. `hint` is for what the label can't say ("It returns if the
  * connection has not recovered.").
  *
- * The glyph is 20px and the hit area is the 44pt touch floor (§2): the
- * box is 28pt and the slop adds 8 on each side, so the control sits on a
- * caption-height banner without making it taller.
+ * The box is the glyph's own 20pt and the slop adds 12 on each side, which
+ * reaches the 44pt touch floor (§2) without taking layout height: a 28pt box
+ * made the one-line network banner about 12pt taller. Slop isn't layout, so
+ * the floor holds only where 12pt around the box is free; a control placed
+ * flush against another one shares that margin.
  */
 export function IconButton({
   label,
@@ -35,7 +37,7 @@ export function IconButton({
       accessibilityHint={hint}
       accessibilityState={{ disabled }}
       disabled={disabled}
-      hitSlop={8}
+      hitSlop={ICON_BUTTON_HIT_SLOP}
       onPress={onPress}
       style={({ pressed }) => [styles.box, pressed ? styles.pressed : null]}
     >
@@ -44,10 +46,16 @@ export function IconButton({
   );
 }
 
+/** The glyph size this control is drawn for, §2's icon-button size. */
+export const ICON_BUTTON_SIZE = 20;
+
+/** (44 - 20) / 2: what lifts the 20pt box to the 44pt touch floor. */
+export const ICON_BUTTON_HIT_SLOP = 12;
+
 const styles = StyleSheet.create({
   box: {
-    width: 28,
-    height: 28,
+    width: ICON_BUTTON_SIZE,
+    height: ICON_BUTTON_SIZE,
     alignItems: "center",
     justifyContent: "center",
   },

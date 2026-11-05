@@ -116,6 +116,17 @@ function invitesToGenerate(draft: string): number {
   return Math.min(MAX_INVITE_BATCH, Math.max(1, parseGuardedInt(draft) ?? 1));
 }
 
+
+/**
+ * The last four characters of a token, to tell same-role invites apart in a
+ * control's label. A batch mints up to 50 invites of one role with one expiry,
+ * so "Revoke the Member invite" would name ten buttons the same; the row shows
+ * the whole token, and its tail is the shortest part a person can match.
+ */
+function tokenTail(token: string): string {
+  return token.slice(-4);
+}
+
 export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const [open, setOpen] = useState(false);
   const [roleName, setRoleName] = useState(SEEDED_MEMBER_ROLE_NAME);
@@ -488,7 +499,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                     </p>
                   </div>
                   <IconButton
-                    label={`Copy the ${invite.role} invite link`}
+                    label={`Copy the ${invite.role} invite link ending ${tokenTail(invite.token)}`}
                     onClick={() => handleCopyInvite(invite)}
                   >
                     <Copy />
@@ -530,13 +541,13 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                 </div>
                 <div className="flex items-center gap-2">
                   <IconButton
-                    label={`Copy the ${invite.role} invite link`}
+                    label={`Copy the ${invite.role} invite link ending ${tokenTail(invite.token)}`}
                     onClick={() => handleCopyInvite(invite)}
                   >
                     <Copy />
                   </IconButton>
                   <IconButton
-                    label={`Revoke the ${invite.role} invite`}
+                    label={`Revoke the ${invite.role} invite ending ${tokenTail(invite.token)}`}
                     onClick={() => handleRevokeInvite(invite.id)}
                     {...revokeGate.controlProps(
                       revokeInviteMutation.isPending || hasLiveDataError,

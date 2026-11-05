@@ -119,6 +119,23 @@ describe("GeofencesAdminPage subscription gating", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
+  // components.md § Icon-only actions: each row action is its glyph alone,
+  // named for the zone it acts on, with the same words as its tooltip.
+  it("draws the row actions as icons named for the zone", () => {
+    chapter.active();
+    render(<GeofencesAdminPage />);
+
+    for (const [button, name] of [
+      [editButton(), "Edit Main library"],
+      [disableButton(), "Disable Main library"],
+      [deleteButton(), "Delete Main library"],
+    ] as const) {
+      expect(button).toHaveAccessibleName(name);
+      expect(button).toHaveAttribute("title", name);
+      expect(button.textContent).toBe("");
+    }
+  });
+
   it("disables the create trigger and names blocker plus recovery when incomplete", async () => {
     chapter.incomplete();
     render(<GeofencesAdminPage />);
