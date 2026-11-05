@@ -363,3 +363,10 @@ and a black calendar glyph that vanished into every date field.
 It is `dark` alone, never `light dark`: Signet has one appearance (§1), so handing the choice back to
 the operating system would draw light controls on a dark page for anyone whose OS is in light mode.
 `signet.css.spec.ts` pins the single declaration.
+
+The scheme gets a browser's dark control, not Signet's, so the web checkbox is drawn by hand: a
+native input with `appearance: none`, painted as [components.md](components.md) § Checkbox by
+`.signet-checkbox` in `apps/web/app/globals.css`. Chromium's dark checkbox is a solid grey square
+with a light rim, which matches neither the spec's transparent fill nor its border, and border and
+radius utilities do nothing to a control the browser paints itself (#3186, 2026-11-05).
+`table-controls.spec.ts` pins the rule.
