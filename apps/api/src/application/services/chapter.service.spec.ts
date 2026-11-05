@@ -560,6 +560,7 @@ describe('ChapterService', () => {
       DEFAULT_CHANNELS.map((channelDef) => ({
         chapter_id: chapter.id,
         name: channelDef.name,
+        description: channelDef.description,
         type: channelDef.type,
         is_read_only: channelDef.is_read_only,
         required_permissions: channelDef.required_permissions

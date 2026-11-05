@@ -613,12 +613,12 @@ describe("MessageTimeline — the viewer's block list (#2313)", () => {
     renderWithList(
       [message({ id: "m1", sender_id: BOB, content: "from the echo" })],
       blockState("unavailable"),
+      { channelStart: <p>Channel start</p> },
     );
 
     expect(screen.queryByText("from the echo")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("Nothing in this channel yet"),
-    ).not.toBeInTheDocument();
+    // A held row is not an empty channel, so the start does not stand in.
+    expect(screen.queryByText("Channel start")).not.toBeInTheDocument();
   });
 
   it("still shows the viewer's own message and a server-cleared row while the list is unavailable", () => {
@@ -1521,5 +1521,56 @@ describe("the image viewer", () => {
     );
 
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("MessageTimeline channel start", () => {
+  const rows = (count: number): ChatMessage[] =>
+    Array.from({ length: count }, (_, i) =>
+      message({
+        id: `msg-${i + 1}`,
+        client_message_id: `cm-${i + 1}`,
+        content: `message ${i + 1}`,
+        created_at: new Date(Date.UTC(2026, 8, 1) + (i + 1) * 60_000).toISOString(),
+      }),
+    );
+
+  it("stands the channel start in for an empty channel, not an empty-state card", () => {
+    renderTimeline([], { channelStart: <p>Welcome to #general</p> });
+
+    expect(screen.getByText("Welcome to #general")).toBeInTheDocument();
+    expect(screen.queryByText(/nothing in this channel/i)).toBeNull();
+  });
+
+  it("lets a channel start taller than the window scroll rather than clip", () => {
+    renderTimeline([], { channelStart: <p>Welcome to #general</p> });
+
+    // jsdom has no layout, so the contract is the boxes: a scrolling outer
+    // box, and a column at least its height that sits the start at the bottom.
+    const column = screen.getByText("Welcome to #general").parentElement!;
+    expect(column).toHaveClass("min-h-full", "justify-end");
+    expect(column.parentElement).toHaveClass("h-full", "overflow-y-auto");
+  });
+
+  it("draws the channel start above the oldest message once no older page is left", () => {
+    renderTimeline(rows(3), {
+      hasOlder: false,
+      channelStart: <p>Welcome to #general</p>,
+    });
+
+    const start = screen.getByText("Welcome to #general");
+    const oldest = screen.getByText("message 1");
+    expect(
+      start.compareDocumentPosition(oldest) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("holds the channel start back while older history is still to load", () => {
+    renderTimeline(rows(3), {
+      hasOlder: true,
+      channelStart: <p>Welcome to #general</p>,
+    });
+
+    expect(screen.queryByText("Welcome to #general")).toBeNull();
   });
 });
