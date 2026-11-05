@@ -440,7 +440,7 @@ describe("ChatReportsCard — async states", () => {
       open: { isPending: true, isLoading: true, fetchStatus: "fetching" },
     };
     const { container } = render(<ChatReportsCard />);
-    expect(screen.getByText("Loading reports...")).toBeInTheDocument();
+    expect(screen.getByText("Loading reports")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /dismiss/i })).toBeNull();
     expect(cardFilledContainers(container)).toEqual([]);
   });

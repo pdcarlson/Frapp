@@ -202,6 +202,37 @@ describe("the panel states plan status, always (4d)", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("draws its own skeleton while neither read has answered", () => {
+    // An "Unknown" chip here would state a fact nobody has read yet.
+    setChapter(undefined, { isPending: true });
+    mockBillingStatus.mockReturnValue({
+      data: undefined,
+      isError: false,
+      isPending: true,
+      fetchStatus: "fetching",
+    });
+    renderPanel();
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading your plan");
+    expect(screen.queryByText("Unknown")).not.toBeInTheDocument();
+  });
+
+  it("renders the panel, not a skeleton, while the reads are paused offline", () => {
+    // Paused queries do not answer until the connection returns, so a
+    // skeleton would hold the slot indefinitely.
+    setChapter(undefined, { isPending: true });
+    mockBillingStatus.mockReturnValue({
+      data: undefined,
+      isError: false,
+      isPending: true,
+      fetchStatus: "paused",
+    });
+    renderPanel();
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
+  });
+
   it("falls back to the billing payload when the chapter record has not resolved", () => {
     // Two caches over one fact, resolving independently. A paying chapter must
     // not be told "Unknown" beside its own live Stripe ids.

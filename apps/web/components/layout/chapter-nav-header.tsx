@@ -27,6 +27,7 @@ import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { hasSettingsDestination } from "@/components/settings/settings-access";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
+import { Skeleton } from "@/components/shared/async-states";
 
 /**
  * The 40px chapter row at the top of the left nav.
@@ -249,8 +250,15 @@ export function ChapterNavHeader({
     text: placeholder,
     source: "initials",
   };
+  /*
+    Still resolving: the tile and the name are placeholders in their own
+    geometry rather than a "--" crest and a "Loading..." label, which read as
+    a chapter actually named that (`components.md` §10, content-shaped).
+  */
+  const loadingIdentity = !identity && !chapterFailed;
   const name =
-    identity?.name ?? (chapterFailed ? "Chapter unavailable" : "Loading...");
+    identity?.name ??
+    (chapterFailed ? "Chapter unavailable" : "Loading chapter");
   const otherChapters = memberships.filter(
     (m) => m.chapter_id !== activeChapterId,
   );
@@ -269,12 +277,22 @@ export function ChapterNavHeader({
             className,
           )}
         >
-          <CrestTile mark={mark} />
+          {loadingIdentity ? (
+            <Skeleton className="h-7 w-7 shrink-0 rounded-[8px]" />
+          ) : (
+            <CrestTile mark={mark} />
+          )}
           {collapsed ? null : (
             <>
-              <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">
-                {name}
-              </span>
+              {loadingIdentity ? (
+                <span className="min-w-0 flex-1">
+                  <Skeleton className="h-[13px] w-28" />
+                </span>
+              ) : (
+                <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">
+                  {name}
+                </span>
+              )}
               <ChevronDown
                 className="h-3.5 w-3.5 shrink-0 text-muted"
                 aria-hidden="true"
