@@ -16,10 +16,8 @@ import { db, miss } from "../harness.mjs";
 //   - a group a `purged` import created that this import put channels into is
 //     re-reaped; one a finished import created, or one an officer made, is not
 //     a candidate even when this import used it;
-//   - chapter scope; a running or finished import deletes nothing;
-//   - called at start (a `failed` import here), it deletes the groups the
-//     import made that none of its rows points at any more, after a remap,
-//     and keeps those a row still points at;
+//   - chapter scope; an import that isn't `purging` deletes nothing, a
+//     failed one waiting for a restart included;
 //   - the mapping columns refuse a group on anything but a new channel, and a
 //     blank name; deleting a group clears the rows that resolved to it;
 //   - a signed-in client may not call either function, and the new table has
@@ -35,7 +33,7 @@ console.log("\n=== Functional: a deleted import takes the channel groups it made
   const B = "b6000000-0000-4000-8000-00000000000b";
   const PURGING = "a6000000-0000-4000-8000-0000000000d1";
   const OTHER = "a6000000-0000-4000-8000-0000000000d2"; // completed
-  const FAILED = "a6000000-0000-4000-8000-0000000000d5"; // remapped, restarting
+  const FAILED = "a6000000-0000-4000-8000-0000000000d5"; // remapped, waiting for a restart
   const RUNNING = "a6000000-0000-4000-8000-0000000000d3";
   const PURGED = "a6000000-0000-4000-8000-0000000000d4";
   const CHANNEL = "a6000000-0000-4000-8000-0000000000c1";
@@ -48,7 +46,7 @@ console.log("\n=== Functional: a deleted import takes the channel groups it made
     OTHERS: "a6000000-0000-4000-8000-0000000000e6", // a finished import created it, this one used it: kept
     OFFICER: "a6000000-0000-4000-8000-0000000000e7", // an officer's group this one used: kept
     IN_B: "b6000000-0000-4000-8000-0000000000e1", // recorded here, but in another chapter: kept
-    STALE: "a6000000-0000-4000-8000-0000000000f1", // the failed import made it, a remap dropped it: deleted at start
+    STALE: "a6000000-0000-4000-8000-0000000000f1", // the failed import made it, a remap dropped it: kept until it is purged
     STILL_MEANT: "a6000000-0000-4000-8000-0000000000f2", // the failed import made it, a row still points at it: kept
   };
   const DELETABLE = [G.EMPTY, G.PINNED_BY_PURGED, G.REREAP].sort();
@@ -117,20 +115,12 @@ console.log("\n=== Functional: a deleted import takes the channel groups it made
     const wrongChapter = await q(`select * from delete_empty_discord_import_categories('${PURGING}', '${B}')`);
     const running = await q(`select * from delete_empty_discord_import_categories('${RUNNING}', '${A}')`);
     const finished = await q(`select * from delete_empty_discord_import_categories('${OTHER}', '${A}')`);
+    const failed = await q(`select * from delete_empty_discord_import_categories('${FAILED}', '${A}')`);
     check(
-      "the wrong chapter id, or a running or finished import, deletes nothing",
-      wrongChapter.length === 0 && running.length === 0 && finished.length === 0 &&
+      "the wrong chapter id, or a running, finished or failed import, deletes nothing",
+      wrongChapter.length === 0 && running.length === 0 && finished.length === 0 && failed.length === 0 &&
         (await groupsLeft()).length === Object.keys(G).length,
-      { wrongChapter, running, finished },
-    );
-
-    const atStart = await q(`select * from delete_empty_discord_import_categories('${FAILED}', '${A}') as id`);
-    const leftAtStart = await groupsLeft();
-    check(
-      "at start, deletes only the import's own groups no row points at any more",
-      atStart.length === 1 && atStart[0].id === G.STALE &&
-        !leftAtStart.includes(G.STALE) && leftAtStart.includes(G.STILL_MEANT),
-      { atStart, leftAtStart },
+      { wrongChapter, running, finished, failed },
     );
 
     const deleted = (await q(`select * from delete_empty_discord_import_categories('${PURGING}', '${A}') as id`))

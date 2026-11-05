@@ -697,9 +697,8 @@ channel that reports a different one fails the import rather than being skipped.
     still has to make then lands in no category, until the import is started
     again: a restart resolves the name again, making the category again if
     it is gone, but never for a channel that already exists or will share
-    one that does. A start also deletes the categories the import made that
-    no channel sits in and none of its channels is bound for any more, as
-    after a remap that unticked one (#2882). *2026-11-05, owner's request: a
+    one that does. A category a remap stops using, as after unticking one,
+    stays until the import is deleted or an officer deletes it (#2882). *2026-11-05, owner's request: a
     78-channel server landed as one flat list.*
   - **A channel an import merges into stays an ordinary channel, which an
     officer can delete at any time (#2922)**: before the import starts, while
@@ -888,8 +887,9 @@ channel that reports a different one fails the import rather than being skipped.
   that is left with no channel in it and that no mapping row of an import
   that isn't being or hasn't been deleted points at; a finished import's row
   counts, as its record of where its channels went. A category another
-  deleted import created, which this one put channels into, goes under the
-  same rules, as channels do. A category the chapter already had is never
+  deleted import created, which this one's mapping still points at, goes
+  under the same rules, as channels do; one a remap stopped pointing at stays
+  until an officer deletes it. A category the chapter already had is never
   deleted, even when the import put channels into it.
 
   Before #2905 every created channel stayed. A bot re-import then merged a

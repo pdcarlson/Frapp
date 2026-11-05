@@ -36,7 +36,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Purpose**: Lets a Discord import put the channels it creates into channel groups (`chat_channel_categories`) named after the server's categories, when the admin chooses it on the mapping step. The behaviour is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
   - Three nullable columns on `discord_import_channels`: `new_channel_group` (the group name the admin chose), `discord_category_position` (the category's place in Discord, read by the bot scan) and `new_channel_category_id` (the group `start` resolved the name to; `on delete set null`). Two checks: only a `create_new` row may carry a group, and a group name is 1 to 100 characters once trimmed.
   - `discord_import_created_categories` (RLS on, no policies) records each group an import created, as `discord_import_created_channels` does for channels.
-  - `delete_empty_discord_import_categories` and its check `discord_import_category_holds_anything`, the purge's group step, which `start` also runs to clear the groups a remap left empty. Service role only.
+  - `delete_empty_discord_import_categories` and its check `discord_import_category_holds_anything`, the purge's group step. Service role only.
   - Two partial indexes: `discord_import_channels (new_channel_category_id)` and `chat_channels (category_id)`.
 
   No row is rewritten: every existing mapping row gets nulls, which is the behaviour it had.

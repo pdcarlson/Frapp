@@ -494,21 +494,12 @@ export class DiscordImportChannelMappingService {
    * is left alone. Each group it creates is recorded right after it is made
    * and before any row points at it, so deleting the import finds it.
    *
-   * Last, it deletes the groups this import made that no row of a live import
-   * points at any more and no channel sits in: after a remap that dropped a
-   * category, or turned keeping them off, they would otherwise stay as empty
-   * sidebar sections until the import is deleted.
+   * A group a remap stopped using stays until the import is deleted, or an
+   * officer deletes it: one the import made may since have been renamed and
+   * adopted, and deleting it here could also pull a group from under another
+   * import's start.
    */
   async provisionChannelGroups(
-    id: string,
-    chapterId: string,
-    channels: readonly DiscordImportChannel[],
-  ): Promise<void> {
-    await this.resolveChannelGroups(id, chapterId, channels);
-    await this.importRepo.deleteEmptyCreatedCategories(id, chapterId);
-  }
-
-  private async resolveChannelGroups(
     id: string,
     chapterId: string,
     channels: readonly DiscordImportChannel[],

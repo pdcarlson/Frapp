@@ -599,6 +599,35 @@ describe("ImportWizard — the bot path", () => {
     ).toBeInTheDocument();
   });
 
+  it("asks about like-named channels once keeping categories would send them to different ones", async () => {
+    const rush = (id: string, category: string) => ({
+      discord_channel_id: id,
+      discord_channel_name: "rush",
+      discord_category: category,
+      parent_discord_channel_id: null,
+      readable: true,
+      private_in_discord: false,
+    });
+    discoverChannels.mockResolvedValue({
+      channels: [rush("c1", "Actives"), rush("c2", "Alumni")],
+      roles: [],
+      warnings: [],
+    });
+
+    await renderAtChannels();
+    // Off: both land in one #rush, as before.
+    await screen.findByText(/Nothing needs attention/);
+
+    fireEvent.click(
+      screen.getByRole("switch", { name: /Keep Discord.s categories/ }),
+    );
+
+    expect(
+      (await screen.findAllByText(/which category they go into/)).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+  });
+
   it("holds Continue on a channel that was private in Discord until its visibility is chosen", async () => {
     discoverChannels.mockResolvedValue({
       channels: [

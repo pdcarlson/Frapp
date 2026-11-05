@@ -977,19 +977,13 @@ describe('DiscordImportService — keeping Discord categories as channel groups'
     expect(repo.assignChannelGroup).not.toHaveBeenCalled();
   });
 
-  it('clears out the groups it made that a remap left empty, after resolving the rest', async () => {
+  it('leaves the groups a remap stopped using to the purge, which an officer may have adopted', async () => {
     const svc = await buildBot();
     repo.findChannels.mockResolvedValue([newChannel('map-01', 'Secret')]);
 
     await svc.start(IMPORT_ID, CHAPTER, USER, true);
 
-    expect(repo.deleteEmptyCreatedCategories).toHaveBeenCalledWith(
-      IMPORT_ID,
-      CHAPTER,
-    );
-    expect(
-      repo.deleteEmptyCreatedCategories.mock.invocationCallOrder[0],
-    ).toBeGreaterThan(repo.assignChannelGroup.mock.invocationCallOrder[0]);
+    expect(repo.deleteEmptyCreatedCategories).not.toHaveBeenCalled();
   });
 
   it('touches no group when no channel names one', async () => {
