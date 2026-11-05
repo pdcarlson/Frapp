@@ -111,6 +111,24 @@ describe("the attachment list", () => {
     expect(screen.queryByRole("link")).toBeNull();
   });
 
+  it("draws a photo bare, with no file-chip frame around it", () => {
+    // components.md § Chrome weight: the framed row is for files. A photo in
+    // a padded, bordered box read like a file chip before anyone opened it.
+    show(photo(1));
+
+    const preview = screen.getByRole("button", { name: "View photo-1.png" });
+    expect(preview).not.toHaveClass("border-border", "bg-surface-1", "px-2");
+    expect(preview).toHaveClass("rounded-md", "overflow-hidden");
+  });
+
+  it("keeps the frame on a file row", () => {
+    show(attachment());
+    expect(screen.getByRole("link", { name: /minutes\.pdf/ })).toHaveClass(
+      "border-border",
+      "bg-surface-1",
+    );
+  });
+
   it("sizes each row to its content rather than the thread's width", () => {
     // The body column stretches its children; without this a file row became
     // a bordered bar across the whole thread.

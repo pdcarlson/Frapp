@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, MessageSquare, Trash2 } from "lucide-react";
-import { DirectoryGlyph, RolesGlyph } from "@/components/members/directory-glyphs";
+import { RolesGlyph } from "@/components/members/directory-glyphs";
 import {
   useCustomRoles,
   useGetOrCreateDm,
@@ -412,8 +412,7 @@ export function MemberDetailSheet({
         className="w-full overflow-y-auto sm:max-w-xl"
       >
         <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            <DirectoryGlyph className="h-5 w-5" />
+          <SheetTitle>
             {displayName}
           </SheetTitle>
         </SheetHeader>

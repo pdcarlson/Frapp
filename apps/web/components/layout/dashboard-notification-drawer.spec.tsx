@@ -161,3 +161,43 @@ describe("DashboardNotificationDrawer — report queue freshness", () => {
     expect(mockInvalidateReports).not.toHaveBeenCalled();
   });
 });
+
+describe("DashboardNotificationDrawer — chrome (components.md § Chrome weight)", () => {
+  it("draws a bare title with Mark all read as its one icon control", () => {
+    renderDrawer();
+
+    expect(
+      screen.getByRole("heading", { name: "Notifications" }),
+    ).toBeInTheDocument();
+    const markAll = screen.getByRole("button", { name: "Mark all read" });
+    expect(markAll).toHaveAttribute("title", "Mark all read");
+    expect(markAll.textContent).toBe("");
+    // The realtime ping refetches; there is no manual Refresh, no count and
+    // no "N total" line.
+    expect(screen.queryByRole("button", { name: /refresh/i })).toBeNull();
+    expect(screen.queryByText(/\d+ total/)).toBeNull();
+  });
+
+  it("marks unread with a dot and a spoken word, not a New or Read badge", () => {
+    notifications.value = [
+      EVENT,
+      { ...REPORT, read_at: "2026-09-22T10:05:00Z" },
+    ];
+    renderDrawer();
+
+    expect(
+      screen.getByRole("link", { name: /^Unread:\s*Notice / }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /^Message Reported / }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^(New|Read)$/)).toBeNull();
+  });
+
+  it("lists rows flat, with no card around each", () => {
+    renderDrawer();
+    const row = screen.getByRole("link", { name: /Notice/ });
+    expect(row).not.toHaveClass("bg-card", "bg-accent-subtle", "border-border");
+    expect(row.closest("ul")).toHaveClass("divide-y");
+  });
+});

@@ -486,12 +486,20 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
     expect(Keyboard.dismiss).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the backdrop out of the accessibility tree; Cancel is the spoken dismissal", () => {
+  it("keeps the backdrop out of the accessibility tree; the escape gesture is the spoken dismissal", () => {
     const tree = openMenu();
     const node = backdrop(tree);
     expect(node.props.accessible).toBe(false);
     expect(node.props.importantForAccessibility).toBe("no");
-    expect(byLabel(tree, "Cancel").props.accessibilityRole).toBe("button");
+    // No Cancel row (components.md § Chrome weight). VoiceOver's escape
+    // gesture closes the menu; Android back is `useBackToClose`'s.
+    expect(() => byLabel(tree, "Cancel")).toThrow();
+    const modal = tree.root.find(
+      (n) =>
+        n.props.accessibilityViewIsModal === true && typeof n.type === "string",
+    );
+    act(() => modal.props.onAccessibilityEscape());
+    expect(menu(tree)).toHaveLength(0);
   });
 
   // What a back press does, and when focus is sent, are `lib/overlay.spec.tsx`'s
@@ -568,7 +576,7 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
       expect(eventType).toBe("focus");
       expect(target.element.props.children).toBe("Notify me about");
 
-      press(byLabel(tree, "Cancel"));
+      press(backdrop(tree));
       press(byLabel(tree, TRIGGER));
       act(() => {
         vi.runAllTimers();

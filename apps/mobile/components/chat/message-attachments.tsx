@@ -145,7 +145,9 @@ export function MessageAttachments({
                 : void open(attachment.id, attachment.download_url)
             }
             onLongPress={onLongPress}
-            style={styles.row}
+            // A photo draws bare at the media radius; the framed row is for
+            // files (components.md § Chrome weight).
+            style={isImage ? styles.imageRow : styles.row}
           >
             {isImage ? (
               <Image
@@ -208,6 +210,11 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.sm,
       paddingVertical: tokens.spacing.xs,
+    },
+    imageRow: {
+      alignSelf: "stretch",
+      borderRadius: tokens.radius.control,
+      overflow: "hidden",
     },
     fileRow: {
       flexDirection: "row",

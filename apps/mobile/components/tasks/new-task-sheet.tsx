@@ -480,11 +480,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
             <View style={styles.pickerHeader}>
-              <SheetHeader
-                title="Assign to"
-                onCancel={() => pickerRef.current?.dismiss()}
-                cancelLabel="Done"
-              />
+              <SheetHeader title="Assign to" />
               {/* Not `SearchField` from `components/filter-chips.tsx`: that is a
                   plain `TextInput`, and inside a gorhom sheet a plain input
                   breaks the sheet's keyboard coordination — `patterns.md` makes

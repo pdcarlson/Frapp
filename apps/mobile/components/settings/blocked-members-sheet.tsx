@@ -87,11 +87,6 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
       [blockList.ids, nameFor],
     );
 
-    function dismiss() {
-      if (typeof ref === "function" || !ref?.current) return;
-      ref.current.dismiss();
-    }
-
     // Only a confirmed read may say the list is empty. An unavailable read
     // with a cached list still shows that list (everyone on it is blocked) but
     // says it could not be refreshed, and offers the same way back as the
@@ -188,11 +183,7 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
         backdropComponent={SheetScrim}
       >
         <BottomSheetScrollView contentContainerStyle={styles.body}>
-          <SheetHeader
-            title={BLOCKED_MEMBERS_TITLE}
-            onCancel={dismiss}
-            cancelLabel="Done"
-          />
+          <SheetHeader title={BLOCKED_MEMBERS_TITLE} />
           {body}
         </BottomSheetScrollView>
       </BottomSheetModal>

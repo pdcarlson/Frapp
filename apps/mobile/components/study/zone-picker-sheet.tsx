@@ -45,15 +45,7 @@ export const ZonePickerSheet = forwardRef<BottomSheetModal, ZonePickerSheetProps
         backdropComponent={SheetScrim}
       >
         <View style={styles.header}>
-          <SheetHeader
-            title="Study zone"
-            onCancel={() => {
-              // `ref` is the caller's; dismissing is theirs to own too, so the
-              // cancel path goes through the same `onSelect`-free close a tap
-              // on the scrim makes.
-              (ref as React.RefObject<BottomSheetModal>)?.current?.dismiss();
-            }}
-          />
+          <SheetHeader title="Study zone" />
         </View>
 
         <BottomSheetFlatList

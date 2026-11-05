@@ -35,7 +35,6 @@ import {
 import { NestedEmpty } from "@/components/shared/nested-states";
 import { SectionLabel } from "@/components/shared/section-label";
 import { denseListClassName } from "@/components/shared/table-controls";
-import { ServiceGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   ErrorState,
   anyReadUncached,
@@ -466,10 +465,7 @@ export function ServiceHoursPage() {
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg" {...logDialog.contentProps}>
               <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <ServiceGlyph className="h-4 w-4" />
-                  Log service hours
-                </DialogTitle>
+                <DialogTitle>Log service hours</DialogTitle>
                 <DialogDescription>
                   An admin approves it before points are awarded.
                 </DialogDescription>

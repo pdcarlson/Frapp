@@ -3,7 +3,6 @@ import { applyAlpha } from "@repo/color";
 import {
   AA_NON_TEXT,
   AA_TEXT,
-  accentFour,
   accentRolesFor,
   CARD_HOVER,
   HAIRLINE_ALPHA,
@@ -185,43 +184,25 @@ const ROW_HOVER_FLOOR = 1.03;
 
 describe("the notification drawer's rows hover off the sheet (#1208)", () => {
   // The drawer is a `SheetContent`, so every row's container is `--popover`.
+  // Rows are flat and transparent there (components.md § Chrome weight).
 
-  it("lifts a read row, which is card filled, off the sheet and off its rest fill", () => {
+  it("lifts a row off the sheet with --card-hover", () => {
     expect(ratio(CARD_HOVER, SURFACE.popover)).toBeGreaterThan(
       INDISTINGUISHABLE,
     );
-    expect(ratio(CARD_HOVER, SURFACE.card)).toBeGreaterThan(INDISTINGUISHABLE);
   });
 
-  it("would have left a read row on the sheet's own luminance with §2's tint", () => {
-    // §2's accent tint is the remedy for a row that is transparent over a menu,
-    // and it separates by hue alone. On this card-filled row it lands within
-    // 1.03:1 of the sheet for several seeds (`#1F4E79` measured 1.000:1), which
-    // is why the read row takes the neutral lift instead.
+  it("would have left a row on the sheet's own luminance with §2's tint", () => {
+    // §2's accent tint is the remedy for a row that is transparent over a
+    // menu, and it separates by hue alone. On the sheet it lands within
+    // 1.03:1 of `--popover` for several seeds (`#1F4E79` measured 1.000:1),
+    // which is why the drawer's rows take the neutral lift instead.
     const worst = Math.min(
       ...SEEDS.map((seed) =>
         ratio(accentRolesFor(seed)["--accent-subtle"]!, SURFACE.popover),
       ),
     );
     expect(worst).toBeLessThan(ROW_HOVER_FLOOR);
-  });
-
-  it("lifts an unread row, which is tinted, to accent-4 for every seed", () => {
-    // §3's Tinted hover: one step up the accent scale, off the sheet and a real
-    // step above the row's accent-3 rest fill (`table-contrast.spec.ts` pins
-    // the same lift for a selected row).
-    for (const seed of SEEDS) {
-      const roles = accentRolesFor(seed);
-      const four = accentFour(roles);
-      expect(
-        ratio(four, SURFACE.popover),
-        `${seed} accent-4 on --popover`,
-      ).toBeGreaterThanOrEqual(ROW_HOVER_FLOOR);
-      expect(
-        ratio(four, roles["--accent-subtle"]!),
-        `${seed} accent-4 over accent-3`,
-      ).toBeGreaterThan(1.1);
-    }
   });
 });
 

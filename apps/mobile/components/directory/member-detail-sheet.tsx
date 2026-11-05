@@ -25,7 +25,6 @@ import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { ErrorState, SkeletonLines } from "@/components/state-block";
 import {
   SheetGrabber,
-  SheetHeader,
   SheetScrim,
   useSheetBackgroundStyle,
 } from "@/components/sheet-scaffold";
@@ -208,7 +207,9 @@ export const MemberDetailSheet = forwardRef<
         style={styles.scroll}
         contentContainerStyle={styles.body}
       >
-        <SheetHeader title="Member" onCancel={dismiss} cancelLabel="Done" />
+        {/* No "Member" title and no Done: the member's name heads the sheet,
+            and the grabber, scrim and Android back close it (components.md
+            § Chrome weight). */}
 
         {memberQuery.isPending ? (
           <SkeletonLines lines={4} showTile tone="list" />
@@ -324,6 +325,7 @@ export const MemberDetailSheet = forwardRef<
                   <ListRow
                     label={`Unblock ${blockTarget.displayName}`}
                     description={UNBLOCK_ROW_DESCRIPTION}
+                    action
                     disabled={blockActions.isPending}
                     onPress={() =>
                       confirmUnblockMember({
@@ -336,6 +338,7 @@ export const MemberDetailSheet = forwardRef<
                   <ListRow
                     label={`Block ${blockTarget.displayName}`}
                     description={BLOCK_ROW_DESCRIPTION}
+                    action
                     destructive
                     disabled={blockActions.isPending}
                     onPress={() =>

@@ -188,6 +188,29 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     expect(text(tree)).toContain(`You · Today at ${time}`);
   });
 
+  it("opens on that line, with no Message title over the menu", () => {
+    // components.md § Chrome weight: an action menu draws no title and no
+    // Cancel. The grabber, the scrim and Android back close it.
+    const tree = render(OWN);
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" &&
+          node.props.children === "Message",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("draws no chevron on a row that acts in place", () => {
+    const chevrons = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" && node.props.children === "›",
+      ).length;
+    // Reply, Edit and Delete all act here.
+    expect(chevrons(render(OWN))).toBe(0);
+  });
+
   it("offers Reply, Edit and Delete on your own message, and never Report or Block", () => {
     const tree = render(OWN);
     expect(hasRow(tree, "Reply")).toBe(true);

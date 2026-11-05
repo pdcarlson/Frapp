@@ -72,9 +72,18 @@ export function MessageAttachments({
 
   const imageIds = new Set(viewerImages(query.data).map((image) => image.id));
 
+  // A file is a row: a framed chip with its glyph, name and size. A photo is
+  // not a file chip. It draws bare, at its own shape with the media radius,
+  // so the thread shows the picture rather than a box holding one
+  // (components.md § Chrome weight). The transparent border is the focus
+  // recipe's: FOCUS_RING swaps a border, so a control needs one to swap.
   const rowClass = cn(
     "flex items-center gap-2 rounded-md border border-border bg-surface-1 px-2 py-1.5",
     "text-caption hover:bg-accent-subtle hover:text-accent-text",
+    FOCUS_RING,
+  );
+  const imageClass = cn(
+    "block overflow-hidden rounded-md border border-transparent",
     FOCUS_RING,
   );
 
@@ -88,7 +97,7 @@ export function MessageAttachments({
     <img
       src={attachment.download_url}
       alt={attachment.filename}
-      className="max-h-64 max-w-full rounded"
+      className="block max-h-64 max-w-full"
     />
   );
 
@@ -109,7 +118,7 @@ export function MessageAttachments({
                 onClick={() =>
                   openViewer({ channelId, messageId, imageId: attachment.id })
                 }
-                className={cn(rowClass, "cursor-zoom-in")}
+                className={cn(imageClass, "cursor-zoom-in")}
               >
                 {preview(attachment)}
               </button>
@@ -133,7 +142,7 @@ export function MessageAttachments({
                 // same-origin / `blob:` / `data:` URLs honour it. Left in case
                 // that ever changes; it costs nothing today.
                 download={attachment.filename}
-                className={rowClass}
+                className={isImage ? imageClass : rowClass}
               >
                 {isImage ? (
                   preview(attachment)

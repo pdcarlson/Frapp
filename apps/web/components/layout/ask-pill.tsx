@@ -3,15 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 
@@ -24,11 +17,15 @@ import { FOCUS_RING_SHELL } from "@/components/ui/focus";
  * that placement on web so later work has somewhere to plug an answer engine
  * into. No retrieval, no corpus, no model call happens here.
  *
- * **It opens a dialog rather than doing nothing.** `spec/ui/design-system/README.md`
+ * **It opens a small popover rather than doing nothing.** `spec/ui/design-system/README.md`
  * §5 rule 2 bans a control that silently no-ops, and the design system's writing rules
  * require a disabled affordance to name its blocker *and* the next action — so
- * the dialog says Ask cannot answer yet and points at the two surfaces that
- * can. It promises no date, because nothing here knows one.
+ * the popover says Ask cannot answer yet and points at the two surfaces that
+ * can. It promises no date, because nothing here knows one. It was a full
+ * modal (title, two paragraphs, Close and Open Documents) until 2026-11-05:
+ * a screen-dimming dialog to say "not yet" is the heavy chrome
+ * `components.md` § Chrome weight rules out, so the note now hangs off the
+ * pill it explains, and Escape or a click away closes it.
  *
  * **House gold, never the chapter accent.** Like mobile's pill
  * (`apps/mobile/components/chat/ask-pill.tsx`), the entry paints in the fixed
@@ -63,48 +60,47 @@ export function AskPill({ className }: { className?: string }) {
   const documentsEnabled = !isModuleEnabled || isModuleEnabled("documents");
 
   return (
-    <>
-      <button
-        type="button"
-        aria-label="Ask a question about your chapter"
-        title="Ask"
-        onClick={() => setOpen(true)}
-        className={cn(
-          "inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-[10px] border border-gold-ask-border bg-gold-ask-fill px-3 text-label font-bold text-gold-ask-text transition hover:bg-gold-ask-border/30",
-          FOCUS_RING_SHELL,
-          className,
-        )}
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Ask a question about your chapter"
+          title="Ask"
+          className={cn(
+            "inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-[10px] border border-gold-ask-border bg-gold-ask-fill px-3 text-label font-bold text-gold-ask-text transition hover:bg-gold-ask-border/30",
+            FOCUS_RING_SHELL,
+            className,
+          )}
+        >
+          <span aria-hidden="true">✦</span>
+          <span>Ask</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        aria-label="Ask isn't ready yet"
+        className="grid w-80 gap-2 text-sm"
       >
-        <span aria-hidden="true">✦</span>
-        <span>Ask</span>
-      </button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Ask isn&apos;t ready on the dashboard yet</DialogTitle>
-            <DialogDescription>
-              Ask will answer questions about your chapter in plain language:
-              bylaws, minutes, dues, who holds which role. It can&apos;t answer
-              anything yet, so nothing it says would be trustworthy.
-            </DialogDescription>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            In the meantime, everything Ask would quote is already readable:
-            find channels, members and messages from the top bar
-            {documentsEnabled ? ", and chapter files live under Documents." : "."}
-          </p>
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => setOpen(false)}>
-              Close
-            </Button>
-            {documentsEnabled ? (
-              <Button asChild onClick={() => setOpen(false)}>
-                <Link href="/documents">Open Documents</Link>
-              </Button>
-            ) : null}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+        <p className="font-semibold text-foreground">
+          Ask isn&apos;t ready yet
+        </p>
+        <p className="text-muted-foreground">
+          It will answer questions about your chapter in plain language. Until
+          then, find channels, members and messages from the search bar
+          {documentsEnabled ? ", and chapter files live in Documents." : "."}
+        </p>
+        {documentsEnabled ? (
+          <Button
+            asChild
+            variant="link"
+            className="h-auto justify-self-start p-0"
+          >
+            <Link href="/documents" onClick={() => setOpen(false)}>
+              Open Documents
+            </Link>
+          </Button>
+        ) : null}
+      </PopoverContent>
+    </Popover>
   );
 }

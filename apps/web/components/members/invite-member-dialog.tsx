@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Copy, Loader2, Trash2 } from "lucide-react";
-import { InviteGlyph } from "@/components/members/directory-glyphs";
 import {
   useBatchCreateInvites,
   useCreateInvite,
@@ -386,10 +385,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         className="max-h-[88vh] overflow-y-auto sm:max-w-2xl"
       >
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <InviteGlyph className="h-5 w-5" />
-            Invite members
-          </DialogTitle>
+          <DialogTitle>Invite members</DialogTitle>
         </DialogHeader>
 
         {hasLiveDataError ? (

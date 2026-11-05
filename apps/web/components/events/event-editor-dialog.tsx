@@ -11,7 +11,6 @@ import {
   Trash2,
 } from "lucide-react";
 import {
-  EventsGlyph,
   RolesGlyph,
   StudyZonesGlyph,
 } from "@/components/events/chapter-ops-glyphs";
@@ -504,8 +503,7 @@ export function EventEditorDialog({
         aria-describedby={undefined}
       >
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <EventsGlyph className="h-4 w-4" />
+          <DialogTitle>
             {mode === "create" ? "Create event" : "Edit event"}
           </DialogTitle>
         </DialogHeader>

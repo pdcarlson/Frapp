@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { AlertTriangle, CalendarPlus, Loader2, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarPlus,
+  Loader2,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import {
   PointsGlyph,
   RolesGlyph,
@@ -31,10 +37,16 @@ import { AttendancePanel } from "@/components/events/attendance-panel";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { formatDayTimeRange } from "@repo/formatting";
 import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
-import { downloadBlob, getErrorMessage } from "@/lib/utils";
+import { cn, downloadBlob, getErrorMessage } from "@/lib/utils";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 
 type EventRecord = Record<string, unknown>;
+
+/**
+ * A header icon action: the image viewer's control size, 36 under a mouse and
+ * the 44 touch floor under a finger (components.md §2).
+ */
+const HEADER_ACTION = "size-9 pointer-coarse:size-11";
 
 type EventDetailSheetProps = {
   open: boolean;
@@ -225,6 +237,11 @@ export function EventDetailSheet({
     }
   }
 
+  const editControl = gate.controlProps(!resolvedEvent);
+  const deleteControl = gate.controlProps(
+    !canMutate || deleteEventMutation.isPending,
+  );
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       {/*
@@ -237,9 +254,64 @@ export function EventDetailSheet({
         className="w-full overflow-y-auto sm:max-w-xl"
         aria-describedby={undefined}
       >
-        <SheetHeader>
+        {/*
+          The sheet's actions are icons in its header, beside the close, as
+          the image viewer's are (components.md § Chrome weight). They were
+          three full-width worded buttons opening the body, which made the
+          first thing in an event's details a toolbar. The words live on as
+          each control's accessible name and tooltip. `right-12` clears the
+          close button `SheetContent` draws at `right-4`, and the title's
+          right padding clears both.
+        */}
+        <SheetHeader className="pr-36">
           <SheetTitle>{eventName}</SheetTitle>
         </SheetHeader>
+        <div className="absolute right-12 top-2.5 flex items-center">
+          <Button
+            variant="quiet"
+            size="icon"
+            className={HEADER_ACTION}
+            aria-label="Add to calendar"
+            title="Add to calendar"
+            disabled={!canMutate || downloadIcsMutation.isPending}
+            onClick={handleAddToCalendar}
+          >
+            {downloadIcsMutation.isPending ? (
+              <Loader2 className="animate-spin" aria-hidden="true" />
+            ) : (
+              <CalendarPlus aria-hidden="true" />
+            )}
+          </Button>
+          <Button
+            variant="quiet"
+            size="icon"
+            className={HEADER_ACTION}
+            aria-label="Edit event"
+            {...editControl}
+            title={editControl.title ?? "Edit event"}
+            onClick={() => {
+              if (!resolvedEvent) return;
+              onRequestEdit(resolvedEvent);
+            }}
+          >
+            <Pencil aria-hidden="true" />
+          </Button>
+          <Button
+            variant="quiet"
+            size="icon"
+            className={cn(HEADER_ACTION, "hover:text-destructive-text")}
+            aria-label="Delete event"
+            {...deleteControl}
+            title={deleteControl.title ?? "Delete event"}
+            onClick={handleDelete}
+          >
+            {deleteEventMutation.isPending ? (
+              <Loader2 className="animate-spin" aria-hidden="true" />
+            ) : (
+              <Trash2 aria-hidden="true" />
+            )}
+          </Button>
+        </div>
 
         {usingPreviewData ? (
           <div className="mt-5 flex items-start gap-3 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
@@ -257,43 +329,6 @@ export function EventDetailSheet({
             Loading event details...
           </div>
         ) : null}
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            {...gate.controlProps(!resolvedEvent)}
-            onClick={() => {
-              if (!resolvedEvent) return;
-              onRequestEdit(resolvedEvent);
-            }}
-          >
-            Edit event
-          </Button>
-          <Button
-            variant="destructive"
-            {...gate.controlProps(!canMutate || deleteEventMutation.isPending)}
-            onClick={handleDelete}
-          >
-            {deleteEventMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="h-4 w-4" />
-            )}
-            Delete event
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={!canMutate || downloadIcsMutation.isPending}
-            onClick={handleAddToCalendar}
-          >
-            {downloadIcsMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <CalendarPlus className="h-4 w-4" />
-            )}
-            Add to calendar
-          </Button>
-        </div>
 
         <SubscriptionNotice gate={gate} feature="editing events" />
 

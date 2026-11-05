@@ -9,8 +9,8 @@ import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * The chrome every Signet bottom sheet draws: the grabber, the title/Cancel
- * row, and the primary CTA — `spec/ui/design-system/components.md` § Bottom
+ * The chrome every Signet bottom sheet draws: the grabber, the title row (with
+ * a Cancel on a form), and the primary CTA — `spec/ui/design-system/components.md` § Bottom
  * sheet, drawn at `canvas-screens.dc.html` s19/s20/s21.
  *
  * Extracted because this is the third sheet in the app and the first two grew
@@ -52,6 +52,11 @@ export function SheetScrim(props: BottomSheetBackdropProps) {
       appearsOnIndex={0}
       disappearsOnIndex={-1}
       opacity={SCRIM_OPACITY}
+      // The scrim is a screen reader's way out of a sheet that draws no
+      // Cancel (a picker, the message menu), so it says so plainly rather
+      // than gorhom's default "Bottom sheet backdrop".
+      accessibilityLabel="Close"
+      accessibilityHint="Closes the sheet."
     />
   );
 }
@@ -67,6 +72,16 @@ export function SheetGrabber() {
   );
 }
 
+/**
+ * A sheet's title row. Pass `onCancel` on a **form** (a sheet with a commit
+ * button: New task, Log service hours, Upload document, Edit profile, Report
+ * message), where Cancel says "give the draft up" and differs from a swipe.
+ * Leave it out on a **picker or a read-only sheet** (Study zone, Assign to,
+ * Blocked members): the pick, the grabber and the scrim already close it, so a
+ * Cancel or Done there is a second close button
+ * (`spec/ui/design-system/components.md` § Chrome weight). An action menu
+ * (the message long-press) draws no SheetHeader at all.
+ */
 export function SheetHeader({
   title,
   onCancel,
@@ -74,7 +89,7 @@ export function SheetHeader({
   cancelDisabled = false,
 }: {
   title: string;
-  onCancel: () => void;
+  onCancel?: () => void;
   cancelLabel?: string;
   /**
    * Holds Cancel while a save is in flight, on a sheet whose Cancel gives the
@@ -92,19 +107,24 @@ export function SheetHeader({
       <Text style={styles.title}>{title}</Text>
       {/* `hitSlop` meets the 44pt floor while keeping components.md §9's compact
           visual — the #939 ruling. */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={cancelDisabled ? { disabled: true } : undefined}
-        disabled={cancelDisabled}
-        onPress={onCancel}
-        hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
-      >
-        <Text
-          style={[styles.cancel, cancelDisabled ? styles.cancelDisabled : null]}
+      {onCancel ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={cancelDisabled ? { disabled: true } : undefined}
+          disabled={cancelDisabled}
+          onPress={onCancel}
+          hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
         >
-          {cancelLabel}
-        </Text>
-      </Pressable>
+          <Text
+            style={[
+              styles.cancel,
+              cancelDisabled ? styles.cancelDisabled : null,
+            ]}
+          >
+            {cancelLabel}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
