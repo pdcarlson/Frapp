@@ -47,6 +47,7 @@ import type {
 import { parseRoleMapping } from '#domain/utils/discord-role-gates';
 import { DiscordOAuthService } from './discord-oauth.service';
 import { DiscordImportRoleMappingService } from './discord-import-role-mapping.service';
+import { DiscordImportChannelMappingService } from './discord-import-channel-mapping.service';
 import {
   assertImportMutable,
   loadImport,
@@ -170,6 +171,7 @@ export class DiscordImportService {
     private readonly storage: IStorageProvider,
     private readonly oauthService: DiscordOAuthService,
     private readonly roleMapping: DiscordImportRoleMappingService,
+    private readonly channelMapping: DiscordImportChannelMappingService,
   ) {}
 
   async create(
@@ -478,6 +480,8 @@ export class DiscordImportService {
       );
     }
 
+    // After the roles, so nothing is created for an import whose roles the
+    // admin may not make: `provisionRoles` refuses first.
     const roleMapping = await this.roleMapping.provisionRoles(
       id,
       chapterId,
@@ -486,6 +490,7 @@ export class DiscordImportService {
       parseRoleMapping(job.role_mapping),
       canManageRoles,
     );
+    await this.channelMapping.provisionChannelGroups(id, chapterId, channels);
 
     return this.importRepo.update(id, chapterId, {
       status: 'ready',

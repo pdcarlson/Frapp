@@ -749,6 +749,57 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
+
+  async assignChannelGroup(
+    importId: string,
+    chapterId: string,
+    rowIds: readonly string[],
+    categoryId: string,
+  ): Promise<void> {
+    if (rowIds.length === 0) return;
+    // Scoped through the import, as `replaceChannels` is: the channel rows
+    // carry no chapter of their own.
+    const owned = await this.findById(importId, chapterId);
+    if (!owned) return;
+    // A group holds a channel and every thread inheriting it, so a large
+    // server's group can name hundreds of rows; batched like other id lists.
+    for (const batch of chunkIds([...rowIds])) {
+      const { error } = await this.supabase
+        .from('discord_import_channels')
+        .update({ new_channel_category_id: categoryId })
+        .eq('import_id', importId)
+        .in('id', batch);
+      if (error) throw new SupabaseQueryError(error);
+    }
+  }
+
+  async recordCreatedCategory(
+    importId: string,
+    categoryId: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('discord_import_created_categories')
+      .upsert(
+        { import_id: importId, category_id: categoryId },
+        { onConflict: 'import_id,category_id', ignoreDuplicates: true },
+      );
+    if (error) throw new SupabaseQueryError(error);
+  }
+
+  async deleteEmptyCreatedCategories(
+    importId: string,
+    chapterId: string,
+  ): Promise<string[]> {
+    // One call, so each group's emptiness check and its delete run under the
+    // row lock that keeps a channel from being moved in between
+    // (`20261105220000_discord_import_channel_groups.sql`).
+    const { data, error } = await this.supabase.rpc(
+      'delete_empty_discord_import_categories',
+      { p_import_id: importId, p_chapter_id: chapterId },
+    );
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
 }
 
 /** Every channel status, in the order the Watch panel counts them (#2857). */
