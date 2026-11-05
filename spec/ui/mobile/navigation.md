@@ -272,6 +272,20 @@ key at all**. Each of those three is load-bearing:
   in `IOS_PURPOSE_STRINGS` with the call that requests it, so declining it fails CI.
   *(Moved 2026-09-30, #2343, from `app.config.spec.ts`'s `REQUESTED_AT_RUNTIME` list.)*
 
+*Corrected 2026-11-05:* "decline what nothing requests" is not the whole rule on iOS.
+App Store Connect's upload scan flags some APIs a linked library references and rejects
+the binary when their key is missing (ITMS-90683), whether or not the app ever asks.
+`expo-location` links `CMMotionActivityManager` for its motion permission requester, so
+its `motionUsagePermission: false` got iOS 0.9.1 (8) rejected. The option now carries a
+string that says Frapp never asks, and `IOS_PURPOSE_STRINGS` pins it as a linked-only
+entry: `requestedBy: null` and a `linkedBy` naming the pod, the symbol and the JS request.
+The gate fails if the key is declined again, asks for its removal once that pod stops
+linking the symbol, and fails if the app ever makes the request the text disowns. The
+scan doesn't flag every linked API: the same upload named only the motion key, though
+`expo-camera` links microphone access and `expo-secure-store` links Face ID, and both of
+those stay declined as above. So a linked-only entry is added when Apple names its key,
+and the declines above stand until it does.
+
 The pairing is also pinned from the other side: `app.config.spec.ts` asserts a media
 picker is depended on **only while a non-spec source file imports one**, which is the
 check that would have caught #1045 shipping the dependency a month ahead of any
