@@ -421,8 +421,7 @@ export function PollsPage() {
         <div className="space-y-4">
           {title}
           <p className="text-sm text-muted-foreground">
-            Seeing every poll needs the polls:view_all permission. You can still
-            vote in chat.
+            Your role can&apos;t see every poll. You can still vote in chat.
           </p>
         </div>
       }

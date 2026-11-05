@@ -230,7 +230,7 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 | Empty (filtered) | `No transactions match this filter` | `Try relaxing the category or member filter.` |
 | Error | `Audit unavailable` | `Couldn't load chapter transactions. Retry or confirm your points:view_all access.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can view the chapter's transaction log.` |
-| Permission denied | `Audit` (the section label) | `Seeing every transaction needs points:view_all.` |
+| Permission denied | `Audit` (the section label) | `Your role can't see every transaction.` |
 
 ### Roles & Permissions (dashboard)
 
@@ -467,6 +467,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Error | `Couldn't load polls` | `Confirm your chapter access and retry.` |
 | Offline | `Polls unavailable offline` | `Reconnect to load the chapter's polls and cast a vote.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can see the chapter's polls.` |
+| Permission denied | `Polls` (the page title) | `Your role can't see every poll. You can still vote in chat.` |
 
 ### Chat (dashboard)
 

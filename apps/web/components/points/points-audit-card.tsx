@@ -180,7 +180,7 @@ export function PointsAuditCard() {
         <section aria-labelledby="points-audit-label" className="space-y-1">
           <SectionLabel id="points-audit-label">Audit</SectionLabel>
           <p className="text-sm text-muted-foreground">
-            Seeing every transaction needs points:view_all.
+            Your role can&apos;t see every transaction.
           </p>
         </section>
       }

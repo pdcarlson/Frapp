@@ -147,7 +147,7 @@ describe("PollsPage disabled-query handling", () => {
     // true, so an idle query settles on the empty state rather than repeating
     // the denied copy, which lives in `deniedFallback` alone.
     expect(screen.getByText("No polls match this view")).toBeInTheDocument();
-    expect(screen.queryByText(/polls:view_all/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/can.t see every poll/)).not.toBeInTheDocument();
   });
 
   it("still spins while a permitted fetch is actually in flight", () => {
@@ -241,7 +241,7 @@ describe("PollsPage disabled-query handling", () => {
     expect(
       screen.queryByText(/polls unavailable offline/i),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/polls:view_all/)).toBeInTheDocument();
+    expect(screen.getByText(/can.t see every poll/)).toBeInTheDocument();
   });
 
   it("shows the Can denied copy, not a spinner, when the caller lacks polls:view_all", () => {
@@ -257,7 +257,7 @@ describe("PollsPage disabled-query handling", () => {
     expect(
       screen.queryByText("Loading chapter polls..."),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/polls:view_all/i)).toBeInTheDocument();
+    expect(screen.getByText(/can.t see every poll/i)).toBeInTheDocument();
     expect(screen.getByText(/you can still vote in chat/i)).toBeInTheDocument();
   });
 

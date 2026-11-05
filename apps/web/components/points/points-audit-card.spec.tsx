@@ -329,7 +329,7 @@ describe("PointsAuditCard on the page surface", () => {
 
     expect(screen.getByRole("region", { name: "Audit" })).toBeInTheDocument();
     expect(
-      screen.getByText("Seeing every transaction needs points:view_all."),
+      screen.getByText("Your role can't see every transaction."),
     ).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
