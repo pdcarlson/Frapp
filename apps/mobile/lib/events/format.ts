@@ -69,20 +69,50 @@ export function formatEventWindow(
   return `${day} · ${time}`;
 }
 
-/** The s06 row label — shorter, since the row already carries the event name. */
-export function formatEventRowTime(startTime: string, now: Date): string {
+export interface EventDateBlock {
+  /**
+   * The small caps line over the day number: "Today", "Tmrw", a weekday inside
+   * the week ("Thu"), or the month beyond it ("Dec").
+   */
+  label: string;
+  /** The day of the month, "14". */
+  day: string;
+  /** The start clock the row's meta line leads with, "6:00 PM". */
+  clock: string;
+}
+
+/**
+ * The s06 row's date block, drawn as a weekday over a day number ("THU / 14"),
+ * plus the clock its meta line leads with.
+ *
+ * The board draws a weekday in every block, which reads true only inside the
+ * week: three weeks out, "THU 14" leaves the member to work out which
+ * Thursday. So past the week the label turns to the month, the same cut-off
+ * `lib/tasks/format.ts` uses when it swaps "Due Friday" for a date. Today and
+ * tomorrow say so in words, because that is the first thing the list answers.
+ * `null` for an unreadable start, so the row draws no block rather than
+ * "Invalid Date".
+ */
+export function formatEventDateBlock(
+  startTime: string,
+  now: Date,
+): EventDateBlock | null {
   const start = parseInstant(startTime);
-  if (!start) return "";
+  if (!start) return null;
   const days = dayDelta(now, start);
-  if (days === 0) return `Today · ${clock(start)}`;
-  if (days === 1) return `Tomorrow · ${clock(start)}`;
-  if (days > 1 && days < 7) {
-    return `${start.toLocaleDateString(undefined, { weekday: "long" })} · ${clock(start)}`;
+  let label: string;
+  if (days === 0) {
+    label = "Today";
+  } else if (days === 1) {
+    label = "Tmrw";
+  } else if (days < 7) {
+    // A negative delta lands here too: an event that started late last night
+    // stays on the list while its check-in window is open, under its weekday.
+    label = start.toLocaleDateString(undefined, { weekday: "short" });
+  } else {
+    label = start.toLocaleDateString(undefined, { month: "short" });
   }
-  return `${start.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  })} · ${clock(start)}`;
+  return { label, day: String(start.getDate()), clock: clock(start) };
 }
 
 export type CheckInWindowState =

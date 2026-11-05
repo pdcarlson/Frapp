@@ -2,8 +2,13 @@
 import React from "react";
 import { act } from "react";
 import * as expoRouter from "expo-router";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import {
+  create,
+  type ReactTestInstance,
+  type ReactTestRenderer,
+} from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
@@ -24,7 +29,10 @@ import { screenText } from "@/test/screen-text";
 const START = new Date("2026-09-25T18:00:00Z");
 const MOUNTED_AT = new Date(START.getTime() - 60_000);
 
-const EVENT = {
+const ACCENT = "#DDB844";
+const ACCENT_SUBTLE = "#251E0E";
+
+const EVENT: Record<string, unknown> = {
   id: "evt-1",
   name: "Chapter meeting",
   location: null,
@@ -37,10 +45,12 @@ const EVENT = {
 let event = EVENT;
 // Swapped by the back-row specs for s07's loading and no-event states.
 let eventPending = false;
-let routeId: string | undefined = EVENT.id;
+let routeId: string | undefined = EVENT.id as string;
+let chapterId: string | null = "chapter-1";
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useActiveChapterId: () => chapterId,
   useEvent: () => ({
     isPending: eventPending,
     isError: false,
@@ -51,7 +61,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({ accent: "#DDB844" }),
+  useChapterBranding: () => ({
+    accent: ACCENT,
+    accentSubtle: ACCENT_SUBTLE,
+    accentBorder: "#6B5619",
+  }),
 }));
 
 vi.mocked(expoRouter.useLocalSearchParams).mockImplementation(
@@ -140,7 +154,8 @@ describe("Event details back row (#3022)", () => {
     });
     event = EVENT;
     eventPending = false;
-    routeId = EVENT.id;
+    routeId = EVENT.id as string;
+    chapterId = "chapter-1";
   });
 
   it("draws ‹ Events over a loaded event", () => {
@@ -161,7 +176,7 @@ describe("Event details back row (#3022)", () => {
     eventPending = true;
 
     const tree = render();
-    expect(screenText(tree)).toContain("Loading event");
+    expect(skeletons(tree).length).toBeGreaterThan(0);
     expectBackRow(tree, "Events", "/events");
   });
 
@@ -171,5 +186,114 @@ describe("Event details back row (#3022)", () => {
     const tree = render();
     expect(screenText(tree)).toContain("Nothing to show");
     expectBackRow(tree, "Events", "/events");
+  });
+
+  it("draws ‹ Events over the no-chapter state", () => {
+    chapterId = null;
+
+    const tree = render();
+    expect(screenText(tree)).toContain("No chapter selected");
+    expectBackRow(tree, "Events", "/events");
+  });
+});
+
+/** The flattened style of `node`; the suite's stub `flatten` is the identity. */
+const flat = (node: ReactTestInstance): Record<string, unknown> =>
+  Object.assign({}, ...[node.props.style].flat(Infinity).filter(Boolean));
+
+const textNode = (tree: ReactTestRenderer, text: string) =>
+  tree.root
+    .findAllByType("Text" as never)
+    .find((node) => node.props.children === text);
+
+const skeletons = (tree: ReactTestRenderer) =>
+  tree.root.findAll((node) => node.props.accessibilityRole === "progressbar");
+
+/**
+ * #18, #19 and #23 of the 2026-11 polish audit: the chips, the check-in card,
+ * the narrating lines and the shared state family.
+ */
+describe("Event details layout", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Inside the check-in window.
+    vi.setSystemTime(new Date(START.getTime() + 10 * 60_000));
+  });
+
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    vi.useRealTimers();
+    event = EVENT;
+    chapterId = "chapter-1";
+  });
+
+  it("puts the place in the line under the title, not beside the chips", () => {
+    event = {
+      ...EVENT,
+      location: "Chapter House — Great Room",
+      is_mandatory: true,
+      point_value: 10,
+    };
+    const tree = render();
+
+    expect(screenText(tree)).toMatch(/· .+ · Chapter House — Great Room\n/);
+    expect(textNode(tree, "Chapter House — Great Room")).toBeUndefined();
+    expect(flat(textNode(tree, "Mandatory")!).color).toBe(
+      signetDarkTokens.color.semantic.destructive,
+    );
+    expect(flat(textNode(tree, "+10 pts")!).color).toBe(ACCENT);
+  });
+
+  it("draws the open card in the accent with the 50pt accent scan button", () => {
+    const tree = render();
+
+    expect(flat(textNode(tree, "Check-in is open")!).color).toBe(ACCENT);
+    const card = tree.root.find(
+      (node) =>
+        typeof node.type === "string" &&
+        flat(node).backgroundColor === ACCENT_SUBTLE,
+    );
+    expect(card).toBeDefined();
+
+    const [scan] = tree.root.findAll(
+      (node) =>
+        typeof node.props.style === "function" &&
+        node.findAll((text) => text.props.children === "Scan QR to check in")
+          .length > 0,
+    );
+    const style = Object.assign(
+      {},
+      ...[scan.props.style({ pressed: false })].flat(Infinity).filter(Boolean),
+    );
+    expect(style).toMatchObject({
+      height: 50,
+      borderRadius: signetDarkTokens.radius.control,
+      backgroundColor: ACCENT,
+    });
+    expect(flat(textNode(tree, "Scan QR to check in")!).color).toBe(
+      signetDarkTokens.color.gold.onHouse,
+    );
+  });
+
+  it("says no more than the card does", () => {
+    event = { ...EVENT, check_in_zone: [[0, 0]], check_in_zone_name: "Great Room" };
+    const tree = render();
+
+    expect(screenText(tree)).not.toContain("to be counted");
+    const zone = textNode(tree, "Check in from inside the Great Room zone.");
+    expect(zone).toBeDefined();
+    // Not info blue: the board draws no semantic hue here.
+    expect(flat(zone!).color).toBe(signetDarkTokens.color.text.mutedForeground);
+  });
+
+  it("says a closed window in one line", () => {
+    vi.setSystemTime(new Date(START.getTime() + 3 * 60 * 60_000));
+    const tree = render();
+
+    expect(screenText(tree)).toContain("Check-in is closed");
+    expect(screenText(tree)).not.toContain("window has ended");
+    expect(textNode(tree, "Scan QR to check in")).toBeUndefined();
   });
 });

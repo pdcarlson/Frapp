@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -36,6 +37,36 @@ export function StatusChip({
   );
 }
 
+/**
+ * §5's Accent kind — `accent-3` fill, 1px `accent-7` border, `accent-11` text —
+ * for the accent-worthy stats §5 names, which on mobile is the `+N pts` chip on
+ * Events (s06) and Event detail (s07). Same geometry as {@link StatusChip}, so
+ * the two sit side by side at one height.
+ *
+ * It lives beside StatusChip rather than as a `hue` value because the rule on
+ * that prop is the point of it: a status is never the chapter accent. Each
+ * screen used to hand-roll this chip as a hairline-bordered muted one, which
+ * §5 reserves for "quiet metadata that must not read as a status", so the one
+ * badge the spec gives the accent was the one not wearing it.
+ */
+export function AccentChip({ label }: { label: string }) {
+  const { tokens } = useFrappTheme();
+  const { accent, accentSubtle, accentBorder } = useChapterBranding();
+  const styles = createStyles(tokens);
+
+  return (
+    <View
+      style={[
+        styles.chip,
+        styles.bordered,
+        { backgroundColor: accentSubtle, borderColor: accentBorder },
+      ]}
+    >
+      <Text style={[styles.text, { color: accent }]}>{label}</Text>
+    </View>
+  );
+}
+
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     chip: {
@@ -44,8 +75,15 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
       paddingHorizontal: tokens.spacing.sm,
     },
+    bordered: {
+      borderWidth: 1,
+    },
     text: {
-      ...typeRole(tokens.typography.role.caption),
+      // §5's 12.5px / 600, which is also what the board draws on every chip.
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
     },
   });
 }

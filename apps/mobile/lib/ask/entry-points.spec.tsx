@@ -33,6 +33,8 @@ vi.mock("@repo/hooks", () => {
   const now = new Date("2026-09-25T18:00:00Z");
   return {
     useNowDate: () => now,
+    // s06 gates its list on an active chapter (no chapter, no query).
+    useActiveChapterId: () => "chapter-1",
     useChannels: () => empty,
     useCategories: () => empty,
     useChannelUnreadCounts: () => empty,
