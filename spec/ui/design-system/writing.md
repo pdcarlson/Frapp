@@ -663,7 +663,7 @@ confirm.
 
 ### Push availability (mobile, s16)
 
-The reason Settings states on its push row, in place of On/Off, when this build
+The reason Settings states on its push row, in place of the switch, when this build
 can't push (`pushUnavailableReason()` in `apps/mobile/lib/notifications/push.ts`).
 One sentence per cause, because each cause has a different remedy
 ([`../mobile/patterns.md`](../mobile/patterns.md#push-notifications) § Push
@@ -679,10 +679,10 @@ is unavailable ([#2299](https://github.com/pdcarlson/Frapp/issues/2299)).
 
 ### Notification preferences (mobile, s16)
 
-The one footnote under Settings' notification switches (`notificationsMeta` in
+The status footnote under Settings' notification switches (`notificationsMeta` in
 `apps/mobile/app/(tabs)/preferences.tsx`). It shows the first row that applies,
 in this order, so a write in flight reads as saving even while the first read is
-still out.
+still out. Once synced it shows nothing: the steady state needs no line.
 
 | State | Title | Description |
 |---|---|---|
@@ -693,7 +693,7 @@ still out.
 | A read or write failed | — | `Couldn't reach the server. Change a setting again to retry.` |
 | A write in flight | — | `Saving…` |
 | A read in flight, nothing being written | — | `Loading your preferences…` |
-| Synced | — | `Synced with your account.` |
+| Synced | — | — (no footnote; it read `Synced with your account.` until 2026-11-05) |
 
 **The read row borrows the web Preferences card's loading line** (`Profile (dashboard)` below), because it is the same `GET /v1/settings`. Until #2938 a read in flight said `Saving…`, while nothing was being saved.
 

@@ -12,11 +12,13 @@
  *
  * - **The OS prompt is downstream of the card.** iOS gives an app exactly one
  *   permission dialog ever; spending it on a cold launch is unrecoverable. So
- *   nothing calls `requestPushPermission()` except the card's "Turn on".
+ *   nothing calls `requestPushPermission()` except the card's "Turn on" and a
+ *   tap on s16 Settings' push switch, which is the member asking for it.
  * - **"Not now" has to stick.** A primer that reappears on every launch is the
  *   nag the contextual pattern exists to avoid, so the decision is persisted.
- *   It is deliberately *not* permanent: s16 Settings still routes to the OS
- *   settings, which is where a member who changes their mind goes.
+ *   It is deliberately *not* permanent: a member who changes their mind taps
+ *   s16 Settings' push switch, which asks the OS if it still will and opens
+ *   the OS settings if it won't.
  *
  * The same reasoning already shipped for location in
  * `components/study/location-primer-sheet.tsx` (s10) — this is its push sibling.

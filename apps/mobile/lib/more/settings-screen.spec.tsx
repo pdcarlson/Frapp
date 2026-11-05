@@ -2,8 +2,12 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultNotificationCategoryState } from "@repo/validation";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { signetDarkTokens } from "@repo/theme/signet";
+import {
+  defaultNotificationCategoryState,
+  NOTIFICATION_CATEGORIES,
+} from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
@@ -18,6 +22,36 @@ import { screenText } from "@/test/screen-text";
  * a module whose native half doesn't exist under vitest.
  */
 
+type PushStatus = { granted: boolean; canAskAgain: boolean; status: string };
+
+/**
+ * What each test sets before it renders: the permission list, the push
+ * module's answers, and the quiet-hours switch. Hoisted so the module mocks
+ * below can read it.
+ */
+const state = vi.hoisted(() => ({
+  permissions: [] as string[],
+  pushReason: null as string | null,
+  quietHoursEnabled: false,
+  getPushPermission: (() =>
+    new Promise(() => undefined)) as () => Promise<PushStatus | null>,
+  requestPushPermission: vi.fn(async () => true),
+  recordPrimerDecision: vi.fn<(decision: string) => Promise<void>>(
+    async () => undefined,
+  ),
+  openSettings: vi.fn(async () => undefined),
+}));
+
+// The suite's stub has no `Linking`; the push switch's fallback opens the OS
+// settings through it.
+vi.mock("react-native", async () => {
+  const { reactNativeStub } = await import("@/test/react-native-stub");
+  return {
+    ...reactNativeStub,
+    Linking: { openSettings: () => state.openSettings() },
+  };
+});
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useBlockedUserIds: () => ({ data: [], isPending: false, isError: false }),
@@ -28,7 +62,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useDeleteAccount: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useGeofences: () => ({ data: [], isPending: false, isError: false }),
-  usePermissionList: () => [],
+  usePermissionList: () => state.permissions,
 }));
 
 vi.mock("@/lib/auth-session", () => ({
@@ -40,13 +74,19 @@ vi.mock("@/lib/account/delete-account-prompt", () => ({
 }));
 
 vi.mock("@/lib/notifications/push", () => ({
-  getPushPermission: vi.fn(() => new Promise(() => undefined)),
-  pushUnavailableReason: () => null,
+  getPushPermission: () => state.getPushPermission(),
+  requestPushPermission: () => state.requestPushPermission(),
+  pushUnavailableReason: () => state.pushReason,
+}));
+
+vi.mock("@/lib/notifications/primer", () => ({
+  recordPrimerDecision: (decision: string) =>
+    state.recordPrimerDecision(decision),
 }));
 
 vi.mock("@/lib/use-notification-preferences-sync", () => ({
   useNotificationPreferencesSync: () => ({
-    quietHoursEnabled: false,
+    quietHoursEnabled: state.quietHoursEnabled,
     setQuietHoursEnabled: vi.fn(),
     categories: defaultNotificationCategoryState(),
     setCategory: vi.fn(),
@@ -94,11 +134,42 @@ function render(): ReactTestRenderer {
   return tree;
 }
 
+beforeEach(() => {
+  state.permissions = [];
+  state.pushReason = null;
+  state.quietHoursEnabled = false;
+  state.getPushPermission = () => new Promise(() => undefined);
+  state.requestPushPermission.mockReset().mockResolvedValue(true);
+  state.recordPrimerDecision.mockReset().mockResolvedValue(undefined);
+  state.openSettings.mockReset().mockResolvedValue(undefined);
+});
+
 afterEach(() => {
   act(() => {
     for (const tree of mounted.splice(0)) tree.unmount();
   });
 });
+
+/** Lets the permission reads and the tap handler's awaits settle. */
+async function settle(): Promise<void> {
+  await act(async () => {
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+  });
+}
+
+function pushSwitches(tree: ReactTestRenderer) {
+  return tree.root.findAll(
+    (node) =>
+      (node.type as unknown) === "Switch" &&
+      String(node.props.accessibilityLabel).startsWith("Push notifications"),
+  );
+}
+
+function pushSwitch(tree: ReactTestRenderer) {
+  const found = pushSwitches(tree);
+  expect(found).toHaveLength(1);
+  return found[0];
+}
 
 /** #3022. s16 opens from More's Settings row and draws `‹ More`. */
 describe("Settings back row (#3022)", () => {
@@ -129,5 +200,159 @@ describe("Settings switches", () => {
       expect(node.props.trackColor.true).toBe("#8E4EC6");
       expect(node.props.activeThumbColor).toBe("#FFFFFF");
     }
+  });
+});
+
+/**
+ * #45. Settings states settings, not what they're for: the screen used to
+ * carry a two-line hint under every category, a body-size sentence on quiet
+ * hours, and standing footnotes that narrated (writing.md §1).
+ */
+describe("Settings copy", () => {
+  it("draws the category switches with their labels only", () => {
+    const text = screenText(render());
+
+    for (const category of NOTIFICATION_CATEGORIES) {
+      expect(text).toContain(category.label);
+      expect(text).not.toContain(category.description);
+    }
+  });
+
+  it("says nothing about sync once the preferences are synced", () => {
+    const text = screenText(render());
+
+    expect(text).not.toContain("Synced with your account.");
+    expect(text).toContain("Chapter announcements always arrive.");
+  });
+
+  it("shows the quiet-hours window only while quiet hours are on", () => {
+    const off = screenText(render());
+    expect(off).not.toContain("10:00 PM");
+    expect(off).not.toContain("Silence normal-priority pushes");
+    expect(off).not.toContain("Saved for when you turn quiet hours back on.");
+
+    state.quietHoursEnabled = true;
+    const on = screenText(render());
+    expect(on).toContain("10:00 PM – 7:00 AM");
+    expect(on).not.toContain("Applies to this account on every device.");
+  });
+
+  it("gives an editor's accent row no narration, and no web footnote", () => {
+    state.permissions = ["*"];
+    const text = screenText(render());
+
+    expect(text).toContain("Chapter accent");
+    expect(text).not.toContain("Your organization's colors");
+    expect(text).not.toContain("web dashboard");
+  });
+
+  it("fills the quiet-hours fields in the card's own tone (#46)", () => {
+    const tree = render();
+    const input = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "TextInput" &&
+        node.props.accessibilityLabel === "Quiet hours start time",
+    );
+
+    expect(input.props.style.backgroundColor).toBe(
+      signetDarkTokens.color.surface.surface1,
+    );
+  });
+});
+
+/**
+ * #51. The push row is the drawn switch. A tap asks the OS while it still
+ * will, and opens the OS settings only when it won't, or to turn push off.
+ */
+describe("Settings push switch", () => {
+  it("asks the OS when it hasn't asked yet, then shows the answer", async () => {
+    let granted = false;
+    state.getPushPermission = async () => ({
+      granted,
+      canAskAgain: !granted,
+      status: granted ? "granted" : "undetermined",
+    });
+    state.requestPushPermission.mockImplementation(async () => {
+      granted = true;
+      return true;
+    });
+    const tree = render();
+    await settle();
+
+    expect(pushSwitch(tree).props.value).toBe(false);
+    expect(pushSwitch(tree).props.accessibilityLabel).toBe(
+      "Push notifications",
+    );
+
+    act(() => pushSwitch(tree).props.onValueChange(true));
+    await settle();
+
+    expect(state.recordPrimerDecision).toHaveBeenCalledWith("accepted");
+    expect(state.requestPushPermission).toHaveBeenCalledTimes(1);
+    expect(state.openSettings).not.toHaveBeenCalled();
+    expect(pushSwitch(tree).props.value).toBe(true);
+  });
+
+  it("opens the OS settings once the OS won't ask again", async () => {
+    state.getPushPermission = async () => ({
+      granted: false,
+      canAskAgain: false,
+      status: "denied",
+    });
+    const tree = render();
+    await settle();
+
+    expect(pushSwitch(tree).props.accessibilityLabel).toBe(
+      "Push notifications, turn on in your phone's settings",
+    );
+    act(() => pushSwitch(tree).props.onValueChange(true));
+    await settle();
+
+    expect(state.requestPushPermission).not.toHaveBeenCalled();
+    expect(state.openSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends a member turning push off to the OS settings", async () => {
+    state.getPushPermission = async () => ({
+      granted: true,
+      canAskAgain: true,
+      status: "granted",
+    });
+    const tree = render();
+    await settle();
+
+    expect(pushSwitch(tree).props.value).toBe(true);
+    expect(pushSwitch(tree).props.accessibilityLabel).toBe(
+      "Push notifications, turn off in your phone's settings",
+    );
+    act(() => pushSwitch(tree).props.onValueChange(false));
+    await settle();
+
+    expect(state.requestPushPermission).not.toHaveBeenCalled();
+    expect(state.openSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws no switch until the permission has been read", () => {
+    const tree = render();
+
+    expect(pushSwitches(tree)).toHaveLength(0);
+  });
+
+  it("states why in a build that can't push, with nothing to tap", async () => {
+    state.pushReason = "Notifications need the installed Frapp build.";
+    const tree = render();
+    await settle();
+
+    const text = screenText(tree);
+    expect(text).toContain("Unavailable");
+    expect(text).toContain("Notifications need the installed Frapp build.");
+    expect(pushSwitches(tree)).toHaveLength(0);
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === "Push notifications",
+      ),
+    ).toHaveLength(0);
   });
 });

@@ -104,7 +104,7 @@ export function isPushAvailable(): boolean {
  * `spec/ui/design-system/writing.md` § Push availability.
  *
  * Its one reader is Settings (s16), which keeps a push row in every build and
- * states this in place of On/Off. The s03 primer card is not drawn at all when
+ * states this in place of the switch. The s03 primer card is not drawn at all when
  * push is unavailable (`primer.ts`, #2299), so it never needs a reason.
  */
 export function pushUnavailableReason(): string | null {
@@ -167,8 +167,9 @@ export async function getPushPermission() {
 /**
  * Requests OS permission, creating the Android channel first.
  *
- * Only ever called from the primer's "Turn on" — never at launch
- * (`patterns.md` § Push notifications, "Contextual primer, never at launch").
+ * Only ever called from the primer's "Turn on" or a tap on Settings' push
+ * switch — never at launch (`patterns.md` § Push notifications, "Contextual
+ * primer, never at launch").
  */
 export async function requestPushPermission(): Promise<boolean> {
   const mod = localOnlyModule();

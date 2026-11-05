@@ -139,10 +139,6 @@ function AccentSheetForm({
   return (
     <BottomSheetView style={styles.body}>
       <SheetHeader title="Chapter accent" onCancel={onDone} />
-      <Text style={styles.helper}>
-        Buttons, the active tab and highlights use this color for everyone in
-        the chapter.
-      </Text>
       <AccentPicker
         label="Chapter accent"
         value={draft}
@@ -176,10 +172,6 @@ function createStyles(tokens: SignetTokens) {
       paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xl,
       gap: tokens.spacing.md,
-    },
-    helper: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
     },
     error: {
       ...typeRole(tokens.typography.role.caption),
