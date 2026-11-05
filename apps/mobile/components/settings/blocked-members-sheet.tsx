@@ -24,6 +24,7 @@ import {
 } from "@repo/chat-core/block-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListSection } from "@/components/list-section";
+import { DirectoryGlyph } from "@/components/more/more-glyphs";
 import {
   SheetGrabber,
   SheetHeader,
@@ -98,7 +99,7 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
     // loads once the device is online instead of offering a dead Retry.
     const body =
       blockList.status === "loading" ? (
-        <SkeletonLines lines={3} showTile={false} />
+        <SkeletonLines lines={3} showTile={false} tone="list" />
       ) : blockList.status === "unavailable" && rows.length === 0 ? (
         <ErrorState
           title={BLOCKED_MEMBERS_ERROR_TITLE}
@@ -113,7 +114,7 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
         />
       ) : rows.length === 0 ? (
         <EmptyState
-          glyph="⊘"
+          glyph={DirectoryGlyph}
           title={BLOCKED_MEMBERS_EMPTY_TITLE}
           body={BLOCKED_MEMBERS_EMPTY_BODY}
         />
