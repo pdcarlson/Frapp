@@ -16,16 +16,12 @@ import {
   StudyZonesGlyph,
 } from "@/components/events/chapter-ops-glyphs";
 import { useCreateEvent, useRoles, useUpdateEvent } from "@repo/hooks";
-import {
-  RECURRENCE_RULES,
-  RECURRENCE_RULE_LABELS,
-} from "@repo/validation";
+import { RECURRENCE_RULES, RECURRENCE_RULE_LABELS } from "@repo/validation";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -171,7 +167,7 @@ type EventEditorDialogProps = {
    * Forwarded to the underlying `DialogContent`. `useGatedDialog` splits its
    * contract across `dialogProps` and `contentProps`; `events-page.tsx` owns
    * `open` while this component owns the content, so without this the revoke
-   * path falls back to Radix's default and refocuses a "New Event" trigger that
+   * path falls back to Radix's default and refocuses a "New event" trigger that
    * just went `disabled` — dropping focus to `<body>`.
    */
   onCloseAutoFocus?: (event: Event) => void;
@@ -498,19 +494,20 @@ export function EventEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {/*
+        No description: the one this had restated the form's own fields.
+        `aria-describedby={undefined}` tells Radix the omission is deliberate.
+      */}
       <DialogContent
         className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
         onCloseAutoFocus={onCloseAutoFocus}
+        aria-describedby={undefined}
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <EventsGlyph className="h-4 w-4" />
             {mode === "create" ? "Create event" : "Edit event"}
           </DialogTitle>
-          <DialogDescription>
-            Configure scheduling, attendance rules, and points for this chapter
-            event.
-          </DialogDescription>
         </DialogHeader>
 
         {usingPreviewData ? (
@@ -523,7 +520,7 @@ export function EventEditorDialog({
         ) : null}
 
         {/*
-          §5 rule 1 wants the gate on the trigger, but "New Event" / "Edit"
+          §5 rule 1 wants the gate on the trigger, but "New event" / "Edit"
           live in the parents that own `open` (events-page, event-detail-sheet),
           so the earliest point this component controls is the top of the form.
           The notice therefore states the blocker before anything is typed,
@@ -538,7 +535,7 @@ export function EventEditorDialog({
               id="event-name"
               value={name}
               onChange={(eventValue) => setName(eventValue.target.value)}
-              placeholder="Chapter Meeting"
+              placeholder="Chapter meeting"
             />
           </div>
 
@@ -570,7 +567,7 @@ export function EventEditorDialog({
                 id="event-location"
                 value={location}
                 onChange={(eventValue) => setLocation(eventValue.target.value)}
-                placeholder="Chapter House"
+                placeholder="Chapter house"
               />
             </div>
             <div className="grid gap-1">
@@ -676,10 +673,8 @@ export function EventEditorDialog({
               <span className="text-muted-foreground">Check-in zone</span>
             </div>
             <p className="text-caption text-muted-foreground">
-              Optional. When set, members must be inside this area to check in.
-              Enter at least 3 corner points; the shape closes itself, so
-              don&apos;t repeat the first point. Remove every point to clear the
-              zone.
+              Optional. Members must be inside it to check in. At least 3
+              points; don&apos;t repeat the first.
             </p>
 
             <div className="grid gap-1">
@@ -748,7 +743,8 @@ export function EventEditorDialog({
                     <div className="flex items-center gap-1">
                       <Button
                         type="button"
-                        variant="secondary"
+                        variant="quiet"
+                        size="icon"
                         aria-label={`Move point ${index + 1} up`}
                         disabled={usingPreviewData || index === 0}
                         onClick={() => handleMoveVertex(index, -1)}
@@ -757,7 +753,8 @@ export function EventEditorDialog({
                       </Button>
                       <Button
                         type="button"
-                        variant="secondary"
+                        variant="quiet"
+                        size="icon"
                         aria-label={`Move point ${index + 1} down`}
                         disabled={
                           usingPreviewData || index === checkInZone.length - 1
@@ -768,7 +765,8 @@ export function EventEditorDialog({
                       </Button>
                       <Button
                         type="button"
-                        variant="destructive"
+                        variant="quiet"
+                        size="icon"
                         aria-label={`Remove point ${index + 1}`}
                         disabled={usingPreviewData}
                         onClick={() => handleRemoveVertex(vertex.id)}

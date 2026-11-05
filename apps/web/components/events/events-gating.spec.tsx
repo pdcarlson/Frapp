@@ -221,7 +221,7 @@ describe("AttendancePanel subscription gating", () => {
 
 describe("EventsPage subscription gating", () => {
   // `POST /v1/events` and `PATCH /v1/events/:id` are paid-ops. The page owns the
-  // editor dialog's `open`, so §5 rule 1 lands here: the New Event button and
+  // editor dialog's `open`, so §5 rule 1 lands here: the New event button and
   // the empty-state CTA are the triggers that must refuse to open it (#841).
   beforeEach(() => vi.clearAllMocks());
 

@@ -24,13 +24,13 @@ import {
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
 import { AttendancePanel } from "@/components/events/attendance-panel";
 import { normalizeRoleOptions } from "@/lib/roles";
-import { formatLocaleDateTime as formatDateTime } from "@repo/formatting";
+import { formatDayTimeRange } from "@repo/formatting";
+import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
 import { downloadBlob, getErrorMessage } from "@/lib/utils";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 
@@ -93,11 +93,17 @@ export function EventDetailSheet({
     typeof resolvedEvent?.is_mandatory === "boolean"
       ? resolvedEvent.is_mandatory
       : false;
-  const recurrenceRule =
-    typeof resolvedEvent?.recurrence_rule === "string" &&
-    resolvedEvent.recurrence_rule.length > 0
-      ? resolvedEvent.recurrence_rule
-      : "One-time";
+  // `null` for a one-time event, which then shows no cadence badge at all.
+  const cadence = recurrenceLabel(resolvedEvent?.recurrence_rule);
+  const schedule = formatDayTimeRange(
+    resolvedEvent?.start_time,
+    resolvedEvent?.end_time,
+  );
+  const location =
+    typeof resolvedEvent?.location === "string" && resolvedEvent.location.trim()
+      ? resolvedEvent.location.trim()
+      : null;
+  const points = pointsLabel(resolvedEvent?.point_value);
   const description =
     typeof resolvedEvent?.description === "string"
       ? resolvedEvent.description
@@ -221,13 +227,18 @@ export function EventDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
+      {/*
+        No description: the one this had explained the sheet to someone already
+        reading it. `aria-describedby={undefined}` says so to Radix, which
+        otherwise warns about a missing Description.
+      */}
+      <SheetContent
+        side="right"
+        className="w-full overflow-y-auto sm:max-w-xl"
+        aria-describedby={undefined}
+      >
         <SheetHeader>
           <SheetTitle>{eventName}</SheetTitle>
-          <SheetDescription>
-            Review scheduling details, recurrence settings, and attendance
-            policy.
-          </SheetDescription>
         </SheetHeader>
 
         {usingPreviewData ? (
@@ -295,7 +306,7 @@ export function EventDetailSheet({
               <Badge variant={isMandatory ? "default" : "secondary"}>
                 {isMandatory ? "Mandatory" : "Optional"}
               </Badge>
-              <Badge variant="outline">{recurrenceRule}</Badge>
+              {cadence ? <Badge variant="outline">{cadence}</Badge> : null}
             </div>
             <div className="mt-3">
               <p className="mb-1 flex items-center gap-1 text-caption text-muted-foreground">
@@ -347,30 +358,28 @@ export function EventDetailSheet({
 
           <div className="rounded-lg border border-border p-3">
             <p className="mb-2 text-caption text-muted-foreground">Schedule</p>
+            {/*
+              One line for when, the mobile event header's shape, in place of
+              "Starts:" and "Ends:" lines. A fact the event does not have drops
+              out rather than reading "TBD" or "0 points".
+            */}
             <div className="space-y-2 text-sm">
               <div className="flex items-start gap-2">
                 <ScheduleGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p>Starts: {formatDateTime(resolvedEvent?.start_time)}</p>
-                  <p>Ends: {formatDateTime(resolvedEvent?.end_time)}</p>
+                <p>{schedule ?? "Not set"}</p>
+              </div>
+              {location ? (
+                <div className="flex items-start gap-2">
+                  <StudyZonesGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                  <p>{location}</p>
                 </div>
-              </div>
-              <div className="flex items-start gap-2">
-                <StudyZonesGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                <p>
-                  {typeof resolvedEvent?.location === "string"
-                    ? resolvedEvent.location
-                    : "TBD"}
-                </p>
-              </div>
-              <div className="flex items-start gap-2">
-                <PointsGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                <p>
-                  {typeof resolvedEvent?.point_value === "number"
-                    ? `${resolvedEvent.point_value} point(s)`
-                    : "0 points"}
-                </p>
-              </div>
+              ) : null}
+              {points ? (
+                <div className="flex items-start gap-2">
+                  <PointsGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                  <p>{points}</p>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -401,7 +410,10 @@ export function EventDetailSheet({
           ) : null}
 
           {eventId && !usingPreviewData ? (
-            <AttendancePanel eventId={eventId} />
+            <AttendancePanel
+              eventId={eventId}
+              eventStart={resolvedEvent?.start_time}
+            />
           ) : null}
         </div>
         {confirmDialog}

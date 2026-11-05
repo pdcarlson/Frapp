@@ -511,3 +511,60 @@ describe("EventDetailSheet Add to calendar", () => {
     expect(mockResetDownloadIcs).toHaveBeenCalled();
   });
 });
+
+describe("EventDetailSheet schedule and policy", () => {
+  function renderSheet(event: Record<string, unknown>) {
+    return render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={event}
+        onRequestEdit={() => {}}
+        onEventDeleted={async () => {}}
+      />,
+    );
+  }
+
+  it("states the when on one line, in the house shape", () => {
+    renderSheet({
+      ...baseEvent,
+      start_time: new Date(2026, 6, 1, 17, 0).toISOString(),
+      end_time: new Date(2026, 6, 1, 19, 0).toISOString(),
+    });
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).not.toMatch(/Starts:|Ends:/);
+    expect(dialog.textContent).not.toMatch(/:\d\d:\d\d/);
+    expect(screen.getByText(/· 5:00\s?– 7:00\sPM$/)).toBeInTheDocument();
+  });
+
+  it("names the cadence in words and draws nothing for a one-time event", () => {
+    const { unmount } = renderSheet({
+      ...baseEvent,
+      recurrence_rule: "BIWEEKLY",
+    });
+    expect(screen.getByText("Bi-weekly")).toBeInTheDocument();
+    expect(screen.queryByText("BIWEEKLY")).toBeNull();
+    unmount();
+
+    renderSheet(baseEvent);
+    expect(screen.queryByText("One-time")).toBeNull();
+  });
+
+  it("drops a location or point value the event does not have", () => {
+    renderSheet(baseEvent);
+
+    const text = screen.getByRole("dialog").textContent ?? "";
+    expect(text).not.toMatch(/TBD|0 points|point\(s\)/);
+  });
+
+  it("carries no description narrating the sheet", () => {
+    renderSheet(baseEvent);
+
+    expect(screen.queryByText(/review scheduling details/i)).toBeNull();
+    expect(screen.getByRole("dialog")).not.toHaveAttribute(
+      "aria-describedby",
+    );
+  });
+});

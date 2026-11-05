@@ -555,6 +555,15 @@ describe("EventEditorDialog point value guard (#2206)", () => {
     expectRefusedEntriesKeep(renderCreate(), "15");
   });
 
+  it("carries no description restating the form", () => {
+    renderCreate();
+
+    expect(screen.queryByText(/configure scheduling/i)).toBeNull();
+    expect(screen.getByRole("dialog")).not.toHaveAttribute(
+      "aria-describedby",
+    );
+  });
+
   it("keeps an emptied or unparseable field empty while the officer types", () => {
     const input = renderCreate();
     expectClearingEntriesEmpty(input, "15");
