@@ -5,6 +5,7 @@ import {
   readEventPayload,
   readHoursPayload,
   readPointsPayload,
+  readRushPayload,
   readSystemAuditPayload,
   readTaskPayload,
 } from "@repo/chat-core/cards";
@@ -30,6 +31,7 @@ import { MessageItem, MessageRowFrame, OwnLineMarkers } from "./message-item";
 import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
 import { ReplyQuote } from "./reply-quote";
+import { RushCard } from "./rush-card";
 import { SystemAuditCard } from "./system-audit-card";
 import { TaskCard } from "./task-card";
 
@@ -238,9 +240,9 @@ function ThreadMessageRowBody({
  * and whose `content` is the whole notice ("This poll has closed."). A poll
  * keeps its own malformed state, which names the poll.
  *
- * Not yet cards on mobile: `rush` (#3383), `dues`, which web draws as a
- * "coming soon" card, and `loading`, web's placeholder for a slash command
- * in flight, which mobile never sends.
+ * Not cards on mobile: `dues`, which web draws as a "coming soon" card, and
+ * `loading`, web's placeholder for a slash command in flight, which mobile
+ * never sends.
  */
 function cardFor(
   frame: ChatCardFrameProps,
@@ -268,6 +270,10 @@ function cardFor(
     case "hours": {
       const payload = readHoursPayload(message);
       return payload ? <HoursCard {...frame} payload={payload} /> : null;
+    }
+    case "rush": {
+      const payload = readRushPayload(message);
+      return payload ? <RushCard {...frame} payload={payload} /> : null;
     }
     case "announcement": {
       const body = readAnnouncementBody(message);

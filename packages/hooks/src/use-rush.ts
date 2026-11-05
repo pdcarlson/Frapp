@@ -1,6 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { statusOf } from "@repo/api-sdk";
+import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export const rushKeys = {
@@ -9,37 +11,45 @@ export const rushKeys = {
     ["rush", chapterId, "detail", id] as const,
 };
 
-export interface RushCandidateView {
-  id: string;
-  chapter_id: string;
-  display_name: string;
-  name_key: string;
-  user_id: string | null;
-  stage: string;
-  bid_status: "none" | "extended";
-  created_by: string;
-  created_at: string;
-  vote_count: number;
-  viewer_has_voted: boolean;
-}
+/** A candidate as the rush routes return it. Voter names are never on it. */
+export type RushCandidateView = components["schemas"]["RushCandidateViewDto"];
 
+/**
+ * One candidate, for a chat rush card's live tally and bid. The route needs
+ * `members:view`; a caller passes `undefined` when the viewer lacks it, and the
+ * hook asks nothing.
+ *
+ * A 403 or 404 resolves to `null` rather than throwing, as `useServiceEntry`
+ * does: a candidate since deleted, or a permission since lost, then clears the
+ * tally instead of keeping the last read, and an expected miss is neither
+ * retried nor reported. Any other failure still throws.
+ */
 export function useRushCandidate(id: string | undefined) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: rushKeys.detail(chapterId, id ?? ""),
-    queryFn: async () => {
+    queryFn: async (): Promise<RushCandidateView | null> => {
       const { data, error } = await client.GET("/v1/rush/candidates/{id}", {
         params: { path: { id: id as string } },
       });
-      if (error) throw error;
-      return data as RushCandidateView;
+      if (error) {
+        const status = statusOf(error);
+        if (status === 403 || status === 404) return null;
+        throw error;
+      }
+      return data;
     },
     enabled: !!chapterId && !!id,
     staleTime: 15_000,
   });
 }
 
+/**
+ * Vote for a candidate. Idempotent on the server (a repeat answers 201 with
+ * the same view), and there is no unvote. The returned view replaces the
+ * card's live read.
+ */
 export function useVoteRushCandidate() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
@@ -51,7 +61,7 @@ export function useVoteRushCandidate() {
         { params: { path: { id } } },
       );
       if (error) throw error;
-      return data as RushCandidateView;
+      return data;
     },
     onSuccess: (view) => {
       queryClient.setQueryData(rushKeys.detail(chapterId, view.id), view);
@@ -59,6 +69,11 @@ export function useVoteRushCandidate() {
   });
 }
 
+/**
+ * Extend a bid to a candidate. Idempotent on the server, and any member may
+ * (there are no rush permissions). The returned view replaces the card's live
+ * read.
+ */
 export function useBidRushCandidate() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
@@ -69,7 +84,7 @@ export function useBidRushCandidate() {
         params: { path: { id } },
       });
       if (error) throw error;
-      return data as RushCandidateView;
+      return data;
     },
     onSuccess: (view) => {
       queryClient.setQueryData(rushKeys.detail(chapterId, view.id), view);

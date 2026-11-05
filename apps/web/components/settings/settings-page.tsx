@@ -20,7 +20,7 @@ import {
   type SemesterArchive,
 } from "@repo/hooks";
 import { type PatchChapterConfig } from "@repo/validation";
-import { titleCase, vocab } from "@/lib/vocabulary";
+import { titleCase, vocab } from "@repo/org-archetypes";
 import { Card, CardDescription, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {

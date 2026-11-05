@@ -2,6 +2,7 @@ import type {
   EventPayload,
   HoursPayload,
   PointsPayload,
+  RushPayload,
   SystemAuditPayload,
   TaskPayload,
 } from "./integrations/payloads";
@@ -11,6 +12,7 @@ export type {
   EventPayload,
   HoursPayload,
   PointsPayload,
+  RushPayload,
   SystemAuditPayload,
   TaskPayload,
 };
@@ -249,4 +251,34 @@ export function readAnnouncementBody(message: ChatMessage): string | null {
   }
   const body = recordOf(message)?.body;
   return typeof body === "string" && body.trim() !== "" ? body : null;
+}
+
+/**
+ * A `kind:"rush"` payload, or `null` without the candidate id, the candidate's
+ * name and the adder's name. `bid_status` is always the creation-time
+ * `"none"` (`RushService.create` makes every candidate with no bid): a card
+ * takes the bid, the vote count and the viewer's vote from the candidate
+ * itself, never from this. `stage` defaults to `"new"`.
+ */
+export function readRushPayload(message: ChatMessage): RushPayload | null {
+  const r = recordOf(message);
+  if (
+    !r ||
+    typeof r.candidate_id !== "string" ||
+    r.candidate_id === "" ||
+    typeof r.display_name !== "string" ||
+    typeof r.added_by_name !== "string"
+  ) {
+    return null;
+  }
+  return {
+    candidate_id: r.candidate_id,
+    display_name: r.display_name,
+    added_by_user_id:
+      typeof r.added_by_user_id === "string" ? r.added_by_user_id : "",
+    added_by_name: r.added_by_name,
+    stage: typeof r.stage === "string" && r.stage !== "" ? r.stage : "new",
+    bid_status: "none",
+    created_at: typeof r.created_at === "string" ? r.created_at : "",
+  };
 }

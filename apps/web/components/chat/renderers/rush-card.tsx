@@ -1,19 +1,34 @@
 "use client";
 
+import { CheckCircle2 } from "lucide-react";
 import { RushGlyph } from "../chat-glyphs";
 import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
-import type { RushPayload } from "@repo/chat-core/integrations";
+import { readRushPayload } from "@repo/chat-core/cards";
 import {
+  canReadCardRushCandidate,
+  readLiveRushCandidate,
+  RUSH_CARD_TALLY_ERROR,
+  rushCardBadgeLabel,
+  rushCardControls,
+  rushCardGateRefusal,
+  rushCardTally,
   useBidRushCandidate,
+  useMyPermissions,
   useRushCandidate,
   useVoteRushCandidate,
 } from "@repo/hooks";
-import { vocab } from "@/lib/vocabulary";
+import { vocab } from "@repo/org-archetypes";
+import { can } from "@repo/validation";
+import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
@@ -24,43 +39,39 @@ interface RushCardProps {
   isConfirmed: boolean;
 }
 
-function readPayload(message: ChatMessage): RushPayload | null {
-  const raw = message.payload;
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw as Record<string, unknown>;
-  if (
-    typeof r.candidate_id !== "string" ||
-    typeof r.display_name !== "string" ||
-    typeof r.added_by_name !== "string"
-  ) {
-    return null;
-  }
-  const bid =
-    r.bid_status === "extended" || r.bid_status === "none"
-      ? r.bid_status
-      : "none";
-  return {
-    candidate_id: r.candidate_id,
-    display_name: r.display_name,
-    added_by_user_id:
-      typeof r.added_by_user_id === "string" ? r.added_by_user_id : "",
-    added_by_name: r.added_by_name,
-    stage: typeof r.stage === "string" ? r.stage : "new",
-    bid_status: bid,
-    created_at: typeof r.created_at === "string" ? r.created_at : "",
-  };
-}
-
 /**
- * Candidate card: creation snapshot plus live vote/bid from GET. Vote is
- * one-click, not a toggle. Voter names are never rendered.
+ * Candidate card: the creation snapshot (the name, who added them) plus the
+ * live bid and votes from `GET /v1/rush/candidates/:id`. Vote is one-click,
+ * not a toggle, and voter names are never rendered.
+ *
+ * Which controls show, the badge and the tally are `rushCardControls`,
+ * `rushCardBadgeLabel` and `rushCardTally` in `@repo/hooks`, the rules the
+ * mobile card applies too. Nothing live is drawn until the candidate is read:
+ * the snapshot has no votes and its bid is `"none"` forever. Every member may
+ * vote and extend a bid; only `members:view` is needed to read the candidate,
+ * so nobody without it asks. While Recruitment is known to be off the card
+ * offers nothing (the server refuses both writes), and a gate's refusal is
+ * told in a member's words (`rushCardGateRefusal`), not the officer-addressed
+ * message the guard sends.
  */
 export function RushCard({ message, isConfirmed }: RushCardProps) {
-  const payload = readPayload(message);
+  const payload = readRushPayload(message);
   const chapterVocabulary = useChapterVocabulary();
-  const live = useRushCandidate(payload?.candidate_id);
+  const { data: permissionsPayload } = useMyPermissions();
+  const canViewMembers = can("members:view", permissionsPayload?.permissions);
+  // Hooks must run before the malformed-payload return; the read no-ops
+  // without an id.
+  const liveQuery = useRushCandidate(
+    payload && canReadCardRushCandidate({ canViewMembers })
+      ? payload.candidate_id
+      : undefined,
+  );
   const vote = useVoteRushCandidate();
   const bid = useBidRushCandidate();
+  // Both writes are paid-ops on `rush.controller.ts`; a card in the free chat
+  // surface doesn't inherit chat's tier (#841).
+  const gate = useSubscriptionGate();
+  const moduleGate = useChapterModuleGateState();
   const { toast } = useToast();
 
   if (!payload) {
@@ -71,14 +82,29 @@ export function RushCard({ message, isConfirmed }: RushCardProps) {
     );
   }
 
+  const live = readLiveRushCandidate(liveQuery.data);
   const label = vocab("recruitment", chapterVocabulary);
-  const displayName = live.data?.display_name ?? payload.display_name;
-  const voteCount = live.data?.vote_count ?? 0;
-  const hasVoted = live.data?.viewer_has_voted ?? false;
-  const bidStatus = live.data?.bid_status ?? payload.bid_status;
-  const voteDisabled =
-    !isConfirmed || hasVoted || vote.isPending || live.isPending;
-  const bidDisabled = !isConfirmed || bidStatus === "extended" || bid.isPending;
+  const recruitmentOff =
+    moduleGate.status === "ready" && !moduleGate.isModuleEnabled("rush");
+  const controls = rushCardControls({ live, recruitmentOff });
+  const actionsDisabled = !isConfirmed || vote.isPending || bid.isPending;
+  const tally = live
+    ? rushCardTally(live)
+    : liveQuery.isError
+      ? RUSH_CARD_TALLY_ERROR
+      : null;
+
+  function onFailure(title: string, fallback: string) {
+    return {
+      onError: (error: unknown) =>
+        toast({
+          title,
+          description:
+            rushCardGateRefusal(error) ?? getErrorMessage(error, fallback),
+          variant: "destructive",
+        }),
+    };
+  }
 
   return (
     <Card className={cn(MESSAGE_CARD)}>
@@ -88,62 +114,73 @@ export function RushCard({ message, isConfirmed }: RushCardProps) {
         >
           <RushGlyph className="h-4 w-4" /> {label}
         </div>
-        {bidStatus === "extended" ? (
-          <Badge variant="success">Bid extended</Badge>
-        ) : (
-          <Badge variant="secondary">Open</Badge>
-        )}
+        {live ? (
+          <Badge variant={live.bid_extended ? "success" : "secondary"}>
+            {rushCardBadgeLabel(live)}
+          </Badge>
+        ) : null}
       </div>
       <div className="mt-2 text-base">
-        <span className="font-semibold">{displayName}</span>
+        <span className="font-semibold">
+          {live?.display_name ?? payload.display_name}
+        </span>
         <span className="text-muted-foreground"> · added by </span>
         <span className="font-semibold">{payload.added_by_name}</span>
       </div>
-      <div className="mt-1 text-caption text-muted-foreground">
-        {live.isError
-          ? "Couldn't load votes"
-          : voteCount === 1
-            ? "1 vote"
-            : `${voteCount} votes`}
-        {hasVoted ? " · you voted" : null}
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          disabled={voteDisabled}
-          onClick={() =>
-            vote.mutate(payload.candidate_id, {
-              onError: (error) =>
-                toast({
-                  title: "Couldn't record that vote",
-                  description: getErrorMessage(error, "Please try again."),
-                  variant: "destructive",
-                }),
-            })
-          }
-        >
-          {hasVoted ? "Voted" : "Vote"}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled={bidDisabled}
-          onClick={() =>
-            bid.mutate(payload.candidate_id, {
-              onError: (error) =>
-                toast({
-                  title: "Couldn't extend that bid",
-                  description: getErrorMessage(error, "Please try again."),
-                  variant: "destructive",
-                }),
-            })
-          }
-        >
-          {bidStatus === "extended" ? "Bid extended" : "Extend bid"}
-        </Button>
-      </div>
+      {tally ? (
+        <div className="mt-1 text-caption text-muted-foreground">{tally}</div>
+      ) : null}
+      {controls.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {controls.includes("vote") ? (
+            <Button
+              type="button"
+              size="sm"
+              {...gate.controlProps(actionsDisabled)}
+              onClick={() =>
+                vote.mutate(
+                  payload.candidate_id,
+                  onFailure("Couldn't record that vote", "Please try again."),
+                )
+              }
+            >
+              Vote
+            </Button>
+          ) : null}
+          {controls.includes("voted") ? (
+            // An indicator, not an action: there is no unvote.
+            <Button type="button" size="sm" disabled>
+              <CheckCircle2 className="h-4 w-4" />
+              Voted
+            </Button>
+          ) : null}
+          {controls.includes("bid") ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              {...gate.controlProps(actionsDisabled)}
+              onClick={() =>
+                bid.mutate(
+                  payload.candidate_id,
+                  onFailure("Couldn't extend that bid", "Please try again."),
+                )
+              }
+            >
+              Extend bid
+            </Button>
+          ) : null}
+          {/* Only under something the gate holds back: the Voted indicator
+              alone has nothing to restore. */}
+          {controls.some((control) => control !== "voted") ? (
+            <SubscriptionNotice
+              gate={gate}
+              feature="voting and extending bids"
+              className="mb-0 w-full"
+            />
+          ) : null}
+        </div>
+      ) : null}
     </Card>
   );
 }

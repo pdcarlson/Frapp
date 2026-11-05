@@ -646,6 +646,86 @@ export const VOCABULARY_DEFAULTS: Readonly<Record<ArchetypeKey, VocabularyDefaul
   );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// VOCABULARY LOOKUP
+// A chapter's own word for recruitment, a new member and a class, read the
+// same way on web and mobile:
+//   vocab("recruitment", config)   // → "Rush" / "Recruitment" / "Intake" / "Induction"
+//   vocab("pledge", config)        // → "New member" / "Aspirant" / "Candidate"
+//   vocab("class", config)         // → "Pledge class" / "Line" / "Cohort"
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type VocabKey = keyof VocabularyDefaults;
+
+/**
+ * A chapter's words by key. Values are `unknown` because the member view
+ * sends the stored `vocabulary` column as it is: `vocab()` takes only a
+ * non-blank string and falls back otherwise.
+ */
+export type VocabConfig = {
+  vocabulary?: Record<string, unknown>;
+};
+
+/** The two member-view fields a chapter's vocabulary is resolved from. */
+export type MemberViewVocabulary = {
+  org_archetype?: string | null;
+  vocabulary?: Record<string, unknown> | null;
+};
+
+/**
+ * A chapter's vocabulary from the member view (`GET /v1/chapters/current`),
+ * shaped for `vocab()`. Any member can read the member view; the config read
+ * needs `chapter-config:view`, which no seeded role below President holds
+ * (#2957). The member view carries the stored `vocabulary` column as-is, so
+ * this applies the merge `ChapterConfigService.getConfig` does: the
+ * archetype's defaults, then the chapter's stored words. Without it a chapter
+ * with no stored words would lose its archetype's `/intake`. `undefined`
+ * until the read answers.
+ */
+export function memberViewVocabulary(
+  chapter: MemberViewVocabulary | undefined,
+): VocabConfig | undefined {
+  if (!chapter) return undefined;
+  return {
+    vocabulary: {
+      ...VOCABULARY_DEFAULTS[getArchetype(chapter.org_archetype ?? "ifc").key],
+      ...(chapter.vocabulary ?? {}),
+    },
+  };
+}
+
+/**
+ * The chapter's word for `key`: its trimmed override when it has one,
+ * otherwise the IFC default (which is also what a caller sees before the
+ * chapter read answers).
+ */
+export function vocab(key: VocabKey, chapterConfig?: VocabConfig): string {
+  const override = chapterConfig?.vocabulary?.[key];
+  if (typeof override === "string" && override.trim()) {
+    return override.trim();
+  }
+  return VOCABULARY_DEFAULTS.ifc[key];
+}
+
+/**
+ * Title-case every word in a vocab term, for callers that use it as a
+ * role-name-style reference (e.g. "New Member" alongside "Member") rather
+ * than inline sentence-case prose. `vocab()`'s own multi-word defaults are
+ * sentence case — only the first word capitalized ("New member", "Pledge
+ * class") — but the seeded role these terms describe is always displayed
+ * fully capitalized elsewhere (e.g. the Discord-import role mapping step's
+ * "New Member"), so a caller quoting the term as a proper noun should apply
+ * this rather than assume `vocab()`'s casing.
+ */
+export function titleCase(term: string): string {
+  return term
+    .split(" ")
+    .map((word) =>
+      word ? word.charAt(0).toUpperCase() + word.slice(1) : word,
+    )
+    .join(" ");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // DUES_CONFIG_SEED
 // Default dues configuration in cents (matches chapter_dues_config schema).
 // ─────────────────────────────────────────────────────────────────────────────
