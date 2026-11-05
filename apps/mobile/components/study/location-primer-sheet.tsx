@@ -1,9 +1,13 @@
 import { forwardRef } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import {
+  locationSettingsPath,
+  turnOnLocationStep,
+} from "@/lib/study/location-settings-path";
 import {
   SheetGrabber,
   SheetHeader,
@@ -24,7 +28,15 @@ import {
  * prescribes for push, where declining is "a quiet 'Not now'".
  *
  * It also handles the already-declined case, where nothing will ask again and
- * the only honest next step is Settings.
+ * the only honest next step is Settings, so that branch opens it. Its copy
+ * still spells out the path, for a member who lands somewhere else or comes
+ * back to it later. The path is `locationSettingsPath`'s, the one the Start
+ * card's failure line uses too: it differs by OS and by iOS version. The web
+ * build has neither a path nor a settings page to open (react-native-web's
+ * `Linking` has no `openSettings`, so calling it throws). The helper says so
+ * with `null`, and on that answer the line says to allow location for the
+ * site in the browser and there is no button; the header's "Not now" closes
+ * the sheet.
  */
 export interface LocationPrimerSheetProps {
   /** False once the OS will no longer prompt — the copy and CTA both change. */
@@ -41,6 +53,11 @@ export const LocationPrimerSheet = forwardRef<
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
+  const settingsPath = locationSettingsPath();
+  const turnOnStep = turnOnLocationStep(settingsPath);
+  // The helper's `null` is the one "no Settings here" answer, so the button
+  // and the line can't disagree about it.
+  const canOpenSettings = settingsPath !== null;
 
   return (
     <BottomSheetModal
@@ -84,20 +101,24 @@ export const LocationPrimerSheet = forwardRef<
         ) : (
           <>
             <Text style={styles.blocked}>
-              Location is turned off for Frapp, and iOS won&apos;t ask again.
-              Turn it on in Settings → Frapp → Location, then start your session.
+              Location is turned off for Frapp. {turnOnStep}, then start your
+              session.
             </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-              onPress={onDismiss}
-              style={({ pressed }) => [
-                styles.secondary,
-                pressed ? styles.secondaryPressed : null,
-              ]}
-            >
-              <Text style={styles.secondaryLabel}>Close</Text>
-            </Pressable>
+            {canOpenSettings ? (
+              <SheetPrimaryButton
+                label="Open Settings"
+                onPress={() => {
+                  // Closed first: the member comes back from Settings to the
+                  // Start card, not to a sheet still saying location is off.
+                  onDismiss();
+                  Linking.openSettings().catch(() => {
+                    // Nothing to do: the sentence above says where to go.
+                  });
+                }}
+                accent={accent}
+                onAccent={tokens.color.gold.onHouse}
+              />
+            ) : null}
           </>
         )}
       </BottomSheetView>
@@ -108,7 +129,7 @@ export const LocationPrimerSheet = forwardRef<
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     body: {
-      paddingHorizontal: tokens.spacing.lg + 2,
+      paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xl,
     },
     copy: {
@@ -127,22 +148,6 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
       marginTop: tokens.spacing.md,
-    },
-    secondary: {
-      height: tokens.touch.buttonLarge,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      alignItems: "center",
-      justifyContent: "center",
-      marginTop: tokens.spacing.md,
-    },
-    secondaryPressed: {
-      opacity: 0.85,
-    },
-    secondaryLabel: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
     },
   });
 }

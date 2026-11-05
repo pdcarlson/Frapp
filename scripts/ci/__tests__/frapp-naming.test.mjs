@@ -748,13 +748,52 @@ export function pinProblems(pin, source) {
 }
 
 // ---------------------------------------------------------------------------
-// The Settings recovery paths. Each site keeps a `Settings → <expo.name> →
-// Location` path in code (iOS 18's `Settings → Apps → <name> → Location`
-// counts). Other `Settings →` paths aren't judged: telling an app path from a
-// system one takes more than a pattern, and the mobile walk still catches a
-// Signet in any of them.
+// The Settings recovery paths. One helper, SETTINGS_SITES, holds the path to
+// the app's location switch for every OS and OS version the binary runs on,
+// and the two lines that send a member there, SETTINGS_CALLERS, take it from
+// that helper. The helper must keep each of SETTINGS_FORMS in code, naming
+// expo.name, and any other `Settings →` in its code fails, so a path it can
+// return is always one of the forms naming the app. A caller must import and
+// call the helper in code. Other `Settings →` paths in a caller aren't
+// judged: telling an app path from a system one takes more than a pattern,
+// and the mobile walk still catches a Signet in any of them.
 
-export const SETTINGS_SITES = ["apps/mobile/app/(tabs)/study.tsx", "apps/mobile/components/study/location-primer-sheet.tsx"];
+export const SETTINGS_SITES = ["apps/mobile/lib/study/location-settings-path.ts"];
+export const SETTINGS_CALLERS = ["apps/mobile/app/(tabs)/study.tsx", "apps/mobile/components/study/location-primer-sheet.tsx"];
+export const SETTINGS_HELPER = { name: "locationSettingsPath", from: "@/lib/study/location-settings-path" };
+
+/** Stands for expo.name in a form's steps. */
+const APP_NAME_STEP = Symbol("expo.name");
+
+/**
+ * Every path the helper can return, one per row the OS draws on the way to the
+ * switch: iOS 18 added an Apps row above each app's page, and the app installs
+ * from iOS 16.4, which has none.
+ */
+export const SETTINGS_FORMS = [
+  { os: "iOS before 18", steps: ["Settings", APP_NAME_STEP, "Location"] },
+  { os: "iOS 18 and later", steps: ["Settings", "Apps", APP_NAME_STEP, "Location"] },
+  { os: "Android", steps: ["Settings", "Apps", APP_NAME_STEP, "Permissions", "Location"] },
+];
+
+/** A form as the member reads it. */
+export function settingsFormText(form, expoName) {
+  return form.steps.map((step) => (step === APP_NAME_STEP ? expoName : step)).join(" → ");
+}
+
+/**
+ * A form as a pattern. Each step's first letter may be either case, the steps
+ * may wrap across lines, and quotes around the name, escaped or not, are
+ * optional; the name must match. The path ends at the form's last step: one
+ * that goes on with a further `→` is a longer path, not the form.
+ */
+function settingsFormPattern(form, expoName, flags) {
+  const step = (value) =>
+    value === APP_NAME_STEP
+      ? `\\\\?["'“‘]?${literal(expoName)}\\\\?["'”’]?`
+      : `[${value[0].toUpperCase()}${value[0].toLowerCase()}]${literal(value.slice(1))}`;
+  return new RegExp(`${form.steps.map(step).join("\\s*→\\s*")}\\b(?!\\s*→)`, flags);
+}
 
 /** The line holding `index` in `source`, and `index`'s column in it. */
 function lineAt(source, index) {
@@ -779,30 +818,50 @@ function blockOpenBefore(source, index) {
 }
 
 /**
- * The path counts only when it is certainly code: not in its line's leading
- * comment, not after a `//` or `/*` on its line, and not below an open `/*`,
- * so a comment can't stand in for a deleted path. That last check takes the
- * nearest `/*` above the path wherever it sits and fails closed, so when the
- * pin fails on copy that reads right, look at the nearest `/*` above it. The
- * first letter of `Settings`, `Apps` and `Location` may be either case, and
- * quotes around the name, escaped or not, are optional; the name must match.
+ * Whether `index` is certainly code: not in its line's leading comment, not
+ * after a `//` or `/*` on its line, and not below an open `/*`, so a comment
+ * can't stand in for a deleted path. That last check takes the nearest `/*`
+ * above wherever it sits and fails closed, so when the pin fails on copy that
+ * reads right, look at the nearest `/*` above it.
  */
+function inCode(source, index) {
+  const { text, column } = lineAt(source, index);
+  const note = inLeadingComment(text, column) || /\/\/|\/\*/.test(text.slice(0, column));
+  return !note && !blockOpenBefore(source, index);
+}
+
+/** The 1-based line `index` sits on. */
+function lineNumber(source, index) {
+  return (source.slice(0, index).match(new RegExp(LINE_BREAK.source, "g")) ?? []).length + 1;
+}
+
 export function settingsPathProblems(list, expoName) {
-  const pin = new RegExp(
-    `[Ss]ettings\\s*→\\s*(?:[Aa]pps\\s*→\\s*)?\\\\?["'“‘]?${literal(expoName)}\\\\?["'”’]?\\s*→\\s*[Ll]ocation\\b`,
-    "g",
-  );
-  return SETTINGS_SITES.filter((site) => {
-    const file = list.find((candidate) => candidate.rel === site);
-    return !(
-      file &&
-      [...file.source.matchAll(pin)].some((match) => {
-        const { text, column } = lineAt(file.source, match.index);
-        const note = inLeadingComment(text, column) || /\/\/|\/\*/.test(text.slice(0, column));
-        return !note && !blockOpenBefore(file.source, match.index);
-      })
-    );
-  }).map((site) => `${site} must keep its Settings → ${expoName} → Location path`);
+  const sourceOf = (rel) => list.find((candidate) => candidate.rel === rel)?.source ?? "";
+  const problems = [];
+  for (const site of SETTINGS_SITES) {
+    const source = sourceOf(site);
+    for (const form of SETTINGS_FORMS) {
+      const kept = [...source.matchAll(settingsFormPattern(form, expoName, "g"))].some((match) => inCode(source, match.index));
+      if (!kept) problems.push(`${site} must keep its ${form.os} path, ${settingsFormText(form, expoName)}`);
+    }
+    for (const start of source.matchAll(/[Ss]ettings\s*→/g)) {
+      if (!inCode(source, start.index)) continue;
+      const known = SETTINGS_FORMS.some((form) => {
+        const pattern = settingsFormPattern(form, expoName, "y");
+        pattern.lastIndex = start.index;
+        return pattern.test(source);
+      });
+      if (!known) problems.push(`${site}:${lineNumber(source, start.index)} has a Settings path that is none of its forms naming ${expoName}`);
+    }
+  }
+  const { name, from } = SETTINGS_HELPER;
+  const imported = new RegExp(`\\bimport\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*["']${literal(from)}["']`);
+  for (const caller of SETTINGS_CALLERS) {
+    const source = sourceOf(caller);
+    const called = [...source.matchAll(new RegExp(`\\b${name}\\(`, "g"))].some((match) => inCode(source, match.index));
+    if (!imported.test(source) || !called) problems.push(`${caller} must take its Settings path from ${name}()`);
+  }
+  return problems;
 }
 
 // ---------------------------------------------------------------------------
@@ -845,11 +904,13 @@ test("every pinned site holds its value", () => {
   assert.deepEqual(PINS.flatMap((pin) => pinProblems(pin, read(pin.file))), []);
 });
 
-test("both Settings recovery paths name expo.name", () => {
+test("every Settings recovery path names expo.name", () => {
   const expoName = JSON.parse(read("apps/mobile/app.json")).expo.name;
   assert.deepEqual(settingsPathProblems(files("mobile"), expoName), []);
-  // Renaming the binary without its Settings paths fails.
-  assert.equal(settingsPathProblems(files("mobile"), "Signet").length, SETTINGS_SITES.length);
+  // Renaming the binary without its Settings paths fails, form by form.
+  const renamed = settingsPathProblems(files("mobile"), "Signet");
+  assert.equal(renamed.filter((problem) => problem.includes(" must keep its ")).length, SETTINGS_SITES.length * SETTINGS_FORMS.length);
+  assert.equal(renamed.filter((problem) => problem.includes(" has a Settings path ")).length, SETTINGS_FORMS.length);
 });
 
 // Lowering a floor or moving a root in the table above takes a second,
@@ -864,7 +925,12 @@ test("the table keeps its floors and roots", () => {
   assert.deepEqual(pinned("apps/web/app/sign-in/page.tsx").map((entry) => entry.min), [2, 2]);
   assert.equal(pinned("apps/landing/app/layout.tsx")[0].exactly, 3);
   assert.equal(pinned("apps/landing/app/page.tsx")[0].exactly, 2);
-  assert.deepEqual(SETTINGS_SITES, ["apps/mobile/app/(tabs)/study.tsx", "apps/mobile/components/study/location-primer-sheet.tsx"]);
+  assert.deepEqual(SETTINGS_SITES, ["apps/mobile/lib/study/location-settings-path.ts"]);
+  assert.deepEqual(SETTINGS_CALLERS, ["apps/mobile/app/(tabs)/study.tsx", "apps/mobile/components/study/location-primer-sheet.tsx"]);
+  assert.deepEqual(
+    SETTINGS_FORMS.map((form) => settingsFormText(form, "Frapp")),
+    ["Settings → Frapp → Location", "Settings → Apps → Frapp → Location", "Settings → Apps → Frapp → Permissions → Location"],
+  );
   assert.deepEqual(SITE_ROSTERS.find((row) => row.kind === "ops-nudge catalog").sites, ["packages/validation/src/ops-nudges.ts"]);
   const roots = Object.fromEntries(
     Object.entries(WALKS).map(([name, spec]) => [name, typeof spec.roots === "function" ? spec.roots() : spec.roots]),
@@ -976,33 +1042,94 @@ test("pin counts: min and exactly", () => {
   assert.equal(pinProblems(pin, "a b b").length, 2);
 });
 
-const STUDY = SETTINGS_SITES[0];
-const PRIMER = SETTINGS_SITES[1];
-const recovery = (rel, name = "Frapp") => ({ rel, source: `const r = "Turn it on in Settings → ${name} → Location.";\n` });
+const HELPER = SETTINGS_SITES[0];
+const [STUDY, PRIMER] = SETTINGS_CALLERS;
+const formPaths = (name = "Frapp") => SETTINGS_FORMS.map((form) => settingsFormText(form, name));
+const helperFile = (lines = formPaths().map((path) => `"${path}"`)) => ({
+  rel: HELPER,
+  source: lines.map((line, i) => (line.startsWith('"') ? `const p${i} = ${line};\n` : line)).join(""),
+});
+const callerFile = (rel, body = "const line = `Turn it on in ${locationSettingsPath()}.`;\n") => ({
+  rel,
+  source: `import { locationSettingsPath } from "@/lib/study/location-settings-path";\n${body}`,
+});
+const recovery = (helper = helperFile()) => [helper, callerFile(STUDY), callerFile(PRIMER)];
+const lostForm = (i, name = "Frapp") => `${HELPER} must keep its ${SETTINGS_FORMS[i].os} path, ${formPaths(name)[i]}`;
+const strayAt = (line) => `${HELPER}:${line} has a Settings path that is none of its forms naming Frapp`;
+/** The helper with form `i`'s line replaced by `source`. */
+const withForm = (i, source) => helperFile(formPaths().map((path, j) => (j === i ? source : `"${path}"`)));
 
-test("both Settings paths must be in code and name expo.name", () => {
-  assert.deepEqual(settingsPathProblems([recovery(STUDY), recovery(PRIMER)], "Frapp"), []);
-  const lost = `${PRIMER} must keep its Settings → Frapp → Location path`;
-  assert.deepEqual(settingsPathProblems([recovery(STUDY)], "Frapp"), [lost]);
+test("every Settings path form must be in the helper's code and name expo.name", () => {
+  assert.deepEqual(settingsPathProblems(recovery(), "Frapp"), []);
+  assert.deepEqual(
+    settingsPathProblems(recovery().slice(1), "Frapp"),
+    SETTINGS_FORMS.map((_, i) => lostForm(i)),
+  );
+  // A wrong name fails each form on its own: that form goes missing, and the
+  // path it was replaced with is none of the forms.
+  SETTINGS_FORMS.forEach((form, i) => {
+    const wrong = withForm(i, `"${formPaths("Signet")[i]}"`);
+    assert.deepEqual(settingsPathProblems(recovery(wrong), "Frapp"), [lostForm(i), strayAt(i + 1)], form.os);
+  });
+  // A comment can't stand in for a form.
   for (const source of [
     "// Settings → Frapp → Location\n",
-    "Linking.openSettings(); // was: Settings → Frapp → Location\n<Text>Turn location on.</Text>\n",
-    "/*\n  old copy: Settings → Frapp → Location\n*/\n<Text>Turn location on.</Text>\n",
-    "/*/\n  old copy: Settings → Frapp → Location\n*/\n<Text>Turn location on.</Text>\n",
-    "<Text>Turn it on in Settings → Frapp → Photos.</Text>\n",
+    "Linking.openSettings(); // was: Settings → Frapp → Location\n",
+    "/*\n  old copy: Settings → Frapp → Location\n*/\n",
+    "/*/\n  old copy: Settings → Frapp → Location\n*/\n",
   ]) {
-    assert.deepEqual(settingsPathProblems([recovery(STUDY), { rel: PRIMER, source }], "Frapp"), [lost], source);
+    assert.deepEqual(settingsPathProblems(recovery(withForm(0, source)), "Frapp"), [lostForm(0)], source);
   }
-  for (const source of [
-    "<Text>\n  Turn it on in Settings →\n  Frapp → Location.\n</Text>\n",
-    "<Text>Turn it on in Settings → Apps → Frapp → Location.</Text>\n",
-    "<Text>Turn it on in settings → “Frapp” → location.</Text>\n",
-    "<Text>Turn it on in settings → apps → Frapp → location.</Text>\n",
-    'const m = "Turn it on in Settings → \\"Frapp\\" → Location.";\n',
+  assert.deepEqual(settingsPathProblems(recovery(withForm(0, '"Settings → Frapp → Photos"')), "Frapp"), [lostForm(0), strayAt(1)]);
+  for (const [i, source] of [
+    [0, '"Settings →\n  Frapp → Location"'],
+    [0, '"settings → “Frapp” → location"'],
+    [0, '"Settings → \\"Frapp\\" → Location"'],
+    [1, '"settings → apps → Frapp → location"'],
+    [2, '"Settings → Apps → ‘Frapp’ →\n  permissions → Location"'],
   ]) {
-    assert.deepEqual(settingsPathProblems([recovery(STUDY), { rel: PRIMER, source }], "Frapp"), [], source);
+    assert.deepEqual(settingsPathProblems(recovery(withForm(i, source)), "Frapp"), [], source);
   }
-  assert.deepEqual(settingsPathProblems([recovery(STUDY), recovery(PRIMER, "Signet")], "Frapp"), [lost]);
+});
+
+test("the helper can return no Settings path but its forms", () => {
+  for (const extra of [
+    '"Settings → Apps → Signet → Location"',
+    '"Settings → General → Frapp → Location"',
+    '"Settings → Location"',
+    // A form with more steps after it is a longer path, not the form.
+    '"Settings → Apps → Frapp → Location → Precise Location"',
+    '"Settings → Frapp → Location →\n  While Using"',
+  ]) {
+    const helper = helperFile([...formPaths().map((path) => `"${path}"`), extra]);
+    assert.deepEqual(settingsPathProblems(recovery(helper), "Frapp"), [strayAt(4)], extra);
+  }
+  // And it doesn't count as the form it starts with, so a form edited into a
+  // longer path goes missing too.
+  for (const [i, source] of [
+    [1, '"Settings → Apps → Frapp → Location → Precise Location"'],
+    [0, '"Settings → Frapp → Location → While Using"'],
+  ]) {
+    assert.deepEqual(settingsPathProblems(recovery(withForm(i, source)), "Frapp"), [lostForm(i), strayAt(i + 1)], source);
+  }
+  // Only code is judged, as for the forms.
+  const noted = helperFile([...formPaths().map((path) => `"${path}"`), "// iOS 17 had no Settings → Apps row.\n"]);
+  assert.deepEqual(settingsPathProblems(recovery(noted), "Frapp"), []);
+});
+
+test("both callers must import and call the helper in code", () => {
+  const owes = (rel) => `${rel} must take its Settings path from locationSettingsPath()`;
+  assert.deepEqual(settingsPathProblems([helperFile(), callerFile(STUDY)], "Frapp"), [owes(PRIMER)]);
+  for (const caller of [
+    callerFile(PRIMER, '<Text>Turn it on in Settings → Apps → Frapp → Location.</Text>\n'),
+    callerFile(PRIMER, "// const path = locationSettingsPath();\n"),
+    { rel: PRIMER, source: "const locationSettingsPath = () => 'Settings → Frapp → Location';\nconst line = locationSettingsPath();\n" },
+  ]) {
+    assert.deepEqual(settingsPathProblems([helperFile(), callerFile(STUDY), caller], "Frapp"), [owes(PRIMER)], caller.source);
+  }
+  const wrapped = callerFile(PRIMER, "const path =\n  locationSettingsPath();\n");
+  wrapped.source = wrapped.source.replace("import { locationSettingsPath }", "import {\n  locationSettingsPath,\n}");
+  assert.deepEqual(settingsPathProblems([helperFile(), callerFile(STUDY), wrapped], "Frapp"), []);
 });
 
 // One planted leftover per row, so emptying a row's bans or neutering its

@@ -212,9 +212,9 @@ describe("More hub anatomy (#1048)", () => {
   });
 
   // The profile card answers a press as a list row does (`usePressFeedback`,
-  // through `PressableRow`). It is a card, so its iOS lift is to the popover
-  // step rather than to its own colour.
-  it("ripples the profile card on Android and lifts it card to popover on iOS", () => {
+  // through `PressableRow`). It sits on `surface1`, the tone of the rows
+  // under it, so its iOS lift is the rows' own one step, to `card`.
+  it("draws the profile card in the rows' tone, ripples it on Android and lifts it a step on iOS", () => {
     const card = render().root.find(
       (node) =>
         (node.type as unknown) === "Pressable" &&
@@ -225,13 +225,29 @@ describe("More hub anatomy (#1048)", () => {
       ...[card.props.style({ pressed: true })].flat(Infinity),
     ) as Record<string, unknown>;
 
+    const resting = Object.assign(
+      {},
+      ...[card.props.style({ pressed: false })].flat(Infinity),
+    ) as Record<string, unknown>;
+
+    expect(resting.backgroundColor).toBe(
+      signetDarkTokens.color.surface.surface1,
+    );
     expect(card.props.android_ripple?.color).toMatch(/^rgba\(/);
     // The suite's react-native stub runs as iOS.
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
     expect(held).not.toHaveProperty("opacity");
     // The ripple is rounded by a parent clip with the card's radius
     // (`PressableRow`); the card's own `overflow` would leave it square.
     expectRoundedRipple(card, signetDarkTokens.radius.cardLarge);
+    // The chevron is `ListRow`'s, at the label role's size.
+    const chevron = card.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "›",
+    );
+    expect(Object.assign({}, chevron.props.style).fontSize).toBe(
+      signetDarkTokens.typography.role.label.size,
+    );
   });
 
   it("draws labels without a description line, and names the current chapter", () => {
@@ -333,7 +349,10 @@ describe("More hub anatomy (#1048)", () => {
         (node.type as unknown) === "Pressable" &&
         node.props.accessibilityLabel === "Host check-in",
     );
-    expect(host.props.accessibilityState).toEqual({ disabled: true });
+    expect(host.props.accessibilityState).toEqual({
+      disabled: true,
+      busy: false,
+    });
     expect(host.props.accessibilityHint).toBeUndefined();
     expect(host.props.accessibilityValue).toEqual({
       text: "No upcoming event",

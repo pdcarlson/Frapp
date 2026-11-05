@@ -82,8 +82,8 @@ Copy never shows a permission key such as `roles:manage`. A permission-denied li
 
 Every empty state MUST include:
 
-- A clear title
-- A short explanation
+- A clear title, except a state inside a list or panel that already sits under its own heading, which may say what is missing in its explanation alone: [§ Arrange the channel list](#arrange-the-channel-list-mobile-and-web)'s `Filtered to nothing` row, the [Notifications (dashboard)](#notifications-dashboard) drawer's `Empty` row and [Discord Import](#discord-import-dashboard)'s `Empty (channel panel)` row
+- A short explanation **only when it tells the member something the title doesn't**: why the view is empty, or what to do next. Never one that restates what the screen is for; without one the title stands alone.
 - A next-step CTA when possible
 
 Example (the Events surface, from the tables below):
@@ -91,6 +91,10 @@ Example (the Events surface, from the tables below):
 `No events yet`
 `Create your first chapter event to unlock attendance and point automation.`
 `[Create first event]`
+
+**Amended 2026-11-05**, after the owner's review of the Android build (2026-11-04): "we don't need to narrate stuff". The explanation used to be required on every empty state, which is how empty cards came to describe their own screen ("Documents the chapter uploads show up here.", "Members appear here once they join the chapter."). The rule above governs new and changed copy, for the reason [`../mobile/patterns.md` § Screen headers](../mobile/patterns.md#screen-headers) took the line under each screen title away: the member is already on the screen. The change that amended it removed those lines from the mobile screens it touched: Documents (s12), Directory (s13) and the notifications inbox (s14). Chat home's no-channels card (s04) swapped its line for what to do next: `No channels yet` / `Ask an admin to add one.` (mobile has no way to create one). A line that carries a fact stays: a search names its query, a filtered view says how to widen it, and the no-chapter state says where to pick a chapter.
+
+Lines that still narrate are follow-up ([#3429](https://github.com/pdcarlson/Frapp/issues/3429)), not changed by the amendment: mobile Events' `Events your chapter schedules will appear here.`; the second sentence of mobile Dues' empty body, `Anything they send will show up here.` ([Dues (mobile, s11)](#dues-mobile-s11)); and on web the empty rows of [Members](#members-dashboard) (`Actives appear here once they join.`), [Alumni](#alumni-dashboard) (`Graduated members appear here.`), [Notifications](#notifications-dashboard) (`… will appear here.`) and [Points](#points-dashboard)' empty transactions (`Your attendance, study sessions, and adjustments will appear here.`).
 
 The skeleton/empty/error state variants themselves — layout, structure, when each renders — are component-level and owned by [components.md](components.md). This document owns the words inside them.
 
@@ -189,7 +193,7 @@ The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.g
 
 - **Empty and no-results were one row doing two jobs.** `No members match this view` / `Try a broader search or invite your first members to populate this directory.` had to cover a chapter with no roster *and* a search that matched nothing, so it asserted neither and instructed the reader in both. The split is the one the Points table below already makes between an empty leaderboard and a search that matched nothing, for the same reason: a filtered view that matches nothing is not a claim about the data.
 - **The descriptions state a fact instead of giving an instruction**, except in the no-results hint slot, where the board's own drawn hint is an instruction (`Check the spelling`).
-- **`actives`, not `members`,** in the two titles about the list itself: it is the word the tab and the section label above the list already use, and it is what the shipped mobile Directory renders for the same state (`apps/mobile/app/(tabs)/directory.tsx`). The error and offline rows keep `members`, because those are about the *records*, not about the tab.
+- **`actives`, not `members`,** in the two titles about the list itself: it is the word the tab and the section label above the list already use, and the shipped mobile Directory's empty title is the same `No actives yet` (`apps/mobile/app/(tabs)/directory.tsx`). Mobile draws that title alone, without this row's description, under §4 as amended 2026-11-05 *(corrected 2026-11-05: this said mobile renders the same state, which stopped being true of the description)*. Mobile's Actives tab has no filters, so the filters row has no mobile twin. The error and offline rows keep `members`, because those are about the *records*, not about the tab.
 - **The old error string named a concept that no longer exists.** "The members workflow no longer falls back to preview data" described the removal of a preview mode to a member who never saw one; `stateMicrocopy.members.preview*` had already lost both its readers.
 
 Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assembled at the call site because it quotes the live query.
@@ -306,6 +310,8 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | Empty | `No documents here yet` | `Upload chapter files like bylaws, agendas, and meeting minutes so everyone can find them.` |
 | Empty (search, all files) | `No documents match that search` | `Nothing in the chapter library has "{query}" in its title.` |
 | Empty (search, inside a folder) | `No documents match that search` | `No match in this folder. Try "All files" to search the whole library.` |
+| Empty (search, all files), mobile s12 | `No matches` | `No document title matches “{query}”.` |
+| Empty (search, inside a folder), mobile s12 | `No matches` | `Nothing in {folder} matches “{query}”.` Mobile's search stays inside the picked folder chip, so the line names the folder it searched |
 | Error | `Couldn't load documents` | `Confirm your chapter access and retry.` |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
 | Offline (search active) | `Search needs a connection` | `Clear the search to browse the documents already on this device.` |
@@ -431,21 +437,27 @@ the state with `pollsGateOf` in `@repo/chat-core/polls`.
 
 ### Study session (mobile, s10)
 
-The dashboard rows above are officer-flavoured — "Ask a chapter admin with
-`geofences:manage`" and "Create your first invoice" are admin next steps, and a
-member reading their own study screen cannot act on either. Per §"Do not rewrite
-equivalent state text ad hoc per screen unless the workflow intent is materially
-different", the member surface gets its own rows rather than inline strings.
+The member's study screen has states the dashboard's *Study session* rows
+above don't cover (a session running on a phone, a pause, the location check,
+a refused write), and its error rows say which read failed rather than the
+dashboard's "Confirm your chapter access and retry".
+Per §"Do not rewrite equivalent state text ad hoc per screen unless the
+workflow intent is materially different", the member surface gets its own rows
+rather than inline strings. Where a state is the same for both, the row says
+so and uses web's line, as *No zones* does.
 
 | State | Title | Description |
 |---|---|---|
-| Loading | — | Skeleton (`components/state-block.tsx`); no loading copy. |
+| Loading | — | Skeleton (`components/card-list-skeleton.tsx`, the start card and the list it becomes); no loading copy. |
 | Module off | `Study hours are turned off` | `Your chapter isn't tracking study hours right now. An officer can turn the module back on.` The same sentence is what a failed Start renders when the module gate refuses it — recognised by the guard's exact message, because `code: chapter.module.disabled` didn't reach a client until #1020, which left a code-keyed path dead until #2393 (moving to the code first is #2995) — the empty state is unreachable while `useCurrentChapter` is disabled (no claim on the token), so the error path has to carry the member-facing wording rather than relaying the guard's officer instructions ("Re-enable it in Settings → Modules"). |
 | Module off (session running) | — | `Your chapter isn't tracking study hours right now, so that didn't save. An officer can turn the module back on — study time tracked now may not be credited.` Rendered when an officer switches `hours` off under a running session: pause, resume, heartbeat and stop are refused by the same gate. It hedges for the reason the *Subscription refused (session running)* row gives. Seen until the member's cached chapter payload catches up: the refusal itself refetches it, and once it says off, the screen below replaces the session. With no payload (no chapter claim on the token) the screen fails open, and this line stays the explanation. |
 | Module off (session running, screen) | `Study hours are turned off` | `Your chapter isn't tracking study hours right now, so your running session can't be updated or ended. An officer can turn the module back on — study time tracked now may not be credited.` The *Module off* empty state's body when a session is still running under it. The screen replaces the session's card, because every write on it is refused while the module is off and nothing expires a stale session in the meantime, so this line is the only place the member learns the session exists. No failure line is stacked above it. A session write that gets through under it (an officer turned `hours` back on) refetches the payload. Within ten minutes of an unpaused session's last banked heartbeat (or a paused one's grace window) that brings the card back; past that, the write settles the session (`EXPIRED` with nothing credited, or `PAUSED_EXPIRED` with its pre-pause time) and the screen goes to Start ([#2718](https://github.com/pdcarlson/Frapp/issues/2718)). |
 | Subscription refused (start) | — | `Your chapter's subscription isn't active, so study sessions can't be recorded. An officer can sort this out for the chapter.` Rendered when `POST /study-sessions` is refused by the subscription gate; the two rules binding it are in § *Subscription refused (mobile, cross-surface)* above. |
 | Subscription refused (session running) | — | `Your chapter's subscription isn't active, so that didn't save. An officer needs to sort it out — study time tracked now may not be credited.` Deliberately **not** the row above. Pause, resume, heartbeat and stop all leave the session active server-side and the End button on screen, so telling the member study "can't be recorded" would be false and would cost them the banked time if they walked away. It must not promise the time is safe either: `stop` is refused too, and a session whose heartbeats are refused goes stale and closes as `EXPIRED` with no points after 10 minutes. The reasoning is kept on `SUBSCRIPTION_REFUSAL_COPY.studySession`. *(Corrected 2026-09-27: this row still quoted the earlier "its time is safe" string after the code dropped it.)* |
-| No zones | `No study zones yet` | `Sessions are tracked inside a zone. An officer with geofences:manage can add one.` (quotes a permission key against §3; [#3422](https://github.com/pdcarlson/Frapp/issues/3422)) |
+| No zones | `No study zones yet` | `Ask an officer who manages study zones to add one.` Web's *Empty zones* line, word for word. *(Corrected 2026-11-05: the earlier body quoted the `geofences:manage` permission key to a member, who can't act on it, [#3422](https://github.com/pdcarlson/Frapp/issues/3422).)* |
+| Location off, OS won't ask again | `Location check` (primer) | `Location is turned off for Frapp. Turn it on in <path>, then start your session.` · `Open Settings` The button opens the app's own settings page. `<path>` is the member's own OS's and OS version's, from `locationSettingsPath` (`apps/mobile/lib/study/location-settings-path.ts`): `Settings → Frapp → Location` below iOS 18, `Settings → Apps → Frapp → Location` from iOS 18 (which put app pages under an Apps row; the app installs from iOS 16.4), `Settings → Apps → Frapp → Permissions → Location` on Android. Never another OS's or iOS version's path, which sends the member looking for a row that isn't there. |
+| Location off, web build | `Location check` (primer) | `Location is turned off for Frapp. Allow location for this site in your browser, then start your session.` No button: a browser has no settings page an app can open, and location there is the site's permission, not a Settings path. The Start card's failure line ends the same way: `… so it needs location while you study. Allow location for this site in your browser.` |
+| Location refused or unreadable (Start) | — (Start card failure line) | `Frapp confirms you're in the study zone, so it needs location while you study. Turn it on in <path>.` The same `<path>` as the row above, from the same helper; this line has no button, so the path is the whole way forward. |
 | Error (sessions) | `Couldn't load study hours` | `Your sessions are still recorded — this was a problem fetching them.` |
 | Error (zones) | `Couldn't load study zones` | `A session has to start inside a zone, so this has to load first.` |
 | Paused (backgrounded) | `<zone> · paused` (status row) | `Paused while Frapp was in the background. It resumes on its own — your credited time is safe until the grace window runs out.` |
@@ -495,6 +507,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Jump target not in the channel's history | — | `That message isn't in this channel anymore.` · `Dismiss` |
 | Jump could not load a page it needed (newer or older) | — | `Couldn't load the messages needed to reach that message.` · `Dismiss` |
 | Jump into a channel whose messages failed to load | — | `Couldn't load this channel's messages to reach that message.` · `Dismiss` |
+| Jump to latest (mobile: a `↓` over the thread once the reader is back in history; `components/chat/jump-to-latest-button.tsx`, `jumpToLatestLabel`) | — | Read `Jump to latest`, or `New messages. Jump to latest` once something new lands out of sight |
 | No channels | `No channels yet` | `New chapters seed #general, #announcements, and #chapter-audit during onboarding. Ask an admin if none appear.` |
 | Empty timeline | `Nothing in this channel yet` | `Be the first to post — everyone in the channel sees it right away.` |
 | Error | `Couldn't load channels` / `Couldn't load messages` | `Confirm your chapter access and retry.` |
@@ -502,6 +515,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | Archived conversation (mobile only: a Group DM everyone else left, #348; web's channel list leaves archived channels out) | — | `This conversation is archived because everyone else left. You can still read it.` |
 | No chapter selected | `No chapter selected` | `Pick an active chapter to load its channels and messages.` |
+| Composer placeholder (mobile; `app/(tabs)/chat-thread.tsx`) | — | `Message <title>`, the header's title (`Message #general`, `Message Casey`); plain `Message` while the title is blank or falls back to `Thread`. The input's accessible name is the same string |
 | Offline (composer) | — | `You're offline — messages send when you reconnect.` |
 | Composer mounted before the channels resolve (#2176); visible after Enter, announced from the first render | — | `Still opening your channels. You can keep typing.` |
 | Send refused by the outbox, message put back (toast, #1728) | `Message not sent` | `It couldn't be queued for delivery. It's back in the composer.` |
@@ -661,12 +675,14 @@ word "subscription"**, which is the chapter's own bill with a different payer
 
 | State | Title | Description |
 |---|---|---|
-| Loading | — | Skeleton (`components/state-block.tsx`); no loading copy. |
+| Loading | — | Skeleton (`components/card-list-skeleton.tsx`, the balance card and the list it becomes); no loading copy. |
 | Empty | `No dues yet` | `Your chapter hasn't billed you. Anything they send will show up here.` |
 | Error | `Couldn't load your dues` | `Your invoices are still on record — this was a problem fetching them.` |
 | Nothing owed | `You're all paid up` (balance label) | — |
-| Payment captured, unsettled | — (notice) | `Payment received, confirmation pending. This updates as soon as your chapter's records catch up.` |
-| Payment settled | — (notice) | `Paid. Your chapter has it — thanks.` |
+| Payment captured, unsettled | — (balance card caption) | `Payment received, confirmation pending. This updates as soon as your chapter's records catch up.` With two or more open: `Payment received for <invoice title>, confirmation pending. This updates as soon as your chapter's records catch up.`, because the label then only counts them and a live `Pay now` pays that invoice. Re-reading until PAID is [`billing.md`](../../behavior/billing.md) § Member payment flow's rule (it owns it). The hold ends when the invoice list reads the invoice as no longer OPEN (PAID, VOID, or dropped from the list: the rows below), on a chapter switch, or when the app closes; nothing else ends it. Meanwhile the card stays on the paid invoice with the chip `Pending`, and with two or more open, that invoice's OPEN row reads `Pending` and the others wait. For the poll's budget after the sheet (about 24s, whether or not the poll has answered) the CTA is disabled as `Confirming payment…`; after that `Pay now` is live under this line, and with two or more open its accessibility hint is the footnote, `Pays <invoice title> — <amount> of your balance.`. Leaving the screen or the app and coming back re-reads the list, and so does a tick every 10s while the screen is up and the app in the foreground. The poll saying PAID ends nothing, because the list hasn't caught up yet. On Android a list read that never answers keeps the hold, because nothing times the request out yet ([#3433](https://github.com/pdcarlson/Frapp/issues/3433)). Pay stays live because nothing Dues reads says a payment failed: one that sat in processing and then failed leaves the invoice OPEN, and the member hears of it from the `Payment declined` push and the row it writes in Notifications (s14), neither of which Dues reads (the row carries no invoice id); a member who turned billing notifications off gets neither. A tap on a payment that failed since opens the sheet on the same intent; one the server already has as succeeded gets its refusal below. |
+| Payment captured, invoice voided or gone | — (balance card line) | Voided: `Payment received for <invoice title>, but your chapter has cancelled that invoice. Ask your treasurer about it.` Gone from the list: `Payment received for <invoice title>, but that invoice is no longer on your dues. Ask your treasurer about it.` The hold ends and Pay moves on to the next invoice, so the line names its invoice, as the settled one does, and is drawn under the next CTA's caption. It promises no update, because neither invoice gets one: VOID is terminal, and the charge is the treasurer's to refund or reissue (`billing.md` § Payment webhook idempotency). For the rest of the visit, unless the list then reads the invoice PAID; paying the next invoice doesn't take it away, since each captured payment keeps its own line. The next visit drops it: History then shows a voided invoice as `Cancelled by your chapter`, and a dropped one appears nowhere on the screen. If the hold ended while the member was away, the line shows in the visit they come back to and goes in the one after. |
+| Payment failed or refused | — (balance card caption, destructive) | The sheet's own message, or the server's for a refused request. A tap on an invoice whose stored payment the server already has as succeeded gets its 409 message as written: `Payment already completed; confirmation is being processed`. One Stripe still has as processing is handed back with no status ([#3432](https://github.com/pdcarlson/Frapp/issues/3432)), so the sheet opens on it, and what it says then is Stripe's (not yet seen on a device). Drawn on the card only while the card is about the invoice the attempt was for, so it is never another invoice's caption or hint, and above the error or loading state when there is no card. Cleared when a new attempt starts, on a new visit (the member coming back to the screen, or the app coming back from the background unless it went there during the attempt), and once the list moves the card to another invoice, so it doesn't come back if the card later returns. |
+| Payment settled | — (balance card line) | `Paid <invoice title>. Your chapter has it — thanks.` Only once the invoice list reads the invoice PAID. Names the invoice, because it can sit under the next invoice's CTA: it is drawn under that CTA's caption, never in place of the footnote naming the next invoice or as the CTA's hint. Gone when the visit ends: the next return to the screen or the app drops it, and the invoice is in History. Paying the next invoice doesn't take it away. If the hold ended while the member was away (the screen stays mounted, so the poll's own last read, or the return's re-read, can find PAID), the line shows in the visit they come back to and goes in the one after. |
 | Stripe unavailable (Expo Go) | — (disabled CTA reason) | `Paying in the app needs the installed Frapp build — Expo Go can't open the payment sheet. Your treasurer can still take payment another way.` |
 | Stripe unavailable (web) | — (disabled CTA reason) | `Paying dues is available in the Frapp mobile app.` |
 | Installed build, Stripe module failed to load | — (disabled CTA reason) | `Card payments couldn't start in this version of the app. Updating the app may fix it. Your treasurer can still take payment another way.` Only while a publishable key is set: a broken module with no key gets the no-key row, because an update can't switch payment on. |
@@ -823,7 +839,8 @@ Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 
 | State | Title | Description | Home |
 |---|---|---|---|
-| Actions sheet rows | — | `Reply` · `Edit message` · `Delete message` (destructive), above the Report and Block rows | mobile `components/chat/message-actions-sheet.tsx` |
+| Actions sheet rows | — | The quick row first, web's four reactions, each read `React with <emoji>`, or `Remove <emoji> reaction` for one the viewer already made; then `Reply` · `Edit message` · `Delete message` (destructive), above the Report and Block rows | mobile `components/chat/message-actions-sheet.tsx` (`quickReactionLabel`) |
+| Add-reaction chip | — | `+` after a message's reactions, read `Add reaction`; it opens the actions sheet | mobile `components/chat/message-item.tsx` (`ADD_REACTION_A11Y_LABEL`) |
 | Delete confirmation | `Delete this message?` | `This can't be undone. Everyone in the channel will see "[message deleted]" in its place.` · confirm `Delete message`. A native alert on mobile, the shell's confirm dialog on web | `message-actions` (`DELETE_MESSAGE_CONFIRM_TITLE`, `_BODY`, `_LABEL`) |
 | Delete failed | `Couldn't delete message` | The reason chat-core classified from the response (an alert) | mobile `lib/chat/confirm-delete-message.ts` |
 | Reply strip | `Replying to <name>` | One line of the parent, as its quote will show it. A parent the block list hides, or one not loaded: `Replying to a message` over the quote's placeholder. Cancel reads `Cancel reply` | mobile `lib/chat/use-composer-staging.ts`; the cancel label in `components/chat/chat-composer.tsx` (`composerCancelLabel`) |
@@ -862,6 +879,7 @@ no reason and no way back.
 | Loading | — | `Loading alumni directory...` |
 | Empty | `No alumni yet` | `Graduated members appear here.` |
 | No results (filters) | `No alumni match the filters` | `Clear a field to see more.` |
+| No results (filters), mobile s13 | `No alumni match the filters` | `Clear a filter to see more.` The fields sit behind a chip named Filters there, so the line names that |
 | Error | `Couldn't load alumni` | `Check your chapter access.` |
 | Offline | `Alumni unavailable offline` | `Reconnect to load alumni records.` |
 | No chapter selected | `No chapter selected` | `Pick a chapter to browse alumni.` |
@@ -1090,6 +1108,29 @@ title for what actually failed. The description and the action are the rows abov
   of the same sentence, because the situation is the same one: reported, and worth retrying.
 
 No row uses an em dash, for the reason the terminal pages above do not.
+
+### Mobile render errors
+
+The mobile app's three boundaries ([#3378](https://github.com/pdcarlson/Frapp/issues/3378)), all in
+[`apps/mobile/components/route-error.tsx`](../../../apps/mobile/components/route-error.tsx). Both
+rows render [components.md](components.md) §10's Error card, with its one button, centered in what
+failed.
+
+| State | Title | Description | Action |
+|---|---|---|---|
+| A tab screen failed (screen row) | `Couldn't load this screen` | `The error has been reported. Retrying usually clears it.` | `Retry`, with a `‹ Chat` back row above the card on a screen that hides the tab bar |
+| The app failed: the root layout or the tab group's (app row) | `Something broke on our side.` | `The error has been reported. Retrying usually clears it.` | `Retry` |
+
+- **The screen row is web's degraded segment, on a phone.** Each tab screen has its own boundary, so
+  the tab bar and the other tabs still work and the title names the screen, as web's names the page.
+  Where the screen hides the tab bar, the way out is a `‹ Chat` back row above the card, not a second
+  action on it, because on iOS a member there would otherwise have only a Retry that keeps failing.
+  Elsewhere the tab bar is the way out. Which screens get the row is
+  [`../mobile/navigation.md` § Back rows](../mobile/navigation.md#back-rows)'s to say.
+- **The app row is web's route error (`500`), on a phone.** It replaces a layout, so there is nothing
+  left to go back to, and Retry, which mounts the layout again, is the only action.
+- **Both borrow the route error's description**, for the reason the degraded segment does. Neither
+  shows the error's own text, which can hold whatever the screen was rendering.
 
 ## 8. Mobile reliability labels
 

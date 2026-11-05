@@ -422,8 +422,8 @@ is unavailable in that state and the sign-in screen says so.
 > Google Service Account) so no machine holds it, or name a local copy with
 > `serviceAccountKeyPath` in `submit.production.android` (eas-cli has no `--key` flag).
 > `apps/mobile/play-service-account.json` stays gitignored in case a local copy is ever
-> used; it must never be committed. No such key exists yet — it
-> becomes real when Play submission is set up (#938). Of the iOS submit identifiers, only
+> used; it must never be committed. The key is uploaded to the EAS project's credentials
+> (2026-11-05, #2556), and no local copy is kept. Of the iOS submit identifiers, only
 > `ascAppId` is in `eas.json` (`submit.production.ios`, since #3111): the App Store Connect
 > app's Apple ID, which is not a secret and which a non-interactive submit can't run without.
 > `appleId` and `appleTeamId` are not, so the file carries no placeholders; an interactive
@@ -452,8 +452,9 @@ is unavailable in that state and the sign-in screen says so.
 > CI, `expo start`, preview/development, and iOS production still omit the field
 > when the file is absent. Prefer the file variable: the JSON carries a Google API key (`AIza…`) that
 > gitleaks' default `gcp-api-key` rule flags, so committing it would need a
-> `.gitleaks.toml` allowlist entry. Neither the Firebase project nor the FCM key exists
-> yet; both are console steps that become real with the store submission (#938 / #1826).
+> `.gitleaks.toml` allowlist entry. The Firebase project is `frapp-67722`; the file variable
+> has been set on EAS (production and preview) since 2026-11-03, and the FCM V1 key is
+> assigned in EAS credentials (`npm run eas -- credentials -p android`, read 2026-11-05) (#1826).
 > The fail-closed path is the reminder that #1826 has to happen before the first
 > production Android binary, not a substitute for it.
 >
