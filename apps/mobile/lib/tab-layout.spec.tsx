@@ -1,4 +1,7 @@
 /** @vitest-environment jsdom */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -184,11 +187,41 @@ describe("full-window screens", () => {
 
   it("keeps it on every other route", () => {
     const options = optionsByName();
+    const [tabs] = hosts(render().root, "Tabs");
 
+    // Hidden for the whole navigator would hide it everywhere.
+    expect(resolved(tabs.props.screenOptions).tabBarStyle).not.toHaveProperty(
+      "display",
+    );
     expect(options.size).toBeGreaterThan(FULL_WINDOW.length + 4);
     for (const [name, screen] of options) {
       if (FULL_WINDOW.includes(name)) continue;
       expect(screen, name).not.toHaveProperty("tabBarStyle");
+    }
+  });
+
+  /**
+   * With no bar under it, each screen sits on the window's bottom edge, so it
+   * must take the bottom safe-area inset itself or its composer, manual code
+   * field or QR footer lands under the home indicator or Android's navigation
+   * buttons. A render here draws no route, so this reads the route's source.
+   */
+  it("has each of them take the bottom safe-area inset itself", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+
+    for (const name of FULL_WINDOW) {
+      const source = readFileSync(
+        join(here, "..", "app", "(tabs)", `${name}.tsx`),
+        "utf8",
+      );
+      const edges = [...source.matchAll(/edges=\{\[([^\]]*)\]\}/g)].map(
+        (match) => match[1],
+      );
+      expect(edges.length, name).toBeGreaterThan(0);
+      expect(
+        edges.some((list) => list.includes('"bottom"')),
+        name,
+      ).toBe(true);
     }
   });
 });

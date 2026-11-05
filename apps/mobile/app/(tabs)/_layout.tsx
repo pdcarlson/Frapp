@@ -21,14 +21,9 @@ const TAB_BAR_HEIGHT = 62;
 const TAB_BAR_PADDING = 6;
 
 /**
- * Options for a screen that takes the whole window: a conversation (s05) and
- * the two check-in screens (s18 scanner, s22 host QR), which the board draws
- * with no tab bar. The thread's composer is then the last thing on screen, as
- * in every messaging app, rather than floating above four tabs that do nothing
- * mid-conversation, and an officer projecting the QR has no tabs under it to
- * tap away mid-hosting. Each draws its own way out (s05's `‹`, the ✕ on s18
- * and s22) and takes the bottom safe-area inset itself, and Android's back
- * button still leads out (`spec/ui/mobile/navigation.md` § Tab bar).
+ * Options for a screen that takes the whole window, with no tab bar: the chat
+ * thread (s05) and the two check-in screens (s18, s22).
+ * `spec/ui/mobile/navigation.md` § Tab bar owns which screens and why.
  */
 const FULL_WINDOW = { tabBarStyle: { display: "none" as const } };
 
