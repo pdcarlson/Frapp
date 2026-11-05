@@ -9,7 +9,9 @@ import {
   type IDiscordImportRepository,
 } from '#domain/repositories/discord-import.repository.interface';
 import {
+  CHAT_CATEGORY_REPOSITORY,
   CHAT_CHANNEL_REPOSITORY,
+  type IChatCategoryRepository,
   type IChatChannelRepository,
 } from '#domain/repositories/chat.repository.interface';
 import type {
@@ -22,6 +24,11 @@ import {
   sameAsDiscordGate,
 } from '#domain/utils/discord-role-gates';
 import {
+  channelGroupKey,
+  planChannelGroups,
+  rowsNeedingGroup,
+} from '#domain/utils/discord-channel-groups';
+import {
   DISCORD_BOT_GATEWAY,
   DiscordApiError,
   DiscordNotConfiguredError,
@@ -33,7 +40,7 @@ import {
   loadImport,
   requireBoundGuild,
 } from './discord-import-guards';
-import { MAX_WARNINGS } from '../workers/discord-import-worker.service';
+import { MAX_WARNINGS } from '#domain/constants/discord-archive-limits';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 export interface ChannelMappingInput {
@@ -59,7 +66,22 @@ export interface ChannelMappingInput {
   new_channel_visibility?: 'chapter' | 'restricted' | 'discord' | null;
   /** Required, and non-empty, when `new_channel_visibility` is `restricted`. */
   new_channel_required_permissions?: string[] | null;
+  /**
+   * The Frapp channel group the channel `create_new` makes goes into, by name
+   * (usually its Discord category). Blank or null is no group; ignored for a
+   * merge or a skip, which create no channel.
+   */
+  new_channel_group?: string | null;
   message_count?: number;
+}
+
+/** The group a decision's new channel goes into, or null for none. */
+function newChannelGroup(
+  decision: ChannelMappingInput | undefined,
+): string | null {
+  if (decision?.mapping_action !== 'create_new') return null;
+  const group = decision.new_channel_group?.trim();
+  return group ? group : null;
 }
 
 /**
@@ -150,6 +172,8 @@ export class DiscordImportChannelMappingService {
     private readonly importRepo: IDiscordImportRepository,
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
+    @Inject(CHAT_CATEGORY_REPOSITORY)
+    private readonly categoryRepo: IChatCategoryRepository,
     @Inject(DISCORD_BOT_GATEWAY)
     private readonly bot: IDiscordBotGateway,
     private readonly oauthService: DiscordOAuthService,
@@ -247,6 +271,11 @@ export class DiscordImportChannelMappingService {
       discord_channel_id: channel.id,
       discord_channel_name: channel.name,
       discord_category: channel.categoryName,
+      discord_category_position: channel.isThread
+        ? null
+        : (channel.categoryPosition ?? null),
+      new_channel_group: null,
+      new_channel_category_id: null,
       // Everything starts skipped. "Ask, never infer" is the rule the upload
       // path already follows, and it matters more here: the bot can see the
       // whole server, so a default of anything other than "do nothing" would
@@ -440,12 +469,77 @@ export class DiscordImportChannelMappingService {
           readable: channel.readable,
           private_in_discord: channel.private_in_discord,
           discord_reader_role_ids: channel.discord_reader_role_ids,
+          discord_category_position: channel.discord_category_position,
+          // A thread lands in its parent's channel, so it carries the same
+          // group; resolved to a chapter group only when the import starts.
+          new_channel_group: newChannelGroup(decision),
+          new_channel_category_id: null,
           ...newChannelShape(decision, gates.get(key)),
         };
       },
     );
 
     return this.importRepo.replaceChannels(id, chapterId, rows);
+  }
+
+  /**
+   * Put each new channel's group in place before the worker makes the channel:
+   * the chapter's group of that name, or a new one after the chapter's own,
+   * in Discord's category order (owner's decision, 2026-11-05: keep
+   * Discord's categories as channel groups when the admin chooses to).
+   *
+   * Runs when the import starts, as the roles do, and again on a restart: a
+   * row whose group an officer deleted meanwhile is resolved again, by name,
+   * while a row whose channel already exists, or will share one that does,
+   * is left alone. Each group it creates is recorded right after it is made
+   * and before any row points at it, so deleting the import finds it.
+   *
+   * A group a remap stopped using stays until the import is deleted, or an
+   * officer deletes it: one the import made may since have been renamed and
+   * adopted, and deleting it here could also pull a group from under another
+   * import's start.
+   */
+  async provisionChannelGroups(
+    id: string,
+    chapterId: string,
+    channels: readonly DiscordImportChannel[],
+  ): Promise<void> {
+    const pending = rowsNeedingGroup(channels);
+    if (pending.length === 0) return;
+
+    const plan = planChannelGroups(
+      pending,
+      await this.categoryRepo.findByChapter(chapterId),
+    );
+    const resolved = new Map(plan.existing);
+    for (const group of plan.create) {
+      const created = await this.categoryRepo.create({
+        chapter_id: chapterId,
+        name: group.name,
+        display_order: group.display_order,
+      });
+      await this.importRepo.recordCreatedCategory(id, created.id);
+      resolved.set(group.key, created.id);
+    }
+
+    const rowsByCategory = new Map<string, string[]>();
+    for (const row of pending) {
+      const categoryId = resolved.get(
+        channelGroupKey(row.new_channel_group ?? ''),
+      );
+      if (!categoryId) continue;
+      const ids = rowsByCategory.get(categoryId) ?? [];
+      ids.push(row.id);
+      rowsByCategory.set(categoryId, ids);
+    }
+    for (const [categoryId, rowIds] of rowsByCategory) {
+      await this.importRepo.assignChannelGroup(
+        id,
+        chapterId,
+        rowIds,
+        categoryId,
+      );
+    }
   }
 
   /**
@@ -621,6 +715,11 @@ export class DiscordImportChannelMappingService {
         readable: null,
         private_in_discord: null,
         discord_reader_role_ids: null,
+        // An export lists each channel's category by name but not where it
+        // sits, so an upload's groups are ordered by name.
+        discord_category_position: null,
+        new_channel_group: newChannelGroup(channel),
+        new_channel_category_id: null,
         ...newChannelShape(channel),
       })),
     );
