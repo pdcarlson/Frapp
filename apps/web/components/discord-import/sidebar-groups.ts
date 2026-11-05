@@ -1,5 +1,10 @@
-import type { ChannelChoice } from "./mapping-issues";
 import type { StagedChannel } from "./upload-step";
+
+/**
+ * The part of a row's choice this file reads. Kept structural, not imported
+ * from `mapping-issues`, which imports this file.
+ */
+type RowChoice = { action: string };
 
 /**
  * Whether a Discord import keeps the server's categories as channel groups,
@@ -25,7 +30,7 @@ export const NO_SIDEBAR_GROUPS: SidebarGroups = {
 /** The group the channel this row creates goes into, or null for none. */
 export function sidebarGroupFor(
   channel: StagedChannel,
-  choice: ChannelChoice | undefined,
+  choice: RowChoice | undefined,
   groups: SidebarGroups,
 ): string | null {
   if (!groups.keep || choice?.action !== "create_new") return null;
@@ -40,7 +45,7 @@ export function sidebarGroupFor(
  */
 export function keptSidebarGroups(
   channels: readonly StagedChannel[],
-  choices: Record<string, ChannelChoice>,
+  choices: Record<string, RowChoice>,
   groups: SidebarGroups,
 ): string[] {
   const seen = new Map<string, string>();

@@ -17,7 +17,10 @@ import {
   STORAGE_PROVIDER,
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
-import { MAX_ARCHIVE_EXPORT_PART_BYTES } from '#domain/constants/discord-archive-limits';
+import {
+  MAX_ARCHIVE_EXPORT_PART_BYTES,
+  MAX_WARNINGS,
+} from '#domain/constants/discord-archive-limits';
 import {
   CHAT_ARCHIVE_BUCKET,
   archiveImportPrefix,
@@ -92,9 +95,6 @@ export const IMPORT_BATCH_SIZE = 200;
  * costs extra round trips instead of stranding rows — see `runPurgeSlice`.
  */
 export const PURGE_BATCH_SIZE = 500;
-
-/** Most recent warnings kept on the job row. */
-export const MAX_WARNINGS = 50;
 
 /**
  * Statuses in which a slice may keep going.

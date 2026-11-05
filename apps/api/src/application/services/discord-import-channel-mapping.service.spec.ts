@@ -1,7 +1,7 @@
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { DiscordNotConfiguredError } from '#domain/adapters/discord.interface';
 import type { DiscordImport } from '#domain/entities/discord-import.entity';
-import { MAX_WARNINGS } from '../workers/discord-import-worker.service';
+import { MAX_WARNINGS } from '#domain/constants/discord-archive-limits';
 import {
   CHAPTER,
   FOREIGN_CHANNEL,

@@ -40,7 +40,7 @@ import {
   loadImport,
   requireBoundGuild,
 } from './discord-import-guards';
-import { MAX_WARNINGS } from '../workers/discord-import-worker.service';
+import { MAX_WARNINGS } from '#domain/constants/discord-archive-limits';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 export interface ChannelMappingInput {

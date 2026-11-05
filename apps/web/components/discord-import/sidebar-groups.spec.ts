@@ -12,6 +12,7 @@ const channel = (id: string, category: string | null) => ({
   category,
 });
 const created: ChannelChoice = { action: "create_new", newName: "x" };
+const merged: ChannelChoice = { action: "use_existing", targetChannelId: "c" };
 const keep = { keep: true, dropped: new Set<string>() };
 
 describe("sidebarGroupFor", () => {
@@ -28,13 +29,7 @@ describe("sidebarGroupFor", () => {
   });
 
   it("names no group for a merge, a skip, or a channel in no category", () => {
-    expect(
-      sidebarGroupFor(
-        channel("1", "Generic"),
-        { action: "use_existing", targetChannelId: "c" },
-        keep,
-      ),
-    ).toBeNull();
+    expect(sidebarGroupFor(channel("1", "Generic"), merged, keep)).toBeNull();
     expect(
       sidebarGroupFor(channel("1", "Generic"), { action: "skip" }, keep),
     ).toBeNull();
