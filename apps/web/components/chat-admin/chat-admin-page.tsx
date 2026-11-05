@@ -53,7 +53,6 @@ import {
   readIsOffline,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
-import { PageHeader } from "@/components/layout/page-header";
 import {
   NestedEmpty,
   NestedError,
@@ -157,12 +156,9 @@ export function ChatAdminPage() {
   return (
     <>
       {/*
-        Outside the `<Can>` so the permission-denied and offline branches keep
-        the route's heading — the shell no longer supplies one (#2141). The
-        denied line sits under it bare, like every other denied page: the card
-        it used to sit in framed one sentence.
+        The denied line sits under the top bar's title bare, like every other
+        denied page: the card it used to sit in framed one sentence.
       */}
-      <PageHeader title="Chat admin" />
       <Can
         permission="channels:manage"
         deniedFallback={

@@ -29,7 +29,6 @@ import {
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
-import { PageHeader } from "@/components/layout/page-header";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useSubscriptionGate } from "@/components/shared/subscription-gate";
@@ -655,12 +654,6 @@ function SettingsPageContent() {
 export function SettingsPage() {
   return (
     <>
-      {/*
-        Outside the Suspense boundary so the heading is there on the pending
-        path too — the shell no longer supplies one (#2141), and the content
-        below deliberately renders none of its own.
-      */}
-      <PageHeader title="Chapter settings" />
       <Suspense
         fallback={<LoadingState message="Loading chapter settings..." />}
       >

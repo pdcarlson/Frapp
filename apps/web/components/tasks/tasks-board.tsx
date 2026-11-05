@@ -46,7 +46,7 @@ import { SectionLabel } from "@/components/shared/section-label";
 import { TasksGlyph } from "@/components/events/chapter-ops-glyphs";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
-import { PageHeader } from "@/components/layout/page-header";
+import { PageActions } from "@/components/layout/page-actions";
 import {
   SubscriptionNotice,
   type SubscriptionGate,
@@ -322,7 +322,6 @@ export function TasksBoard() {
   if (isOffline && anyReadUncached(tasksQuery, membersQuery, currentUser)) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Tasks" />
         <NestedOffline
           sole
           title="Tasks unavailable offline"
@@ -346,7 +345,6 @@ export function TasksBoard() {
   if (tasksQuery.isPending) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Tasks" />
         <NestedLoading sole message="Loading chapter tasks..." />
       </div>
     );
@@ -361,7 +359,6 @@ export function TasksBoard() {
   if (tasksQuery.isError && !tasksQuery.data) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Tasks" />
         <NestedError
           sole
           title="Couldn't load tasks"
@@ -376,153 +373,146 @@ export function TasksBoard() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Tasks"
-        actions={
-          <Can permission="tasks:manage">
-            <Dialog {...createDialog.dialogProps}>
-              <DialogTrigger asChild>
-                <Button
-                  size="toolbar"
-                  className="gap-2"
-                  {...gate.controlProps()}
-                >
-                  <Plus className="h-4 w-4" /> New task
-                </Button>
-              </DialogTrigger>
-              {/*
-                No description: the old one restated the fields below it, and
-                the one fact it carried (points are optional) now sits on the
-                Points label. `aria-describedby={undefined}` tells Radix the
-                omission is deliberate, so it does not warn.
-              */}
-              <DialogContent
-                className="sm:max-w-lg"
-                aria-describedby={undefined}
-                {...createDialog.contentProps}
+      <PageActions>
+        <Can permission="tasks:manage">
+          <Dialog {...createDialog.dialogProps}>
+            <DialogTrigger asChild>
+              <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
+                <Plus className="h-4 w-4" /> New task
+              </Button>
+            </DialogTrigger>
+            {/*
+              No description: the old one restated the fields below it, and
+              the one fact it carried (points are optional) now sits on the
+              Points label. `aria-describedby={undefined}` tells Radix the
+              omission is deliberate, so it does not warn.
+            */}
+            <DialogContent
+              className="sm:max-w-lg"
+              aria-describedby={undefined}
+              {...createDialog.contentProps}
+            >
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <TasksGlyph className="h-4 w-4" />
+                  Create a task
+                </DialogTitle>
+              </DialogHeader>
+              <form
+                onSubmit={submitDraft}
+                className="space-y-4"
+                id="tasks-create-form"
               >
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2">
-                    <TasksGlyph className="h-4 w-4" />
-                    Create a task
-                  </DialogTitle>
-                </DialogHeader>
-                <form
-                  onSubmit={submitDraft}
-                  className="space-y-4"
-                  id="tasks-create-form"
-                >
+                <div className="grid gap-1">
+                  <Label htmlFor="task-title">Title</Label>
+                  <Input
+                    id="task-title"
+                    value={draft.title}
+                    onChange={(event) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        title: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="task-description">Description</Label>
+                  <Textarea
+                    id="task-description"
+                    rows={3}
+                    value={draft.description}
+                    onChange={(event) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        description: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div className="grid gap-1">
-                    <Label htmlFor="task-title">Title</Label>
+                    <Label htmlFor="task-assignee">Assignee</Label>
+                    <Select
+                      value={draft.assignee_id}
+                      onValueChange={(value) =>
+                        setDraft((prev) => ({ ...prev, assignee_id: value }))
+                      }
+                    >
+                      <SelectTrigger id="task-assignee">
+                        <SelectValue placeholder="Select a member" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {members.map((member) => (
+                          <SelectItem
+                            key={member.user_id ?? "unknown"}
+                            value={String(member.user_id ?? "")}
+                          >
+                            {memberLabel(member.display_name, member.user_id)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="task-due-date">Due date</Label>
                     <Input
-                      id="task-title"
-                      value={draft.title}
+                      id="task-due-date"
+                      type="date"
+                      value={draft.due_date}
                       onChange={(event) =>
                         setDraft((prev) => ({
                           ...prev,
-                          title: event.target.value,
+                          due_date: event.target.value,
                         }))
                       }
                       required
                     />
                   </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="task-description">Description</Label>
-                    <Textarea
-                      id="task-description"
-                      rows={3}
-                      value={draft.description}
-                      onChange={(event) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          description: event.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="grid gap-1">
-                      <Label htmlFor="task-assignee">Assignee</Label>
-                      <Select
-                        value={draft.assignee_id}
-                        onValueChange={(value) =>
-                          setDraft((prev) => ({ ...prev, assignee_id: value }))
-                        }
-                      >
-                        <SelectTrigger id="task-assignee">
-                          <SelectValue placeholder="Select a member" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {members.map((member) => (
-                            <SelectItem
-                              key={member.user_id ?? "unknown"}
-                              value={String(member.user_id ?? "")}
-                            >
-                              {memberLabel(member.display_name, member.user_id)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="task-due-date">Due date</Label>
-                      <Input
-                        id="task-due-date"
-                        type="date"
-                        value={draft.due_date}
-                        onChange={(event) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            due_date: event.target.value,
-                          }))
-                        }
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div className="grid gap-1 sm:max-w-xs">
-                    <Label htmlFor="task-points">Points (optional)</Label>
-                    <Input
-                      id="task-points"
-                      type="number"
-                      min={0}
-                      value={draft.point_reward}
-                      onChange={(event) => {
-                        const next = guardIntDraft(event.target.value);
-                        if (next === undefined) return;
-                        setDraft((prev) => ({ ...prev, point_reward: next }));
-                      }}
-                    />
-                  </div>
-                </form>
-                <DialogFooter>
-                  {/*
-                    Cancel is not gated: it only closes the dialog, and a lapsed
-                    chapter still needs a way out of a form it can't submit.
-                  */}
-                  <Button
-                    variant="secondary"
-                    onClick={() => createDialog.setOpen(false)}
-                    disabled={createTask.isPending}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    form="tasks-create-form"
-                    type="submit"
-                    {...gate.controlProps(createTask.isPending)}
-                  >
-                    {createTask.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : null}
-                    Create task
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </Can>
-        }
-      />
+                </div>
+                <div className="grid gap-1 sm:max-w-xs">
+                  <Label htmlFor="task-points">Points (optional)</Label>
+                  <Input
+                    id="task-points"
+                    type="number"
+                    min={0}
+                    value={draft.point_reward}
+                    onChange={(event) => {
+                      const next = guardIntDraft(event.target.value);
+                      if (next === undefined) return;
+                      setDraft((prev) => ({ ...prev, point_reward: next }));
+                    }}
+                  />
+                </div>
+              </form>
+              <DialogFooter>
+                {/*
+                  Cancel is not gated: it only closes the dialog, and a lapsed
+                  chapter still needs a way out of a form it can't submit.
+                */}
+                <Button
+                  variant="secondary"
+                  onClick={() => createDialog.setOpen(false)}
+                  disabled={createTask.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  form="tasks-create-form"
+                  type="submit"
+                  {...gate.controlProps(createTask.isPending)}
+                >
+                  {createTask.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  Create task
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </Can>
+      </PageActions>
       {/*
         Outside the `tasks:manage` <Can>: the assignee-facing Start / Mark
         complete controls are gated too, so a member with no manage permission

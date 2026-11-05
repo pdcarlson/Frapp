@@ -119,11 +119,13 @@ describe("EventsPage list", () => {
     ).toBeNull();
   });
 
-  it("keeps the toolbar controls in one row with the title", () => {
+  it("keeps the toolbar controls in one row, under the top bar's title", () => {
     render(<EventsPage />);
 
-    const heading = screen.getByRole("heading", { level: 1, name: "Events" });
-    const toolbarRow = heading.parentElement?.parentElement;
+    // The route's h1 is the top bar's (`top-bar.tsx`), not the page's.
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+    const newEvent = screen.getByRole("button", { name: /new event/i });
+    const toolbarRow = newEvent.parentElement;
     expect(toolbarRow).toBeTruthy();
     const scope = within(toolbarRow as HTMLElement);
     expect(

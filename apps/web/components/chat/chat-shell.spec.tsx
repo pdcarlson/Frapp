@@ -3292,3 +3292,16 @@ describe("ChatShell block list (#2313)", () => {
     expect(screen.getByText("Someone is typing…")).toBeInTheDocument();
   });
 });
+
+describe("ChatShell heading level", () => {
+  it("names the channel in an h2, under the top bar's h1", () => {
+    // The route's h1 is the top bar's "Chat" (`top-bar.tsx`), rendered by the
+    // shell around this component, so an h1 here would give /chat two.
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+    expect(screen.getAllByRole("heading", { level: 2 }).length).toBeGreaterThan(
+      0,
+    );
+  });
+});
