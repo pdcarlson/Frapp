@@ -46,6 +46,7 @@ import { denseListClassName } from "@/components/shared/table-controls";
 import { Switch } from "@/components/ui/switch";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { signOutCurrentSession } from "@/lib/auth/session";
+import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
 import { getErrorMessage, initials, parseGuardedInt } from "@/lib/utils";
 import {
   NotificationSettingsSkeleton,
@@ -97,6 +98,7 @@ export function ProfilePanel() {
     onFailed: () => toast({ ...DELETE_ACCOUNT_FAILED, variant: "destructive" }),
   });
   const isDeletingAccount = deleteFlow.isDeleting;
+  const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
   // The notification categories are per-chapter — `notification_preferences` is
   // keyed `(user_id, chapter_id, category)` — so this card, unlike the rest of
   // /profile, has a tenant. With no active chapter there is nothing to read and
@@ -291,6 +293,7 @@ export function ProfilePanel() {
   }
 
   async function handleSignOut() {
+    if (!(await confirmDrop("sign-out"))) return;
     setIsSigningOut(true);
     try {
       await signOutCurrentSession();
@@ -968,6 +971,7 @@ export function ProfilePanel() {
         </ProfileSection>
       </div>
       {deleteFlow.confirmDialog}
+      {confirmDropDialog}
     </div>
   );
 }

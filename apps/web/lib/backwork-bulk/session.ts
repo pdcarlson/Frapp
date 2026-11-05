@@ -1,5 +1,6 @@
 "use client";
 
+import { statusOf } from "@repo/api-sdk";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
   putSignedUpload,
@@ -26,11 +27,13 @@ import { BulkUploadQueue } from "@/lib/backwork-bulk/queue";
  * tab asks before it closes or reloads.
  *
  * A batch belongs to one account and one chapter, and ends with them: a
- * chapter switch or sign-out (the chapter store moving; the switcher and the
- * account menu ask first when something would be lost), or another account
+ * chapter switch or sign-out (the chapter store moving; every switch and
+ * sign-out control asks first when something would be lost, through
+ * `useConfirmDropBulkUploads`), or another account
  * signing in in this tab (`FrappProvider`, and `getBulkSession` itself). An
- * ended batch frees its documents, stops uploading, and never warns or
- * toasts again, so the next account never sees the last one's files.
+ * ended batch frees its documents, stops uploading, says once how many it
+ * dropped (never which), and never warns or toasts again, so the next account
+ * never sees the last one's files.
  *
  * The page hands the session its current mutation hooks on every render
  * (`bind`); after the page unmounts the session keeps using the last ones,
@@ -81,14 +84,8 @@ function releasePrepared(prepared: Prepared) {
   for (const preview of prepared.previews.values()) {
     preview.then((p) => URL.revokeObjectURL(p.url)).catch(() => undefined);
   }
-  // pdf.js 6 tears a document down through its loading task.
-  void prepared.doc.loadingTask.destroy();
-}
-
-function statusOf(error: unknown): number | undefined {
-  return error && typeof error === "object" && "statusCode" in error
-    ? (error as { statusCode?: number }).statusCode
-    : undefined;
+  // A prepared document means the module has loaded, so this resolves at once.
+  void loadPdfModule().then(({ destroyPdf }) => destroyPdf(prepared.doc));
 }
 
 /** The signed-in account right now: the one the API client's token is for. */
@@ -106,7 +103,7 @@ function createSession(userId: string, chapterId: string): BulkSession {
 
   const queue = new BulkUploadQueue<Prepared, Submission>({
     prepare: async (file, id) => {
-      const { loadPdf, renderPagePreview } = await loadPdfModule();
+      const { loadPdf, renderPagePreview, destroyPdf } = await loadPdfModule();
       const bytes = new Uint8Array(await file.arrayBuffer());
       const hash = await sha256Hex(bytes);
       // A duplicate only while the other copy is still in the batch: a
@@ -128,7 +125,7 @@ function createSession(userId: string, chapterId: string): BulkSession {
       try {
         await first;
       } catch (error) {
-        void doc.loadingTask.destroy();
+        void destroyPdf(doc);
         throw error;
       }
       return { bytes, hash, doc, pageCount: doc.numPages, previews } satisfies Prepared;
@@ -212,6 +209,19 @@ function createSession(userId: string, chapterId: string): BulkSession {
     end: () => {
       if (ended) return;
       ended = true;
+      // Said here because a store move can come from somewhere that never
+      // asked, such as another tab or device switching chapters. After a
+      // switch or sign-out that asked, the reload hides it.
+      const lost = queue.unsaved();
+      if (lost > 0) {
+        toast({
+          variant: "destructive",
+          title: "Bulk upload stopped",
+          description: `You switched chapters or accounts, so ${
+            lost === 1 ? "1 document that wasn't uploaded was" : `${lost} documents that weren't uploaded were`
+          } dropped.`,
+        });
+      }
       // Discarding publishes, and the guard listener above then lets go.
       queue.discard();
     },
@@ -227,7 +237,7 @@ let watchingChapter = false;
  */
 export function getBulkSession(userId: string, chapterId: string): BulkSession {
   // A chapter change ends every batch the moment the store moves: the
-  // switcher and sign-out have already asked (`confirmDropBulkUploads`), and
+  // switcher and sign-out have already asked (`useConfirmDropBulkUploads`), and
   // their reload mustn't stop on a second, browser leave prompt.
   if (!watchingChapter) {
     watchingChapter = true;
@@ -266,17 +276,21 @@ export function unsavedBulkUploads(): number {
   return count;
 }
 
+export type BulkDropAction = "switch" | "sign-out" | "delete-account";
+
 /**
- * Asks before a chapter switch or sign-out drops documents that aren't
- * uploaded yet. True when there is nothing to lose or the person agrees.
+ * What a chapter switch, sign-out or account deletion would drop from Bulk
+ * upload, as a sentence for its confirm dialog; null when nothing would be
+ * lost. `useConfirmDropBulkUploads` asks with it.
  */
-export function confirmDropBulkUploads(action: "switch" | "sign-out"): boolean {
+export function bulkDropNotice(action: BulkDropAction): string | null {
   const count = unsavedBulkUploads();
-  if (count === 0 || typeof window === "undefined") return true;
+  if (count === 0) return null;
   const docs = count === 1 ? "1 document that isn't" : `${count} documents that aren't`;
-  return window.confirm(
-    `Bulk upload has ${docs} uploaded yet. ${
-      action === "switch" ? "Switching chapters" : "Signing out"
-    } drops ${count === 1 ? "it" : "them"}.`,
-  );
+  const doing = {
+    switch: "Switching chapters",
+    "sign-out": "Signing out",
+    "delete-account": "Deleting your account",
+  }[action];
+  return `Bulk upload has ${docs} uploaded yet. ${doing} drops ${count === 1 ? "it" : "them"}.`;
 }

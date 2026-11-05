@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { throwUnlessOk } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export function useBackworkResources(filters?: {
@@ -87,11 +88,11 @@ export function useRequestBackworkUploadUrl() {
       content_type: string;
       size_bytes?: number;
     }) => {
-      const { data, error } = await client.POST("/v1/backwork/upload-url", {
-        body,
-      });
-      if (error) throw error;
-      return data;
+      const result = await client.POST("/v1/backwork/upload-url", { body });
+      // On the status (see `throwUnlessOk`): an empty-bodied failure must not
+      // read as a signed URL.
+      throwUnlessOk(result);
+      return result.data;
     },
   });
 }
@@ -125,9 +126,11 @@ export function useConfirmBackworkUpload() {
       tags?: string[];
       is_redacted: boolean;
     }) => {
-      const { data, error } = await client.POST("/v1/backwork", { body });
-      if (error) throw error;
-      return data;
+      const result = await client.POST("/v1/backwork", { body });
+      // On the status (see `throwUnlessOk`): an empty-bodied failure must not
+      // read as a filed document, which bulk upload would then mark done.
+      throwUnlessOk(result);
+      return result.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["backwork"] });

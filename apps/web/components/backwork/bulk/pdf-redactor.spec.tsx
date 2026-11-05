@@ -97,15 +97,25 @@ describe("PdfRedactor", () => {
     await waitFor(() => expect(latest[1]).toEqual([]));
   });
 
-  it("copies this page's boxes to every page", async () => {
+  it("copies this page's boxes to every page, keeping each page's own", async () => {
     render(<Harness pageCount={3} />);
+    fireEvent.click(screen.getByRole("button", { name: /next page/i }));
+    expect(await screen.findByText("Page 2 of 3")).toBeTruthy();
+    await draw(20, 100, 220, 140);
+    const pageTwoOwn = latest[2]![0];
+    fireEvent.click(screen.getByRole("button", { name: /previous page/i }));
+    expect(await screen.findByText("Page 1 of 3")).toBeTruthy();
     await draw(20, 20, 220, 60);
-    fireEvent.click(screen.getByRole("button", { name: /same boxes on every page/i }));
+    fireEvent.click(screen.getByRole("button", { name: /copy boxes to every page/i }));
     expect(Object.keys(latest)).toEqual(["1", "2", "3"]);
     expect(latest[3]).toEqual(latest[1]);
+    expect(latest[2]).toEqual([pageTwoOwn, latest[1]![0]]);
+    // Copying again adds no second copy.
+    fireEvent.click(screen.getByRole("button", { name: /copy boxes to every page/i }));
+    expect(latest[2]).toHaveLength(2);
 
     fireEvent.click(screen.getByRole("button", { name: /next page/i }));
     expect(await screen.findByText("Page 2 of 3")).toBeTruthy();
-    expect(await screen.findAllByTestId("redaction-box")).toHaveLength(1);
+    expect(await screen.findAllByTestId("redaction-box")).toHaveLength(2);
   });
 });

@@ -87,7 +87,8 @@ const PATH_KEY = "__backworkPath";
 
 function relativePath(file: File): string {
   const tagged = (file as File & { [PATH_KEY]?: string })[PATH_KEY];
-  return tagged ?? file.webkitRelativePath ?? file.name;
+  // `webkitRelativePath` is "" for a file picked or dropped on its own.
+  return tagged ?? (file.webkitRelativePath || file.name);
 }
 
 /** One unreadable entry is counted and skipped; it never sinks the whole drop. */

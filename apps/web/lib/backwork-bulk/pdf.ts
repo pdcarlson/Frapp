@@ -34,8 +34,33 @@ function loadPdfJs(): Promise<PdfJs> {
   return pdfjsPromise;
 }
 
+/**
+ * Teardowns still running. Every document shares one worker port, and pdf.js
+ * refuses to open a document on a port while another document on it is being
+ * destroyed ("the worker is being destroyed"). So teardowns queue here, and a
+ * load waits for the queue to drain before it opens anything.
+ */
+let teardown: Promise<void> = Promise.resolve();
+
+type LoadingTask = { destroy: () => Promise<void> };
+
+/** Tears a document down through its loading task, after any earlier teardown. */
+export function destroyPdf(doc: { loadingTask: LoadingTask }): Promise<void> {
+  return destroyTask(doc.loadingTask);
+}
+
+function destroyTask(task: LoadingTask): Promise<void> {
+  teardown = teardown.then(() => task.destroy()).catch(() => undefined);
+  return teardown;
+}
+
 export async function loadPdf(bytes: Uint8Array): Promise<PDFDocumentProxy> {
   const pdfjs = await loadPdfJs();
+  // Wait until no teardown is running; one queued while this waited counts.
+  for (let pending = teardown; ; pending = teardown) {
+    await pending;
+    if (pending === teardown) break;
+  }
   // pdf.js transfers the buffer to its worker, so hand it a copy and keep the
   // caller's bytes (the original, which a Blank Copy uploads as-is) intact.
   // pdf.js 6 no longer evaluates font code at all, so there is no eval switch.
@@ -43,14 +68,21 @@ export async function loadPdf(bytes: Uint8Array): Promise<PDFDocumentProxy> {
   // (`scripts/copy-pdfjs-assets.mjs`); without the wasm a JPEG 2000 or JBIG2
   // scan, which is most copier output, renders blank.
   const base = `/pdfjs/${pdfjs.version}/`;
-  return pdfjs.getDocument({
+  const task = pdfjs.getDocument({
     data: bytes.slice(),
     enableXfa: false,
     wasmUrl: `${base}wasm/`,
     standardFontDataUrl: `${base}standard_fonts/`,
     cMapUrl: `${base}cmaps/`,
     iccUrl: `${base}iccs/`,
-  }).promise;
+  });
+  try {
+    return await task.promise;
+  } catch (error) {
+    // A document that failed to open still holds its worker-side state.
+    void destroyTask(task);
+    throw error;
+  }
 }
 
 export type PagePreview = {

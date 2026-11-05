@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import {
-  confirmDropBulkUploads,
+  bulkDropNotice,
   endBulkSessions,
   getBulkSession,
   type BulkSession,
@@ -29,6 +29,7 @@ vi.mock("./pdf", () => ({
   loadPdf: async () => ({ numPages: 1, loadingTask: { destroy: async () => undefined } }),
   renderPagePreview: async () => ({ url: "blob:preview", width: 10, height: 10 }),
   flattenPdf: async () => new TextEncoder().encode("%PDF flat"),
+  destroyPdf: async () => undefined,
 }));
 
 const flush = async () => {
@@ -110,7 +111,7 @@ describe("bulk upload session", () => {
     expect(getBulkSession("u1", "c1")).not.toBe(session);
   });
 
-  it("never files an upload from an ended batch, and says nothing about it", async () => {
+  it("never files an upload from an ended batch, and says only what it dropped", async () => {
     const session = getBulkSession("u1", "c1");
     const confirm = bindMutations(session);
     session.queue.add([pdf("a.pdf")]);
@@ -119,6 +120,18 @@ describe("bulk upload session", () => {
     endBulkSessions();
     await flush();
     expect(confirm).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Bulk upload stopped",
+        description: expect.stringContaining("1 document that wasn't uploaded was dropped"),
+      }),
+    );
+  });
+
+  it("ends an empty or fully uploaded batch without a word", () => {
+    getBulkSession("u1", "c1");
+    useChapterStore.setState({ activeChapterId: "c2" });
     expect(toast).not.toHaveBeenCalled();
   });
 
@@ -172,13 +185,13 @@ describe("bulk upload session", () => {
     expect(confirm).not.toHaveBeenCalled();
   });
 
-  it("asks before a switch drops documents that aren't uploaded", () => {
-    const ask = vi.spyOn(window, "confirm").mockReturnValue(false);
-    spies.push(ask);
-    expect(confirmDropBulkUploads("switch")).toBe(true);
-    expect(ask).not.toHaveBeenCalled();
+  it("names what a switch, sign-out or deletion would drop, and nothing when nothing would", () => {
+    expect(bulkDropNotice("switch")).toBeNull();
     getBulkSession("u1", "c1").queue.add([pdf("a.pdf"), pdf("b.pdf")]);
-    expect(confirmDropBulkUploads("switch")).toBe(false);
-    expect(ask).toHaveBeenCalledWith(expect.stringContaining("2 documents"));
+    expect(bulkDropNotice("switch")).toBe(
+      "Bulk upload has 2 documents that aren't uploaded yet. Switching chapters drops them.",
+    );
+    expect(bulkDropNotice("sign-out")).toContain("Signing out drops them.");
+    expect(bulkDropNotice("delete-account")).toContain("Deleting your account drops them.");
   });
 });

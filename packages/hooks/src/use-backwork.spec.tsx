@@ -246,7 +246,7 @@ const CHAPTER_ID = "chapter-abc";
         storage_path: "chapters/c/backwork/r/test.pdf",
         resource_id: "r",
       };
-      const mockPost = vi.fn().mockResolvedValue({ data: mockData, error: null });
+      const mockPost = vi.fn().mockResolvedValue({ data: mockData, error: null, response: { ok: true, status: 201 } });
       const mockClient = { POST: mockPost };
 
       const { result } = renderHook(() => useRequestBackworkUploadUrl(), {
@@ -260,8 +260,12 @@ const CHAPTER_ID = "chapter-abc";
     });
 
     it("surfaces an error when request fails", async () => {
-      const mockError = new Error("Upload failed");
-      const mockPost = vi.fn().mockResolvedValue({ data: null, error: mockError });
+      const mockError = { statusCode: 413, message: "Upload failed" };
+      const mockPost = vi.fn().mockResolvedValue({
+        data: null,
+        error: mockError,
+        response: { ok: false, status: 413 },
+      });
       const mockClient = { POST: mockPost };
 
       const { result } = renderHook(() => useRequestBackworkUploadUrl(), {
@@ -269,14 +273,14 @@ const CHAPTER_ID = "chapter-abc";
       });
 
       const body = { filename: "test.pdf", content_type: "application/pdf" };
-      await expect(result.current.mutateAsync(body)).rejects.toThrowError(mockError);
+      await expect(result.current.mutateAsync(body)).rejects.toEqual(mockError);
     });
   });
 
   describe("useConfirmBackworkUpload", () => {
     it("confirms backwork upload and invalidates queries", async () => {
       const mockData = { id: "res1", status: "success" };
-      const mockPost = vi.fn().mockResolvedValue({ data: mockData, error: null });
+      const mockPost = vi.fn().mockResolvedValue({ data: mockData, error: null, response: { ok: true, status: 201 } });
       const mockClient = { POST: mockPost };
       const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -300,8 +304,12 @@ const CHAPTER_ID = "chapter-abc";
     });
 
     it("surfaces an error when confirmation fails", async () => {
-      const mockError = new Error("Confirmation failed");
-      const mockPost = vi.fn().mockResolvedValue({ data: null, error: mockError });
+      const mockError = { statusCode: 409, message: "Confirmation failed" };
+      const mockPost = vi.fn().mockResolvedValue({
+        data: null,
+        error: mockError,
+        response: { ok: false, status: 409 },
+      });
       const mockClient = { POST: mockPost };
 
       const { result } = renderHook(() => useConfirmBackworkUpload(), {
@@ -314,7 +322,21 @@ const CHAPTER_ID = "chapter-abc";
         is_redacted: false,
       };
 
-      await expect(result.current.mutateAsync(body)).rejects.toThrowError(mockError);
+      await expect(result.current.mutateAsync(body)).rejects.toEqual(mockError);
+    });
+
+    it("rejects an empty-bodied failure instead of reading it as filed", async () => {
+      const mockPost = vi.fn().mockResolvedValue({
+        data: undefined,
+        error: undefined,
+        response: { ok: false, status: 502 },
+      });
+      const { result } = renderHook(() => useConfirmBackworkUpload(), {
+        wrapper: createWrapper({ POST: mockPost }),
+      });
+      await expect(
+        result.current.mutateAsync({ storage_path: "p", file_hash: "h", is_redacted: false }),
+      ).rejects.toMatchObject({ statusCode: 502 });
     });
   });
 

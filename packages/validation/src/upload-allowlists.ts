@@ -1,5 +1,7 @@
 /**
- * Shared upload MIME / extension allowlists and the 25 MB size cap.
+ * Shared upload MIME / extension allowlists and the size caps: 25 MB for
+ * every kind but two exceptions, `archive` and backwork's 50 MB
+ * (`MAX_BACKWORK_UPLOAD_BYTES`).
  *
  * One table per kind; MIME types, extensions, the HTML `accept` attribute, and
  * the size bound all derive from it. Application services, web upload pages,
@@ -33,8 +35,9 @@
  * **not** one number, and `supabase/config.toml`'s `[storage] file_size_limit`
  * is not `MAX_UPLOAD_BYTES`: it caps the **local stack** and overrides a higher
  * per-bucket column there. What the hosted projects enforce per object is not
- * measured here, and so is not claimed. See the `archive` kind below for the
- * one kind deliberately held off this cap; the per-bucket values are owned by
+ * measured here, and so is not claimed. See the `archive` kind and
+ * `MAX_BACKWORK_UPLOAD_BYTES` below for the two deliberately held off this
+ * cap; the per-bucket values are owned by
  * `spec/architecture/README.md` § 7 (Storage).
  *
  * ## What the bucket allowlist actually enforces

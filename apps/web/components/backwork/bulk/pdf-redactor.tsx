@@ -238,9 +238,16 @@ export function PdfRedactor({
     setDrag(null);
   }
 
+  // Adds this page's boxes to every page, keeping what each page already
+  // has: a box drawn on another page is a redaction too, and never dropped.
   function copyToAllPages() {
+    const same = (a: Box, b: Box) =>
+      a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
     const next: BoxesByPage = {};
-    for (let p = 1; p <= pageCount; p += 1) next[p] = [...pageBoxes];
+    for (let p = 1; p <= pageCount; p += 1) {
+      const own = boxes[p] ?? [];
+      next[p] = [...own, ...pageBoxes.filter((box) => !own.some((o) => same(o, box)))];
+    }
     commit(next);
   }
 
@@ -302,7 +309,7 @@ export function PdfRedactor({
               onClick={copyToAllPages}
               className="gap-1.5"
             >
-              <Copy className="h-4 w-4" /> Same boxes on every page
+              <Copy className="h-4 w-4" /> Copy boxes to every page
             </Button>
           ) : null}
         </div>

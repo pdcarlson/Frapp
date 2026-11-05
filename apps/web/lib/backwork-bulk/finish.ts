@@ -1,3 +1,4 @@
+import { statusOf } from "@repo/api-sdk";
 import type { useConfirmBackworkUpload } from "@repo/hooks";
 import {
   ASSIGNMENT_TYPES,
@@ -54,12 +55,6 @@ const BACKWORK_YEAR_MIN = 1900;
  * again instead of failing the document.
  */
 const RATE_LIMIT_WAITS_MS = [15_000, 30_000, 45_000];
-
-function statusOf(error: unknown): number | undefined {
-  return error && typeof error === "object" && "statusCode" in error
-    ? (error as { statusCode?: number }).statusCode
-    : undefined;
-}
 
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 

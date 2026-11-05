@@ -89,6 +89,16 @@ describe("collect-files", () => {
     expect(result.files.map((f) => f.name)).toEqual(["solo.pdf"]);
   });
 
+  it("sorts loose files by name, as browsers give them an empty folder path", async () => {
+    const loose = (name: string) => {
+      const f = file(name);
+      Object.defineProperty(f, "webkitRelativePath", { value: "" });
+      return { kind: "file", getAsFile: () => f };
+    };
+    const result = await collectFromDrop([loose("exam 10.pdf"), loose("exam 2.pdf")]);
+    expect(result.files.map((f) => f.name)).toEqual(["exam 2.pdf", "exam 10.pdf"]);
+  });
+
   it("counts an unreadable file and keeps the rest of the folder", async () => {
     const broken = {
       isFile: true,

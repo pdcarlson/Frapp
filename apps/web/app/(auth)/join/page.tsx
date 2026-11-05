@@ -29,6 +29,7 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { getSessionUser } from "@/lib/auth/session";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
 
 /**
  * s02 — Join chapter (`spec/ui/design-system/reference/canvas-screens.dc.html`).
@@ -67,6 +68,7 @@ function JoinPageContent() {
   const { isOffline } = useNetwork();
   const redeemInviteMutation = useRedeemInvite();
   const selectChapter = useSelectChapter();
+  const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
   const initialToken = useMemo(
     () => extractInviteTokenFromQuery((key) => searchParams.get(key)) ?? "",
     [searchParams],
@@ -137,6 +139,8 @@ function JoinPageContent() {
       setRedeemError(terms.blocker);
       return;
     }
+    // Joining switches to the new chapter, which ends this tab's Bulk upload.
+    if (!(await confirmDrop("switch"))) return;
     try {
       const result = await redeemInviteMutation.mutateAsync(
         terms.redeemBody(extracted),
@@ -257,6 +261,7 @@ function JoinPageContent() {
           itself in.
         </AuthNote>
       </div>
+      {confirmDropDialog}
     </AuthScreen>
   );
 }

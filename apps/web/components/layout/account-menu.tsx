@@ -16,7 +16,7 @@ import {
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { cn, initials } from "@/lib/utils";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
-import { confirmDropBulkUploads } from "@/lib/backwork-bulk/session";
+import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
 
 type CurrentUser = {
   display_name?: string | null;
@@ -63,8 +63,10 @@ export function AccountMenu({
   const name = user.display_name?.trim() || "Your account";
   const email = user.email ?? null;
 
+  const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
+
   async function handleSignOut() {
-    if (!confirmDropBulkUploads("sign-out")) return;
+    if (!(await confirmDrop("sign-out"))) return;
     setIsSigningOut(true);
     try {
       await signOutCurrentSession();
@@ -181,6 +183,7 @@ export function AccountMenu({
           <span>{isSigningOut ? "Signing out..." : "Sign out"}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
+      {confirmDropDialog}
     </DropdownMenu>
   );
 }

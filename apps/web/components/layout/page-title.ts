@@ -26,7 +26,9 @@ import { SETTINGS_TOOLS } from "@/components/settings/settings-access";
  * they read "Settings › Study zones" and the parent links back. The parent is
  * the nav row that claims the route in its `activeFor`, so it is named and
  * linked exactly as that row is, and it shows only when that row does: a
- * member the nav hides Settings from is not handed a link to it here. A
+ * member the nav hides Settings from is not handed a link to it here.
+ * A page reached from inside a nav row's own page reads the same way under
+ * that row, "Backwork › Bulk upload" (`SUB_PAGE_TITLES`). A
  * top-level route has no parent: prefixing the chapter name ("Phi Gamma Delta ›
  * Study hours") would repeat the chapter switcher that sits beside it in the
  * nav, and a caret that leads nowhere new is decoration.

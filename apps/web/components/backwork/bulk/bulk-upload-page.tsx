@@ -8,8 +8,10 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
+  ArrowLeft,
   CheckCircle2,
   FolderOpen,
   Loader2,
@@ -196,8 +198,13 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
       let preview = prepared.previews.get(page);
       if (!preview) {
         const { renderPagePreview } = await import("@/lib/backwork-bulk/pdf");
-        preview = renderPagePreview(prepared.doc, page);
-        prepared.previews.set(page, preview);
+        const rendering = renderPagePreview(prepared.doc, page);
+        prepared.previews.set(page, rendering);
+        // A failed render isn't kept, so coming back to the page tries again.
+        rendering.catch(() => {
+          if (prepared.previews.get(page) === rendering) prepared.previews.delete(page);
+        });
+        preview = rendering;
       }
       return preview;
     },
@@ -220,7 +227,16 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
 
   return (
     <div className="space-y-4">
-      {/* The top bar titles this "Backwork › Bulk upload", and the crumb links back. */}
+      {/*
+        From `sm` the top bar titles this "Backwork › Bulk upload" and its
+        crumb links back. Below `sm` the bar hides the crumb, so the way back
+        is here.
+      */}
+      <Button asChild variant="ghost" size="sm" className="-ml-2 sm:hidden">
+        <Link href="/backwork">
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Backwork
+        </Link>
+      </Button>
       <SubscriptionNotice gate={gate} feature="uploading backwork" />
 
       {snapshot.items.length === 0 ? (
