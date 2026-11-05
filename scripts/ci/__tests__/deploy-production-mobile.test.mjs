@@ -153,7 +153,7 @@ describe("the expression reader", () => {
 });
 
 describe("the mobile_build input", () => {
-  it("is a choice whose default builds nothing", () => {
+  it("is a choice whose default does nothing for the app", () => {
     const lines = readFileSync(CALLER, "utf8").split("\n");
     const at = lines.findIndex((l) => /^ {6}mobile_build:\s*$/.test(l));
     assert.notEqual(at, -1, "deploy-production.yml has no mobile_build input");
@@ -166,20 +166,24 @@ describe("the mobile_build input", () => {
     assert.equal(value("type"), "choice");
     assert.equal(value("default"), "none");
     assert.equal(value("required"), "false");
-    assert.equal(value("options"), "[none, ios, android, all]");
+    assert.equal(value("options"), "[none, ios, android, all, auto]");
   });
 });
 
-describe("the mobile job runs only after a live, tagged full ship, for a named platform", () => {
-  const job = () => jobOf(CALLER, "mobile");
-  const PLATFORMS = ["none", "ios", "android", "all", "", "bogus"];
+// Three jobs read the input: `mobile-plan` decides once, from the trusted
+// ref, and `mobile` (store build) and `ota` (update) act on its two outputs.
+describe("the app jobs run only after a live, tagged full ship, for a value named in full", () => {
+  const MODES = ["none", "ios", "android", "all", "auto", "", "bogus"];
   const RESULTS = ["success", "failure", "skipped", "cancelled"];
+  const PLAN_VALUES = ["none", "ios", "android", "all", "", "bogus"];
+  const live = (dry_run_only, scope, deploy, release) =>
+    !dry_run_only && scope !== "migrations-only" && deploy === "success" && release === "success";
 
-  it("builds exactly when every condition holds, across every combination", () => {
-    const condition = job().if;
-    assert.ok(condition, "the mobile job has no if:");
-    let built = 0;
-    for (const mobile_build of PLATFORMS)
+  it("plans exactly when every condition holds, across every combination", () => {
+    const condition = jobOf(CALLER, "mobile-plan").if;
+    assert.ok(condition, "the mobile-plan job has no if:");
+    let planned = 0;
+    for (const mobile_build of MODES)
       for (const dry_run_only of [true, false])
         for (const scope of ["full", "migrations-only", ""])
           for (const deploy of RESULTS)
@@ -188,45 +192,92 @@ describe("the mobile job runs only after a live, tagged full ship, for a named p
                 inputs: { mobile_build, dry_run_only, scope },
                 needs: { deploy: { result: deploy }, release: { result: release } },
               });
-              const expected =
-                ["ios", "android", "all"].includes(mobile_build) &&
-                !dry_run_only &&
-                scope !== "migrations-only" &&
-                deploy === "success" &&
-                release === "success";
+              const expected = ["ios", "android", "all", "auto"].includes(mobile_build) && live(dry_run_only, scope, deploy, release);
               assert.equal(runs, expected, JSON.stringify({ mobile_build, dry_run_only, scope, deploy, release }));
-              if (runs) built += 1;
+              if (runs) planned += 1;
             }
-    // Three platforms, two scopes that ship (`full`, and an empty scope that
-    // ships like `full`): the table above was not vacuous.
-    assert.equal(built, 6);
+    // Four modes, two scopes that ship (`full`, and an empty scope that ships
+    // like `full`): the table above was not vacuous.
+    assert.equal(planned, 8);
   });
 
-  it("waits for the deploy and the tag, and builds the validated SHA", () => {
-    assert.equal(job().keys.get("needs"), "[validate, deploy, release]");
-    assert.equal(job().keys.get("uses"), "./.github/workflows/_mobile-build.yml");
-    const call = job().keys.get("with");
-    assert.equal(call.get("sha"), VALIDATED_SHA);
-    assert.equal(call.get("platform"), "${{ inputs.mobile_build }}");
-    // The called jobs read `automation` secrets, which a called job gets only
-    // through `inherit` (#2804).
-    assert.equal(job().keys.get("secrets"), "inherit");
+  it("builds and publishes only what a successful plan names, after a live ship", () => {
+    const build = jobOf(CALLER, "mobile").if;
+    const ota = jobOf(CALLER, "ota").if;
+    let builds = 0;
+    let publishes = 0;
+    for (const mobile_build of MODES)
+      for (const dry_run_only of [true, false])
+        for (const scope of ["full", "migrations-only"])
+          for (const deploy of ["success", "failure"])
+            for (const plan of RESULTS)
+              for (const out of PLAN_VALUES) {
+                const ctx = {
+                  inputs: { mobile_build, dry_run_only, scope },
+                  needs: {
+                    deploy: { result: deploy },
+                    release: { result: "success" },
+                    "mobile-plan": { result: plan, outputs: { build: out, update: out } },
+                  },
+                };
+                const ok = live(dry_run_only, scope, deploy, "success") && plan === "success" && ["ios", "android", "all"].includes(out);
+                const key = JSON.stringify({ mobile_build, dry_run_only, scope, deploy, plan, out });
+                assert.equal(evaluate(build, ctx), ok, `mobile ${key}`);
+                // An update only ever comes from `auto`, whatever the plan says.
+                assert.equal(evaluate(ota, ctx), ok && mobile_build === "auto", `ota ${key}`);
+                if (ok) builds += 1;
+                if (ok && mobile_build === "auto") publishes += 1;
+              }
+    assert.ok(builds > 0 && publishes > 0, "the tables above were vacuous");
+  });
+
+  it("waits for the deploy, the tag and the plan, and acts on the validated SHA", () => {
+    assert.equal(jobOf(CALLER, "mobile-plan").keys.get("needs"), "[validate, deploy, release]");
+    for (const [id, uses, output] of [
+      ["mobile", "./.github/workflows/_mobile-build.yml", "build"],
+      ["ota", "./.github/workflows/_mobile-update.yml", "update"],
+    ]) {
+      const job = jobOf(CALLER, id);
+      assert.equal(job.keys.get("needs"), "[validate, deploy, release, mobile-plan]", id);
+      assert.equal(job.keys.get("uses"), uses, id);
+      const call = job.keys.get("with");
+      assert.equal(call.get("sha"), VALIDATED_SHA, id);
+      assert.equal(call.get("platform"), `\${{ needs.mobile-plan.outputs.${output} }}`, id);
+      // The called jobs read `automation` secrets, which a called job gets
+      // only through `inherit` (#2804).
+      assert.equal(job.keys.get("secrets"), "inherit", id);
+    }
+  });
+
+  it("the plan holds no secret, runs the trusted ref's script, and installs the shipped tree inert", () => {
+    const steps = stepsOf(CALLER, "mobile-plan");
+    assert.doesNotMatch(steps.map((s) => s.body).join("\n"), /secrets\./);
+    const plan = stepNamed(CALLER, "mobile-plan", "Plan the store build and the update");
+    assert.equal(scriptOf(plan), "node trusted/scripts/ci/plan-mobile-release.mjs");
+    const install = stepNamed(CALLER, "mobile-plan", "Install the shipped commit's dependencies (no install scripts)");
+    assert.equal(scriptOf(install), "npm ci --ignore-scripts --no-audit --no-fund");
+    const names = steps.map((s) => s.name);
+    assert.ok(names.indexOf("Check out the shipped commit (read, never run)") < names.indexOf("Check out the trusted ref beside it"), "the root checkout comes first");
   });
 });
 
 describe("unticked, a run is what it was", () => {
   it("nothing else in the dispatch reads the input", () => {
-    for (const j of workflowJobs(CALLER).filter((x) => x.jobId !== "mobile")) {
+    for (const j of workflowJobs(CALLER).filter((x) => !["mobile-plan", "mobile", "ota"].includes(x.jobId))) {
       assert.doesNotMatch(String(j.if ?? ""), /mobile/, `${j.jobId}'s if: reads the mobile input`);
     }
     const text = readFileSync(CALLER, "utf8")
       .split("\n")
       .filter((l) => !/^\s*#/.test(l));
-    const reads = text.filter((l) => /inputs\.mobile_build|needs\.mobile\b/.test(l)).map((l) => l.trim());
-    // The third read is the summary's, for one message on a failed tag, run below.
+    const reads = text.filter((l) => /inputs\.mobile_build|needs\.mobile\b(?!-)/.test(l)).map((l) => l.trim());
+    // The plan's own reads, the update's `auto` clause, and the summary's,
+    // for one message on a failed tag, run below.
     assert.deepEqual(reads, [
-      `if: ${jobOf(CALLER, "mobile").if}`,
-      "platform: ${{ inputs.mobile_build }}",
+      `if: ${jobOf(CALLER, "mobile-plan").if}`,
+      "if: ${{ inputs.mobile_build == 'auto' }}",
+      "if: ${{ inputs.mobile_build == 'auto' }}",
+      "MOBILE_BUILD: ${{ inputs.mobile_build }}",
+      `if: ${jobOf(CALLER, "ota").if}`,
       "MOBILE_BUILD: ${{ inputs.mobile_build }}",
     ]);
   });
@@ -271,10 +322,10 @@ describe("unticked, a run is what it was", () => {
       assert.equal(none.status, 1);
       assert.match(none.stdout, /Re-run the 'Release' workflow manually with sha=/);
       assert.doesNotMatch(none.stdout, /store build/, "unticked, the message is what it was");
-      for (const platform of ["ios", "android", "all"]) {
+      for (const platform of ["ios", "android", "all", "auto"]) {
         const asked = run(platform);
         assert.equal(asked.status, 1, platform);
-        assert.match(asked.stdout, new RegExp(`asked for a store build \\(${platform}\\).*Re-run failed jobs on this run`), platform);
+        assert.match(asked.stdout, new RegExp(`asked for a store build or update \\(${platform}\\).*Re-run failed jobs on this run`), platform);
       }
       assert.equal(run("ios", "success").status, 0, "a tagged ship says nothing about the store build here");
     });

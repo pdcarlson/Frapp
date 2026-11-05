@@ -27,8 +27,10 @@ action file is not on disk yet when the runner resolves it.
   `packages/*` build command; `scripts/ci/__tests__/turbo-packages-build-action.test.mjs`
   fails if either reappears in a workflow *or* in another composite action.
 - **No workflow or other action hand-writes `actions/setup-node` or the install, except
-  `_deploy.yml`, `release.yml` and `_mobile-build.yml`.** Those three check out another commit
-  before Node is set up (the commit being deployed, tagged, or built for the stores), so a
+  `_deploy.yml`, `release.yml`, `_mobile-build.yml`, `_mobile-update.yml` and
+  `deploy-production.yml`.** Each checks out another commit before Node is set up (the commit
+  being deployed, tagged, built for the stores, published as an OTA update, or, in
+  `deploy-production.yml`'s `mobile-plan`, read to choose between those two), so a
   local action there would load from that tree (see the workspace rule below), and they keep
   a hand-written step pinned to `node-setup`'s: the same `actions/setup-node` ref, Node
   version and `package-manager-cache: false`. `scripts/ci/__tests__/node-setup-action.test.mjs`
@@ -38,11 +40,13 @@ action file is not on disk yet when the runner resolves it.
   installing mode in a job that holds a secret, directly or through a composite action it
   calls (those jobs run dependency-free scripts, so no `node-setup` call runs `npm ci`'s
   lifecycle scripts beside a credential).
-  `_deploy.yml` and `_mobile-build.yml` are outside that rule: each hand-written `npm ci`
-  runs in a job that holds its environment's secrets, before any step that uses them
-  (`_deploy.yml`'s Infisical injection, `_mobile-build.yml`'s `EXPO_TOKEN` steps). #2824
-  tracks isolating `_deploy.yml`'s, and #3125 `_mobile-build.yml`'s. Only the job that
-  checks out another commit is exempt; any other job in either file follows the rule.
+  `_deploy.yml`, `_mobile-build.yml` and `_mobile-update.yml` are outside that rule: each
+  hand-written `npm ci` runs in a job that holds its environment's secrets, before any step
+  that uses them (`_deploy.yml`'s Infisical injection, the two mobile files' `EXPO_TOKEN`
+  steps; `_mobile-update.yml`'s install runs no install script). #2824 tracks isolating
+  `_deploy.yml`'s, and #3125 the mobile ones'. `mobile-plan`'s `npm ci --ignore-scripts` holds
+  no secret. Only the job that checks out another commit is exempt; any other job in these
+  files follows the rule.
 - **`clean-checkout-typecheck` and `web-production-build` must never use
   `turbo-packages-build`.** Each exists to fail when the shared packages cannot build
   from a cold tree — `clean-checkout-typecheck` on a dev install, `web-production-build`
