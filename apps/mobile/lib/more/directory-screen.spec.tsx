@@ -92,7 +92,10 @@ vi.mock("@/components/directory/member-detail-sheet", () => ({
   MemberDetailSheet: () => null,
 }));
 
-import DirectoryScreen, { MemberRow } from "@/app/(tabs)/directory";
+import DirectoryScreen, {
+  MemberListSkeleton,
+  MemberRow,
+} from "@/app/(tabs)/directory";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { DirectoryGlyph } from "@/components/more/more-glyphs";
 import { SearchGlyph } from "@/components/search-glyph";
@@ -352,9 +355,63 @@ describe("s13's member rows", () => {
   it("gives a row with nothing to open no feedback", () => {
     const row = pressableOf(undefined);
     expect(row.props.android_ripple).toBeUndefined();
-    expect(
-      JSON.stringify(row.props.style({ pressed: true })),
-    ).not.toContain(signetDarkTokens.color.surface.card);
+    expect(JSON.stringify(row.props.style({ pressed: true }))).not.toContain(
+      signetDarkTokens.color.surface.card,
+    );
+  });
+});
+
+describe("s13's loading state", () => {
+  // components.md §10: the skeleton is the rows it becomes, on the row's own
+  // frame and hairline, with the avatar's circle where the initials land.
+  it("draws member rows on the member row's frame", () => {
+    let real!: ReactTestRenderer;
+    let skeleton!: ReactTestRenderer;
+    act(() => {
+      real = create(
+        <FrappThemeProvider>
+          <MemberRow
+            row={{
+              userId: "u-1",
+              displayName: "Marcus Reid",
+              initials: "MR",
+              meta: null,
+              avatarUrl: null,
+            }}
+            onPress={vi.fn()}
+          />
+        </FrappThemeProvider>,
+      );
+      skeleton = create(
+        <FrappThemeProvider>
+          <MemberListSkeleton rows={2} />
+        </FrappThemeProvider>,
+      );
+    });
+    const flat = (style: unknown) =>
+      Object.assign({}, ...[style].flat(Infinity)) as Record<string, unknown>;
+    const pressable = real.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    const realRow = flat(pressable.props.style({ pressed: false }));
+    const [region, firstRow] = skeleton.root.findAllByType("View" as never);
+
+    expect(region!.props.accessibilityRole).toBe("progressbar");
+    expect(region!.props.accessibilityLabel).toBe("Loading members");
+    const row = flat(firstRow!.props.style);
+    for (const key of [
+      "paddingVertical",
+      "paddingHorizontal",
+      "marginHorizontal",
+      "minHeight",
+      "borderBottomWidth",
+      "gap",
+    ]) {
+      expect(row[key]).toBe(realRow[key]);
+    }
+    const [avatar] = skeleton.root.findAllByType("Animated.View" as never);
+    expect(flat(avatar!.props.style).width).toBe(40);
+    expect(flat(avatar!.props.style).borderRadius).toBe(20);
   });
 });
 

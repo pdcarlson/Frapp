@@ -10,7 +10,9 @@ import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import {
   EmptyState,
   ErrorState,
-  SkeletonLines,
+  SkeletonBlock,
+  SkeletonRegion,
+  SkeletonText,
 } from "@/components/state-block";
 import { AccentChip, StatusChip } from "@/components/status-chip";
 import { exportEventToCalendar } from "@/lib/calendar-export";
@@ -126,7 +128,7 @@ export default function EventDetailsScreen() {
   if (eventQuery.isPending) {
     return (
       <ScreenShell back={BACK_TO_EVENTS} title="Event">
-        <SkeletonLines lines={3} />
+        <EventDetailSkeleton />
       </ScreenShell>
     );
   }
@@ -311,6 +313,51 @@ function CheckInCard({
   );
 }
 
+/**
+ * The screen's loading state, on the loaded screen's own styles: the check-in
+ * card's frame and header line, a DETAILS section's caption and body lines,
+ * and the Add to calendar button's frame. The optional badge row is left out,
+ * since most events carry no badge and a placeholder for one would leave a gap
+ * when it doesn't land.
+ */
+function EventDetailSkeleton() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { body, caption, label } = tokens.typography.role;
+
+  return (
+    <SkeletonRegion label="Loading event" style={styles.skeletonStack}>
+      <View style={styles.checkInCard}>
+        <View style={styles.checkInHeader}>
+          <SkeletonBlock
+            width={tokens.spacing.sm}
+            height={tokens.spacing.sm}
+            radius={tokens.spacing.xs}
+          />
+          <View style={styles.checkInTitleSkeleton}>
+            <SkeletonText role={label} width="55%" />
+          </View>
+          <SkeletonText
+            role={caption}
+            width={tokens.spacing["3xl"] + tokens.spacing.lg}
+          />
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <SkeletonText role={caption} width="18%" />
+        <SkeletonText role={body} width="92%" />
+        <SkeletonText role={body} width="84%" />
+        <SkeletonText role={body} width="46%" />
+      </View>
+
+      <View style={styles.secondaryButton}>
+        <SkeletonText role={label} width="32%" />
+      </View>
+    </SkeletonRegion>
+  );
+}
+
 /** DETAILS and INTERNAL NOTES share this shape; only the label and body differ. */
 function DetailSection({
   label,
@@ -331,6 +378,10 @@ function DetailSection({
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    // `ScreenShell`'s gap, which spaces the loaded screen's blocks.
+    skeletonStack: {
+      gap: tokens.spacing.md,
+    },
     badgeRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -361,6 +412,10 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       color: tokens.color.text.foreground,
       ...typeRole(tokens.typography.role.label),
+    },
+    // The title's flex, so the trailing caption sits where it lands.
+    checkInTitleSkeleton: {
+      flex: 1,
     },
     checkInMeta: {
       color: tokens.color.text.mutedForeground,

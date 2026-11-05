@@ -13,7 +13,9 @@ import {
   EmptyState,
   ErrorState,
   NoChapterState,
-  SkeletonLines,
+  SkeletonBlock,
+  SkeletonRegion,
+  SkeletonText,
 } from "@/components/state-block";
 import { BACK_TO_MORE, BackRow } from "@/components/back-row";
 import { Chip, FilterChips, SearchField } from "@/components/filter-chips";
@@ -239,7 +241,6 @@ export default function DirectoryScreen() {
 
   function renderBody() {
     if (!chapterId) return <NoChapterState noun="the member directory" />;
-    if (activeQuery.isPending) return <SkeletonLines lines={4} showTile />;
     if (activeQuery.isError) {
       return (
         <ErrorState
@@ -291,7 +292,13 @@ export default function DirectoryScreen() {
         keyExtractor={(row) => row.userId}
         ListHeaderComponent={header}
         ListEmptyComponent={
-          <View style={styles.emptyWrap}>{renderBody()}</View>
+          // The skeleton stands in for the rows themselves, so it takes no
+          // inset: the empty and error cards do.
+          chapterId && activeQuery.isPending ? (
+            <MemberListSkeleton />
+          ) : (
+            <View style={styles.emptyWrap}>{renderBody()}</View>
+          )
         }
         renderItem={({ item }) => (
           <MemberRow
@@ -360,6 +367,48 @@ export function MemberRow({
   );
 }
 
+/** Name widths, cycled, so the placeholder roster doesn't read as a grid. */
+const SKELETON_NAME_WIDTHS = [
+  "46%",
+  "34%",
+  "52%",
+  "40%",
+  "30%",
+  "44%",
+] as const;
+
+/**
+ * The roster's loading state: member rows on {@link MemberRow}'s own styles,
+ * an avatar-sized circle and the name and meta lines, split by the same
+ * hairlines, so the real rows land in place.
+ */
+export function MemberListSkeleton({ rows = 6 }: { rows?: number }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { caption, label } = tokens.typography.role;
+
+  return (
+    <SkeletonRegion label="Loading members">
+      {Array.from({ length: rows }, (_, index) => (
+        <View key={index} style={styles.row}>
+          <SkeletonBlock
+            width={AVATAR_SIZE}
+            height={AVATAR_SIZE}
+            radius={avatarRadius(AVATAR_SIZE)}
+          />
+          <View style={styles.rowText}>
+            <SkeletonText
+              role={label}
+              width={SKELETON_NAME_WIDTHS[index % SKELETON_NAME_WIDTHS.length]!}
+            />
+            <SkeletonText role={caption} width="28%" />
+          </View>
+        </View>
+      ))}
+    </SkeletonRegion>
+  );
+}
+
 /** How many of the alumni filters hold a value: a new key counts with no edit here. */
 function countSetFilters(filters: Record<string, string | undefined>): number {
   return Object.values(filters).filter(Boolean).length;
@@ -370,8 +419,11 @@ function countMembers(data: unknown): number {
   return records(data).filter((row) => str(row, "user_id")).length;
 }
 
+/** The member row's avatar, which its skeleton draws at the same size. */
+const AVATAR_SIZE = 40;
+
 function createStyles(tokens: SignetTokens) {
-  const avatarSize = 40;
+  const avatarSize = AVATAR_SIZE;
   return StyleSheet.create({
     safeArea: {
       flex: 1,

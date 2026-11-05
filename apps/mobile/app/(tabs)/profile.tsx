@@ -12,9 +12,22 @@ import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { EditProfileSheet } from "@/components/profile/edit-profile-sheet";
-import { ProfilePhoto } from "@/components/profile/profile-photo";
-import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
-import { ErrorState, SkeletonLines } from "@/components/state-block";
+import {
+  PROFILE_PHOTO_SIZE,
+  ProfilePhoto,
+} from "@/components/profile/profile-photo";
+import {
+  ListRow,
+  ListRowSkeleton,
+  ListSection,
+  SectionHeader,
+} from "@/components/list-section";
+import {
+  ErrorState,
+  SkeletonBlock,
+  SkeletonRegion,
+  SkeletonText,
+} from "@/components/state-block";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -24,7 +37,7 @@ import {
   selectViewerProfile,
   sumApprovedServiceMinutes,
 } from "@/lib/more/profile";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s15 — Profile (`canvas-screens.dc.html:497`).
@@ -92,7 +105,7 @@ export default function ProfileScreen() {
   if (userQuery.isPending) {
     return (
       <ScreenShell back={BACK_TO_MORE} title="Profile">
-        <SkeletonLines lines={4} showTile tone="list" />
+        <ProfileSkeleton />
       </ScreenShell>
     );
   }
@@ -219,8 +232,57 @@ export default function ProfileScreen() {
   );
 }
 
+/** The four Details rows: Email, Graduation, City, Company. */
+const DETAIL_ROWS = 4;
+
+/**
+ * The screen's loading state, on the loaded screen's own styles: the photo's
+ * circle with the name and meta lines under it, the two stat cards, and the
+ * Details list. The Details caption is fixed text, so it is drawn as itself.
+ */
+function ProfileSkeleton() {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens, accent);
+  const { caption, headline } = tokens.typography.role;
+
+  return (
+    <SkeletonRegion label="Loading your profile" style={styles.skeletonStack}>
+      <View style={styles.identity}>
+        <SkeletonBlock
+          width={PROFILE_PHOTO_SIZE}
+          height={PROFILE_PHOTO_SIZE}
+          radius={avatarRadius(PROFILE_PHOTO_SIZE)}
+        />
+        <SkeletonText role={headline} width="44%" />
+        <SkeletonText role={caption} width="30%" />
+      </View>
+
+      <View style={styles.statRow}>
+        {[0, 1].map((index) => (
+          <View key={index} style={styles.statCard}>
+            <SkeletonText role={headline} width="36%" />
+            <SkeletonText role={caption} width="48%" />
+          </View>
+        ))}
+      </View>
+
+      <SectionHeader>Details</SectionHeader>
+      <ListSection>
+        {Array.from({ length: DETAIL_ROWS }, (_, index) => (
+          <ListRowSkeleton key={index} index={index} variant="detail" />
+        ))}
+      </ListSection>
+    </SkeletonRegion>
+  );
+}
+
 function createStyles(tokens: SignetTokens, accent: string) {
   return StyleSheet.create({
+    // `ScreenShell`'s gap, which spaces the loaded screen's blocks.
+    skeletonStack: {
+      gap: tokens.spacing.md,
+    },
     identity: {
       alignItems: "center",
       gap: tokens.spacing.sm,

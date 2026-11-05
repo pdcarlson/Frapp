@@ -196,7 +196,9 @@ describe("Events list states", () => {
     query = { isPending: true, isError: false, isFetching: true };
     const tree = render();
 
-    expect(skeletons(tree).length).toBeGreaterThan(0);
+    // One region, named for what loads, shaped as the event cards.
+    expect(skeletons(tree)).toHaveLength(1);
+    expect(skeletons(tree)[0]!.props.accessibilityLabel).toBe("Loading events");
     expect(screenText(tree)).not.toContain("Loading events");
   });
 

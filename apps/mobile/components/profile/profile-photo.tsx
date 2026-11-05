@@ -25,7 +25,9 @@ import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding
 import { pickAndSetProfilePhoto } from "@/lib/more/profile-photo";
 import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
-const AVATAR_SIZE = 84;
+/** The avatar's diameter, which Profile's loading state draws at too. */
+export const PROFILE_PHOTO_SIZE = 84;
+const AVATAR_SIZE = PROFILE_PHOTO_SIZE;
 const BADGE_SIZE = 28;
 const BADGE_GLYPH_SIZE = 16;
 

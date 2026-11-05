@@ -13,6 +13,7 @@ import { BACK_TO_CHAT } from "@/components/back-row";
 import {
   listRowHint,
   SectionHeader,
+  SectionHeaderSkeleton,
   usePressFeedback,
 } from "@/components/list-section";
 import { NotificationsGlyph } from "@/components/more/more-glyphs";
@@ -20,7 +21,8 @@ import {
   EmptyState,
   ErrorState,
   NoChapterState,
-  SkeletonLines,
+  SkeletonRegion,
+  SkeletonText,
 } from "@/components/state-block";
 import {
   type NotificationRow,
@@ -128,7 +130,7 @@ export default function NotificationsScreen() {
 
   function renderBody() {
     if (!chapterId) return <NoChapterState noun="your notifications" />;
-    if (notificationsQuery.isPending) return <SkeletonLines lines={4} />;
+    if (notificationsQuery.isPending) return <NotificationListSkeleton />;
     if (notificationsQuery.isError) {
       return (
         <ErrorState
@@ -239,6 +241,45 @@ export function NotificationListRow({
         </Text>
       </View>
     </Pressable>
+  );
+}
+
+/** Title widths, cycled, so the placeholder rows don't read as a grid. */
+const SKELETON_TITLE_WIDTHS = ["62%", "48%", "70%", "54%"] as const;
+
+/**
+ * The list's loading state: a group caption over rows on
+ * {@link NotificationListRow}'s own styles (the dot's column, the 20pt title
+ * and body lines, the meta line), so the real list lands in place. The dot
+ * column is left empty, as on a read row: which rows are unread isn't known
+ * yet.
+ */
+function NotificationListSkeleton({ rows = 4 }: { rows?: number }) {
+  const { tokens } = useFrappTheme();
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
+  const { caption, label } = tokens.typography.role;
+
+  return (
+    <SkeletonRegion label="Loading notifications" style={styles.group}>
+      <SectionHeaderSkeleton width="16%" />
+      {Array.from({ length: rows }, (_, index) => (
+        <View key={index} style={styles.row}>
+          <View style={styles.dotSpacer} />
+          <View style={styles.rowText}>
+            <SkeletonText
+              role={label}
+              lineHeight={LINE_HEIGHT}
+              width={
+                SKELETON_TITLE_WIDTHS[index % SKELETON_TITLE_WIDTHS.length]!
+              }
+            />
+            <SkeletonText role={label} lineHeight={LINE_HEIGHT} width="86%" />
+            <SkeletonText role={caption} width="24%" style={styles.rowMeta} />
+          </View>
+        </View>
+      ))}
+    </SkeletonRegion>
   );
 }
 

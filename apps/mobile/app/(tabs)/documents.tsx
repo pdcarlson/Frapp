@@ -16,13 +16,18 @@ import { BACK_TO_MORE } from "@/components/back-row";
 import { UploadGlyph } from "@/components/documents/document-glyphs";
 import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
 import { FilterChips, SearchField } from "@/components/filter-chips";
-import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import {
+  ListRow,
+  ListRowSkeleton,
+  ListSection,
+  SectionHeader,
+} from "@/components/list-section";
 import { DocumentsGlyph } from "@/components/more/more-glyphs";
 import { SearchGlyph } from "@/components/search-glyph";
 import {
   EmptyState,
   ErrorState,
-  SkeletonLines,
+  SkeletonRegion,
 } from "@/components/state-block";
 import {
   selectDocumentFolders,
@@ -153,8 +158,18 @@ export default function DocumentsScreen() {
   }
 
   function renderList() {
-    if (documentsQuery.isPending)
-      return <SkeletonLines lines={4} tone="list" />;
+    if (documentsQuery.isPending) {
+      // Document rows in the list's own section: a title and its meta line.
+      return (
+        <SkeletonRegion label="Loading documents">
+          <ListSection>
+            {Array.from({ length: 4 }, (_, index) => (
+              <ListRowSkeleton key={index} index={index} description />
+            ))}
+          </ListSection>
+        </SkeletonRegion>
+      );
+    }
     if (documentsQuery.isError) {
       return (
         <ErrorState

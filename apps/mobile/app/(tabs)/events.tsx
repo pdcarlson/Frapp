@@ -10,7 +10,9 @@ import {
   EmptyState,
   ErrorState,
   NoChapterState,
-  SkeletonLines,
+  SkeletonBlock,
+  SkeletonRegion,
+  SkeletonText,
 } from "@/components/state-block";
 import { AccentChip, StatusChip } from "@/components/status-chip";
 import { AskSheet } from "@/components/ask/ask-sheet";
@@ -71,8 +73,7 @@ export default function EventsScreen() {
     // showed its loading state forever.
     if (!chapterId) return <NoChapterState noun="events" />;
 
-    // The tile stands in for the row's date block.
-    if (eventsQuery.isPending) return <SkeletonLines lines={2} showTile />;
+    if (eventsQuery.isPending) return <EventListSkeleton />;
 
     if (eventsQuery.isError) {
       // Explicit retry for the same reason Chat home carries one: this is a
@@ -196,8 +197,56 @@ function EventRowCard({
   );
 }
 
+/** Event name widths, cycled, so the placeholder cards don't read as a grid. */
+const SKELETON_NAME_WIDTHS = ["62%", "48%", "56%"] as const;
+
+/**
+ * The list's loading state: event cards on {@link EventRowCard}'s own styles,
+ * with the date block's two lines in its 52pt column, the name and the meta
+ * line beside it, and a chip where the points land. The real cards replace
+ * them in place.
+ */
+function EventListSkeleton({ cards = 3 }: { cards?: number }) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens, accent);
+  const { caption, headline, title } = tokens.typography.role;
+
+  return (
+    <SkeletonRegion label="Loading events" style={styles.skeletonList}>
+      {Array.from({ length: cards }, (_, index) => (
+        <View key={index} style={styles.card}>
+          <View style={styles.dateBlock}>
+            <SkeletonText role={caption} width="70%" />
+            <SkeletonText role={headline} width="50%" />
+          </View>
+          <View style={styles.body}>
+            <SkeletonText
+              role={title}
+              width={SKELETON_NAME_WIDTHS[index % SKELETON_NAME_WIDTHS.length]!}
+            />
+            <SkeletonText role={caption} width="40%" />
+            {index === 0 ? (
+              <View style={styles.footer}>
+                <SkeletonBlock
+                  width={tokens.spacing["3xl"]}
+                  height={tokens.spacing.xl}
+                />
+              </View>
+            ) : null}
+          </View>
+        </View>
+      ))}
+    </SkeletonRegion>
+  );
+}
+
 function createStyles(tokens: SignetTokens, accent: string) {
   return StyleSheet.create({
+    // `ScreenShell`'s gap, which spaces the real cards.
+    skeletonList: {
+      gap: tokens.spacing.md,
+    },
     card: {
       flexDirection: "row",
       gap: tokens.spacing.md,
