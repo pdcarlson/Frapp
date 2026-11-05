@@ -25,28 +25,17 @@ const scroll = (y: number) =>
   >;
 
 /**
- * The thread's rows, newest first as the inverted list draws it, a second
- * apart. A key ending in `*` is the viewer's own message (unconfirmed, or
- * confirmed from any device), and one ending in `~` is drawn with nothing to
- * read (a blocked member's tombstone, or a deleted message).
+ * The thread's rows, newest first as the inverted list draws it. A key ending
+ * in `*` is the viewer's own message (unconfirmed, or confirmed from any
+ * device), and one ending in `~` is drawn with nothing to read (a blocked
+ * member's tombstone, or a deleted message).
  */
 const rows = (...ids: string[]): LatestRow[] =>
-  ids.map((id, index) => {
+  ids.map((id) => {
     const own = id.endsWith("*");
     const silent = id.endsWith("~");
-    return {
-      id: own || silent ? id.slice(0, -1) : id,
-      own,
-      silent,
-      createdAt: (ids.length - index) * 1000,
-    };
+    return { id: own || silent ? id.slice(0, -1) : id, own, silent };
   });
-
-/** One row at an explicit time, in seconds; `rows`' markers apply. */
-const at = (id: string, seconds: number): LatestRow => ({
-  ...rows(id)[0]!,
-  createdAt: seconds * 1000,
-});
 
 /** Messages 1..n, newest first. */
 const thread = (n: number) =>
@@ -121,25 +110,17 @@ describe("useJumpToLatest", () => {
   // from someone else can then sit below the newest row, and neither the
   // newest row nor the timestamp they left at says anything arrived.
   it("notices an arrival behind the newest row after the reader's own message re-sorts", () => {
-    // Sent on a clock 60s ahead: drawn newest at its device time.
-    const { result, rerender } = setup([
-      at("own*", 90),
-      at("c-2", 30),
-      at("c-1", 0),
-    ]);
+    // Sent on a clock ahead of the server's: drawn newest at its device time.
+    const { result, rerender } = setup(rows("own*", "c-2", "c-1"));
     act(() => result.current.onScroll(scroll(FOLLOW_ARRIVALS_WITHIN + 1)));
 
     // Confirmed, and re-sorted behind c-2 by its server time: nothing new.
-    rerender({
-      rows: [at("c-2", 30), at("own*", 10), at("c-1", 0)],
-      channelKey: "chan-1",
-    });
+    rerender({ rows: rows("c-2", "own*", "c-1"), channelKey: "chan-1" });
     expect(result.current.hasNewBelow).toBe(false);
 
-    // Someone else's message lands in the skew window, below the newest row,
-    // stamped a little before it (a write that ran long).
+    // Someone else's message lands in the skew window, below the newest row.
     rerender({
-      rows: [at("c-2", 30), at("c-3", 20), at("own*", 10), at("c-1", 0)],
+      rows: rows("c-2", "c-3", "own*", "c-1"),
       channelKey: "chan-1",
     });
     expect(result.current.hasNewBelow).toBe(true);
@@ -181,22 +162,14 @@ describe("useJumpToLatest", () => {
     const { result, rerender } = setup(thread(3));
     act(() => result.current.onScroll(scroll(VIEWPORT * 2)));
 
-    // Pending, then confirmed under the same key at the server's time.
-    rerender({
-      rows: [at("mine*", 9), ...thread(3)],
-      channelKey: "chan-1",
-    });
-    expect(result.current.hasNewBelow).toBe(false);
-    rerender({
-      rows: [at("mine*", 4), ...thread(3)],
-      channelKey: "chan-1",
-    });
+    // Pending, then confirmed under the same key.
+    rerender({ rows: [...rows("mine*"), ...thread(3)], channelKey: "chan-1" });
     expect(result.current.hasNewBelow).toBe(false);
     expect(result.current.showsJump).toBe(true);
 
     // And someone else's reply after it still says so.
     rerender({
-      rows: [at("c-4", 5), at("mine*", 4), ...thread(3)],
+      rows: [...rows("c-4", "mine*"), ...thread(3)],
       channelKey: "chan-1",
     });
     expect(result.current.hasNewBelow).toBe(true);
@@ -215,35 +188,35 @@ describe("useJumpToLatest", () => {
     expect(result.current.hasNewBelow).toBe(false);
   });
 
-  // A row the thread held (the block list was still loading) is released
-  // between rows the reader had already seen. It is history coming into view.
-  it("does not count an older row that comes into view mid-history as news", () => {
-    const { result, rerender } = setup([
-      at("c-3", 300),
-      at("c-2", 200),
-      at("c-1", 100),
-    ]);
+  // On reconnect the realtime manager resubscribes before it backfills, so a
+  // live message can be on screen, and seen, before the ones posted during
+  // the outage are merged in beneath it at their own times. They are real
+  // messages the reader hasn't seen.
+  it("counts messages backfilled under a newer one the reader already saw", () => {
+    // The live row arrives while the reader is at the newest message.
+    const { result, rerender } = setup(rows("live", "c-2", "c-1"));
     act(() => result.current.onScroll(scroll(VIEWPORT * 2)));
+    expect(result.current.hasNewBelow).toBe(false);
 
     rerender({
-      rows: [at("c-3", 300), at("c-2", 200), at("h-1", 150), at("c-1", 100)],
+      rows: rows("live", "b-2", "b-1", "c-2", "c-1"),
       channelKey: "chan-1",
     });
-    expect(result.current.hasNewBelow).toBe(false);
+    expect(result.current.hasNewBelow).toBe(true);
+    expect(result.current.showsJump).toBe(true);
   });
 
-  // The same release, of a row newer than anything from anyone else the
-  // reader had seen: only their own message sat above it. That is news.
-  it("counts a released row newer than the last message from anyone else they saw", () => {
-    const { result, rerender } = setup([
-      at("m-2*", 400),
-      at("c-2", 200),
-      at("c-1", 100),
-    ]);
+  // A row the thread held (the block list was still loading) is released
+  // between rows the reader had already seen. Telling it from a backfilled
+  // message would take its age, and an age cutoff hides backfills (above),
+  // so it lights the dot: one offer of a jump to the newest, which they can
+  // ignore.
+  it("counts an older row that comes into view mid-history", () => {
+    const { result, rerender } = setup(thread(3));
     act(() => result.current.onScroll(scroll(VIEWPORT * 2)));
 
     rerender({
-      rows: [at("m-2*", 400), at("h-1", 300), at("c-2", 200), at("c-1", 100)],
+      rows: rows("c-3", "c-2", "h-1", "c-1"),
       channelKey: "chan-1",
     });
     expect(result.current.hasNewBelow).toBe(true);

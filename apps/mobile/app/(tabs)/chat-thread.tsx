@@ -180,6 +180,7 @@ export default function ChatThreadScreen() {
     viewerId,
     canSend,
     send,
+    sendInFlight,
     edit,
     remove,
     react,
@@ -459,7 +460,6 @@ export default function ChatThreadScreen() {
           message._status !== "confirmed" ||
           (viewerId !== null && message.sender_id === viewerId),
         silent: visibility === "tombstone" || message.is_deleted,
-        createdAt: Date.parse(message.created_at),
       })),
     [inverted, viewerId],
   );
@@ -513,9 +513,10 @@ export default function ChatThreadScreen() {
   // whichever channel was on screen. Nothing runs when the send settles, so a
   // switch in between can't scroll the next channel. A send that then queues
   // nothing (the outbox write failed) has cost them a jump they asked for by
-  // tapping Send, and its hint below says why nothing went. An edit, a second
-  // tap while a staged reply is still on its way, and an empty draft don't
-  // move them at all: an edit's message is the one they were reading.
+  // tapping Send, and its hint below says why nothing went. An edit, a tap
+  // while an earlier send is still on its way (which `send` would refuse), and
+  // an empty draft don't move them at all: an edit's message is the one they
+  // were reading.
   const followSend = useCallback(
     () => jumpToLatest({ animated: false }),
     [jumpToLatest],
@@ -533,6 +534,7 @@ export default function ChatThreadScreen() {
     setDraft: handleChangeText,
     hasAttachments: attachments.length > 0,
     send,
+    sendInFlight,
     edit,
     onSending: followSend,
   });
@@ -1020,8 +1022,8 @@ export default function ChatThreadScreen() {
                   // that tap on dismissing the keyboard. Dragging the thread
                   // puts the keyboard away, as every messenger does, and so
                   // does a tap on a plain message (`MessageRowFrame`). A tap
-                  // on a card's body doesn't yet: the card's own long-press
-                  // Pressable takes it first.
+                  // on a card's body doesn't (#3461): the card's own
+                  // long-press Pressable takes it first.
                   // `on-drag` rather than iOS's `interactive`, on both: the
                   // avoiding view under the composer follows keyboard frame
                   // events, which an interactive drag only sends at its end,

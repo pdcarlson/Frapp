@@ -244,8 +244,9 @@ export function groupReactions(
  *
  * A plain tap on the row puts the keyboard away. On a card row that holds
  * only for the gutter, avatar and author line: a tap on the card's body
- * doesn't, yet, because the card wraps its body in a long-press `Pressable` of
- * its own (`ChatCardShell`), which takes the tap before this one sees it.
+ * doesn't (#3461), because the card wraps its body in a long-press
+ * `Pressable` of its own (`ChatCardShell`), which takes the tap before this
+ * one sees it.
  */
 export function MessageRowFrame({
   message,
@@ -298,7 +299,7 @@ export function MessageRowFrame({
       // put the keyboard away. The row has no tap action of its own; its
       // controls (chips, links, photos, Retry) claim their own taps first,
       // and so does a card's own Pressable, so a tap on a card's body leaves
-      // the keyboard up for now (see above).
+      // the keyboard up (#3461, see above).
       onPress={Keyboard.dismiss}
       disabled={!onOpenActions}
       style={[styles.row, startsRun ? styles.rowStartsRun : styles.rowFollows]}

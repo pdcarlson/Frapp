@@ -19,8 +19,9 @@
  *
  * **A reply the send never took stays staged.** The strip clears as the send
  * goes out, as web's does, and comes back when `send` reports it did not
- * dispatch (an earlier send still in flight, or an outbox that refused the
- * row), so the words the member gets back are still a reply. A second tap on
+ * dispatch (an outbox that refused the row), so the words the member gets
+ * back are still a reply. A tap while an earlier send is still in flight
+ * never takes the strip down, since `send` would refuse it. A second tap on
  * the same staged reply, inside one render, is a duplicate of the send already
  * carrying it: it neither sends nor puts the reply back.
  *
@@ -117,13 +118,19 @@ export interface ComposerStagingInput {
    * belongs to the tap waits on it.
    */
   send: (content: string, options?: SendOptions) => Promise<boolean>;
+  /**
+   * Whether `send` would refuse a message now because an earlier one is still
+   * in flight (`UseChatChannelResult.sendInFlight`), read on the tap.
+   */
+  sendInFlight: () => boolean;
   edit: (messageId: string, content: string) => Promise<void>;
   /**
    * Runs on the tap, synchronously, once `submit` has decided a message goes
    * out and just before it hands that message to `send`: not for an edit, a
-   * resubmit while the staged reply is still in flight, or a draft with
-   * nothing in it. So the thread can follow a send at once, rather than a
-   * network round-trip later and possibly in another channel.
+   * tap while an earlier send is still in flight (a second tap inside one
+   * render included), or a draft with nothing in it. So the thread can follow
+   * a send at once, rather than a network round-trip later and possibly in
+   * another channel.
    */
   onSending?: () => void;
 }
@@ -177,6 +184,7 @@ export function useComposerStaging({
   setDraft,
   hasAttachments,
   send,
+  sendInFlight,
   edit,
   onSending,
 }: ComposerStagingInput): ComposerStaging {
@@ -370,6 +378,11 @@ export function useComposerStaging({
     // lets `onSending` run on the tap only for a message that goes out. The
     // composer already greys Send out on an empty draft; this is the belt.
     if (!channelId || (!draft.trim() && !hasAttachments)) return;
+    // An earlier send still out (a slow POST): `send` refuses this one at its
+    // re-entry guard, so jumping would move the reader for nothing. That guard
+    // is claimed as `send` is called, so a second tap inside the same render
+    // stops here too, and the jump runs once per message that goes out.
+    if (sendInFlight()) return;
     if (staged) {
       replyInFlightRef.current = staged;
       setReplies((current) => withoutKey(current, staged.channelId));
@@ -399,6 +412,7 @@ export function useComposerStaging({
     hasAttachments,
     onSending,
     send,
+    sendInFlight,
   ]);
 
   // An edit emptied of the text it had can't be saved, and the composer greys

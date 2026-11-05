@@ -174,6 +174,7 @@ function channelState(
     viewerId: VIEWER,
     canSend: true,
     send: vi.fn(async () => true),
+    sendInFlight: () => false,
     edit: vi.fn(async () => {}),
     remove: vi.fn(async () => {}),
     react: vi.fn(async () => {}),
@@ -1052,10 +1053,19 @@ describe("chat thread jump to latest", () => {
   /** A send the test settles itself, as a slow POST holds it open. */
   function heldSend() {
     const held: { settle: (queued: boolean) => void } = { settle: () => {} };
-    const send = vi.fn(
-      () => new Promise<boolean>((resolve) => (held.settle = resolve)),
-    );
-    return { send, held };
+    // As the channel hook's: claimed as `send` is called, before it awaits,
+    // and released when it settles.
+    let inFlight = false;
+    const send = vi.fn(() => {
+      inFlight = true;
+      return new Promise<boolean>((resolve) => {
+        held.settle = (queued) => {
+          inFlight = false;
+          resolve(queued);
+        };
+      });
+    });
+    return { send, sendInFlight: () => inFlight, held };
   }
 
   // Online, `send` settles only once the server has answered, so the jump
@@ -1117,6 +1127,55 @@ describe("chat thread jump to latest", () => {
       held.settle(true);
       await Promise.resolve();
     });
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  // `send` refuses a message while an earlier one is out (a slow POST), so a
+  // jump then would move the reader with nothing on its way.
+  it("leaves the reader where they are for a Send tap while an earlier send is still out", async () => {
+    const { send, sendInFlight, held } = heldSend();
+    channel = channelState({ draft: "first", send, sendInFlight });
+    const scrollToOffset = vi.fn();
+    const tree = renderMeasured(scrollToOffset);
+    scrollTo(tree, 1200);
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+
+    // Back up the thread, with the next message typed, before the POST answers.
+    scrollTo(tree, 1200);
+    channel = { ...channel, draft: "second" };
+    rerender(tree);
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+    expect(jumpButtons(tree)).toHaveLength(1);
+
+    // Once it answers, the next tap sends and jumps.
+    await act(async () => {
+      held.settle(true);
+      await Promise.resolve();
+    });
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(scrollToOffset).toHaveBeenCalledTimes(2);
+    act(() => tree.unmount());
+  });
+
+  it("moves the reader once for a double tap on Send", () => {
+    const { send, sendInFlight } = heldSend();
+    channel = channelState({ draft: "on my way", send, sendInFlight });
+    const scrollToOffset = vi.fn();
+    const tree = renderMeasured(scrollToOffset);
+    scrollTo(tree, 1200);
+
+    act(() => {
+      // One render: the second tap reads the same draft.
+      const composer = tree.root.findByType(ChatComposer);
+      composer.props.onSend();
+      composer.props.onSend();
+    });
+    expect(send).toHaveBeenCalledTimes(1);
     expect(scrollToOffset).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });

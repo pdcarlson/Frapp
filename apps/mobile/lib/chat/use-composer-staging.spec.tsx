@@ -73,6 +73,7 @@ function setup(overrides: Partial<ComposerStagingInput> = {}) {
     setDraft: vi.fn(),
     hasAttachments: false,
     send: vi.fn().mockResolvedValue(true),
+    sendInFlight: () => false,
     edit: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -249,6 +250,66 @@ describe("useComposerStaging — onSending", () => {
       await Promise.resolve();
     });
     expect(onSending).toHaveBeenCalledTimes(1);
+  });
+
+  // `send` refuses a message while an earlier one is out, and claims that
+  // guard as it is called, so `sendInFlight` already holds for a second tap
+  // inside the same render.
+  function heldSend() {
+    let inFlight = false;
+    let settle!: (queued: boolean) => void;
+    const send = vi.fn(() => {
+      inFlight = true;
+      return new Promise<boolean>((resolve) => {
+        settle = (queued) => {
+          inFlight = false;
+          resolve(queued);
+        };
+      });
+    });
+    return { send, sendInFlight: () => inFlight, settle: (q: boolean) => settle(q) };
+  }
+
+  it("does not run while an earlier send is still in flight, and does once it settles", async () => {
+    const { send, sendInFlight, settle } = heldSend();
+    const onSending = vi.fn();
+    const { result, rerender, input } = setup({ onSending, send, sendInFlight });
+    act(() => result.current.submit());
+    expect(onSending).toHaveBeenCalledTimes(1);
+
+    rerender({ ...input, draft: "the next one" });
+    act(() => result.current.submit());
+    expect(onSending).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      settle(true);
+      await Promise.resolve();
+    });
+    act(() => result.current.submit());
+    expect(onSending).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenLastCalledWith("the next one", { replyToId: null });
+  });
+
+  it("runs once for a double tap inside one render", () => {
+    const { send, sendInFlight } = heldSend();
+    const onSending = vi.fn();
+    const { result } = setup({ onSending, send, sendInFlight });
+    act(() => {
+      result.current.submit();
+      result.current.submit();
+    });
+    expect(onSending).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not run with no channel open", () => {
+    const onSending = vi.fn();
+    const send = vi.fn().mockResolvedValue(false);
+    const { result } = setup({ onSending, send, channelId: null });
+    act(() => result.current.submit());
+    expect(onSending).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("does not run for an edit", async () => {

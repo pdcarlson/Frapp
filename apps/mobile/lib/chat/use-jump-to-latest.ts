@@ -33,15 +33,6 @@ export interface LatestScrollableList {
 type Zone = "newest" | "near" | "away";
 
 /**
- * How much older than the newest message from someone else that the reader
- * had seen a row can be and still count as an arrival. The server stamps
- * `created_at` when the insert starts, so a message whose write ran long can
- * reach the reader just after a newer one; a row older than this is history
- * coming into view (a held row released once the block list loads), not news.
- */
-export const ARRIVAL_ORDER_SLACK_MS = 60_000;
-
-/**
  * One row of the thread, newest first as the inverted list draws it.
  */
 export interface LatestRow {
@@ -50,9 +41,7 @@ export interface LatestRow {
   /**
    * The viewer's own message: an unconfirmed send from this device, or one
    * of theirs the server has confirmed, from here or another device. Never
-   * news to them, and its time says nothing about what they had seen (the
-   * device clock until confirmed, then the server's, which for a message
-   * queued offline is later than everything backfilled from the outage).
+   * news to them.
    */
   own: boolean;
   /**
@@ -62,8 +51,6 @@ export interface LatestRow {
    * same reason (spec/behavior/chat § Read Receipts).
    */
   silent: boolean;
-  /** `created_at` in epoch ms; read only for rows that are not `own`. */
-  createdAt: number;
 }
 
 /** Where the reader is, per channel. */
@@ -99,12 +86,17 @@ interface ReadingState {
  *   have been reading is. An older page loads past that end. With none of
  *   the old rows left (an empty thread when they left), anything there now
  *   arrived.
- * - It is not older, by more than `ARRIVAL_ORDER_SLACK_MS`, than the newest
- *   message from someone else they had seen, read at its time now. A row
- *   from the middle of history that comes into view is not news. Their own
- *   messages are left out of that measure (see `LatestRow.own`); with none
- *   from anyone else, nothing bounds it.
  * - It is someone else's and has something to read (`own`, `silent`).
+ *
+ * Where it sits among the rows they saw, and how old it is, don't matter.
+ * The cache fills gaps under rows the reader has already seen: on reconnect
+ * the realtime manager resubscribes before its REST backfill, so a live
+ * message can be on screen before the ones posted during the outage are
+ * merged in beneath it at their own times. Those are real messages the
+ * reader hasn't seen, and missing one is worse than the other mistake this
+ * rule allows: an older row released mid-history (a held row, once the
+ * block list loads) lights the dot too, which costs one jump offer they can
+ * ignore, since the jump only ever goes to the newest message.
  */
 function arrivedSince(
   rows: readonly LatestRow[],
@@ -112,20 +104,15 @@ function arrivedSince(
 ): boolean {
   if (seen === null) return false;
   let oldestSeen = rows.length;
-  let newestSeenTime = Number.NEGATIVE_INFINITY;
   for (let index = rows.length - 1; index >= 0; index -= 1) {
-    const row = rows[index]!;
-    if (!seen.has(row.id)) continue;
-    if (oldestSeen === rows.length) oldestSeen = index;
-    if (!row.own && row.createdAt > newestSeenTime)
-      newestSeenTime = row.createdAt;
+    if (seen.has(rows[index]!.id)) {
+      oldestSeen = index;
+      break;
+    }
   }
-  const notBefore = newestSeenTime - ARRIVAL_ORDER_SLACK_MS;
   for (let index = 0; index < oldestSeen; index += 1) {
     const row = rows[index]!;
-    if (row.own || row.silent || seen.has(row.id)) continue;
-    // Negated, so a time that didn't parse counts rather than hides news.
-    if (!(row.createdAt < notBefore)) return true;
+    if (!row.own && !row.silent && !seen.has(row.id)) return true;
   }
   return false;
 }
