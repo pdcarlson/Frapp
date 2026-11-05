@@ -24,6 +24,8 @@ Colors below are given by **token role** (`accent-N` per [accent-engine.md](acce
 
 ## 2. Shared rules
 
+- **Every control height in this file is a step of [foundations.md](foundations.md) §9's control size scale**, which owns the numbers; a section names its step. *(Added 2026-11-05.)* The scale's Small step (36) is not §3's Compact button (34, web app bar only).
+
 - **Touch targets MUST be ≥ 44px** on touch surfaces. Compact 34px controls (§7) are web/pointer-only.
 - **No drop shadows.** Elevation is a lighter surface fill ([foundations.md](foundations.md)).
 - **No pill shapes** except the toggle track (§4) and the proportion meter (§12). The "Ask pill" is a rounded rectangle, not a capsule.
@@ -48,7 +50,7 @@ Colors below are given by **token role** (`accent-N` per [accent-engine.md](acce
 
 - **Semantic colors are status-only** (success `#3fb950`, warning `#e5a000`, danger `#f85149`, info `#2f81f7`) — never decorative.
 - **No component references the chapter hex.** Every accent role resolves through the generated scale ([accent-engine.md](accent-engine.md) §1; §8 says which roles are contrast-gated).
-- Undrawn primitives (select, radio, dropdown menu, popover) MUST compose from the same tokens: elevated `#2A2621` fill, hairline border, radius 12, `accent-8` ring.
+- Undrawn primitives (select, radio, dropdown menu, popover) MUST compose from the same tokens: elevated `#2A2621` fill, hairline border, radius 12, `accent-8` ring. A row inside a menu or select is the Row step, 32px with a 14px label to a fine pointer, and 44px with a 16px label to a coarse one (added 2026-11-05: at 44/16 everywhere, a two-item chapter menu stood taller than the sidebar block it opens from, which the owner called out).
 - **A hairline's alpha is not a free parameter.** `--border` is `rgba(255,255,255,.08)` and a diluted `border-border/70` composites to 1.169:1 on `--card` against the token's 1.253:1. Neither clears §6's 3:1 non-text floor and at this ladder neither can, which is exactly why the remaining margin is not available to spend: once elevation is ~1.12:1 the hairline is the only edge there is. Five Chapter Ops row lists had invented that value; [README.md](README.md) §3 rule 4 already bans one-offing a token value at the call site, and this is what it costs.
 - **The chat thread is `--background`, and a card in it is `--card`.** The web dashboard's chat panes are `--background` for the thread and `--surface-1` for the rails, and a hovered message row fills `--surface-1` (§11). A card posted into the thread (poll, task, event) is `--card` with a hairline, and there **the hairline is load-bearing**: one ladder step is ~1.12:1 and the composited hairline reaches ~1.4:1, both under the 3:1 non-text floor, so a card that drops its border is delineated by 1.12:1 and effectively has no edge. *(Corrected 2026-09-29: this rule was written for the incoming chat bubble, which painted `--card` with a hairline, so wrapping the thread in a card made the bubble `#211E1A` on `#211E1A`. The compact layout ([#2873](https://github.com/pdcarlson/Frapp/issues/2873)) removed the bubble; the reasoning carries over to the cards.)*
 - **A highlighted row inside one of those primitives takes `--card-hover`, never a surface step and never the accent tint** (changed 2026-11-05, owner's call; [foundations.md](foundations.md) §6, "Where the accent goes"). The elevated fill above is the *top* of the surface ladder ([foundations.md](foundations.md) §2), so there is no ladder step above it to highlight with. The ShadCN scaffold's `--accent` held that same `#2A2621`, so a menu that highlighted with it painted the hovered row in its own background. It and `--secondary` (an alias of `--card`) are deleted ([#3036](https://github.com/pdcarlson/Frapp/issues/3036)), along with their `-foreground` pairs and the Tailwind `secondary` and `accent` colour keys. [`apps/web/components/shared/elevation-call-sites.spec.ts`](../../../apps/web/components/shared/elevation-call-sites.spec.ts) still bans both names across the two Next apps, because with the variables gone `hover:bg-accent` compiles to nothing, which is the silent no-colour failure of [#1145](https://github.com/pdcarlson/Frapp/issues/1145). It scans each spelling its fixtures list (utilities, `var()` reads, Tailwind shorthands, config keys, `theme()`). A rest fill names its ladder step instead, and a hover takes a state above it. `--card-hover` is that state: it sits above every ladder step (1.199:1 on `--popover`, 1.324:1 on `--card`, §3), so hover and keyboard highlight inside menus, command palettes, selects, tables and lists all take it, with `--foreground` text. Until 2026-11-05 they took the §5 accent-tint recipe (`accent-3` fill, `accent-11` text), which separated by hue rather than luminance and lit every hovered row in the chapter color.
@@ -87,9 +89,11 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 | Size | Height | Radius | Label | Use |
 | ---- | ------ | ------ | ----- | --- |
-| Default | 46–48px | 12 | 15px | standalone actions, forms, sheet primary |
-| Inline | 44px | 12 | 14.5px | action rows inside cards |
+| Default | Field: 40 to a mouse, 44 on touch; on mobile a full-width sheet or flow primary is Primary, 48 | 12 | 15px | standalone actions, forms, sheet primary |
+| Inline | Small: 36 to a mouse, 44 on touch | 12 | 14.5px | action rows inside cards |
 | Compact | 34px | 10 | 13.5px | web app bar only (pointer) |
+
+**Web takes the dense heights on a mouse** (added 2026-11-05). To a fine pointer the Default button is 40 and the Inline and icon ones 36, and `pointer-coarse` gives all three 44, so the touch floor (§2) holds wherever a finger lands. At 48 a form's inputs and Save buttons stood well above the 34px sidebar rows beside them, and the owner called the whole Settings page oversized. Mobile is touch-only: its Default is 44 (`touch.button`, 46 until this change) and its full-width sheet CTA 48 (`touch.buttonLarge`; the board draws 50). Implementation: Button's `default`, `sm` and `icon` sizes.
 
 **Web's toolbar row takes Compact on a mouse** (added 2026-11-05). A dashboard route's one toolbar row (the `PageActions` row, filters, search) is 36px to a fine pointer and 44px to a coarse one: Button's `toolbar` size, and `dashboardFilterSelectClassName` / `dashboardToolbarSearchClassName` in `apps/web/components/shared/table-controls.ts`. That is the same rule the dense list rows under it follow ([`../web-dashboard/README.md` § Page grammar](../web-dashboard/README.md#page-grammar)), rounded onto the 4px grid, and §2's carve-out keeps the touch floor. At the Default 48 a route's primary action stood taller than the toolbar row it sits in and every row it acts on, which is the hierarchy the owner called off on every page (2026-11-04). Forms, dialogs and sheets keep Default.
 
@@ -97,7 +101,7 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 ## 4. Inputs and selection
 
-**Dashboard filter toolbars take the toolbar height, not the default field height (48).** The toolbar height is 36 to a mouse and 44 to a finger (§3, corrected 2026-11-05; it was the Inline 44 on both, and the paragraph below is the reasoning for matching the row, which still holds). That is a carve-out for filter chrome specifically, and reading it as "the height for a native `<select>`" reproduces the same defect one context over — the event editor put two filter-height selects in a `sm:grid-cols-2` beside 48px `Input`s, so a *form* row rendered at two heights. `apps/web/components/shared/table-controls.ts` therefore writes the paint once and exports two heights, `dashboardFilterSelectClassName` (the toolbar height) and `dashboardFormSelectClassName` (48). A filter row is secondary chrome sitting above the thing it filters, and mixing §4's 48px field with §3's 44px Inline button in one row renders two visibly different heights — which is what `/members`, `/events`, `/polls` and `/roles` all did. On a coarse pointer the row is 44, the touch floor (§2), so nothing a finger hits goes under it; a select in a dialog or form is a field and takes `dashboardFormSelectClassName`. This settles the second half of #1187 once rather than per family: the Directory & Finance slice applies it to its own screens, and each remaining #920 slice applies it to theirs.
+**Dashboard filter toolbars take the toolbar height, not the default field height (40 to a mouse, 44 to a finger).** The toolbar height is 36 to a mouse and 44 to a finger (§3, corrected 2026-11-05; it was the Inline 44 on both, and the paragraph below is the reasoning for matching the row, which still holds). That is a carve-out for filter chrome specifically, and reading it as "the height for a native `<select>`" reproduces the same defect one context over — the event editor put two filter-height selects in a `sm:grid-cols-2` beside 48px `Input`s, so a *form* row rendered at two heights. `apps/web/components/shared/table-controls.ts` therefore writes the paint once and exports two heights, `dashboardFilterSelectClassName` (the toolbar height) and `dashboardFormSelectClassName` (the field height). A filter row is secondary chrome sitting above the thing it filters, and mixing §4's 48px field with §3's 44px Inline button in one row renders two visibly different heights — which is what `/members`, `/events`, `/polls` and `/roles` all did. On a coarse pointer the row is 44, the touch floor (§2), so nothing a finger hits goes under it; a select in a dialog or form is a field and takes `dashboardFormSelectClassName`. This settles the second half of #1187 once rather than per family: the Directory & Finance slice applies it to its own screens, and each remaining #920 slice applies it to theirs.
 
 ### Text input
 
@@ -108,21 +112,21 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 | Error | surface `#1A1A1A` | 1px `#f85149` + 3px ring danger @ ~25% | caption 12.5 `#f85149` below |
 | Disabled | surface `#1A1A1A` | 1px `rgba(255,255,255,.08)` | `#57534C` |
 
-Default height 48px, radius 12, padding-x 14, text 15.5px. The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#131211` inside the surface-level app bar). The web top bar's Find field is the named exception: it shares the bar's surface (§7). *(Exception added 2026-11-05.)*
+The Field step: 40px to a fine pointer and 44px on touch, padding-x 12 at both, radius 12 (corrected 2026-11-05 from 48px and padding-x 14 everywhere, with §3's button heights, for the same reason). A multi-line field (`Textarea`) takes the same padding and grows. A web sheet's fields sit one step down, at Small. The value stays 16px at either height, the body floor ([foundations.md](foundations.md) §7). The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#131211` inside the surface-level app bar). The web top bar's Find field is the named exception: it shares the bar's surface (§7). *(Exception added 2026-11-05.)*
 
 In the Error state the caption MUST be wired to the field, not merely placed under it: `aria-describedby` on the input references the caption's id, and `aria-invalid` marks the input while the error stands.
 
 ### Checkbox
 
-24×24px, radius 7. Unchecked: transparent fill, 1.5px border `rgba(255,255,255,.25)`. Checked: fill `accent-9`, check glyph in `accent-contrast` at 2.2px stroke, round caps/joins. The row hit area MUST be ≥ 44px.
+20×20px with radius 6 to a fine pointer, 24×24px with radius 7 on touch (the smaller box added 2026-11-05). Unchecked: transparent fill, 1.5px border `rgba(255,255,255,.25)`. Checked: fill `accent-9`, check glyph in `accent-contrast` at 2.2px stroke, round caps/joins. The row hit area MUST be ≥ 44px on touch. A checkbox row in a form (a role list, a channel list) is the Row step: flush, no border of its own, an `accent-3` hover, 32px to a mouse and 44 on touch.
 
 ### Toggle
 
-Track 50×30px, full-round — one of the two sanctioned pills (the other is the §12 meter; [foundations.md](foundations.md) §8 holds the list). On: track `accent-9`, thumb 24px `accent-contrast`, right. Off: track elevated `#2A2621` with 1px `rgba(255,255,255,.14)` border, thumb `#78716A`, left.
+Track 36×22px with an 18px thumb to a fine pointer (the board's `4c` toggle) and 50×30px with a 24px thumb on touch (two sizes since 2026-11-05, settling [#3057](https://github.com/pdcarlson/Frapp/issues/3057); 50×30 everywhere before), full-round — one of the two sanctioned pills (the other is the §12 meter; [foundations.md](foundations.md) §8 holds the list). On: track `accent-9`, thumb `accent-contrast`, right. Off: track elevated `#2A2621` with 1px `rgba(255,255,255,.14)` border, thumb `#78716A`, left.
 
 ## 5. Badges and chips
 
-Height 26–28px, radius 8–10, padding-x 10–12, text 12.5px / 600.
+The Chip step ([foundations.md](foundations.md) §9): height 24px on every pointer (26–28 until 2026-11-05), radius 8–10, padding-x 8, text 12.5px / 600. On touch a chip that is a control carries the 44px hit area through padding or `hitSlop`, not a taller fill. Mobile's filter chips draw 32 (s13 draws 34).
 
 | Kind | Fill | Border | Text | Use |
 | ---- | ---- | ------ | ---- | --- |
@@ -143,9 +147,9 @@ Height 26–28px, radius 8–10, padding-x 10–12, text 12.5px / 600.
 
 Underline style only — no segmented pill controls.
 
-- Row: 1px bottom hairline `rgba(255,255,255,.08)`; items gap 22px, padding 11px vertical.
-- Active: 15px / 600 `#EDEAE3`, 2px bottom underline `accent-9`.
-- Inactive: 15px / 400 `#78716A`; hover lifts text to `#A9A399`.
+- Row: 1px bottom hairline `rgba(255,255,255,.08)`; items gap 22px. An item is the Small step: 36px to a fine pointer, 44 on touch, set by a min-height so a caller's padding cannot push it past its row.
+- Active: 15px / 600 `#EDEAE3` (web: 14), 2px bottom underline `accent-9`.
+- Inactive: 15px / 400 `#78716A` (web: 14); hover lifts text to `#A9A399`.
 - On touch surfaces the item hit area MUST be ≥ 44px tall.
 
 ## 7. Navigation items (web)
@@ -188,7 +192,7 @@ There is no ⌘K. Cmd/Ctrl+F opens the Find dialog without being advertised: the
 
 - Fill card `#211E1A`, 1px border `rgba(255,255,255,.08)`, radius 16 (14 for dense/small cards), padding 16.
 - Title 16.5px / 700 `#EDEAE3`; metadata line 14.5px `#A9A399`; a trailing badge (§5) MAY sit in the title row.
-- Action rows use Inline buttons (44px, radius 12), gap 8, 13px above.
+- Action rows use Inline buttons (§3), gap 8, 13px above.
 - Cards never carry shadows; a raised card is a lighter surface ([foundations.md](foundations.md)).
 
 ## 9. Sheets and dialogs
@@ -199,8 +203,8 @@ There is no ⌘K. Cmd/Ctrl+F opens the Find dialog without being advertised: the
 - Grabber: 40×4.5px, full-round, `rgba(255,255,255,.18)`, centered, 10px from the top edge, 14px above the header.
 - Header row: title 19px / 700 `#EDEAE3`, "Cancel" text control 14.5px `#78716A` right-aligned — **where the reference draws one**. s19, s20, s21 and s23 do; **s17 does not**: its header is the ✦ glyph + "Ask Frapp" in gold with a trailing caption where Cancel would sit, and the grabber plus the scrim are the dismissal. Reference wins, so a Cancel MUST NOT be added there.
 - Scrim: `rgba(0,0,0,.55)` behind a presented sheet, fading in at the first detent and gone at dismissal. Mobile mechanics (`BottomSheetBackdrop`, snap points, sheet-aware scrollables): [patterns.md](../mobile/patterns.md).
-- Body: standard controls (§3–§4) at default sizes, padding-x 18.
-- Primary action: full-width Primary button, 48px, pinned last.
+- Body: standard controls (§3–§4) at their touch sizes, padding-x 18. A web sheet (the upload sheet) takes the Small step for its fields and footer buttons.
+- Primary action: full-width Primary button at the Primary step, 48px, pinned last (the board draws 50; rounded onto the scale 2026-11-05).
 - **Sheet chrome MUST NOT be styled through NativeWind** (locked ban) — grabber, container, and header use the platform styling path. Mobile usage patterns: [patterns.md](../mobile/patterns.md).
 
 ### Dialogs (web)

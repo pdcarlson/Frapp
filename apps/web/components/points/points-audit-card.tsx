@@ -44,7 +44,7 @@ type Category = PointCategory;
 
 /**
  * The Radix filter triggers at the toolbar height. `SelectTrigger` is a form
- * field at 48 by default; in this section's toolbar row it lines up with the
+ * field at 40 (44 to a finger) by default; in this section's toolbar row it lines up with the
  * buttons beside it instead.
  */
 const TOOLBAR_SELECT = `${dashboardToolbarHeightClassName} w-full text-sm sm:w-44`;
