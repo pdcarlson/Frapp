@@ -2782,6 +2782,32 @@ drop index if exists public.chat_channels_dm_pair_key;
 alter table public.chat_channels drop constraint if exists chat_channels_dm_two_members;
 ```
 
+## Rollback Discord import channel groups (20261105220000)
+
+* **Migration**: `20261105220000_discord_import_channel_groups.sql`
+
+Three nullable columns and two checks on `discord_import_channels`, a table `discord_import_created_categories` (RLS on, no policies), two functions, `delete_empty_discord_import_categories` and its check `discord_import_category_holds_anything`, and two partial indexes. The migration rewrites no row. What changes data is the API: `start` creates groups and records them, and the purge's group step deletes the empty ones an import made.
+
+**Revert the API code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API neither writes the columns or the table nor calls the function, so leaving them in place is safe. Groups an import already made stay as ordinary groups an officer can rename or delete in Chat admin, and their channels stay in them.
+
+**Keep the schema unless it is itself the problem.** To remove it anyway, do it in a later forward migration, not by hand, after the code revert has shipped:
+
+```sql
+drop function if exists public.delete_empty_discord_import_categories(uuid, uuid);
+drop function if exists public.discord_import_category_holds_anything(uuid);
+drop table if exists public.discord_import_created_categories;
+drop index if exists public.idx_chat_channels_category;
+drop index if exists public.idx_discord_import_channels_category;
+alter table public.discord_import_channels
+  drop constraint if exists discord_import_channels_group_name_length,
+  drop constraint if exists discord_import_channels_group_only_new,
+  drop column if exists new_channel_category_id,
+  drop column if exists discord_category_position,
+  drop column if exists new_channel_group;
+```
+
+Dropping the table loses the record of which groups each import made, so a later purge of those imports leaves their groups behind.
+
 ## Rollback default channel descriptions (20261105210000)
 
 * **Migration**: `20261105210000_default_channel_descriptions.sql`

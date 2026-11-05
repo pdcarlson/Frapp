@@ -261,14 +261,18 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
 
     // Category names are resolved from the same response rather than fetched:
     // a category IS a channel row, so the mapping is already in hand.
-    const categoryNames = new Map<string, string>();
+    // Its position too, so groups an import makes from the categories come in
+    // the order Discord shows them.
+    const categories = new Map<string, { name: string; position: number }>();
     for (const entry of raw) {
       const channel = asRecord(entry);
       if (!channel) continue;
       if (channel.type === ChannelType.GuildCategory) {
         const id = asString(channel.id);
         const name = asString(channel.name);
-        if (id && name) categoryNames.set(id, name);
+        const position =
+          typeof channel.position === 'number' ? channel.position : 0;
+        if (id && name) categories.set(id, { name, position });
       }
     }
 
@@ -341,7 +345,12 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
         id,
         name,
         guildId,
-        categoryName: parentId ? (categoryNames.get(parentId) ?? null) : null,
+        categoryName: parentId
+          ? (categories.get(parentId)?.name ?? null)
+          : null,
+        categoryPosition: parentId
+          ? (categories.get(parentId)?.position ?? null)
+          : null,
         parentChannelId: null,
         isThread: false,
         holdsOnlyThreads: threadParentOnly,
