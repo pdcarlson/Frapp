@@ -189,6 +189,17 @@ export function dueChip(
 }
 
 /**
+ * The open invoices, earliest due first — s11's OPEN list, and the order
+ * {@link selectNextDueInvoice} takes its first row from, so the list's top row
+ * is always the one "Pay now" settles.
+ */
+export function selectOpenInvoicesByDueDate(rows: InvoiceRow[]): InvoiceRow[] {
+  return [...selectOpenInvoices(rows)].sort((a, b) =>
+    a.dueDate.localeCompare(b.dueDate),
+  );
+}
+
+/**
  * The invoice a "Pay now" tap settles: a PaymentIntent is per invoice, so only
  * one can be paid at a time, and the earliest due date is the one that turns
  * overdue next.
@@ -198,11 +209,7 @@ export function dueChip(
  * rule are two chips naming different invoices the moment it changes.
  */
 export function selectNextDueInvoice(rows: InvoiceRow[]): InvoiceRow | null {
-  return (
-    [...selectOpenInvoices(rows)].sort((a, b) =>
-      a.dueDate.localeCompare(b.dueDate),
-    )[0] ?? null
-  );
+  return selectOpenInvoicesByDueDate(rows)[0] ?? null;
 }
 
 /**

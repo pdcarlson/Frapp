@@ -6,6 +6,19 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import { splitAmount, type DueState } from "@/lib/dues/invoices";
 
 /**
+ * One line about the member's last payment attempt, drawn in the card's
+ * caption slot under the CTA.
+ *
+ * Here rather than above the card: the screen used to insert these as a bare
+ * caption over everything, so the card, the CTA the member had just tapped
+ * and the whole list jumped down the moment a payment came back.
+ */
+export interface BalanceCardStatus {
+  text: string;
+  tone: "neutral" | "destructive";
+}
+
+/**
  * The balance card at the top of s11 — `canvas-screens.dc.html`, `id="s11"`.
  *
  * ## Two drawn elements are missing, on purpose
@@ -33,6 +46,16 @@ export interface BalanceCardProps {
   disabledReason: string | null;
   /** Context shown under an *enabled* CTA, e.g. which invoice it pays. */
   footnote: string | null;
+  /**
+   * A payment was captured and the server hasn't written PAID yet
+   * (`spec/behavior/billing.md`: the webhook is the source of truth). The CTA
+   * stays disabled as "Confirming payment…" and the chip reads Pending, so the
+   * member can't start a second payment for an invoice that is still OPEN,
+   * which the server would refuse with a 409 anyway.
+   */
+  isConfirming?: boolean;
+  /** Takes the caption slot ahead of the blocker and the footnote. */
+  status?: BalanceCardStatus | null;
   isPaying: boolean;
   onPay: () => void;
 }
@@ -44,6 +67,8 @@ export function BalanceCard({
   payLabel,
   disabledReason,
   footnote,
+  isConfirming = false,
+  status = null,
   isPaying,
   onPay,
 }: BalanceCardProps) {
@@ -56,16 +81,27 @@ export function BalanceCard({
     due?.state === "past-due"
       ? tokens.color.semantic.destructive
       : tokens.color.semantic.warning;
-  const disabled = isPaying || disabledReason !== null;
-  // The blocker wins over the context note: a member who cannot pay does not
-  // need to be told which invoice they cannot pay.
-  const caption = disabledReason ?? footnote;
+  const disabled = isPaying || isConfirming || disabledReason !== null;
+  // The last attempt's outcome wins, because it is what the member is waiting
+  // to read. Then the blocker over the context note: a member who cannot pay
+  // does not need to be told which invoice they cannot pay.
+  const caption = status?.text ?? disabledReason ?? footnote;
+  const captionIsFailure = status?.tone === "destructive";
+  const buttonLabel = isPaying
+    ? "Opening…"
+    : isConfirming
+      ? "Confirming payment…"
+      : payLabel;
 
   return (
     <View style={styles.card}>
       <View style={styles.metaRow}>
         <Text style={styles.label}>{label}</Text>
-        {due ? <StatusChip label={due.label} hue={chipHue} /> : null}
+        {isConfirming ? (
+          <StatusChip label="Pending" hue={tokens.color.semantic.warning} />
+        ) : due ? (
+          <StatusChip label={due.label} hue={chipHue} />
+        ) : null}
       </View>
 
       <Text
@@ -80,7 +116,7 @@ export function BalanceCard({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={payLabel}
-          accessibilityState={{ disabled, busy: isPaying }}
+          accessibilityState={{ disabled, busy: isPaying || isConfirming }}
           // §5 rule 4: disable and name the reason, never hide a recoverable
           // block — and the reason is wired to the control for a screen reader
           // rather than only sitting near it.
@@ -95,12 +131,24 @@ export function BalanceCard({
           ]}
         >
           <Text style={[styles.payLabel, { color: tokens.color.gold.onHouse }]}>
-            {isPaying ? "Opening…" : payLabel}
+            {buttonLabel}
           </Text>
         </Pressable>
       ) : null}
 
-      {caption ? <Text style={styles.reason}>{caption}</Text> : null}
+      {caption ? (
+        <Text
+          style={[
+            styles.reason,
+            captionIsFailure ? styles.reasonFailure : null,
+          ]}
+          // Read out on Android when a payment comes back: the line is the
+          // outcome the member is waiting for.
+          accessibilityLiveRegion={status ? "polite" : undefined}
+        >
+          {caption}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -163,6 +211,9 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
       textAlign: "center",
       marginTop: tokens.spacing.md,
+    },
+    reasonFailure: {
+      color: tokens.color.semantic.destructive,
     },
   });
 }

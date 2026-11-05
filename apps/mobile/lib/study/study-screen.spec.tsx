@@ -10,7 +10,13 @@ import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
-import { MODULE_OFF_COPY } from "@/lib/study/errors";
+import { MODULE_OFF_COPY, startErrorCopy } from "@/lib/study/errors";
+import { drawnText } from "@/test/screen-text";
+import { CardListSkeleton } from "@/components/card-list-skeleton";
+import { SkeletonLines } from "@/components/state-block";
+import { StartCard } from "@/components/study/start-card";
+import { SessionCard } from "@/components/study/session-card";
+import { ZonePickerSheet } from "@/components/study/zone-picker-sheet";
 
 /**
  * s10's refusal wiring (#2297, and the module gate #2393), rendered (#2416).
@@ -70,6 +76,17 @@ let chapter: unknown = HOURS_ON;
 /** The chapter query's `refetch`: a spec sets `chapter` from it to play the server's answer. */
 const refetchChapter = vi.fn();
 const ZONES = [{ id: "zone-1", name: "Library", is_active: true }];
+/** Sorted by name on arrival, so "Commons" is the first zone. */
+const TWO_ZONES = [
+  { id: "zone-1", name: "Library", is_active: true },
+  { id: "zone-2", name: "Commons", is_active: true },
+];
+/** What `useGeofences` answers with. */
+let zones: unknown[] = ZONES;
+/** Both reads still in flight, as on a cold open. */
+let isLoading = false;
+/** Only the sessions read in flight: zones can land first. */
+let sessionsLoading = false;
 const NO_SESSIONS: unknown[] = [];
 const LIVE_SESSION = [
   {
@@ -95,15 +112,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => ({ data: chapter, refetch: refetchChapter }),
   useGeofences: () => ({
-    data: ZONES,
-    isPending: false,
+    data: isLoading ? undefined : zones,
+    isPending: isLoading,
     isError: false,
     isFetching: false,
     refetch: vi.fn(),
   }),
   useStudySessions: () => ({
-    data: sessions,
-    isPending: false,
+    data: isLoading || sessionsLoading ? undefined : sessions,
+    isPending: isLoading || sessionsLoading,
     isError: false,
     isFetching: false,
     refetch: vi.fn().mockResolvedValue({ data: sessions }),
@@ -178,6 +195,9 @@ function appStateListener(): (state: string) => void {
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
   sessions = NO_SESSIONS;
+  zones = ZONES;
+  isLoading = false;
+  sessionsLoading = false;
   chapter = HOURS_ON;
   refetchChapter.mockReset().mockResolvedValue(undefined);
 });
@@ -682,5 +702,161 @@ describe("Study back row (#3022)", () => {
     const tree = render();
     expectBackRow(tree, "More", "/more");
     tree.unmount();
+  });
+});
+
+/** A finished session in `zoneId`, as the history list reads it. */
+function finished(id: string, zoneId: string, startTime: string) {
+  return {
+    id,
+    geofence_id: zoneId,
+    status: "COMPLETED",
+    start_time: startTime,
+    end_time: startTime,
+    total_foreground_minutes: 45,
+  };
+}
+
+/** The zone the Start card names, off its zone row's label. */
+const selectedZoneLabel = (tree: ReactTestRenderer) =>
+  tree.root.find(
+    (node) =>
+      node.type === ("Pressable" as never) &&
+      typeof node.props.accessibilityLabel === "string" &&
+      /study zone/i.test(node.props.accessibilityLabel),
+  ).props.accessibilityLabel as string;
+
+describe("Study's default zone", () => {
+  it("opens on the zone of the member's last session, with Start ready", () => {
+    // Waiting for a choice opened every two-zone chapter on "Pick a zone" over
+    // a disabled Start, the screen's one action dead on arrival.
+    zones = TWO_ZONES;
+    sessions = [
+      finished("s-new", "zone-1", "2026-09-27T10:00:00Z"),
+      finished("s-old", "zone-2", "2026-09-20T10:00:00Z"),
+    ];
+    const tree = render();
+
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Library");
+    expect(startButton(tree).props.disabled).toBe(false);
+    expect(screenText(tree)).not.toContain("Pick a zone");
+    act(() => tree.unmount());
+  });
+
+  it("opens on the first zone when there is no history", () => {
+    zones = TWO_ZONES;
+    const tree = render();
+
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Commons");
+    expect(startButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("falls back to the first zone when the last session's zone is gone", () => {
+    zones = TWO_ZONES;
+    sessions = [finished("s-1", "zone-retired", "2026-09-27T10:00:00Z")];
+    const tree = render();
+
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Commons");
+    act(() => tree.unmount());
+  });
+
+  it("waits for the history before choosing, so the last zone isn't beaten by the first", () => {
+    zones = TWO_ZONES;
+    sessions = [finished("s-1", "zone-1", "2026-09-27T10:00:00Z")];
+    sessionsLoading = true;
+    const tree = render();
+
+    sessionsLoading = false;
+    rerender(tree);
+
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Library");
+    act(() => tree.unmount());
+  });
+
+  it("keeps the member's own pick", () => {
+    zones = TWO_ZONES;
+    const tree = render();
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Commons");
+
+    act(() => tree.root.findByType(ZonePickerSheet).props.onSelect("zone-1"));
+    rerender(tree);
+
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Library");
+    act(() => tree.unmount());
+  });
+});
+
+describe("Study loading and empty states", () => {
+  it("loads as the card and the list it becomes, not one card of bars", () => {
+    isLoading = true;
+    const tree = render();
+
+    expect(tree.root.findAllByType(CardListSkeleton)).toHaveLength(1);
+    expect(tree.root.findAllByType(SkeletonLines)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("tells a member with no zones who to ask, without a permission key", () => {
+    zones = [];
+    const tree = render();
+
+    expect(screenText(tree)).toContain("No study zones yet");
+    expect(screenText(tree)).toContain("Ask an officer to add a study zone.");
+    expect(screenText(tree)).not.toContain("geofences:manage");
+    act(() => tree.unmount());
+  });
+});
+
+describe("Study's notice and failure lines", () => {
+  it("draws a failed Start inside the Start card, not above it", async () => {
+    api.start.mockRejectedValue(FAILED);
+    const tree = render();
+    await tapStart(tree);
+
+    const copy = startErrorCopy(FAILED);
+    expect(drawnText(tree.root.findByType(StartCard))).toContain(copy);
+    expect(occurrences(tree, copy)).toBe(1);
+    act(() => tree.unmount());
+  });
+
+  describe("with a session running", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-27T12:01:00Z"));
+      sessions = LIVE_SESSION;
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("draws a refused heartbeat's line inside the session card", async () => {
+      api.heartbeat.mockRejectedValue(REFUSED);
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      expect(drawnText(tree.root.findByType(SessionCard))).toContain(
+        SUBSCRIPTION_REFUSAL_COPY.studySession,
+      );
+      expect(occurrences(tree, SUBSCRIPTION_REFUSAL_COPY.studySession)).toBe(1);
+      act(() => tree.unmount());
+    });
+
+    it("hands the closed-elsewhere notice to the Start card that replaces the session", async () => {
+      api.heartbeat.mockRejectedValue({ statusCode: 404, error: "Not Found" });
+      const tree = render();
+      sessions = NO_SESSIONS;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      expect(drawnText(tree.root.findByType(StartCard))).toContain(
+        "That session has already been closed somewhere else.",
+      );
+      act(() => tree.unmount());
+    });
   });
 });

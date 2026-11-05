@@ -3,6 +3,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 import { formatTimer } from "@repo/formatting";
+import { CardMessages } from "./start-card";
 
 /**
  * The live-session card — `canvas-screens.dc.html`, `id="s10"`.
@@ -40,6 +41,13 @@ export interface SessionCardProps {
   /** e.g. `Leaving the zone pauses with a 5-min grace window.` */
   graceCopy: string;
   isEnding: boolean;
+  /**
+   * The screen's notice and failure lines (a picked-up session, a refused or
+   * failed End), drawn under End rather than above the card so the timer
+   * doesn't jump when one arrives.
+   */
+  notice?: string | null;
+  failure?: string | null;
   onEnd: () => void;
 }
 
@@ -50,6 +58,8 @@ export function SessionCard({
   isReportingStale,
   graceCopy,
   isEnding,
+  notice = null,
+  failure = null,
   onEnd,
 }: SessionCardProps) {
   const { tokens } = useFrappTheme();
@@ -121,6 +131,8 @@ export function SessionCard({
           {isEnding ? "Ending…" : "End session"}
         </Text>
       </Pressable>
+
+      <CardMessages notice={notice} failure={failure} align="center" />
 
       <Text style={styles.grace}>{graceCopy}</Text>
     </View>

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 import {
@@ -13,13 +13,14 @@ import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
+import { EmptyState, ErrorState } from "@/components/state-block";
+import { CardListSkeleton } from "@/components/card-list-skeleton";
 import {
-  EmptyState,
-  ErrorState,
-  SkeletonLines,
-} from "@/components/state-block";
-import { BalanceCard } from "@/components/dues/balance-card";
+  BalanceCard,
+  type BalanceCardStatus,
+} from "@/components/dues/balance-card";
 import { InvoiceHistoryRow } from "@/components/dues/invoice-row";
+import { OpenInvoiceRow } from "@/components/dues/open-invoice-row";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   balanceCents,
@@ -28,7 +29,7 @@ import {
   selectInvoiceHistory,
   selectInvoiceRows,
   selectNextDueInvoice,
-  selectOpenInvoices,
+  selectOpenInvoicesByDueDate,
 } from "@/lib/dues/invoices";
 import {
   isStripeAvailable,
@@ -55,6 +56,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * flips only when `GET /v1/invoices/:id` says so. If the poll runs out, the
  * screen says pending rather than guessing either way.
  *
+ * Pending is a state of the card, not a line above it: from capture until the
+ * list itself reads the invoice as no longer OPEN, the CTA stays disabled as
+ * "Confirming payment…" and the chip reads Pending. Re-enabling it the moment
+ * the poll gave up offered a second payment for an invoice the member had
+ * just paid, which the server refuses with a 409.
+ *
  * ## Copy discipline
  *
  * "Chapter dues", never "subscription" (`spec/ui/mobile/patterns.md`). The
@@ -74,6 +81,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /** `billing.md`'s own phrase for the window between capture and settlement. */
 const PENDING_COPY =
   "Payment received, confirmation pending. This updates as soon as your chapter's records catch up.";
+
+const PAID_COPY = "Paid. Your chapter has it — thanks.";
 
 export default function DuesScreen() {
   const { tokens } = useFrappTheme();
@@ -100,9 +109,24 @@ export default function DuesScreen() {
   // webhook lands later here than it does in a browser tab.
   const awaitPaid = useAwaitInvoicePaid({ attempts: 12, intervalMs: 2000 });
 
+  /** Only ever the settled line; the pending one is derived from the latch. */
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [isPaying, setIsPaying] = useState(false);
+  /**
+   * The invoice whose payment was captured, held until the list reads it as
+   * no longer OPEN. Not cleared when the poll gives up, and not on refocus:
+   * the member has paid, and re-offering Pay on that invoice is the 409.
+   */
+  const [pendingInvoiceId, setPendingInvoiceId] = useState<string | null>(null);
+  const pendingInvoiceIdRef = useRef(pendingInvoiceId);
+  useEffect(() => {
+    pendingInvoiceIdRef.current = pendingInvoiceId;
+  }, [pendingInvoiceId]);
+  const refetchInvoicesRef = useRef(invoicesQuery.refetch);
+  useEffect(() => {
+    refetchInvoicesRef.current = invoicesQuery.refetch;
+  });
 
   // One clock per focus. A tab is never unmounted, so a mount-only value would
   // still be yesterday's when the member reopens the app — and "Past due" is
@@ -111,6 +135,12 @@ export default function DuesScreen() {
   useFocusEffect(
     useCallback(() => {
       setNow(new Date());
+      // A webhook that landed while the member was elsewhere is what lets a
+      // pending payment settle; nothing else re-reads the list after the poll
+      // has given up.
+      if (pendingInvoiceIdRef.current !== null) {
+        void refetchInvoicesRef.current();
+      }
       return undefined;
     }, []),
   );
@@ -119,7 +149,13 @@ export default function DuesScreen() {
     () => selectInvoiceRows(invoicesQuery.data, viewerUserId),
     [invoicesQuery.data, viewerUserId],
   );
-  const open = useMemo(() => selectOpenInvoices(rows), [rows]);
+  const open = useMemo(() => selectOpenInvoicesByDueDate(rows), [rows]);
+  // Derived, not cleared by an effect: the latch holds exactly while its
+  // invoice is still OPEN in the list the screen is drawing.
+  const confirmingInvoiceId =
+    pendingInvoiceId !== null && open.some((row) => row.id === pendingInvoiceId)
+      ? pendingInvoiceId
+      : null;
   // Memoized rather than re-derived inside `renderBody`, which re-runs on every
   // `isPaying` / `notice` change. `balanceCents` stays the single definition of
   // the number — the screen must not grow a second notion of "open" beside the
@@ -136,6 +172,7 @@ export default function DuesScreen() {
     if (!target) return;
     setFailure(null);
     setNotice(null);
+    setPendingInvoiceId(null);
     setIsPaying(true);
     try {
       const intent = await payInvoice.mutateAsync(target.id);
@@ -166,12 +203,15 @@ export default function DuesScreen() {
       // poll through `payIntentErrorCopy` would put "Could not start payment.
       // Please try again." in red under a member who has already paid, with the
       // Pay button live again.
-      setNotice(PENDING_COPY);
+      setPendingInvoiceId(target.id);
       try {
         const settled = await awaitPaid.mutateAsync(target.id);
-        setNotice(settled ? "Paid. Your chapter has it — thanks." : PENDING_COPY);
+        // The poll's PAID is the server's word, but the card keeps saying
+        // pending until the refetched list agrees, so the two never differ.
+        if (settled) setNotice(PAID_COPY);
       } catch {
-        setNotice(PENDING_COPY);
+        // A failed read says nothing about the payment. The latch keeps the
+        // pending state up, which is the honest answer either way.
       }
     } catch (error) {
       setFailure(payIntentErrorCopy(error));
@@ -179,6 +219,16 @@ export default function DuesScreen() {
       setIsPaying(false);
     }
   }, [awaitPaid, chapterName, payInvoice, target]);
+
+  // One line about the last payment attempt, newest-first in what it can say:
+  // a failure, then a captured payment still settling, then a settled one.
+  const paymentStatus: BalanceCardStatus | null = failure
+    ? { text: failure, tone: "destructive" }
+    : confirmingInvoiceId !== null
+      ? { text: PENDING_COPY, tone: "neutral" }
+      : notice
+        ? { text: notice, tone: "neutral" }
+        : null;
 
   function renderBody() {
     if (viewerQuery.isError) {
@@ -196,17 +246,32 @@ export default function DuesScreen() {
     // selector withholds every row until it does, so treating that as empty
     // would flash "all paid up" at a member who owes money.
     if (invoicesQuery.isPending || viewerUserId === null) {
-      return <SkeletonLines lines={4} showTile />;
+      return <CardListSkeleton rows={3} />;
     }
 
     if (invoicesQuery.isError) {
       return (
-        <ErrorState
-          title="Couldn't load your dues"
-          body="Your invoices are still on record — this was a problem fetching them."
-          onRetry={() => void invoicesQuery.refetch()}
-          isRetrying={invoicesQuery.isFetching}
-        />
+        <>
+          {/* No card to carry it here, and a refetch that fails right after a
+              payment must not swallow "payment received". */}
+          {paymentStatus ? (
+            <Text
+              style={
+                paymentStatus.tone === "destructive"
+                  ? styles.failure
+                  : styles.notice
+              }
+            >
+              {paymentStatus.text}
+            </Text>
+          ) : null}
+          <ErrorState
+            title="Couldn't load your dues"
+            body="Your invoices are still on record — this was a problem fetching them."
+            onRetry={() => void invoicesQuery.refetch()}
+            isRetrying={invoicesQuery.isFetching}
+          />
+        </>
       );
     }
 
@@ -240,9 +305,31 @@ export default function DuesScreen() {
               ? `Pays ${target.title} — ${formatAmount(target.amountCents)} of your balance.`
               : null
           }
+          isConfirming={confirmingInvoiceId !== null}
+          status={paymentStatus}
           isPaying={isPaying}
           onPay={() => void handlePay()}
         />
+
+        {/* One open bill is the card. With more, the card can only count them
+            and name the one Pay settles, and HISTORY holds settled rows only,
+            so this is the one place the rest are listed. */}
+        {open.length > 1 ? (
+          <>
+            <SectionHeader>OPEN</SectionHeader>
+            <View style={styles.rows}>
+              {open.map((invoice, index, all) => (
+                <OpenInvoiceRow
+                  key={invoice.id}
+                  invoice={invoice}
+                  now={now}
+                  isConfirming={invoice.id === confirmingInvoiceId}
+                  isLast={index === all.length - 1}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
 
         {history.length > 0 ? (
           <>
@@ -271,9 +358,6 @@ export default function DuesScreen() {
 
   return (
     <ScreenShell back={BACK_TO_MORE} title="Dues">
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-      {failure ? <Text style={styles.failure}>{failure}</Text> : null}
-
       {renderBody()}
     </ScreenShell>
   );

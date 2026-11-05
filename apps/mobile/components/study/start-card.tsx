@@ -29,6 +29,13 @@ export interface StartCardProps {
    */
   isBlocked?: boolean;
   graceCopy: string;
+  /**
+   * The screen's notice (a session that just ended) and failure lines, drawn
+   * under Start rather than above the card, so the card and the list below it
+   * don't jump when one arrives.
+   */
+  notice?: string | null;
+  failure?: string | null;
   onChooseZone: () => void;
   onStart: () => void;
 }
@@ -39,6 +46,8 @@ export function StartCard({
   isStarting,
   isBlocked = false,
   graceCopy,
+  notice = null,
+  failure = null,
   onChooseZone,
   onStart,
 }: StartCardProps) {
@@ -65,9 +74,12 @@ export function StartCard({
       >
         <View style={styles.zoneText}>
           <Text style={styles.zoneName}>{zone?.name ?? "Pick a zone"}</Text>
-          <Text style={styles.zoneMeta}>
-            {zone ? zoneRewardCopy(zone) : "Your chapter has study zones set up."}
-          </Text>
+          {/* No meta without a zone. The screen picks one by default, so this
+              is a moment between loads, and the old line only narrated that
+              zones exist. */}
+          {zone ? (
+            <Text style={styles.zoneMeta}>{zoneRewardCopy(zone)}</Text>
+          ) : null}
         </View>
         {canChooseZone ? <Text style={styles.chevron}>›</Text> : null}
       </Pressable>
@@ -98,7 +110,49 @@ export function StartCard({
         </Text>
       </Pressable>
 
+      <CardMessages notice={notice} failure={failure} align="left" />
+
       <Text style={styles.grace}>{graceCopy}</Text>
+    </View>
+  );
+}
+
+/**
+ * A study card's notice and failure lines, under its button. Shared by
+ * `StartCard` and `SessionCard`, which differ only in alignment.
+ */
+export function CardMessages({
+  notice,
+  failure,
+  align,
+}: {
+  notice: string | null;
+  failure: string | null;
+  align: "left" | "center";
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  if (!notice && !failure) return null;
+  const textAlign = align === "center" ? styles.messageCentered : null;
+  return (
+    <View style={styles.messages}>
+      {notice ? (
+        <Text
+          style={[styles.notice, textAlign]}
+          // Read out on Android as it arrives: it is the outcome of the tap.
+          accessibilityLiveRegion="polite"
+        >
+          {notice}
+        </Text>
+      ) : null}
+      {failure ? (
+        <Text
+          style={[styles.failure, textAlign]}
+          accessibilityLiveRegion="polite"
+        >
+          {failure}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -164,6 +218,22 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
       marginTop: tokens.spacing.md,
+    },
+    messages: {
+      alignSelf: "stretch",
+      gap: tokens.spacing.xs,
+      marginTop: tokens.spacing.md,
+    },
+    notice: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    failure: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
+    },
+    messageCentered: {
+      textAlign: "center",
     },
   });
 }

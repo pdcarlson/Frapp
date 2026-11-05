@@ -14,6 +14,15 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
+/** `Linking` isn't in the suite's `react-native` stub; this spec adds it. */
+const { openSettings } = vi.hoisted(() => ({
+  openSettings: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("react-native", async () => {
+  const { reactNativeStub } = await import("@/test/react-native-stub");
+  return { ...reactNativeStub, Linking: { openSettings } };
+});
+
 import { LocationPrimerSheet } from "./location-primer-sheet";
 
 /**
@@ -63,7 +72,9 @@ describe("LocationPrimerSheet", () => {
     expect(rendered.some((line) => /\bSignet\b/.test(line))).toBe(false);
   });
 
-  it("points at Settings → expo.name when iOS will not ask again", () => {
+  it("names the app, and no one platform, when the OS will not ask again", () => {
+    // The old line said "iOS won't ask again" and spelled out the iOS path,
+    // which an Android member can't follow.
     const rendered = texts(
       render(
         <LocationPrimerSheet
@@ -78,10 +89,46 @@ describe("LocationPrimerSheet", () => {
         line.includes(`Location is turned off for ${APP_NAME}`),
       ),
     ).toBe(true);
-    expect(
-      rendered.some((line) =>
-        line.includes(`Settings → ${APP_NAME} → Location`),
+    expect(rendered.some((line) => /\b(iOS|Android)\b/.test(line))).toBe(false);
+    expect(rendered.some((line) => line.includes("→"))).toBe(false);
+  });
+
+  it("opens Settings from the blocked branch, closing the sheet first", async () => {
+    const onDismiss = vi.fn();
+    const tree = render(
+      <LocationPrimerSheet
+        canAskAgain={false}
+        onAllow={() => {}}
+        onDismiss={onDismiss}
+      />,
+    );
+    const button = tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        node
+          .findAllByType("Text" as never)
+          .some((text) => text.props.children === "Open Settings"),
+    );
+
+    await act(async () => {
+      button.props.onPress();
+    });
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(openSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Continue, not Open Settings, while the OS can still ask", () => {
+    const rendered = texts(
+      render(
+        <LocationPrimerSheet
+          canAskAgain
+          onAllow={() => {}}
+          onDismiss={() => {}}
+        />,
       ),
-    ).toBe(true);
+    );
+    expect(rendered).toContain("Continue");
+    expect(rendered).not.toContain("Open Settings");
   });
 });

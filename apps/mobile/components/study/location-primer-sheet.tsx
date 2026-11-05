@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -23,7 +23,9 @@ import {
  * prescribes for push, where declining is "a quiet 'Not now'".
  *
  * It also handles the already-declined case, where nothing will ask again and
- * the only honest next step is Settings.
+ * the only honest next step is Settings, so that branch opens it. Its copy
+ * names no path: the way to the switch differs between iOS and Android, and
+ * the button makes the path moot.
  */
 export interface LocationPrimerSheetProps {
   /** False once the OS will no longer prompt — the copy and CTA both change. */
@@ -82,20 +84,22 @@ export const LocationPrimerSheet = forwardRef<
         ) : (
           <>
             <Text style={styles.blocked}>
-              Location is turned off for Frapp, and iOS won&apos;t ask again.
-              Turn it on in Settings → Frapp → Location, then start your session.
+              Location is turned off for Frapp. Turn it on in Settings to start
+              a session.
             </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-              onPress={onDismiss}
-              style={({ pressed }) => [
-                styles.secondary,
-                pressed ? styles.secondaryPressed : null,
-              ]}
-            >
-              <Text style={styles.secondaryLabel}>Close</Text>
-            </Pressable>
+            <SheetPrimaryButton
+              label="Open Settings"
+              onPress={() => {
+                // Closed first: the member comes back from Settings to the
+                // Start card, not to a sheet still saying location is off.
+                onDismiss();
+                Linking.openSettings().catch(() => {
+                  // Nothing to do: the sentence above still says where to go.
+                });
+              }}
+              accent={accent}
+              onAccent={tokens.color.gold.onHouse}
+            />
           </>
         )}
       </BottomSheetView>
@@ -106,7 +110,7 @@ export const LocationPrimerSheet = forwardRef<
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     body: {
-      paddingHorizontal: tokens.spacing.lg + 2,
+      paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xl,
     },
     copy: {
@@ -125,22 +129,6 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
       marginTop: tokens.spacing.md,
-    },
-    secondary: {
-      height: tokens.touch.buttonLarge,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      alignItems: "center",
-      justifyContent: "center",
-      marginTop: tokens.spacing.md,
-    },
-    secondaryPressed: {
-      opacity: 0.85,
-    },
-    secondaryLabel: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
     },
   });
 }
