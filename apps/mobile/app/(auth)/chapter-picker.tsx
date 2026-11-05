@@ -257,9 +257,12 @@ export default function ChapterPicker() {
               </OnboardingPressable>
             </View>
           ) : listEmpty || !data ? (
-            // Not reachable through the normal hook path, but a member with no
-            // membership at all would otherwise be stranded on a blank screen
-            // with no way back to sign-in.
+            // Reached whenever the list holds no chapter. One normal path
+            // leads here: a refused activate refetches the list, which drops
+            // the chapter the member was removed from, so when it was their
+            // only one the list comes back empty (handleSelect). Without this
+            // they would be stranded on a blank screen with no way back to
+            // sign-in.
             // s02 asks invite-or-start itself (#3350), so one way there.
             <View style={styles.stateBlock}>
               <Text style={styles.helperText}>

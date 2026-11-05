@@ -6,9 +6,13 @@ import {
   FOUNDED_YEAR_MIN,
   chapterIdentityBranding,
   chapterIdentityIsValid,
+  directoryMatchMarkFields,
   latestFoundedYear,
+  lettersHiddenBy,
   normalizeAccentInput,
   parseFoundedYear,
+  withOrgName,
+  type ChapterIdentityForm,
 } from "./chapter-identity";
 
 describe("DEFAULT_CHAPTER_ACCENT", () => {
@@ -171,5 +175,107 @@ describe("chapterIdentityBranding", () => {
     expect(branding.greek_letters).toBe("ΦΓΔ");
     expect(branding.short_name).toBe("FIJI");
     expect(branding.show_greek_letters).toBe(false);
+  });
+});
+
+describe("lettersHiddenBy", () => {
+  it("reads the picked row's organization before the typed name", () => {
+    // FIJI's row renamed to something unrelated is still FIJI.
+    expect(lettersHiddenBy("Phi Gamma Delta", { name: "Tau Nu Chapter" })).toBe(
+      "Phi Gamma Delta",
+    );
+  });
+
+  it("falls back to the typed name, and can only hide letters", () => {
+    expect(lettersHiddenBy(null, { name: "FIJI" })).toBe("Phi Gamma Delta");
+    expect(
+      lettersHiddenBy("Sigma Nu", { name: "Phi Gamma Delta Tau Nu" }),
+    ).toBe("Phi Gamma Delta");
+    expect(lettersHiddenBy("Sigma Nu", { name: "Sigma Nu" })).toBeNull();
+    expect(lettersHiddenBy(undefined, { name: "" })).toBeNull();
+  });
+});
+
+describe("withOrgName", () => {
+  it("by hand, naming FIJI fills an empty short name and turns the letters off", () => {
+    expect(withOrgName(EMPTY_CHAPTER_IDENTITY, "FIJI", false)).toMatchObject({
+      name: "FIJI",
+      shortName: "FIJI",
+      showGreekLetters: false,
+    });
+  });
+
+  it("by hand, leaving FIJI undoes both", () => {
+    const fiji = withOrgName(EMPTY_CHAPTER_IDENTITY, "FIJI", false);
+    expect(withOrgName(fiji, "Sigma Nu", false)).toMatchObject({
+      name: "Sigma Nu",
+      shortName: "",
+      showGreekLetters: true,
+    });
+  });
+
+  it("after a directory pick, changes the name alone", () => {
+    const picked: ChapterIdentityForm = {
+      ...EMPTY_CHAPTER_IDENTITY,
+      name: "Phi Gamma Delta",
+      shortName: "FIJI",
+      showGreekLetters: false,
+    };
+    expect(withOrgName(picked, "Tau Nu Chapter", true)).toEqual({
+      ...picked,
+      name: "Tau Nu Chapter",
+    });
+  });
+});
+
+describe("directoryMatchMarkFields", () => {
+  const fijiRow: ChapterIdentityForm = {
+    ...EMPTY_CHAPTER_IDENTITY,
+    name: "Phi Gamma Delta",
+    shortName: "FIJI",
+    showGreekLetters: false,
+  };
+
+  it("picking FIJI's row fills the short name and turns the letters off", () => {
+    expect(
+      directoryMatchMarkFields("Phi Gamma Delta", null, EMPTY_CHAPTER_IDENTITY),
+    ).toEqual({ shortName: "FIJI", showGreekLetters: false });
+  });
+
+  it("undoes FIJI's fields when another row follows a renamed FIJI row", () => {
+    // The rename changed the name alone, so the edited name no longer says
+    // FIJI: the previously picked row is what set the fields.
+    const renamed = withOrgName(fijiRow, "Tau Nu Chapter", true);
+    expect(
+      directoryMatchMarkFields("Sigma Nu", "Phi Gamma Delta", renamed),
+    ).toEqual({ shortName: "", showGreekLetters: true });
+  });
+
+  it("fills FIJI's fields when FIJI's row follows another row renamed FIJI", () => {
+    const sigEp: ChapterIdentityForm = {
+      ...EMPTY_CHAPTER_IDENTITY,
+      name: "Sigma Phi Epsilon",
+    };
+    const renamed = withOrgName(sigEp, "FIJI", true);
+    expect(
+      directoryMatchMarkFields("Phi Gamma Delta", "Sigma Phi Epsilon", renamed),
+    ).toEqual({ shortName: "FIJI", showGreekLetters: false });
+  });
+
+  it("reads the typed name when no row was picked", () => {
+    const typed = withOrgName(EMPTY_CHAPTER_IDENTITY, "FIJI", false);
+    expect(directoryMatchMarkFields("Sigma Nu", null, typed)).toEqual({
+      shortName: "",
+      showGreekLetters: true,
+    });
+  });
+
+  it("keeps a short name the founder typed", () => {
+    expect(
+      directoryMatchMarkFields("Phi Gamma Delta", null, {
+        ...EMPTY_CHAPTER_IDENTITY,
+        shortName: "Fiji Tau Nu",
+      }),
+    ).toEqual({ shortName: "Fiji Tau Nu", showGreekLetters: false });
   });
 });

@@ -15,8 +15,13 @@ export const ONBOARDING_COLUMN_WIDTH = 400;
  * house gold, because no chapter's color applies before the member is inside
  * one (`spec/behavior/branding.md` § Brand Boundaries). Join, setup and s03
  * pin it in their own footer, above the keyboard and the inset; the Terms
- * prompt puts it in its card, and sign-in's email form ends on it. This owns
- * how it looks and behaves, so those screens can't drift apart.
+ * prompt puts it in its card, and sign-in's email form ends on it. The
+ * update-required gate (`components/client-policy-gate.tsx`) renders it too,
+ * over the whole app, chapter or none: house gold is still right there,
+ * because the gate is the product speaking, not a chapter. It is asked
+ * before sign-in and drawn outside every chapter's context, so no one
+ * chapter's color is the gate's. This owns how it looks and behaves, so
+ * those screens can't drift apart.
  *
  * `busy` swaps the label for a spinner. A disabled button dims, so a member
  * waiting on a slow request doesn't take it for a frozen screen.

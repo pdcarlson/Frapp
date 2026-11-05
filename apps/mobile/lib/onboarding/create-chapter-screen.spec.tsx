@@ -133,6 +133,15 @@ const SIGEP_ROW: ChapterDirectoryResult = {
   chapter_designation: "New York Alpha",
 };
 
+/** An organization with no short name and letters it shows. */
+const SIGMA_NU_ROW: ChapterDirectoryResult = {
+  ...FIJI_ROW,
+  id: "dir-sigma-nu",
+  org_letters: "ΣΝ",
+  org_name: "Sigma Nu",
+  chapter_designation: "Delta Delta",
+};
+
 async function settle(): Promise<void> {
   for (let i = 0; i < 5; i += 1) {
     await act(async () => {
@@ -561,6 +570,77 @@ describe("chapter setup — Greek letters", () => {
 
     const sent = await submitMatch(root);
     expect(sent.show_greek_letters).toBe(false);
+  });
+
+  // A pick undoes what the row picked before it set, however that row's name
+  // was edited in between: the edit changed the name alone, so the earlier
+  // row's organization is the one being left (`directoryMatchMarkFields`).
+  it("undoes FIJI's short name and switch when a renamed FIJI row gives way to another", async () => {
+    directoryRows = [FIJI_ROW, SIGMA_NU_ROW];
+    const { root } = await render();
+    await pickRow(root, "Phi Gamma Delta");
+    await press(root, "Edit details");
+    typeInto(root, "Organization", "Tau Nu Chapter");
+    expect(inputValues(root)).toContain('["Short name","FIJI"]');
+    await press(root, "Back");
+    expect(title(root)).toBe(SETUP_TITLES.find);
+
+    await pickRow(root, "ΣΝ · Sigma Nu");
+    await press(root, "Edit details");
+    expect(inputValues(root)).toContain('["Short name",""]');
+    expect(lettersSwitch(root)?.props.value).toBe(true);
+    expect(allText(root)).not.toContain("doesn't display its Greek letters");
+
+    const sent = await submitMatch(root);
+    expect(sent.short_name).toBeUndefined();
+    expect(sent.show_greek_letters).toBeUndefined();
+  });
+
+  it("fills FIJI's short name when FIJI's row follows another row renamed FIJI", async () => {
+    const { root } = await render();
+    await pickRow(root, "Sigma Phi Epsilon");
+    await press(root, "Edit details");
+    typeInto(root, "Organization", "FIJI");
+    await press(root, "Back");
+
+    await pickRow(root, "Phi Gamma Delta");
+    await press(root, "Edit details");
+    expect(inputValues(root)).toContain('["Short name","FIJI"]');
+    expect(lettersSwitch(root)).toBeUndefined();
+
+    const sent = await submitMatch(root);
+    expect(sent.short_name).toBe("FIJI");
+    expect(sent.show_greek_letters).toBe(false);
+  });
+
+  // Entering the chapter by hand forgets the row picked before: an unrelated
+  // organization typed after FIJI's row is that organization's alone.
+  it("forgets FIJI's row on manual entry", async () => {
+    const { root } = await render();
+    await pickRow(root, "Phi Gamma Delta");
+    await press(root, "Back");
+    await press(root, "Not in our directory?");
+    typeInto(root, "Organization", "Sigma Nu");
+    typeInto(root, "School", "Rensselaer Polytechnic Institute");
+    await press(root, "More details (optional)");
+
+    expect(lettersSwitch(root)?.props.value).toBe(true);
+    expect(inputValues(root)).toContain('["Short name",""]');
+    expect(allText(root)).not.toContain("doesn't display its Greek letters");
+
+    await act(async () => {
+      radios(root)[0].props.onPress();
+    });
+    await press(root, "Continue");
+    await press(root, "agree");
+    await act(async () => {
+      primary(root).props.onPress();
+    });
+    await settle();
+    const sent = (onboard.mock.calls[0]?.[0] as { branding: SentBranding })
+      .branding;
+    expect(sent.show_greek_letters).toBeUndefined();
+    expect(sent.short_name).toBeUndefined();
   });
 
   it("fills the short name when FIJI is typed by hand, and leaves a typed one", async () => {

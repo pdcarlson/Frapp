@@ -30,7 +30,6 @@ import {
   orgColorsFor,
   orgDefaultAccent,
   orgHidingGreekLettersIn,
-  orgMarkFieldsFor,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import { SignetTokens } from "@repo/theme/signet";
@@ -62,7 +61,10 @@ import {
   EMPTY_CHAPTER_IDENTITY,
   chapterIdentityBranding,
   chapterIdentityIsValid,
+  directoryMatchMarkFields,
+  lettersHiddenBy,
   normalizeAccentInput,
+  withOrgName,
   type ChapterIdentityForm,
 } from "@repo/hooks/chapter-identity";
 import {
@@ -97,10 +99,12 @@ import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * nothing preselected. Some organizations don't display their Greek letters
  * (Phi Gamma Delta): for them the letters appear nowhere here and the created
  * chapter is sent with them off. The short name and the letters switch follow
- * `orgMarkFieldsFor`, as web's setup does: naming such an organization, by its
- * directory row or by hand ("FIJI", "Phi Gamma Delta Tau Nu"), turns the
- * switch off and fills an empty short name. A chapter picked from its row
- * keeps the letters hidden whatever its name field says later.
+ * `orgMarkFieldsFor` through the glue both setups share in
+ * `@repo/hooks/chapter-identity` (`withOrgName`, `directoryMatchMarkFields`,
+ * `lettersHiddenBy`): naming such an organization, by its directory row or by
+ * hand ("FIJI", "Phi Gamma Delta Tau Nu"), turns the switch off and fills an
+ * empty short name, and picking another row undoes both. A chapter picked
+ * from its row keeps the letters hidden whatever its name field says later.
  */
 
 type Step = "find" | "confirm" | "color" | "live" | "primer" | "invite";
@@ -139,24 +143,6 @@ function knownArchetype(value: string | null | undefined): ArchetypeKey | null {
 }
 
 /**
- * The organization whose Greek letters setup must not draw, or `null`: the
- * picked directory row's organization first, because a chapter from FIJI's
- * row is FIJI whatever its name field says later, then the name as typed
- * ("FIJI", "Phi Gamma Delta Tau Nu"). Web's setup decides the same way. The
- * match (`orgHidingGreekLettersIn`) can hide letters, never show them.
- */
-function lettersHiddenBy(
-  matchedOrgName: string | null,
-  identity: ChapterIdentityForm,
-): string | null {
-  return (
-    orgHidingGreekLettersIn(matchedOrgName) ??
-    orgHidingGreekLettersIn(identity.name) ??
-    null
-  );
-}
-
-/**
  * The branding setup previews and sends. The form already holds the switch
  * off for an organization that hides its letters (`withOrgName`); this is
  * the last line for any form that doesn't. One does on purpose: a row from
@@ -171,28 +157,6 @@ function setupBranding(
 ) {
   const branding = chapterIdentityBranding(identity);
   return hiddenBy ? { ...branding, show_greek_letters: false } : branding;
-}
-
-/**
- * The identity after the Organization field changes. By hand, the short name
- * and the letters switch follow `orgMarkFieldsFor`, as web's setup does:
- * naming an organization fills an empty short name from its profile and
- * turns the switch off when it hides its letters, typing on past it ("Phi
- * Gamma Delta Tau Nu") keeps both, and leaving it undoes both. After a
- * directory pick the row decides the organization, so editing the name
- * changes the name alone.
- */
-function withOrgName(
-  identity: ChapterIdentityForm,
-  name: string,
-  fromDirectory: boolean,
-): ChapterIdentityForm {
-  if (fromDirectory) return { ...identity, name };
-  return {
-    ...identity,
-    name,
-    ...orgMarkFieldsFor(name, identity.name, identity),
-  };
 }
 
 /** How a directory row reads in the results: never letters a group hides. */
@@ -270,9 +234,9 @@ export default function CreateChapter() {
       university: row.university ?? "",
       greekLetters: row.org_letters ?? "",
       // The directory knows letters, not whether an organization shows them:
-      // FIJI's profile switches them off (`orgMarkFieldsFor`), and fills the
-      // short name only if the founder left it empty.
-      ...orgMarkFieldsFor(row.org_name, identity.name, identity),
+      // the row's profile decides, and a row picked before this one undoes
+      // what it set however the name was edited since.
+      ...directoryMatchMarkFields(row.org_name, matchedOrgName, identity),
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
