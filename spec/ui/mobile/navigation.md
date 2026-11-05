@@ -242,6 +242,11 @@ permissions clause names it in the same change, moving only the page's pin on th
 #3395 precedent; whether that edit is material, and what each ruling does, is
 [`legal.md` § Acceptance record](../../behavior/legal.md#acceptance-record)'s.
 
+*2026-11-05, later:* the purpose string was widened on its own, ahead of #3401's Files
+picker, so the 0.9.1 store build carries it. `photosPermission` now names all five
+callers ("send photos in chapter chat, add photos to your chapter's documents, and attach
+photo proof to service hours"). #3401 keeps the picker and #2620.
+
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`
 key at all**. Each of those three is load-bearing:

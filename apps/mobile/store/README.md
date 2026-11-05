@@ -538,7 +538,7 @@ Advertising Data, Browsing History, Search History.
 > Videos* item collected for *App Functionality*, so the row's values don't change. The
 > privacy policy's permissions clause names it; the owner ruled that edit non-material
 > on 2026-11-04, so it moved only the page's pin and nobody is asked to accept again.
-> The iOS purpose string doesn't name it yet ([#3401](https://github.com/pdcarlson/Frapp/issues/3401)).
+> The iOS purpose string names it from the 0.9.1 store build on (widened 2026-11-05).
 > Deploy the landing before submitting a binary that carries #3399.
 >
 > **Service-hour proof photos use this row too (2026-11-05).** s20's "Add photo proof"
@@ -549,10 +549,9 @@ Advertising Data, Browsing History, Search History.
 > names it, as #3399's did for documents, and on that precedent the edit moved only
 > the page's pin. Whether that edit is material, and what each ruling does:
 > [`legal.md` § Acceptance record](../../../spec/behavior/legal.md#acceptance-record).
-> The iOS purpose string (`app.json`'s `photosPermission`) doesn't name it: it can only
-> widen in a store build, and
-> [#3401](https://github.com/pdcarlson/Frapp/issues/3401) widens it to name document
-> uploads and service-hour proof and updates the store records to match. Deploy the
+> The iOS purpose string (`app.json`'s `photosPermission`) names it from the 0.9.1 store
+> build on (widened 2026-11-05, split out of
+> [#3401](https://github.com/pdcarlson/Frapp/issues/3401), which keeps the Files picker). Deploy the
 > landing before submitting a binary that carries s20's photo row.
 >
 > ‡ **`Linked: No` on Crash Data and Performance Data is wrong, and this table's own
