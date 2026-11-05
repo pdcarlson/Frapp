@@ -50,9 +50,11 @@ const ACTION = join(ACTION_DIR, NAME, "action.yml");
 
 // Each checks out a commit other than the workflow's own before Node is set
 // up: `_deploy.yml` the commit being deployed, `release.yml` the one being
-// tagged, `_mobile-build.yml` the one being built for the stores (#3111).
-// Asserted to still do so below, so the list can't outlive its reason.
-const EXCEPTIONS = ["_deploy.yml", "release.yml", "_mobile-build.yml"];
+// tagged, `_mobile-build.yml` the one being built for the stores (#3111),
+// `_mobile-update.yml` the one published as an OTA update, and
+// `deploy-production.yml`'s `mobile-plan` the one it reads to choose between
+// them. Asserted to still do so below, so the list can't outlive its reason.
+const EXCEPTIONS = ["_deploy.yml", "release.yml", "_mobile-build.yml", "_mobile-update.yml", "deploy-production.yml"];
 
 const INSTALL_MODES = ["ci", "none", "omit-dev"];
 

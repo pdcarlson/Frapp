@@ -1,0 +1,192 @@
+name: Mobile update
+
+# Publish the commit production serves as an OTA update to the `production`
+# channel (#2511's first slice). A reusable workflow: `on: workflow_call` only,
+# and its one caller is `deploy-production.yml`'s `ota` job, which runs only
+# when the operator chose `mobile_build: auto`, only after a `full`,
+# non-dry-run ship whose deploy and tag both succeeded, and only for the
+# platforms its `mobile-plan` job found an update can reach safely
+# (`scripts/ci/plan-mobile-release.mjs`).
+#
+# ── Through the guard, never a bare `eas update` ────────────────────────────
+# The publish is `npm run eas -- update --channel production`, the command a
+# person runs by hand (docs/ops/deployment/mobile.md § 6.7). Its guard,
+# `scripts/eas-update.mjs`, passes the channel's `--environment`, adds the
+# build profile's eas.json `env`, sets the production fences, and refuses a
+# dirty tree, any commit but the latest `v*` tag, and any native difference
+# from a store build of the same `expo.version`. So the plan's verdict is
+# checked again at the moment of publishing, by the same comparison.
+#
+# ── Source maps ─────────────────────────────────────────────────────────────
+# After the publish, the guard uploads the bundle's source maps to Sentry when
+# `SENTRY_AUTH_TOKEN` is set. The EAS variable of that name is Secret and only
+# reaches EAS's build workers, so CI has it only when the `automation`
+# environment holds a secret of that name. Without one the update is still
+# live, its errors still reach Sentry with minified stack traces, and the
+# guard's warning (and this run's summary) says so.
+#
+# ── The trust split (ci-cd.md § The deploy job's trust split) ──────────────
+# `publish` checks out the deployed commit and runs nothing local from it as a
+# check: no `./.github/actions/…` action, and the steps that judge the tree
+# are inline shell. The guard and eas-cli are the deployed commit's own
+# publishing tools, as `eas build` is in `_mobile-build.yml`; the deployed
+# commit is an ancestor of `main` with green CI. `npm ci` and the pinned
+# eas-cli install (`scripts/eas.mjs`, which installs `_mobile-build.yml`'s pin
+# with `--ignore-scripts`) run before any step that names `EXPO_TOKEN`, and
+# only the publish step names it. The same honest limits as the store build
+# apply (`_mobile-build.yml`'s header, #3118, #3125).
+#
+# ── Failure ─────────────────────────────────────────────────────────────────
+# Production is live and tagged before this starts, so nothing here rolls
+# anything back or turns the deploy's summary red. A refused or failed publish
+# reds `publish`, which reds the run with the caller's job name saying the
+# ship stands. Nothing reached any phone then. The summary says how to publish
+# by hand. A re-run publishes again, which is harmless: a second update group
+# of the same commit replaces the first.
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: "The validated commit Deploy production just shipped"
+        required: true
+        type: string
+      platform:
+        description: "ios, android or all"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish the OTA update to the production channel
+    runs-on: ubuntu-latest
+    # Main only, no reviewers: no Approve click.
+    environment:
+      name: automation
+      deployment: false
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      # Before any checkout. Names only: the checks are `!= ''`, so no value
+      # enters this step.
+      - name: Check the inputs, and that EXPO_TOKEN reached this job
+        env:
+          DEPLOY_SHA: ${{ inputs.sha }}
+          PLATFORM: ${{ inputs.platform }}
+          HAS_EXPO_TOKEN: ${{ secrets.EXPO_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          case "$PLATFORM" in
+            ios|android|all) ;;
+            *)
+              echo "::error::platform must be ios, android or all; got '$PLATFORM'."
+              exit 1
+              ;;
+          esac
+          if ! [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::sha must be a full 40-character lowercase commit SHA; got '$DEPLOY_SHA'."
+            exit 1
+          fi
+          if [ "$HAS_EXPO_TOKEN" != "true" ]; then
+            echo "::error::EXPO_TOKEN did not reach this job. It is a secret of the automation environment, and a called job gets it only when its caller passes secrets: inherit. Production is live and tagged; nothing was published."
+            exit 1
+          fi
+
+      # Full history and tags: the guard compares the tree with each recorded
+      # build's commit and finds the latest tag. No credentials are kept; the
+      # guard's `git fetch --tags origin main` reads the public repository.
+      - name: Check out the shipped commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Hand-written, not ./.github/actions/node-setup: a local action loads
+      # from the deployed tree. Matches node-setup's step
+      # (`node-setup-action.test.mjs`).
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # The guard's native check reads the installed tree, and the export
+      # evaluates app.config.js through the project's own `expo`.
+      - name: Install dependencies
+        run: npm ci
+
+      # `scripts/eas.mjs` installs `_mobile-build.yml`'s eas-cli pin into the
+      # gitignored `.cache/eas-cli/` on first use. `--version` does that
+      # here, before EXPO_TOKEN is in any step's environment.
+      - name: Install the pinned EAS CLI
+        run: node scripts/eas.mjs --version
+
+      - name: Confirm the tree is exactly the shipped commit
+        env:
+          DEPLOY_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          HEAD_SHA="$(git rev-parse HEAD)"
+          if [ "$HEAD_SHA" != "$DEPLOY_SHA" ]; then
+            echo "::error::HEAD is $HEAD_SHA, not the shipped $DEPLOY_SHA. Refusing to publish anything else."
+            exit 1
+          fi
+          DIRTY="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$DIRTY" ]; then
+            echo "::error::The install changed the tree, and the update would bundle the change:"
+            printf '%s\n' "$DIRTY"
+            exit 1
+          fi
+
+      - name: Publish through the guard
+        id: publish
+        timeout-minutes: 20
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          PLATFORM: ${{ inputs.platform }}
+          DEPLOY_SHA: ${{ inputs.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CI: "1"
+          EXPO_NO_TELEMETRY: "1"
+        run: |
+          set -euo pipefail
+          npm run eas -- update --channel production --platform "$PLATFORM" --non-interactive \
+            --message "Deploy production $DEPLOY_SHA $RUN_URL"
+
+      - name: Summarise the publish
+        if: ${{ always() }}
+        env:
+          OUTCOME: ${{ steps.publish.outcome }}
+          PLATFORM: ${{ inputs.platform }}
+          DEPLOY_SHA: ${{ inputs.sha }}
+          HAS_SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
+        run: |
+          {
+            echo "### OTA update of \`$DEPLOY_SHA\`"
+            echo ""
+            case "$OUTCOME" in
+              success)
+                echo "Published to the \`production\` channel for \`$PLATFORM\`. Installed apps download it on their next launch and run it on the one after."
+                echo ""
+                echo "Check it: \`npm run eas -- update:list --branch production\`. Roll back: \`npm run eas -- update:roll-back-to-embedded --channel production\` (docs/ops/deployment/mobile.md § 6.7)."
+                if [ "$HAS_SENTRY_AUTH_TOKEN" != "true" ]; then
+                  echo ""
+                  echo "> Source maps were not uploaded: the \`automation\` environment has no \`SENTRY_AUTH_TOKEN\`, so this update's stack traces in Sentry stay minified."
+                fi
+                ;;
+              skipped)
+                echo "Not published: a step before the publish failed (the log above says which). Nothing reached any phone."
+                ;;
+              *)
+                echo "Not published (\`$OUTCOME\`): the guard refused or eas-cli failed, and the log above says why. Nothing reached any phone."
+                echo ""
+                echo "Production is live and tagged. To publish by hand, follow docs/ops/deployment/mobile.md § 6.7 from the tag."
+                ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"

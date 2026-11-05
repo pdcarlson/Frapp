@@ -306,11 +306,33 @@ with `autoIncrement` gives every production build the next one. When a store ref
 
 #### From Deploy production (CI)
 
-Dispatch **Deploy production** as usual and set **`mobile_build`** to `ios`, `android` or `all`.
-The default, `none`, builds nothing, and the run is exactly what it was without the input. The
-store build runs only on a `full`, non-dry-run ship, after the deploy **and** the version tag
-succeed. A dry run or a `migrations-only` run never builds, whatever the input says. The `mobile`
-job then calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111):
+Dispatch **Deploy production** as usual and set **`mobile_build`** to `ios`, `android`, `all` or
+`auto`. The default, `none`, does nothing for the app, and the run is exactly what it was without
+the input. Anything for the app runs only on a `full`, non-dry-run ship, after the deploy **and**
+the version tag succeed. A dry run or a `migrations-only` run never builds or publishes, whatever
+the input says.
+
+The `mobile-plan` job decides first, from the trusted ref
+([`scripts/ci/plan-mobile-release.mjs`](../../../scripts/ci/plan-mobile-release.mjs)). A named
+platform is a store build of it and no update. **`auto`** reads the shipped commit and decides per
+platform:
+
+- **OTA update** when that platform has a store build of the shipped `expo.version` recorded in
+  `apps/mobile/store/shipped-builds.json`, and every recorded build of that version has the
+  shipped commit's native inputs (the guard's comparison, § 6.7). The `ota` job publishes it
+  (§ 6.7, Published by Deploy production).
+- **Store build** when that platform has no recorded build of the version: a new version, or a
+  platform that never shipped one.
+- **Store builds on both platforms, no update, and a warning** when some recorded build of the
+  version has other native inputs. That means native code changed without the version bump the
+  `mobile-validate` check now requires; bump `expo.version` so the next ship can update over the
+  air again.
+- **Nothing, and a red job,** when the commit is no longer the latest `v*` tag or a recorded
+  build's commit can't be read. Re-run once fixed, or dispatch again with a named platform.
+
+Merge each `shipped-builds.json` PR before the next `auto` ship: an unrecorded build is invisible
+to the plan, which would build that version again instead of updating it. A store build then
+calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111):
 
 1. **`build`** checks out the validated SHA and nothing else, runs `npm ci`, and installs eas-cli
    **24.8.0** with `--before=2026-10-01`, so none of eas-cli's own dependencies can be a version
@@ -504,11 +526,35 @@ to its deadline.
 laptop too; after a bump, or when a run disagrees, re-check it against
 `npm run eas -- submit --help`.
 
-### 6.7 OTA updates (by hand)
+### 6.7 OTA updates
 
 A JS-only fix can reach installed beta builds as an over-the-air update instead of a store build.
-There is no publishing pipeline yet (#2511 owns CI publishing, a staging app variant and staged
-rollout). Until then, a person publishes from a laptop, and only through the guard.
+Deploy production publishes one when asked (below), and a person can still publish from a laptop.
+Both go through the same guard. #2511 still owns a staging app variant, promotion and staged
+rollout.
+
+#### Published by Deploy production
+
+Set **`mobile_build`** to **`auto`**. When `mobile-plan` (§ 6.6) finds a platform's store build
+can take the shipped commit, the `ota` job calls
+[`_mobile-update.yml`](../../../.github/workflows/_mobile-update.yml). Its one job, `publish`,
+checks out the shipped commit, runs `npm ci`, installs the pinned eas-cli (`node scripts/eas.mjs
+--version`), checks the tree is exactly that commit, and only then, in the one step that holds
+`EXPO_TOKEN`, runs:
+
+```bash
+npm run eas -- update --channel production --platform <planned> --non-interactive \
+  --message "Deploy production <sha> <run url>"
+```
+
+The guard below re-checks everything the plan checked, so a refused publish reds the job and
+reaches no phone. Production stays live and tagged either way. The job's summary says what was
+published and how to check or roll it back. Source maps upload only when the `automation`
+environment holds a `SENTRY_AUTH_TOKEN` secret (an organization-level Sentry auth token, the same
+kind § 6.3 sets in EAS); without one the update ships with minified stack traces, and the summary
+says so. A re-run publishes the same commit again, which is harmless.
+
+#### Published by hand
 
 An update publishes the commit production serves, the latest `v*` tag, which is the same rule
 store builds follow (§ 6.6). The bundle calls `api.frapp.live`, so JS from main's tip could call

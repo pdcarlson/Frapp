@@ -47,8 +47,12 @@
 // `eas update` never loads Secret variables, so without it the update's stack traces stay
 // minified, and the guard says so.
 //
-// NOT HERE (#2511): a staging app variant, CI publishing, `update:republish` promotion, staged
-// rollout gates, OTA code signing (off for 0.9.x, #2526).
+// CI runs this same guard: Deploy production's `mobile_build: auto` publishes through
+// `npm run eas -- update` (`.github/workflows/_mobile-update.yml`), after its plan
+// (`scripts/ci/plan-mobile-release.mjs`) found the update can reach that platform's store build.
+//
+// NOT HERE (#2511): a staging app variant, `update:republish` promotion, staged rollout gates,
+// OTA code signing (off for 0.9.x, #2526).
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -230,6 +234,46 @@ export function staleInstall(headLock, installedLock) {
   return stale;
 }
 
+/** `android 0.9.1 build 3 (cca52decb010)`: how every message names a store build. */
+export function buildLabel(build) {
+  return `${build.platform} ${build.version} build ${build.build} (${build.sha.slice(0, 12)})`;
+}
+
+/**
+ * For each recorded store build, which native inputs differ between its commit and `head`:
+ * `app.json`, `app.config.js`, and the lockfile version of every native package (`isNative` reads
+ * the installed tree, so it describes `head`'s install). `headLock` is `head`'s parsed lockfile.
+ * A build may carry its own `label` (the PR check compares against its base commit this way).
+ * Returns `[{ build, label, changed: string[], error? }]`, one per build, in order. The guard, the
+ * deploy's OTA-or-store-build plan (`scripts/ci/plan-mobile-release.mjs`) and the PR check
+ * (`scripts/check-mobile-native-version.mjs`) all judge with this one comparison.
+ */
+export function compareNativeInputs({ builds, git, headLock, isNative, head = "HEAD" }) {
+  const results = [];
+  for (const build of builds) {
+    const label = build.label ?? buildLabel(build);
+    if (git(["cat-file", "-e", `${build.sha}^{commit}`]).status !== 0) {
+      git(["fetch", "--quiet", "origin", build.sha]);
+      if (git(["cat-file", "-e", `${build.sha}^{commit}`]).status !== 0) {
+        results.push({ build, label, changed: [], error: `Commit ${build.sha} of ${label} isn't available locally or from origin, so its native inputs can't be compared.` });
+        continue;
+      }
+    }
+    const changed = [];
+    for (const file of [APP_JSON, APP_CONFIG]) {
+      if (git(["diff", "--quiet", build.sha, head, "--", file]).status !== 0) changed.push(file);
+    }
+    const buildLockText = git(["show", `${build.sha}:${LOCKFILE}`]);
+    if (buildLockText.status !== 0) {
+      results.push({ build, label, changed: [], error: `Couldn't read ${LOCKFILE} at ${build.sha}: ${buildLockText.stderr.trim()}` });
+      continue;
+    }
+    changed.push(...nativePackageChanges(JSON.parse(buildLockText.stdout), headLock, isNative));
+    results.push({ build, label, changed });
+  }
+  return results;
+}
+
 function defaultGit(args) {
   const r = spawnSync("git", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? r.error?.message ?? "" };
@@ -329,33 +373,16 @@ export function productionChecks({
     return { errors, notes };
   }
 
-  for (const build of builds) {
-    const label = `${build.platform} ${build.version} build ${build.build} (${build.sha.slice(0, 12)})`;
-    if (git(["cat-file", "-e", `${build.sha}^{commit}`]).status !== 0) {
-      git(["fetch", "--quiet", "origin", build.sha]);
-      if (git(["cat-file", "-e", `${build.sha}^{commit}`]).status !== 0) {
-        errors.push(`Commit ${build.sha} of ${label} isn't available locally or from origin, so its native inputs can't be compared.`);
-        continue;
-      }
-    }
-    const changed = [];
-    for (const file of [APP_JSON, APP_CONFIG]) {
-      if (git(["diff", "--quiet", build.sha, "HEAD", "--", file]).status !== 0) changed.push(file);
-    }
-    const buildLockText = git(["show", `${build.sha}:${LOCKFILE}`]);
-    if (buildLockText.status !== 0) {
-      errors.push(`Couldn't read ${LOCKFILE} at ${build.sha}: ${buildLockText.stderr.trim()}`);
-      continue;
-    }
-    changed.push(...nativePackageChanges(JSON.parse(buildLockText.stdout), headLock, isNative));
-    if (changed.length) {
+  for (const result of compareNativeInputs({ builds, git, headLock, isNative })) {
+    if (result.error) errors.push(result.error);
+    else if (result.changed.length) {
       errors.push(
-        `Native inputs changed since ${label}, so this update could crash it:\n` +
-          changed.map((c) => `      - ${c}`).join("\n") +
+        `Native inputs changed since ${result.label}, so this update could crash it:\n` +
+          result.changed.map((c) => `      - ${c}`).join("\n") +
           `\n    Bump expo.version in ${APP_JSON} and ship a store build instead (spec/environments/README.md § Mobile (EAS), Native changes).`,
       );
     } else {
-      notes.push(`Reaches ${label}: same native inputs as HEAD.`);
+      notes.push(`Reaches ${result.label}: same native inputs as HEAD.`);
     }
   }
   return { errors, notes, runtime };
