@@ -49,7 +49,9 @@ tab. Both are in [`graphics/app-store/`](graphics/app-store/):
 App Store Connect uses the screenshots instead. Both images were composed on 2026-11-05 from
 the charcoal screenshot set (`scripts/demo/store-frames.mjs`). Nothing renders them, so
 `check:brand-assets` doesn't check them, and they go stale when the screenshots change. The
-owner uploaded the header on 2026-11-05.
+header is centered: on an iPhone the product page shows only its middle (about 62% of the
+width, and the top three quarters above the app card), so the first, left-aligned version
+lost its headline there and was replaced the same day.
 
 **App Store screenshot slot.** The version page's screenshot slot is now *iPhone with Dynamic
 Island (medium display)*. It rejected the 1320 × 2868 set and took **1206 × 2622**
