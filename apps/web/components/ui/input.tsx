@@ -6,7 +6,9 @@ import { FOCUS_RING } from "@/components/ui/focus"
 /*
  * Text input, `spec/ui/design-system/components.md` §4.
  *
- * Height 48, radius 12, padding-x 14, the `--surface-1` fill sitting one layer
+ * Height 40 to a mouse and 48 to a finger (§4, corrected 2026-11-05: it was
+ * 48 everywhere, which stood taller than the 34px sidebar rows and every list
+ * row beside it), radius 12, padding-x 12 / 14, the `--surface-1` fill sitting one layer
  * below the card or sheet that contains it, and the shared focus recipe.
  *
  * Two things the shadcn scaffold got wrong on this surface:
@@ -28,7 +30,7 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
       <input
         type={type}
         className={cn(
-          "flex h-12 w-full rounded-md border border-input bg-surface-1 px-3.5 py-1 text-base text-foreground caret-primary transition-colors",
+          "flex h-10 w-full rounded-md border border-input bg-surface-1 px-3 py-1 text-base pointer-coarse:h-12 pointer-coarse:px-3.5 text-foreground caret-primary transition-colors",
           "file:border-0 file:bg-transparent file:text-sm file:font-semibold file:text-foreground",
           "placeholder:text-muted-foreground",
           FOCUS_RING,

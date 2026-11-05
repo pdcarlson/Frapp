@@ -80,15 +80,15 @@ export const dashboardToolbarSearchGlyphClassName =
 
 /**
  * A `<select>` that is a **form field** rather than filter chrome, at §4's
- * default 48.
+ * field height: 40 to a mouse, 48 to a finger, the same as `Input`.
  *
  * §4's 44 is a carve-out for filter rows specifically — "secondary chrome
  * sitting above the thing it filters" — and reading it as the height for every
  * native select gets the same defect §4 was written about, one context over:
  * the event editor put two of these in a `sm:grid-cols-2` beside `Input`s,
- * which are `h-12`, so one form row rendered at two heights.
+ * so one form row rendered at two heights.
  */
-export const dashboardFormSelectClassName = `h-12 ${NATIVE_SELECT}`;
+export const dashboardFormSelectClassName = `h-10 pointer-coarse:h-12 ${NATIVE_SELECT}`;
 
 export const dashboardTableCheckboxClassName = [
   "h-6 w-6 rounded-[7px] border-input accent-primary",

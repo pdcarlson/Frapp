@@ -24,6 +24,10 @@ import { FOCUS_RING } from "@/components/ui/focus";
  *    shifts the label by a pixel as it lands. Reserving the box is cheaper than
  *    explaining the jitter.
  *
+ * Every size is pointer-aware (§3, corrected 2026-11-05): the mouse gets the
+ * dense heights the sidebar already used, and `pointer-coarse` restores the
+ * 44/48 touch heights, so nothing a finger hits drops under the 44 floor (§2).
+ *
  * Label size is the `label` role — 14 — not the 15/14.5/14 ladder §3's size
  * table quotes. foundations.md §7 locks the type scale and calls an off-scale
  * size a defect, exactly as §1 there locks the radius map over the same board's
@@ -79,14 +83,15 @@ const buttonVariants = cva(
         link: "font-semibold text-accent-text underline-offset-4 hover:underline disabled:border-transparent disabled:bg-transparent",
       },
       size: {
-        // §3's ladder. `sm` is the Inline size (44, action rows inside cards)
-        // and `default` the standalone one; the names are the scaffold's and
-        // are kept so 68 call sites do not churn for a rename.
-        default: "h-12 px-4 text-sm",
-        sm: "h-11 px-3.5 text-sm",
-        // Square, and 44 rather than the app bar's 38, so an icon-only control
+        // §3's ladder. `sm` is the Inline size (36 to a mouse, 44 to a finger:
+        // action rows inside cards) and `default` the standalone one (40, 48);
+        // the names are the scaffold's and are kept so 68 call sites do not
+        // churn for a rename.
+        default: "h-10 px-4 text-sm pointer-coarse:h-12",
+        sm: "h-9 px-3 text-sm pointer-coarse:h-11 pointer-coarse:px-3.5",
+        // Square: 36 to a mouse, and 44 to a finger so an icon-only control
         // clears the touch-target floor (§2) on the 375px layout.
-        icon: "h-11 w-11",
+        icon: "h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11",
         // A toolbar row's controls (the PageActions row, filters, search):
         // §3's Compact on a mouse, the 44 touch floor on a finger, which is
         // the README's row rule. At 48 the primary action stood taller than
