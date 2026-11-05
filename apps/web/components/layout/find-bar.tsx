@@ -16,8 +16,9 @@ import {
  *
  * **It looks like a field because it is the visible way in.** The shortcut is
  * not advertised (Paul removed the keycap, 2026-11-05), so a member who never
- * presses it still sees where search lives. Clicking it, or typing into it via
- * the shortcut, lands in the dialog's own input.
+ * presses it still sees where search lives. Clicking it, pressing Enter or
+ * Space on it, or simply typing while it has focus (as one would into the
+ * field it looks like) lands in the dialog's own input.
  *
  * **Taking over Cmd/Ctrl+F is deliberate.** It is the key people already
  * press to find something, and in an app whose content is paginated and
@@ -31,6 +32,8 @@ import {
 export function FindBar({ className }: { className?: string }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // False only when a keystroke on the field opened the dialog; see FindDialog.
+  const [selectOnOpen, setSelectOnOpen] = useState(true);
   /*
    * Read here, while the dialog is closed, on purpose. It keeps `["channels"]`
    * warm on every dashboard route, so the dialog's Channels group is instant
@@ -90,6 +93,7 @@ export function FindBar({ className }: { className?: string }) {
         active instanceof HTMLElement && active !== document.body
           ? active
           : null;
+      setSelectOnOpen(true);
       setOpen(true);
     }
     window.addEventListener("keydown", onKeyDown);
@@ -113,6 +117,25 @@ export function FindBar({ className }: { className?: string }) {
         aria-label={FIND_PLACEHOLDER}
         onClick={() => {
           returnFocusRef.current = null;
+          setSelectOnOpen(true);
+          setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          /*
+           * A printable key starts a search, as it would in a real field: the
+           * dialog opens with that character as the query. Space is left alone
+           * so it still presses the button, and a chord (Cmd+C) is not typing.
+           */
+          if (event.key.length !== 1 || event.key === " ") return;
+          if (event.metaKey || event.ctrlKey || event.altKey) return;
+          event.preventDefault();
+          returnFocusRef.current = null;
+          // The first key replaces a kept query, like typing over the selected
+          // text the dialog would show; a fast second one, landing before the
+          // dialog's input takes focus, appends to it.
+          const key = event.key;
+          setQuery((previous) => (open ? previous + key : key));
+          setSelectOnOpen(false);
           setOpen(true);
         }}
         className={cn(
@@ -137,6 +160,7 @@ export function FindBar({ className }: { className?: string }) {
         onQueryChange={setQuery}
         inputRef={inputRef}
         onCloseFocus={restoreFocus}
+        selectOnOpen={selectOnOpen}
       />
     </>
   );

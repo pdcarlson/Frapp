@@ -14,8 +14,16 @@ import {
 } from "@repo/validation";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 
-const { push, searchQuery, channelsQuery, departmentsQuery, moduleGate } =
-  vi.hoisted(() => ({
+const {
+  push,
+  searchQuery,
+  channelsQuery,
+  departmentsQuery,
+  departmentsOptions,
+  moduleGate,
+  permissionList,
+  debounced,
+} = vi.hoisted(() => ({
     push: vi.fn(),
     searchQuery: {
       current: {
@@ -27,9 +35,13 @@ const { push, searchQuery, channelsQuery, departmentsQuery, moduleGate } =
     },
     channelsQuery: { current: { data: [] as unknown[] } },
     departmentsQuery: { current: { data: [] as unknown[] } },
+    departmentsOptions: { current: undefined as { enabled?: boolean } | undefined },
     moduleGate: {
       current: undefined as ((key: string) => boolean) | undefined,
     },
+    permissionList: { current: [] as string[] },
+    // `null` passes the live value through; a string pins the debounced one.
+    debounced: { current: null as string | null },
   }));
 
 vi.mock("next/navigation", () => ({
@@ -39,7 +51,11 @@ vi.mock("next/navigation", () => ({
 vi.mock("@repo/hooks", () => ({
   useSearch: () => searchQuery.current,
   useChannels: () => channelsQuery.current,
-  useDepartments: () => departmentsQuery.current,
+  useDepartments: (options?: { enabled?: boolean }) => {
+    departmentsOptions.current = options;
+    return departmentsQuery.current;
+  },
+  usePermissionList: () => permissionList.current,
   SEARCH_MIN_QUERY_LENGTH: 3,
   SEARCH_COMPLETED_EVENT: "search-completed",
 }));
@@ -48,14 +64,17 @@ vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
   useChapterModuleGate: () => moduleGate.current,
 }));
 
-// The debounce is real elsewhere; here it would only make every assertion wait.
+// The debounce is real elsewhere; here it would only make every assertion
+// wait. A test that needs the list to trail the text pins `debounced`.
 vi.mock("@/lib/hooks/use-debounced-value", () => ({
-  useDebouncedValue: (value: unknown) => value,
+  useDebouncedValue: (value: unknown) => debounced.current ?? value,
 }));
 
 import { FindBar } from "./find-bar";
 import { FIND_PLACEHOLDER } from "./find-dialog";
 
+// Offsetless instants on purpose: they parse as local time, so the calendar
+// days the assertions name hold in every runner timezone.
 function searchPayload() {
   return {
     payload: {
@@ -65,11 +84,11 @@ function searchPayload() {
           id: "m1",
           content: "announce the thing",
           channel_id: "c1",
-          created_at: "2026-10-28T19:08:00Z",
+          created_at: "2026-10-28T19:08:00",
         },
       ],
       events: [
-        { id: "e1", name: "announce party", start_time: "2026-11-09T19:00:00Z" },
+        { id: "e1", name: "announce party", start_time: "2026-11-09T19:00:00" },
       ],
       backwork: [
         {
@@ -79,7 +98,7 @@ function searchPayload() {
           course_number: "101",
           semester: "Fall",
           year: 2025,
-          created_at: "2025-09-14T12:00:00Z",
+          created_at: "2025-09-14T12:00:00",
         },
       ],
     },
@@ -151,7 +170,10 @@ describe("FindBar", () => {
     searchQuery.current = searchState();
     channelsQuery.current = { data: [] };
     departmentsQuery.current = { data: [{ id: "d1", code: "COGS" }] };
-    moduleGate.current = undefined;
+    departmentsOptions.current = undefined;
+    moduleGate.current = () => true;
+    permissionList.current = ["members:view", "backwork:upload"];
+    debounced.current = null;
   });
 
   it("carries no keyboard hint, closed or open", async () => {
@@ -283,6 +305,58 @@ describe("FindBar", () => {
     expect(screen.getByText("announce party")).toBeInTheDocument();
   });
 
+  it("hides Events when the events module is off", async () => {
+    moduleGate.current = (key) => key !== "events";
+    searchQuery.current = searchState({ data: searchPayload() });
+
+    const user = userEvent.setup();
+    render(<FindBar />);
+    await openAndType(user, "announce");
+
+    expect(screen.queryByText("announce party")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Events" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("announcements 101")).toBeInTheDocument();
+  });
+
+  it("keeps the module groups out until the module gate has loaded", async () => {
+    // Right after a chapter switch the gate is still loading; the rows are
+    // data a switched-off module would not show, so they wait for it.
+    moduleGate.current = undefined;
+    searchQuery.current = searchState({ data: searchPayload() });
+
+    const user = userEvent.setup();
+    render(<FindBar />);
+    await openAndType(user, "announce");
+
+    expect(screen.queryByText("announce party")).not.toBeInTheDocument();
+    expect(screen.queryByText("announcements 101")).not.toBeInTheDocument();
+    expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
+  });
+
+  it("hides Backwork, and skips the department read, for a member the library refuses", async () => {
+    permissionList.current = ["members:view", "alumni:post"];
+    searchQuery.current = searchState({ data: searchPayload() });
+
+    const user = userEvent.setup();
+    render(<FindBar />);
+    await openAndType(user, "announce");
+
+    expect(screen.queryByText("announcements 101")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Backwork" }),
+    ).not.toBeInTheDocument();
+    expect(departmentsOptions.current).toEqual({ enabled: false });
+  });
+
+  it("reads departments for a member who may browse backwork", async () => {
+    const user = userEvent.setup();
+    render(<FindBar />);
+    await openAndType(user, "announce");
+    expect(departmentsOptions.current).toEqual({ enabled: true });
+  });
+
   it("narrows to one group with a chip", async () => {
     channelsQuery.current = { data: [{ id: "c1", name: "announcements" }] };
     searchQuery.current = searchState({ data: searchPayload() });
@@ -334,6 +408,34 @@ describe("FindBar", () => {
     expect(input).toHaveAttribute("aria-activedescendant", options[1]!.id);
   });
 
+  it("ignores Enter while the list still belongs to the previous text", async () => {
+    channelsQuery.current = { data: [{ id: "c1", name: "announcements" }] };
+    searchQuery.current = searchState({ data: searchPayload() });
+
+    const user = userEvent.setup();
+    render(<FindBar />);
+    const input = await openAndType(user, "announce");
+    // The member types on; the debounced query (and so the list) lags.
+    debounced.current = "announce";
+    await user.type(input, "x");
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(push).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("leaves an IME's Enter to the IME", async () => {
+    channelsQuery.current = { data: [{ id: "c1", name: "announcements" }] };
+    searchQuery.current = searchState({ data: searchPayload() });
+
+    const user = userEvent.setup();
+    render(<FindBar />);
+    const input = await openAndType(user, "announce");
+
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("lists nothing under the minimum query length", async () => {
     channelsQuery.current = { data: [{ id: "c1", name: "announcements" }] };
     const user = userEvent.setup();
@@ -365,6 +467,40 @@ describe("FindBar", () => {
     expect(await screen.findByRole("combobox")).toHaveValue("announce");
   });
 
+  it("hands focus back to where the shortcut was pressed from", async () => {
+    render(
+      <>
+        <button type="button">Elsewhere</button>
+        <FindBar />
+      </>,
+    );
+    const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+    elsewhere.focus();
+    chord();
+    await screen.findByRole("dialog");
+
+    const user = userEvent.setup();
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(elsewhere).toHaveFocus());
+  });
+
+  it("opens with the key typed on the field as the query", async () => {
+    const user = userEvent.setup();
+    render(<FindBar />);
+    trigger().focus();
+    await user.keyboard("r");
+
+    const input = await screen.findByRole("combobox");
+    expect(input).toHaveValue("r");
+    await waitFor(() => expect(input).toHaveFocus());
+    // Not selected, so the next key appends rather than replacing it.
+    await user.keyboard("ush");
+    expect(input).toHaveValue("rush");
+  });
+
   it("tells a timeout apart from an empty result", async () => {
     searchQuery.current = searchState({
       data: { payload: {}, timedOut: true, timedOutSources: ["messages"] },
@@ -394,6 +530,22 @@ describe("FindBar", () => {
     expect(
       within(screen.getByRole("listbox")).getByText(/stopped looking in messages/i),
     ).toBeInTheDocument();
+  });
+
+  it("does not blame a timeout in a group the chip leaves out", async () => {
+    // Channels are matched here and never time out, so under the Channels chip
+    // a slow message scan is not "Search took too long".
+    searchQuery.current = searchState({
+      data: { payload: {}, timedOut: true, timedOutSources: ["messages"] },
+    });
+    const user = userEvent.setup();
+    render(<FindBar />);
+    await openAndType(user, "announce");
+    await user.click(screen.getByRole("button", { name: "Channels" }));
+
+    const list = within(screen.getByRole("listbox"));
+    expect(list.getByText("No matches.")).toBeInTheDocument();
+    expect(list.queryByText(/took too long/i)).not.toBeInTheDocument();
   });
 
   it("distinguishes a failed search from an empty one", async () => {
@@ -457,7 +609,75 @@ describe("FindBar", () => {
           properties: event.properties ?? {},
         }),
       ).not.toThrow();
-      expect(Object.values(event.properties ?? {})).not.toContain("announce");
+      // Every key is known, and the only string sent is the surface: a
+      // property carrying the text (or any prefix of it) fails here.
+      expect(Object.keys(event.properties ?? {}).sort()).toEqual(
+        [
+          "backwork_count",
+          "events_count",
+          "latency_ms",
+          "members_count",
+          "messages_count",
+          "query_length",
+          "query_word_count",
+          "surface",
+          "timed_out",
+          "total_count",
+          "zero_result",
+        ].sort(),
+      );
+      for (const [key, value] of Object.entries(event.properties ?? {})) {
+        if (typeof value === "string") expect(key).toBe("surface");
+      }
     }
+  });
+
+  it("counts a search once, not again when the dialog reopens on it", async () => {
+    const events: Array<{ name: string; properties?: AnalyticsProperties }> = [];
+    searchQuery.current = searchState({
+      data: searchPayload(),
+      dataUpdatedAt: 7000,
+    });
+    const user = userEvent.setup();
+    renderWithTrack((name, properties) => events.push({ name, properties }));
+    // Pinned so the one event is for the whole text, as a real debounce gives.
+    debounced.current = "announce";
+    await openAndType(user, "announce");
+    await waitFor(() => expect(events).toHaveLength(1));
+    debounced.current = null;
+    const before = events.length;
+
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    // The reopen refetches the kept query.
+    searchQuery.current = searchState({
+      data: searchPayload(),
+      dataUpdatedAt: 8000,
+    });
+    await user.click(trigger());
+    await screen.findByRole("combobox");
+
+    expect(events.length).toBe(before);
+  });
+
+  it("measures the trimmed query", async () => {
+    const events: Array<{ name: string; properties?: AnalyticsProperties }> = [];
+    searchQuery.current = searchState({
+      data: searchPayload(),
+      dataUpdatedAt: 9000,
+    });
+    const user = userEvent.setup();
+    renderWithTrack((name, properties) => events.push({ name, properties }));
+    // Pinned so the one event fires for the whole text, padding included.
+    debounced.current = "  rush  ";
+    await openAndType(user, "  rush  ");
+
+    await waitFor(() => expect(events.length).toBeGreaterThan(0));
+    expect(events.at(-1)!.properties).toMatchObject({
+      query_length: 4,
+      query_word_count: 1,
+    });
   });
 });

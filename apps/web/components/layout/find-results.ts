@@ -91,6 +91,16 @@ export const SINGLE_GROUP_LIMIT = 10;
 
 const MESSAGE_PREVIEW_CHARS = 120;
 
+/**
+ * The first {@link MESSAGE_PREVIEW_CHARS} code points. `String#slice` counts
+ * UTF-16 units, so it could split an emoji's surrogate pair and leave a
+ * replacement glyph at the end of the row.
+ */
+function preview(content: string): string {
+  if (content.length <= MESSAGE_PREVIEW_CHARS) return content;
+  return Array.from(content).slice(0, MESSAGE_PREVIEW_CHARS).join("");
+}
+
 function joinHint(parts: Array<string | null | undefined>): string | undefined {
   const kept = parts.filter((p): p is string => !!p && p.trim() !== "");
   return kept.length > 0 ? kept.join(" · ") : undefined;
@@ -188,9 +198,7 @@ export function buildFindResults({
       out.push({
         id: `message-${row.id ?? out.length}`,
         group: "Messages",
-        label: content
-          ? content.slice(0, MESSAGE_PREVIEW_CHARS)
-          : "Message with no text",
+        label: content ? preview(content) : "Message with no text",
         hint: joinHint([
           channelName ? `#${channelName}` : null,
           formatDay(row.created_at, now),

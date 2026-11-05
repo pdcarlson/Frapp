@@ -22,15 +22,18 @@ import {
 import {
   useChannels,
   useDepartments,
+  usePermissionList,
   useSearch,
   SEARCH_MIN_QUERY_LENGTH,
   SEARCH_COMPLETED_EVENT,
 } from "@repo/hooks";
+import { canAny } from "@repo/validation";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { asArray, cn } from "@/lib/utils";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 import { FOCUS_RING } from "@/components/ui/focus";
+import { DialogOverlay } from "@/components/ui/dialog";
 import { EYEBROW } from "@/components/ui/typography";
 import {
   FIND_GROUPS,
@@ -77,6 +80,21 @@ const MODULE_FOR_GROUP: Partial<Record<FindGroup, string>> = {
   Backwork: "backwork",
 };
 
+/**
+ * The library's own gate (`BackworkController`, any of the two). `/v1/search`
+ * applies it too and sends such a member no backwork rows; hiding the group
+ * here also drops its chip and skips the department read, which would 403.
+ */
+const BACKWORK_BROWSE = ["backwork:upload", "backwork:admin"] as const;
+
+/** Which group each `/v1/search` source fills, for its timeout notice. */
+const GROUP_FOR_SOURCE: Record<string, FindGroup> = {
+  backwork: "Backwork",
+  events: "Events",
+  members: "Members",
+  messages: "Messages",
+};
+
 type FindDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -86,6 +104,12 @@ type FindDialogProps = {
   inputRef: React.RefObject<HTMLInputElement | null>;
   /** Puts focus back where it was before the dialog opened. */
   onCloseFocus: () => void;
+  /**
+   * Select the kept query on open (the default), so typing replaces it. Off
+   * when the dialog opened from a keystroke on the field, which already put
+   * that character in the query: selecting it would let the next one erase it.
+   */
+  selectOnOpen?: boolean;
 };
 
 export function FindDialog({
@@ -95,25 +119,35 @@ export function FindDialog({
   onQueryChange,
   inputRef,
   onCloseFocus,
+  selectOnOpen = true,
 }: FindDialogProps) {
+  /*
+   * The last query a `search-completed` event went out for. Held here, not in
+   * the panel, because the panel unmounts on close and the query survives it:
+   * reopening refetches the kept query (`staleTime: 0`), and without this the
+   * refetch would count as a search the member never re-ran.
+   */
+  const lastTrackedQueryRef = useRef<string | null>(null);
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/55 data-[state=open]:animate-in data-[state=open]:fade-in-0 motion-reduce:animate-none" />
+        <DialogOverlay className="motion-reduce:animate-none" />
         <DialogPrimitive.Content
           aria-modal="true"
           // Select what was typed last time, so typing replaces it and Enter
           // or the arrows still work on it.
           onOpenAutoFocus={(event) => {
             event.preventDefault();
-            inputRef.current?.focus();
-            inputRef.current?.select();
+            const input = inputRef.current;
+            input?.focus();
+            if (selectOnOpen) input?.select();
+            else input?.setSelectionRange(input.value.length, input.value.length);
           }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             onCloseFocus();
           }}
-          className="fixed left-1/2 top-[12vh] z-50 flex max-h-[76vh] w-[min(640px,calc(100vw-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98] motion-reduce:animate-none"
+          className="fixed left-1/2 top-[12vh] z-50 flex max-h-[76vh] w-[min(640px,calc(100vw-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-[0.98] motion-reduce:animate-none"
         >
           <DialogPrimitive.Title className="sr-only">Find</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
@@ -125,6 +159,7 @@ export function FindDialog({
             onQueryChange={onQueryChange}
             inputRef={inputRef}
             onDone={() => onOpenChange(false)}
+            lastTrackedQueryRef={lastTrackedQueryRef}
           />
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
@@ -142,11 +177,13 @@ function FindPanel({
   onQueryChange,
   inputRef,
   onDone,
+  lastTrackedQueryRef,
 }: {
   query: string;
   onQueryChange: (query: string) => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
   onDone: () => void;
+  lastTrackedQueryRef: React.MutableRefObject<string | null>;
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState<FindFilter>("All");
@@ -158,30 +195,41 @@ function FindPanel({
   /*
    * Everything below reads the DEBOUNCED query, deliberately. `useSearch` keys
    * on it, so gating on the raw `query` would render a confident "No matches."
-   * for the first 200ms of every search, and re-typing over an old query would
-   * list the old hits under the new text with the first preselected, so Enter
-   * opened a result for a search the member had already replaced.
+   * for the first 200ms of every search. The list therefore trails the text
+   * for those 200ms, so Enter is ignored until it catches up (`onInputKeyDown`):
+   * otherwise re-typing over an old query and pressing Enter would open an old
+   * hit for a search the member had already replaced.
    */
   const hasMinQuery = debouncedQuery.trim().length >= SEARCH_MIN_QUERY_LENGTH;
   const isDebouncing = query !== debouncedQuery;
   const search = useSearch(debouncedQuery);
   const channels = useChannels();
-  const departments = useDepartments();
   const isModuleEnabled = useChapterModuleGate();
+  const permissions = usePermissionList();
   // `null` outside `AnalyticsProvider` (tests, or an opted-out member).
   const track = useContext(AnalyticsContext);
+  // Set by the member typing in this mount; see the telemetry effect.
+  const typedRef = useRef(false);
 
-  // A group whose module the chapter switched off is never listed or offered.
-  // While the gate is still loading it fails open, like the nav does.
+  /*
+   * A group whose module the chapter switched off is never listed or offered,
+   * and nor is Backwork for a member the library itself would refuse. Unlike
+   * the nav, the module groups fail CLOSED while the gate loads (right after a
+   * chapter switch): the nav only links to a route, but these rows are data
+   * the switched-off module would not show. The permission list is `[]` while
+   * it loads, so Backwork fails closed the same way.
+   */
+  const canBrowseBackwork = canAny(BACKWORK_BROWSE, permissions);
   const hiddenGroups = useMemo(() => {
     const hidden = new Set<FindGroup>();
-    if (!isModuleEnabled) return hidden;
     for (const group of FIND_GROUPS) {
       const key = MODULE_FOR_GROUP[group];
-      if (key && !isModuleEnabled(key)) hidden.add(group);
+      if (key && !(isModuleEnabled?.(key) ?? false)) hidden.add(group);
     }
+    if (!canBrowseBackwork) hidden.add("Backwork");
     return hidden;
-  }, [isModuleEnabled]);
+  }, [isModuleEnabled, canBrowseBackwork]);
+  const departments = useDepartments({ enabled: !hiddenGroups.has("Backwork") });
   const chips: FindFilter[] = [
     "All",
     ...FIND_GROUPS.filter((g) => !hiddenGroups.has(g)),
@@ -247,6 +295,14 @@ function FindPanel({
     if (!search.data) return;
     if (search.dataUpdatedAt === trackedAtRef.current) return;
     trackedAtRef.current = search.dataUpdatedAt;
+    // A reopen refetches the kept query; that is not a new search. (A search
+    // abandoned by closing before it settled is never counted: it never
+    // settled, and the spec counts settled searches.)
+    if (!typedRef.current && debouncedQuery === lastTrackedQueryRef.current) {
+      return;
+    }
+    lastTrackedQueryRef.current = debouncedQuery;
+    const trimmed = debouncedQuery.trim();
 
     const bag =
       search.data.payload && typeof search.data.payload === "object"
@@ -263,8 +319,8 @@ function FindPanel({
 
     track?.(SEARCH_COMPLETED_EVENT, {
       surface: "find-bar",
-      query_length: debouncedQuery.length,
-      query_word_count: debouncedQuery.split(/\s+/).filter(Boolean).length,
+      query_length: trimmed.length,
+      query_word_count: trimmed.split(/\s+/).filter(Boolean).length,
       backwork_count: counts.backwork,
       events_count: counts.events,
       members_count: counts.members,
@@ -281,6 +337,7 @@ function FindPanel({
     search.dataUpdatedAt,
     debouncedQuery,
     track,
+    lastTrackedQueryRef,
   ]);
 
   // Deliberately touches no ref: closing and clearing is the whole job, and a
@@ -297,6 +354,8 @@ function FindPanel({
   );
 
   function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    // An IME's Enter commits a candidate, and its arrows move between them.
+    if (event.nativeEvent.isComposing) return;
     if (results.length === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -306,14 +365,35 @@ function FindPanel({
       setActiveIndex((i) => (i - 1 + results.length) % results.length);
     } else if (event.key === "Enter") {
       event.preventDefault();
+      // The list still belongs to the previous text; see `hasMinQuery`.
+      if (isDebouncing) return;
       openResult(results[activeIndex]);
     }
   }
 
-  const showResults = hasMinQuery || isDebouncing;
+  // "Searching..." only for text that will actually be searched.
+  const showResults =
+    hasMinQuery ||
+    (isDebouncing && query.trim().length >= SEARCH_MIN_QUERY_LENGTH);
   const isLoading = search.isFetching || isDebouncing;
-  const timedOut = search.data?.timedOut ?? false;
-  const timedOutSources = search.data?.timedOutSources ?? [];
+  /*
+   * Only a timeout in a group the member is looking at counts. Channels are
+   * matched here and never time out, so under the Channels chip a slow message
+   * scan is not "Search took too long"; nor is one in a hidden group. A server
+   * that names no sources falls back to the whole-search flag.
+   */
+  const shownGroup = (group: FindGroup) =>
+    !hiddenGroups.has(group) &&
+    (effectiveFilter === "All" || effectiveFilter === group);
+  const allTimedOutSources = search.data?.timedOutSources ?? [];
+  const timedOutSources = allTimedOutSources.filter((source) => {
+    const group = GROUP_FOR_SOURCE[source];
+    return group ? shownGroup(group) : true;
+  });
+  const timedOut =
+    allTimedOutSources.length > 0
+      ? timedOutSources.length > 0
+      : (search.data?.timedOut ?? false) && effectiveFilter !== "Channels";
 
   /*
    * "We stopped looking here" must read differently from "we found nothing"
@@ -358,7 +438,10 @@ function FindPanel({
           aria-label={FIND_PLACEHOLDER}
           placeholder={FIND_PLACEHOLDER}
           value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
+          onChange={(e) => {
+            typedRef.current = true;
+            onQueryChange(e.target.value);
+          }}
           onKeyDown={onInputKeyDown}
           className="min-w-0 flex-1 bg-transparent text-body text-foreground outline-none placeholder:text-muted-foreground"
         />
