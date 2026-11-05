@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { flatStyle } from "@/test/flat-style";
 
 /**
  * #2299. s03 is the first screen after joining a chapter, for a new member and
@@ -202,17 +203,9 @@ describe("s03 welcome, one gold button", () => {
           .some((text) => text.props.children === "Go to chat"),
       );
 
-  /** A Pressable's resting fill, resolving a `({ pressed }) => style`. */
-  function fill(pressable: Node | undefined): unknown {
-    const style: unknown = pressable?.props.style;
-    const resolved =
-      typeof style === "function" ? style({ pressed: false }) : style;
-    const parts = (Array.isArray(resolved) ? resolved : [resolved]) as (Record<
-      string,
-      unknown
-    > | null)[];
-    return Object.assign({}, ...parts.filter(Boolean)).backgroundColor;
-  }
+  /** A Pressable's resting fill. */
+  const fill = (pressable: Node | undefined): unknown =>
+    flatStyle(pressable?.props.style).backgroundColor;
 
   beforeEach(() => {
     pushAvailable = false;
@@ -249,5 +242,28 @@ describe("s03 welcome, one gold button", () => {
       busy: true,
     });
     expect(texts(root).some((t) => t.includes("Opening chat"))).toBe(false);
+  });
+
+  it("spins under the same label as the outlined button, while the primer shows", async () => {
+    pushAvailable = true;
+    permission = { granted: false };
+    completeOnboarding.mockReturnValueOnce(new Promise(() => {}));
+    const { root } = await render();
+    act(() => {
+      void goToChat(root)?.props.onPress();
+    });
+
+    const button = root
+      .findAllByType("Pressable" as never, { deep: true })
+      .find((pressable) => pressable.props.accessibilityLabel === "Go to chat");
+    // Still the outlined one: Turn on keeps the gold.
+    expect(fill(button)).toBe(signetDarkTokens.color.surface.card);
+    expect(button?.props.accessibilityState).toEqual({
+      disabled: true,
+      busy: true,
+    });
+    expect(
+      button?.findAllByType("ActivityIndicator" as never, { deep: true }),
+    ).toHaveLength(1);
   });
 });

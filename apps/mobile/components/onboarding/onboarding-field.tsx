@@ -11,10 +11,14 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * label styles and two heights it had.
  *
  * The sheets' field (`sheetFieldStyles`, which owns components.md § Text
- * input's paint and focus border), with the focus border in the text-level
- * gold, since nothing in `(auth)` has a chapter yet, and 48pt tall, the spec's
- * height, where a sheet's field is 44. The border is what tells a member
- * where they're typing.
+ * input's paint and focus border), 48pt tall, the spec's height, where a
+ * sheet's field is 44. The border is what tells a member where they're typing.
+ *
+ * Its focus border is house gold (`gold.askText`) on purpose. Inside a chapter
+ * that border follows the chapter's accent, and `sheetFieldStyles`' own note
+ * calls a gold one drift; but nothing in `(auth)` has a chapter yet, so there
+ * is no accent to follow, and house gold is what the flow paints everything
+ * in (spec/behavior/branding.md). It is not the drift that note describes.
  *
  * Every `TextInput` prop passes through, `ref` included, so a screen can still
  * move focus from one field to the next on Return.

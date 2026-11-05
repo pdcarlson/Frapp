@@ -11,11 +11,7 @@ import {
   View,
   type TextInputProps,
 } from "react-native";
-import Animated, {
-  FadeIn,
-  ReduceMotion,
-  ZoomIn,
-} from "react-native-reanimated";
+import Animated, { ReduceMotion, ZoomIn } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -33,8 +29,8 @@ import {
   ARCHETYPES,
   orgColorsFor,
   orgDefaultAccent,
+  orgHidingGreekLettersIn,
   orgMarkFields,
-  orgProfileFor,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import { SignetTokens } from "@repo/theme/signet";
@@ -59,6 +55,7 @@ import {
   OnboardingPrimaryButton,
 } from "@/components/onboarding/onboarding-primary-button";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
+import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
 import { Toggle } from "@/components/toggle";
 import {
@@ -79,6 +76,7 @@ import { usePushPrimer } from "@/lib/notifications/use-push-primer";
 import { useBackToClose } from "@/lib/overlay";
 import { successHaptic } from "@/lib/haptics";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
+import { stepFadeIn } from "@/lib/onboarding/step-fade";
 import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -97,8 +95,9 @@ import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * The archetype comes from the directory match and is asked only when the
  * chapter is entered by hand (or the match carries no known archetype), with
  * nothing preselected. Some organizations don't display their Greek letters
- * (Phi Gamma Delta, `orgProfileFor`): for them the letters appear nowhere
- * here, the switch starts off and the short name is filled in.
+ * (Phi Gamma Delta, `orgHidingGreekLettersIn`): for them the letters appear
+ * nowhere here and the created chapter is sent with them off; a directory
+ * match also fills in the short name.
  */
 
 type Step = "find" | "confirm" | "color" | "live" | "primer" | "invite";
@@ -136,9 +135,29 @@ function knownArchetype(value: string | null | undefined): ArchetypeKey | null {
     : null;
 }
 
-/** Whether an organization keeps its Greek letters off every surface. */
-function hidesLetters(orgName: string | null | undefined): boolean {
-  return orgProfileFor(orgName)?.displaysGreekLetters === false;
+/**
+ * The organization whose Greek letters setup must not draw for this name, or
+ * `undefined`. The match web's setup makes: the organization's name as whole
+ * words in any case ("Phi Gamma Delta (FIJI)") or its short name as written
+ * ("FIJI"), not only the directory's exact name, so a founder typing their
+ * chapter in by hand never gets the letters field, the switch, or a mark
+ * drawn from the letters. It can only hide letters, never show them.
+ */
+function lettersHiddenBy(orgName: string | null | undefined): string | null {
+  return orgHidingGreekLettersIn(orgName) ?? null;
+}
+
+/**
+ * The branding setup previews and sends: the form's, with the letters off
+ * whenever the organization hides them, whatever the switch holds. Only an
+ * exact name turns the switch off (`orgMarkFields`), so "FIJI" typed by hand
+ * leaves it on; the letters stay stored, as below.
+ */
+function setupBranding(identity: ChapterIdentityForm) {
+  const branding = chapterIdentityBranding(identity);
+  return lettersHiddenBy(identity.name)
+    ? { ...branding, show_greek_letters: false }
+    : branding;
 }
 
 /**
@@ -160,7 +179,7 @@ function withOrgName(
 
 /** How a directory row reads in the results: never letters a group hides. */
 export function directoryRowTitle(row: ChapterDirectoryResult): string {
-  return !hidesLetters(row.org_name) && row.org_letters
+  return !lettersHiddenBy(row.org_name) && row.org_letters
     ? `${row.org_letters} · ${row.org_name}`
     : row.org_name;
 }
@@ -299,7 +318,7 @@ export default function CreateChapter() {
         org_archetype: archetype,
         directory_id: directoryId ?? undefined,
         accept_terms_privacy: true,
-        branding: chapterIdentityBranding(identity),
+        branding: setupBranding(identity),
       });
       const id = onboardedChapterId(chapter);
       const active = id ? await selectChapter(id) : false;
@@ -412,7 +431,7 @@ export default function CreateChapter() {
   const setupIndex = SETUP_STEPS.indexOf(step);
   const mark = resolveChapterMark({
     logoUrl,
-    branding: chapterIdentityBranding(identity),
+    branding: setupBranding(identity),
     name: identity.name,
   });
   const accent = normalizeAccentInput(identity.colorAccent);
@@ -492,15 +511,12 @@ export default function CreateChapter() {
             ) : null}
 
             {/*
-              Each step fades in rather than replacing the last in one frame,
-              keyed so the fade runs on every step change. Off for a member
-              who reduces motion; the step still changes, just at once.
+              Each step fades in (`stepFadeIn`, as join's views do), keyed so
+              the fade runs on every step change.
             */}
             <Animated.View
               key={step}
-              entering={FadeIn.duration(
-                tokens.motion.duration.standard,
-              ).reduceMotion(ReduceMotion.System)}
+              entering={stepFadeIn(tokens)}
               style={styles.stack}
             >
               <Text accessibilityRole="header" style={styles.title}>
@@ -574,6 +590,9 @@ export default function CreateChapter() {
                     }
                     onValidityChange={setAccentValid}
                     orgColors={orgColorsFor(identity.name)}
+                    // House gold on purpose, as setup's other fields are
+                    // (`OnboardingTextInput`): the chapter doesn't exist yet,
+                    // so there is no accent for the focus border to follow.
                     focusColor={tokens.color.gold.askText}
                   />
                   {/*
@@ -758,18 +777,16 @@ function Footer({
           disabled={isGenerating}
           busy={isGenerating}
         />
-        <Pressable
+        <OnboardingPressable
           accessibilityRole="button"
           onPress={onFinish}
-          style={({ pressed }) => [
-            styles.quietButton,
-            pressed ? styles.textPressed : null,
-          ]}
+          quiet
+          style={styles.quietButton}
         >
           <Text style={styles.quietButtonText}>
             {inviteLink ? "Go to chat" : "Skip for now"}
           </Text>
-        </Pressable>
+        </OnboardingPressable>
       </View>
     );
   }
@@ -864,16 +881,14 @@ function FindStep({
           <Text style={[styles.errorText, styles.flex]}>
             We couldn&apos;t reach the directory.
           </Text>
-          <Pressable
+          <OnboardingPressable
             accessibilityRole="button"
             onPress={onRetry}
-            style={({ pressed }) => [
-              styles.textButton,
-              pressed ? styles.textPressed : null,
-            ]}
+            quiet
+            style={styles.textButton}
           >
             <Text style={styles.textButtonText}>Retry</Text>
-          </Pressable>
+          </OnboardingPressable>
         </View>
       ) : null}
 
@@ -937,7 +952,7 @@ function ConfirmStep({
   ) {
     onChange({ ...identity, [key]: value });
   }
-  const lettersHidden = hidesLetters(identity.name);
+  const lettersHidden = lettersHiddenBy(identity.name);
 
   const meta = [identity.designation.trim(), identity.university.trim()]
     .filter(Boolean)
@@ -1029,8 +1044,8 @@ function ConfirmStep({
       */}
       {lettersHidden ? (
         <Text style={styles.helperText}>
-          {identity.name.trim()} doesn&apos;t display its Greek letters, so your
-          short name stands in for them.
+          {lettersHidden} doesn&apos;t display its Greek letters, so your short
+          name stands in for them.
         </Text>
       ) : (
         <>
@@ -1098,14 +1113,12 @@ function ConfirmStep({
         </View>
       )}
 
-      <Pressable
+      <OnboardingPressable
         accessibilityRole="button"
         accessibilityState={{ expanded: detailsOpen }}
         onPress={onToggleDetails}
-        style={({ pressed }) => [
-          styles.textButton,
-          pressed ? styles.textPressed : null,
-        ]}
+        quiet
+        style={styles.textButton}
       >
         <Text style={styles.textButtonText}>
           {isManual
@@ -1116,7 +1129,7 @@ function ConfirmStep({
               ? "Hide details"
               : "Edit details"}
         </Text>
-      </Pressable>
+      </OnboardingPressable>
 
       {detailsOpen ? (
         <View style={styles.stack}>
@@ -1226,7 +1239,7 @@ function InviteStep({
             <Text selectable style={styles.monoBody}>
               {inviteLink}
             </Text>
-            <Pressable
+            <OnboardingPressable
               accessibilityRole="button"
               accessibilityState={{
                 disabled: isGenerating,
@@ -1234,13 +1247,11 @@ function InviteStep({
               }}
               disabled={isGenerating}
               onPress={onGenerate}
-              style={({ pressed }) => [
-                styles.textButton,
-                pressed ? styles.textPressed : null,
-              ]}
+              quiet
+              style={styles.textButton}
             >
               <Text style={styles.textButtonText}>Create another link</Text>
-            </Pressable>
+            </OnboardingPressable>
           </View>
         </View>
       ) : null}
@@ -1375,9 +1386,6 @@ function createStyles(tokens: SignetTokens) {
     textButtonText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.gold.askText,
-    },
-    textPressed: {
-      opacity: 0.6,
     },
     // The invite step's way out under its gold button: a 44pt line of muted
     // text, there when wanted and not competing with the invite.

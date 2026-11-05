@@ -4,10 +4,11 @@
  * with `pressed` first, then arrays are merged left to right, nested ones
  * included, and `null`/`false` entries drop out.
  *
- * One copy for the specs to share. A flattener that skips the function step
- * hands back the function itself, cast as a style, so a check like
- * `expect(flatStyle(row.props.style).opacity).toBeUndefined()` passes whatever
- * the row draws.
+ * The shared copy: a new spec reads styles through this. Older specs still
+ * carry private copies, which are moving here (#3441). A flattener that skips
+ * the function step hands back the function itself, cast as a style, so a
+ * check like `expect(flatStyle(row.props.style).opacity).toBeUndefined()`
+ * passes whatever the row draws.
  */
 export function flatStyle(
   style: unknown,

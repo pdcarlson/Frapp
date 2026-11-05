@@ -11,6 +11,7 @@ import {
   orgProfileFor,
 } from "@repo/org-archetypes";
 import { FrappThemeProvider } from "@/lib/theme";
+import { flatStyle } from "@/test/flat-style";
 import { AccentPicker, parseTypedHex, type AccentPickerProps } from "./accent-picker";
 
 function render(props: Partial<AccentPickerProps> = {}) {
@@ -49,11 +50,6 @@ const FIJI = orgColorsFor("Phi Gamma Delta");
 /** A purple stand-in for the caller's focus color, unlike any token. */
 const FOCUS = "#CB9FFF";
 
-function flat(style: unknown): Record<string, unknown> {
-  if (Array.isArray(style)) return Object.assign({}, ...style.map(flat));
-  return (style ?? {}) as Record<string, unknown>;
-}
-
 describe("AccentPicker", () => {
   it("focuses the hex field as it opens, and edges it in the caller's color while focused", () => {
     const { tree } = render();
@@ -66,11 +62,11 @@ describe("AccentPicker", () => {
       );
     // "Custom color…" was the tap asking to type; no second tap to focus.
     expect(field().props.autoFocus).toBe(true);
-    expect(flat(field().props.style).borderColor).not.toBe(FOCUS);
+    expect(flatStyle(field().props.style).borderColor).not.toBe(FOCUS);
     act(() => field().props.onFocus());
-    expect(flat(field().props.style).borderColor).toBe(FOCUS);
+    expect(flatStyle(field().props.style).borderColor).toBe(FOCUS);
     act(() => field().props.onBlur());
-    expect(flat(field().props.style).borderColor).not.toBe(FOCUS);
+    expect(flatStyle(field().props.style).borderColor).not.toBe(FOCUS);
   });
 
   it("offers the organization's colors before the presets", () => {

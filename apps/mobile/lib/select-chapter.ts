@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { useActivateChapter } from "@repo/hooks";
+import { statusOf } from "@repo/api-sdk";
 import { getSupabaseClient } from "./supabase";
 
 export interface SelectChapterOptions {
@@ -15,6 +16,14 @@ export interface SelectChapterOptions {
    * runs inside a selection that otherwise never throws.
    */
   onActivated?: () => void;
+  /**
+   * Called when the server answers step 1 with a refusal (403: the caller
+   * isn't a member of `chapterId`, `ChapterService.setActiveChapter`), before
+   * the `false` comes back. Nothing moved, and a retry can't succeed, which is
+   * what tells it apart from a `false` for being offline. The same rules as
+   * `onActivated`: only the picker passes it, and it is bookkeeping.
+   */
+  onRefused?: () => void;
 }
 
 /**
@@ -57,10 +66,12 @@ export function useSelectChapter() {
 
       try {
         await activateChapter.mutateAsync(chapterId);
-      } catch {
+      } catch (caught) {
         // Nothing happened server-side, so the member is exactly where they
         // started and a retry is safe. (Short of an answer lost on the way
-        // back after the server applied it, which nothing here can see.)
+        // back after the server applied it, which nothing here can see.) A
+        // 403 is the server saying no, which a retry won't change.
+        if (statusOf(caught) === 403) options?.onRefused?.();
         return false;
       }
       options?.onActivated?.();

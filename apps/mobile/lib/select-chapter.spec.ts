@@ -156,6 +156,31 @@ describe("useSelectChapter", () => {
     expect(onActivated).not.toHaveBeenCalled();
   });
 
+  it("says when the server refuses the activate, and only then", async () => {
+    // The picker reads this to keep a refused member (removed from that
+    // chapter) on the list rather than treating it as being offline.
+    const onRefused = vi.fn();
+    mockState.activateError = Object.assign(new Error("Forbidden"), {
+      statusCode: 403,
+    });
+    await expect(renderSelect()("chapter-a", { onRefused })).resolves.toBe(
+      false,
+    );
+    expect(onRefused).toHaveBeenCalledTimes(1);
+
+    onRefused.mockClear();
+    mockState.activateError = new Error("Failed to fetch");
+    await expect(renderSelect()("chapter-a", { onRefused })).resolves.toBe(
+      false,
+    );
+    mockState.activateError = null;
+    mockState.refreshError = { message: "network down" };
+    await expect(renderSelect()("chapter-a", { onRefused })).resolves.toBe(
+      false,
+    );
+    expect(onRefused).not.toHaveBeenCalled();
+  });
+
   it("never throws, so a caller cannot roll back a completed action", async () => {
     mockState.activateError = new Error("boom");
     const selectChapter = renderSelect();

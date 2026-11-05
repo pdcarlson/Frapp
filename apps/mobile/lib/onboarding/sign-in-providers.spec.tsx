@@ -6,6 +6,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, tint } from "@/lib/theme";
+import { flatStyle } from "@/test/flat-style";
 import {
   OAUTH_MEMBERSHIP_HINT,
   signInProviderLayout,
@@ -38,6 +39,12 @@ vi.mock("@/lib/auth-session", () => ({
     signInWithPassword: auth.signInWithPassword,
     signOut: vi.fn(),
   }),
+}));
+
+// A purple stand-in for a chapter's accent, so a back row that lost `house`
+// paints purple and fails, rather than crashing for want of a QueryClient.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({ accent: "#CB9FFF" }),
 }));
 
 import SignIn from "@/app/(auth)/sign-in";
@@ -76,18 +83,6 @@ function pressableLabelled(root: Node, label: string): Node {
 }
 
 /**
- * Flattens the style arrays the screen passes, which the mock leaves alone,
- * resolving a `({ pressed }) => style` at rest.
- */
-function flat(style: unknown): Record<string, unknown> {
-  if (typeof style === "function") return flat(style({ pressed: false }));
-  if (Array.isArray(style)) {
-    return Object.assign({}, ...style.map(flat));
-  }
-  return (style ?? {}) as Record<string, unknown>;
-}
-
-/**
  * Buttons drawn in the light fill: the one the screen leads with. The others
  * are Secondary buttons on the card fill (components.md § Buttons).
  */
@@ -96,7 +91,7 @@ function filledLabels(root: Node): string[] {
     .findAll(
       (node) =>
         isHost(node, "Pressable") &&
-        flat(node.props.style).backgroundColor ===
+        flatStyle(node.props.style).backgroundColor ===
           signetDarkTokens.color.text.foreground,
     )
     .flatMap((pressable) =>
@@ -221,14 +216,10 @@ describe("sign-in providers on iOS", () => {
       tree.root.find(
         (node) =>
           isHost(node, "Pressable") &&
-          flat(node.props.style).backgroundColor ===
+          flatStyle(node.props.style).backgroundColor ===
             signetDarkTokens.color.text.foreground,
       );
-    const held = () =>
-      Object.assign(
-        {},
-        ...[lead().props.style({ pressed: true })].flat(Infinity),
-      ) as Record<string, unknown>;
+    const held = () => flatStyle(lead().props.style, true);
 
     expect(held().opacity).toBe(0.85);
     expect(lead().props.android_ripple).toEqual({ color: expect.any(String) });
@@ -264,6 +255,23 @@ describe("the email form", () => {
     expect(buttonLabels(tree.root)).not.toContain("Sign in");
   });
 
+  it("draws its ‹ Back row in house gold: (auth) has no chapter accent", () => {
+    const tree = render();
+    act(() => {
+      pressableLabelled(tree.root, "Continue with email").props.onPress();
+    });
+    const back = tree.root.find(
+      (node) =>
+        isHost(node, "Pressable") &&
+        node.props.accessibilityLabel === "Back to sign-in options",
+    );
+    const text = back.find((node) => isHost(node, "Text"));
+    expect(text.props.children).toBe("‹ Back");
+    expect(flatStyle(text.props.style).color).toBe(
+      signetDarkTokens.color.gold.askText,
+    );
+  });
+
   it("marks the chosen mode in house gold, as the flow's other selections are", () => {
     const tree = render();
     act(() => {
@@ -274,8 +282,8 @@ describe("the email form", () => {
       const chip = pressableLabelled(tree.root, label);
       const text = chip.find((node) => isHost(node, "Text"));
       return {
-        fill: flat(chip.props.style).backgroundColor,
-        ink: flat(text.props.style).color,
+        fill: flatStyle(chip.props.style).backgroundColor,
+        ink: flatStyle(text.props.style).color,
         selected: chip.props.accessibilityState?.selected,
       };
     };

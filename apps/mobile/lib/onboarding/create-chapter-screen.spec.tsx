@@ -10,6 +10,7 @@ import { ReduceMotion } from "react-native-reanimated";
 import type { ChapterDirectoryResult } from "@repo/hooks";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { flatStyle } from "@/test/flat-style";
 
 /**
  * Chapter setup (#3351): find, confirm, color, then the live moment, the push
@@ -82,6 +83,20 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 }));
 
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: vi.fn() }));
+
+// The founder's new chapter is purple, so a setup control that follows the
+// chapter accent instead of house gold shows up as purple.
+vi.mock("@/lib/chapter-branding", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/chapter-branding")>();
+  return {
+    ...actual,
+    useChapterBranding: () => ({
+      ...actual.useChapterBranding(),
+      accent: "#CB9FFF",
+    }),
+  };
+});
 
 import CreateChapter, { SETUP_TITLES } from "@/app/(auth)/create-chapter";
 
@@ -290,6 +305,19 @@ describe("chapter setup — step order", () => {
     expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
   });
 
+  it("draws its ‹ Back row in house gold, not the chapter's accent", async () => {
+    const { root } = await render();
+    const backInk = () =>
+      flatStyle(control(root, "Back")!.findByType("Text" as never).props.style)
+        .color;
+    // `gold.askText` on find, confirm and color: `(auth)` has no chapter.
+    expect(backInk()).toBe(signetDarkTokens.color.gold.askText);
+    await pickRow(root, "Phi Gamma Delta");
+    expect(backInk()).toBe(signetDarkTokens.color.gold.askText);
+    await press(root, "Continue");
+    expect(backInk()).toBe(signetDarkTokens.color.gold.askText);
+  });
+
   it("steps back from color to confirm to find", async () => {
     const { root } = await render();
     await pickRow(root, "Phi Gamma Delta");
@@ -433,6 +461,47 @@ describe("chapter setup — Greek letters", () => {
     expect(inputValues(root)).toContain('["Short name","FIJI"]');
     expect(lettersSwitch(root)).toBeUndefined();
   });
+
+  // The match web's setup makes (`orgHidingGreekLettersIn`), not only the
+  // directory's exact name. The letters are typed under another name first,
+  // so the switch is still on when the name changes: nothing but the match
+  // keeps them off the mark and out of what is sent.
+  it.each(["FIJI", "Phi Gamma Delta (FIJI)", "phi gamma delta tau nu"])(
+    "hides the letters for %s typed by hand, and sends them off",
+    async (orgName) => {
+      const { root } = await render();
+      await press(root, "Not in our directory?");
+      typeInto(root, "Organization", "Delta Tau");
+      typeInto(root, "School", "Rensselaer Polytechnic Institute");
+      await press(root, "More details (optional)");
+      typeInto(root, "Greek letters", "ΦΓΔ");
+      expect(lettersSwitch(root)?.props.value).toBe(true);
+
+      typeInto(root, "Organization", orgName);
+      expect(lettersSwitch(root)).toBeUndefined();
+      expect(inputValues(root)).not.toContain("Greek letters");
+      expect(allText(root)).toContain(
+        `["Phi Gamma Delta"," doesn't display its Greek letters`,
+      );
+      expect(allText(root)).not.toContain("ΦΓΔ");
+
+      await act(async () => {
+        radios(root)[0].props.onPress();
+      });
+      await press(root, "Continue");
+      expect(allText(root)).not.toContain("ΦΓΔ");
+      await press(root, "agree");
+      await act(async () => {
+        primary(root).props.onPress();
+      });
+      await settle();
+      const body = onboard.mock.calls[0]?.[0] as {
+        branding: { show_greek_letters?: boolean };
+      };
+      expect(body.branding.show_greek_letters).toBe(false);
+      expect(allText(root)).not.toContain("ΦΓΔ");
+    },
+  );
 
   it("sends FIJI's branding with the letters switched off", async () => {
     const { root } = await render();
@@ -586,17 +655,9 @@ describe("chapter setup — push primer for the founder", () => {
   });
 });
 
-/** A Pressable's resting fill, resolving a `({ pressed }) => style`. */
-function fillOf(pressable: Node | undefined): unknown {
-  const style: unknown = pressable?.props.style;
-  const resolved =
-    typeof style === "function" ? style({ pressed: false }) : style;
-  const parts = (Array.isArray(resolved) ? resolved : [resolved]) as (Record<
-    string,
-    unknown
-  > | null)[];
-  return Object.assign({}, ...parts.filter(Boolean)).backgroundColor;
-}
+/** A Pressable's resting fill. */
+const fillOf = (pressable: Node | undefined): unknown =>
+  flatStyle(pressable?.props.style).backgroundColor;
 
 /**
  * The invite step's one gold button is the invite: `Create invite link`,

@@ -4,7 +4,6 @@ import {
   BackHandler,
   Keyboard,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   View,
@@ -13,7 +12,8 @@ import * as Linking from "expo-linking";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { useClientPolicy } from "@/lib/client-policy";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /** `spec/ui/design-system/writing.md` § Update required (mobile, global). */
 export const UPDATE_REQUIRED_COPY = {
@@ -110,18 +110,16 @@ function UpdateRequiredScreen({ updateUrl }: { updateUrl: string | null }) {
       <Text style={styles.body}>{UPDATE_REQUIRED_COPY.body}</Text>
 
       {updateUrl ? (
-        <Pressable
+        <OnboardingPressable
           accessibilityRole="button"
           onPress={() => {
             void openUpdate(updateUrl);
           }}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            pressed ? styles.primaryButtonPressed : null,
-          ]}
+          rippleColor={styles.primaryRipple.color}
+          style={styles.primaryButton}
         >
           <Text style={styles.primaryButtonText}>{UPDATE_REQUIRED_COPY.cta}</Text>
-        </Pressable>
+        </OnboardingPressable>
       ) : (
         <Text style={styles.body}>{UPDATE_REQUIRED_COPY.noLink}</Text>
       )}
@@ -168,10 +166,11 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "center",
     },
-    // The onboarding primary's held value: the gate's one button shows the
-    // press landed.
-    primaryButtonPressed: {
-      opacity: 0.85,
+    // The gate's one button presses as the onboarding primary it is painted
+    // like (`OnboardingPressable`): a ripple toward gold's ink on Android, the
+    // held dim on iOS. Not a style a view takes: the ripple's color.
+    primaryRipple: {
+      color: tint(tokens.color.gold.onHouse, 0.16),
     },
     primaryButtonText: {
       ...typeRole(tokens.typography.role.label),

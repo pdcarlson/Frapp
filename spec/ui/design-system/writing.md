@@ -1000,6 +1000,16 @@ Mobile's first-officer setup, `(auth)/create-chapter.tsx` (#3351). Titles are `S
 | Invite | `Invite your chapter` | `Each link lets one person join and expires after 24 hours.` The gold primary reads `Create invite link`, then `Share invite` once a link exists, with the link on a card above it and `Create another link` under the link. Leaving is the quiet line under the primary: `Skip for now`, then `Go to chat`. |
 | Invite failed | — | The server's message, else `Couldn't create an invite. You can invite members from the web dashboard.` |
 
+### Chapter picker (mobile)
+
+`(auth)/chapter-picker.tsx`. When each error shows, and when a failed select leaves instead, is [`screens.md`'s supporting-routes paragraph](../mobile/screens.md)'s.
+
+| State | Title | Description |
+|---|---|---|
+| Idle | `Choose your chapter` | No line under the title: the list says it. The open chapter's row is marked `Current`. |
+| Switch failed | — | `Could not switch chapters. Check your connection and try again.` |
+| Switch refused (403, no longer a member) | — | `You can't open that chapter because you're no longer a member of it. Pick another chapter.` A retry can't succeed, so it names another chapter as the way on, not the connection. |
+
 ### App error boundary (`global-error`)
 
 | State | Title | Description |

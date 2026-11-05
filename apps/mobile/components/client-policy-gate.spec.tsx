@@ -12,8 +12,10 @@ import {
 } from "react-native";
 import * as Linking from "expo-linking";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { FrappThemeProvider } from "@/lib/theme";
+import { signetDarkTokens } from "@repo/theme/signet";
+import { FrappThemeProvider, tint } from "@/lib/theme";
 import type { ClientPolicy } from "@/lib/client-policy";
+import { flatStyle } from "@/test/flat-style";
 
 const policy = vi.hoisted(() => ({
   current: { updateRequired: false, updateUrl: null } as ClientPolicy,
@@ -131,6 +133,21 @@ describe("ClientPolicyGate", () => {
     expect(AccessibilityInfo.announceForAccessibility).not.toHaveBeenCalledWith(
       UPDATE_REQUIRED_COPY.linkFailed,
     );
+  });
+
+  it("presses as the onboarding primary: a ripple on Android, the held dim on iOS", () => {
+    policy.current = { updateRequired: true, updateUrl: "https://a.test/app" };
+    const button = render().root.findByType(Pressable);
+    // Toward gold's own ink, as `OnboardingPrimaryButton`'s ripple is.
+    expect(button.props.android_ripple).toEqual({
+      color: tint(signetDarkTokens.color.gold.onHouse, 0.16),
+    });
+    expect(flatStyle(button.props.style, true).opacity).toBe(0.85);
+
+    // Android shows the ripple instead, so the fill doesn't also dim.
+    const os = vi.spyOn(Platform, "OS", "get").mockReturnValue("android");
+    onTestFinished(() => os.mockRestore());
+    expect(flatStyle(button.props.style, true).opacity).toBeUndefined();
   });
 
   it("still blocks, with instructions instead of a button, when there is no link", () => {

@@ -459,18 +459,16 @@ export default function SignIn() {
                   ? renderProvider(layout.tucked, false)
                   : null}
                 {layout.tucked && !moreOpen ? (
-                  <Pressable
+                  <OnboardingPressable
                     accessibilityRole="button"
                     onPress={() => setMoreOpen(true)}
-                    style={({ pressed }) => [
-                      styles.textButton,
-                      pressed ? styles.textButtonPressed : null,
-                    ]}
+                    quiet
+                    style={styles.textButton}
                   >
                     <Text style={styles.textButtonLabel}>
                       Other ways to sign in
                     </Text>
-                  </Pressable>
+                  </OnboardingPressable>
                 ) : null}
                 {appleVisible ? (
                   <Text style={styles.hintText}>{OAUTH_MEMBERSHIP_HINT}</Text>
@@ -607,9 +605,6 @@ function createStyles(tokens: SignetTokens) {
       minHeight: tokens.touch.minimum,
       alignItems: "center",
       justifyContent: "center",
-    },
-    textButtonPressed: {
-      opacity: 0.6,
     },
     textButtonLabel: {
       ...typeRole(tokens.typography.role.label),

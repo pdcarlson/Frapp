@@ -5,7 +5,10 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { FrappThemeProvider } from "@/lib/theme";
+import { Platform } from "react-native";
+import { signetDarkTokens } from "@repo/theme/signet";
+import { FrappThemeProvider, tint } from "@/lib/theme";
+import { flatStyle } from "@/test/flat-style";
 import { drawnText } from "@/test/screen-text";
 
 /**
@@ -17,7 +20,8 @@ import { drawnText } from "@/test/screen-text";
  * chapter that's open now is marked, and a tap on it selects it again like any
  * row, since the mark reads a token claim that can lag the server. Unlike any
  * other row, it leaves even when that fails, unless the last switch it saw
- * reach the server since it opened put the server on another chapter.
+ * reach the server since it opened put the server on another chapter, or the
+ * server refused it (the member is no longer in that chapter).
  *
  * Here, not beside the screen: a spec under `app/` is a route module and
  * ships in the bundle (`lib/routes.spec.ts`).
@@ -35,6 +39,12 @@ vi.mock("@/lib/auth-session", () => ({
 
 vi.mock("@/lib/select-chapter", () => ({
   useSelectChapter: () => selectChapter,
+}));
+
+// A purple stand-in for the chapter's accent: the picker is opened from
+// inside a chapter, so a back row that lost `house` would paint it.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({ accent: "#CB9FFF" }),
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -114,6 +124,18 @@ function halfAppliedSwitch() {
   );
 }
 
+/** A switch the server refuses: the member isn't in that chapter any more. */
+function refusedSwitch() {
+  selectChapter.mockImplementationOnce(
+    async (_id: string, options?: { onRefused?: () => void }) => {
+      options?.onRefused?.();
+      return false;
+    },
+  );
+}
+
+const REFUSED = "You can't open that chapter because you're no longer a member";
+
 function rowFor(root: Node, name: string): Node {
   return root.find(
     (node) =>
@@ -139,6 +161,11 @@ describe("chapter picker, opened from More", () => {
     const column = tree.root.findByType("ScrollView" as never);
 
     expect(drawnText(back)).toBe("‹ More");
+    // House gold (`gold.askText`), not the chapter's accent, as all of
+    // `(auth)` is.
+    expect(flatStyle(back.findByType("Text" as never).props.style).color).toBe(
+      signetDarkTokens.color.gold.askText,
+    );
     // At the top of the column, where every screen opened from More puts its
     // row and title, rather than floating above a centred list.
     expect(
@@ -214,6 +241,22 @@ describe("chapter picker, opened from More", () => {
     tree.unmount();
   });
 
+  it("presses Sign out as the flow's quiet lines do: a ripple on Android, a 0.6 dim on iOS", () => {
+    const signOut = rowFor(render().root, "Sign out");
+    // `ListRow`'s neutral ripple, through `OnboardingPressable`'s quiet line.
+    expect(signOut.props.android_ripple).toEqual({
+      color: tint(signetDarkTokens.color.text.foreground, 0.12),
+    });
+    expect(flatStyle(signOut.props.style, true).opacity).toBe(0.6);
+
+    const os = vi.spyOn(Platform, "OS", "get").mockReturnValue("android");
+    try {
+      expect(flatStyle(signOut.props.style, true).opacity).toBeUndefined();
+    } finally {
+      os.mockRestore();
+    }
+  });
+
   it("has no line narrating the list under its title", () => {
     const tree = render();
 
@@ -249,6 +292,34 @@ describe("chapter picker, opened from More", () => {
     expect(selected()).toEqual(["chapter-tau-nu"]);
     expect(router.back).toHaveBeenCalledTimes(1);
     expect(drawnText(tree.root)).not.toContain("Could not switch chapters");
+  });
+
+  it("keeps the Current row on screen when the server refuses it", async () => {
+    // Removed from that chapter while the token still names it: the tabs
+    // would refuse every request, so the member is told to pick another.
+    refusedSwitch();
+    const tree = render();
+
+    await act(async () => {
+      rowFor(tree.root, "FIJI Tau Nu").props.onPress();
+    });
+    expect(selected()).toEqual(["chapter-tau-nu"]);
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+    expect(drawnText(tree.root)).toContain(REFUSED);
+    expect(drawnText(tree.root)).not.toContain("Check your connection");
+  });
+
+  it("says another row was refused, rather than blaming the connection", async () => {
+    refusedSwitch();
+    const tree = render();
+
+    await act(async () => {
+      rowFor(tree.root, "Sigma Phi Epsilon").props.onPress();
+    });
+    expect(router.back).not.toHaveBeenCalled();
+    expect(drawnText(tree.root)).toContain(REFUSED);
+    expect(drawnText(tree.root)).not.toContain("Check your connection");
   });
 
   it("keeps the error on the Current row after a switch here reached the server", async () => {

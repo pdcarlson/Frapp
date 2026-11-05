@@ -20,7 +20,7 @@ import {
   Text,
   View,
 } from "react-native";
-import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   isDeadInviteError,
@@ -61,6 +61,7 @@ import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { successHaptic } from "@/lib/haptics";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
+import { stepFadeIn } from "@/lib/onboarding/step-fade";
 import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -418,7 +419,7 @@ export default function JoinChapter() {
   }
 
   const accountButton = (
-    <Pressable
+    <OnboardingPressable
       accessibilityRole="button"
       accessibilityLabel="Account"
       accessibilityHint="Sign out or delete your account."
@@ -428,13 +429,11 @@ export default function JoinChapter() {
       onPress={() => {
         setAccountOpen((open) => !open);
       }}
-      style={({ pressed }) => [
-        styles.accountButton,
-        pressed ? styles.textPressed : null,
-      ]}
+      quiet
+      style={styles.accountButton}
     >
       <Text style={styles.accountButtonText}>Account</Text>
-    </Pressable>
+    </OnboardingPressable>
   );
 
   // The board's s02 `‹ Back` row, in house gold (`BackRow`), with the
@@ -459,11 +458,8 @@ export default function JoinChapter() {
     </View>
   );
 
-  // Each view fades in rather than replacing the last in one frame. Off for
-  // a member who reduces motion; the step still changes, just at once.
-  const entering = FadeIn.duration(
-    tokens.motion.duration.standard,
-  ).reduceMotion(ReduceMotion.System);
+  // Each view fades in (`stepFadeIn`, as setup's steps do).
+  const entering = stepFadeIn(tokens);
 
   return (
     // Safe area on every edge (#3345): `(auth)` renders with `headerShown:
@@ -801,9 +797,6 @@ function createStyles(tokens: SignetTokens) {
     accountButtonText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.mutedForeground,
-    },
-    textPressed: {
-      opacity: 0.6,
     },
     title: {
       ...typeRole(tokens.typography.role.headline),

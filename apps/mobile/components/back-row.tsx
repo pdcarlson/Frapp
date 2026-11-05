@@ -67,7 +67,9 @@ type BackRowProps = {
  * `‹ More`), as the board's s02 does. They pass `house`, because `(auth)` has
  * no chapter to take an accent from, and `onPress`, because their way back is
  * a step inside one route (the email form to the providers, the confirm step
- * to the field) or the picker's own `router.back()`, not a tab to open.
+ * to the field), not a tab to open. Two leave their route instead: setup's
+ * find step goes back to what opened it (`router.back()`, or `/join` with
+ * nothing behind it), and the picker's `‹ More` is its own `router.back()`.
  */
 export function BackRow(props: BackRowProps) {
   // Two components rather than a branch inside one: a house row never reads

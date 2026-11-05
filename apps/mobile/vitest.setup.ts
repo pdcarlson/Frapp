@@ -257,56 +257,49 @@ vi.mock("react-native-gesture-handler", () => {
 // written through `get`/`set`, the React Compiler-safe accessors the viewer
 // uses. An animated style re-runs its updater on every read, the way the UI
 // thread does, so a spec that runs a gesture callback can read the result.
-vi.mock("react-native-reanimated", () => ({
-  default: { Image: "Animated.Image", View: "Animated.View" },
-  useSharedValue: <T>(initial: T) =>
-    React.useRef(
-      (() => {
-        let value = initial;
-        return {
-          get: () => value,
-          set: (next: T) => {
-            value = next;
-          },
-        };
-      })(),
-    ).current,
-  useAnimatedStyle: <T extends object>(updater: () => T) =>
-    new Proxy({} as T, {
-      get: (_target, key) => updater()[key as keyof T],
-      ownKeys: () => Reflect.ownKeys(updater()),
-      getOwnPropertyDescriptor: (_target, key) => ({
-        configurable: true,
-        enumerable: true,
-        value: updater()[key as keyof T],
+vi.mock("react-native-reanimated", () => {
+  // Entering animations are builders: each modifier returns a new builder
+  // that keeps what it was given, so a spec can read the reduced-motion
+  // setting (`entering.reduceMotionMode`) off the view the builder was handed
+  // to. One builder for every entering animation the app uses, so a modifier
+  // a screen starts calling is added once.
+  const entering = (config: object): object => ({
+    ...config,
+    duration: (ms: number) => entering({ ...config, durationMs: ms }),
+    reduceMotion: (mode: string) =>
+      entering({ ...config, reduceMotionMode: mode }),
+  });
+  return {
+    default: { Image: "Animated.Image", View: "Animated.View" },
+    useSharedValue: <T>(initial: T) =>
+      React.useRef(
+        (() => {
+          let value = initial;
+          return {
+            get: () => value,
+            set: (next: T) => {
+              value = next;
+            },
+          };
+        })(),
+      ).current,
+    useAnimatedStyle: <T extends object>(updater: () => T) =>
+      new Proxy({} as T, {
+        get: (_target, key) => updater()[key as keyof T],
+        ownKeys: () => Reflect.ownKeys(updater()),
+        getOwnPropertyDescriptor: (_target, key) => ({
+          configurable: true,
+          enumerable: true,
+          value: updater()[key as keyof T],
+        }),
       }),
-    }),
-  withTiming: <T>(value: T) => value,
-  // Entering animations are builders: each modifier returns the builder.
-  ZoomIn: (() => {
-    // Each modifier returns a new builder that keeps what it was given, so a
-    // spec can read the reduced-motion setting (`entering.reduceMotionMode`)
-    // off the view the builder was handed to.
-    const build = (config: object): object => ({
-      ...config,
-      duration: (ms: number) => build({ ...config, durationMs: ms }),
-      reduceMotion: (mode: string) =>
-        build({ ...config, reduceMotionMode: mode }),
-    });
-    return build({});
-  })(),
-  // Join's views and setup's steps fade in. Built as `ZoomIn` is.
-  FadeIn: (() => {
-    const build = (config: object): object => ({
-      ...config,
-      duration: (ms: number) => build({ ...config, durationMs: ms }),
-      reduceMotion: (mode: string) =>
-        build({ ...config, reduceMotionMode: mode }),
-    });
-    return build({});
-  })(),
-  ReduceMotion: { System: "system", Always: "always", Never: "never" },
-}));
+    withTiming: <T>(value: T) => value,
+    // Setup's live mark zooms in; join's views and setup's steps fade in.
+    ZoomIn: entering({}),
+    FadeIn: entering({}),
+    ReduceMotion: { System: "system", Always: "always", Never: "never" },
+  };
+});
 
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaProvider: "SafeAreaProvider",

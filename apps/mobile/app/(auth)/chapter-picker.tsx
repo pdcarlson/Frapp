@@ -7,7 +7,6 @@ import {
 } from "expo-router";
 import {
   ActivityIndicator,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -19,6 +18,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { useAuthSession } from "@/lib/auth-session";
 import { ChoiceRow } from "@/components/auth/choice-row";
 import { BackRow } from "@/components/back-row";
+import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -38,9 +38,9 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * There is no local write on selection — see `lib/select-chapter.ts`. Because
  * the gate exempts this route, it will not push the member back out when a
  * switch lands, so every exit here is explicit: back to (or into) `(tabs)` on
- * success, and from the Current row when its re-select fails but nothing in
- * this visit may have moved the server off that chapter (`handleSelect`); to
- * sign-in on sign-out. Nothing waits on a redirect that may never come.
+ * success, and in some cases from a failed re-select of the Current row (the
+ * rule is `handleSelect`'s); to sign-in on sign-out. Nothing waits on a
+ * redirect that may never come.
  */
 export default function ChapterPicker() {
   const { tokens } = useFrappTheme();
@@ -121,21 +121,35 @@ export default function ChapterPicker() {
     setSelectError(null);
 
     try {
+      // Set by `onRefused`: the server said no, rather than not answering.
+      const outcome = { refused: false };
       const ok = await selectChapter(nextChapterId, {
         onActivated: () => {
           serverMovedTo.current = nextChapterId;
         },
+        onRefused: () => {
+          outcome.refused = true;
+        },
       });
 
-      // A failed re-select of the row marked Current leaves anyway when
-      // nothing in this visit may have moved the server off that chapter: no
-      // activate has landed here, or the last one to land was for this very
-      // chapter, which leaves the server and the token in hand agreeing
-      // whether or not the refresh after it worked. Requests are checked
-      // against the token's claim, so the tabs underneath work as they did
-      // before the tap, and an error would strand a member who is offline on
-      // the chapter they're already in (a picker a link opened has no row
-      // out but Sign out).
+      // The exit rule for a failed select. It is stated here and in
+      // screens.md's supporting-routes paragraph; everything else points here.
+      //
+      // A refused activate (403: the member isn't in that chapter any more)
+      // stays, on any row, the Current one included, with an error that says
+      // to pick another. Nothing moved, a retry can't succeed, and leaving
+      // from Current would put the member on tabs whose every request the
+      // chapter guard refuses for the same reason.
+      //
+      // Otherwise (offline, say), a failed re-select of the row marked Current
+      // leaves anyway when nothing in this visit may have moved the server
+      // off that chapter: no activate has landed here, or the last one to
+      // land was for this very chapter, which leaves the server and the token
+      // in hand agreeing whether or not the refresh after it worked. Requests
+      // are checked against the token's claim, so the tabs underneath work as
+      // they did before the tap, and an error would strand a member who is
+      // offline on the chapter they're already in (a picker a link opened has
+      // no row out but Sign out).
       // After a switch here whose activate landed and whose refresh failed,
       // the server holds the other chapter and the next token would move the
       // member there, so a failed re-select of Current shows the error and
@@ -145,6 +159,12 @@ export default function ChapterPicker() {
       // here: a failed re-select then leaves, and the next token follows the
       // server, to the chapter the member chose there.
       // Any other row keeps the error: its switch hasn't taken.
+      if (!ok && outcome.refused) {
+        setSelectError(
+          "You can't open that chapter because you're no longer a member of it. Pick another chapter.",
+        );
+        return;
+      }
       const leavesAnyway =
         alreadyOn &&
         (serverMovedTo.current === null ||
@@ -220,18 +240,17 @@ export default function ChapterPicker() {
               <Text style={styles.errorText}>
                 We could not load your chapters.
               </Text>
-              <Pressable
+              <OnboardingPressable
                 accessibilityRole="button"
                 onPress={() => {
                   void refetch();
                 }}
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  pressed ? styles.primaryButtonPressed : null,
-                ]}
+                rippleColor={styles.primaryRipple.color}
+                heldStyle={styles.primaryButtonPressed}
+                style={styles.primaryButton}
               >
                 <Text style={styles.primaryButtonText}>Try again</Text>
-              </Pressable>
+              </OnboardingPressable>
             </View>
           ) : !data || data.length === 0 ? (
             // Not reachable through the normal hook path, but a member with no
@@ -243,20 +262,19 @@ export default function ChapterPicker() {
                 This account is not a member of any chapter yet. Join with an
                 invite, or start your chapter if you&apos;re the first officer.
               </Text>
-              <Pressable
+              <OnboardingPressable
                 accessibilityRole="button"
                 onPress={() => {
                   router.push("/join");
                 }}
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  pressed ? styles.primaryButtonPressed : null,
-                ]}
+                rippleColor={styles.primaryRipple.color}
+                heldStyle={styles.primaryButtonPressed}
+                style={styles.primaryButton}
               >
                 <Text style={styles.primaryButtonText}>
                   Join or start a chapter
                 </Text>
-              </Pressable>
+              </OnboardingPressable>
             </View>
           ) : (
             <View style={styles.list}>
@@ -266,10 +284,8 @@ export default function ChapterPicker() {
                 // as on any row: `Current` reads the token's claim, which can
                 // lag the active chapter the server holds (a switch on web, or
                 // a switch here whose refresh failed), and selecting it again
-                // is what puts the server back on the chapter shown. Unlike
-                // the other rows, it leaves even when that fails, unless a
-                // switch in this visit may have moved the server to another
-                // chapter; then it keeps the error (`handleSelect`).
+                // is what puts the server back on the chapter shown. When that
+                // fails, `handleSelect` decides whether it leaves.
                 const isCurrent = membership.chapter_id === currentChapterId;
                 return (
                   <ChoiceRow
@@ -304,18 +320,16 @@ export default function ChapterPicker() {
             move us. Sign-out is the escape hatch — gating it on `pendingId`
             meant any stuck selection left the member with no way off this
             screen at all. */}
-          <Pressable
+          <OnboardingPressable
             accessibilityRole="button"
             onPress={() => {
               void handleSignOut();
             }}
-            style={({ pressed }) => [
-              styles.secondaryButton,
-              pressed ? styles.textPressed : null,
-            ]}
+            quiet
+            style={styles.secondaryButton}
           >
             <Text style={styles.secondaryButtonText}>Sign out</Text>
-          </Pressable>
+          </OnboardingPressable>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -390,9 +404,14 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "center",
     },
-    // components.md § Buttons: Tinted presses one step up its own tint.
+    // components.md § Buttons: Tinted presses one step up its own tint, held
+    // on iOS and as the ripple on Android (`OnboardingPressable`).
     primaryButtonPressed: {
       backgroundColor: tint(tokens.color.gold.house, 0.2),
+    },
+    // Not a style a view takes: the ripple's color, from a token like the rest.
+    primaryRipple: {
+      color: tint(tokens.color.gold.house, 0.2),
     },
     primaryButtonText: {
       ...typeRole(tokens.typography.role.label),
@@ -402,9 +421,6 @@ function createStyles(tokens: SignetTokens) {
       minHeight: tokens.touch.button,
       alignItems: "center",
       justifyContent: "center",
-    },
-    textPressed: {
-      opacity: 0.6,
     },
     secondaryButtonText: {
       ...typeRole(tokens.typography.role.label),
