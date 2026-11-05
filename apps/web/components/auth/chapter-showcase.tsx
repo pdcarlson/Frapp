@@ -17,7 +17,14 @@
  * renderers' own parts (`Card`, `MESSAGE_CARD`, `EYEBROW`, `Badge`, the meter
  * classes and the nav glyphs) so the picture cannot drift far from the app.
  * The renderers themselves are not mounted: each one reads a real message and
- * mutates through the API.
+ * mutates through the API. The words follow the app's too: the task badge
+ * reads `@repo/hooks`' labels, and the typing line names nobody, sitting above
+ * the composer as `chat-shell.tsx` puts it.
+ *
+ * **It is an officer's view of a meeting in progress.** The checked-in count
+ * is shown only to members who can read attendance (`event-card.tsx`), and
+ * Check in is offered only inside the event window (`spec/behavior/events.md`),
+ * so every post lands after the meeting's 8:00 start.
  *
  * **It is a picture, so it is hidden from assistive tech.** The panel is
  * `aria-hidden`, holds nothing focusable (every "button" is a `span` drawn
@@ -28,7 +35,8 @@
  * The server renders that frame, which keeps the first paint complete; with
  * motion allowed it holds for a moment, fades, and the scene plays from the
  * top and loops. Under `prefers-reduced-motion` it never leaves the finished
- * frame. Entrances use the theme's `fade-up` and `count-up` utilities (the
+ * frame, and below `lg`, where the frame hides the panel, the clock never
+ * starts. Entrances use the theme's `fade-up` and `count-up` utilities (the
  * `@repo/theme` motion scale) behind `motion-safe:`. A looping showcase is not
  * one of #3493's once-per-flow signature moments; `spec/ui/web-dashboard`
  * records the distinction.
@@ -36,6 +44,8 @@
 
 import { useEffect, useState } from "react";
 import { Check, CheckCircle2 } from "lucide-react";
+import { taskCardStatusLabel } from "@repo/hooks";
+import type { TaskStatus } from "@repo/hooks";
 import {
   EventsGlyph,
   LocationGlyph,
@@ -46,6 +56,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { STATUS_BADGE } from "@/components/chat/renderers/task-card";
 import {
   meterFillClassName,
   meterTrackDenseClassName,
@@ -64,13 +75,14 @@ const AT = {
   taskCard: 6200,
   taskStarted: 7200,
   taskDone: 8400,
-  pollPost: 9600,
-  votesFrom: 10200,
-  votesTo: 12200,
+  taskConfirmed: 9200,
+  pollPost: 9900,
+  votesFrom: 10500,
+  votesTo: 12500,
 } as const;
 
 /** The finished frame: every row posted, every count landed. */
-export const SHOWCASE_FINAL = 12600;
+export const SHOWCASE_FINAL = 12900;
 const HOLD_UNTIL = SHOWCASE_FINAL + 3400;
 const FADE_MS = 500;
 const LOOP_AT = HOLD_UNTIL + FADE_MS;
@@ -104,24 +116,31 @@ function nextBeat(t: number): number | undefined {
 
 /**
  * The scene's clock. Starts on the finished frame (what the server renders),
- * then runs only when motion is allowed and the tab is visible.
+ * then runs only when motion is allowed, the panel is on screen (`lg` and up,
+ * matching `auth-frame.tsx`) and the tab is visible.
  */
 function useSceneClock(): number {
   const [t, setT] = useState<number>(SHOWCASE_FINAL);
   const [running, setRunning] = useState(false);
 
   useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const shown = window.matchMedia("(min-width: 1024px)");
     const sync = () => {
-      const allowed = !query.matches && document.visibilityState === "visible";
-      setRunning(allowed);
-      if (query.matches) setT(SHOWCASE_FINAL);
+      setRunning(
+        !reduce.matches &&
+          shown.matches &&
+          document.visibilityState === "visible",
+      );
+      if (reduce.matches || !shown.matches) setT(SHOWCASE_FINAL);
     };
     sync();
-    query.addEventListener("change", sync);
+    reduce.addEventListener("change", sync);
+    shown.addEventListener("change", sync);
     document.addEventListener("visibilitychange", sync);
     return () => {
-      query.removeEventListener("change", sync);
+      reduce.removeEventListener("change", sync);
+      shown.removeEventListener("change", sync);
       document.removeEventListener("visibilitychange", sync);
     };
   }, []);
@@ -219,8 +238,15 @@ function EventCard({ t }: { t: number }) {
 }
 
 function TaskCard({ t }: { t: number }) {
-  const status =
-    t >= AT.taskDone ? "Done" : t >= AT.taskStarted ? "In progress" : "To do";
+  const status: TaskStatus =
+    t >= AT.taskDone ? "COMPLETED" : t >= AT.taskStarted ? "IN_PROGRESS" : "TODO";
+  const confirmed = t >= AT.taskConfirmed;
+  const label = taskCardStatusLabel({
+    id: "showcase",
+    status,
+    stored_status: status,
+    points_awarded: confirmed,
+  });
   return (
     <Card className={cn(MESSAGE_CARD, ENTER)}>
       <div className="flex items-center justify-between gap-6">
@@ -229,12 +255,12 @@ function TaskCard({ t }: { t: number }) {
         </div>
         {/* Keyed on the status so each change re-enters, which is the scene's one flourish. */}
         <Badge
-          key={status}
-          variant={status === "To do" ? "outline" : "default"}
+          key={label}
+          variant={STATUS_BADGE[status]}
           className="motion-safe:animate-count-up gap-1"
         >
-          {status === "Done" ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
-          {status}
+          {confirmed ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
+          {label}
         </Badge>
       </div>
       <p className="mt-2 text-base font-bold">Grab the projector from the library</p>
@@ -292,23 +318,12 @@ function PollCard({ t }: { t: number }) {
   );
 }
 
+/** `chat-shell.tsx`'s line, word for word: typing names nobody. */
 function Typing() {
   return (
-    <div
-      className={cn(
-        "flex items-center gap-1 pl-11 text-caption text-muted-foreground",
-        "motion-safe:animate-fade-in",
-      )}
-    >
-      {[0, 150, 300].map((delay) => (
-        <span
-          key={delay}
-          className="h-1.5 w-1.5 rounded-full bg-muted-foreground motion-safe:animate-pulse"
-          style={{ animationDelay: `${delay}ms` }}
-        />
-      ))}
-      <span className="ml-1.5">Sam is typing</span>
-    </div>
+    <p className="shrink-0 px-5 pb-1 text-caption text-muted-foreground motion-safe:animate-fade-in">
+      Someone is typing…
+    </p>
   );
 }
 
@@ -333,9 +348,9 @@ export function ChapterShowcase({ className }: { className?: string }) {
           <div className="hidden w-44 shrink-0 flex-col gap-0.5 border-r border-border p-3 text-sm xl:flex">
             <div className="flex items-center gap-2 px-2 pb-3 font-bold text-foreground">
               <span className="flex h-6 w-6 items-center justify-center rounded-sm bg-accent-subtle text-caption font-bold text-accent-text">
-                B
+                N
               </span>
-              Beta Chapter
+              Northfield
             </div>
             {CHANNELS.map((channel) => (
               <div
@@ -366,25 +381,25 @@ export function ChapterShowcase({ className }: { className?: string }) {
               }}
             >
               {t >= AT.meetingPost ? (
-                <Row initials="JR" author="Jordan Reyes" time="7:52 PM">
-                  <Body>Meeting starts in ten. Check in at the door.</Body>
+                <Row initials="JR" author="Jordan Reyes" time="8:01 PM">
+                  <Body>Starting now. Check in so you get your points.</Body>
                   {t >= AT.eventCard ? <EventCard t={t} /> : null}
                 </Row>
               ) : null}
-              {t >= AT.typing && t < AT.taskPost ? <Typing /> : null}
               {t >= AT.taskPost ? (
-                <Row initials="SO" author="Sam Okafor" time="7:54 PM">
-                  <Body>Eli, can you grab the projector before we start?</Body>
+                <Row initials="SO" author="Sam Okafor" time="8:03 PM">
+                  <Body>Eli, can you grab the projector from the library?</Body>
                   {t >= AT.taskCard ? <TaskCard t={t} /> : null}
                 </Row>
               ) : null}
               {t >= AT.pollPost ? (
-                <Row initials="MK" author="Maya Kim" time="7:58 PM">
+                <Row initials="MK" author="Maya Kim" time="8:06 PM">
                   <Body>Formal theme. Vote before Friday.</Body>
                   <PollCard t={t} />
                 </Row>
               ) : null}
             </div>
+            {t >= AT.typing && t < AT.taskPost ? <Typing /> : null}
             <div className="mx-5 mb-4 flex h-11 shrink-0 items-center rounded-md border border-border px-4 text-sm text-muted-foreground">
               Message #general
             </div>

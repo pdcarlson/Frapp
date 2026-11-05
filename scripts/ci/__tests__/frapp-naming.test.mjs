@@ -93,6 +93,9 @@ export const WALKS = {
   },
   // Every directory under app/ is a route segment, `coverage` and `.well-known` included.
   webApp: { roots: ["apps/web/app"], ext: /\.(?:ts|tsx)$/, exclude: /\.spec\./, all: true },
+  // The signed-out screens: their routes, and the components that render the
+  // sign-in screen and the frame, which live outside app/ since 2026-11-05.
+  webAuth: { roots: ["apps/web/app", "apps/web/components/auth"], ext: /\.(?:ts|tsx)$/, exclude: /\.spec\./, all: true },
   landing: { roots: ["apps/landing"], ext: /\.(?:ts|tsx)$/, skip: ["public"], exclude: /\.(?:spec|test)\.|\.d\.ts$/ },
   // Every product source, specs included: `Signet System` is never a note.
   product: { roots: ["apps/web", "apps/api", "apps/mobile", "packages"], ext: /\.(?:ts|tsx|js|mjs)$/ },
@@ -237,6 +240,16 @@ export function jsxProp(source, prop) {
   return [...source.matchAll(pattern)].map((match) => match[1] || match[2]);
 }
 
+/**
+ * A screen's `title` or `subtitle`: the literal JSX prop, plus a
+ * `const SIGN_IN_TITLE = "…"` the prop names instead (`sign-in-screen.tsx`).
+ */
+export function authTitles(source, prop) {
+  // The lookbehind keeps `title` from also reading every `*_SUBTITLE`.
+  const constant = new RegExp(`\\bconst [A-Z_]*(?<!SUB)${prop.toUpperCase()}\\s*=\\s*["']([^"']+)["']`, "g");
+  return [...jsxProp(source, prop), ...[...source.matchAll(constant)].map((match) => match[1])];
+}
+
 /** JSON-quoted `*Permission` keys, and the unquoted JS form Expo config files use. `false` is not a prompt. */
 export function permissionStrings(source) {
   const pattern = /(?:^|[\s,{])(?:"([A-Za-z]+Permission)"|([A-Za-z]+Permission)):\s*["']([^"']+)["']/gm;
@@ -273,8 +286,8 @@ export const SITE_ROSTERS = [
     // frame's lockup now (`apps/web/components/auth/auth-frame.tsx`, pinned
     // below), and every screen titles itself.
     kind: "web auth wordmark",
-    walk: "webApp",
-    is: (source) => jsxProp(source, "title").some((title) => title === "Frapp" || title === "Signet"),
+    walk: "webAuth",
+    is: (source) => authTitles(source, "title").some((title) => title === "Frapp" || title === "Signet"),
     sites: [],
   },
   {
@@ -337,14 +350,14 @@ export const COLLECTED = [
   },
   {
     what: "web auth title",
-    walk: "webApp",
-    collect: (source) => jsxProp(source, "title").map((value) => ({ key: "title", value })),
+    walk: "webAuth",
+    collect: (source) => authTitles(source, "title").map((value) => ({ key: "title", value })),
     wrong: (value) => value === "Signet",
   },
   {
     what: "web auth subtitle",
-    walk: "webApp",
-    collect: (source) => jsxProp(source, "subtitle").map((value) => ({ key: "subtitle", value })),
+    walk: "webAuth",
+    collect: (source) => authTitles(source, "subtitle").map((value) => ({ key: "subtitle", value })),
     wrong: (value) => /\bSignet\b/.test(value),
   },
   {
@@ -941,6 +954,7 @@ test("the table keeps its floors and roots", () => {
   assert.deepEqual(roots.api, ["apps/api/src"]);
   assert.deepEqual(roots.web, ["apps/web", ...packageSources()]);
   assert.deepEqual(roots.webApp, ["apps/web/app"]);
+  assert.deepEqual(roots.webAuth, ["apps/web/app", "apps/web/components/auth"]);
   assert.deepEqual(roots.landing, ["apps/landing"]);
   assert.deepEqual(roots.product, ["apps/web", "apps/api", "apps/mobile", "packages"]);
   assert.deepEqual(roots.validation, ["packages/validation"]);
@@ -1145,7 +1159,7 @@ test("every row reports its own planted leftover", () => {
   TEXT_BANS.forEach((row, i) => assert.equal(textBanProblems(row, [{ rel: "x", source: textSamples[i] }]).length, 1, String(row.ban)));
   const collectedSamples = {
     "mobile *Permission prompt": 'module.exports = { cameraPermission: "Allow the app to use the camera." };',
-    "web auth title": "<AuthScreen title={'Signet'} />",
+    "web auth title": "const SIGN_IN_TITLE = 'Signet';",
     "web auth subtitle": '<AuthScreen subtitle="Ask Signet anything." />',
     "web metadata title": "export const metadata = {\n  title: 'Tasks · Frapp'\n}",
     "landing metadata title": "export const metadata = {\n  title: 'Signet — Privacy',\n};",

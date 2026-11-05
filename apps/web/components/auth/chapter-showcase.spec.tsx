@@ -3,11 +3,13 @@ import { act, render } from "@testing-library/react";
 
 import { ChapterShowcase, SHOWCASE_FINAL } from "./chapter-showcase";
 
-function mockMotion(reduce: boolean) {
+function mockMotion(reduce: boolean, { wide = true } = {}) {
   vi.spyOn(window, "matchMedia").mockImplementation(
     (query: string) =>
       ({
-        matches: reduce && query.includes("prefers-reduced-motion"),
+        matches: query.includes("min-width")
+          ? wide
+          : reduce && query.includes("prefers-reduced-motion"),
         media: query,
         onchange: null,
         addListener: () => {},
@@ -53,7 +55,7 @@ describe("ChapterShowcase", () => {
     const { container } = render(<ChapterShowcase />);
     const text = container.textContent ?? "";
     expect(text).toContain("31 checked in");
-    expect(text).toContain("Done");
+    expect(text).toContain("Confirmed");
     expect(text).toContain("36 votes");
   });
 
@@ -64,6 +66,45 @@ describe("ChapterShowcase", () => {
     advance(SHOWCASE_FINAL * 2);
     expect(container.textContent).toContain("31 checked in");
     expect(container.textContent).toContain("36 votes");
+  });
+
+  it("never starts the clock below lg, where the frame hides the panel", () => {
+    vi.useFakeTimers();
+    mockMotion(false, { wide: false });
+    const { container } = render(<ChapterShowcase />);
+    advance(SHOWCASE_FINAL * 2);
+    expect(container.textContent).toContain("31 checked in");
+    expect(container.textContent).toContain("Maya Kim");
+  });
+
+  it("walks the task through the app's own badge words", () => {
+    vi.useFakeTimers();
+    mockMotion(false);
+    const { container } = render(<ChapterShowcase />);
+    const seen = new Set<string>();
+    for (let elapsed = 0; elapsed < SHOWCASE_FINAL + 4000; elapsed += 50) {
+      act(() => {
+        vi.advanceTimersByTime(50);
+      });
+      for (const label of [
+        "To do",
+        "In progress",
+        "Awaiting confirmation",
+        "Confirmed",
+        "Someone is typing…",
+      ]) {
+        if (container.textContent?.includes(label)) seen.add(label);
+      }
+    }
+    expect([...seen].sort()).toEqual(
+      [
+        "Awaiting confirmation",
+        "Confirmed",
+        "In progress",
+        "Someone is typing…",
+        "To do",
+      ].sort(),
+    );
   });
 
   it("plays the scene from the top when motion is allowed, then loops", () => {
@@ -85,7 +126,11 @@ describe("ChapterShowcase", () => {
     mockMotion(false);
     const { container } = render(<ChapterShowcase />);
     const text = container.textContent ?? "";
-    expect(text).not.toMatch(/\bgoing\b|rsvp|dues|ask frapp|signet/i);
+    expect(text).not.toMatch(
+      /\bgoing\b|rsvp|dues|ask frapp|signet|\bdone\b|\bbeta\b/i,
+    );
+    // Check in opens at the event's start, so nothing posts before 8:00.
+    expect(text).not.toMatch(/7:\d\d PM/);
     expect(text).not.toMatch(/[Α-Ωα-ω]/);
   });
 });

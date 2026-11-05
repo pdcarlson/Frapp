@@ -25,11 +25,42 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * three feature cards describing the API's scoping model, and a five-step
  * "What this milestone unlocks" walkthrough.
  */
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const query = toQuery(await searchParams);
+  // GoTrue sends a link to the Site URL, which is `/`, whenever its redirect
+  // target is not on the allow list (`docs/ops/deployment/supabase.md`). The
+  // page this replaced mounted a browser client that could still pick such a
+  // link up, so hand its `code` or `token_hash` to the route that exchanges
+  // one rather than dropping it on the hop to `/sign-in`.
+  if (AUTH_LINK_PARAMS.some((name) => query.has(name))) {
+    redirect(`/auth/callback?${query}`);
+  }
+
   const supabase = await createSupabaseServerClient();
   const {
     data: { session },
   } = await supabase.auth.getSession();
 
-  redirect(session ? "/chat" : "/sign-in");
+  if (session) redirect("/chat");
+  // Kept, so a `/?redirectTo=…` still reaches the form that reads it.
+  redirect(query.size > 0 ? `/sign-in?${query}` : "/sign-in");
+}
+
+/** What `app/auth/callback/route.ts` reads to finish or report a sign-in link. */
+const AUTH_LINK_PARAMS = ["code", "token_hash", "error_code", "error"] as const;
+
+function toQuery(
+  params: Record<string, string | string[] | undefined>,
+): URLSearchParams {
+  const query = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (item !== undefined) query.append(name, item);
+    }
+  }
+  return query;
 }

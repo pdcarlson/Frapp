@@ -121,17 +121,7 @@ function SignUpPageContent() {
     <AuthScreen
       title="Create your account"
       subtitle="One account, then join your chapter or start one."
-      footer={
-        <p>
-          Already have an account?{" "}
-          <Link
-            href={`/sign-in?redirectTo=${encodeURIComponent(redirectTo)}`}
-            className="font-semibold text-accent-text hover:underline"
-          >
-            Sign in
-          </Link>
-        </p>
-      }
+      footer={<SignUpFooter redirectTo={redirectTo} />}
     >
       <form className="flex flex-col gap-4" onSubmit={handleSignUp}>
         <div className="space-y-1.5">
@@ -177,6 +167,21 @@ function SignUpPageContent() {
   );
 }
 
+/** Its own component so the Suspense fallback draws the same footer. */
+function SignUpFooter({ redirectTo }: { redirectTo: string }) {
+  return (
+    <p>
+      Already have an account?{" "}
+      <Link
+        href={`/sign-in?redirectTo=${encodeURIComponent(redirectTo)}`}
+        className="font-semibold text-accent-text hover:underline"
+      >
+        Sign in
+      </Link>
+    </p>
+  );
+}
+
 export default function SignUpPage() {
   return (
     <Suspense
@@ -184,6 +189,7 @@ export default function SignUpPage() {
         <AuthScreen
           title="Create your account"
           subtitle="One account, then join your chapter or start one."
+          footer={<SignUpFooter redirectTo={resolveRedirectPath(null)} />}
         >
           <div role="status" aria-busy="true" aria-live="polite">
             <span className="sr-only">Loading the sign-up form…</span>

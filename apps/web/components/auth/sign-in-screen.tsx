@@ -171,28 +171,7 @@ function SignInPageContent() {
     <AuthScreen
       title={SIGN_IN_TITLE}
       subtitle={SIGN_IN_SUBTITLE}
-      footer={
-        <>
-          <p>
-            New here?{" "}
-            <Link
-              href={`/sign-up?redirectTo=${encodeURIComponent(redirectTo)}`}
-              className="font-semibold text-accent-text hover:underline"
-            >
-              Create an account
-            </Link>
-          </p>
-          <p>
-            Have an invite?{" "}
-            <Link
-              href="/join"
-              className="font-semibold text-accent-text hover:underline"
-            >
-              Join your chapter
-            </Link>
-          </p>
-        </>
-      }
+      footer={<SignInFooter redirectTo={redirectTo} />}
     >
       <form className="flex flex-col gap-4" onSubmit={handlePasswordSignIn}>
         <div className="space-y-1.5">
@@ -250,6 +229,35 @@ function SignInPageContent() {
 }
 
 /**
+ * The form's two other exits. A component so the Suspense fallback can draw
+ * the same footer, and the column does not grow two lines on hydration.
+ */
+function SignInFooter({ redirectTo }: { redirectTo: string }) {
+  return (
+    <>
+      <p>
+        New here?{" "}
+        <Link
+          href={`/sign-up?redirectTo=${encodeURIComponent(redirectTo)}`}
+          className="font-semibold text-accent-text hover:underline"
+        >
+          Create an account
+        </Link>
+      </p>
+      <p>
+        Have an invite?{" "}
+        <Link
+          href="/join"
+          className="font-semibold text-accent-text hover:underline"
+        >
+          Join your chapter
+        </Link>
+      </p>
+    </>
+  );
+}
+
+/**
  * The boundary `useSearchParams` requires.
  *
  * It renders the column rather than nothing: the previous fallback was a blank
@@ -261,7 +269,11 @@ export function SignInScreen() {
   return (
     <Suspense
       fallback={
-        <AuthScreen title={SIGN_IN_TITLE} subtitle={SIGN_IN_SUBTITLE}>
+        <AuthScreen
+          title={SIGN_IN_TITLE}
+          subtitle={SIGN_IN_SUBTITLE}
+          footer={<SignInFooter redirectTo={resolveRedirectPath(null)} />}
+        >
           <div role="status" aria-busy="true" aria-live="polite">
             <span className="sr-only">Loading the sign-in form…</span>
             <SkeletonText lines={4} />
