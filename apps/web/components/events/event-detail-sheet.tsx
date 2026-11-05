@@ -261,11 +261,13 @@ export function EventDetailSheet({
           first thing in an event's details a toolbar. The words live on as
           each control's accessible name and tooltip. `right-12` clears the
           close button `SheetContent` draws at `right-4`, and the title's
-          right padding clears both, plus 8px, at either size: the icons'
-          left edge sits 156px from the sheet's edge under a mouse and 180px
-          under a finger, and the header already starts 24px in (`p-6`).
+          right padding clears both, plus 8px: the icons' left edge sits
+          180px from the sheet's edge under a finger (156px under a mouse),
+          and the header already starts 24px in (`p-6`). One padding for
+          both pointers, since padding never splits by pointer (foundations.md
+          §9); only the controls' heights do.
         */}
-        <SheetHeader className="pr-36 pointer-coarse:pr-41">
+        <SheetHeader className="pr-41">
           <SheetTitle>{eventName}</SheetTitle>
         </SheetHeader>
         <div className="absolute right-12 top-2.5 flex items-center">
