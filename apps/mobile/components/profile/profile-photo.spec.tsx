@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { onlineManager } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 
 /**
@@ -286,6 +287,29 @@ describe("ProfilePhoto", () => {
       Object.assign({}, ...[badge.props.style].flat()).backgroundColor,
     ).toBe("#8E4EC6");
     expect(badge.findAllByType(CameraGlyph)).toHaveLength(1);
+  });
+
+  // foundations.md §6 "Where the accent goes" (2026-11-05): a person's avatar
+  // is neutral, the viewer's own included: a hairline ring, a raised fill and
+  // foreground initials, never the accent's ring, tint or text.
+  it("draws the avatar and its initials neutral, never in the chapter accent", () => {
+    const tree = render(null);
+    const flat = (style: unknown) =>
+      Object.assign({}, ...[style].flat()) as Record<string, unknown>;
+    const initials = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "PC",
+    );
+    expect(flat(initials.props.style).color).toBe(
+      signetDarkTokens.color.text.foreground,
+    );
+    const circle = flat(initials.parent!.props.style);
+    expect(circle.borderColor).toBe(signetDarkTokens.color.border.hairline);
+    expect(circle.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    for (const colour of ["#CB9FFF", "#251A33"]) {
+      expect(JSON.stringify(initials.parent!.props.style)).not.toContain(colour);
+      expect(JSON.stringify(initials.props.style)).not.toContain(colour);
+    }
   });
 
   // The camera says a photo can be chosen. Without a chapter the avatar still

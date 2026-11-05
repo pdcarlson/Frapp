@@ -278,6 +278,20 @@ describe("ChannelRow pin and DM badge (#2877)", () => {
     ]);
   });
 
+  // foundations.md §6 "Where the accent goes" (2026-11-05): a row icon is
+  // neutral, so a pinned row's `#` stays muted like any other row's.
+  it("keeps a pinned row's sigil muted, never the chapter accent", () => {
+    for (const isPinned of [true, false]) {
+      const sigil = renderRow({ isPinned, onTogglePin: vi.fn() }).root.find(
+        (node) =>
+          (node.type as unknown) === "Text" && node.props.children === "#",
+      );
+      const flat = JSON.stringify(sigil.props.style);
+      expect(flat).toContain(`"color":"${signetDarkTokens.color.text.muted}"`);
+      expect(flat).not.toContain("#CB9FFF");
+    }
+  });
+
   it("takes the long press from `onLongPress` when given", () => {
     const onLongPress = vi.fn();
     const onHide = vi.fn();

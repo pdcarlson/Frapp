@@ -18,8 +18,8 @@ interface SystemAuditCardProps {
 }
 
 /**
- * `#chapter-audit` system message. Deliberately the one accent-free card, and
- * the one that keeps `font-mono` for its action: an audit row's action is a
+ * `#chapter-audit` system message. The one card
+ * that keeps `font-mono` for its action: an audit row's action is a
  * key, which is exactly what foundations.md §7 reserves the mono role for. The
  * actor is a member's name, so it is not mono: `actorLabel` gives the
  * roster's name, "Frapp" for the system, or the member fallback, never the
@@ -43,14 +43,21 @@ export function SystemAuditCard({ message, nameFor }: SystemAuditCardProps) {
   const actor = actorLabel(payload.actor_user_id, nameFor);
   return (
     <Card className={cn(MESSAGE_CARD)}>
-      <div className={cn(EYEBROW, "flex items-center gap-1.5 text-muted-foreground")}>
+      <div
+        className={cn(
+          EYEBROW,
+          "flex items-center gap-1.5 text-muted-foreground",
+        )}
+      >
         <AuditGlyph className="h-4 w-4" /> Audit
       </div>
       <div className="mt-2 flex flex-wrap items-baseline gap-x-2 text-caption">
         <span className="font-mono font-semibold text-foreground">
           {payload.action}
         </span>
-        {actor ? <span className="text-muted-foreground">by {actor}</span> : null}
+        {actor ? (
+          <span className="text-muted-foreground">by {actor}</span>
+        ) : null}
       </div>
       <div className="mt-2 font-mono text-caption text-muted-foreground">
         {auditChangeSummary(payload)}
