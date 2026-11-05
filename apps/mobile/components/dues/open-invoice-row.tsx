@@ -58,9 +58,8 @@ export function OpenInvoiceRow({
 }
 
 // HISTORY's row geometry (`invoice-row.tsx`), restated because that file's
-// styles are private. It stays a copy for now: `invoice-row.tsx` is moving onto
-// a shared `HistoryRow` in a separate change, and this row follows it there
-// once that lands, rather than both changes editing the same row at once.
+// styles are private. A copy until #3454 renders this row through the shared
+// `HistoryRow` that `invoice-row.tsx` is moving onto.
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     row: {

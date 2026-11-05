@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { focusManager } from "@tanstack/react-query";
-import { StyleSheet, Text, View } from "react-native";
+import { AppState, StyleSheet, Text, View } from "react-native";
+import type { AppStateStatus } from "react-native";
 import {
   payIntentErrorCopy,
   useActiveChapterId,
@@ -17,6 +18,7 @@ import { BACK_TO_MORE } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
 import { EmptyState, ErrorState } from "@/components/state-block";
 import { CardListSkeleton } from "@/components/card-list-skeleton";
+import { CardMessages } from "@/components/card-messages";
 import {
   BalanceCard,
   type BalanceCardStatus,
@@ -58,51 +60,72 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the invoice and then the list, and the invoice flips only when the list says
  * so. If the poll runs out, the screen says pending rather than guessing.
  *
- * ## A captured payment holds its invoice until the list agrees
+ * ## A captured payment holds its invoice for the rest of the visit
  *
  * Pay settles one invoice, because a PaymentIntent is per invoice: the
  * earliest-due open one ({@link selectNextDueInvoice}), unless a payment is
  * confirming, in which case it is that invoice. A completed sheet holds the
  * invoice it paid: the chip reads Pending, the CTA is disabled as "Confirming
- * payment…", and the card says "Payment received, confirmation pending"
- * (`billing.md` § Member payment flow, `screens.md` s11). The hold ends only
- * when the invoice list reads that invoice as no longer OPEN, and the "Paid …"
- * line waits for the same read. The poll's PAID ends nothing on its own: it
- * makes the list re-read (`useAwaitInvoicePaid`'s onSettled), so the card
- * never says Paid beside a Pending chip.
+ * payment…", and the card says "Payment received, confirmation pending". The
+ * copy and the hold are `writing.md` § Dues (mobile, s11)'s *Payment
+ * captured, unsettled* row; `billing.md` § Member payment flow and
+ * `screens.md` s11 own only the rule behind the caption, that a completed
+ * sheet says payment received, confirmation pending, until the server
+ * reports PAID. Within a visit the hold ends only when the invoice list reads
+ * that invoice as no longer OPEN, and the "Paid …" line waits for the same
+ * read. The poll's PAID ends nothing on its own: it makes the list re-read
+ * (`useAwaitInvoicePaid`'s onSettled), so the card never says Paid beside a
+ * Pending chip.
  *
  * Other open invoices wait meanwhile, until the webhook lands: usually
- * seconds, but if the webhook is stuck, until the hold ends as below. The card
- * stays on the confirming invoice, and the OPEN list shows the rest with their
- * own amounts and due chips.
+ * seconds, but if the webhook is stuck, until the visit ends. The card stays
+ * on the confirming invoice, and the OPEN list shows the rest with their own
+ * amounts and due chips.
+ *
+ * If the list reads the invoice as anything else (VOID: a treasurer can void
+ * an OPEN invoice, captured payment or not), or drops it, the member has
+ * still been charged, so the pending line stays on the card for the rest of
+ * the visit, as a line of its own like the "Paid …" one, and Pay is free for
+ * the next invoice. Only PAID replaces it, with the "Paid …" line.
  *
  * ## How long the hold lasts
  *
- * Until the list reads the invoice as no longer OPEN, with no time bound,
- * because until then Pay has nothing honest to offer: the server already has
- * the payment, and a second tap would only meet its refusal below. The list
- * is re-read every {@link HOLD_REREAD_MS} while the hold stands, the screen
- * is up and the app is in the foreground, so a webhook that lands after the
- * poll gives up still ends it in front of the member, and again when they come
- * back to the screen (Dues is a hidden tab route, `href: null` in
- * `app/(tabs)/_layout.tsx`, which the tab navigator keeps mounted, so coming
- * back doesn't reset it). Re-reads wait for the viewer's id, so none goes out
- * unfiltered.
+ * The visit. Dues is a hidden tab route (`href: null` in
+ * `app/(tabs)/_layout.tsx`), which the tab navigator keeps mounted, so the
+ * screen ends the hold itself when the member leaves: when they come back to
+ * the screen, and when the app comes back from the background. The second
+ * matters on its own. A payment that sat in `processing` and then failed
+ * leaves the invoice OPEN (`notifyStripePaymentFailure` changes no status),
+ * so nothing in the list would ever end the hold, and the member who left to
+ * read the "Payment declined" push comes back to the screen it points at. A
+ * background spell that starts while a Pay attempt is in flight is part of
+ * that attempt, not a leave, so it ends nothing. That is for a bank's page or
+ * app opened from the sheet, which can send the app to the background with
+ * the sheet still up; derived from the payment methods the server enables
+ * (`automatic_payment_methods`), not seen on a device.
  *
- * The 10s re-reads and the one on return join a read already in flight
- * rather than cancelling it, so on Android a read that never answers keeps
- * the hold: nothing there times a request out (#3433). The poll's own re-read
- * as it ends (`useAwaitInvoicePaid`'s invalidation), like any invoice
- * invalidation, does cancel the read in flight and send a fresh one. A tick
- * doesn't restart a stuck read. A fresh request could answer, but cancelling
- * aborts nothing (`useInvoices` passes no `signal`), so every restart would
- * leave one more request open on Android's timeout-free networking, and a
- * read that is only slow would be thrown away. Once #3433 adds a client-side
- * timeout, a stuck read ends in an error and the next tick sends a fresh one.
+ * Within the visit the list is re-read every {@link HOLD_REREAD_MS} while the
+ * hold stands, the screen is up and the app is in the foreground, so a
+ * webhook that lands after the poll gives up still ends the hold in front of
+ * the member. Re-reads wait for the viewer's id, so none goes out unfiltered.
+ * The return that ends a hold re-reads too, so the screen comes back showing
+ * whether the webhook landed meanwhile, which the list's 30s staleTime would
+ * otherwise skip.
  *
- * The hold lives in this screen's state, so a chapter switch, which remounts
- * the screen ({@link DuesScreen}), or the app being closed ends it. If the
- * webhook is still stuck then, Pay targets that invoice again, and a tap meets
+ * The re-reads join a read already in flight rather than cancelling it, so on
+ * Android a read that never answers keeps the hold for the visit: nothing
+ * there times a request out (#3433). The poll's own re-read as it ends
+ * (`useAwaitInvoicePaid`'s invalidation), like any invoice invalidation, does
+ * cancel the read in flight and send a fresh one. A tick doesn't restart a
+ * stuck read. A fresh request could answer, but cancelling aborts nothing
+ * (`useInvoices` passes no `signal`), so every restart would leave one more
+ * request open on Android's timeout-free networking, and a read that is only
+ * slow would be thrown away. Once #3433 adds a client-side timeout, a stuck
+ * read ends in an error and the next tick sends a fresh one.
+ *
+ * A chapter switch, which remounts the screen ({@link DuesScreen}), and the
+ * app being closed end the hold too. If the webhook is still stuck when the
+ * hold ends, Pay targets that invoice again, and a tap meets
  * `createPaymentIntent`'s answer for the invoice's stored intent
  * (`financial-invoice.service.ts`, `billing.md` § Member payment flow):
  *
@@ -201,7 +224,8 @@ function ChapterDues() {
 
   /**
    * The invoice a completed sheet paid on this visit. While the list reads it
-   * OPEN it is held; once the list reads it PAID it is the "Paid …" line.
+   * OPEN it is held; once the list reads it PAID it is the "Paid …" line;
+   * read as anything else, or gone, it keeps the pending line.
    */
   const [capturedId, setCapturedId] = useState<string | null>(null);
   const [failure, setFailure] = useState<PayFailure | null>(null);
@@ -213,6 +237,10 @@ function ChapterDues() {
   const [openingAttempt, setOpeningAttempt] = useState<number | null>(null);
   const lastAttemptRef = useRef(0);
   const isPaying = openingAttempt !== null;
+  const isPayingRef = useRef(isPaying);
+  useEffect(() => {
+    isPayingRef.current = isPaying;
+  }, [isPaying]);
   const refetchInvoicesRef = useRef(invoicesQuery.refetch);
   useEffect(() => {
     refetchInvoicesRef.current = invoicesQuery.refetch;
@@ -237,6 +265,9 @@ function ChapterDues() {
     capturedId !== null && (!listLoaded || capturedRow?.status === "OPEN");
   const settledRow =
     listLoaded && capturedRow?.status === "PAID" ? capturedRow : null;
+  // Voided, or gone from the list: not settled, but the money still moved.
+  const unsettledElsewhere =
+    capturedId !== null && listLoaded && !isHolding && settledRow === null;
 
   // One clock per focus. A tab is never unmounted, so a mount-only value would
   // still be yesterday's when the member reopens the app — and "Past due" is
@@ -246,29 +277,54 @@ function ChapterDues() {
   // unknown the query is disabled, and an explicit refetch would still send
   // it, without the `user_id` filter (see `useInvoices` above).
   const rereads = isHolding && viewerUserId !== null;
-  const isHoldingRef = useRef(isHolding);
   const rereadsRef = useRef(rereads);
   useEffect(() => {
-    isHoldingRef.current = isHolding;
     rereadsRef.current = rereads;
-  }, [isHolding, rereads]);
+  }, [rereads]);
+  /**
+   * A new visit: the hold, and any line about last visit's payment, end (see
+   * "How long the hold lasts"). A hold that stood re-reads the list, so the
+   * screen shows whether the webhook landed while the member was away.
+   */
+  const startVisit = useCallback(() => {
+    if (rereadsRef.current) {
+      void refetchInvoicesRef.current({ cancelRefetch: false });
+    }
+    setCapturedId(null);
+  }, []);
   useFocusEffect(
     useCallback(() => {
       setNow(new Date());
       // Coming back is a fresh look: last visit's failure is about an
-      // attempt the member has moved on from, and a settled "Paid …" line
-      // isn't news. A hold stays, since the payment it stands for is still
-      // confirming (see "How long the hold lasts"), and a webhook that landed
-      // while the member was elsewhere settles it on this read, which the
-      // list's 30s staleTime would otherwise skip.
+      // attempt the member has moved on from.
       setFailure(null);
-      if (!isHoldingRef.current) setCapturedId(null);
-      else if (rereadsRef.current) {
-        void refetchInvoicesRef.current({ cancelRefetch: false });
-      }
+      startVisit();
       return undefined;
-    }, []),
+    }, [startVisit]),
   );
+  // Back to the app on this screen is an AppState change, which navigation
+  // focus never sees. Only a return from `background`, however it passes
+  // through `inactive` on the way: iOS goes `inactive` alone for Control
+  // Center or a system sheet, which is no leave. And not a return whose
+  // background spell began during a Pay attempt, which a bank's page opened
+  // from the sheet would cause.
+  useEffect(() => {
+    let away = AppState.currentState === "background";
+    let leftDuringAttempt = false;
+    const subscription = AppState.addEventListener(
+      "change",
+      (next: AppStateStatus) => {
+        if (next === "background" && !away) {
+          away = true;
+          leftDuringAttempt = isPayingRef.current;
+        } else if (next === "active") {
+          if (away && !leftDuringAttempt) startVisit();
+          away = false;
+        }
+      },
+    );
+    return () => subscription.remove();
+  }, [startVisit]);
   useFocusEffect(
     useCallback(() => {
       if (!rereads) return undefined;
@@ -384,19 +440,26 @@ function ChapterDues() {
     : confirming
       ? { text: PENDING_COPY, tone: "neutral" }
       : null;
-  // The settled payment's line. Its invoice left OPEN, so the card is about
-  // another invoice or none, and the line is drawn as its own.
-  const receipt = settledRow ? paidCopy(settledRow.title) : null;
+  // The captured payment's line once its invoice left OPEN, so the card is
+  // about another invoice or none, and the line is drawn as its own: "Paid …"
+  // when the list says PAID, and otherwise still the pending line.
+  const receipt = settledRow
+    ? paidCopy(settledRow.title)
+    : unsettledElsewhere
+      ? PENDING_COPY
+      : null;
 
   // The branches with no card still say where the payment stands and why the
   // last attempt failed: a read that fails right after a payment must not
   // swallow "payment received", or the reason a payment didn't go through.
   const capturedLine = isHolding ? PENDING_COPY : receipt;
   const standalone = (
-    <>
-      {capturedLine ? <Text style={styles.notice}>{capturedLine}</Text> : null}
-      {failureText ? <Text style={styles.failure}>{failureText}</Text> : null}
-    </>
+    <CardMessages
+      notice={capturedLine}
+      failure={failureText}
+      align="left"
+      placement="screen"
+    />
   );
 
   function renderBody() {
@@ -441,12 +504,16 @@ function ChapterDues() {
     }
 
     if (rows.length === 0) {
+      // The paid invoice can leave the list altogether, and with it every row.
       return (
-        <EmptyState
-          glyph="✓"
-          title="No dues yet"
-          body="Your chapter hasn't billed you. Anything they send will show up here."
-        />
+        <>
+          {standalone}
+          <EmptyState
+            glyph="✓"
+            title="No dues yet"
+            body="Your chapter hasn't billed you. Anything they send will show up here."
+          />
+        </>
       );
     }
 
@@ -533,14 +600,6 @@ function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     rows: {
       marginTop: tokens.spacing.xs,
-    },
-    notice: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    failure: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.destructive,
     },
     footer: {
       ...typeRole(tokens.typography.role.caption),

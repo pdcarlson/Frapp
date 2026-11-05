@@ -63,9 +63,10 @@ export interface BalanceCardProps {
    */
   status?: BalanceCardStatus | null;
   /**
-   * A settled payment for an invoice the CTA no longer settles. Drawn as its
-   * own line under the caption and never as the CTA's hint: it says nothing
-   * about the next invoice, and must not hide the footnote naming it.
+   * A captured payment for an invoice the CTA no longer settles: the "Paid …"
+   * line, or the pending line when the invoice left OPEN some other way. Drawn
+   * as its own line under the caption and never as the CTA's hint: it says
+   * nothing about the next invoice, and must not hide the footnote naming it.
    */
   receipt?: string | null;
   isPaying: boolean;

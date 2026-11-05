@@ -3,7 +3,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 import { formatTimer } from "@repo/formatting";
-import { CardMessages } from "./start-card";
+import { CardMessages } from "@/components/card-messages";
 
 /**
  * The live-session card — `canvas-screens.dc.html`, `id="s10"`.

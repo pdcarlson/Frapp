@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Platform } from "react-native";
 import appJson from "../../app.json";
-import { locationSettingsPath } from "./location-settings-path";
+import {
+  BROWSER_LOCATION_STEP,
+  locationSettingsPath,
+} from "./location-settings-path";
 
 /**
  * Settings lists the app under `expo.name`, so the name is read from `app.json`
@@ -43,6 +46,13 @@ describe("locationSettingsPath", () => {
     expect(pathOn("ios", undefined)).toBe(
       `Settings → Apps → ${APP_NAME} → Location`,
     );
+  });
+
+  it("has no Settings path on the web build, where location is the site's", () => {
+    // react-native-web reports Version "0.0.0", which once read as iOS 0 and
+    // sent a browser visitor to an iPhone's Settings.
+    expect(pathOn("web", "0.0.0")).toBeNull();
+    expect(BROWSER_LOCATION_STEP).not.toMatch(/Settings/);
   });
 
   it("names Android's own Permissions page, whatever its API level", () => {

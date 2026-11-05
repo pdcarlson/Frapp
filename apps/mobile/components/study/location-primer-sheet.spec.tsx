@@ -112,6 +112,26 @@ describe("LocationPrimerSheet", () => {
       );
     });
 
+    it("points at the browser on the web build, with no Open Settings to throw", () => {
+      // react-native-web's Linking has no openSettings, so the button threw
+      // there, and the path it named was an iPhone's.
+      platform.OS = "web";
+      platform.Version = "0.0.0";
+      const tree = render(
+        <LocationPrimerSheet
+          canAskAgain={false}
+          onAllow={() => {}}
+          onDismiss={() => {}}
+        />,
+      );
+      const copy = texts(tree).join("");
+      expect(copy).toContain(
+        `Location is turned off for ${APP_NAME}. Allow location for this site in your browser, then start your session.`,
+      );
+      expect(copy).not.toContain("Settings →");
+      expect(texts(tree)).not.toContain("Open Settings");
+    });
+
     it("spells out Android's own path on Android", () => {
       // The iOS path was all this said, and Android has no such screen.
       platform.OS = "android";

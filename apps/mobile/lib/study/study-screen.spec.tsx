@@ -697,6 +697,27 @@ describe("Study with hours switched off (#2718)", () => {
       expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.runningSession);
       act(() => tree.unmount());
     });
+
+    it("reads the ended notice out above the screen, as a card would", async () => {
+      // No card here, but the line is the same outcome a card announces.
+      api.heartbeat.mockRejectedValue({ statusCode: 404, error: "Not Found" });
+      const tree = render();
+      sessions = NO_SESSIONS;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      const notice = tree.root.find(
+        (node) =>
+          node.type === ("Text" as never) &&
+          drawnText(node).startsWith(
+            "That session has already been closed somewhere else.",
+          ),
+      );
+      expect(notice.props.accessibilityLiveRegion).toBe("polite");
+      expect(screenText(tree)).toContain(MODULE_OFF_TITLE);
+      act(() => tree.unmount());
+    });
   });
 });
 
@@ -794,6 +815,34 @@ describe("Study's default zone", () => {
     act(() => tree.unmount());
   });
 
+  it("offers the zone of a session that ends on screen, not the one picked before it ran", async () => {
+    // Relaunched mid-session in Commons, with the last finished one in
+    // Library: the history holds finished sessions only, so Library was
+    // chosen under the running card, and a valid choice is kept.
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-09-27T12:01:00Z"));
+      zones = TWO_ZONES;
+      const running = { ...LIVE_SESSION[0]!, geofence_id: "zone-2" };
+      const library = finished("s-lib", "zone-1", "2026-09-26T10:00:00Z");
+      sessions = [running, library];
+      api.heartbeat.mockRejectedValue({ statusCode: 404, error: "Not Found" });
+      const tree = render();
+
+      // Closed elsewhere: the next beat 404s, and the list now has it closed.
+      sessions = [{ ...running, status: "COMPLETED" }, library];
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+      rerender(tree);
+
+      expect(selectedZoneLabel(tree)).toBe("Study zone: Commons");
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps the member's own pick", () => {
     zones = TWO_ZONES;
     const tree = render();
@@ -867,6 +916,15 @@ describe("Study when location can't be read", () => {
     expect(line).toContain(
       "Turn it on in Settings → Apps → Frapp → Permissions → Location.",
     );
+  });
+
+  it("points at the browser on the web build, which has no Settings path", async () => {
+    // react-native-web's Platform.Version is "0.0.0", which read as iOS 16.
+    const line = await failedLocationLine("web", "0.0.0");
+    expect(line).toContain(
+      "so it needs location while you study. Allow location for this site in your browser.",
+    );
+    expect(line).not.toContain("Settings →");
   });
 });
 

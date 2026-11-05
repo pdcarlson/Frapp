@@ -1,10 +1,13 @@
 import { forwardRef } from "react";
-import { Linking, StyleSheet, Text, View } from "react-native";
+import { Linking, Platform, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { locationSettingsPath } from "@/lib/study/location-settings-path";
+import {
+  BROWSER_LOCATION_STEP,
+  locationSettingsPath,
+} from "@/lib/study/location-settings-path";
 import {
   SheetGrabber,
   SheetHeader,
@@ -27,7 +30,11 @@ import {
  * the only honest next step is Settings, so that branch opens it. Its copy
  * still spells out the path, for a member who lands somewhere else or comes
  * back to it later. The path is `locationSettingsPath`'s, the one the Start
- * card's failure line uses too: it differs by OS and by iOS version.
+ * card's failure line uses too: it differs by OS and by iOS version. The web
+ * build has neither a path nor a settings page to open (react-native-web's
+ * `Linking` has no `openSettings`, so calling it throws), so there the line
+ * says to allow location for the site in the browser and there is no button;
+ * the header's "Not now" closes the sheet.
  */
 export interface LocationPrimerSheetProps {
   /** False once the OS will no longer prompt — the copy and CTA both change. */
@@ -45,6 +52,10 @@ export const LocationPrimerSheet = forwardRef<
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
   const settingsPath = locationSettingsPath();
+  const turnOnStep = settingsPath
+    ? `Turn it on in ${settingsPath}`
+    : BROWSER_LOCATION_STEP;
+  const canOpenSettings = Platform.OS !== "web";
 
   return (
     <BottomSheetModal
@@ -87,22 +98,24 @@ export const LocationPrimerSheet = forwardRef<
         ) : (
           <>
             <Text style={styles.blocked}>
-              Location is turned off for Frapp. Turn it on in {settingsPath},
-              then start your session.
+              Location is turned off for Frapp. {turnOnStep}, then start your
+              session.
             </Text>
-            <SheetPrimaryButton
-              label="Open Settings"
-              onPress={() => {
-                // Closed first: the member comes back from Settings to the
-                // Start card, not to a sheet still saying location is off.
-                onDismiss();
-                Linking.openSettings().catch(() => {
-                  // Nothing to do: the sentence above says where to go.
-                });
-              }}
-              accent={accent}
-              onAccent={tokens.color.gold.onHouse}
-            />
+            {canOpenSettings ? (
+              <SheetPrimaryButton
+                label="Open Settings"
+                onPress={() => {
+                  // Closed first: the member comes back from Settings to the
+                  // Start card, not to a sheet still saying location is off.
+                  onDismiss();
+                  Linking.openSettings().catch(() => {
+                    // Nothing to do: the sentence above says where to go.
+                  });
+                }}
+                accent={accent}
+                onAccent={tokens.color.gold.onHouse}
+              />
+            ) : null}
           </>
         )}
       </BottomSheetView>

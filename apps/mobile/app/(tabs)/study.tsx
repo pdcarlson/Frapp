@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, StyleSheet, Text, View } from "react-native";
+import { Alert, AppState, StyleSheet, View } from "react-native";
 import type { AppStateStatus } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
@@ -19,6 +19,7 @@ import { BACK_TO_MORE } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
 import { EmptyState, ErrorState } from "@/components/state-block";
 import { CardListSkeleton } from "@/components/card-list-skeleton";
+import { CardMessages } from "@/components/card-messages";
 import { SessionCard } from "@/components/study/session-card";
 import { SessionRow } from "@/components/study/session-row";
 import { StartCard } from "@/components/study/start-card";
@@ -46,7 +47,10 @@ import {
   startErrorCopy,
 } from "@/lib/study/errors";
 import { startOfWeek } from "@/lib/study/format";
-import { locationSettingsPath } from "@/lib/study/location-settings-path";
+import {
+  BROWSER_LOCATION_STEP,
+  locationSettingsPath,
+} from "@/lib/study/location-settings-path";
 import {
   creditedSeconds,
   isReportingStale,
@@ -63,7 +67,7 @@ import {
   selectActiveZones,
   type StudyZoneModel,
 } from "@/lib/study/zones";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useFrappTheme } from "@/lib/theme";
 
 /**
  * s10 — Study hours (`canvas-screens.dc.html`, `id="s10"`).
@@ -116,10 +120,14 @@ const MIRROR_RETRY_MS = 15 * 1000;
  * switch, since this line has no button to get them there (the primer's
  * blocked branch does). The path is {@link locationSettingsPath}'s, the one the
  * primer uses too: it differs by OS and by iOS version, and naming the wrong
- * one sends the member looking for a row that isn't there.
+ * one sends the member looking for a row that isn't there. The web build has
+ * no Settings path, since location there is the site's permission in the
+ * browser, so the line says that instead.
  */
 function locationRequiredCopy(): string {
-  return `Frapp confirms you're in the study zone, so it needs location while you study. Turn it on in ${locationSettingsPath()}.`;
+  const path = locationSettingsPath();
+  const step = path ? `Turn it on in ${path}` : BROWSER_LOCATION_STEP;
+  return `Frapp confirms you're in the study zone, so it needs location while you study. ${step}.`;
 }
 
 export default function StudyScreen() {
@@ -342,6 +350,27 @@ export default function StudyScreen() {
       return findZone(zones, lastZoneId)?.id ?? zones[0]?.id ?? null;
     });
   }, [zones, historyLoaded, lastZoneId]);
+
+  /**
+   * When the session on screen ends, here or elsewhere, the Start card that
+   * replaces it offers that session's zone, which is now the member's most
+   * recent. The effect above can't see it: the history holds finished
+   * sessions only, so a session picked up on launch was never its last zone,
+   * and a still-valid earlier choice is kept. A zone gone since is left to
+   * that effect.
+   */
+  const shownZoneIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (session) {
+      shownZoneIdRef.current = session.geofenceId;
+      return;
+    }
+    const endedZoneId = shownZoneIdRef.current;
+    shownZoneIdRef.current = null;
+    if (endedZoneId && zones.some((zone) => zone.id === endedZoneId)) {
+      setSelectedZoneId(endedZoneId);
+    }
+  }, [session, zones]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", setAppState);
@@ -787,10 +816,12 @@ export default function StudyScreen() {
    * that a session ended must still reach the member there.
    */
   const standaloneMessages = (
-    <>
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-      {failure ? <Text style={styles.failure}>{failure}</Text> : null}
-    </>
+    <CardMessages
+      notice={notice}
+      failure={failure}
+      align="left"
+      placement="screen"
+    />
   );
 
   function renderBody() {
@@ -821,7 +852,12 @@ export default function StudyScreen() {
           {/* The notice only. No failure line applies here: each one is about
               a card, an End or a Start this screen has replaced, and its body
               already says why nothing here works (#2718). */}
-          {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+          <CardMessages
+            notice={notice}
+            failure={null}
+            align="left"
+            placement="screen"
+          />
           <EmptyState
             glyph="◷"
             title="Study hours are turned off"
@@ -958,14 +994,6 @@ function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     rows: {
       marginTop: tokens.spacing.xs,
-    },
-    notice: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    failure: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.destructive,
     },
   });
 }

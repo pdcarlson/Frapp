@@ -4,6 +4,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import type { StudyZoneModel } from "@/lib/study/zones";
 import { zoneRewardCopy } from "@/lib/study/zones";
+import { CardMessages } from "@/components/card-messages";
 
 /**
  * The idle half of s10 — pick a zone, start a session.
@@ -117,46 +118,6 @@ export function StartCard({
   );
 }
 
-/**
- * A study card's notice and failure lines, under its button. Shared by
- * `StartCard` and `SessionCard`, which differ only in alignment.
- */
-export function CardMessages({
-  notice,
-  failure,
-  align,
-}: {
-  notice: string | null;
-  failure: string | null;
-  align: "left" | "center";
-}) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  if (!notice && !failure) return null;
-  const textAlign = align === "center" ? styles.messageCentered : null;
-  return (
-    <View style={styles.messages}>
-      {notice ? (
-        <Text
-          style={[styles.notice, textAlign]}
-          // Read out on Android as it arrives: it is the outcome of the tap.
-          accessibilityLiveRegion="polite"
-        >
-          {notice}
-        </Text>
-      ) : null}
-      {failure ? (
-        <Text
-          style={[styles.failure, textAlign]}
-          accessibilityLiveRegion="polite"
-        >
-          {failure}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     card: {
@@ -218,22 +179,6 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
       marginTop: tokens.spacing.md,
-    },
-    messages: {
-      alignSelf: "stretch",
-      gap: tokens.spacing.xs,
-      marginTop: tokens.spacing.md,
-    },
-    notice: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    failure: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.destructive,
-    },
-    messageCentered: {
-      textAlign: "center",
     },
   });
 }

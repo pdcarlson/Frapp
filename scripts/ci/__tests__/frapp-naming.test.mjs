@@ -784,14 +784,15 @@ export function settingsFormText(form, expoName) {
 /**
  * A form as a pattern. Each step's first letter may be either case, the steps
  * may wrap across lines, and quotes around the name, escaped or not, are
- * optional; the name must match.
+ * optional; the name must match. The path ends at the form's last step: one
+ * that goes on with a further `→` is a longer path, not the form.
  */
 function settingsFormPattern(form, expoName, flags) {
   const step = (value) =>
     value === APP_NAME_STEP
       ? `\\\\?["'“‘]?${literal(expoName)}\\\\?["'”’]?`
       : `[${value[0].toUpperCase()}${value[0].toLowerCase()}]${literal(value.slice(1))}`;
-  return new RegExp(`${form.steps.map(step).join("\\s*→\\s*")}\\b`, flags);
+  return new RegExp(`${form.steps.map(step).join("\\s*→\\s*")}\\b(?!\\s*→)`, flags);
 }
 
 /** The line holding `index` in `source`, and `index`'s column in it. */
@@ -1092,9 +1093,24 @@ test("every Settings path form must be in the helper's code and name expo.name",
 });
 
 test("the helper can return no Settings path but its forms", () => {
-  for (const extra of ['"Settings → Apps → Signet → Location"', '"Settings → General → Frapp → Location"', '"Settings → Location"']) {
+  for (const extra of [
+    '"Settings → Apps → Signet → Location"',
+    '"Settings → General → Frapp → Location"',
+    '"Settings → Location"',
+    // A form with more steps after it is a longer path, not the form.
+    '"Settings → Apps → Frapp → Location → Precise Location"',
+    '"Settings → Frapp → Location →\n  While Using"',
+  ]) {
     const helper = helperFile([...formPaths().map((path) => `"${path}"`), extra]);
     assert.deepEqual(settingsPathProblems(recovery(helper), "Frapp"), [strayAt(4)], extra);
+  }
+  // And it doesn't count as the form it starts with, so a form edited into a
+  // longer path goes missing too.
+  for (const [i, source] of [
+    [1, '"Settings → Apps → Frapp → Location → Precise Location"'],
+    [0, '"Settings → Frapp → Location → While Using"'],
+  ]) {
+    assert.deepEqual(settingsPathProblems(recovery(withForm(i, source)), "Frapp"), [lostForm(i), strayAt(i + 1)], source);
   }
   // Only code is judged, as for the forms.
   const noted = helperFile([...formPaths().map((path) => `"${path}"`), "// iOS 17 had no Settings → Apps row.\n"]);
