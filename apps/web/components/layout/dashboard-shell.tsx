@@ -12,6 +12,13 @@ import {
 } from "@/components/ui/sheet";
 import { SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import { AppNav } from "@/components/layout/app-nav";
+import { ChatNavColumn } from "@/components/layout/chat-nav-column";
+import {
+  isChannelsNavRoute,
+  NavFaceContext,
+  type NavFace,
+  type NavFaceContextValue,
+} from "@/components/layout/nav-face";
 import { TopBar } from "@/components/layout/top-bar";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
 import { AccountMenu } from "@/components/layout/account-menu";
@@ -80,6 +87,36 @@ export function DashboardShell({
   const [navCollapsed, setNavCollapsed] = useState(defaultNavCollapsed);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // `/chat`'s left column is the channel list, with the module nav one back
+  // arrow away (`nav-face.tsx`). Every arrival at Chat opens on the channels:
+  // the face resets whenever the pathname changes, during render (React's
+  // "adjust state when a prop changes"), so there is no frame of the old face
+  // after navigating. Leaving Chat by a module row and coming back is the
+  // common path, and it must not land on the modules.
+  const channelsNav = isChannelsNavRoute(pathname);
+  const [face, setFace] = useState<NavFace>("channels");
+  const [facePath, setFacePath] = useState(pathname);
+  if (facePath !== pathname) {
+    setFacePath(pathname);
+    setFace("channels");
+  }
+  // Stable, so chat can call them from an effect without re-running it.
+  const showModules = useCallback(() => setFace("modules"), []);
+  const showChannels = useCallback(() => setFace("channels"), []);
+  const [channelsSlot, setChannelsSlot] = useState<HTMLElement | null>(null);
+  const navFace = useMemo<NavFaceContextValue | null>(
+    () =>
+      channelsNav
+        ? {
+            face,
+            showModules,
+            showChannels,
+            channelsSlot,
+          }
+        : null,
+    [channelsNav, face, showModules, showChannels, channelsSlot],
+  );
 
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const { data: permissionsPayload } = useMyPermissions({
@@ -185,13 +222,25 @@ export function DashboardShell({
       </a>
 
       <div className="hidden lg:flex">
-        <AppNav
-          collapsed={navCollapsed}
-          onToggleCollapsed={toggleNavCollapsed}
-          permissions={permissions}
-          isModuleEnabled={isModuleEnabled}
-          pathname={pathname}
-        />
+        {navFace ? (
+          <ChatNavColumn
+            face={navFace.face}
+            onShowModules={navFace.showModules}
+            onShowChannels={navFace.showChannels}
+            channelsSlotRef={setChannelsSlot}
+            permissions={permissions}
+            isModuleEnabled={isModuleEnabled}
+            pathname={pathname}
+          />
+        ) : (
+          <AppNav
+            collapsed={navCollapsed}
+            onToggleCollapsed={toggleNavCollapsed}
+            permissions={permissions}
+            isModuleEnabled={isModuleEnabled}
+            pathname={pathname}
+          />
+        )}
       </div>
 
       {/*
@@ -216,9 +265,11 @@ export function DashboardShell({
 
           A full-bleed route (`full-bleed-routes.ts`) gets the same landmark
           with no inset and no scroll: it is handed the frame and owns what
-          happens inside it. That is the only way chat's channels column can sit
-          flush against the nav and its composer can pin to the bottom of the
-          viewport instead of the bottom of a scrolling document.
+          happens inside it. That is how chat's thread sits flush against the
+          left column and its composer pins to the bottom of the viewport
+          instead of the bottom of a scrolling document. (Below `lg` chat's
+          channel list is inline here too; from `lg` up it is the left column
+          itself, `chat-nav-column.tsx`.)
         */}
         <main
           id="main-content"
@@ -229,7 +280,9 @@ export function DashboardShell({
               : "gap-3 overflow-y-auto px-4 py-4 sm:px-6",
           )}
         >
-          {children}
+          <NavFaceContext.Provider value={navFace}>
+            {children}
+          </NavFaceContext.Provider>
         </main>
       </div>
     </div>
