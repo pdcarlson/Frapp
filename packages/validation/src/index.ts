@@ -649,16 +649,23 @@ export type {
 // ── Ops-setup nudges (issue #492) ────────────────────────────────────────────
 // Shared for the same reason as the categories above: each `key` is written
 // verbatim into `members.dismissed_ops_nudges`, the column is an unconstrained
-// `text[]`, and `DismissOpsNudgeDto` validates against this catalog — so a
+// `text[]`, and `DismissOpsNudgeDto` validates against `MEMBER_DISMISSAL_KEYS`
+// (these keys plus the setup checklist's) — so a
 // per-surface copy would drift into dismissal entries that suppress nothing.
 // `selectOpsNudge` carries the spec's priority order, which is behavior rather
 // than presentation, so it is shared too rather than re-derived per surface.
 export {
+  MEMBER_DISMISSAL_KEYS,
   OPS_NUDGE_MODULES,
+  SETUP_CHECKLIST_DISMISS_KEY,
   isOpsNudgeModuleKey,
   selectOpsNudge,
 } from "./ops-nudges";
-export type { OpsNudgeModule, OpsNudgeModuleKey } from "./ops-nudges";
+export type {
+  MemberDismissalKey,
+  OpsNudgeModule,
+  OpsNudgeModuleKey,
+} from "./ops-nudges";
 
 // Client-side RBAC gates, shared by apps/web and apps/mobile. Moved out of
 // `apps/web/lib/auth/can.ts` with #994 so the wildcard rule has one definition.
