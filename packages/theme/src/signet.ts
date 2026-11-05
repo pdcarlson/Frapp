@@ -191,7 +191,7 @@ const SIGNET_DARK: SignetTokens = {
     avatar: "50%",
   },
   spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, "2xl": 32, "3xl": 48 },
-  touch: { minimum: 44, button: 46, buttonLarge: 48, tabBar: 56 },
+  touch: { minimum: 44, button: 44, buttonLarge: 48, tabBar: 56 },
   focus: { ringWidth: 3, ringOpacity: 0.25 },
   scrollbar: {
     width: 6,

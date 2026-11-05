@@ -384,9 +384,10 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
     },
     secondaryButton: {
-      // The primary button's geometry (`SheetPrimaryButton`: 50pt, control
-      // radius), outlined as the board draws its secondary buttons.
-      height: 50,
+      // The primary button's geometry (`SheetPrimaryButton`: the 48pt Primary
+      // step, control radius), outlined as the board draws its secondary
+      // buttons.
+      height: tokens.touch.buttonLarge,
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.input,

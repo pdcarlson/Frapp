@@ -48,8 +48,9 @@ import { cn } from "@/lib/utils";
 /**
  * A field inside the sheet, at the board's 44px.
  *
- * `Input`, `Textarea` and `SelectTrigger` all ship §4's 48px default, which is
- * right for a form on a page and one step too tall for a sheet — the board
+ * `Input`, `Textarea` and `SelectTrigger` all ship §4's 40px default (44 to a
+ * finger), which is right for a form on a page and one step too tall for a
+ * sheet — the board
  * pitches sheet fields "one level below" deliberately, so the sheet reads as
  * secondary to the surface it sits over. Radius, fill, hairline and focus are
  * already the board's values on those primitives and are not respelled here.
@@ -57,16 +58,18 @@ import { cn } from "@/lib/utils";
  * `Textarea` is `min-h-24` rather than a fixed height, so this is the wrong
  * class for one — pass `rows` instead and leave its height alone.
  */
-export const UPLOAD_FIELD_CLASS = "h-11";
+export const UPLOAD_FIELD_CLASS = "h-9 pointer-coarse:h-11";
 
 /**
- * The sheet's own buttons: the board's 44px / r12 footer, its 15px label
- * rounded onto the `label` role (14), as `components.md` rounds a drawn size
- * (#2842). That leaves it one step from `size="sm"` (44px, `px-3.5`,
- * `text-sm`): the board pads the footer 16px, and `text-label` is the role
+ * The sheet's own buttons: the board's r12 footer at the Compact step of
+ * foundations.md §9's scale (36 to a mouse, 44 to a finger; the board drew
+ * 44), its 15px label rounded onto the `label` role (14), as `components.md`
+ * rounds a drawn size (#2842). That leaves it one step from `size="sm"`
+ * (`px-3`, `text-sm`): the board pads the footer 16px, and `text-label` is the role
  * where `text-sm` is Tailwind's own 14px.
  */
-export const UPLOAD_SHEET_BUTTON_CLASS = "h-11 px-4 text-label";
+export const UPLOAD_SHEET_BUTTON_CLASS =
+  "h-9 px-4 text-label pointer-coarse:h-11";
 
 /**
  * The sheet container.

@@ -212,7 +212,7 @@ export function AlumniDirectory() {
               onChange={(event) => setGraduationYear(event.target.value)}
               placeholder="e.g. 2018"
               inputMode="numeric"
-              className="h-11 w-full sm:w-40"
+              className="h-9 w-full sm:w-40 pointer-coarse:h-11"
             />
           </div>
           <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto">
@@ -227,7 +227,7 @@ export function AlumniDirectory() {
               value={cityFilter}
               onChange={(event) => setCityFilter(event.target.value)}
               placeholder="Austin, Chicago, …"
-              className="h-11 w-full sm:w-40"
+              className="h-9 w-full sm:w-40 pointer-coarse:h-11"
             />
           </div>
           <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto">
@@ -242,7 +242,7 @@ export function AlumniDirectory() {
               value={companyFilter}
               onChange={(event) => setCompanyFilter(event.target.value)}
               placeholder="Employer or industry"
-              className="h-11 w-full sm:w-40"
+              className="h-9 w-full sm:w-40 pointer-coarse:h-11"
             />
           </div>
           <Button type="submit" size="sm" className="gap-2">

@@ -894,7 +894,7 @@ function IdentityStep({
               // a tap target. `rounded` already maps to `--radius` (12) via the
               // preset's `DEFAULT`; spelled `rounded-md` so the radius step is
               // named rather than inherited.
-              className="h-11 w-14 cursor-pointer rounded-md border border-border bg-background"
+              className="h-10 w-14 cursor-pointer pointer-coarse:h-11 rounded-md border border-border bg-background"
               aria-label="Accent color"
             />
             <span className="font-mono text-caption text-muted-foreground">

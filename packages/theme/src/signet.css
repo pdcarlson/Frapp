@@ -306,7 +306,7 @@
      * Web honors the same 44px minimum as mobile. A pointer does not
      * make a small target acceptable. */
     --touch-min: 44px;
-    --touch-button: 46px;
+    --touch-button: 44px;
 
     /* ── Scrollbars ───────────────────────────────────────────────
      * A scroll region on a Signet surface draws its own bar. The browser

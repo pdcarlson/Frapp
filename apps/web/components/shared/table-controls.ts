@@ -80,7 +80,7 @@ export const dashboardToolbarSearchGlyphClassName =
 
 /**
  * A `<select>` that is a **form field** rather than filter chrome, at §4's
- * field height: 40 to a mouse, 48 to a finger, the same as `Input`.
+ * field height: 40 to a mouse, 44 to a finger, the same as `Input`.
  *
  * §4's 44 is a carve-out for filter rows specifically — "secondary chrome
  * sitting above the thing it filters" — and reading it as the height for every
@@ -88,27 +88,27 @@ export const dashboardToolbarSearchGlyphClassName =
  * the event editor put two of these in a `sm:grid-cols-2` beside `Input`s,
  * so one form row rendered at two heights.
  */
-export const dashboardFormSelectClassName = `h-10 pointer-coarse:h-12 ${NATIVE_SELECT}`;
+export const dashboardFormSelectClassName = `h-10 pointer-coarse:h-11 ${NATIVE_SELECT}`;
 
 export const dashboardTableCheckboxClassName = [
-  "h-6 w-6 rounded-[7px] border-input accent-primary",
+  "h-5 w-5 rounded-[6px] border-input accent-primary pointer-coarse:h-6 pointer-coarse:w-6 pointer-coarse:rounded-[7px]",
   FOCUS_RING,
 ].join(" ");
 
 /**
  * Wraps a `dashboardTableCheckboxClassName` input so the *tappable* area clears
- * §2's 44px floor on touch without changing the 24px box a pointer sees.
+ * §2's 44px floor on touch without changing the 20px box a pointer sees.
  */
 export const dashboardCheckboxHitAreaClassName = [
-  "flex h-6 w-6 cursor-pointer items-center justify-center",
+  "flex h-5 w-5 cursor-pointer items-center justify-center",
   "pointer-coarse:h-11 pointer-coarse:w-11",
 ].join(" ");
 
 /**
  * A compact icon control: 32px to a pointer, 44px to a finger.
  *
- * `Button`'s `size="icon"` is 44x44, which is §2's touch-target floor and right
- * for a control that stands alone. Two places want less where a mouse can aim:
+ * `Button`'s `size="icon"` is 36x36 to a pointer and 44x44 to a finger, §2's
+ * touch-target floor, which is right for a control that stands alone. Two places want less where a mouse can aim:
  *
  * - The trailing icon button of a **dense list row**: `/documents` after the
  *   greenfield lane flattened its cards away (`spec/ui/web-dashboard/README.md`

@@ -25,8 +25,9 @@ import { FOCUS_RING } from "@/components/ui/focus";
  *    explaining the jitter.
  *
  * Every size is pointer-aware (§3, corrected 2026-11-05): the mouse gets the
- * dense heights the sidebar already used, and `pointer-coarse` restores the
- * 44/48 touch heights, so nothing a finger hits drops under the 44 floor (§2).
+ * dense heights the sidebar already used, and `pointer-coarse` gives every
+ * size the 44 touch height, so nothing a finger hits drops under the floor
+ * (§2). The steps are foundations.md §9's control size scale.
  *
  * Label size is the `label` role — 14 — not the 15/14.5/14 ladder §3's size
  * table quotes. foundations.md §7 locks the type scale and calls an off-scale
@@ -84,10 +85,10 @@ const buttonVariants = cva(
       },
       size: {
         // §3's ladder. `sm` is the Inline size (36 to a mouse, 44 to a finger:
-        // action rows inside cards) and `default` the standalone one (40, 48);
+        // action rows inside cards) and `default` the standalone one (40, 44);
         // the names are the scaffold's and are kept so 68 call sites do not
         // churn for a rename.
-        default: "h-10 px-4 text-sm pointer-coarse:h-12",
+        default: "h-10 px-4 text-sm pointer-coarse:h-11",
         sm: "h-9 px-3 text-sm pointer-coarse:h-11 pointer-coarse:px-3.5",
         // Square: 36 to a mouse, and 44 to a finger so an icon-only control
         // clears the touch-target floor (§2) on the 375px layout.

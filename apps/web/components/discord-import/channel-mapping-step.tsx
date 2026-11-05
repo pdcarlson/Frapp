@@ -660,7 +660,7 @@ function BulkVisibilitySelect({
   return (
     <select
       aria-label={label}
-      className={cn(dashboardFormSelectClassName, "h-11 w-auto")}
+      className={cn(dashboardFormSelectClassName, "w-auto")}
       value=""
       onChange={(event) => bulk.choose(event.target.value)}
     >

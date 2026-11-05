@@ -286,7 +286,7 @@ export function SettingsAccentTab({
               aria-label="Accent color picker"
               value={accentDraftHex || accent.resolvedAccent}
               onChange={(event) => draft.update(event.target.value)}
-              className="h-10 w-24 p-1 pointer-coarse:h-12"
+              className="h-10 w-24 p-1 pointer-coarse:h-11"
             />
             <Input
               aria-label="Accent color hex value"
@@ -321,7 +321,7 @@ export function SettingsAccentTab({
               drawing an illegible word and calling it a preview.
             */}
             <div
-              className="flex h-10 w-36 items-center justify-center rounded-md text-sm font-semibold pointer-coarse:h-12"
+              className="flex h-10 w-36 items-center justify-center rounded-md text-sm font-semibold pointer-coarse:h-11"
               style={{
                 backgroundColor: accent.resolvedAccent,
                 color: previewInk,
