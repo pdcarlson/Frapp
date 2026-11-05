@@ -23,7 +23,6 @@ import { anyReadUncached } from "@/components/shared/async-states";
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { SectionLabel } from "@/components/shared/section-label";
@@ -59,6 +58,7 @@ import { formatRelativeDayTime, parseInstant } from "@repo/formatting";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { cn, getErrorMessage } from "@/lib/utils";
+import { EventsPageSkeleton } from "@/components/events/events-skeleton";
 
 type EventRow = Record<string, unknown>;
 
@@ -326,11 +326,7 @@ export function EventsPage() {
   }
 
   if (eventsQuery.isLoading) {
-    return (
-      <div className="space-y-4">
-        <NestedLoading sole message={stateMicrocopy.events.loading} />
-      </div>
-    );
+    return <EventsPageSkeleton />;
   }
 
   if (eventsQuery.isError) {

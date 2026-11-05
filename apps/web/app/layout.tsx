@@ -36,8 +36,8 @@ const figtree = localFont({
  * product that calls this surface an admin dashboard, and it is wrong on the
  * greenfield: `nav-config.ts` gates Admin behind a permission and everything
  * above it — Chat, Events, Tasks, Points, Polls, Directory — is a member
- * surface. The pre-auth screens render the product as the plain name
- * (`page.tsx`, `sign-in/page.tsx`), so the default agrees with them.
+ * surface. The signed-out frame's header renders the product as the plain
+ * name (`components/auth/auth-frame.tsx`), so the default agrees with it.
  */
 export const metadata: Metadata = {
   title: {

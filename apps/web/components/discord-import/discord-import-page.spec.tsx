@@ -200,7 +200,7 @@ describe("DiscordImportPage — the list on the page surface (#2500)", () => {
     hooks.listCached = false;
     const { container } = render(<DiscordImportPage />);
 
-    expect(screen.getByText("Loading imports...")).toBeInTheDocument();
+    expect(screen.getByText("Loading imports")).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
 
@@ -408,7 +408,7 @@ describe("DiscordImportPage — the list on the page surface (#2500)", () => {
       { offline: true },
       "Imports unavailable offline",
     ],
-    ["reloads with nothing cached", { loading: true }, "Loading imports..."],
+    ["reloads with nothing cached", { loading: true }, "Loading imports"],
   ])("keeps an open wizard through a list read that %s", (_, state, branch) => {
     const { container, rerender } = render(<DiscordImportPage />);
     fireEvent.click(screen.getByRole("button", { name: "New import" }));

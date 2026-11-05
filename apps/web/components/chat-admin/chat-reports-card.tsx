@@ -32,7 +32,6 @@ import {
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -53,6 +52,7 @@ import {
   reportedMessageSubject,
 } from "./chat-report-copy";
 import type { ChatReportTab } from "./chat-report-copy";
+import { ReportRowsSkeleton } from "@/components/chat-admin/chat-admin-skeleton";
 
 /**
  * The officer report queue (#2257) and its one destructive action (#2311).
@@ -350,7 +350,7 @@ function ReportListBody({
     );
   }
   if (query.isLoading) {
-    return <NestedLoading message={copy.loading} />;
+    return <ReportRowsSkeleton />;
   }
   // `data === undefined`, not `isError` alone: a failed *background* refetch
   // keeps the rows v5 already holds, and a queue an officer is mid-way through

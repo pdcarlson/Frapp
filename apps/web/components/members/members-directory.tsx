@@ -34,13 +34,13 @@ import { anyReadUncached } from "@/components/shared/async-states";
   `/backwork` across for this reason; this is the same move on the same grounds.
 
   `sole` on every one of them: each is the whole screen's only async state, so
-  the loading skeleton needs its live region back and the titles need to be
-  headings rather than paragraphs.
+  the titles need to be headings rather than paragraphs. Loading is not in
+  this family any more; it is the roster's own skeleton
+  (`directory-skeleton.tsx`).
 */
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import {
@@ -65,6 +65,10 @@ import { vocab } from "@repo/org-archetypes";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { asArray, cn, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";
+import {
+  MemberRowsSkeleton,
+  MembersRosterSkeleton,
+} from "@/components/members/directory-skeleton";
 
 const PAGE_SIZE = 25;
 
@@ -558,7 +562,7 @@ export function MembersDirectory() {
   }
 
   if (activeQuery.isLoading) {
-    return <NestedLoading sole message={stateMicrocopy.members.loading} />;
+    return <MembersRosterSkeleton />;
   }
 
   if (activeQuery.isError) {
@@ -579,7 +583,7 @@ export function MembersDirectory() {
   // directory still looks healthy while those features are quietly broken, so
   // surface their load state.
   if (rolesQuery.isLoading || leaderboardQuery.isLoading) {
-    return <NestedLoading sole message={stateMicrocopy.members.loading} />;
+    return <MembersRosterSkeleton />;
   }
 
   if (rolesQuery.isError || leaderboardQuery.isError) {
@@ -784,7 +788,7 @@ export function MembersDirectory() {
       ) : null}
 
       {activeQuery.isLoading ? (
-        <NestedLoading message={stateMicrocopy.members.loading} />
+        <MemberRowsSkeleton />
       ) : sortedMembers.length === 0 ? (
         /*
          * Three states where there was one, because the board draws them as

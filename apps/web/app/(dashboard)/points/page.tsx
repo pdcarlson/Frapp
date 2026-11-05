@@ -18,7 +18,6 @@ import { anyReadUncached } from "@/components/shared/async-states";
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { SectionLabel } from "@/components/shared/section-label";
@@ -46,6 +45,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { PointsAuditCard } from "@/components/points/points-audit-card";
+import { PointsPageSkeleton } from "@/components/points/points-skeleton";
 
 const windows = [
   { label: "All time", value: "all" as const },
@@ -322,11 +322,7 @@ export default function PointsPage() {
   }
 
   if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <NestedLoading sole message={stateMicrocopy.points.loading} />
-      </div>
-    );
+    return <PointsPageSkeleton />;
   }
 
   // The leaderboard and the ledger are what officers read chapter financial

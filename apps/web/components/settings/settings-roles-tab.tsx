@@ -21,7 +21,6 @@ import {
   EmptyState,
   ErrorState,
   anyReadUncached,
-  LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -56,6 +55,7 @@ import {
   usePermissionsCatalog,
   useRoles,
 } from "@repo/hooks";
+import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleton";
 
 type PermissionCatalogEntry = { key: string; permission: string };
 
@@ -233,7 +233,7 @@ function RolesMatrixSection({ packLabel }: { packLabel: string | null }) {
     return (
       <section className="space-y-4">
         {header}
-        <LoadingState message="Loading roles..." />
+        <SettingsListCardSkeleton label="Loading roles" rows={4} />
       </section>
     );
   }
@@ -537,7 +537,7 @@ function CustomView({
       />
     );
   } else if (customRolesQuery.isLoading || paused) {
-    body = <LoadingState message="Loading custom roles..." />;
+    body = <SettingsListCardSkeleton label="Loading custom roles" />;
   } else if (customRolesQuery.isError) {
     body = (
       <ErrorState

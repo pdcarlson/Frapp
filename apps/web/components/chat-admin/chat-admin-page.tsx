@@ -56,7 +56,6 @@ import {
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import {
@@ -75,6 +74,10 @@ import {
   type PermissionCatalogEntry,
 } from "@/components/shared/permission-checkbox-grid";
 import { useGateCatalog } from "@/components/shared/use-gate-catalog";
+import {
+  ChannelsSkeleton,
+  ChatAdminBodySkeleton,
+} from "@/components/chat-admin/chat-admin-skeleton";
 
 type ChannelType = "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
 
@@ -152,7 +155,16 @@ function useToggleSet(
   );
 }
 
-export function ChatAdminPage() {
+/**
+ * `initialChannelId` is `?channel=<id>`: the channel start's Edit channel
+ * shortcut (`components/chat/channel-start.tsx`) opens this page with that
+ * channel selected and its description field focused.
+ */
+export function ChatAdminPage({
+  initialChannelId = null,
+}: {
+  initialChannelId?: string | null;
+} = {}) {
   return (
     <>
       {/*
@@ -161,6 +173,7 @@ export function ChatAdminPage() {
       */}
       <Can
         permission="channels:manage"
+        fallback={<ChatAdminBodySkeleton />}
         deniedFallback={
           <p className="text-sm text-muted-foreground">
             Your role can&apos;t manage channels. Ask your chapter president for
@@ -183,14 +196,18 @@ export function ChatAdminPage() {
         */}
         <div className="space-y-6">
           <ChatReportsCard />
-          <ChatAdminBody />
+          <ChatAdminBody initialChannelId={initialChannelId} />
         </div>
       </Can>
     </>
   );
 }
 
-function ChatAdminBody() {
+function ChatAdminBody({
+  initialChannelId,
+}: {
+  initialChannelId: string | null;
+}) {
   const { isOffline } = useNetwork();
   const { toast } = useToast();
   const { confirm, confirmDialog } = useConfirmDialog();
@@ -312,6 +329,9 @@ function ChatAdminBody() {
 
   const [nameDraft, setNameDraft] = useState("");
   const [descriptionDraft, setDescriptionDraft] = useState("");
+  // What the draft was seeded with, so a save can tell an officer's edit from
+  // the server row moving underneath an untouched draft.
+  const [descriptionSeed, setDescriptionSeed] = useState("");
   const [categoryDraft, setCategoryDraft] = useState(NO_CATEGORY);
   const [readOnlyDraft, setReadOnlyDraft] = useState(false);
   const [defaultLevelDraft, setDefaultLevelDraft] = useState<string>(
@@ -321,10 +341,31 @@ function ChatAdminBody() {
     new Set(),
   );
 
+  // `?channel=` from the channel start. Applied once, during render rather
+  // than in an effect, so the editor's first paint already shows the channel.
+  // The description field takes focus as the editor mounts (`autoFocus`), so
+  // the officer lands where the channel start sent them. Any later pick
+  // clears it (`selectChannel`), so the field doesn't take focus again when
+  // the editor remounts.
+  const [initialApplied, setInitialApplied] = useState(false);
+  const [focusDescription, setFocusDescription] = useState(false);
+  if (!initialApplied && initialChannelId) {
+    const initial = channels.find((c) => c.id === initialChannelId);
+    if (initial) {
+      setInitialApplied(true);
+      selectChannel(initial);
+      setFocusDescription(true);
+    } else if (channelsQuery.isSuccess) {
+      setInitialApplied(true);
+    }
+  }
+
   function selectChannel(channel: AdminChannel) {
+    setFocusDescription(false);
     setSelectedChannelId(channel.id);
     setNameDraft(channel.name);
     setDescriptionDraft(channel.description ?? "");
+    setDescriptionSeed((channel.description ?? "").trim());
     setCategoryDraft(channel.category_id ?? NO_CATEGORY);
     setReadOnlyDraft(channel.is_read_only);
     setDefaultLevelDraft(
@@ -350,12 +391,21 @@ function ChatAdminBody() {
       });
       return;
     }
+    // The description goes out only when the officer changed it. Sending the
+    // blank draft on every save turned a never-set description (null) into
+    // `''`, which reads the same on screen but is what a deliberate clear
+    // looks like to the default-description backfill (20261105210000). The
+    // draft is compared with what it was seeded from, not the live row: a
+    // refetch that brings in the backfill or another officer's text while
+    // this draft sits untouched must not send the stale draft over it.
+    const description = descriptionDraft.trim();
+    const descriptionChanged = description !== descriptionSeed;
     try {
       await updateChannel.mutateAsync({
         id: selectedChannel.id,
         body: {
           name,
-          description: descriptionDraft.trim(),
+          ...(descriptionChanged ? { description } : {}),
           // `null` clears the category; `NO_CATEGORY` selected means "make this
           // uncategorized," which is a real write, not "leave it alone."
           category_id: categoryDraft === NO_CATEGORY ? null : categoryDraft,
@@ -370,6 +420,7 @@ function ChatAdminBody() {
             : {}),
         },
       });
+      if (descriptionChanged) setDescriptionSeed(description);
       toast({ description: `#${name} saved.` });
     } catch (error) {
       toast({
@@ -512,7 +563,7 @@ function ChatAdminBody() {
     );
   }
   if (channelsQuery.isLoading || categoriesQuery.isLoading || paused) {
-    return <NestedLoading sole message="Loading channels..." />;
+    return <ChannelsSkeleton />;
   }
   // `data === undefined`, not `isError` alone: a failed background refetch
   // keeps the rows TanStack already holds, and an officer part-way through an
@@ -863,6 +914,7 @@ function ChatAdminBody() {
                   <div className="grid gap-1">
                     <Label htmlFor="ca-description">Description</Label>
                     <Textarea
+                      autoFocus={focusDescription}
                       id="ca-description"
                       value={descriptionDraft}
                       onChange={(event) =>
