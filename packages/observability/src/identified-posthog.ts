@@ -34,6 +34,7 @@ export {
   isProductFlagEnabled,
   captureSentryErrorCorrelated,
   captureRouteView,
+  createRouteViewRecorder,
 } from "./posthog-adapter";
 export type {
   PostHogAdapter,

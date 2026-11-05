@@ -1,4 +1,10 @@
-import React, { createContext, useCallback, useEffect, useMemo } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { usePathname } from "expo-router";
 import {
   useFrappClient,
@@ -11,7 +17,7 @@ import {
 } from "@repo/validation";
 import {
   applyAnalyticsOptOut,
-  captureRouteView,
+  createRouteViewRecorder,
   namedAnalyticsEventBody,
 } from "@repo/observability/identified-posthog";
 
@@ -27,12 +33,14 @@ import {
  * does; #3101). While it is pending, after it fails with nothing cached, or
  * with no active chapter, the PostHog SDK stays opted out and `track` posts
  * nothing: nothing on the server stands behind what the SDK sends directly
- * (`$identify`, the `sentry-error-correlated` marker). Once a payload has
+ * (`$identify`, the `sentry-error-correlated` marker, route views, app
+ * lifecycle events). Once a payload has
  * loaded, only an explicit `true` opts out (`spec/behavior/data-retention.md`
  * #analytics-events-pseudonymous).
  *
- * Each route is recorded once as a `$screen` named by its route template
- * (#3382), from the same gate, so an opted-out chapter sends none.
+ * Each visit to a route is recorded once as a `$screen` named by its route
+ * template (#3382), from the same gate, so an opted-out chapter sends none.
+ * App lifecycle events are gated in `before_send` (`lib/posthog/config.ts`).
  */
 type TrackFn = (name: string, properties?: AnalyticsProperties) => void;
 
@@ -49,15 +57,18 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
     applyAnalyticsOptOut(optedOut);
   }, [optedOut]);
 
-  // One `$screen` per route, as its template (#3382). Declared after the
-  // opt-out effect so the SDK gate `captureRouteView` checks is already
-  // current when this runs, and keyed on `optedOut` so the first route is
-  // recorded once the chapter read opts in. expo-router's pathname drops params and groups, so Chat home is
-  // `/` and a thread is `/chat-thread`, never its channel id.
+  // One `$screen` per visit, as its route template (#3382). Declared after the
+  // opt-out effect so the gate the recorder checks is already current when
+  // this runs, and keyed on `optedOut` so the route the member is on is
+  // recorded once the chapter read opts in. The recorder keeps the visit, so a
+  // gate that flips while the member stays put (a chapter switch reloads the
+  // chapter read) records nothing more. expo-router's pathname drops params and
+  // groups, so Chat home is `/` and a thread is `/chat-thread`.
   const pathname = usePathname();
+  const [recordRouteView] = useState(createRouteViewRecorder);
   useEffect(() => {
-    if (pathname) captureRouteView(pathname);
-  }, [optedOut, pathname]);
+    recordRouteView(pathname);
+  }, [optedOut, pathname, recordRouteView]);
 
   const track = useCallback<TrackFn>(
     (name, properties) => {

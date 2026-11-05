@@ -8,6 +8,7 @@ import {
   namedAnalyticsEventBody,
   bindPostHogAdapterForTests,
   captureRouteView,
+  createRouteViewRecorder,
   captureSentryErrorCorrelated,
   createMemoryPostHogAdapter,
   getPostHogReplayId,
@@ -379,6 +380,58 @@ describe("captureRouteView", () => {
     bindPostHogAdapterForTests(memory.adapter);
     captureRouteView("mailto:a@b.c");
     expect(memory.calls).toEqual([]);
+  });
+});
+
+describe("createRouteViewRecorder", () => {
+  const views = (memory: ReturnType<typeof createMemoryPostHogAdapter>) =>
+    memory.calls.flatMap((c) => (c.type === "routeView" ? [c.path] : []));
+
+  it("records each visit once, however often it is called", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const record = createRouteViewRecorder();
+    record("/chat");
+    record("/chat");
+    record("/events");
+    record("/chat");
+    expect(views(memory)).toEqual(["/chat", "/events", "/chat"]);
+  });
+
+  it("records the current route once capture turns on, not a route left while opted out", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const record = createRouteViewRecorder();
+    applyAnalyticsOptOut(true);
+    record("/chat");
+    record("/events");
+    applyAnalyticsOptOut(false);
+    record("/events");
+    expect(views(memory)).toEqual(["/events"]);
+  });
+
+  // A chapter switch reloads the chapter read: the gate goes true and back
+  // while the member stays on the same route.
+  it("records nothing more when the gate flips on a route already recorded", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const record = createRouteViewRecorder();
+    record("/chapter-picker");
+    applyAnalyticsOptOut(true);
+    record("/chapter-picker");
+    applyAnalyticsOptOut(false);
+    record("/chapter-picker");
+    expect(views(memory)).toEqual(["/chapter-picker"]);
+  });
+
+  it("ignores a missing pathname", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const record = createRouteViewRecorder();
+    record(null);
+    record(undefined);
+    record("");
+    expect(views(memory)).toEqual([]);
   });
 });
 

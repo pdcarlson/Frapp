@@ -274,6 +274,18 @@ describe("AnalyticsProvider route views", () => {
     expect(routeViews()).toEqual([]);
   });
 
+  // A chapter switch reloads the chapter read while the member stays put.
+  it("does not record the same visit again when the gate flips", () => {
+    pathname.current = "/chat";
+    chapter(false);
+    const view = render(tree());
+    chapter(undefined);
+    view.rerender(tree());
+    chapter(false);
+    view.rerender(tree());
+    expect(routeViews()).toEqual(["/chat"]);
+  });
+
   it("stops recording the moment the chapter opts out", () => {
     pathname.current = "/chat";
     chapter(false);

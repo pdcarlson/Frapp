@@ -178,6 +178,28 @@ export function captureRouteView(path: string): void {
 }
 
 /**
+ * One route view per visit (#3382). Call the returned function with the
+ * current pathname whenever the pathname or the chapter's opt-out changes:
+ * it records a visit once, as soon as capture is on, so the first route is
+ * recorded when the chapter read opts in, and a gate that flips while the
+ * member stays put (a chapter switch reloads the chapter read) records
+ * nothing more. A route reached while opted out is still recorded if the
+ * member is on it when capture turns on.
+ */
+export function createRouteViewRecorder(): (
+  path: string | null | undefined,
+) => void {
+  let visit: { path: string; recorded: boolean } | null = null;
+  return (path) => {
+    if (!path) return;
+    if (visit?.path !== path) visit = { path, recorded: false };
+    if (optedOut || visit.recorded) return;
+    visit.recorded = true;
+    captureRouteView(path);
+  };
+}
+
+/**
  * `reset()` clears the SDK's stored consent along with the identity. posthog-js
  * removes it (`consent.reset()`), PostHog core nulls its persisted `OptedOut`,
  * and both then fall back to capturing. A reset runs whenever identity is

@@ -203,6 +203,19 @@ describe("mobile AnalyticsProvider screen views", () => {
     expect(screens()).toEqual(["/", "/chat-thread"]);
   });
 
+  // Picking another chapter reloads the chapter read while the picker is
+  // still on screen.
+  it("does not record the same visit again when the gate flips", () => {
+    atPath("/chapter-picker");
+    harness.chapter.mockReturnValue({ data: { analytics_opt_out: false } });
+    const view = render(tree());
+    harness.chapter.mockReturnValue({ data: undefined });
+    view.rerender(tree());
+    harness.chapter.mockReturnValue({ data: { analytics_opt_out: false } });
+    view.rerender(tree());
+    expect(screens()).toEqual(["/chapter-picker"]);
+  });
+
   it("records nothing for a chapter that opted out", () => {
     atPath("/events");
     harness.chapter.mockReturnValue({ data: { analytics_opt_out: true } });

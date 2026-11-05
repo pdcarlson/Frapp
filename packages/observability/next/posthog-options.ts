@@ -1,7 +1,7 @@
 import {
   POSTHOG_EXCEPTION_AUTOCAPTURE,
+  analyticsRouteTemplate,
   isPseudonymHex,
-  pathOnlyAnalyticsPath,
   shouldEnablePostHogReplay,
 } from "../src/index";
 
@@ -55,14 +55,17 @@ export function buildAnonymousPostHogBrowserOptions(opts: {
 const EMAIL_RE = /[^\s@]+@[^\s@]+\.[^\s@]+/;
 
 function looksLikeUrlOrPath(value: string): boolean {
-  return (
-    value.startsWith("/") || /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(value)
-  );
+  return value.startsWith("/") || /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(value);
 }
 
 /**
  * Last-line property filter. Drops IP, email, `$set`, nested bodies, and
- * reduces URL-shaped strings to a path. Used by landing `before_send`.
+ * reduces URL-shaped strings to their route template
+ * (`analyticsRouteTemplate`: path-only, any segment that does not name a
+ * screen as `[id]`). That covers what the SDKs add on their own (`$current_url`,
+ * `$pathname`, `$referrer`, `$prev_pageview_pathname`, `$screen_name`,
+ * `Application Opened.url`), so no event carries a raw id in a path (#3382).
+ * Used by landing `before_send`, and by the identified variant below.
  */
 export function sanitizeAnonymousPostHogProperties(
   properties: Record<string, unknown>,
@@ -84,7 +87,7 @@ export function sanitizeAnonymousPostHogProperties(
     }
     if (typeof value === "string") {
       if (looksLikeUrlOrPath(value)) {
-        const path = pathOnlyAnalyticsPath(value);
+        const path = analyticsRouteTemplate(value);
         if (path) next[key] = path;
         continue;
       }
@@ -123,9 +126,7 @@ function asPropertyMap(value: unknown): Record<string, unknown> | undefined {
  * Chapter (and any other) group keys may leave only as 64-hex. A raw
  * UUID or chapter id is dropped rather than forwarded.
  */
-function sanitizeGroups(
-  value: unknown,
-): Record<string, string> | undefined {
+function sanitizeGroups(value: unknown): Record<string, string> | undefined {
   const rec = asPropertyMap(value);
   if (!rec) return undefined;
   const next: Record<string, string> = {};

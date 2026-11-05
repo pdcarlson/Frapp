@@ -57,6 +57,31 @@ describe("analyticsRouteTemplate", () => {
     );
   });
 
+  // A malformed link lands on not-found with whatever its path held, so
+  // anything that is not a screen name is treated as a record.
+  it("replaces any segment that does not name a screen", () => {
+    expect(analyticsRouteTemplate("/members/jane.doe@school.edu")).toBe(
+      "/members/[id]",
+    );
+    expect(analyticsRouteTemplate("/members/jane.doe%40school.edu")).toBe(
+      "/members/[id]",
+    );
+    expect(analyticsRouteTemplate("/join/AbCdEfGhJk")).toBe("/join/[id]");
+    expect(analyticsRouteTemplate("/join/k9q2")).toBe("/join/[id]");
+    expect(analyticsRouteTemplate("/x/AbCdEfGhIjKlMnOpQrStUv")).toBe("/x/[id]");
+    expect(analyticsRouteTemplate("/Chat")).toBe("/[id]");
+    expect(analyticsRouteTemplate(`/x/${"q".repeat(25)}`)).toBe("/x/[id]");
+    expect(analyticsRouteTemplate("/x/abcdefabcdef")).toBe("/x/[id]");
+  });
+
+  it("keeps route groups, templated params, and a trailing slash", () => {
+    expect(analyticsRouteTemplate("/(tabs)/chat-thread")).toBe(
+      "/(tabs)/chat-thread",
+    );
+    expect(analyticsRouteTemplate("/events/[id]")).toBe("/events/[id]");
+    expect(analyticsRouteTemplate("/events/")).toBe("/events/");
+  });
+
   it("is undefined when nothing safe remains", () => {
     expect(analyticsRouteTemplate("")).toBeUndefined();
     expect(analyticsRouteTemplate("not-a-path")).toBeUndefined();
