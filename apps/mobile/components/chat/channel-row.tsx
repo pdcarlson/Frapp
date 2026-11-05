@@ -1,10 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
-import {
-  type ChapterBranding,
-  useChapterBranding,
-} from "@/lib/chapter-branding";
 import { initialsFor } from "@/lib/chat/display-name";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { SkeletonBlock, SkeletonRegion } from "@/components/state-block";
@@ -52,8 +48,9 @@ export interface ChannelRowProps {
   /** DM/group rows draw initials; channel rows draw a `#` sigil. */
   isDirect?: boolean;
   /**
-   * The member pinned this row (#2877). Renders the sigil in gold, per the
-   * drawn pinned `announcements` row, and names the pin action "Unpin from top".
+   * The member pinned this row (#2877). Names the pin action "Unpin from top".
+   * The sigil stays muted like every row's: a row icon is neutral, never the
+   * chapter accent (foundations.md §6, "Where the accent goes", 2026-11-05).
    */
   isPinned?: boolean;
   preview?: string | null;
@@ -110,8 +107,7 @@ export function ChannelRow({
   onLongPress,
 }: ChannelRowProps) {
   const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
   // Red means "you were addressed": an @-mention, or anything unread in a
   // direct message (foundations.md §5). The DM half was missing here until
   // #2877, so an unread DM drew the neutral badge while web drew it red; the
@@ -169,7 +165,7 @@ export function ChannelRow({
           <Text style={styles.avatarText}>{initialsFor(name)}</Text>
         </View>
       ) : (
-        <Text style={isPinned ? styles.sigilPinned : styles.sigil}>#</Text>
+        <Text style={styles.sigil}>#</Text>
       )}
 
       <View style={styles.body}>
@@ -218,8 +214,7 @@ export function UnreadBadge({
   addressed: boolean;
 }) {
   const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
   return (
     <View
       style={[
@@ -252,8 +247,7 @@ const SKELETON_TITLE_WIDTHS = ["42%", "28%", "55%", "36%", "48%"] as const;
  */
 export function ChannelListSkeleton({ rows = 5 }: { rows?: number }) {
   const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
   return (
     <SkeletonRegion label="Loading channels" style={styles.skeletonList}>
       <View style={styles.skeletonCaption}>
@@ -304,7 +298,7 @@ export function accessibilityLabelFor({
   return parts.join(", ");
 }
 
-function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
+function createStyles(tokens: SignetTokens) {
   const AVATAR_SIZE = 34;
 
   return StyleSheet.create({
@@ -333,10 +327,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     sigil: {
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.muted,
-    },
-    sigilPinned: {
-      ...typeRole(tokens.typography.role.title),
-      color: brand.accent,
     },
     avatar: {
       width: AVATAR_SIZE,

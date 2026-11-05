@@ -467,9 +467,11 @@ function createStyles(tokens: SignetTokens, accent: string) {
       color: tokens.color.text.foreground,
       fontVariant: ["tabular-nums"],
     },
+    // A count is a number, so the foreground text, never the chapter accent
+    // (foundations.md §6, "Where the accent goes", 2026-11-05).
     count: {
       marginTop: tokens.spacing.sm,
-      color: accent,
+      color: tokens.color.text.foreground,
       ...typeRole(tokens.typography.role.display),
       fontVariant: ["tabular-nums"],
     },

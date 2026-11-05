@@ -670,7 +670,7 @@ export function InvoiceList({ id }: { id?: string }) {
       ) : null}
 
       {selectedIds.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent-border bg-accent-subtle p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-popover p-3">
           <p className="text-sm font-semibold">
             {selectedIds.length} invoice{selectedIds.length > 1 ? "s" : ""}{" "}
             selected
@@ -777,7 +777,7 @@ export function InvoiceList({ id }: { id?: string }) {
                     // `/members`' 36/44 — see the table of the two row shapes
                     // in `spec/ui/web-dashboard/README.md` § Page grammar.
                     "flex min-h-11 flex-col gap-2 py-2 md:flex-row md:items-center",
-                    selected && "bg-accent-subtle-hover text-accent-text",
+                    selected && "bg-popover",
                   )}
                 >
                   <label
@@ -879,7 +879,7 @@ export function InvoiceList({ id }: { id?: string }) {
                         </Button>
                         <Button
                           size="toolbar"
-                          variant="quiet"
+                          variant="ghost"
                           {...gate.controlProps(transitioningId === invoice.id)}
                           onClick={() => void transition(invoice, "VOID")}
                         >

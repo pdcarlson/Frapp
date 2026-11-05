@@ -309,7 +309,7 @@ export default function ChapterPicker() {
                     busy={isPendingRow}
                     trailing={
                       isPendingRow ? (
-                        <ActivityIndicator color={tokens.color.gold.house} />
+                        <ActivityIndicator color={tokens.color.text.muted} />
                       ) : isCurrent ? (
                         <Text style={styles.currentText}>Current</Text>
                       ) : undefined

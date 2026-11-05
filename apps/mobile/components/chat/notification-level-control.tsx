@@ -11,7 +11,8 @@ import type { ChatNotificationLevel } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
+import { useChapterBranding } from "@/lib/chapter-branding";
+import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { MuteGlyph } from "./mute-glyph";
 
 /**
@@ -152,8 +153,7 @@ export function NotificationLevelControl({
   onLayout?: (event: LayoutChangeEvent) => void;
 }) {
   const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
 
   const isMuted = menu.level === "off";
   const glyphColor = menu.blocked
@@ -196,6 +196,12 @@ export function NotificationLevelControl({
  * while it is visible (`accessibilityViewIsModal` below is iOS-only). The
  * overlay rules, including why this is not a React Native `Modal`:
  * `spec/ui/mobile/patterns.md` § Overlays.
+ *
+ * The levels are a radio group, so the current one is a control the member
+ * switched on, and its checkmark is the one thing here in the chapter accent.
+ * The rows themselves stay neutral, the selected one included: no accent wash,
+ * the label in the foreground text, the description muted (foundations.md §6,
+ * "Where the accent goes", 2026-11-05).
  */
 export function NotificationLevelMenu({
   menu,
@@ -211,7 +217,7 @@ export function NotificationLevelMenu({
 }) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
   const titleRef = useRef<React.ComponentRef<typeof Text>>(null);
 
   // Opening hides the trigger that had a screen reader's focus, which clears
@@ -251,26 +257,26 @@ export function NotificationLevelMenu({
               }}
               style={({ pressed }) => [
                 styles.option,
-                selected ? styles.optionSelected : null,
                 pressed ? styles.pressed : null,
               ]}
             >
-              <Text
-                style={[
-                  styles.optionLabel,
-                  selected ? styles.optionLabelSelected : null,
-                ]}
+              <View style={styles.optionText}>
+                <Text style={styles.optionLabel}>{option.label}</Text>
+                <Text style={styles.optionDescription}>
+                  {option.description}
+                </Text>
+              </View>
+              {/* A fixed slot, so the text wraps the same whichever row is
+                  on. Decorative: `selected` already says it. */}
+              <View
+                style={styles.optionCheck}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
               >
-                {option.label}
-              </Text>
-              <Text
-                style={[
-                  styles.optionDescription,
-                  selected ? styles.optionDescriptionSelected : null,
-                ]}
-              >
-                {option.description}
-              </Text>
+                {selected ? (
+                  <CheckGlyph color={brand.accent} size={OPTION_CHECK_SIZE} />
+                ) : null}
+              </View>
             </Pressable>
           );
         })}
@@ -290,7 +296,10 @@ export function NotificationLevelMenu({
   );
 }
 
-function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
+/** The selected level's checkmark, at the tab family's small size. */
+const OPTION_CHECK_SIZE = 16;
+
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     trigger: {
       flexDirection: "row",
@@ -329,30 +338,29 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       borderBottomColor: tokens.color.border.hairline,
     },
     option: {
+      flexDirection: "row",
+      alignItems: "center",
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.md,
       borderBottomWidth: 1,
       borderBottomColor: tokens.color.border.hairline,
+      gap: tokens.spacing.md,
+    },
+    optionText: {
+      flex: 1,
       gap: tokens.spacing.xs,
     },
-    optionSelected: {
-      // The engine's subtle fill, which §8 holds accent text to 4.5:1 on; an
-      // 18% wash of the accent over the menu had no such guarantee.
-      backgroundColor: brand.accentSubtle,
+    optionCheck: {
+      width: OPTION_CHECK_SIZE,
+      alignItems: "center",
     },
     optionLabel: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
     },
-    optionLabelSelected: {
-      color: brand.accent,
-    },
     optionDescription: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
-    },
-    optionDescriptionSelected: {
-      color: brand.accent,
     },
     cancel: {
       minHeight: 44,

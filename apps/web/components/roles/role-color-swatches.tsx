@@ -44,7 +44,7 @@ export function RoleColorSwatches({
         disabled={disabled}
         onClick={() => onChange(null)}
         className={cn(
-          "grid size-7 place-items-center rounded-full border border-input text-muted-foreground transition-colors hover:bg-accent-subtle disabled:opacity-50",
+          "grid size-7 place-items-center rounded-full border border-input text-muted-foreground transition-colors hover:bg-card-hover disabled:opacity-50",
           FOCUS_RING_OFFSET,
           value === null && "border-accent-text text-foreground",
         )}
