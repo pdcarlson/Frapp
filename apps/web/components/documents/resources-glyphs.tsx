@@ -1,6 +1,6 @@
 /**
  * Signet duotone glyphs for the Resources & Reporting family — documents,
- * backwork, polls and reports.
+ * polls and reports, plus the toolbar search glyph `/backwork` shares.
  *
  * Every glyph here draws the shared two-tone set (`@repo/theme/nav-glyphs`,
  * `spec/ui/design-system/iconography.md` §1.1) except the re-exported
@@ -13,8 +13,8 @@
  * silhouette marks a document row on `/documents`, the "No folder" filter
  * beside it, and the PDF a report exports to — two screens, one shape.
  *
- * **Five of the six are re-exports, and that is the point.** `nav-glyphs.tsx`
- * already draws all five, and a second copy of
+ * **Four of the five are re-exports, and that is the point.** `nav-glyphs.tsx`
+ * already draws all four, and a second copy of
  * the same path data is the drift §1 rule 1 bans. Since the nav glyphs moved
  * to the shared two-tone set (`@repo/theme/nav-glyphs`, iconography.md §1.1),
  * `DocumentsGlyph` is Phosphor `file-text`, no longer the board's s12/s21 file
@@ -39,7 +39,6 @@ import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
 
 export {
-  BackworkGlyph,
   DocumentsGlyph,
   PollsGlyph,
   ReportsGlyph,
