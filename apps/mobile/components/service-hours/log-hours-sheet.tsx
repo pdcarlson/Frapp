@@ -194,10 +194,6 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
     // Set the moment Submit sends, before `isPending` reaches a render: two
     // taps handled in one batch both see the same render's `canSubmit`.
     const sending = useRef(false);
-    // Bumped each time the entry is given up, so an upload that finishes
-    // after a Cancel (one handled before the held Cancel reached a render)
-    // doesn't go on to file it.
-    const entryGeneration = useRef(0);
 
     /**
      * The attached photo, and its storage path once its bytes are up. The
@@ -233,7 +229,6 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
 
     /** Gives the entry up: Cancel, and a save that filed it. */
     const clearEntry = () => {
-      entryGeneration.current += 1;
       setDescription("");
       setMinutes(DEFAULT_DURATION_MINUTES);
       setDateChoice(DEFAULT_SERVICE_DATE_CHOICE);
@@ -252,7 +247,12 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
       setProofError(null);
     };
 
+    // Held while a save runs (`cancelDisabled` below): the create can't be
+    // called back, so a Cancel then would clear an entry that gets filed
+    // anyway. `sending` covers a tap in the same batch as Submit, before
+    // `pending` reaches a render.
     const cancel = () => {
+      if (sending.current) return;
       clearEntry();
       dismiss();
     };
@@ -295,14 +295,13 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
         send(proofPath ? { ...entry, proof_path: proofPath } : entry, sentFrom);
         return;
       }
-      void uploadThenSend(proof.image, entry, sentFrom, entryGeneration.current);
+      void uploadThenSend(proof.image, entry, sentFrom);
     };
 
     const uploadThenSend = async (
       image: PickedImage,
       entry: { date: string; duration_minutes: number; description: string },
       sentFrom: number,
-      generation: number,
     ) => {
       setUploading(true);
       const put = await uploadProofPhoto(image, (body) =>
@@ -315,12 +314,6 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
         if (!isSameVisit(sentFrom)) return;
         if (put.final) setRefusal(put.reason);
         else setProofError(put.reason);
-        return;
-      }
-      // The entry was given up while the PUT ran: nothing is filed. The
-      // bytes stay in the bucket unclaimed (#2197); see the header.
-      if (entryGeneration.current !== generation) {
-        sending.current = false;
         return;
       }
       setProof((current) =>

@@ -686,6 +686,36 @@ describe("Log service hours sheet", () => {
     act(() => tree.unmount());
   });
 
+  it("does nothing on a Cancel in the same batch as Submit", () => {
+    // Both presses run before `isPending` reaches a render, so the Cancel the
+    // member reached was not drawn disabled yet; `sending` holds it instead.
+    let fail = () => {};
+    mutate.mockImplementation((_body, options) => {
+      fail = () => options.onError(FAILED);
+    });
+    const tree = render();
+    fill(tree);
+    const cancel = cancelButton(tree);
+    act(() => {
+      submitButton(tree).props.onPress();
+      cancel.props.onPress();
+    });
+
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(dismiss).not.toHaveBeenCalled();
+    expect(descriptionField(tree).props.value).toBe("Food bank");
+
+    // The create fails: the visit hears of it, and the entry is still there
+    // for the retry, or for a Cancel that now gives it up.
+    act(() => fail());
+    expect(screenText(tree)).toContain(TRY_AGAIN);
+    expect(descriptionField(tree).props.value).toBe("Food bank");
+    act(() => cancelButton(tree).props.onPress());
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(descriptionField(tree).props.value).toBe("");
+    act(() => tree.unmount());
+  });
+
   it("sends one entry however often Submit is pressed mid-save", () => {
     mutate.mockImplementation(() => {});
     const tree = render();
@@ -1243,12 +1273,14 @@ describe("Log service hours photo proof", () => {
     act(() => tree.unmount());
   });
 
-  it("files nothing when the entry was given up while the photo uploaded", async () => {
-    // A Cancel handled before the held Cancel reached a render.
+  it("does nothing on a Cancel in the same batch as a Submit that uploads", async () => {
+    // A Cancel handled before the held Cancel reached a render: the upload
+    // goes on to file the entry, so the Cancel must not have given it up.
     let finish: (value: unknown) => void = () => {};
     uploadProofPhoto.mockImplementationOnce(
       () => new Promise((resolve) => (finish = resolve)),
     );
+    mutate.mockImplementation((_body, options) => options.onSuccess());
     const tree = render();
     fill(tree);
     await attach(tree);
@@ -1257,10 +1289,24 @@ describe("Log service hours photo proof", () => {
       submitButton(tree).props.onPress();
       cancel.props.onPress();
     });
+    expect(dismiss).not.toHaveBeenCalled();
+    expect(
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "BottomSheetTextInput" &&
+          node.props.accessibilityLabel === "Service description",
+      ).props.value,
+    ).toBe("Food bank");
+    expect(screenText(tree)).toContain("receipt.jpg");
+
     await act(async () => finish({ status: "uploaded", storagePath: PATH }));
 
-    expect(mutate).not.toHaveBeenCalled();
-    expect(successHaptic).not.toHaveBeenCalled();
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ description: "Food bank", proof_path: PATH }),
+    );
+    // The save, not the Cancel, closed the sheet.
+    expect(dismiss).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 

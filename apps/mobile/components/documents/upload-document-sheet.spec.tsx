@@ -14,9 +14,9 @@ import { DOCUMENT_TITLE_MAX_LENGTH } from "@repo/validation";
  * and folder chosen, a gate withdraws Upload while a failure keeps the photo
  * for another try, a swipe or scrim close keeps the draft until Cancel or an
  * upload that files it, Cancel is held while an upload runs, a kept folder
- * that is gone files where a fresh sheet would, and a sheet closed mid-upload
- * keeps its draft until the upload settles. The wire steps are pinned in
- * `lib/more/document-upload.spec.ts`.
+ * that is gone files where a fresh sheet would (a held retry's at None), and
+ * a sheet closed mid-upload keeps its draft until the upload settles. The
+ * wire steps are pinned in `lib/more/document-upload.spec.ts`.
  */
 
 const pickDocumentPhoto = vi.fn();
@@ -711,6 +711,55 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(titleInput(tree).props.value).toBe("");
   });
 
+  it("gives Cancel back when a confirm fails with the bytes held", async () => {
+    const tree = render();
+    await choose(tree);
+    const settle = heldUpload();
+    await pressUpload(tree);
+    expect(pressable(tree, "Cancel").props.disabled).toBe(true);
+
+    // The PUT landed and the confirm failed: a retry is held, and the title
+    // and folder hold still, but Cancel is the member's again.
+    await settle({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+      final: false,
+      sent: SENT,
+    });
+    expect(titleInput(tree).props.editable).toBe(false);
+    expect(pressable(tree, "Cancel").props.disabled).toBe(false);
+
+    // A retry that fails again gives it back too.
+    const settleRetry = heldUpload();
+    await pressUpload(tree);
+    expect(pressable(tree, "Cancel").props.disabled).toBe(true);
+    await settleRetry({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+      final: false,
+      sent: SENT,
+    });
+    expect(pressable(tree, "Cancel").props.disabled).toBe(false);
+
+    // And Cancel then gives the held retry up with the draft.
+    act(() => {
+      pressable(tree, "Cancel").props.onPress();
+    });
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    closed(tree);
+    open(tree);
+    expect(screenText(tree)).toContain("Choose a photo");
+    expect(titleInput(tree).props.editable).toBe(true);
+    await choose(tree);
+    await pressUpload(tree);
+    expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
+      PHOTO,
+      expect.any(Object),
+      expect.any(Object),
+      undefined,
+    );
+  });
+
   it("opens the library once for two taps on Choose", async () => {
     const tree = render();
     let resolvePick!: (value: unknown) => void;
@@ -970,6 +1019,56 @@ describe("UploadDocumentSheet (#3399)", () => {
       });
       expect(folderChips(tree).props.selected).toBe(null);
       expect(await uploadedFolder(tree)).toBe(null);
+    });
+
+    it("files a held retry whose folder was deleted at None", async () => {
+      const tree = mount(FOLDERS);
+      await choose(tree);
+      act(() => {
+        pressable(tree, "Bylaws").props.onPress();
+      });
+      const sent = { ...SENT, folder: "Bylaws" };
+      uploadDocumentPhoto.mockResolvedValue({
+        status: "refused",
+        reason: "Couldn't upload that photo. Try again in a moment.",
+        final: false,
+        sent,
+      });
+      await pressUpload(tree);
+      closed(tree);
+
+      // An officer deleted "Bylaws" while the sheet was away. Sending its
+      // name would have the API create it again.
+      act(() => {
+        tree.update(sheet([{ id: "f1", name: "Minutes" }]));
+      });
+      open(tree);
+      expect(folderChips(tree).props.selected).toBe(null);
+      expect(titleInput(tree).props.editable).toBe(false);
+      expect(await uploadedFolder(tree)).toBe(null);
+      const retry = uploadDocumentPhoto.mock.lastCall?.[3] as typeof sent;
+      expect(retry).toEqual({ ...sent, folder: null });
+      // Still the same photo, so it confirms the bytes already sent.
+      expect(retry.image).toBe(PHOTO);
+    });
+
+    it("keeps a held retry's folder while s12 still lists it", async () => {
+      const tree = mount(FOLDERS);
+      await choose(tree);
+      const sent = { ...SENT, folder: "Bylaws" };
+      uploadDocumentPhoto.mockResolvedValue({
+        status: "refused",
+        reason: "Couldn't upload that photo. Try again in a moment.",
+        final: false,
+        sent,
+      });
+      await pressUpload(tree);
+      closed(tree);
+      open(tree);
+
+      expect(folderChips(tree).props.selected).toBe("Bylaws");
+      expect(await uploadedFolder(tree)).toBe("Bylaws");
+      expect(uploadDocumentPhoto.mock.lastCall?.[3]).toEqual(sent);
     });
 
     it("sends no folder once the last one is deleted and no chips draw", async () => {

@@ -447,6 +447,36 @@ describe("New task draft across visits", () => {
     act(() => tree.unmount());
   });
 
+  it("does nothing on a Cancel in the same batch as Create", () => {
+    // Both presses run before `isPending` reaches a render, so the Cancel the
+    // member reached was not drawn disabled yet; `sending` holds it instead.
+    let fail = () => {};
+    mutate.mockImplementationOnce((_body, options) => {
+      fail = () => options.onError(FAILED);
+    });
+    const tree = renderWithRef();
+    typeTitle(tree);
+    const cancel = cancelButton(tree);
+    act(() => {
+      createButton(tree).props.onPress();
+      cancel.props.onPress();
+    });
+
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(dismiss).not.toHaveBeenCalled();
+    expect(titleValue(tree)).toBe("Sweep the porch");
+
+    // The create fails: the visit hears of it, and the draft is still there
+    // for the retry, or for a Cancel that now gives it up.
+    act(() => fail());
+    expect(screenText(tree)).toContain(TRY_AGAIN);
+    expect(titleValue(tree)).toBe("Sweep the porch");
+    act(() => cancelButton(tree).props.onPress());
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(titleValue(tree)).toBe("");
+    act(() => tree.unmount());
+  });
+
   // 2026-09-28 is a Monday.
   const monday = new Date(2026, 8, 28, 12);
   const tuesday = new Date(2026, 8, 29, 12);

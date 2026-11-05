@@ -82,8 +82,9 @@ export const RETRY_KEEPS_DRAFT =
  * - A kept folder is re-read against s12's folders on every visit. One an
  *   officer has since deleted or renamed falls back to what the sheet starts
  *   on with nothing chosen (s12's filter, when that folder still exists, else
- *   None), so Upload never files into a folder no chip shows as selected; the
- *   API would otherwise create it again (`ensureFolder`).
+ *   None), and a held retry's folder falls back to None, so Upload never
+ *   files into a folder no chip shows as selected; the API would otherwise
+ *   create it again (`ensureFolder`).
  *
  * ## Closing mid-upload
  *
@@ -148,7 +149,12 @@ export const UploadDocumentSheet = forwardRef<
       : startFolder;
   // A held retry files into the folder it was sent with, so the chips show
   // that one; a new pick drops the hold and the chips follow the draft again.
-  const folder = stored ? stored.folder : draftFolder;
+  // One deleted or renamed since files at None, where a deleted folder's
+  // documents go: sending its old name would have `ensureFolder` create it
+  // again when the first confirm never landed. When it did land, the API
+  // answers with that row, wherever it now sits, so the folder sent is moot.
+  const heldFolder = stored && listed(stored.folder) ? stored.folder : null;
+  const folder = stored ? heldFolder : draftFolder;
   const canUpload = picked !== null && !uploading && !picking && !refusal;
 
   const reset = useCallback(() => {
@@ -231,7 +237,7 @@ export const UploadDocumentSheet = forwardRef<
         requestUploadUrl: (body) => requestUploadUrl.mutateAsync(body),
         confirm: (body) => confirmUpload.mutateAsync(body),
       },
-      stored ?? undefined,
+      stored ? { ...stored, folder: heldFolder } : undefined,
     );
     sending.current = false;
     setUploading(false);

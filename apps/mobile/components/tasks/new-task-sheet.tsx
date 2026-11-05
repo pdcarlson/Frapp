@@ -257,7 +257,11 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       setRefusal(null);
     }, [markClosed]);
 
+    // Held while a create runs (`cancelDisabled` below; the header says
+    // why). `sending` covers a tap in the same batch as Create, before
+    // `isPending` reaches a render.
     const cancel = useCallback(() => {
+      if (sending.current) return;
       reset();
       dismiss();
     }, [reset, dismiss]);
