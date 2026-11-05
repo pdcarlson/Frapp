@@ -22,11 +22,13 @@ import {
 } from "@/lib/auth/oauth";
 
 /**
- * Create an account — s01's grammar, one step along.
+ * Create an account — the sign-in screen with different fields.
  *
  * The reference draws no sign-up screen, so this is s01's column applied rather
- * than a transcription. It carries **no mark**, for s02's reason: the mark
- * belongs to the entry screen, and this is reached from one.
+ * than a transcription. Since 2026-11-05 it sits in the same signed-out frame
+ * as sign-in (`app/(auth)/layout.tsx`), so the hop between them swaps only the
+ * form and the product panel keeps running. It draws no "‹ Back" for the same
+ * reason: the two are one page, and the footer link is the way across.
  *
  * The #920 Profile & pre-auth slice replaced a two-card grid whose eyebrow read
  * "Frapp account setup", whose heading promised "live staging walkthroughs",
@@ -117,11 +119,10 @@ function SignUpPageContent() {
 
   return (
     <AuthScreen
-      back={{ href: `/sign-in?redirectTo=${encodeURIComponent(redirectTo)}`, label: "Back" }}
       title="Create your account"
       subtitle="One account, then join your chapter or start one."
       footer={
-        <>
+        <p>
           Already have an account?{" "}
           <Link
             href={`/sign-in?redirectTo=${encodeURIComponent(redirectTo)}`}
@@ -129,7 +130,7 @@ function SignUpPageContent() {
           >
             Sign in
           </Link>
-        </>
+        </p>
       }
     >
       <form className="flex flex-col gap-4" onSubmit={handleSignUp}>

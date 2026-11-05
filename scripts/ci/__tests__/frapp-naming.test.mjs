@@ -268,11 +268,14 @@ export const SITE_ROSTERS = [
     sites: ["packages/validation/src/ops-nudges.ts"],
   },
   {
-    // Join, sign-up and no-access titles are not the product wordmark.
+    // No screen title is the product wordmark. Until 2026-11-05 `/` and
+    // `/sign-in` used it as their title; the wordmark is the signed-out
+    // frame's lockup now (`apps/web/components/auth/auth-frame.tsx`, pinned
+    // below), and every screen titles itself.
     kind: "web auth wordmark",
     walk: "webApp",
     is: (source) => jsxProp(source, "title").some((title) => title === "Frapp" || title === "Signet"),
-    sites: ["apps/web/app/page.tsx", "apps/web/app/sign-in/page.tsx"],
+    sites: [],
   },
   {
     kind: "mobile permission and Expo Go copy",
@@ -595,14 +598,13 @@ export const PINS = [
     has: ['template: "%s · Frapp"', 'default: "Frapp"', `description: "${TAGLINE}"`],
   },
   {
-    file: "apps/web/app/page.tsx",
-    why: "the web home wordmark and brand tagline",
-    has: [propCount("title", "Frapp", 1), propCount("subtitle", TAGLINE, 1)],
-  },
-  {
-    file: "apps/web/app/sign-in/page.tsx",
-    why: "the sign-in form's and its Suspense fallback's wordmark and tagline",
-    has: [propCount("title", "Frapp", 2), propCount("subtitle", TAGLINE, 2)],
+    // The tagline left the sign-in screen on 2026-11-05 with the wordmark:
+    // Ask is not built, so the page body holds it back as the landing page
+    // does (spec/ui/landing/README.md D8). The root layout's description above
+    // still carries it.
+    file: "apps/web/components/auth/auth-frame.tsx",
+    why: "the signed-out frame's wordmark, beside the mark on every pre-auth route",
+    has: [/<span className="[^"]*">\s*Frapp\s*<\/span>/],
   },
 
   // --- Mobile (ADR-25 step 2) ----------------------------------------------
@@ -921,8 +923,7 @@ test("the table keeps its floors and roots", () => {
   assert.equal(floor("web metadata title"), 18);
   assert.equal(floor("landing metadata title"), 7);
   const pinned = (file) => PINS.filter((pin) => pin.file === file).flatMap((pin) => pin.has ?? []);
-  assert.deepEqual(pinned("apps/web/app/page.tsx").map((entry) => entry.min), [1, 1]);
-  assert.deepEqual(pinned("apps/web/app/sign-in/page.tsx").map((entry) => entry.min), [2, 2]);
+  assert.equal(pinned("apps/web/components/auth/auth-frame.tsx").length, 1);
   assert.equal(pinned("apps/landing/app/layout.tsx")[0].exactly, 3);
   assert.equal(pinned("apps/landing/app/page.tsx")[0].exactly, 2);
   assert.deepEqual(SETTINGS_SITES, ["apps/mobile/lib/study/location-settings-path.ts"]);

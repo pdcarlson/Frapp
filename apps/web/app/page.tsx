@@ -1,22 +1,29 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AuthScreen } from "@/components/auth/auth-screen";
-import { Button } from "@/components/ui/button";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
- * The signed-out entry point.
+ * The signed-out entry point, which is now only a gate.
  *
- * A redirect gate first and a screen second: with a session it never renders at
- * all (`spec/ui/web-dashboard/README.md` §Gating & routing semantics — `/`
- * redirects to `/chat`), so its whole surface is the pre-auth column s01 draws.
+ * With a session it redirects to `/chat` (`spec/ui/web-dashboard/README.md`
+ * §Gating & routing semantics); without one it redirects to `/sign-in`.
  *
- * The #920 Profile & pre-auth slice deleted what stood here: a "Frapp staging"
- * eyebrow over "Run live chapter admin workflows on the web", three feature
- * cards describing the API's scoping model, and a five-step "What this
- * milestone unlocks" walkthrough. It also deleted two `border-border/70` washes
- * — §3 rule 4 bans one-offing a token value at the call site, and `--border` is
- * already `rgba(255,255,255,.08)`, so `/70` was diluting a hairline to 0.056.
+ * Until 2026-11-05 it was a screen of its own: mark, wordmark, tagline and two
+ * buttons, "Sign in" and "Create an account", each leading to a second page.
+ * That was the mobile entry screen's shape, where the form sits behind a tap;
+ * on the web it cost every returning member a click before the form. The
+ * sign-in form carries both of its other exits in its footer ("Create an
+ * account", "Join your chapter").
+ *
+ * It redirects rather than rendering the form itself because it cannot join
+ * the `(auth)` group that keeps the signed-out frame mounted across routes:
+ * `app/(dashboard)/page.tsx` is that group's index and would resolve to the
+ * same `/`. Rendering the frame here instead would remount it, and restart its
+ * product panel, on the hop to `/sign-up`.
+ *
+ * The #920 Profile & pre-auth slice deleted what stood here before that: a
+ * "Frapp staging" eyebrow over "Run live chapter admin workflows on the web",
+ * three feature cards describing the API's scoping model, and a five-step
+ * "What this milestone unlocks" walkthrough.
  */
 export default async function Home() {
   const supabase = await createSupabaseServerClient();
@@ -24,35 +31,5 @@ export default async function Home() {
     data: { session },
   } = await supabase.auth.getSession();
 
-  if (session) {
-    redirect("/chat");
-  }
-
-  return (
-    <AuthScreen
-      mark
-      title="Frapp"
-      subtitle="Ask your chapter anything."
-      footer={
-        <>
-          Have an invite?{" "}
-          <Link
-            href="/join"
-            className="font-semibold text-accent-text hover:underline"
-          >
-            Join your chapter
-          </Link>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-3">
-        <Button asChild className="w-full">
-          <Link href="/sign-in">Sign in</Link>
-        </Button>
-        <Button asChild variant="secondary" className="w-full">
-          <Link href="/sign-up">Create an account</Link>
-        </Button>
-      </div>
-    </AuthScreen>
-  );
+  redirect(session ? "/chat" : "/sign-in");
 }

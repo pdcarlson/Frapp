@@ -27,8 +27,13 @@ import {
 /**
  * s01 — Sign in (`spec/ui/design-system/reference/canvas-screens.dc.html`).
  *
- * Mark, wordmark, tagline, two fields, the primary, an "or" rule and the second
- * method. The #920 Profile & pre-auth slice replaced a three-card staging-demo
+ * Two fields, the primary, an "or" rule and the second method, under a
+ * "Welcome back" title. Since 2026-11-05 the mark and wordmark live in the
+ * signed-out frame's lockup (`auth-frame.tsx`), and `/` redirects here instead
+ * of drawing a two-button page that led here. The title no longer carries the
+ * "Ask your chapter anything." tagline either: Ask is not built, and the
+ * landing page holds that line back for the same reason
+ * (`spec/ui/landing/README.md` D8). The #920 Profile & pre-auth slice replaced a three-card staging-demo
  * grid ("Frapp admin access" / "Sign in to manage your chapter in staging" /
  * "What this unlocks") whose copy described the milestone rather than the
  * product, and whose four bullets named database behaviour to a member.
@@ -47,6 +52,9 @@ import {
  * failed link back here with `authError` set; the toast below is the only
  * place that code is read.
  */
+const SIGN_IN_TITLE = "Welcome back";
+const SIGN_IN_SUBTITLE = "Sign in to your chapter.";
+
 function SignInPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -161,18 +169,28 @@ function SignInPageContent() {
 
   return (
     <AuthScreen
-      mark
-      title="Frapp"
-      subtitle="Ask your chapter anything."
+      title={SIGN_IN_TITLE}
+      subtitle={SIGN_IN_SUBTITLE}
       footer={
         <>
-          New here?{" "}
-          <Link
-            href={`/sign-up?redirectTo=${encodeURIComponent(redirectTo)}`}
-            className="font-semibold text-accent-text hover:underline"
-          >
-            Create an account
-          </Link>
+          <p>
+            New here?{" "}
+            <Link
+              href={`/sign-up?redirectTo=${encodeURIComponent(redirectTo)}`}
+              className="font-semibold text-accent-text hover:underline"
+            >
+              Create an account
+            </Link>
+          </p>
+          <p>
+            Have an invite?{" "}
+            <Link
+              href="/join"
+              className="font-semibold text-accent-text hover:underline"
+            >
+              Join your chapter
+            </Link>
+          </p>
         </>
       }
     >
@@ -234,16 +252,16 @@ function SignInPageContent() {
 /**
  * The boundary `useSearchParams` requires.
  *
- * It renders the column rather than a bare `<main className="min-h-screen">` —
- * the previous fallback was a blank dark screen with nothing announced, and the
- * mark and title do not depend on the search params, so they can be stable
- * across the hydration boundary instead of appearing after it.
+ * It renders the column rather than nothing: the previous fallback was a blank
+ * dark screen with nothing announced, and the title does not depend on the
+ * search params, so it can be stable across the hydration boundary instead of
+ * appearing after it.
  */
-export default function SignInPage() {
+export function SignInScreen() {
   return (
     <Suspense
       fallback={
-        <AuthScreen mark title="Frapp" subtitle="Ask your chapter anything.">
+        <AuthScreen title={SIGN_IN_TITLE} subtitle={SIGN_IN_SUBTITLE}>
           <div role="status" aria-busy="true" aria-live="polite">
             <span className="sr-only">Loading the sign-in form…</span>
             <SkeletonText lines={4} />

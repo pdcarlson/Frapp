@@ -37,14 +37,18 @@ const ROOT = join(__dirname, "..", "..");
  * edited deliberately.
  */
 const FAMILY = [
+  "app/(auth)/layout.tsx",
   "app/page.tsx",
-  "app/sign-in/page.tsx",
-  "app/sign-up/page.tsx",
-  "app/join/page.tsx",
-  "app/no-access/page.tsx",
+  "app/(auth)/sign-in/page.tsx",
+  "app/(auth)/sign-up/page.tsx",
+  "app/(auth)/join/page.tsx",
+  "app/(auth)/no-access/page.tsx",
   "app/global-error.tsx",
   "app/(dashboard)/profile/page.tsx",
   "components/auth/auth-screen.tsx",
+  "components/auth/auth-frame.tsx",
+  "components/auth/sign-in-screen.tsx",
+  "components/auth/chapter-showcase.tsx",
   "components/auth/signet-mark.tsx",
   "components/profile/profile-panel.tsx",
   "components/profile/profile-glyphs.tsx",
@@ -174,7 +178,7 @@ describe("mono is reserved for machine values", () => {
     // chapter now supplies one seed, not a dark/accent pair.
     "components/onboarding/chapter-wizard.tsx": 2,
     // The invite token a member reads character by character.
-    "app/join/page.tsx": 1,
+    "app/(auth)/join/page.tsx": 1,
   };
 
   it.each(FAMILY)("%s", (file) => {
@@ -202,11 +206,13 @@ describe("the accent slot never paints a pre-auth screen", () => {
    */
   const PRE_AUTH = [
     "app/page.tsx",
-    "app/sign-in/page.tsx",
-    "app/sign-up/page.tsx",
-    "app/join/page.tsx",
-    "app/no-access/page.tsx",
+    "app/(auth)/sign-in/page.tsx",
+    "app/(auth)/sign-up/page.tsx",
+    "app/(auth)/join/page.tsx",
+    "app/(auth)/no-access/page.tsx",
     "components/auth/auth-screen.tsx",
+    "components/auth/auth-frame.tsx",
+    "components/auth/sign-in-screen.tsx",
   ] as const;
 
   it.each(PRE_AUTH)("%s paints no bare accent-slot class", (file) => {
