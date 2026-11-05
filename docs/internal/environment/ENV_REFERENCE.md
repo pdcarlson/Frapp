@@ -452,8 +452,9 @@ is unavailable in that state and the sign-in screen says so.
 > CI, `expo start`, preview/development, and iOS production still omit the field
 > when the file is absent. Prefer the file variable: the JSON carries a Google API key (`AIza…`) that
 > gitleaks' default `gcp-api-key` rule flags, so committing it would need a
-> `.gitleaks.toml` allowlist entry. Neither the Firebase project nor the FCM key exists
-> yet; both are console steps that become real with the store submission (#938 / #1826).
+> `.gitleaks.toml` allowlist entry. The Firebase project is `frapp-67722`; the file variable
+> has been set on EAS (production and preview) since 2026-11-03, and the FCM V1 key is
+> assigned in EAS credentials (`npm run eas -- credentials -p android`, read 2026-11-05) (#1826).
 > The fail-closed path is the reminder that #1826 has to happen before the first
 > production Android binary, not a substitute for it.
 >

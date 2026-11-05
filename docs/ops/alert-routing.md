@@ -2,7 +2,7 @@
 
 ## Primary channels
 
-- **Critical production alerts, today:** four production-scoped Sentry email rules, created 2026-11-05 ([#863](https://github.com/pdcarlson/Frapp/issues/863)) and named *Frapp prod alert: …*, email the owner: `6297121` (a new or regressed issue at level error or above in `frapp-api`, `frapp-web` or `frapp-mobile`, at most every 5 minutes), and the three rules in [§ Security events](#security-events), [§ Billing webhooks](#billing-webhooks) and [§ Chat worker subscriptions](#chat-worker-subscriptions). A test firing of `6297121` reached the owner's Gmail on 2026-11-05, about 4 minutes after the click; a Gmail filter on the subject carries these emails to the phone. Each project's default high-priority email rule still runs beside them (see the callout below). Render's paging rules are unread (the Render MCP was unauthorized on 2026-09-09). The [watchdogs](#automated-github-issue-alerts), including the production `/health/ready` alert, open `incident` issues assigned to the owner ([ADR-24](../../spec/architecture/adr/adr-24.md) decision 2). Assignment is a participating notification, so GitHub tells the owner under every repo-watch setting except **Ignore**. The owner's setting hasn't been checked; the test firing in [#2505](https://github.com/pdcarlson/Frapp/issues/2505) settles it. **Decided, blocked by plan** (the rest of decision 2, #2505): Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on. Sentry offers the Discord integration only on its Team plan, and the org is on the free plan (seen in the Sentry dashboard, 2026-11-05), so email, decision 2's second path, carries every Sentry alert until the plan changes.
+- **Critical production alerts, today:** four production-scoped Sentry email rules, created 2026-11-05 ([#863](https://github.com/pdcarlson/Frapp/issues/863)) and named *Frapp prod alert: …*, email the owner: `6297121` (a new or regressed issue at level error or above in `frapp-api`, `frapp-web` or `frapp-mobile`, at most every 5 minutes), and the three rules in [§ Security events](#security-events), [§ Billing webhooks](#billing-webhooks) and [§ Chat worker subscriptions](#chat-worker-subscriptions). A test firing of `6297121` reached the owner's Gmail on 2026-11-05, about 4 minutes after the click; a Gmail filter on the subject carries these emails to the phone. Each project's default high-priority email rule, also scoped to production since 2026-11-05, still runs beside them (see the callout below). Render's paging rules are unread (the Render MCP was unauthorized on 2026-09-09). The [watchdogs](#automated-github-issue-alerts), including the production `/health/ready` alert, open `incident` issues assigned to the owner ([ADR-24](../../spec/architecture/adr/adr-24.md) decision 2). Assignment is a participating notification, so GitHub tells the owner under every repo-watch setting except **Ignore**. The owner's setting hasn't been checked; the test firing in [#2505](https://github.com/pdcarlson/Frapp/issues/2505) settles it. **Decided, blocked by plan** (the rest of decision 2, #2505): Sentry's Discord integration posting to a private `#alerts` channel with phone notifications on. Sentry offers the Discord integration only on its Team plan, and the org is on the free plan (seen in the Sentry dashboard, 2026-11-05), so email, decision 2's second path, carries every Sentry alert until the plan changes.
 - **Staging alerts:** today the staging [watchdogs](#automated-github-issue-alerts) (deploy outcomes and staging conformance) open `incident` issues, as above. Staging isn't automatically low priority: each alert's priority is on its roster row. The staging deploy alert is **P1** (owner decision on #2803): its one job ships the API, and a production deploy of that commit builds the same image. A failure anywhere in that job also stops web and landing. Migration drift watches staging and production together. A daily Sentry digest is planned in #2505; none exists yet.
 - **Error tracking:** Sentry project alerts — org `frapp-live`, projects `frapp-api` (NestJS API), `frapp-web` (Next dashboard) and `frapp-mobile` (Expo app)
 
@@ -74,7 +74,9 @@
 > *(Superseded 2026-11-05: the Sentry MCP now has `create_alert_rule` and `update_alert_rule`, and
 > an agent session created the four production rules `6297121`–`6297124` with them,
 > [#863](https://github.com/pdcarlson/Frapp/issues/863). A session's own permission policy can still
-> refuse an update to an existing rule, as it did for `3133192` and `3855503` that day.)*
+> refuse an update to an existing rule, as it did for `3133192` and `3855503` that day. The owner
+> then scoped those two in the dashboard, so all three default rules above have
+> `environment: production` (read 2026-11-05).)*
 >
 > **Render paging rules were not verified this session** (Render MCP `list_workspaces`
 > unauthorized). **PostHog alerts** (org Signet, project `569878`, same date): no insight
@@ -85,7 +87,7 @@
 > **Update 2026-09-23** (Sentry MCP, for the delivery-plan research on #2504):
 > - `find_alert_rules(kind=metric)` now answers `[]` instead of 410, so the org has no metric rules.
 > - The MCP exposes `create_uptime_monitor` (not yet exercised) but no tool that creates alert
->   rules. Creating a monitor stays an owner step (quota; the header of
+>   rules. *(Superseded 2026-11-05: it now has `create_alert_rule`; see the note above.)* Creating a monitor stays an owner step (quota; the header of
 >   `scripts/ci/production-uptime.mjs`).
 > - `find_uptime_monitors` and `find_monitors` both returned `[]`: no uptime or cron monitors exist.
 >
@@ -321,7 +323,7 @@ The fingerprint is fixed per worker, so every outage of one worker lands in one 
 
 Source: the `warning`-level events web and mobile send when a React Query query or mutation fails ([#3377](https://github.com/pdcarlson/Frapp/issues/3377)). What is reported, what each event carries, how events are grouped and how often they repeat: [`observability.md` § Error Tracking](../../spec/behavior/observability.md#error-tracking).
 
-**No rule pages on these, by design.** They land in `frapp-web` and `frapp-mobile` for triage, not as alerts: an API 5xx behind one is already an error-level event in `frapp-api`, which its `request_id` tag joins. Sentry gives a `warning` event's new issue **medium** priority, and `frapp-web`'s default rule `3855503` (read 2026-11-04) emails only when an issue is or becomes high priority. So a client failure emails no one unless Sentry marks its issue escalating. The production rule `6297121` fires only at level error or above, so it skips these too. `frapp-mobile`'s default rule `3914865` has the same name and was not re-read that day.
+**No rule pages on these, by design.** They land in `frapp-web` and `frapp-mobile` for triage, not as alerts: an API 5xx behind one is already an error-level event in `frapp-api`, which its `request_id` tag joins. Sentry gives a `warning` event's new issue **medium** priority, and `frapp-web`'s default rule `3855503` (read 2026-11-04) emails only when an issue is or becomes high priority. So a client failure emails no one unless Sentry marks its issue escalating. The production rule `6297121` fires only at level error or above, so it skips these too. `frapp-mobile`'s default rule `3914865` has the same name. All three default rules are scoped to `environment: production` since 2026-11-05.
 
 ### Thresholds that exist only as intended lists
 

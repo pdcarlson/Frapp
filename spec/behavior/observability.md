@@ -118,7 +118,7 @@ A slice is done when **intended** behavior above is true in code **and** the mat
 | Alerts | Live Sentry/PostHog/Render rules, dated, in [`alert-routing.md`](../../docs/ops/alert-routing.md) |
 | Forget | #709 verified in the production PostHog project before production ingest |
 
-Human-only until proven otherwise: #709 (PostHog deleted-users automation), #1173 (production PostHog project), #863 (Sentry alert-rule *create* + channel proof), #970 (web DSN actually capturing), #938/#1361 (EAS + mobile DSN capture), source-map `SENTRY_AUTH_TOKEN` in Infisical `prod`, network allowlists, production replay approval.
+Human-only until proven otherwise: #709 (PostHog deleted-users automation), #1173 (production PostHog project), #863 (channel proof to the owner's phone; Sentry alert rules can be created through the Sentry MCP since 2026-11-05), #970 (web DSN actually capturing), #938/#1361 (EAS + mobile DSN capture), source-map `SENTRY_AUTH_TOKEN` in Infisical `prod`, network allowlists, production replay approval.
 
 ## Structured Logging
 
