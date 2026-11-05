@@ -418,6 +418,15 @@ describe("Tasks board's New task sheet across chapters", () => {
   });
 });
 
+describe("Tasks board rows", () => {
+  // Flush rows split by hairlines: the screen tells each group's first row it
+  // is first, so no hairline floats above a group.
+  it("marks only the first row of a group as first", () => {
+    const tree = render();
+    expect(rows(tree).map((r) => r.props.isFirst)).toEqual([true, false]);
+  });
+});
+
 describe("Tasks board pull-to-refresh", () => {
   it("refreshes the board, the viewer, the points and the leaderboard on a pull (#3385)", async () => {
     for (const each of Object.values(refetch)) each.mockClear();
