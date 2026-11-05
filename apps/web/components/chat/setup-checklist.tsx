@@ -63,7 +63,9 @@ export function SetupChecklistView({
           aria-label={HIDE_SETUP_CHECKLIST_LABEL}
           title={HIDE_SETUP_CHECKLIST_LABEL}
           className={cn(
-            "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground",
+            // 24 beside the rail's other row controls; the touch floor on a
+            // finger (foundations.md §9).
+            "inline-flex size-6 shrink-0 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground pointer-coarse:size-11",
             FOCUS_RING,
           )}
         >
@@ -76,7 +78,9 @@ export function SetupChecklistView({
             <Link
               href={SETUP_CHECKLIST_HREF[line.key]}
               className={cn(
-                "flex h-8 w-full items-center gap-2 rounded-xs px-2 text-sm transition-colors hover:bg-card",
+                // The Row step (foundations.md §9): 32 with a 14px label on a
+                // mouse, 44 with a 16px one on touch.
+                "flex min-h-8 w-full items-center gap-2 rounded-xs px-2 text-sm transition-colors hover:bg-card pointer-coarse:min-h-11 pointer-coarse:text-base",
                 line.done ? "text-muted-foreground" : "text-foreground",
                 FOCUS_RING,
               )}
