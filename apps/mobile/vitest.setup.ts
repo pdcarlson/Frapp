@@ -61,9 +61,11 @@ vi.mock("expo-location", () => ({
   Accuracy: { Balanced: 3, High: 4 },
 }));
 
-// Chapter setup marks the chapter going live with a tap (#3351).
+// Chapter setup marks the chapter going live with a tap (#3351), and a
+// reaction ticks (`lib/haptics.ts`).
 vi.mock("expo-haptics", () => ({
   notificationAsync: vi.fn().mockResolvedValue(undefined),
+  selectionAsync: vi.fn().mockResolvedValue(undefined),
   NotificationFeedbackType: {
     Success: "success",
     Warning: "warning",
