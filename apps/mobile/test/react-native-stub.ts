@@ -73,6 +73,8 @@ export const reactNativeStub = {
   // attachments inline.
   Image: "Image",
   ScrollView: "ScrollView",
+  // Pull-to-refresh (#3385) on ScreenShell's ScrollView and Directory's list.
+  RefreshControl: "RefreshControl",
   TextInput: "TextInput",
   // Added with s16's rendered spec (#3022): its notification rows are switches.
   Switch: "Switch",
