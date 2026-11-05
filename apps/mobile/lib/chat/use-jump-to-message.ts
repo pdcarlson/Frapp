@@ -20,11 +20,11 @@ export const JUMP_RETRY_MS = 100;
  * Rows have no fixed height, so a target outside the rendered window fails
  * `scrollToIndex` once. The fallback scrolls near it by the average row height
  * and tries once more. That retry looks the message up again when it fires,
- * in the rows on screen then, rather than reusing the failed index: the thread
- * reuses one list across a channel switch, and `scrollToIndex` throws (it does
- * not fail) on an index past the end of a shorter list, inside a timer where
- * nothing catches it. A channel switch (`resetKey`) or unmount cancels a
- * pending retry.
+ * in the rows on screen then, rather than reusing the failed index: the rows
+ * can change under a pending retry, and `scrollToIndex` throws (it does not
+ * fail) on an index past the end of a shorter list, inside a timer where
+ * nothing catches it. A channel switch (`resetKey`), which also gives the
+ * thread a fresh list, or unmount cancels a pending retry.
  *
  * Kept out of `app/(tabs)/chat-thread.tsx` so it can be tested.
  */

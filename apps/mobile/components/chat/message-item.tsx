@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import {
   Image,
+  Keyboard,
   Pressable,
   StyleSheet,
   Text,
@@ -69,7 +70,9 @@ import { ReplyQuote } from "./reply-quote";
  * Everything the bubble carried has a home here: the delivery state is a line
  * under the body (`deliveryChrome` is exhaustive over `MessageStatus`, #1910),
  * `(edited)` and Pinned trail the body's last line on every row, the reply quote
- * sits above the author line, and reactions sit under the body.
+ * sits above the author line, and reactions sit under the body. A row nobody
+ * has reacted to draws no reaction row at all: the first reaction starts from
+ * the long-press sheet's quick picks (`message-actions-sheet.tsx`).
  */
 
 export interface MessageItemProps {
@@ -127,8 +130,8 @@ export interface MessageItemProps {
   onJumpToParent?: () => void;
 }
 
-/** The drawn quick reaction. A fuller picker is not in this slice. */
-export const QUICK_REACTION = "👍";
+/** The add chip's accessible name: it opens the sheet that holds the picks. */
+export const ADD_REACTION_A11Y_LABEL = "Add reaction";
 
 /** Long-press is the gesture; this is its screen-reader twin. */
 export const MESSAGE_ACTIONS_A11Y_LABEL = "Message actions";
@@ -238,6 +241,12 @@ export function groupReactions(
  * author line, photo — opens the actions. It is `accessible={false}` for the
  * reason `messageActionsA11yProps` gives, and the screen-reader half of the
  * long-press rides the author line, or the gutter on a follow-on row.
+ *
+ * A plain tap on the row puts the keyboard away. On a card row that holds
+ * only for the gutter, avatar and author line: a tap on the card's body
+ * doesn't (#3461), because the card wraps its body in a long-press
+ * `Pressable` of its own (`ChatCardShell`), which takes the tap before this
+ * one sees it.
  */
 export function MessageRowFrame({
   message,
@@ -284,6 +293,14 @@ export function MessageRowFrame({
     <Pressable
       accessible={false}
       onLongPress={onOpenActions}
+      // The thread's list lets a tap reach a control with the keyboard up
+      // (`keyboardShouldPersistTaps="handled"`), and this Pressable claims a
+      // tap anywhere on the row, so without this a tap on a message no longer
+      // put the keyboard away. The row has no tap action of its own; its
+      // controls (chips, links, photos, Retry) claim their own taps first,
+      // and so does a card's own Pressable, so a tap on a card's body leaves
+      // the keyboard up (#3461, see above).
+      onPress={Keyboard.dismiss}
       disabled={!onOpenActions}
       style={[styles.row, startsRun ? styles.rowStartsRun : styles.rowFollows]}
     >
@@ -668,6 +685,9 @@ function AccentText({
   return <Text style={[style, { color: accent }]}>{children}</Text>;
 }
 
+/** A reaction chip's reach: up to the 44pt floor above and below its 26pt. */
+const CHIP_HIT_SLOP = { top: 9, bottom: 9 } as const;
+
 type ReactionChipStyles = Pick<
   ReturnType<typeof createStyles>,
   "reactionChip" | "reactionChipMine" | "reactionText" | "reactionTextMine"
@@ -704,8 +724,10 @@ function ReactionChip({
       accessibilityLabel={`${group.emoji}, ${group.count}`}
       disabled={disabled}
       // A 26pt chip against the 44pt floor: hitSlop closes the gap without
-      // inflating the drawn chip (components.md §11).
-      hitSlop={9}
+      // inflating the drawn chip, vertically only (components.md §11). Chips
+      // sit 6pt apart, so 9pt to the side would let each chip's later
+      // neighbour, the `+` included, take the taps on its right edge.
+      hitSlop={CHIP_HIT_SLOP}
       onPress={onPress}
       onLongPress={onLongPress}
       style={[
@@ -736,6 +758,22 @@ function ReactionChip({
  * affordance `MessageItem` gives every other kind — `styles` is narrowed to
  * just the keys this component reads so a caller with its own `createStyles`
  * only has to match that slice, not `MessageItem`'s full style sheet.
+ *
+ * **Nothing at all until someone reacts.** The row used to draw a `👍 +` chip
+ * under every message the viewer hadn't reacted to, which was nearly every
+ * row: a 26pt pill plus its margin, repeated down the whole thread, and the
+ * main reason it read loose and busy next to s05's board. No messenger puts a
+ * reaction control on every line; they start the first reaction from a long
+ * press. So the first one starts in the message actions sheet, whose top row
+ * is the quick picks (`message-actions-sheet.tsx`), and a message without
+ * reactions costs no height here.
+ *
+ * Once a message has reactions, a `+` chip follows them, as the board draws it
+ * (s05: the `5` chip, then `+`). It opens that same sheet, where the picks
+ * live; it is not a one-tap reaction of its own. It needs the sheet, so it is
+ * drawn only when the row offers its actions (`onLongPress`), and not while
+ * the message is unconfirmed, since a reaction addresses a server id a pending
+ * placeholder does not have yet.
  */
 export function ReactionRow({
   reactions,
@@ -755,7 +793,7 @@ export function ReactionRow({
    * The row's long-press (the message actions), forwarded to every chip. A
    * chip is its own `Pressable` and claims the touch, so without this a long
    * press on one ends as a tap — a reaction toggled — instead of opening the
-   * actions the rest of the message opens.
+   * actions the rest of the message opens. It is also the `+` chip's tap.
    */
   onLongPress?: () => void;
   styles: Pick<
@@ -767,12 +805,7 @@ export function ReactionRow({
     | "reactionTextMine"
   >;
 }) {
-  // The add chip is what makes the *first* reaction on a message possible.
-  // Without it the row only rendered when reactions already existed, so
-  // `onReact` was unreachable and nobody could ever start one — the Canvas
-  // draws this chip (s05, `canvas-screens.dc.html:181`) for that reason.
-  // Hidden while the message is unconfirmed, since a reaction addresses a
-  // server id a pending placeholder does not have yet.
+  if (reactions.length === 0) return null;
   return (
     <View style={styles.reactionRow}>
       {reactions.map((group) => {
@@ -789,23 +822,27 @@ export function ReactionRow({
         return <ReactionChip key={group.actionType} {...chip} />;
       })}
 
-      {!disabled && !reactions.some((group) => group.mine) ? (
+      {!disabled && onLongPress ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`React with ${QUICK_REACTION}`}
-          hitSlop={9}
-          onPress={() => onReact(messageId, QUICK_REACTION)}
+          accessibilityLabel={ADD_REACTION_A11Y_LABEL}
+          hitSlop={CHIP_HIT_SLOP}
+          onPress={onLongPress}
           onLongPress={onLongPress}
           style={styles.reactionChip}
         >
-          <Text style={styles.reactionText}>{`${QUICK_REACTION} +`}</Text>
+          <Text style={styles.reactionText}>+</Text>
         </Pressable>
       ) : null}
     </View>
   );
 }
 
-const AVATAR_SIZE = 32;
+/**
+ * The 32pt avatar, and the gutter it sets (components.md §11). Exported for
+ * the thread's loading shapes (`thread-skeleton.tsx`), which mirror the row.
+ */
+export const MESSAGE_AVATAR_SIZE = 32;
 /** The crest raster's field colour (`spec/ui/brand-identity.md` §2, "Mark field"). */
 const CREST_FIELD = "#1A1A1A";
 
@@ -825,7 +862,7 @@ function createStyles(tokens: SignetTokens) {
       marginBottom: 2,
     },
     elbow: {
-      marginLeft: AVATAR_SIZE / 2,
+      marginLeft: MESSAGE_AVATAR_SIZE / 2,
       marginTop: 10,
       width: 24,
       height: 10,
@@ -842,9 +879,9 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.md,
     },
     avatar: {
-      width: AVATAR_SIZE,
-      height: AVATAR_SIZE,
-      borderRadius: avatarRadius(AVATAR_SIZE),
+      width: MESSAGE_AVATAR_SIZE,
+      height: MESSAGE_AVATAR_SIZE,
+      borderRadius: avatarRadius(MESSAGE_AVATAR_SIZE),
       backgroundColor: tokens.color.surface.popover,
       alignItems: "center",
       justifyContent: "center",
@@ -856,8 +893,8 @@ function createStyles(tokens: SignetTokens) {
       overflow: "hidden",
     },
     systemAvatarImage: {
-      width: AVATAR_SIZE,
-      height: AVATAR_SIZE,
+      width: MESSAGE_AVATAR_SIZE,
+      height: MESSAGE_AVATAR_SIZE,
     },
     // Initials at caption / 700 (§11 Row anatomy), as web's avatar draws them.
     // Weight comes from the Figtree family, never `fontWeight` (see `typeRole`).
@@ -869,7 +906,7 @@ function createStyles(tokens: SignetTokens) {
     // Held open on every row of a run, so a follow-on's text lines up under
     // the first row's. Stretches to the row's height so a screen reader's
     // focus ring on it covers the row.
-    gutter: { width: AVATAR_SIZE, alignSelf: "stretch" },
+    gutter: { width: MESSAGE_AVATAR_SIZE, alignSelf: "stretch" },
     column: { flex: 1, minWidth: 0 },
     authorLine: {
       flexDirection: "row",
