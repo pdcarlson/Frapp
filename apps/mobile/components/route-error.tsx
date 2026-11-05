@@ -1,15 +1,13 @@
-import {
-  Component,
-  useEffect,
-  type ReactElement,
-  type ReactNode,
-} from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Component, useEffect, type ReactElement, type ReactNode } from "react";
+import { StyleSheet, View } from "react-native";
 import * as Sentry from "@sentry/react-native";
-import { useRouter, type ErrorBoundaryProps } from "expo-router";
+import { usePathname, type ErrorBoundaryProps } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { createReportOnce } from "@repo/observability";
 import type { SignetTokens } from "@repo/theme/signet";
+import { BACK_TO_CHAT, BackRow } from "@/components/back-row";
 import { ErrorState } from "@/components/state-block";
-import { FrappThemeProvider, typeRole, useFrappTheme } from "@/lib/theme";
+import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
 
 /**
  * What a member sees when a screen fails to render, and how the failure
@@ -29,22 +27,28 @@ import { FrappThemeProvider, typeRole, useFrappTheme } from "@/lib/theme";
  *   bar, a provider, or a sign-in screen. The app around the screen is gone,
  *   so they use the app row.
  *
+ * Both rows are `components.md` §10's Error card, which carries one button:
+ * Retry. A screen's way out is the `‹ Chat` back row above the card, the
+ * navigation every pushed screen already draws, not a second action on it.
+ *
  * ## Why the root's surface can't use the theme it was given
  *
  * expo-router wraps the root layout's *module*, so the root boundary renders
  * outside every provider that layout mounts. `AppErrorScreen` brings its own
  * `FrappThemeProvider`, which holds static tokens and needs nothing above it.
- * That is also why it offers no Back to chat: with the providers gone there is
- * no session or router state to go back to, and Retry, which mounts the root
- * layout again, is the whole remedy.
+ * That is also why it draws no back row: with the providers gone there is no
+ * session or chapter to go back to, and Retry, which mounts the layout again,
+ * is the whole remedy.
  *
  * ## Reporting
  *
  * Catching an error without reporting it would leave the app looking better
  * and reporting less (web's `app/error.tsx` makes the same point). Each error
- * is reported once, however many times the fallback remounts, as web's
- * `SegmentError` does: one error object, one event. The event carries which
- * boundary caught it and, for a screen, the route's name, as tags.
+ * is reported once, however many times its fallback remounts, through the
+ * `createReportOnce` web's `SegmentError` uses. The event is tagged with the
+ * boundary that caught it (`error_boundary`) and the route as a path
+ * (`route_path`, such as `/event-details` or `/sign-in`). No route here has a
+ * dynamic segment, so a path names a screen and never a record.
  *
  * It carries no React component stack. The shared scrubber keeps only an
  * allowlist of contexts, and `react` is not on it
@@ -52,41 +56,29 @@ import { FrappThemeProvider, typeRole, useFrappTheme } from "@/lib/theme";
  * would be dropped before sending. In a release build the names in it are
  * minified anyway; the route tag and the error's own stack are what place it.
  */
-const REPORTED = new WeakSet<object>();
 
 /** Which boundary caught the error, as the `error_boundary` tag. */
 export type RouteErrorBoundaryKind = "root" | "tabs" | "screen";
 
-/**
- * Reports a caught render error once. A thrown non-object can't go in the
- * `WeakSet`, so it is reported every time; web makes the same trade.
- */
-export function reportRouteError(
-  error: unknown,
-  context: {
-    boundary: RouteErrorBoundaryKind;
-    /** The route's name, for a screen boundary. */
-    route?: string;
-  },
-): void {
-  if (typeof error === "object" && error !== null) {
-    if (REPORTED.has(error)) return;
-    REPORTED.add(error);
-  }
+/** Reports a caught render error, once per error object. */
+export const reportRouteError = createReportOnce<{
+  boundary: RouteErrorBoundaryKind;
+  /** The route as a path, when the boundary knows it. */
+  routePath?: string;
+}>((error, { boundary, routePath }) => {
   Sentry.captureException(error, {
     tags: {
-      error_boundary: context.boundary,
-      ...(context.route ? { route_name: context.route } : {}),
+      error_boundary: boundary,
+      ...(routePath ? { route_path: routePath } : {}),
     },
   });
-}
+});
 
 /** `writing.md` § Mobile render errors, the screen row. */
 export const SCREEN_ERROR_COPY = {
   title: "Couldn't load this screen",
   body: "The error has been reported. Retrying usually clears it.",
   retry: "Retry",
-  back: "Back to chat",
 } as const;
 
 /** `writing.md` § Mobile render errors, the app row. */
@@ -98,16 +90,20 @@ export const APP_ERROR_COPY = {
 
 /**
  * The root and tab-group layouts' boundary: the whole app area failed, so it
- * fills the window and offers Retry alone. Works with no provider above it.
+ * fills the window and offers Retry alone. Works with no provider above it:
+ * `usePathname` reads expo-router's own store, which the root's boundary still
+ * sits inside.
  */
 export function AppErrorScreen({
   error,
   retry,
   boundary,
 }: ErrorBoundaryProps & { boundary: Exclude<RouteErrorBoundaryKind, "screen"> }) {
+  const routePath = usePathname();
+
   useEffect(() => {
-    reportRouteError(error, { boundary });
-  }, [error, boundary]);
+    reportRouteError(error, { boundary, routePath: routePath || undefined });
+  }, [error, boundary, routePath]);
 
   return (
     <FrappThemeProvider>
@@ -123,11 +119,21 @@ export function AppErrorScreen({
   );
 }
 
+/** The tab route that is Chat home (`app/(tabs)/index.tsx`). */
+const CHAT_HOME_ROUTE = "index";
+
+/** A tab route's name as the path `usePathname` reports for it. */
+function tabRoutePath(route: string): string {
+  return route === CHAT_HOME_ROUTE ? "/" : `/${route}`;
+}
+
 /**
  * One screen's fallback. The tab bar is still there, so it fills the screen
- * rather than the window, and a screen other than Chat home also offers Back
- * to chat: the chat thread and both check-in screens hide the tab bar, and on
- * iOS a member there would otherwise have only a Retry that keeps failing.
+ * rather than the window. A screen other than Chat home draws the `‹ Chat`
+ * back row: some screens hide the tab bar (`FULL_WINDOW` in
+ * `app/(tabs)/_layout.tsx`, listed in `spec/ui/mobile/navigation.md` § Tab
+ * bar), and on iOS a member there would otherwise have only a Retry that keeps
+ * failing.
  */
 export function ScreenErrorScreen({
   route,
@@ -136,35 +142,33 @@ export function ScreenErrorScreen({
   route: string;
   retry: () => void;
 }) {
-  const router = useRouter();
   const { tokens } = useFrappTheme();
+  const { top } = useSafeAreaInsets();
   const styles = createStyles(tokens);
 
   return (
-    <ErrorFrame>
-      <ErrorState
-        title={SCREEN_ERROR_COPY.title}
-        body={SCREEN_ERROR_COPY.body}
-        retryLabel={SCREEN_ERROR_COPY.retry}
-        onRetry={retry}
-      />
+    <View style={[styles.screen, { paddingTop: top + tokens.spacing.sm }]}>
       {route === CHAT_HOME_ROUTE ? null : (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={SCREEN_ERROR_COPY.back}
-          hitSlop={tokens.spacing.sm}
-          onPress={() => router.navigate("/(tabs)")}
-          style={({ pressed }) => [styles.back, pressed ? styles.pressed : null]}
-        >
-          <Text style={styles.backText}>{SCREEN_ERROR_COPY.back}</Text>
-        </Pressable>
+        <View style={styles.backRow}>
+          <BackRow {...BACK_TO_CHAT} />
+        </View>
       )}
-    </ErrorFrame>
+      <ErrorFrame>
+        <ErrorState
+          title={SCREEN_ERROR_COPY.title}
+          body={SCREEN_ERROR_COPY.body}
+          retryLabel={SCREEN_ERROR_COPY.retry}
+          onRetry={retry}
+        />
+      </ErrorFrame>
+    </View>
   );
 }
 
-/** The tab route that is Chat home (`app/(tabs)/index.tsx`). */
-const CHAT_HOME_ROUTE = "index";
+/** What `screenLayout` hands a screen's boundary of its navigation object. */
+type ScreenEvents = {
+  addListener: (event: "focus" | "blur", callback: () => void) => () => void;
+};
 
 /**
  * The tab navigator's `screenLayout`: every tab screen in its own boundary.
@@ -176,13 +180,19 @@ const CHAT_HOME_ROUTE = "index";
  */
 export function screenErrorLayout({
   route,
+  navigation,
   children,
 }: {
   route: { name: string; params?: object };
+  navigation: ScreenEvents;
   children: ReactNode;
 }): ReactElement {
   return (
-    <RouteErrorBoundary route={route.name} resetKey={paramsKey(route.params)}>
+    <RouteErrorBoundary
+      route={route.name}
+      resetKey={paramsKey(route.params)}
+      navigation={navigation}
+    >
       {children}
     </RouteErrorBoundary>
   );
@@ -199,7 +209,7 @@ function paramsKey(params: object | undefined): string {
 }
 
 type ScreenBoundaryProps = {
-  /** The route's name: the `route_name` tag, and whether Back to chat shows. */
+  /** The route's name: the route tag, and whether the back row shows. */
   route: string;
   /**
    * Changes when the screen is opened for something else. Tab screens stay
@@ -207,6 +217,12 @@ type ScreenBoundaryProps = {
    * when the member opens a different event on the same screen.
    */
   resetKey: string;
+  /**
+   * The screen's focus events. A tab screen that failed stays mounted when
+   * the member leaves it, so coming back to it tries the screen again rather
+   * than showing the old fallback until they find Retry.
+   */
+  navigation?: ScreenEvents;
   children: ReactNode;
 };
 
@@ -223,21 +239,50 @@ export class RouteErrorBoundary extends Component<
 > {
   state: ScreenBoundaryState = { error: undefined, failed: false };
 
+  /** Set when the member leaves the screen while it shows the fallback. */
+  private leftWhileFailed = false;
+  private unsubscribers: (() => void)[] = [];
+
   static getDerivedStateFromError(error: unknown): ScreenBoundaryState {
     return { error, failed: true };
   }
 
-  componentDidCatch(error: unknown): void {
-    reportRouteError(error, { boundary: "screen", route: this.props.route });
+  componentDidMount(): void {
+    const { navigation } = this.props;
+    if (!navigation) return;
+    this.unsubscribers = [
+      navigation.addListener("blur", () => {
+        if (this.state.failed) this.leftWhileFailed = true;
+      }),
+      navigation.addListener("focus", () => {
+        if (this.state.failed && this.leftWhileFailed) this.retry();
+      }),
+    ];
   }
 
-  componentDidUpdate(prev: ScreenBoundaryProps): void {
-    if (this.state.failed && prev.resetKey !== this.props.resetKey) {
+  componentWillUnmount(): void {
+    for (const unsubscribe of this.unsubscribers) unsubscribe();
+    this.unsubscribers = [];
+  }
+
+  componentDidCatch(error: unknown): void {
+    reportRouteError(error, {
+      boundary: "screen",
+      routePath: tabRoutePath(this.props.route),
+    });
+  }
+
+  componentDidUpdate(prev: ScreenBoundaryProps, prevState: ScreenBoundaryState): void {
+    // Only a fallback that was already showing resets. When the new params are
+    // what made the screen throw, this commit is the one that caught it, and
+    // resetting now would render the failing screen straight back.
+    if (prevState.failed && this.state.failed && prev.resetKey !== this.props.resetKey) {
       this.retry();
     }
   }
 
   retry = (): void => {
+    this.leftWhileFailed = false;
     this.setState({ error: undefined, failed: false });
   };
 
@@ -260,25 +305,18 @@ function ErrorFrame({ children }: { children: ReactNode }) {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: tokens.color.surface.background,
+    },
+    backRow: {
+      paddingHorizontal: tokens.spacing.lg,
+    },
     frame: {
       flex: 1,
       justifyContent: "center",
-      gap: tokens.spacing.sm,
       paddingHorizontal: tokens.spacing.lg,
       backgroundColor: tokens.color.surface.background,
-    },
-    back: {
-      alignSelf: "center",
-      minHeight: tokens.touch.minimum,
-      justifyContent: "center",
-      paddingHorizontal: tokens.spacing.lg,
-    },
-    backText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.mutedForeground,
-    },
-    pressed: {
-      opacity: 0.7,
     },
   });
 }
