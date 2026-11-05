@@ -97,7 +97,7 @@ in the S2 nav restructure (#957) — see
 | Ask sheet | Tap a source chip | Says the citation is a sample with nothing behind it to open. A chip that swallowed the tap would be the dead end this checklist exists to catch |
 | Notifications (`/(tabs)/notifications`) | Tap a row with a recognizable target | Marks it read **and** routes to the target (chat thread, event detail, tasks, dues, service hours, directory) |
 | Notifications (`/(tabs)/notifications`) | Tap a row whose target this build does not recognize | Marks it read and stays put — never a navigation to a wrong or dead screen |
-| Settings (`/(tabs)/preferences`) | Push notifications switch | On a fresh install (never asked), a tap shows the OS prompt and the switch follows the answer. Once granted, or once the OS stops asking, a tap opens the OS settings app; changing the permission there and returning updates the switch on the next foreground — it does **not** need a relaunch. Expo Go reads Unavailable with the reason |
+| Settings (`/(tabs)/preferences`) | Push notifications switch | On a fresh install (never asked), a tap shows the OS prompt and the switch follows the answer. Once granted, or once the OS stops asking, a tap opens the OS settings app; changing the permission there and returning updates the switch on the next foreground — it does **not** need a relaunch. On Android, switching off only the "Chapter notifications" category there also reads off on return. Expo Go reads Unavailable with the reason |
 
 ## 4) Connection states and write gating
 

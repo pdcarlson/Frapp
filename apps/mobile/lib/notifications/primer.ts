@@ -18,8 +18,8 @@
  * - **"Not now" has to stick.** A primer that reappears on every launch is the
  *   nag the contextual pattern exists to avoid, so the decision is persisted.
  *   It is deliberately *not* permanent: a member who changes their mind taps
- *   s16 Settings' push switch, which asks the OS if it still will and opens
- *   the OS settings if it won't.
+ *   s16 Settings' push switch, which asks the OS while a prompt can still
+ *   help and otherwise opens the OS settings.
  *
  * The same reasoning already shipped for location in
  * `components/study/location-primer-sheet.tsx` (s10) — this is its push sibling.

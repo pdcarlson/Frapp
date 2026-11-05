@@ -39,6 +39,7 @@ const state = vi.hoisted(() => ({
   quietHoursEnabled: false,
   getPushPermission: (() =>
     new Promise(() => undefined)) as () => Promise<PushStatus | null>,
+  isPushChannelBlocked: (async () => false) as () => Promise<boolean>,
   requestPushPermission: vi.fn<() => Promise<boolean>>(async () => true),
   openSettings: vi.fn(async () => undefined),
 }));
@@ -76,6 +77,7 @@ vi.mock("@/lib/account/delete-account-prompt", () => ({
 
 vi.mock("@/lib/notifications/push", () => ({
   getPushPermission: () => state.getPushPermission(),
+  isPushChannelBlocked: () => state.isPushChannelBlocked(),
   requestPushPermission: () => state.requestPushPermission(),
   pushUnavailableReason: () => state.pushReason,
 }));
@@ -135,6 +137,7 @@ beforeEach(() => {
   state.pushReason = null;
   state.quietHoursEnabled = false;
   state.getPushPermission = () => new Promise(() => undefined);
+  state.isPushChannelBlocked = async () => false;
   state.requestPushPermission.mockReset().mockResolvedValue(true);
   state.openSettings.mockReset().mockResolvedValue(undefined);
   vi.mocked(AsyncStorage.setItem).mockClear();
@@ -362,8 +365,36 @@ describe("Settings push switch", () => {
     expect(screenText(tree)).toContain("Turn on in your phone's settings.");
   });
 
-  it("asks once for two taps made before the first settles", async () => {
-    // The second tap lands while the OS prompt is up.
+  it("asks on Android 13+ after a first Don't Allow, where the OS still will", async () => {
+    // On Android 13+ one "Don't allow" reads `status: "denied"` while
+    // `canAskAgain` stays true until a second one (expo-modules-core's
+    // `PermissionsService.kt`). The OS still shows its prompt then, so the
+    // tap must ask rather than key on `status`.
+    state.getPushPermission = async () => ({
+      granted: false,
+      canAskAgain: true,
+      status: "denied",
+    });
+    const tree = render();
+    await settle();
+
+    expect(pushSwitch(tree).props.value).toBe(false);
+    expect(pushSwitch(tree).props.accessibilityLabel).toBe(
+      "Push notifications",
+    );
+    expect(screenText(tree)).not.toContain("Turn on in your phone's settings.");
+
+    act(() => pushSwitch(tree).props.onValueChange(true));
+    await settle();
+
+    expect(primerWrites()).toEqual(["accepted"]);
+    expect(state.requestPushPermission).toHaveBeenCalledTimes(1);
+    expect(state.openSettings).not.toHaveBeenCalled();
+  });
+
+  it("asks once when a second tap lands while the OS prompt is up", async () => {
+    // The first tap's permission read settles and its request stays pending,
+    // which is the OS prompt on screen. Only then does the second tap land.
     state.getPushPermission = async () => ({
       granted: false,
       canAskAgain: true,
@@ -379,13 +410,15 @@ describe("Settings push switch", () => {
     const tree = render();
     await settle();
 
-    act(() => {
-      pushSwitch(tree).props.onValueChange(true);
-      pushSwitch(tree).props.onValueChange(true);
-    });
+    act(() => pushSwitch(tree).props.onValueChange(true));
+    await settle();
+    expect(state.requestPushPermission).toHaveBeenCalledTimes(1);
+
+    act(() => pushSwitch(tree).props.onValueChange(true));
     await settle();
 
     expect(state.requestPushPermission).toHaveBeenCalledTimes(1);
+    expect(primerWrites()).toEqual(["accepted"]);
     expect(state.openSettings).not.toHaveBeenCalled();
 
     answer(false);
@@ -417,6 +450,51 @@ describe("Settings push switch", () => {
 
     expect(state.requestPushPermission).not.toHaveBeenCalled();
     expect(primerWrites()).toEqual([]);
+    expect(state.openSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads off on Android when the app's channel is switched off, though the permission is granted", async () => {
+    // Turning off the "Chapter notifications" category leaves the permission
+    // reading granted, and that channel is where the API's pushes show. No
+    // prompt turns a channel back on, so a tap opens the OS settings.
+    state.getPushPermission = async () => ({
+      granted: true,
+      canAskAgain: true,
+      status: "granted",
+    });
+    state.isPushChannelBlocked = async () => true;
+    const tree = render();
+    await settle();
+
+    expect(pushSwitch(tree).props.value).toBe(false);
+    expect(pushSwitch(tree).props.accessibilityLabel).toBe(
+      "Push notifications, turn on in your phone's settings",
+    );
+    expect(screenText(tree)).toContain("Turn on in your phone's settings.");
+
+    act(() => pushSwitch(tree).props.onValueChange(true));
+    await settle();
+
+    expect(state.requestPushPermission).not.toHaveBeenCalled();
+    expect(primerWrites()).toEqual([]);
+    expect(state.openSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the OS settings rather than asking while the app's channel is switched off", async () => {
+    // A grant would leave the channel off and the switch with it.
+    state.getPushPermission = async () => ({
+      granted: false,
+      canAskAgain: true,
+      status: "denied",
+    });
+    state.isPushChannelBlocked = async () => true;
+    const tree = render();
+    await settle();
+
+    act(() => pushSwitch(tree).props.onValueChange(true));
+    await settle();
+
+    expect(state.requestPushPermission).not.toHaveBeenCalled();
     expect(state.openSettings).toHaveBeenCalledTimes(1);
   });
 

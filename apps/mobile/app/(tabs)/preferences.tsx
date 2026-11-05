@@ -42,6 +42,7 @@ import { LEGAL_LINKS } from "@/lib/more/legal";
 import { acceptPrimer } from "@/lib/notifications/primer";
 import {
   getPushPermission,
+  isPushChannelBlocked,
   pushUnavailableReason,
 } from "@/lib/notifications/push";
 import type { PushPermissionStatus } from "@/lib/notifications/push-types";
@@ -76,7 +77,7 @@ import {
  *   here. See the catalog's docblock in `@repo/validation`.
  * - **Appearance is static text.** The app is dark-only by design
  *   (`lib/theme.tsx`), and Canvas draws this row as a value, not a control.
- * - **"Push notifications" is a switch that reports the device permission.**
+ * - **"Push notifications" is a switch that reports the device's settings.**
  *   Canvas draws a toggle, and it shows what is true: on only when the OS will
  *   show a push (`pushIsOn()`). A tap asks the OS while a prompt can still help
  *   (the tap is the member accepting, so `patterns.md`'s "OS prompt only after
@@ -122,6 +123,26 @@ function formatTimeOfDay(value: string): string {
 }
 
 /**
+ * What the push switch reads: the OS permission, and whether the member has
+ * switched off the app's Android push channel (`isPushChannelBlocked()`),
+ * which the permission doesn't report.
+ */
+type PushState = PushPermissionStatus & { channelBlocked: boolean };
+
+/**
+ * Both reads, together, so the switch never pairs a fresh one with a stale
+ * other. `null` when there is no module to ask; rejects if either read fails,
+ * which the callers treat as unknown.
+ */
+async function readPushState(): Promise<PushState | null> {
+  const [permission, channelBlocked] = await Promise.all([
+    getPushPermission(),
+    isPushChannelBlocked(),
+  ]);
+  return permission ? { ...permission, channelBlocked } : null;
+}
+
+/**
  * Whether the OS will show a push, which is what the switch reports.
  *
  * `status`, not `granted`. On Android 13+ (`targetSdk` 33 and up)
@@ -135,19 +156,24 @@ function formatTimeOfDay(value: string): string {
  * (`ExpoNotificationsPermissionsRequester.swift`): a provisional or ephemeral
  * grant reads `"undetermined"`, so the switch is off there and a tap asks for
  * the full prompt.
+ *
+ * Nor is it on with the app's Android push channel switched off: `status`
+ * still reads `"granted"` then, but that channel is where the API's pushes
+ * show (`isPushChannelBlocked()`).
  */
-function pushIsOn(permission: PushPermissionStatus): boolean {
-  return permission.status === "granted";
+function pushIsOn(push: PushState): boolean {
+  return push.status === "granted" && !push.channelBlocked;
 }
 
 /**
- * Whether a tap should show the OS prompt: nothing granted yet, and the OS
- * will still ask. A granted permission whose notifications are blocked (the
- * Android 13+ case above) is not one: Android answers that request at once,
- * with no prompt, so only the OS settings can turn it back on.
+ * Whether a tap should show the OS prompt: nothing granted yet, the OS will
+ * still ask, and a grant would be enough. A granted permission whose
+ * notifications are blocked (the Android 13+ case above) is not one: Android
+ * answers that request at once, with no prompt. Nor is a channel switched
+ * off, which no prompt turns back on. Only the OS settings fix those.
  */
-function pushTapAsks(permission: PushPermissionStatus): boolean {
-  return !permission.granted && permission.canAskAgain;
+function pushTapAsks(push: PushState): boolean {
+  return !push.granted && push.canAskAgain && !push.channelBlocked;
 }
 
 /**
@@ -155,11 +181,11 @@ function pushTapAsks(permission: PushPermissionStatus): boolean {
  * isn't the switch flipping: on, and off once no prompt can help, a tap opens
  * the phone's settings instead.
  */
-function pushToggleLabel(permission: PushPermissionStatus): string {
-  if (pushIsOn(permission)) {
+function pushToggleLabel(push: PushState): string {
+  if (pushIsOn(push)) {
     return "Push notifications, turn off in your phone's settings";
   }
-  return pushTapAsks(permission)
+  return pushTapAsks(push)
     ? "Push notifications"
     : "Push notifications, turn on in your phone's settings";
 }
@@ -334,8 +360,8 @@ export default function PreferencesScreen() {
   const deleteAccount = useDeleteAccount();
 
   /**
-   * OS notification permission, read once on mount and again on every
-   * foreground.
+   * OS notification permission and the Android channel (`readPushState()`),
+   * read once on mount and again on every foreground.
    *
    * The re-read matters because turning push *off* (and back on, once the OS
    * stops asking) happens in the OS settings app, so the member leaves,
@@ -343,21 +369,20 @@ export default function PreferencesScreen() {
    * would be worse than no row. `null` while unread, so the switch never
    * flashes off at a member who has granted it.
    */
-  const [pushPermission, setPushPermission] =
-    useState<PushPermissionStatus | null>(null);
+  const [pushState, setPushState] = useState<PushState | null>(null);
   useEffect(() => {
     let cancelled = false;
     const read = () => {
-      void getPushPermission()
-        .then((status) => {
-          if (!cancelled) setPushPermission(status);
+      void readPushState()
+        .then((next) => {
+          if (!cancelled) setPushState(next);
         })
         .catch(() => {
           // An unreadable permission is unknown, not "off" — the row draws no
           // switch rather than telling someone who has granted push to go turn
           // it on. Swallowed rather than surfaced: there is nothing a member
           // can do about it, and an unhandled rejection would be worse.
-          if (!cancelled) setPushPermission(null);
+          if (!cancelled) setPushState(null);
         });
     };
     read();
@@ -401,23 +426,23 @@ export default function PreferencesScreen() {
    *   "Turn on" the OS would now ignore.
    * - On: the OS settings, since an app cannot revoke its own permission.
    * - Off, and no prompt can help: the OS settings, the only place left. That
-   *   is iOS after one answer, Android after a second "Don't allow", and
+   *   is iOS after one answer, Android after a second "Don't allow",
    *   Android 13+ with the permission granted but the app's notifications
-   *   blocked.
+   *   blocked, and Android with the app's channel switched off.
    */
   async function handlePushTap() {
     if (pushTapInFlight.current) return;
     pushTapInFlight.current = true;
     try {
-      const current = await getPushPermission().catch(() => null);
+      const current = await readPushState().catch(() => null);
       if (current && pushTapAsks(current)) {
         // A prompt the OS failed to show reads as not granted; the re-read
         // below reports whatever is true either way.
         await acceptPrimer();
-        setPushPermission(await getPushPermission().catch(() => null));
+        setPushState(await readPushState().catch(() => null));
         return;
       }
-      if (current) setPushPermission(current);
+      if (current) setPushState(current);
       await Linking.openSettings().catch(() => undefined);
     } finally {
       pushTapInFlight.current = false;
@@ -526,19 +551,19 @@ export default function PreferencesScreen() {
             value="Unavailable"
             description={pushReason}
           />
-        ) : pushPermission ? (
+        ) : pushState ? (
           <ListRow
             label="Push notifications"
             description={
-              !pushIsOn(pushPermission) && !pushTapAsks(pushPermission)
+              !pushIsOn(pushState) && !pushTapAsks(pushState)
                 ? "Turn on in your phone's settings."
                 : null
             }
             trailing={
               <Toggle
-                value={pushIsOn(pushPermission)}
+                value={pushIsOn(pushState)}
                 onValueChange={() => void handlePushTap()}
-                accessibilityLabel={pushToggleLabel(pushPermission)}
+                accessibilityLabel={pushToggleLabel(pushState)}
               />
             }
           />

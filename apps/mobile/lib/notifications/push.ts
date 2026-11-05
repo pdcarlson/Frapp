@@ -164,6 +164,33 @@ export async function getPushPermission() {
   return mod ? mod.getPermissionsAsync() : null;
 }
 
+/** `AndroidImportance.NONE`. A number, not the enum, as in `ensureAndroidChannel()`. */
+const ANDROID_IMPORTANCE_NONE = 2;
+
+/**
+ * Whether the member has switched off `ANDROID_CHANNEL_ID` in the OS settings
+ * (the "Chapter notifications" category, or "Turn off" on a delivered push).
+ * It is the channel FCM shows a push on when the push names none (`app.json`
+ * sets it as the plugin's `defaultChannel`), and the API's pushes name none,
+ * so with it off they don't show.
+ *
+ * `getPushPermission()` can't see it. On Android it reports the
+ * POST_NOTIFICATIONS permission and the app-wide switch
+ * (`areNotificationsEnabled()`), and switching one channel off leaves both as
+ * they were (`NotificationPermissionsModule.kt`). Nor does the boot-time
+ * `ensureAndroidChannel()` undo it: Android doesn't raise the importance of a
+ * channel the member has changed.
+ *
+ * `false` wherever there is no channel to read: iOS, a module that can't
+ * load, Android before 8, and a channel not created yet.
+ */
+export async function isPushChannelBlocked(): Promise<boolean> {
+  const mod = localOnlyModule();
+  if (!mod || Platform.OS !== "android") return false;
+  const channel = await mod.getNotificationChannelAsync(ANDROID_CHANNEL_ID);
+  return channel?.importance === ANDROID_IMPORTANCE_NONE;
+}
+
 /**
  * Requests OS permission, creating the Android channel first.
  *
