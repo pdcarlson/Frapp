@@ -95,12 +95,71 @@ export function useCheckIn() {
 }
 
 /**
+ * What `useMintCheckInToken` resolves to: the server's response, untouched,
+ * and when this device sent the request, on its own clock.
+ *
+ * `requestedAt` is stamped before the request leaves, so it is never later
+ * than the mint. Adding the response's `rotatesInMs` to it gives a rotation
+ * time on this device's clock that is never later than the real one, with no
+ * comparison against the server's clock, which a phone's can be well off.
+ * Receipt time would err the other way, by the response's whole trip.
+ */
+export interface MintedCheckInTokenResult {
+  response: unknown;
+  requestedAt: number;
+}
+
+/** Until a response says when it rotates, and after a failed request. */
+export const CHECK_IN_TOKEN_FALLBACK_POLL_MS = 10_000;
+/**
+ * How long after the computed rotation to ask again. The computed time is
+ * early by the request's trip to the server, so asking exactly then could get
+ * the old window's code back. Half a second covers an ordinary trip; a request
+ * that still lands early just asks again, {@link CHECK_IN_TOKEN_MIN_POLL_MS}
+ * later.
+ */
+export const CHECK_IN_TOKEN_ROTATION_SLACK_MS = 500;
+/** The shortest wait between two mints, so a mistimed answer can't loop. */
+export const CHECK_IN_TOKEN_MIN_POLL_MS = 1_000;
+
+/** `rotatesInMs` from a mint response, or `null` when it has none. */
+function rotatesInMsOf(response: unknown): number | null {
+  if (typeof response !== "object" || response === null) return null;
+  const value = (response as { rotatesInMs?: unknown }).rotatesInMs;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * How long to wait before asking for the next code: until just after the
+ * current one rotates. Exported for the spec; the hook hands it to TanStack as
+ * a `refetchInterval` function, which is re-read after every fetch.
+ */
+export function checkInTokenRefetchMs(
+  result: MintedCheckInTokenResult | undefined,
+  failed: boolean,
+  now: number,
+): number {
+  const rotatesInMs = result ? rotatesInMsOf(result.response) : null;
+  if (failed || !result || rotatesInMs === null) {
+    return CHECK_IN_TOKEN_FALLBACK_POLL_MS;
+  }
+  return Math.max(
+    CHECK_IN_TOKEN_MIN_POLL_MS,
+    result.requestedAt + rotatesInMs + CHECK_IN_TOKEN_ROTATION_SLACK_MS - now,
+  );
+}
+
+/**
  * The rotating code for the host display (s22).
  *
  * Officer-only (`events:update`) and 503s where the environment has no signing
- * secret, so callers must render both states. Polled rather than timed off the
- * previous response: the server owns the window boundary, and a client that
- * re-derived it would drift.
+ * secret, so callers must render both states. Asked for again when the code
+ * rotates, timed off the response's own `rotatesInMs` rather than a fixed
+ * poll, so a screen on display shows each new code as its window opens. The
+ * server still owns the boundary: the client only counts down to the moment
+ * the server named, on the device's clock (see
+ * {@link MintedCheckInTokenResult}). A 10s poll stands in while there is no
+ * answer to time from.
  *
  * `staleTime: 0` and no structural sharing of a stale token — a code that is one
  * window old is still redeemable, so a slightly late refetch degrades to "the
@@ -110,19 +169,23 @@ export function useMintCheckInToken(eventId: string, enabled = true) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["attendance", eventId, "check-in-token"],
-    queryFn: async () => {
+    queryFn: async (): Promise<MintedCheckInTokenResult> => {
+      const requestedAt = Date.now();
       const { data, error } = await client.GET(
         "/v1/events/{eventId}/attendance/check-in-token",
         { params: { path: { eventId } } },
       );
       if (error) throw error;
-      return data;
+      return { response: data, requestedAt };
     },
     enabled: enabled && !!eventId,
     staleTime: 0,
-    // Comfortably inside the 30s window so the displayed code is never the one
-    // that just aged out of the previous-window grace.
-    refetchInterval: 10_000,
+    refetchInterval: (query) =>
+      checkInTokenRefetchMs(
+        query.state.data,
+        query.state.status === "error",
+        Date.now(),
+      ),
     refetchOnWindowFocus: true,
     // A 403 (not an officer) or 503 (unconfigured) will not fix itself by
     // asking again on a timer.

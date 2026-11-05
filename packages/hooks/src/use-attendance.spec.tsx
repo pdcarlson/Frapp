@@ -4,7 +4,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFrappClient } from "@repo/api-sdk";
-import { useAttendance, useCheckIn } from "./use-attendance";
+import {
+  CHECK_IN_TOKEN_FALLBACK_POLL_MS,
+  CHECK_IN_TOKEN_MIN_POLL_MS,
+  checkInTokenRefetchMs,
+  useAttendance,
+  useCheckIn,
+  useMintCheckInToken,
+} from "./use-attendance";
 import { FrappClientProvider } from "./use-frapp-client";
 
 describe("useAttendance", () => {
@@ -168,6 +175,127 @@ describe("useAttendance", () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+});
+
+/**
+ * s22's rotating code. The screen measures everything on the phone's own clock
+ * from when the request was sent, and it is asked for again when it rotates,
+ * so a code on display is replaced as its window opens rather than up to a
+ * poll interval later.
+ */
+describe("useMintCheckInToken", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+  });
+
+  const createWrapper = (mockClient: unknown) => {
+    const Wrapper = ({ children }: { children: React.ReactNode }) => (
+      <FrappClientProvider
+        client={mockClient as ReturnType<typeof createFrappClient>}
+      >
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      </FrappClientProvider>
+    );
+
+    Wrapper.displayName = "MintCheckInTokenWrapper";
+    return Wrapper;
+  };
+
+  const MINTED = {
+    token: "signed",
+    manualCode: "4KQ-88",
+    qrPayload: "frapp-checkin:v1:event-123:signed",
+    expiresAt: "2026-11-05T12:00:30.000Z",
+  };
+
+  it("stamps the request's start, which is never later than the mint", async () => {
+    let sentAt = 0;
+    const mockGet = vi.fn().mockImplementation(async () => {
+      sentAt = Date.now();
+      // The trip back: a stamp taken on arrival would be this much later.
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      return { data: { ...MINTED, rotatesInMs: 20_000 }, error: null };
+    });
+    const before = Date.now();
+    const { result } = renderHook(() => useMintCheckInToken("event-123"), {
+      wrapper: createWrapper({ GET: mockGet }),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.response).toEqual({
+      ...MINTED,
+      rotatesInMs: 20_000,
+    });
+    expect(result.current.data?.requestedAt).toBeGreaterThanOrEqual(before);
+    expect(result.current.data?.requestedAt).toBeLessThanOrEqual(sentAt);
+  });
+
+  it("asks for the next code when this one rotates, not a poll later", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const mockGet = vi
+        .fn()
+        .mockResolvedValue({
+          data: { ...MINTED, rotatesInMs: 7_000 },
+          error: null,
+        });
+      renderHook(() => useMintCheckInToken("event-123"), {
+        wrapper: createWrapper({ GET: mockGet }),
+      });
+      await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+
+      // Before the rotation: the code on screen is the current one.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6_000);
+      });
+      expect(mockGet).toHaveBeenCalledTimes(1);
+
+      // Just past it (7s, plus the half-second slack).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+      expect(mockGet).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  describe("checkInTokenRefetchMs", () => {
+    const result = (rotatesInMs: unknown, requestedAt = 1_000_000) => ({
+      response: { ...MINTED, rotatesInMs },
+      requestedAt,
+    });
+
+    it("waits until just after the rotation, counted from the request's start", () => {
+      expect(checkInTokenRefetchMs(result(20_000), false, 1_005_000)).toBe(
+        15_500,
+      );
+    });
+
+    it("polls on the fallback with nothing to time from", () => {
+      expect(checkInTokenRefetchMs(undefined, false, 0)).toBe(
+        CHECK_IN_TOKEN_FALLBACK_POLL_MS,
+      );
+      expect(checkInTokenRefetchMs(result(undefined), false, 0)).toBe(
+        CHECK_IN_TOKEN_FALLBACK_POLL_MS,
+      );
+      // A failed refetch keeps the old data, whose rotation is long past;
+      // timing off it would retry every second.
+      expect(checkInTokenRefetchMs(result(20_000), true, 9_999_999)).toBe(
+        CHECK_IN_TOKEN_FALLBACK_POLL_MS,
+      );
+    });
+
+    it("never asks again sooner than the minimum", () => {
+      expect(checkInTokenRefetchMs(result(20_000), false, 5_000_000)).toBe(
+        CHECK_IN_TOKEN_MIN_POLL_MS,
+      );
     });
   });
 });

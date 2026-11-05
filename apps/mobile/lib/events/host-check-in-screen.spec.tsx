@@ -2,7 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText, textHeadings } from "@/test/screen-text";
@@ -63,20 +63,42 @@ const { __refocus: refocus, __blur: blur } = expoRouter as unknown as {
   __blur: () => void;
 };
 
-const MINTED = {
-  data: {
-    qrPayload: "frapp://check-in?e=evt-1&t=signed",
-    manualCode: "4KQ-88",
-    expiresAt: "2099-01-01T00:00:00Z",
-  },
-  // Just landed. Set per test, since how long ago decides whether it draws.
-  dataUpdatedAt: 0,
-  error: null,
-  isPending: false,
-  isError: false,
-  isFetching: false,
-  refetch: vi.fn(),
-};
+/** How long the server says the code has left in its window when minted. */
+const ROTATES_IN_MS = 20_000;
+
+/**
+ * The mint hook's result for a request that started at `requestedAt` on the
+ * phone's clock (`useMintCheckInToken`).
+ */
+function mintedAt(
+  requestedAt: number,
+  response: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    data: {
+      response: {
+        qrPayload: "frapp://check-in?e=evt-1&t=signed",
+        manualCode: "4KQ-88",
+        expiresAt: "2099-01-01T00:00:00Z",
+        rotatesInMs: ROTATES_IN_MS,
+        ...response,
+      },
+      requestedAt,
+    },
+    error: null,
+    isPending: false,
+    isError: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  };
+}
+
+/**
+ * The last moment a code asked for at `requestedAt` may be drawn as live:
+ * its rotation, one more window, less the time a member needs to scan it.
+ */
+const liveUntil = (requestedAt: number) =>
+  requestedAt + ROTATES_IN_MS + 30_000 - 10_000;
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -119,7 +141,7 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
       eventId: "evt-1",
     });
     hooks.event = EVENT;
-    hooks.token = { ...MINTED, dataUpdatedAt: Date.now() };
+    hooks.token = mintedAt(Date.now());
     hooks.attendance = [
       { status: "PRESENT" },
       { status: "LATE" },
@@ -191,11 +213,7 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
     // The poll stops while the screen is out of sight, so a code cached then
     // can be minutes old on the way back. Drawn at once with its live dot, a
     // member scanning it would be refused.
-    hooks.token = {
-      ...MINTED,
-      dataUpdatedAt: Date.now() - 5 * 60_000,
-      isFetching: true,
-    };
+    hooks.token = { ...mintedAt(Date.now() - 5 * 60_000), isFetching: true };
     const tree = render();
     expect(tree.root.findAllByType("QRCode" as never)).toHaveLength(0);
     const text = screenText(tree);
@@ -210,7 +228,7 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
     ).toHaveLength(1);
 
     // The refetch focus started lands.
-    hooks.token = { ...MINTED, dataUpdatedAt: Date.now() };
+    hooks.token = mintedAt(Date.now());
     act(() =>
       tree.update(
         <FrappThemeProvider>
@@ -238,17 +256,75 @@ describe("Host check-in while the room fills (2026-11 polish, #20)", () => {
     act(() => tree.unmount());
   });
 
-  it("keeps drawing a code the poll just replaced, which still redeems", () => {
-    // A code past its countdown redeems for one more window, and the 10s poll
-    // lands inside it, so the screen must not blank between rotations.
-    hooks.token = {
-      ...MINTED,
-      data: { ...MINTED.data, expiresAt: "2000-01-01T00:00:00Z" },
-      dataUpdatedAt: Date.now() - 9_000,
-    };
-    const tree = render();
-    expect(tree.root.findAllByType("QRCode" as never)).toHaveLength(1);
-    act(() => tree.unmount());
+  describe("on the phone's own clock", () => {
+    const NOW = Date.parse("2026-11-05T19:00:00Z");
+    let clock: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      clock = vi.spyOn(Date, "now").mockReturnValue(NOW);
+    });
+    afterEach(() => clock.mockRestore());
+
+    const qrCount = (tree: ReactTestRenderer) =>
+      tree.root.findAllByType("QRCode" as never).length;
+
+    it("draws a code that will still redeem for a scan, and not one that won't", () => {
+      // The server keeps accepting a code for a window after it rotates, but a
+      // member still has to scan it, get a fix and post.
+      hooks.token = mintedAt(NOW - liveUntil(0) + 1);
+      const inside = render();
+      expect(qrCount(inside)).toBe(1);
+      act(() => inside.unmount());
+
+      hooks.token = mintedAt(NOW - liveUntil(0));
+      const past = render();
+      expect(qrCount(past)).toBe(0);
+      act(() => past.unmount());
+    });
+
+    it("keeps drawing a code past its rotation while the next is on its way", () => {
+      // 5s past the rotation: still 15s of redeeming left, so the screen
+      // doesn't blank between rotations.
+      hooks.token = { ...mintedAt(NOW - ROTATES_IN_MS - 5_000), isFetching: true };
+      const tree = render();
+      expect(qrCount(tree)).toBe(1);
+      expect(screenText(tree)).toContain("0:00");
+      act(() => tree.unmount());
+    });
+
+    it("counts down from when it asked, whatever the phone's clock says the server's time is", () => {
+      // `expiresAt` is the server's clock. A phone 45s fast would read it as
+      // long gone; one far slow, as hours away. Neither moves the countdown.
+      for (const expiresAt of ["2000-01-01T00:00:00Z", "2099-01-01T00:00:00Z"]) {
+        hooks.token = mintedAt(NOW, { expiresAt });
+        const tree = render();
+        expect(screenText(tree)).toContain("0:20");
+        act(() => tree.unmount());
+      }
+    });
+
+    it("blanks a code that ran out while the officer was away, until the new one lands", () => {
+      hooks.token = mintedAt(NOW);
+      const tree = render();
+      expect(qrCount(tree)).toBe(1);
+
+      act(() => blur());
+      clock.mockReturnValue(liveUntil(NOW));
+      act(() => refocus());
+      expect(qrCount(tree)).toBe(0);
+      expect(screenText(tree)).not.toContain("Rotates in");
+
+      hooks.token = mintedAt(liveUntil(NOW));
+      act(() =>
+        tree.update(
+          <FrappThemeProvider>
+            <HostCheckInScreen />
+          </FrappThemeProvider>,
+        ),
+      );
+      expect(qrCount(tree)).toBe(1);
+      expect(screenText(tree)).toContain("0:20");
+      act(() => tree.unmount());
+    });
   });
 
   it("ends to More, where its one row opened it", () => {

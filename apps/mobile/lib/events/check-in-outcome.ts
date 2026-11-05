@@ -31,11 +31,35 @@ export type CheckInOutcome =
    * write. Terminal until an officer acts, so a caller offers no retry.
    */
   | { kind: "blocked"; message: string }
-  | { kind: "error"; message: string };
+  | {
+      kind: "error";
+      message: string;
+      /**
+       * Whether the refusal was of this one attempt rather than of the member,
+       * so it says nothing about the next code they send: the code itself was
+       * refused ({@link CHECK_IN_CODE_REFUSED_MESSAGE}), or the request never
+       * got a real answer (no connection, a server fault, the rate limit).
+       * `false` for everything a typed code would meet as well: where the
+       * member is (the zone, a missing or refused location), the event's
+       * window, their eligibility. s18 clears an attempt-only line when the
+       * member turns to typing a code, and keeps the rest.
+       */
+      attemptOnly: boolean;
+    };
 
 /** The scanner's own words when location access is refused. */
 export const CHECK_IN_LOCATION_DENIED_COPY =
   "This event checks you in by location. Allow location access to check in.";
+
+/**
+ * The API's refusal of a scanned or typed code: stale, screenshotted, or
+ * another event's. It carries no `code` (`@repo/api-sdk`'s `codeOf`), so the
+ * message is what identifies it; a spec reads it from
+ * `apps/api/src/application/services/attendance.service.ts` so the two can't
+ * drift apart in silence.
+ */
+export const CHECK_IN_CODE_REFUSED_MESSAGE =
+  "That check-in code is not valid for this event, or it has expired";
 
 export const ALREADY_CHECKED_IN_COPY =
   "You're already checked in for this event.";
@@ -54,6 +78,25 @@ export function checkInSuccess(
     title: CHECKED_IN_TITLE,
     pointsLabel,
   };
+}
+
+/**
+ * Whether a failure was of this attempt alone (see the `error` variant's
+ * `attemptOnly`). A request with no HTTP status either never reached the
+ * server, which `fetch` reports as a `TypeError`, or failed on the device
+ * before it was sent, which is the location step: its refused-permission copy
+ * and the location service's own errors are plain `Error`s, and those are
+ * about the member's phone, so they stay.
+ */
+function isAttemptOnly(error: unknown): boolean {
+  const status = statusOf(error);
+  if (status === undefined) {
+    return !(error instanceof Error) || error instanceof TypeError;
+  }
+  if (status >= 500 || status === 429) return true;
+  return (
+    status === 403 && serverMessageOf(error) === CHECK_IN_CODE_REFUSED_MESSAGE
+  );
 }
 
 /**
@@ -84,5 +127,6 @@ export function checkInFailure(
   return {
     kind: "error",
     message: serverMessageOf(error) ?? "Couldn't check you in.",
+    attemptOnly: isAttemptOnly(error),
   };
 }

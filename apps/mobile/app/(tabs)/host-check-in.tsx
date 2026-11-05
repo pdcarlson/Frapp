@@ -10,11 +10,11 @@ import {
   useMintCheckInToken,
   usePermissionList,
 } from "@repo/hooks";
-import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import { EmptyState, ErrorState } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { CHECK_IN_TOKEN_WINDOW_MS } from "@/lib/events/check-in-code";
 import { formatCountdown } from "@/lib/events/format";
 import { selectEventDetail, selectMintedToken } from "@/lib/events/select";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
@@ -62,9 +62,21 @@ import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
  * That leaves a cached code behind, and an officer who comes back minutes
  * later would see it drawn at once, live dot and all, while the fresh one is
  * still on its way; a member who scanned it would be refused. So a code is
- * drawn only while it is young enough to still redeem
- * ({@link TOKEN_SURE_AGE_MS}), and the blank card stands in until the new one
+ * drawn only while it will still redeem for long enough to be scanned
+ * ({@link SCAN_MARGIN_MS}), and the blank card stands in until the new one
  * lands.
+ *
+ * ## One clock: the phone's, from when the code was asked for
+ *
+ * The server signs window `floor(t / 30s)` and accepts the current window and
+ * the previous one, so a code minted at `m` is current until the window
+ * boundary (`m + rotatesInMs`) and redeems for one window after it. Every time
+ * here is measured on this phone's clock from when the request *started*,
+ * which is never later than the mint, plus the response's `rotatesInMs`
+ * (`selectMintedToken`'s `rotatesAt`). So the countdown, the rotation refetch
+ * (`useMintCheckInToken`) and the live bound each fall at or before the real
+ * moment, never after it, and none of them compares the server's clock with
+ * the phone's: a phone whose clock is off shows the same countdown.
  */
 
 /** Until the body has measured itself: the size the screen always drew. */
@@ -80,27 +92,20 @@ const LIVE_DOT_SIZE = 8;
  * How often the "N checked in" count is re-read while the officer watches it.
  * The roster isn't pushed to this screen (nothing invalidates it when *another*
  * member checks in), so without a poll it froze at its value when the screen
- * opened. The token's own 10s poll is the cadence the screen already keeps.
+ * opened. Ten seconds is fresh enough for a number read across a room.
  */
 const ATTENDANCE_POLL_MS = 10_000;
 
 /**
- * How long after it arrived a code can be drawn as live.
- *
- * The server accepts the current window's code and the previous one's, so a
- * code redeems for at least one full window (30s) after it was minted,
- * wherever in its window that was. Past that it may be dead. The age is
- * measured on this device's clock from when the response landed
- * (`dataUpdatedAt`), which is a round trip after the mint, rather than
- * against the server's `expiresAt`, so a phone whose clock is off can't blank
- * a good code or draw one minutes dead. While the screen is up the 10s poll
- * keeps every code well inside this; only a code left over from an earlier
- * visit runs past it.
- *
- * Must match `CHECK_IN_TOKEN_WINDOW_MS` in
- * `apps/api/src/domain/utils/check-in-token.ts`.
+ * How long a drawn code must still redeem for: a member has to raise the
+ * phone and decode it, s18 may need a location fix (a cold one at the
+ * "balanced" accuracy it asks for takes a few seconds), and the check-in then
+ * has to reach the server. Ten seconds covers that on poor venue Wi-Fi. A code
+ * is drawn as live only until `rotatesAt + window - margin`; while the screen
+ * is up the rotation refetch replaces it within a round trip of `rotatesAt`,
+ * so the margin only ever blanks a code left over from an earlier visit.
  */
-const TOKEN_SURE_AGE_MS = 30_000;
+const SCAN_MARGIN_MS = 10_000;
 
 /**
  * The time, re-read every half second while `active`. The token itself comes
@@ -161,15 +166,17 @@ export default function HostCheckInScreen() {
     () => selectMintedToken(tokenQuery.data),
     [tokenQuery.data],
   );
-  // The code to draw: the cached one only while it surely still redeems (see
-  // `TOKEN_SURE_AGE_MS`). Past that the screen shows the blank card it shows
-  // while loading, and the refetch focus started replaces it.
+  // The code to draw: the cached one only while it will still redeem for a
+  // scan (see `SCAN_MARGIN_MS`). Past that the screen shows the blank card it
+  // shows while loading, and the refetch focus started replaces it.
   const minted =
-    cached && now - tokenQuery.dataUpdatedAt < TOKEN_SURE_AGE_MS
+    cached &&
+    now < cached.rotatesAt + CHECK_IN_TOKEN_WINDOW_MS - SCAN_MARGIN_MS
       ? cached
       : null;
-  const expiry = minted ? parseInstant(minted.expiresAt) : null;
-  const remaining = expiry ? expiry.getTime() - now : 0;
+  // Counted down on the phone's clock alone: no `expiresAt - now`, which
+  // would put the phone's clock error on screen.
+  const remaining = minted ? minted.rotatesAt - now : 0;
   const checkedIn = countCheckedIn(attendance);
 
   const [bodyWidth, setBodyWidth] = useState<number | null>(null);

@@ -107,22 +107,39 @@ export function selectEventRows(data: unknown, now: Date): EventRow[] {
 export interface MintedCheckInToken {
   qrPayload: string;
   manualCode: string;
-  expiresAt: string;
+  /**
+   * When the code rotates, on this device's clock: the request's start plus
+   * the server's `rotatesInMs`. Never later than the real rotation, since the
+   * request left before the mint, and never compared with the server's clock
+   * (its `expiresAt`), which a phone's can be well off.
+   */
+  rotatesAt: number;
 }
 
 /**
- * The s22 mint response. Narrowed for the same `never`-inference reason as the
- * event payloads above — and with a second motive: a partially-formed response
+ * The s22 mint result (`useMintCheckInToken`: the response and when it was
+ * asked for). Narrowed for the same `never`-inference reason as the event
+ * payloads above — and with a second motive: a partially-formed response
  * must not render a QR of `undefined`, which encodes cleanly and scans to
- * nothing. All three fields or nothing.
+ * nothing. Every field or nothing.
  */
 export function selectMintedToken(data: unknown): MintedCheckInToken | null {
-  if (!isRecord(data)) return null;
-  const qrPayload = str(data, "qrPayload");
-  const manualCode = str(data, "manualCode");
-  const expiresAt = str(data, "expiresAt");
-  if (!qrPayload || !manualCode || !expiresAt) return null;
-  return { qrPayload, manualCode, expiresAt };
+  if (!isRecord(data) || !isRecord(data.response)) return null;
+  const { response, requestedAt } = data;
+  const qrPayload = str(response, "qrPayload");
+  const manualCode = str(response, "manualCode");
+  const rotatesInMs = response.rotatesInMs;
+  if (
+    !qrPayload ||
+    !manualCode ||
+    typeof rotatesInMs !== "number" ||
+    !Number.isFinite(rotatesInMs) ||
+    typeof requestedAt !== "number" ||
+    !Number.isFinite(requestedAt)
+  ) {
+    return null;
+  }
+  return { qrPayload, manualCode, rotatesAt: requestedAt + rotatesInMs };
 }
 
 export function selectEventDetail(data: unknown): EventDetail | null {

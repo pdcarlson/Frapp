@@ -30,7 +30,7 @@ import { useCheckIn, useEvent } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ManualCodeSheet } from "@/components/check-in/manual-code-sheet";
 import { useSheetVisit } from "@/components/sheet-scaffold";
-import { EmptyState } from "@/components/state-block";
+import { EmptyState, ErrorState } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   isPlausibleManualCode,
@@ -98,10 +98,13 @@ type Status =
       eventName: string | null;
     })
   /**
-   * `foreign` marks the scanner's "different event" line, the one error that
-   * is about the camera rather than the member's check-in (see `openManual`).
+   * `attemptOnly` is `checkInFailure`'s: the line is about this one attempt
+   * (the code it sent, or a request that got no real answer), not about the
+   * member, so it clears when they turn to typing a code (see `openManual`).
+   * `foreign` marks the scanner's "different event" line, which is
+   * attempt-only too, and which `handleBarcode` reports once per code.
    */
-  | { kind: "error"; message: string; foreign?: true }
+  | { kind: "error"; message: string; attemptOnly: boolean; foreign?: true }
   /**
    * The subscription gate (#2297) or the module gate (#2393) refused the
    * write. Terminal until an officer acts, so — unlike `error` — it re-arms neither the
@@ -114,12 +117,13 @@ type Status =
  * Which terminal state a failed check-in lands in. The copy, gate refusals
  * included, is `checkInFailure`'s, shared with the chat event card. "Already
  * checked in" stays an `error` here, as it always was: it leaves the scanner
- * armed for the member's next event, where `blocked` would disarm it.
+ * armed for the member's next event, where `blocked` would disarm it. It is
+ * about the member, not the code, so a typed code would meet it too.
  */
 function failureStatus(error: unknown): Status {
   const failure = checkInFailure(error);
   return failure.kind === "already"
-    ? { kind: "error", message: failure.message }
+    ? { kind: "error", message: failure.message, attemptOnly: false }
     : failure;
 }
 
@@ -155,6 +159,15 @@ export default function CheckInScreen() {
     () => selectEventDetail(eventQuery.data),
     [eventQuery.data],
   );
+  /**
+   * Nothing is sent until the event has loaded. A check-in reads it twice:
+   * whether the event has a zone decides whether a location goes with it (a
+   * zoned event refuses a check-in without one, even from a member standing
+   * in the zone), and the success panel names the event and its points as
+   * they were when the check-in was sent. The camera still shows while it
+   * loads; it just doesn't decode, and the manual Check in stays off.
+   */
+  const eventLoaded = event !== null;
   const needsLocation = event?.hasCheckInZone ?? false;
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -165,6 +178,33 @@ export default function CheckInScreen() {
   const focused = useIsFocused();
   const [torchOn, setTorchOn] = useState(false);
   const [manualCode, setManualCode] = useState("");
+  // The event a check-in is on its way for, if any; see the reset below.
+  const [inFlightFor, setInFlightFor] = useState<string | null>(null);
+
+  /**
+   * What the screen holds belongs to one event.
+   *
+   * The tab instance is reused, so `eventId` can change under it: a member
+   * leaves one event's scanner and opens the next (where the focus reset
+   * below also runs), or a `frapp://` link moves the focused screen to
+   * another event (where it doesn't). Either way, the last event's refusal,
+   * its confirmation, and a code typed for it are not about this one: a
+   * "You're already checked in" or a zone refusal from the last event would
+   * otherwise greet the member here, in the scanner and in the manual sheet,
+   * and the last event's code would sit in the field ready to send. So they
+   * are reset during the render that changes the event, before anything of
+   * the old one is drawn. The one thing kept is a check-in still on its way
+   * for the event the screen is now on (it left this event and came back
+   * before it answered): that one shows as sending, and its answer lands.
+   */
+  const [shownEventId, setShownEventId] = useState(eventId);
+  if (shownEventId !== eventId) {
+    setShownEventId(eventId);
+    setStatus(
+      inFlightFor === eventId ? { kind: "submitting" } : { kind: "idle" },
+    );
+    setManualCode("");
+  }
 
   const sheetRef = useRef<BottomSheetModal>(null);
   const sheet = useSheetVisit(sheetRef);
@@ -217,8 +257,9 @@ export default function CheckInScreen() {
   // Last foreign-event code already reported — see `handleBarcode`.
   const reportedForeignRef = useRef<string | null>(null);
   // Forgotten as soon as its line leaves the screen, by whatever path (the
-  // sheet opening, a check-in starting), so the same wrong code held up again
-  // is reported again rather than dropped in silence.
+  // sheet opening, a check-in starting, the screen moving to another event),
+  // so the same wrong code held up again is reported again rather than
+  // dropped in silence.
   useEffect(() => {
     if (status.kind !== "error" || !status.foreign) {
       reportedForeignRef.current = null;
@@ -276,7 +317,10 @@ export default function CheckInScreen() {
    *
    * A result that lands after the screen has moved to another event is
    * dropped, success or failure: it is about an event the member is no longer
-   * looking at, and drawing it would confirm (or refuse) the wrong one.
+   * looking at, and drawing it would confirm (or refuse) the wrong one. A
+   * dropped result touches nothing: the move already reset the screen to the
+   * event it is on now (see `shownEventId`), and a status, or a code typed
+   * since, belongs to that event.
    */
   const submit = useCallback(
     async (payload: { token?: string; manualCode?: string }) => {
@@ -284,13 +328,11 @@ export default function CheckInScreen() {
       const eventName = event?.name ?? null;
       const outcome = checkInSuccess(event?.point_value);
       setStatus({ kind: "submitting" });
+      setInFlightFor(submittedFor);
       try {
         const fix = await resolveLocation();
         await checkIn.mutateAsync({ eventId: submittedFor, ...payload, ...fix });
-        if (eventIdRef.current !== submittedFor) {
-          setStatus({ kind: "idle" });
-          return;
-        }
+        if (eventIdRef.current !== submittedFor) return;
         setStatus({ ...outcome, eventId: submittedFor, eventName });
         setManualCode("");
         // A typed code succeeds with the sheet up; the panel replaces the
@@ -301,18 +343,17 @@ export default function CheckInScreen() {
         // Once per check-in, here rather than on the panel's render
         // (spec/ui/mobile/README.md, Native-feel rules).
         successHaptic();
-        // `accessibilityLiveRegion` on the panel is Android-only, and Android
-        // reads it out; announcing there as well would say it twice.
+        // `accessibilityLiveRegion` is Android-only, and TalkBack reads the
+        // panel out as it fills the region (see the render); announcing there
+        // as well would say it twice. VoiceOver has no live regions.
         if (Platform.OS === "ios") {
           AccessibilityInfo.announceForAccessibility(outcome.message);
         }
       } catch (error) {
-        if (eventIdRef.current !== submittedFor) {
-          setStatus({ kind: "idle" });
-          return;
-        }
+        if (eventIdRef.current !== submittedFor) return;
         setStatus(failureStatus(error));
       } finally {
+        setInFlightFor(null);
         // Released on both paths so a failed scan can be retried. A latch that
         // stayed closed after an error would strand the member on a dead screen.
         latchRef.current.release();
@@ -342,6 +383,7 @@ export default function CheckInScreen() {
           setStatus({
             kind: "error",
             message: "That code is for a different event.",
+            attemptOnly: true,
             foreign: true,
           });
         }
@@ -366,12 +408,14 @@ export default function CheckInScreen() {
   }, [cameraPermission, requestCameraPermission]);
 
   const scanning =
+    eventLoaded &&
     !manualOpen &&
     status.kind !== "submitting" &&
     status.kind !== "success" &&
     status.kind !== "blocked";
 
   const manualSubmitDisabled =
+    !eventLoaded ||
     !isPlausibleManualCode(manualCode) ||
     writeBlockedReason !== null ||
     status.kind === "submitting" ||
@@ -379,13 +423,18 @@ export default function CheckInScreen() {
     checkIn.isPending;
 
   const openManual = () => {
-    // A scan's "different event" line is about the camera, not the code the
-    // member is about to type, so it doesn't follow them into the sheet. Every
-    // other line stays: a refusal is why the sheet's button is off, and a zone,
-    // location or "already checked in" answer is still true of the code they
-    // are about to type.
+    // The sheet shows only lines that stay true of the code the member is
+    // about to type. A line about the last attempt (`attemptOnly`: the
+    // scanned code was refused as stale or another event's, or the request
+    // got no real answer) says nothing about a fresh code, so it clears. A
+    // line about the member stays: where they are (the zone, their
+    // location), that they're already checked in here, or a refusal that is
+    // why the sheet's button is off. The screen already dropped whatever
+    // belonged to an earlier event (`shownEventId`).
     setStatus((current) =>
-      current.kind === "error" && current.foreign ? { kind: "idle" } : current,
+      current.kind === "error" && current.attemptOnly
+        ? { kind: "idle" }
+        : current,
     );
     setManualOpen(true);
     sheetRef.current?.present();
@@ -443,16 +492,18 @@ export default function CheckInScreen() {
         <View style={styles.close} />
       </View>
 
-      {!eventId ? (
-        <View style={styles.stateWrap}>
-          <EmptyState
-            glyph="◎"
-            title="No event selected"
-            body="Open an event, then tap Scan QR to check in."
-          />
-        </View>
-      ) : status.kind === "success" ? (
-        <View style={styles.successScreen}>
+      {/*
+        The success panel's live region is mounted for the whole visit, empty
+        until a check-in lands, and the panel fills it. TalkBack announces a
+        change inside a live region it already knows; a region that mounts
+        with its content already in it isn't reliably read out, and Android
+        hears the success only through this.
+      */}
+      <View
+        accessibilityLiveRegion="polite"
+        style={status.kind === "success" ? styles.successBody : null}
+      >
+        {status.kind === "success" ? (
           <View
             accessible
             accessibilityLabel={
@@ -460,8 +511,7 @@ export default function CheckInScreen() {
                 ? `${status.message} ${status.eventName}`
                 : status.message
             }
-            accessibilityLiveRegion="polite"
-            style={styles.successBody}
+            style={styles.successContent}
           >
             <View style={styles.successMark}>
               <Text style={styles.successGlyph}>✓</Text>
@@ -476,6 +526,11 @@ export default function CheckInScreen() {
               </Text>
             ) : null}
           </View>
+        ) : null}
+      </View>
+
+      {status.kind === "success" ? (
+        <View style={styles.successFooter}>
           <Pressable
             accessibilityRole="button"
             onPress={() => leaveTo(status.eventId)}
@@ -489,6 +544,25 @@ export default function CheckInScreen() {
               Back to event
             </Text>
           </Pressable>
+        </View>
+      ) : !eventId ? (
+        <View style={styles.stateWrap}>
+          <EmptyState
+            glyph="◎"
+            title="No event selected"
+            body="Open an event, then tap Scan QR to check in."
+          />
+        </View>
+      ) : !eventLoaded && eventQuery.isError ? (
+        // Nothing can be sent without the event (see `eventLoaded`), so a
+        // scanner here would be dead with nothing saying why.
+        <View style={styles.stateWrap}>
+          <ErrorState
+            title="Event didn't load"
+            body="Check-in needs the event's details first."
+            onRetry={() => void eventQuery.refetch()}
+            isRetrying={eventQuery.isFetching}
+          />
         </View>
       ) : (
         <>
@@ -820,16 +894,18 @@ function createStyles(tokens: SignetTokens, accent: string) {
       borderColor: tint(accent, 0.3),
       backgroundColor: tint(accent),
     },
-    successScreen: {
-      flex: 1,
-      paddingHorizontal: tokens.spacing.xl,
-      paddingBottom: tokens.spacing.xl,
-    },
     successBody: {
       flex: 1,
-      alignItems: "center",
       justifyContent: "center",
+      paddingHorizontal: tokens.spacing.xl,
+    },
+    successContent: {
+      alignItems: "center",
       gap: tokens.spacing.sm,
+    },
+    successFooter: {
+      paddingHorizontal: tokens.spacing.xl,
+      paddingBottom: tokens.spacing.xl,
     },
     successMark: {
       width: SUCCESS_MARK_SIZE,
