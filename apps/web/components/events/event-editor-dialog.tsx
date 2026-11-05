@@ -652,7 +652,7 @@ export function EventEditorDialog({
                   {displayedRoles.map((role) => (
                     <label
                       key={role.id}
-                      className="flex min-h-8 cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1 text-sm transition hover:bg-accent-subtle pointer-coarse:min-h-11 pointer-coarse:text-base"
+                      className="flex min-h-8 cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1 text-sm transition hover:bg-card-hover pointer-coarse:min-h-11 pointer-coarse:text-base"
                     >
                       <span className="font-semibold">{role.name}</span>
                       <input
@@ -749,7 +749,7 @@ export function EventEditorDialog({
                       <div className="flex items-center gap-1">
                         <Button
                           type="button"
-                          variant="quiet"
+                          variant="ghost"
                           size="icon"
                           aria-label={`Move point ${index + 1} up`}
                           disabled={usingPreviewData || index === 0}
@@ -759,7 +759,7 @@ export function EventEditorDialog({
                         </Button>
                         <Button
                           type="button"
-                          variant="quiet"
+                          variant="ghost"
                           size="icon"
                           aria-label={`Move point ${index + 1} down`}
                           disabled={
@@ -771,7 +771,7 @@ export function EventEditorDialog({
                         </Button>
                         <Button
                           type="button"
-                          variant="quiet"
+                          variant="ghost"
                           size="icon"
                           aria-label={`Remove point ${index + 1}`}
                           disabled={usingPreviewData}

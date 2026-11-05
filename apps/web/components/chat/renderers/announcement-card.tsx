@@ -13,7 +13,7 @@ interface AnnouncementCardProps {
 }
 
 /**
- * Announcement card: §8 card chrome, accent eyebrow, body at the `body` role.
+ * Announcement card: §8 card chrome, muted eyebrow, body at the `body` role.
  *
  * The text is `readAnnouncementBody` from `@repo/chat-core/cards`, which
  * mobile's card reads too: the message's `content` first, which is what the
@@ -26,7 +26,12 @@ export function AnnouncementCard({ message }: AnnouncementCardProps) {
 
   return (
     <Card className={cn(MESSAGE_CARD)}>
-      <div className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}>
+      <div
+        className={cn(
+          EYEBROW,
+          "flex items-center gap-1.5 text-muted-foreground",
+        )}
+      >
         <AnnouncementGlyph className="h-4 w-4" /> Announcement
       </div>
       <div className="mt-2 whitespace-pre-wrap break-words text-base">

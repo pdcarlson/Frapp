@@ -97,7 +97,7 @@ export function PinsPanel({
                 }}
                 className={cn(
                   "block w-full px-3 py-3 text-left text-caption transition-colors",
-                  "hover:bg-accent-subtle hover:text-accent-text",
+                  "hover:bg-card-hover hover:text-foreground",
                   FOCUS_RING,
                 )}
               >

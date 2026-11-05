@@ -502,13 +502,13 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
           <SubscriptionNotice gate={gate} feature="issuing invites" />
 
           {generatedInvites.length > 0 ? (
-            <div className="space-y-2 rounded-md border border-accent-border bg-accent-subtle p-3">
+            <div className="space-y-2 rounded-md border border-border p-3">
               <p className="text-sm font-semibold">Freshly generated tokens</p>
               <div className="space-y-2">
                 {generatedInvites.map((invite) => (
                   <div
                     key={invite.id}
-                    className="flex items-center justify-between gap-2 rounded-md border border-accent-border bg-accent-subtle-hover p-2"
+                    className="flex items-center justify-between gap-2 rounded-md border border-border p-2"
                   >
                     <div className="min-w-0">
                       <p className="truncate font-mono text-caption">

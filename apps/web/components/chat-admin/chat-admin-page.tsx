@@ -827,7 +827,7 @@ function ChatAdminBody({
                       FOCUS_RING_OFFSET,
                       selectedChannelId === channel.id
                         ? "bg-accent-subtle-hover text-accent-text"
-                        : "hover:bg-accent-subtle",
+                        : "hover:bg-card-hover",
                     )}
                     aria-pressed={selectedChannelId === channel.id}
                     onClick={() => selectChannel(channel)}
@@ -851,7 +851,7 @@ function ChatAdminBody({
                     ) : null}
                   </button>
                   <Button
-                    variant="quiet"
+                    variant="ghost"
                     size="icon"
                     className={compactControlClassName}
                     aria-label={`Delete #${channel.name}`}
@@ -1067,7 +1067,7 @@ function ChatAdminBody({
                               </p>
                             </div>
                             <Button
-                              variant="quiet"
+                              variant="ghost"
                               size="icon"
                               className={compactControlClassName}
                               aria-label="Unpin message"
@@ -1176,7 +1176,7 @@ function ChatAdminBody({
                       </span>
                       <div className="flex shrink-0 gap-1">
                         <Button
-                          variant="quiet"
+                          variant="ghost"
                           size="icon"
                           className={compactControlClassName}
                           aria-label={`Rename ${category.name}`}
@@ -1185,7 +1185,7 @@ function ChatAdminBody({
                           <Pencil className="h-4 w-4" />
                         </Button>
                         <Button
-                          variant="quiet"
+                          variant="ghost"
                           size="icon"
                           className={compactControlClassName}
                           aria-label={`Delete ${category.name}`}

@@ -8,8 +8,9 @@ import {
 } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 
-// A purple chapter's accent, deliberately not house gold, so a glyph that
-// slipped back to a `gold.*` token would show up in an assertion.
+// A purple chapter's accent, deliberately not house gold, so a glyph or time
+// that slipped back to the accent or a `gold.*` token would show up in an
+// assertion (the strip draws no accent: foundations.md §6).
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
     accent: "#CB9FFF",
@@ -376,17 +377,21 @@ describe("UpNextStrip rows", () => {
     );
   }
 
-  it("leads the event with the accent calendar and the task with the muted check", () => {
-    const [eventRow, taskRow] = rows(renderStrip());
+  it("leads both rows with a muted glyph and never draws the accent", () => {
+    const tree = renderStrip();
+    const [eventRow, taskRow] = rows(tree);
 
     // Each tab glyph is two filled Paths; the second is the full-strength
     // outline, so its fill is the glyph's hue.
     const outline = (row: ReactTestInstance) =>
       row.findAll((node) => (node.type as unknown as string) === "Path")[1]!;
-    expect(outline(eventRow!).props.fill).toBe("#CB9FFF");
+    expect(outline(eventRow!).props.fill).toBe(
+      signetDarkTokens.color.text.muted,
+    );
     expect(outline(taskRow!).props.fill).toBe(
       signetDarkTokens.color.text.muted,
     );
+    expect(JSON.stringify(tree.toJSON())).not.toContain("#CB9FFF");
     for (const svg of [eventRow!, taskRow!].map((row) =>
       row.find((node) => (node.type as unknown as string) === "Svg"),
     )) {

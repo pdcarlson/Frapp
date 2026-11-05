@@ -110,7 +110,7 @@ function RoleChecklistItem({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition-colors hover:bg-accent-subtle">
+    <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition-colors hover:bg-card-hover">
       <div>
         <p className="text-sm font-semibold">{title}</p>
         <p
