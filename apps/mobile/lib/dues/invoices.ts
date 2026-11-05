@@ -189,20 +189,42 @@ export function dueChip(
 }
 
 /**
+ * The due chip's hue. The balance card and the OPEN list both call this, so a
+ * row and the card never draw the same invoice in two hues: warning while it's
+ * due, and while a payment on it is pending; destructive once the date passes.
+ */
+export function dueChipHue(
+  state: DueState | "pending",
+  semantic: { warning: string; destructive: string },
+): string {
+  return state === "past-due" ? semantic.destructive : semantic.warning;
+}
+
+/**
+ * The open invoices, earliest due first — s11's OPEN list, and the order
+ * {@link selectNextDueInvoice} takes its first row from, so "Pay now" settles
+ * the list's top row. The one exception is an earlier-due invoice issued while
+ * a payment is confirming: the card stays on the confirming invoice.
+ */
+export function selectOpenInvoicesByDueDate(rows: InvoiceRow[]): InvoiceRow[] {
+  return [...selectOpenInvoices(rows)].sort((a, b) =>
+    a.dueDate.localeCompare(b.dueDate),
+  );
+}
+
+/**
  * The invoice a "Pay now" tap settles: a PaymentIntent is per invoice, so only
  * one can be paid at a time, and the earliest due date is the one that turns
- * overdue next.
+ * overdue next. While a payment is confirming, the Dues card stays on that
+ * invoice instead (`app/(tabs)/dues.tsx`), which is the one this named when
+ * the member tapped Pay.
  *
- * Exported rather than inlined because two surfaces need the same answer — the
+ * Exported rather than inlined because two surfaces need the same rule — the
  * Dues card and the More hub's trailing chip — and two copies of a tie-break
  * rule are two chips naming different invoices the moment it changes.
  */
 export function selectNextDueInvoice(rows: InvoiceRow[]): InvoiceRow | null {
-  return (
-    [...selectOpenInvoices(rows)].sort((a, b) =>
-      a.dueDate.localeCompare(b.dueDate),
-    )[0] ?? null
-  );
+  return selectOpenInvoicesByDueDate(rows)[0] ?? null;
 }
 
 /**

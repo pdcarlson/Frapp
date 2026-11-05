@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   balanceCents,
   dueChip,
+  dueChipHue,
   formatAmount,
   historyMeta,
   selectInvoiceHistory,
   selectInvoiceRows,
   selectNextDueInvoice,
   selectOpenInvoices,
+  selectOpenInvoicesByDueDate,
   splitAmount,
   type InvoiceRow,
 } from "./invoices";
@@ -129,6 +131,19 @@ describe("money", () => {
 
   it("never renders a negative balance", () => {
     expect(formatAmount(-500)).toBe("$0.00");
+  });
+});
+
+describe("dueChipHue", () => {
+  const semantic = { warning: "warning", destructive: "destructive" };
+
+  it("is destructive only once the date has passed", () => {
+    expect(dueChipHue("upcoming", semantic)).toBe("warning");
+    expect(dueChipHue("past-due", semantic)).toBe("destructive");
+  });
+
+  it("stays warning while a payment is pending, even on a past-due bill", () => {
+    expect(dueChipHue("pending", semantic)).toBe("warning");
   });
 });
 
@@ -262,5 +277,22 @@ describe("selectNextDueInvoice", () => {
   it("returns null when nothing is open", () => {
     const rows = selectInvoiceRows([invoice({ status: "PAID" })], VIEWER);
     expect(selectNextDueInvoice(rows)).toBeNull();
+  });
+});
+
+describe("selectOpenInvoicesByDueDate", () => {
+  it("lists only open invoices, earliest due first, with the one Pay settles on top", () => {
+    const rows = selectInvoiceRows(
+      [
+        invoice({ id: "later", due_date: "2026-11-01" }),
+        invoice({ id: "draft", due_date: "2026-08-01", status: "DRAFT" }),
+        invoice({ id: "sooner", due_date: "2026-09-15" }),
+        invoice({ id: "paid", due_date: "2026-01-01", status: "PAID" }),
+      ],
+      VIEWER,
+    );
+    const open = selectOpenInvoicesByDueDate(rows);
+    expect(open.map((row) => row.id)).toEqual(["sooner", "later"]);
+    expect(open[0]?.id).toBe(selectNextDueInvoice(rows)?.id);
   });
 });

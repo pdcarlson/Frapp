@@ -2,7 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import appJson from "../../app.json";
 
@@ -14,6 +14,35 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
+/** `Linking` isn't in the suite's `react-native` stub; this spec adds it. */
+const { openSettings } = vi.hoisted(() => ({
+  openSettings: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("react-native", async () => {
+  const { reactNativeStub } = await import("@/test/react-native-stub");
+  return { ...reactNativeStub, Linking: { openSettings } };
+});
+
+/**
+ * The real helper unless a test sets `settingsPath.answer`, so one test can
+ * give a native OS no Settings path and see what the sheet decides on.
+ */
+const settingsPath = vi.hoisted(() => ({
+  answer: undefined as string | null | undefined,
+}));
+vi.mock("@/lib/study/location-settings-path", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/study/location-settings-path")>();
+  return {
+    ...actual,
+    locationSettingsPath: () =>
+      settingsPath.answer === undefined
+        ? actual.locationSettingsPath()
+        : settingsPath.answer,
+  };
+});
+
+import { Platform } from "react-native";
 import { LocationPrimerSheet } from "./location-primer-sheet";
 
 /**
@@ -63,25 +92,131 @@ describe("LocationPrimerSheet", () => {
     expect(rendered.some((line) => /\bSignet\b/.test(line))).toBe(false);
   });
 
-  it("points at Settings → expo.name when iOS will not ask again", () => {
-    const rendered = texts(
-      render(
+  describe("when the OS will not ask again", () => {
+    const platform = Platform as { OS: string; Version?: string | number };
+    const { OS: os, Version: version } = platform;
+    afterEach(() => {
+      platform.OS = os;
+      platform.Version = version;
+      settingsPath.answer = undefined;
+    });
+
+    const blocked = () =>
+      texts(
+        render(
+          <LocationPrimerSheet
+            canAskAgain={false}
+            onAllow={() => {}}
+            onDismiss={() => {}}
+          />,
+        ),
+      ).join("");
+
+    it("spells out the iOS path on iPhone, naming the app, and no OS", () => {
+      platform.OS = "ios";
+      platform.Version = "18.2";
+      const copy = blocked();
+      expect(copy).toContain(`Location is turned off for ${APP_NAME}`);
+      expect(copy).toContain(`Settings → Apps → ${APP_NAME} → Location`);
+      expect(copy).not.toContain("Permissions");
+      // The old line said "iOS won't ask again", which reads as nonsense on
+      // the other OS and narrates nothing the member can act on.
+      expect(copy).not.toMatch(/\b(iOS|Android)\b/);
+    });
+
+    it("skips the Apps row before iOS 18, which has none", () => {
+      platform.OS = "ios";
+      platform.Version = "17.6";
+      expect(blocked()).toContain(
+        `Turn it on in Settings → ${APP_NAME} → Location, then`,
+      );
+    });
+
+    it("points at the browser on the web build, with no Open Settings to throw", () => {
+      // react-native-web's Linking has no openSettings, so the button threw
+      // there, and the path it named was an iPhone's.
+      platform.OS = "web";
+      platform.Version = "0.0.0";
+      const tree = render(
         <LocationPrimerSheet
           canAskAgain={false}
           onAllow={() => {}}
           onDismiss={() => {}}
         />,
+      );
+      const copy = texts(tree).join("");
+      expect(copy).toContain(
+        `Location is turned off for ${APP_NAME}. Allow location for this site in your browser, then start your session.`,
+      );
+      expect(copy).not.toContain("Settings →");
+      expect(texts(tree)).not.toContain("Open Settings");
+    });
+
+    it("takes the helper's word that there is no Settings path, whatever the OS", () => {
+      // One answer to "is there a Settings path": the line and the button
+      // both follow the helper's null, not a Platform check of their own.
+      platform.OS = "ios";
+      platform.Version = "18.2";
+      settingsPath.answer = null;
+      const tree = render(
+        <LocationPrimerSheet
+          canAskAgain={false}
+          onAllow={() => {}}
+          onDismiss={() => {}}
+        />,
+      );
+      expect(texts(tree).join("")).toContain(
+        "Allow location for this site in your browser, then start your session.",
+      );
+      expect(texts(tree)).not.toContain("Open Settings");
+    });
+
+    it("spells out Android's own path on Android", () => {
+      // The iOS path was all this said, and Android has no such screen.
+      platform.OS = "android";
+      const copy = blocked();
+      expect(copy).toContain(
+        `Settings → Apps → ${APP_NAME} → Permissions → Location`,
+      );
+    });
+  });
+
+  it("opens Settings from the blocked branch, closing the sheet first", async () => {
+    const onDismiss = vi.fn();
+    const tree = render(
+      <LocationPrimerSheet
+        canAskAgain={false}
+        onAllow={() => {}}
+        onDismiss={onDismiss}
+      />,
+    );
+    const button = tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        node
+          .findAllByType("Text" as never)
+          .some((text) => text.props.children === "Open Settings"),
+    );
+
+    await act(async () => {
+      button.props.onPress();
+    });
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(openSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Continue, not Open Settings, while the OS can still ask", () => {
+    const rendered = texts(
+      render(
+        <LocationPrimerSheet
+          canAskAgain
+          onAllow={() => {}}
+          onDismiss={() => {}}
+        />,
       ),
     );
-    expect(
-      rendered.some((line) =>
-        line.includes(`Location is turned off for ${APP_NAME}`),
-      ),
-    ).toBe(true);
-    expect(
-      rendered.some((line) =>
-        line.includes(`Settings → ${APP_NAME} → Location`),
-      ),
-    ).toBe(true);
+    expect(rendered).toContain("Continue");
+    expect(rendered).not.toContain("Open Settings");
   });
 });

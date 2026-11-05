@@ -93,10 +93,10 @@ export const ZonePickerSheet = forwardRef<BottomSheetModal, ZonePickerSheetProps
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     header: {
-      paddingHorizontal: tokens.spacing.lg + 2,
+      paddingHorizontal: tokens.spacing.lg,
     },
     list: {
-      paddingHorizontal: tokens.spacing.lg + 2,
+      paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xl,
     },
     row: {
