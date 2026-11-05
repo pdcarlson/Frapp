@@ -17,9 +17,11 @@ import type { BadgeKind } from "@/components/ui/badge";
  * one — so the chapter whose brand most needs `PAID` to read as paid is exactly
  * the chapter where it renders as overdue. Pinned in `status-contrast.spec.ts`.
  *
- * `DRAFT` is the one state that is deliberately *not* semantic: it is the
- * absence of a status rather than a status, so it takes §5's Hairline kind,
- * "quiet metadata that must not read as a status".
+ * `DRAFT` and `VOID` are deliberately *not* semantic, so both take §5's
+ * Hairline kind, "quiet metadata that must not read as a status". `DRAFT` is
+ * the absence of a status rather than a status; `VOID` is a cancelled invoice,
+ * not a failed payment, so it must not read as danger (mobile draws it grey
+ * too).
  *
  * **There is no `OVERDUE` case, deliberately.** `financial_invoices.status` is
  * constrained to `DRAFT | OPEN | PAID | VOID`; overdue is a *derived* fact from
@@ -42,7 +44,9 @@ export function invoiceStatusKind(
     case "OPEN":
       return "warning";
     case "VOID":
-      return "destructive";
+      // Cancelled, not failed: nothing is owed, so it reads as quiet metadata
+      // rather than danger, as mobile's dues history draws it.
+      return "outline";
     default:
       return "outline";
   }

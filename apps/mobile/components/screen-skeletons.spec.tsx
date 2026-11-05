@@ -278,12 +278,13 @@ describe("Screen skeletons sit on their screen's frames", () => {
   const views = (tree: ReactTestRenderer) =>
     tree.root.findAllByType("View" as never).map((v) => flatten(v.props.style));
 
-  it("Events: cards on the event card's frame, with the 52pt date column", () => {
-    const tree = render(<EventListSkeleton cards={2} />);
+  it("Events: the next-event card, then a caption and flat rows", () => {
+    const tree = render(<EventListSkeleton rows={3} />);
     const cards = views(tree).filter(
       (style) => style.borderRadius === tokens.radius.cardLarge,
     );
-    expect(cards).toHaveLength(2);
+    // One card, as the loaded list draws only the next event as a card.
+    expect(cards).toHaveLength(1);
     expect(cards[0]).toMatchObject({
       flexDirection: "row",
       gap: tokens.spacing.md,
@@ -291,7 +292,20 @@ describe("Screen skeletons sit on their screen's frames", () => {
       borderWidth: 1,
       backgroundColor: tokens.color.surface.card,
     });
-    expect(views(tree).filter((style) => style.width === 52)).toHaveLength(2);
+    // The 52pt date column on the card and on every flat row.
+    expect(views(tree).filter((style) => style.width === 52)).toHaveLength(4);
+    const flat = views(tree).filter(
+      (style) =>
+        style.minHeight === tokens.touch.minimum &&
+        style.paddingVertical === tokens.spacing.md,
+    );
+    expect(flat).toHaveLength(3);
+    // Hairline-split: no rule above the first row.
+    expect(flat.map((style) => style.borderTopWidth ?? 0)).toEqual([
+      0,
+      expect.any(Number),
+      expect.any(Number),
+    ]);
   });
 
   it("Event details: the check-in card's frame and the calendar button, as itself", () => {
@@ -306,7 +320,9 @@ describe("Screen skeletons sit on their screen's frames", () => {
           style.padding === tokens.spacing.lg,
       ),
     ).toHaveLength(1);
-    expect(views(tree).filter((style) => style.height === tokens.touch.buttonLarge)).toHaveLength(1);
+    expect(
+      views(tree).filter((style) => style.height === tokens.touch.buttonLarge),
+    ).toHaveLength(1);
   });
 
   it("Notifications: rows on the row's frame, with 20pt title and body lines", () => {
@@ -346,7 +362,7 @@ describe("Screen skeletons sit on their screen's frames", () => {
       views(tree).filter(
         (style) =>
           style.flex === 1 &&
-          style.backgroundColor === tokens.color.surface.surface1,
+          style.backgroundColor === tokens.color.surface.card,
       ),
     ).toHaveLength(2);
     expect(tree.root.findAllByType(ListRowSkeleton)).toHaveLength(4);

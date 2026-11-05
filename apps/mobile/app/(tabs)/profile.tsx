@@ -310,8 +310,9 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      // The Details list's tone, as s15 draws both in one.
-      backgroundColor: tokens.color.surface.surface1,
+      // The Details list's tone (`card`, as every grouped list since
+      // 2026-11-05), as s15 draws both in one.
+      backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
       alignItems: "center",
       gap: tokens.spacing.xs,
@@ -330,10 +331,10 @@ function createStyles(tokens: SignetTokens) {
       paddingHorizontal: tokens.spacing.xs,
     },
     bioCard: {
-      borderRadius: tokens.radius.cardLarge,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
     },
     bioText: {

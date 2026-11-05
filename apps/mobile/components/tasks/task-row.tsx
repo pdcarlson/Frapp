@@ -2,7 +2,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
-import { PressableRow } from "@/components/list-section";
+import { gutterBleed, PressableRow } from "@/components/list-section";
 import { AccentChip } from "@/components/status-chip";
 import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import {
@@ -16,12 +16,14 @@ import type { TaskRowModel } from "@/lib/tasks/board";
 /**
  * One row of the s08 board — `canvas-screens.dc.html:282-324`.
  *
- * A card with a leading checkbox, a title, a due/done subtitle, and an optional
- * trailing points chip. The finished row is drawn at `opacity:.62` with a
- * line-through title and a box in the raised neutral fill with a muted check.
- * Canvas draws that box gold; foundations.md §6 ("Where the accent goes",
- * 2026-11-05) overrides it: finished work is the quietest thing on a list, so
- * a done state takes a muted fill or check, never the accent.
+ * A flush row on the screen background, split from the one above by a
+ * hairline, with a leading checkbox, a title, a due/done subtitle, and an
+ * optional trailing points chip.
+ * The finished row is drawn at `opacity:.62` with a line-through title and a
+ * box in the raised neutral fill with a muted check. Canvas draws that box
+ * gold; foundations.md §6 ("Where the accent goes", 2026-11-05) overrides it:
+ * finished work is the quietest thing on a list, so a done state takes a muted
+ * fill or check, never the accent.
  *
  * ## The checkbox is a three-state control, not a two-state one
  *
@@ -48,9 +50,17 @@ export interface TaskRowProps {
    * it dims and reads busy whichever branch it takes.
    */
   isPending?: boolean;
+  /** The first row of its group draws no hairline above it. */
+  isFirst?: boolean;
 }
 
-export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps) {
+export function TaskRow({
+  row,
+  now,
+  onToggle,
+  isPending = false,
+  isFirst = false,
+}: TaskRowProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const chip = formatPointsChip(row.pointReward, row.pointsAwarded);
@@ -117,6 +127,7 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
   // second so it wins if the optimistic write lands mid-sequence.
   const rowStyle = [
     styles.row,
+    isFirst ? null : styles.rowDivider,
     isPending ? styles.rowPending : null,
     row.isDone ? styles.rowDone : null,
   ];
@@ -141,10 +152,8 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
     );
   }
 
-  // The row is a card, so its iOS lift is to the popover step (`onCard`).
   return (
     <PressableRow
-      onCard
       accessibilityRole="checkbox"
       accessibilityState={{ checked: row.isDone, busy: isPending }}
       accessibilityLabel={`${row.title}${subtitle ? `, ${subtitle}` : ""}`}
@@ -166,10 +175,10 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
 const SKELETON_TITLE_WIDTHS = ["58%", "44%", "52%"] as const;
 
 /**
- * A {@link TaskRow} that hasn't loaded, on the row's own styles: the card, a
- * block in the checkbox's square, the title and due lines, and a chip where
- * the points land. Placed inside a `SkeletonRegion`
- * (`components/state-block.tsx`).
+ * A {@link TaskRow} that hasn't loaded, on the row's own styles: the row and
+ * its hairline (none on a section's first row), a block in the checkbox's
+ * square, the title and due lines, and a chip where the points land. Placed
+ * inside a `SkeletonRegion` (`components/state-block.tsx`).
  */
 export function TaskRowSkeleton({ index = 0 }: { index?: number }) {
   const { tokens } = useFrappTheme();
@@ -177,7 +186,7 @@ export function TaskRowSkeleton({ index = 0 }: { index?: number }) {
   const { caption, label } = tokens.typography.role;
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, index === 0 ? null : styles.rowDivider]}>
       <SkeletonBlock width={tokens.spacing.xl} height={tokens.spacing.xl} />
       <View style={styles.body}>
         <SkeletonText
@@ -197,13 +206,18 @@ function createStyles(tokens: SignetTokens) {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.md,
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      // Flush on the floor, as web lists sit (owner pick 2026-11-05). It was a
+      // bordered card per task, which stacked eight boxes down the tab.
       paddingVertical: tokens.spacing.md,
-      paddingHorizontal: tokens.spacing.lg,
       minHeight: tokens.touch.minimum,
+      // Square and hairline-split like the Directory's member rows, so it
+      // bleeds the same way: content on the gutter line, press feedback clear
+      // of it.
+      ...gutterBleed(tokens, { rounded: false }),
+    },
+    rowDivider: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: tokens.color.border.hairline,
     },
     rowDone: {
       // The drawn `opacity:.62`. A raw number because no token carries a
@@ -253,7 +267,8 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
     },
     subtitleUrgent: {
-      color: tokens.color.semantic.destructive,
+      // Danger as text takes the lift, as web's overdue label does.
+      color: tokens.color.semantic.destructiveText,
     },
     subtitleDone: {
       color: tokens.color.text.muted,

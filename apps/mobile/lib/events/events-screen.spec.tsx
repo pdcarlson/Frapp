@@ -178,8 +178,9 @@ describe("Event card", () => {
     events = [{ ...EVENT, is_mandatory: true, point_value: 10 }];
     const tree = render();
 
+    // Danger text in its AA lift (components.md §5), the tint keeps the hue.
     expect(styleOf(tree, "Mandatory").color).toBe(
-      signetDarkTokens.color.semantic.destructive,
+      signetDarkTokens.color.semantic.destructiveText,
     );
     expect(styleOf(tree, "+10 pts").color).toBe(ACCENT);
   });
@@ -264,5 +265,77 @@ describe("Events list states", () => {
 
     expect(screenText(tree)).toContain("Nothing scheduled");
     expect(screenText(tree)).not.toContain("will appear here");
+  });
+});
+
+/**
+ * The owner's 2026-11-05 pick: the next event is the page's one card, and the
+ * rest sit flush on the floor in "This week" and "Later" groups, with points in
+ * the meta line as web writes them.
+ */
+describe("Events after the first", () => {
+  const at = (days: number) => new Date(START.getTime() + days * 86_400_000);
+  const make = (id: string, days: number, extra: object = {}) => ({
+    ...EVENT,
+    id,
+    name: `Event ${id}`,
+    start_time: at(days).toISOString(),
+    end_time: new Date(at(days).getTime() + 3_600_000).toISOString(),
+    ...extra,
+  });
+
+  it("groups the rest into this week and later", () => {
+    events = [
+      make("a", 0),
+      make("b", 2),
+      make("c", 10, { point_value: 15, location: "Library" }),
+    ];
+    const text = screenText(render());
+    expect(text.indexOf("This week")).toBeGreaterThan(text.indexOf("Event a"));
+    expect(text.indexOf("Event b")).toBeGreaterThan(text.indexOf("This week"));
+    expect(text.indexOf("Later")).toBeGreaterThan(text.indexOf("Event b"));
+    expect(text.indexOf("Event c")).toBeGreaterThan(text.indexOf("Later"));
+    expect(text).toMatch(/Library · 15 pts/);
+    expect(text).not.toContain("+15 pts");
+  });
+
+  it("draws a later row with no card fill and Mandatory in danger", () => {
+    events = [make("a", 0), make("b", 2, { is_mandatory: true })];
+    const tree = render();
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Open Event b",
+    );
+    const resting = StyleSheet.flatten(row.props.style({ pressed: false }));
+    expect(resting.backgroundColor).toBeUndefined();
+    expect(resting.borderRadius).toBeUndefined();
+    const chip = row.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "Mandatory",
+    );
+    expect(StyleSheet.flatten(chip.props.style).color).toBe(
+      signetDarkTokens.color.semantic.destructiveText,
+    );
+  });
+
+  it("splits rows by hairlines, none above a group's first, and bleeds into the gutter", () => {
+    events = [make("a", 0), make("b", 2), make("c", 3)];
+    const tree = render();
+    const pressableOf = (name: string) =>
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === `Open ${name}`,
+      );
+    const restingOf = (name: string) =>
+      StyleSheet.flatten(pressableOf(name).props.style({ pressed: false }));
+    const first = restingOf("Event b");
+    expect(first.borderTopWidth).toBeUndefined();
+    expect(restingOf("Event c").borderTopWidth).toBeGreaterThan(0);
+    // The row pads by `sm` and its clip pulls that back into the gutter.
+    expect(first.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
+    const clip = StyleSheet.flatten(pressableOf("Event b").parent!.props.style);
+    expect(clip.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
   });
 });

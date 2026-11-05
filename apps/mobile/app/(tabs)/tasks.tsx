@@ -211,7 +211,7 @@ export default function TasksScreen() {
 
   const renderRows = useCallback(
     (rows: TaskRowModel[]) =>
-      rows.map((row) => {
+      rows.map((row, index) => {
         const busy = pendingId === row.id;
         const pressable =
           !busy &&
@@ -223,6 +223,7 @@ export default function TasksScreen() {
             row={row}
             now={now}
             isPending={busy}
+            isFirst={index === 0}
             // Dropped, not disabled-in-place, while the sequence runs: the row
             // is mid-ladder, so a second tap would race the compare-and-set.
             onToggle={pressable ? () => void toggle(row) : undefined}
@@ -264,7 +265,7 @@ export default function TasksScreen() {
       return (
         <SkeletonRegion label="Loading chapter tasks" style={styles.skeleton}>
           <SectionHeaderSkeleton width="30%" />
-          <View style={styles.rows}>
+          <View>
             {Array.from({ length: 3 }, (_, index) => (
               <TaskRowSkeleton key={index} index={index} />
             ))}
@@ -303,14 +304,14 @@ export default function TasksScreen() {
         {board.dueThisWeek.length > 0 ? (
           <>
             <SectionHeader>DUE THIS WEEK</SectionHeader>
-            <View style={styles.rows}>{renderRows(board.dueThisWeek)}</View>
+            <View>{renderRows(board.dueThisWeek)}</View>
           </>
         ) : null}
 
         {board.later.length > 0 ? (
           <>
             <SectionHeader>LATER</SectionHeader>
-            <View style={styles.rows}>{renderRows(board.later)}</View>
+            <View>{renderRows(board.later)}</View>
           </>
         ) : null}
       </>
@@ -362,9 +363,6 @@ export default function TasksScreen() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    rows: {
-      gap: tokens.spacing.sm,
-    },
     // `ScreenShell`'s gap, between the caption and its rows.
     skeleton: {
       gap: tokens.spacing.md,
