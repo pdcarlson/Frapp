@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
@@ -45,11 +44,13 @@ import {
   ImageViewerContext,
   useImageViewer,
 } from "@/components/chat/image-viewer";
+import { JumpToLatestButton } from "@/components/chat/jump-to-latest-button";
 import {
   MessageActionsSheet,
   type MessageActionsSheetHandle,
   type MessageActionsTarget,
 } from "@/components/chat/message-actions-sheet";
+import { groupReactions } from "@/components/chat/message-item";
 import {
   NotificationLevelControl,
   NotificationLevelMenu,
@@ -58,6 +59,7 @@ import {
 } from "@/components/chat/notification-level-control";
 import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
+import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
 import { threadLayout } from "@/lib/chat/thread-layout";
 import { ErrorState } from "@/components/state-block";
 import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
@@ -72,10 +74,12 @@ import { useThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import {
   postRefusalHint,
   selectPostCapability,
+  THREAD_HEADER_FALLBACK,
   threadHeaderTitle,
 } from "@/lib/chat/channel-list";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
+import { useJumpToLatest } from "@/lib/chat/use-jump-to-latest";
 import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
@@ -83,6 +87,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 const NO_DEPARTED: ReadonlySet<string> = new Set();
+
+/** One object for the list's life: the native prop is diffed by identity. */
+const MAINTAIN_POSITION = {
+  minIndexForVisible: 0,
+  autoscrollToTopThreshold: 80,
+} as const;
 
 /**
  * s05 — Chat thread.
@@ -209,6 +219,12 @@ export default function ChatThreadScreen() {
       roster.byId,
     ],
   );
+  // `Message #general`, `Message Casey`, as s05 draws it. Plain `Message`
+  // while the title is still blank or fell back, rather than `Message Thread`.
+  const composerPlaceholder =
+    headerTitle && headerTitle !== THREAD_HEADER_FALLBACK
+      ? `Message ${headerTitle}`
+      : "Message";
 
   // Delete on someone else's message (#2775). The server resolves the
   // permission in the message's own chapter; this only decides whether the
@@ -407,6 +423,21 @@ export default function ChatThreadScreen() {
   // out oldest first; `threadLayout` says why.
   const layout = useMemo(() => threadLayout(thread.rows), [thread.rows]);
 
+  // A reply quote's tap scrolls to its parent (`lib/chat/use-jump-to-message.ts`).
+  const {
+    listRef,
+    jumpToMessage,
+    onScrollToIndexFailed: handleScrollToIndexFailed,
+  } = useJumpToMessage<FlatList<ThreadRow>>(inverted, channelId);
+  // The way back to the newest message after reading back through history,
+  // and the notice that something new landed there.
+  const latest = useJumpToLatest({
+    listRef,
+    newestId: inverted[0]?.message.client_message_id ?? null,
+    channelKey: channelId,
+  });
+  const jumpToLatest = latest.jumpToLatest;
+
   // Older history (#2772). The list is inverted, so its end is the top: reaching
   // it loads the next page, which is appended past the rows on screen and so
   // leaves them where they are. A failed read waits for Retry in the edge row
@@ -457,25 +488,34 @@ export default function ChatThreadScreen() {
     edit,
   });
   const submitComposer = staging.submit;
+  const sendingEdit = staging.isEditing;
   const handleSend = useCallback(() => {
     // Clear first: `attachError` sits ahead of `sendError` in the hint chain
     // below, and a stale photo-permission line would hide the one report that
     // a message never reached the outbox.
     setAttachError(null);
     submitComposer();
-  }, [submitComposer]);
+    // A new message lands at the bottom, so a member who sends from deep in
+    // history is taken there to see it go. An edit stays where it is: its
+    // message is the one they were reading.
+    if (!sendingEdit) jumpToLatest({ animated: false });
+  }, [submitComposer, sendingEdit, jumpToLatest]);
 
   const handleDelete = useCallback(
     (messageId: string) => confirmDeleteMessage(() => remove(messageId)),
     [remove],
   );
 
-  // A reply quote's tap scrolls to its parent (`lib/chat/use-jump-to-message.ts`).
-  const {
-    listRef,
-    jumpToMessage,
-    onScrollToIndexFailed: handleScrollToIndexFailed,
-  } = useJumpToMessage<FlatList<ThreadRow>>(inverted, channelId);
+  // The actions sheet's quick reactions, through the same optimistic calls a
+  // chip under the message makes; a refusal lands in the reaction banner.
+  const handleReact = useCallback(
+    (messageId: string, emoji: string) => void react(messageId, emoji),
+    [react],
+  );
+  const handleUnreact = useCallback(
+    (messageId: string, emoji: string) => void unreact(messageId, emoji),
+    [unreact],
+  );
 
   const { unblock, reloadMaskedCopies } = useBlockActions();
   const handleUnblock = useCallback(
@@ -541,6 +581,12 @@ export default function ChatThreadScreen() {
         sentAt: message.created_at,
         senderInDirectory:
           message.sender_id !== null && isMember(message.sender_id) === true,
+        // `canOpen` above already required a known viewer.
+        reactedWith: viewerId
+          ? groupReactions(message, viewerId)
+              .filter((group) => group.mine)
+              .map((group) => group.emoji)
+          : [],
       });
       actionsSheetRef.current?.present();
     },
@@ -815,7 +861,7 @@ export default function ChatThreadScreen() {
             </View>
           ) : loadError ? (
             // Ahead of the identity gate, as on web (#2243): a failed read
-            // must not hide behind "Loading messages…" while `/users/me` is
+            // must not hide behind the loading skeleton while `/users/me` is
             // still in flight.
             // With a Retry: the channel query never refetches on its own
             // (`staleTime: Infinity`), so without one the member's only way
@@ -842,10 +888,8 @@ export default function ChatThreadScreen() {
             // still loading (#2250). Rendering rows now would paint the
             // member's own messages as incoming, then flip them when identity
             // lands; messages can arrive from cache well before `/users/me`.
-            <View style={styles.stateBlock}>
-              <ActivityIndicator color={tokens.color.text.muted} />
-              <Text style={styles.stateBody}>Loading messages…</Text>
-            </View>
+            // Message-shaped, at the bottom where the rows will land (§10).
+            <ThreadSkeleton />
           ) : thread.rows.length === 0 && thread.heldCount === 0 ? (
             // Counted after the block list, held rows included: a channel whose
             // only messages are being held is not an empty channel, and the
@@ -860,23 +904,55 @@ export default function ChatThreadScreen() {
             // The rows reach the image viewer through this, not through a
             // prop threaded down the row and its body.
             <ImageViewerContext.Provider value={imageViewer.open}>
-              <FlatList
-                ref={listRef}
-                onScrollToIndexFailed={handleScrollToIndexFailed}
-                data={inverted}
-                renderItem={renderItem}
-                // `client_message_id` is always present and is stable across the
-                // optimistic → confirmed transition, which the server id is not.
-                keyExtractor={(item) => item.message.client_message_id}
-                inverted
-                onEndReached={handleEndReached}
-                onEndReachedThreshold={0.5}
-                // An inverted list draws its footer at the top, above the oldest
-                // loaded row.
-                ListFooterComponent={historyEdge}
-                contentContainerStyle={styles.listContent}
-                style={styles.flex}
-              />
+              {/* The list and the jump control over its corner. */}
+              <View style={styles.flex}>
+                <FlatList
+                  ref={listRef}
+                  onScrollToIndexFailed={handleScrollToIndexFailed}
+                  data={inverted}
+                  renderItem={renderItem}
+                  // `client_message_id` is always present and is stable across
+                  // the optimistic → confirmed transition, which the server id
+                  // is not.
+                  keyExtractor={(item) => item.message.client_message_id}
+                  inverted
+                  // A new message is inserted at index 0, the scroll origin of
+                  // an inverted list, so without this every arrival moved what
+                  // a member reading back through history was reading by a
+                  // row. The native scroll view keeps the first visible row
+                  // where it was (iOS, and Android's Fabric scroll view in RN
+                  // 0.86, which this app runs) and, within 80pt of the newest
+                  // message, scrolls on to show the arrival instead. Older
+                  // pages append at the far end, which this never touches.
+                  maintainVisibleContentPosition={MAINTAIN_POSITION}
+                  onScroll={latest.onScroll}
+                  onLayout={latest.onLayout}
+                  // A tap on a reaction, link, photo, quote or Retry acts at
+                  // once with the keyboard up; React Native's default spent
+                  // that tap on dismissing the keyboard. Dragging the thread
+                  // puts the keyboard away, as every messenger does.
+                  // `on-drag` rather than iOS's `interactive`, on both: the
+                  // avoiding view under the composer follows keyboard frame
+                  // events, which an interactive drag only sends at its end,
+                  // so the composer would hang in mid-air while the keyboard
+                  // followed the finger down.
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
+                  onEndReached={handleEndReached}
+                  onEndReachedThreshold={0.5}
+                  // An inverted list draws its footer at the top, above the
+                  // oldest loaded row.
+                  ListFooterComponent={historyEdge}
+                  contentContainerStyle={styles.listContent}
+                  style={styles.flex}
+                />
+                {latest.isAway ? (
+                  <JumpToLatestButton
+                    hasNew={latest.hasNewBelow}
+                    onPress={() => jumpToLatest()}
+                  />
+                ) : null}
+              </View>
             </ImageViewerContext.Provider>
           )}
 
@@ -931,7 +1007,7 @@ export default function ChatThreadScreen() {
             onSend={handleSend}
             canSend={canSend && channelCanPost && !staging.isSavingEdit}
             context={staging.context}
-            placeholder="Message"
+            placeholder={composerPlaceholder}
             // A send that never reached the outbox has no failed row to show
             // (nothing was queued), so this line is the only report of it.
             //
@@ -1010,6 +1086,8 @@ export default function ChatThreadScreen() {
         onReply={staging.startReply}
         onEdit={staging.startEdit}
         onDelete={handleDelete}
+        onReact={handleReact}
+        onUnreact={handleUnreact}
       />
       {/*
         Last, so it is above the header, the thread, the composer and the mute

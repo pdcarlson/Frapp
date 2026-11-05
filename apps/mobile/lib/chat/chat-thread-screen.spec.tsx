@@ -36,6 +36,9 @@ import {
   NotificationLevelMenu,
 } from "@/components/chat/notification-level-control";
 import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
+import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
+import { jumpToLatestLabel } from "@/components/chat/jump-to-latest-button";
+import { reactionActionType } from "@repo/chat-core/types";
 import type { UseChatChannelResult } from "@/lib/chat/use-chat-channel";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
@@ -286,6 +289,10 @@ const rows = (tree: ReactTestRenderer) =>
 const lists = (tree: ReactTestRenderer) =>
   tree.root.findAllByType("FlatList" as never);
 
+/** The message-shaped loading state (components.md §10). */
+const skeletons = (tree: ReactTestRenderer) =>
+  tree.root.findAllByType(ThreadSkeleton);
+
 const byLabel = (tree: ReactTestRenderer, label: string) =>
   tree.root.find(
     (node) =>
@@ -360,7 +367,7 @@ describe("chat thread identity gate (#2250)", () => {
     channel = channelState({ viewerId: null });
     const tree = render();
 
-    expect(screenText(tree)).toContain("Loading messages…");
+    expect(skeletons(tree)).toHaveLength(1);
     expect(lists(tree)).toHaveLength(0);
     expect(rows(tree)).toHaveLength(0);
     act(() => tree.unmount());
@@ -374,7 +381,7 @@ describe("chat thread identity gate (#2250)", () => {
     channel = { ...channel, viewerId: VIEWER };
     rerender(tree);
 
-    expect(screenText(tree)).not.toContain("Loading messages…");
+    expect(skeletons(tree)).toHaveLength(0);
     expect(rows(tree)).toHaveLength(2);
     for (const row of rows(tree)) expect(row.props.viewerId).toBe(VIEWER);
     act(() => tree.unmount());
@@ -388,7 +395,7 @@ describe("chat thread identity gate (#2250)", () => {
     const tree = render();
 
     expect(screenText(tree)).toContain("Couldn't load your account");
-    expect(screenText(tree)).not.toContain("Loading messages…");
+    expect(skeletons(tree)).toHaveLength(0);
     expect(rows(tree)).toHaveLength(0);
     act(() => byLabel(tree, "Try again").props.onPress());
     expect(viewerQuery.refetch).toHaveBeenCalledTimes(1);
@@ -404,7 +411,7 @@ describe("chat thread identity gate (#2250)", () => {
 
     expect(screenText(tree)).toContain("Couldn't load messages");
     expect(screenText(tree)).not.toContain("Couldn't load your account");
-    expect(screenText(tree)).not.toContain("Loading messages…");
+    expect(skeletons(tree)).toHaveLength(0);
     act(() => byLabel(tree, "Try again").props.onPress());
     expect(channel.reload).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
@@ -748,6 +755,194 @@ describe("chat thread frame (#2485)", () => {
     const frame = tree.root.findByType("SafeAreaView" as never);
 
     expect(frame.props.edges).toContain("top");
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread loading state (components.md §10)", () => {
+  it("draws message shapes, not a spinner and a sentence", () => {
+    channel = channelState({ isLoading: true });
+    const tree = render();
+
+    expect(skeletons(tree)).toHaveLength(1);
+    expect(tree.root.findAllByType("ActivityIndicator" as never)).toHaveLength(
+      0,
+    );
+    expect(screenText(tree)).not.toMatch(/Loading/);
+    expect(lists(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread list behaviour", () => {
+  const list = (tree: ReactTestRenderer) => lists(tree)[0]!;
+
+  it("keeps the reader's place as messages arrive, following them only near the newest", () => {
+    const tree = render();
+    expect(list(tree).props.maintainVisibleContentPosition).toEqual({
+      minIndexForVisible: 0,
+      autoscrollToTopThreshold: 80,
+    });
+    act(() => tree.unmount());
+  });
+
+  it("lets a tap act with the keyboard up, and a drag put the keyboard away", () => {
+    const tree = render();
+    expect(list(tree).props.keyboardShouldPersistTaps).toBe("handled");
+    expect(list(tree).props.keyboardDismissMode).toBe("on-drag");
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread jump to latest", () => {
+  const list = (tree: ReactTestRenderer) => lists(tree)[0]!;
+  const jumpButtons = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        [jumpToLatestLabel(false), jumpToLatestLabel(true)].includes(
+          node.props.accessibilityLabel,
+        ),
+    );
+
+  function scrollTo(tree: ReactTestRenderer, y: number) {
+    act(() =>
+      list(tree).props.onScroll({
+        nativeEvent: { contentOffset: { x: 0, y } },
+      }),
+    );
+  }
+
+  function renderMeasured(scrollToOffset = vi.fn()) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(<Screen />, {
+        createNodeMock: (element) =>
+          element.type === "FlatList"
+            ? { scrollToOffset, scrollToIndex: vi.fn() }
+            : null,
+      });
+    });
+    act(() =>
+      list(tree).props.onLayout({ nativeEvent: { layout: { height: 500 } } }),
+    );
+    return tree;
+  }
+
+  it("appears past a screen of history, and takes the reader back down", () => {
+    const scrollToOffset = vi.fn();
+    const tree = renderMeasured(scrollToOffset);
+    expect(jumpButtons(tree)).toHaveLength(0);
+
+    scrollTo(tree, 1200);
+    const [jump] = jumpButtons(tree);
+    expect(jump!.props.accessibilityLabel).toBe(jumpToLatestLabel(false));
+
+    act(() => jump!.props.onPress());
+    expect(scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: true });
+
+    scrollTo(tree, 0);
+    expect(jumpButtons(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("says so when a newer message lands while the reader is away", () => {
+    const tree = renderMeasured();
+    scrollTo(tree, 1200);
+
+    channel = {
+      ...channel,
+      messages: [
+        ...channel.messages,
+        message("m3", {
+          created_at: new Date(2026, 8, 28, 17, 2).toISOString(),
+        }),
+      ],
+    };
+    rerender(tree);
+
+    expect(jumpButtons(tree)[0]!.props.accessibilityLabel).toBe(
+      jumpToLatestLabel(true),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("takes a member who sends a new message to the bottom to see it go", () => {
+    const scrollToOffset = vi.fn();
+    const tree = renderMeasured(scrollToOffset);
+    scrollTo(tree, 1200);
+
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+
+    expect(scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: false });
+    act(() => tree.unmount());
+  });
+
+  it("leaves the reader where they are when the send saves an edit", () => {
+    channel = channelState({
+      messages: [message("m1", { sender_id: VIEWER, content: "first" })],
+    });
+    const scrollToOffset = vi.fn();
+    const tree = renderMeasured(scrollToOffset);
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    act(() => (sheet.props.onEdit as (id: string) => void)("m1"));
+    expect(tree.root.findByType(ChatComposer).props.context?.kind).toBe(
+      "edit",
+    );
+
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+
+    expect(scrollToOffset).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread reactions from the actions sheet", () => {
+  it("opens the sheet knowing the viewer's reactions, and wires its picks", () => {
+    channel = channelState({
+      messages: [
+        message("m1", {
+          reactions: {
+            [reactionActionType("🔥")]: [VIEWER, MEMBER],
+            [reactionActionType("👍")]: [MEMBER],
+          },
+        }),
+      ],
+    });
+    const tree = render();
+    const row = rows(tree)[0]!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    expect(sheet.props.target).toMatchObject({
+      messageId: "m1",
+      reactedWith: ["🔥"],
+    });
+    act(() =>
+      (sheet.props.onReact as (id: string, emoji: string) => void)("m1", "👍"),
+    );
+    act(() =>
+      (sheet.props.onUnreact as (id: string, emoji: string) => void)(
+        "m1",
+        "🔥",
+      ),
+    );
+    expect(channel.react).toHaveBeenCalledWith("m1", "👍");
+    expect(channel.unreact).toHaveBeenCalledWith("m1", "🔥");
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread composer placeholder", () => {
+  it("names the conversation, as s05 draws it", () => {
+    const tree = render();
+    expect(tree.root.findByType(ChatComposer).props.placeholder).toBe(
+      "Message #general",
+    );
     act(() => tree.unmount());
   });
 });
