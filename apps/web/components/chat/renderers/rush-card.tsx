@@ -49,7 +49,7 @@ interface RushCardProps {
  * mobile card applies too. Nothing live is drawn until the candidate is read:
  * the snapshot has no votes and its bid is `"none"` forever. Every member may
  * vote and extend a bid; only `members:view` is needed to read the candidate,
- * so nobody without it asks. While Recruitment is known to be off the card
+ * so nobody known to lack it asks. While Recruitment is known to be off the card
  * offers nothing (the server refuses both writes), and a gate's refusal is
  * told in a member's words (`rushCardGateRefusal`), not the officer-addressed
  * message the guard sends.
@@ -58,11 +58,16 @@ export function RushCard({ message, isConfirmed }: RushCardProps) {
   const payload = readRushPayload(message);
   const chapterVocabulary = useChapterVocabulary();
   const { data: permissionsPayload } = useMyPermissions();
-  const canViewMembers = can("members:view", permissionsPayload?.permissions);
+  const permissions = permissionsPayload?.permissions;
+  const canViewMembers = can("members:view", permissions);
   // Hooks must run before the malformed-payload return; the read no-ops
   // without an id.
   const liveQuery = useRushCandidate(
-    payload && canReadCardRushCandidate({ canViewMembers })
+    payload &&
+      canReadCardRushCandidate({
+        canViewMembers,
+        permissionsKnown: Array.isArray(permissions),
+      })
       ? payload.candidate_id
       : undefined,
   );

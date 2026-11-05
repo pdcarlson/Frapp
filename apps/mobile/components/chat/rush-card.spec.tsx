@@ -21,7 +21,10 @@ import { screenText } from "@/test/screen-text";
  */
 
 const state = vi.hoisted(() => ({
-  permissions: ["members:view"] as string[],
+  /** `undefined`: the permissions read hasn't answered (loading, or failed). */
+  permissions: ["members:view"] as string[] | undefined,
+  votePending: false,
+  bidPending: false,
   live: undefined as unknown,
   liveError: false,
   candidateIds: [] as (string | undefined)[],
@@ -33,7 +36,9 @@ const bid = vi.hoisted(() => vi.fn());
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  usePermissionList: () => state.permissions,
+  useMyPermissions: () => ({
+    data: state.permissions ? { permissions: state.permissions } : undefined,
+  }),
   // The real hook is disabled without an id, so no id reads nothing.
   useRushCandidate: (id: string | undefined) => {
     state.candidateIds.push(id);
@@ -42,8 +47,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
       isError: !!id && state.liveError,
     };
   },
-  useVoteRushCandidate: () => ({ mutateAsync: vote, isPending: false }),
-  useBidRushCandidate: () => ({ mutateAsync: bid, isPending: false }),
+  useVoteRushCandidate: () => ({
+    mutateAsync: vote,
+    isPending: state.votePending,
+  }),
+  useBidRushCandidate: () => ({ mutateAsync: bid, isPending: state.bidPending }),
   useCurrentChapter: () => ({ data: state.chapter }),
 }));
 
@@ -184,6 +192,8 @@ const SUBSCRIPTION_REFUSED = {
 
 beforeEach(() => {
   state.permissions = ["members:view"];
+  state.votePending = false;
+  state.bidPending = false;
   state.live = liveCandidate();
   state.liveError = false;
   state.candidateIds = [];
@@ -238,6 +248,15 @@ describe("RushCard — the snapshot", () => {
     expect(actions(tree)).toEqual([]);
   });
 
+  it("asks for the candidate while the permissions read hasn't answered", () => {
+    // Every seeded role holds members:view, and a failed permissions read
+    // must not leave a member's card without its tally and controls.
+    state.permissions = undefined;
+    const tree = render();
+    expect(state.candidateIds).toContain("cand-1");
+    expect(actions(tree)).toEqual(["Vote", "Extend bid"]);
+  });
+
   it("says the votes couldn't load when the read failed", () => {
     state.live = undefined;
     state.liveError = true;
@@ -259,6 +278,11 @@ describe("RushCard — live", () => {
     const extended = screenText(render());
     expect(extended).toContain("Bid extended");
     expect(extended).toContain("1 vote · you voted");
+  });
+
+  it("titles the card with the candidate's live name, not the snapshot's", () => {
+    state.live = liveCandidate({ display_name: "Jordan Reyes-Cole" });
+    expect(screenText(render())).toContain("Jordan Reyes-Cole");
   });
 
   it("lets a member vote and extend a bid", async () => {
@@ -367,6 +391,17 @@ describe("RushCard — live", () => {
     const tree = render();
     await press(tree, "Extend bid");
     expect(screenText(tree)).toContain("Couldn't extend that bid.");
+  });
+
+  it.each([
+    ["a vote", "votePending"],
+    ["a bid", "bidPending"],
+  ] as const)("can't be pressed while %s is pending", (_name, flag) => {
+    state[flag] = true;
+    const tree = render();
+    for (const label of ["Vote", "Extend bid"]) {
+      expect(button(tree, label).props.disabled).toBe(true);
+    }
   });
 
   it("can't be pressed while a write would be lost, and says why", () => {

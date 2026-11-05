@@ -363,9 +363,11 @@ Three of these exist to keep one state from impersonating another:
 Every mobile paid-ops write can be refused by `ChapterGuard` when the chapter's
 subscription is not active — the founder case is a brand-new chapter, which is
 `incomplete` until checkout ([#2297](https://github.com/pdcarlson/Frapp/issues/2297)).
-The strings live in `apps/mobile/lib/subscription-refusal.ts` and are asserted
-against these rules in `subscription-refusal.spec.ts`. Two constraints bind
-every one of them, and both are the point rather than style:
+The strings live in `apps/mobile/lib/subscription-refusal.ts`, apart from a
+chat card's that web shows too, which lives beside the card's rules in
+`@repo/hooks` (the rush candidate row below). All of them are asserted against
+these rules in `apps/mobile/lib/subscription-refusal.spec.ts`. Two constraints
+bind every one of them, and both are the point rather than style:
 
 - **No price, plan, purchase path or link.** The constraint itself is owned by
   `apps/mobile/store/README.md` (the submitted App Store Connect answers) — read
@@ -390,7 +392,9 @@ every one of them, and both are the point rather than style:
 sentence addressed to that officer ("Re-enable it in Settings → Modules to make
 changes"). A member can't follow it, so a mobile surface that would relay the
 server's message matches the refusal with `moduleRefusalOf`
-(`apps/mobile/lib/module-refusal.ts`) and shows its own row instead. The same
+(`apps/mobile/lib/module-refusal.ts`), or, for a chat card web shares, with its
+rules' own reader in `@repo/hooks` (`rushCardGateRefusal`), and shows its own
+row instead. The same
 two rules as the subscription refusal apply: point at an officer, and withdraw
 the control rather than invite a retry, since only an officer can turn the
 module back on ([#2393](https://github.com/pdcarlson/Frapp/issues/2393),

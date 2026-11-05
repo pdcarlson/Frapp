@@ -73,8 +73,18 @@ describe("readLiveRushCandidate", () => {
 
 describe("canReadCardRushCandidate", () => {
   it("asks only for a members:view holder, the one viewer the route answers", () => {
-    expect(canReadCardRushCandidate({ canViewMembers: true })).toBe(true);
-    expect(canReadCardRushCandidate({ canViewMembers: false })).toBe(false);
+    expect(
+      canReadCardRushCandidate({ canViewMembers: true, permissionsKnown: true }),
+    ).toBe(true);
+    expect(
+      canReadCardRushCandidate({ canViewMembers: false, permissionsKnown: true }),
+    ).toBe(false);
+  });
+
+  it("asks while permissions are unknown, so a failed permissions read doesn't empty the card", () => {
+    expect(
+      canReadCardRushCandidate({ canViewMembers: false, permissionsKnown: false }),
+    ).toBe(true);
   });
 });
 
@@ -176,9 +186,12 @@ describe("rushCardGateRefusal", () => {
     );
   });
 
-  it("never names a plan, a price or checkout", () => {
+  it("points at an officer, the only actor a member has", () => {
+    // The store-answer guard (no price, purchase path, venue or link, and no
+    // retry) runs on this copy in `apps/mobile/lib/subscription-refusal.spec.ts`,
+    // beside the copy it was written for, so the two can't disagree.
     for (const copy of Object.values(RUSH_CARD_REFUSAL_COPY)) {
-      expect(copy).not.toMatch(/plan|price|checkout|subscribe|upgrade/i);
+      expect(copy).toMatch(/officer/i);
     }
   });
 });

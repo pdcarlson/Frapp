@@ -111,6 +111,23 @@ describe("useRushCandidate", () => {
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
+
+  it("throws a chapter-context 403, which clears by itself, so it keeps its retry", async () => {
+    // A session whose token hasn't caught up with a chapter switch. Resolved
+    // to null, it would cache an empty card as a success.
+    const GET = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: {
+        statusCode: 403,
+        code: "chapter.context.mismatch",
+        message: "Chapter context mismatch",
+      },
+    });
+    const { result } = renderHook(() => useRushCandidate("cand-1"), {
+      wrapper: createWrapper(queryClient, { GET }),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
 });
 
 describe.each([

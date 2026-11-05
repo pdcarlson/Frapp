@@ -51,7 +51,13 @@ export function HoursCard({ message, viewerId }: HoursCardProps) {
   // A hook, so it runs before the malformed-payload return; an empty id holds
   // the request.
   const { data: liveRaw } = useServiceEntry(
-    payload && canReadCardServiceEntry({ isOwner, canApprove, canViewMembers })
+    payload &&
+      canReadCardServiceEntry({
+        isOwner,
+        canApprove,
+        canViewMembers,
+        permissionsKnown: Array.isArray(permissions),
+      })
       ? payload.entry_id
       : "",
   );

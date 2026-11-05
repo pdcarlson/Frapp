@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { statusOf } from "@repo/api-sdk";
+import { isCardReadMiss } from "./card-read-miss";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
@@ -65,11 +65,13 @@ export function useServiceEntries(
  * `["service-entries"]` prefix, so a review or a delete from any screen
  * refreshes it.
  *
- * A 403 or a 404 resolves to `null` rather than throwing. Both are answers (the
- * entry was deleted, or the viewer lost a permission or the module was turned
- * off), and a thrown refetch would keep the badge read before it, so a deleted
- * entry would go on saying "Approved". Resolving also keeps an expected miss
- * out of the query's retries and out of Sentry.
+ * A 404, or a 403 from the route's own checks, resolves to `null` rather than
+ * throwing (`isCardReadMiss`). Both are answers (the entry was deleted, or the
+ * viewer lost a permission or the module was turned off), and a thrown refetch
+ * would keep the badge read before it, so a deleted entry would go on saying
+ * "Approved". Resolving also keeps an expected miss out of the query's retries
+ * and out of Sentry. `ChapterGuard`'s `chapter.context.*` 403s still throw:
+ * they clear once the token catches up with a chapter switch.
  */
 export function useServiceEntry(id: string) {
   const client = useFrappClient();
@@ -81,8 +83,7 @@ export function useServiceEntry(id: string) {
         params: { path: { id } },
       });
       if (error) {
-        const status = statusOf(error);
-        if (status === 403 || status === 404) return null;
+        if (isCardReadMiss(error)) return null;
         throw error;
       }
       return data;

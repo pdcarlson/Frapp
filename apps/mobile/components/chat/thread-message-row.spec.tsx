@@ -44,6 +44,8 @@ vi.mock("@repo/hooks", async () => {
     // The event and task cards' reads and writes (#3185); their own specs
     // cover what each one does. Here they only have to draw.
     usePermissionList: () => [],
+    // The hours and rush cards read the query itself (#3383).
+    useMyPermissions: () => ({ data: { permissions: [] } }),
     useTask: () => ({ data: undefined }),
     useEvent: () => ({ data: undefined, isError: false }),
     useAttendance: () => ({ data: undefined }),
@@ -1179,8 +1181,8 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
     expect(host.props.accessible).toBe(true);
   });
 
-  it("draws a points or hours row whose payload doesn't read as its text", () => {
-    for (const kind of ["points", "hours"] as const) {
+  it("draws a points, hours or rush row whose payload doesn't read as its text", () => {
+    for (const kind of ["points", "hours", "rush"] as const) {
       const text = allDrawnText(
         renderRow(
           visible(

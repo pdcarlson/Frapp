@@ -52,16 +52,24 @@ export function readLiveRushCandidate(data: unknown): LiveRushCandidate | null {
 }
 
 /**
- * Whether the viewer may read the card's candidate. The rush routes need
- * `members:view` and nothing else (there are no rush permissions), so a card
- * shouldn't ask for anyone without it: for them it is a guaranteed 403, and
- * the card shows no tally. The reads also answer while Recruitment is off;
- * only the writes are refused then.
+ * Whether the card should read its candidate. The rush routes need
+ * `members:view` and nothing else (there are no rush permissions), so a
+ * viewer known not to hold it isn't asked for: for them it is a guaranteed
+ * 403, and the card shows no tally.
+ *
+ * Until the viewer's permissions are known (still loading, or that read
+ * failed) the card asks anyway. Every seeded role holds `members:view`, and a
+ * 403 resolves to no tally (`useRushCandidate`), so asking costs at most one
+ * request; waiting would leave a member's card without its tally, Vote and
+ * Extend bid for as long as the permissions read kept failing. The reads also
+ * answer while Recruitment is off; only the writes are refused then.
  */
 export function canReadCardRushCandidate(input: {
   canViewMembers: boolean;
+  /** Whether the viewer's permissions have been read. */
+  permissionsKnown: boolean;
 }): boolean {
-  return input.canViewMembers;
+  return !input.permissionsKnown || input.canViewMembers;
 }
 
 /**

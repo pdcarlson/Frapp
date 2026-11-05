@@ -1,8 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState } from "react-native";
-import { useFocusEffect } from "expo-router";
 import type { RushPayload } from "@repo/chat-core/cards";
-import { serverMessageOf } from "@repo/api-sdk";
 import {
   canReadCardRushCandidate,
   readLiveRushCandidate,
@@ -13,7 +9,7 @@ import {
   rushCardTally,
   useBidRushCandidate,
   useCurrentChapter,
-  usePermissionList,
+  useMyPermissions,
   useRushCandidate,
   useVoteRushCandidate,
 } from "@repo/hooks";
@@ -21,7 +17,6 @@ import { memberViewVocabulary, vocab } from "@repo/org-archetypes";
 import { can, isModuleEnabled } from "@repo/validation";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { StatusChip } from "@/components/status-chip";
-import { useConnection } from "@/lib/connection/use-connection";
 import { useFrappTheme } from "@/lib/theme";
 import { RushGlyph } from "./card-glyphs";
 import {
@@ -34,6 +29,7 @@ import {
   ChatCardShell,
   type ChatCardFrameProps,
 } from "./chat-card";
+import { useCardWrite } from "./use-card-write";
 
 /**
  * The chat rush card on mobile (#3383), web's
@@ -55,22 +51,27 @@ import {
  * chapter's own word for recruitment (`vocab`), "Rush" or "Intake" or
  * "Recruitment", as web's is.
  *
- * Mobile has no toast, so a refusal is a line on the card, as the task card's
- * is. A gate refusal is in a member's words (`rushCardGateRefusal`) and
- * withdraws the controls until the member comes back to the thread or the
- * app: pressing again would only fetch the same refusal. Any other refusal
- * relays the server's message and leaves them to retry. Neither write has an
- * outbox, so both are disabled while a write would be lost
- * (`useConnection().writeBlockedReason`).
+ * Mobile has no toast, so a refusal is a line on the card, with the task
+ * card's lifecycle (`useCardWrite`). A gate refusal is in a member's words
+ * (`rushCardGateRefusal`) and withdraws the controls until the member comes
+ * back to the thread or the app: pressing again would only fetch the same
+ * refusal. Any other refusal relays the server's message and leaves them to
+ * retry. Neither write has an outbox, so both are disabled while a write
+ * would be lost (`useConnection().writeBlockedReason`).
  */
 export function RushCard({
   payload,
   ...frame
 }: ChatCardFrameProps & { payload: RushPayload }) {
   const { tokens } = useFrappTheme();
-  const canViewMembers = can("members:view", usePermissionList());
+  // The query, not `usePermissionList()`: its `[]` can't tell "holds
+  // nothing" from "not read yet", and the read rule treats those apart.
+  const permissions = useMyPermissions().data?.permissions;
   const liveQuery = useRushCandidate(
-    canReadCardRushCandidate({ canViewMembers })
+    canReadCardRushCandidate({
+      canViewMembers: can("members:view", permissions),
+      permissionsKnown: Array.isArray(permissions),
+    })
       ? payload.candidate_id
       : undefined,
   );
@@ -85,60 +86,15 @@ export function RushCard({
     !isModuleEnabled(chapterQuery.data?.enabled_modules, "rush");
   const controls = rushCardControls({ live, recruitmentOff });
 
-  const { writeBlockedReason } = useConnection();
   const vote = useVoteRushCandidate();
   const bid = useBidRushCandidate();
-  const [refusal, setRefusal] = useState<{
-    text: string;
-    /** A gate's: the controls stay withdrawn rather than invite a retry. */
-    gate: boolean;
-  } | null>(null);
-  // Cleared when the member comes back, as the task card's is: an officer may
-  // have sorted the gate out since. Back to the thread is a navigation focus;
-  // back to the app with the thread still open is an AppState change. The
-  // listener is held only while there is a refusal to clear.
-  useFocusEffect(
-    useCallback(() => {
-      setRefusal(null);
-      return undefined;
-    }, []),
-  );
-  const hasRefusal = refusal !== null;
-  useEffect(() => {
-    if (!hasRefusal) return undefined;
-    const subscription = AppState.addEventListener("change", (next) => {
-      if (next === "active") setRefusal(null);
-    });
-    return () => subscription.remove();
-  }, [hasRefusal]);
-  const pending = vote.isPending || bid.isPending;
-  // The hooks' `isPending` reaches React a tick after the press, so two taps
-  // in one frame would both send; the ref is set before the first await.
-  const inFlight = useRef(false);
-
-  /** Runs one write; a refusal lands on the card. */
-  const act = async (write: () => Promise<unknown>, fallback: string) => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setRefusal(null);
-    try {
-      await write();
-    } catch (error) {
-      const gate = rushCardGateRefusal(error);
-      setRefusal(
-        gate
-          ? { text: gate, gate: true }
-          : { text: serverMessageOf(error) ?? fallback, gate: false },
-      );
-    } finally {
-      inFlight.current = false;
-    }
-  };
-
-  const blockedReason =
-    writeBlockedReason ?? (refusal?.gate ? refusal.text : null);
-  const disabled = !frame.isConfirmed || pending || blockedReason !== null;
-  const hint = blockedReason ?? undefined;
+  // The task card's refusal lifecycle (`useCardWrite`): a gate's withdraws the
+  // controls until the member comes back to the thread or the app.
+  const { refusal, act, disabled, hint } = useCardWrite({
+    gateRefusal: rushCardGateRefusal,
+    isConfirmed: frame.isConfirmed,
+    pending: vote.isPending || bid.isPending,
+  });
   // No tally before the read, and none for a viewer who can't read it: the
   // snapshot's "0 votes" would be wrong for any candidate anyone voted for.
   const tally = live

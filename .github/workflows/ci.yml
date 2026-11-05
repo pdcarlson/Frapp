@@ -179,9 +179,9 @@ jobs:
       - name: Shared api-sdk package tests
         run: npm run test -w @repo/api-sdk
 
-      # `vocab()` and `memberViewVocabulary()`, which web and mobile both name a
-      # chapter's recruitment, new-member and class words with. Hoisted workspace
-      # vitest, like api-sdk: no lockfile entry.
+      # `vocab()` and `memberViewVocabulary()`: web names a chapter's recruitment,
+      # new-member and class words with them, and mobile's rush card its
+      # recruitment word. Hoisted workspace vitest, like api-sdk: no lockfile entry.
       - name: Shared org-archetypes package tests
         run: npm run test -w @repo/org-archetypes
 

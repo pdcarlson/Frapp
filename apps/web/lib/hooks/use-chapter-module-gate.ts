@@ -7,8 +7,8 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 
 /**
  * The module gate for member-facing chrome: the sidebar, the drawer, the Ask
- * pill, the Settings tools list, chat's slash commands, and a poll card's
- * Vote (#3012).
+ * pill, the Settings tools list, chat's slash commands, a poll card's Vote
+ * (#3012), and a rush card's Vote and Extend bid (#3383).
  *
  * **It reads `enabled_modules` from `GET /v1/chapters/current`, not from
  * `useOrgConfig()`.** The config read (`GET /v1/chapters/:id/config`) is guarded

@@ -680,15 +680,25 @@ export type MemberViewVocabulary = {
  * archetype's defaults, then the chapter's stored words. Without it a chapter
  * with no stored words would lose its archetype's `/intake`. `undefined`
  * until the read answers.
+ *
+ * Only a non-blank stored word replaces the archetype's. The config PATCH
+ * accepts any string, so a cleared field can be stored as `""`; laid over the
+ * defaults as it is, that blank would reach `vocab()`, which falls back to the
+ * IFC word, and an NPHC chapter would read "Rush" instead of "Intake".
  */
 export function memberViewVocabulary(
   chapter: MemberViewVocabulary | undefined,
 ): VocabConfig | undefined {
   if (!chapter) return undefined;
+  const stored = Object.fromEntries(
+    Object.entries(chapter.vocabulary ?? {}).filter(
+      ([, word]) => typeof word === "string" && word.trim() !== "",
+    ),
+  );
   return {
     vocabulary: {
       ...VOCABULARY_DEFAULTS[getArchetype(chapter.org_archetype ?? "ifc").key],
-      ...(chapter.vocabulary ?? {}),
+      ...stored,
     },
   };
 }

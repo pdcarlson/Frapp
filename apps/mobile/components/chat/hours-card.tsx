@@ -5,7 +5,7 @@ import {
   canReadCardServiceEntry,
   readLiveServiceEntry,
   SERVICE_ENTRY_CARD_LABELS,
-  usePermissionList,
+  useMyPermissions,
   useServiceEntry,
   type ServiceEntryStatus,
 } from "@repo/hooks";
@@ -45,11 +45,18 @@ export function HoursCard({
   const { tokens } = useFrappTheme();
   // `!!viewerId`: a missing viewer must never match a missing member id.
   const isOwner = !!frame.viewerId && frame.viewerId === payload.user_id;
-  const permissions = usePermissionList();
+  // The query, not `usePermissionList()`: its `[]` can't tell "holds
+  // nothing" from "not read yet", and the read rule treats those apart.
+  const permissions = useMyPermissions().data?.permissions;
   const canApprove = can("service:approve", permissions);
   const canViewMembers = can("members:view", permissions);
   const entryQuery = useServiceEntry(
-    canReadCardServiceEntry({ isOwner, canApprove, canViewMembers })
+    canReadCardServiceEntry({
+      isOwner,
+      canApprove,
+      canViewMembers,
+      permissionsKnown: Array.isArray(permissions),
+    })
       ? payload.entry_id
       : "",
   );

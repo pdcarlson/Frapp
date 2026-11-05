@@ -1,8 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { statusOf } from "@repo/api-sdk";
 import type { components } from "@repo/api-sdk";
+import { isCardReadMiss } from "./card-read-miss";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export const rushKeys = {
@@ -19,10 +19,12 @@ export type RushCandidateView = components["schemas"]["RushCandidateViewDto"];
  * `members:view`; a caller passes `undefined` when the viewer lacks it, and the
  * hook asks nothing.
  *
- * A 403 or 404 resolves to `null` rather than throwing, as `useServiceEntry`
- * does: a candidate since deleted, or a permission since lost, then clears the
- * tally instead of keeping the last read, and an expected miss is neither
- * retried nor reported. Any other failure still throws.
+ * A 404, or a 403 from the route's own checks, resolves to `null` rather than
+ * throwing, as `useServiceEntry` does (`isCardReadMiss`): a candidate since
+ * deleted, or a permission since lost, then clears the tally instead of
+ * keeping the last read, and an expected miss is neither retried nor
+ * reported. Any other failure still throws, including `ChapterGuard`'s
+ * `chapter.context.*` 403s, which clear by themselves and keep their retry.
  */
 export function useRushCandidate(id: string | undefined) {
   const client = useFrappClient();
@@ -34,8 +36,7 @@ export function useRushCandidate(id: string | undefined) {
         params: { path: { id: id as string } },
       });
       if (error) {
-        const status = statusOf(error);
-        if (status === 403 || status === 404) return null;
+        if (isCardReadMiss(error)) return null;
         throw error;
       }
       return data;

@@ -77,6 +77,21 @@ describe("memberViewVocabulary", () => {
     ).toBe("Rush");
   });
 
+  it("keeps the archetype's word under a blank or non-string stored one", () => {
+    // The config PATCH takes any string, so a cleared field is stored as "".
+    for (const stored of ["", "   ", null, 7]) {
+      expect(
+        vocab(
+          "recruitment",
+          memberViewVocabulary({
+            org_archetype: "nphc",
+            vocabulary: { recruitment: stored },
+          }),
+        ),
+      ).toBe("Intake");
+    }
+  });
+
   it("says nothing until the read answers", () => {
     expect(memberViewVocabulary(undefined)).toBeUndefined();
   });

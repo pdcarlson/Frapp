@@ -95,6 +95,21 @@ describe("useServiceEntry", () => {
     expect(result.current.data).toBeUndefined();
   });
 
+  it("throws a chapter-context 403, which clears by itself, so it keeps its retry", async () => {
+    const GET = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: {
+        statusCode: 403,
+        code: "chapter.context.mismatch",
+        message: "Chapter context mismatch",
+      },
+    });
+    const { result } = renderHook(() => useServiceEntry("entry-1"), {
+      wrapper: createWrapper(queryClient, { GET }),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
   it("refreshes when an officer reviews the entry from any screen", async () => {
     let status = "PENDING";
     const GET = vi.fn(async () => ({

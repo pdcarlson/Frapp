@@ -20,7 +20,10 @@ const { mockOffline, state, voteMutate, bidMutate, toast } = vi.hoisted(
       live: undefined as unknown,
       liveError: false,
       candidateIds: [] as (string | undefined)[],
-      permissions: ["members:view"] as string[],
+      /** `undefined`: the permissions read hasn't answered (loading, or failed). */
+      permissions: ["members:view"] as string[] | undefined,
+      votePending: false,
+      bidPending: false,
     },
     voteMutate: vi.fn(),
     bidMutate: vi.fn(),
@@ -44,8 +47,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
       isError: !!id && state.liveError,
     };
   },
-  useVoteRushCandidate: () => ({ mutate: voteMutate, isPending: false }),
-  useBidRushCandidate: () => ({ mutate: bidMutate, isPending: false }),
+  useVoteRushCandidate: () => ({
+    mutate: voteMutate,
+    isPending: state.votePending,
+  }),
+  useBidRushCandidate: () => ({
+    mutate: bidMutate,
+    isPending: state.bidPending,
+  }),
   // The member view, which any member can read (#2957): the card's word, the
   // Recruitment gate and the subscription gate all come from here, never from
   // the officer-only config.
@@ -54,7 +63,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     throw new Error("the rush card must not read the officer-only config");
   },
   useMyPermissions: () => ({
-    data: { permissions: state.permissions },
+    data: state.permissions ? { permissions: state.permissions } : undefined,
     isPending: false,
     isError: false,
   }),
@@ -149,6 +158,8 @@ describe("RushCard", () => {
     state.liveError = false;
     state.candidateIds = [];
     state.permissions = ["members:view"];
+    state.votePending = false;
+    state.bidPending = false;
     memberView();
   });
 
@@ -212,6 +223,32 @@ describe("RushCard", () => {
 
     expect(state.candidateIds.every((id) => id === undefined)).toBe(true);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("asks for the candidate while the permissions read hasn't answered", () => {
+    // Every seeded role holds members:view, and a failed permissions read
+    // must not leave a member's card without its tally and controls.
+    state.permissions = undefined;
+    render(<RushCard message={makeMessage()} isConfirmed />);
+
+    expect(state.candidateIds).toContain("cand-1");
+    expect(screen.getByRole("button", { name: "Vote" })).toBeEnabled();
+  });
+
+  it("titles the card with the candidate's live name, not the snapshot's", () => {
+    state.live = liveCandidate({ display_name: "Jane Doe-Ruiz" });
+    render(<RushCard message={makeMessage()} isConfirmed />);
+    expect(screen.getByText("Jane Doe-Ruiz")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["a vote", "votePending"],
+    ["a bid", "bidPending"],
+  ] as const)("can't be pressed while %s is pending", (_name, flag) => {
+    state[flag] = true;
+    render(<RushCard message={makeMessage()} isConfirmed />);
+    expect(screen.getByRole("button", { name: "Vote" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Extend bid" })).toBeDisabled();
   });
 
   it("falls back to content when the payload is missing", () => {
@@ -283,6 +320,8 @@ describe("RushCard subscription gating", () => {
     state.live = liveCandidate();
     state.liveError = false;
     state.permissions = ["members:view"];
+    state.votePending = false;
+    state.bidPending = false;
   });
 
   it("disables both writes and explains why on a lapsed chapter", () => {
