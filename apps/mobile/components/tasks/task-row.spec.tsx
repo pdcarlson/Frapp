@@ -26,8 +26,8 @@ import type { TaskRowModel } from "@/lib/tasks/board";
 /**
  * These pin the four rules that are cheapest to break by copying a neighbouring
  * row component, and one of them is a literal acceptance criterion of #995:
- * an overdue date is `semantic.destructive`, never the mention red that
- * `foundations.md:67` reserves for direct address.
+ * an overdue date is `semantic.destructiveText` (danger's AA lift), never the
+ * mention red that `foundations.md:67` reserves for direct address.
  */
 
 const NOW = new Date(2026, 7, 17, 12, 0, 0, 0);
@@ -93,7 +93,7 @@ function styleOfText(tree: ReactTestRenderer, needle: string) {
 }
 
 describe("TaskRow — the overdue colour", () => {
-  it("draws an urgent due date in semantic.destructive, not the mention red", () => {
+  it("draws an urgent due date in semantic.destructiveText, not the mention red", () => {
     const tree = render(
       <TaskRow
         row={row({ dueDate: "2026-08-15", displayStatus: "OVERDUE", isOverdue: true })}
@@ -103,7 +103,7 @@ describe("TaskRow — the overdue colour", () => {
     );
 
     const style = styleOfText(tree, "Overdue by");
-    expect(style.color).toBe(signetDarkTokens.color.semantic.destructive);
+    expect(style.color).toBe(signetDarkTokens.color.semantic.destructiveText);
     expect(style.color).not.toBe(signetDarkTokens.color.semantic.mention);
   });
 

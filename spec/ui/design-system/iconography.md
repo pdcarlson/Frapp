@@ -191,8 +191,10 @@ cluster replaces its own as it rebuilds; there is no separate icon migration.
 The More hub's leading row glyphs (s09, #1048) live in
 `apps/mobile/components/more/more-glyphs.tsx` at 20px (§2's list-row size)
 and draw the shared nav set (§1.1), so one intent draws one shape on both
-surfaces. Member rows are painted in the chapter accent; the Admin rows in
-`text.muted`.
+surfaces. Every row's glyph is `text.mutedForeground`, the rest hue the web
+sidebar's glyphs take (§1: the accent marks the active item, and a hub row is
+never active). Changed 2026-11-05; member rows were painted in the chapter
+accent and Admin rows in `text.muted`.
 
 | Semantic intent | Glyph (nav set key, Phosphor name) | Web counterpart |
 |---|---|---|

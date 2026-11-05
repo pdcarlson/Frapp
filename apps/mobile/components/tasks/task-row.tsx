@@ -3,7 +3,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
-import { PressableRow } from "@/components/list-section";
+import { gutterBleed, PressableRow } from "@/components/list-section";
 import { AccentChip } from "@/components/status-chip";
 import {
   formatDoneSubtitle,
@@ -16,8 +16,9 @@ import type { TaskRowModel } from "@/lib/tasks/board";
 /**
  * One row of the s08 board — `canvas-screens.dc.html:282-324`.
  *
- * A card with a leading checkbox, a title, a due/done subtitle, and an optional
- * trailing points chip. The finished row is drawn at `opacity:.62` with a
+ * A flush row on the screen background, split from the one above by a
+ * hairline, with a leading checkbox, a title, a due/done subtitle, and an
+ * optional trailing points chip. The finished row is drawn at `opacity:.62` with a
  * line-through title and a box filled with the chapter accent (Canvas draws
  * it gold, the house accent).
  *
@@ -175,6 +176,10 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       // bordered card per task, which stacked eight boxes down the tab.
       paddingVertical: tokens.spacing.md,
       minHeight: tokens.touch.minimum,
+      // Square and hairline-split like the Directory's member rows, so it
+      // bleeds the same way: content on the gutter line, press feedback clear
+      // of it.
+      ...gutterBleed(tokens, { rounded: false }),
     },
     rowDivider: {
       borderTopWidth: StyleSheet.hairlineWidth,
@@ -228,7 +233,8 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       color: tokens.color.text.mutedForeground,
     },
     subtitleUrgent: {
-      color: tokens.color.semantic.destructive,
+      // Danger as text takes the lift, as web's overdue label does.
+      color: tokens.color.semantic.destructiveText,
     },
     subtitleDone: {
       color: tokens.color.text.muted,

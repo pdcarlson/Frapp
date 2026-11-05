@@ -37,7 +37,7 @@ const EMPHASIS_FILL_ALPHA = 0.16;
 const NEUTRAL_FILL = "rgba(255,255,255,0.06)";
 
 export type MoreGlyphProps = {
-  /** The stroke hue: the chapter accent, or `text.muted` for a neutral row. */
+  /** The stroke hue: `text.mutedForeground` on every hub row (iconography §1). */
   color: string;
   /** `true` draws §1's neutral fill rather than the stroke hue's tint. */
   neutral?: boolean;
@@ -114,8 +114,8 @@ export function NotificationsGlyph(props: MoreGlyphProps) {
  * A hub row's glyph. These draw the shared nav set (`@repo/theme/nav-glyphs`),
  * the same shapes as the web sidebar, so Study hours or Settings looks the same
  * in the More hub as in the web nav. The silhouette is always the glyph's own
- * hue at 20%; a row's emphasis comes from `color` alone (the chapter accent for
- * member rows, `text.muted` for Admin).
+ * hue at 20%; a row's hue comes from `color` alone (`text.mutedForeground` on
+ * every hub row).
  */
 export type HubGlyphProps = {
   color: string;

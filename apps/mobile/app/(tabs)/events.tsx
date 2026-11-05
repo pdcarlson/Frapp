@@ -4,7 +4,11 @@ import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useActiveChapterId, useEvents, useNowDate } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { PressableRow, SectionHeader } from "@/components/list-section";
+import {
+  gutterBleed,
+  PressableRow,
+  SectionHeader,
+} from "@/components/list-section";
 import { ScreenShell } from "@/components/screen-shell";
 import {
   EmptyState,
@@ -21,7 +25,11 @@ import {
   formatEventDateBlock,
   resolveCheckInWindow,
 } from "@/lib/events/format";
-import { selectEventRows, type EventRow } from "@/lib/events/select";
+import {
+  groupByWeek,
+  selectEventRows,
+  type EventRow,
+} from "@/lib/events/select";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -100,8 +108,9 @@ export default function EventsScreen() {
     }
 
     // The next event is the one card on the page; everything after it is a
-    // flush row, grouped into this week and later, as web's Events list draws
-    // its rows (owner pick 2026-11-05, `spec/ui/mobile/screens.md` s06).
+    // flush row, as web's Events list draws its rows. Mobile adds the This
+    // week / Later split the Tasks tab already uses (owner pick 2026-11-05,
+    // recorded in `spec/ui/mobile/screens.md` s06).
     const [next, ...rest] = events;
     const { thisWeek, later } = groupByWeek(rest, now);
 
@@ -220,22 +229,6 @@ function EventRowCard({
   );
 }
 
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-
-/** Splits the rows after the card into the coming seven days and the rest. */
-export function groupByWeek(
-  events: EventRow[],
-  now: Date,
-): { thisWeek: EventRow[]; later: EventRow[] } {
-  const horizon = now.getTime() + WEEK_MS;
-  const thisWeek: EventRow[] = [];
-  const later: EventRow[] = [];
-  for (const event of events) {
-    (Date.parse(event.start_time) < horizon ? thisWeek : later).push(event);
-  }
-  return { thisWeek, later };
-}
-
 function EventGroup({
   label,
   events,
@@ -344,6 +337,10 @@ function createStyles(tokens: SignetTokens, accent: string) {
       gap: tokens.spacing.md,
       minHeight: tokens.touch.minimum,
       paddingVertical: tokens.spacing.md,
+      // Square and hairline-split like the Directory's member rows, so it
+      // bleeds the same way: content on the gutter line, press feedback clear
+      // of it.
+      ...gutterBleed(tokens, { rounded: false }),
     },
     flatDivider: {
       borderTopWidth: StyleSheet.hairlineWidth,

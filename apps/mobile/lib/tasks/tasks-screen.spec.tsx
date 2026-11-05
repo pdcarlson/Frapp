@@ -401,3 +401,12 @@ describe("Tasks board's New task sheet across chapters", () => {
     act(() => tree.unmount());
   });
 });
+
+describe("Tasks board rows", () => {
+  // Flush rows split by hairlines: the screen tells each group's first row it
+  // is first, so no hairline floats above a group.
+  it("marks only the first row of a group as first", () => {
+    const tree = render();
+    expect(rows(tree).map((r) => r.props.isFirst)).toEqual([true, false]);
+  });
+});

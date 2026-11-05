@@ -88,11 +88,12 @@ type StateBlockProps = {
  * half opacity ({@link SkeletonPulse}), still under reduced motion, and paused
  * while their screen is out of view.
  *
- * The card takes the tone of what it turns into, so a screen doesn't change
- * tone when its content lands: `card` (the default, as the empty and error
- * cards) where the skeleton stands in for cards (task rows, event cards, the
- * Ask answer), `list` (`surface1`) where it stands in for a grouped list
- * (`ListSection`).
+ * The card takes the shape of what it turns into, so a screen doesn't change
+ * when its content lands. Both tones sit on `card`, the fill of the empty and
+ * error cards and of a grouped list: `card` (the default) where the skeleton
+ * stands in for cards (the next-event card, the Ask answer) or a flush list,
+ * `list` where it stands in for a `ListSection`, whose smaller `radius.card`
+ * corners it takes.
  */
 export function SkeletonLines({
   lines = 3,
@@ -506,7 +507,7 @@ function createStyles(tokens: SignetTokens) {
     // A skeleton that turns into a `ListSection` takes its tone
     // (`SkeletonLines`'s `tone="list"`).
     listCard: {
-      backgroundColor: tokens.color.surface.surface1,
+      borderRadius: tokens.radius.card,
     },
     errorCard: {
       // The sanctioned semantic border, and the only one in the family.

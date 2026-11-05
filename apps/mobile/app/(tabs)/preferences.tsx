@@ -784,8 +784,8 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.input,
-      // The card's own surface1, so Settings has one container tone; the
-      // hairline input border marks the field.
+      // The input step, one below the `card` it sits on, with the input
+      // border marking the field.
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.sm,

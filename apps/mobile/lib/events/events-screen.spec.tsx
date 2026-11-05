@@ -274,4 +274,24 @@ describe("Events after the first", () => {
       signetDarkTokens.color.semantic.destructiveText,
     );
   });
+
+  it("splits rows by hairlines, none above a group's first, and bleeds into the gutter", () => {
+    events = [make("a", 0), make("b", 2), make("c", 3)];
+    const tree = render();
+    const pressableOf = (name: string) =>
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === `Open ${name}`,
+      );
+    const restingOf = (name: string) =>
+      StyleSheet.flatten(pressableOf(name).props.style({ pressed: false }));
+    const first = restingOf("Event b");
+    expect(first.borderTopWidth).toBeUndefined();
+    expect(restingOf("Event c").borderTopWidth).toBeGreaterThan(0);
+    // The row pads by `sm` and its clip pulls that back into the gutter.
+    expect(first.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
+    const clip = StyleSheet.flatten(pressableOf("Event b").parent!.props.style);
+    expect(clip.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
+  });
 });

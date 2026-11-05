@@ -155,7 +155,9 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
           <EventsGlyph className="h-4 w-4" /> Event
         </div>
         {payload.is_mandatory ? (
-          <Badge variant="default">Mandatory</Badge>
+          // A status, so the danger badge, never the accent (components.md §5),
+          // as the Events list and detail sheet draw it.
+          <Badge variant="destructive">Mandatory</Badge>
         ) : null}
       </div>
       <p className="mt-2 text-base font-bold">{payload.name}</p>

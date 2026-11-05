@@ -104,9 +104,9 @@ export function listRowHint(
  * can take the hook directly.
  *
  * The default lift is `surface.card`: a row on the screen background rises to
- * it, as does the More profile card on `surface1`. A row that sits on a
- * `surface.card` fill (a `ListRow` in its `ListSection`, or an event card)
- * passes `onCard` and lifts to `surface.popover` instead: a card lifted to its
+ * it. A row that sits on a `surface.card` fill (a `ListRow` in its
+ * `ListSection`, the More profile card, or an event card) passes `onCard` and
+ * lifts to `surface.popover` instead: a card lifted to its
  * own colour shows nothing.
  */
 export type PressFeedback = {
