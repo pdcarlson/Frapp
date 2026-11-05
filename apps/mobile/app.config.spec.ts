@@ -80,6 +80,8 @@ function loadConfig() {
     }) => void;
     isAskEnabledValue: (raw: unknown) => boolean;
     PRODUCTION_ASK_ENABLED_ERROR: string;
+    publicValueProfile: (env: NodeJS.Dict<string>) => string | undefined;
+    PRODUCTION_UPDATE_SENTRY_DSN_ERROR: string;
   };
 }
 
@@ -124,6 +126,7 @@ const productionPublicEnv = {
 const restoredEnvKeys = [
   "EAS_BUILD_PROFILE",
   "EAS_BUILD_PLATFORM",
+  "FRAPP_EAS_UPDATE_PROFILE",
   "GOOGLE_SERVICES_JSON",
   "EXPO_PUBLIC_API_URL",
   "EXPO_PUBLIC_SUPABASE_URL",
@@ -923,6 +926,119 @@ describe("expo-updates, installed dormant (#2526)", () => {
   });
 });
 
+// `npm run eas -- update` (scripts/eas-update.mjs) sets FRAPP_EAS_UPDATE_PROFILE
+// to the channel's build profile, because `eas update` sets no EAS_BUILD_PROFILE
+// and would otherwise skip every fence on public values (#3472).
+describe("an OTA update through the guard (#3472)", () => {
+  const productionUpdateEnv = {
+    ...productionPublicEnv,
+    EXPO_PUBLIC_SENTRY_DSN: "https://public@o0.ingest.sentry.io/0",
+    FRAPP_EAS_UPDATE_PROFILE: "production",
+  };
+
+  it("takes the build's profile first, then the update's", () => {
+    const { publicValueProfile } = loadConfig();
+    expect(publicValueProfile({})).toBeUndefined();
+    expect(publicValueProfile({ FRAPP_EAS_UPDATE_PROFILE: "production" })).toBe(
+      "production",
+    );
+    expect(
+      publicValueProfile({
+        EAS_BUILD_PROFILE: "preview",
+        FRAPP_EAS_UPDATE_PROFILE: "production",
+      }),
+    ).toBe("preview");
+  });
+
+  it("passes with production values, and needs no google-services file", () => {
+    const { applyMobileConfig } = loadConfig();
+    const result = applyMobileConfig(androidConfig, {
+      env: { ...productionUpdateEnv, FRAPP_EAS_UPDATE_GIT_SHA: "abc123" },
+      existsSync: missing,
+    });
+    expect(
+      (result.android as { googleServicesFile?: string }).googleServicesFile,
+    ).toBeUndefined();
+    expect((result.extra as { gitSha?: string }).gitSha).toBe("abc123");
+  });
+
+  it("runs the production API fence, so a bundle can't call localhost", () => {
+    const { applyMobileConfig, PRODUCTION_API_URL_ERROR } = loadConfig();
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: { ...productionUpdateEnv, EXPO_PUBLIC_API_URL: undefined },
+        existsSync: missing,
+      }),
+    ).toThrow(PRODUCTION_API_URL_ERROR);
+  });
+
+  it("runs the production Supabase fences", () => {
+    const { applyMobileConfig, PRODUCTION_SUPABASE_URL_ERROR, PRODUCTION_SUPABASE_KEY_ERROR } =
+      loadConfig();
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: { ...productionUpdateEnv, EXPO_PUBLIC_SUPABASE_URL: easStagingSupabaseOrigin },
+        existsSync: missing,
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_URL_ERROR);
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: { ...productionUpdateEnv, EXPO_PUBLIC_SUPABASE_ANON_KEY: LEGACY_ANON_JWT_FIXTURE },
+        existsSync: missing,
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_KEY_ERROR);
+  });
+
+  it("runs the Ask fence", () => {
+    const { applyMobileConfig, PRODUCTION_ASK_ENABLED_ERROR } = loadConfig();
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: { ...productionUpdateEnv, EXPO_PUBLIC_ASK_ENABLED: "1" },
+        existsSync: missing,
+      }),
+    ).toThrow(PRODUCTION_ASK_ENABLED_ERROR);
+  });
+
+  it("refuses a production update with no Sentry DSN, which a Secret EAS variable never supplies locally", () => {
+    const { applyMobileConfig, PRODUCTION_UPDATE_SENTRY_DSN_ERROR } = loadConfig();
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: { ...productionUpdateEnv, EXPO_PUBLIC_SENTRY_DSN: undefined },
+        existsSync: missing,
+      }),
+    ).toThrow(PRODUCTION_UPDATE_SENTRY_DSN_ERROR);
+    // Builds keep their own rules: EAS loads Secret variables for them, even
+    // when the shell still carries the update marker from an earlier publish.
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: {
+          ...productionPublicEnv,
+          EAS_BUILD_PROFILE: "production",
+          EAS_BUILD_PLATFORM: "ios",
+          FRAPP_EAS_UPDATE_PROFILE: "production",
+        },
+        existsSync: missing,
+      }),
+    ).not.toThrow();
+  });
+
+  it("holds a preview update to the client-key allowlist, not the production fences", () => {
+    const { applyMobileConfig, EAS_SUPABASE_CLIENT_KEY_ERROR } = loadConfig();
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: { FRAPP_EAS_UPDATE_PROFILE: "preview", EXPO_PUBLIC_API_URL: "https://api-staging.frapp.live" },
+        existsSync: missing,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: { FRAPP_EAS_UPDATE_PROFILE: "preview", EXPO_PUBLIC_SUPABASE_ANON_KEY: JWT_SECRET_FIXTURE },
+        existsSync: missing,
+      }),
+    ).toThrow(EAS_SUPABASE_CLIENT_KEY_ERROR);
+  });
+});
+
 describe("PRODUCTION_SUPABASE_ORIGIN", () => {
   it("is the frapp-prod origin from .github/environments.json", () => {
     const { PRODUCTION_SUPABASE_ORIGIN } = loadConfig();
@@ -1139,6 +1255,8 @@ describe("iOS privacy manifest (#2294)", () => {
     // second restore policy in this file.
     delete process.env.EAS_BUILD_PROFILE;
     delete process.env.EAS_BUILD_PLATFORM;
+    // The update guard's profile turns the same fences on (#3472).
+    delete process.env.FRAPP_EAS_UPDATE_PROFILE;
     return getConfig(path.dirname(fileURLToPath(import.meta.url)), {
       skipSDKVersionRequirement: true,
       isModdedConfig: true,

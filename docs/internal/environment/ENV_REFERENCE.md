@@ -486,9 +486,11 @@ is unavailable in that state and the sign-in screen says so.
 > which also refuses the legacy JWT secret pasted from the wrong field,
 > since the binary goes to testers or the store. An unset key still builds on `preview`
 > and `development`. A run with no EAS profile keeps only the secret-key check: a local
-> `expo start` or CI prebuild, where placeholder values still run, and also `eas update`,
-> whose bundle is published over the air, which is why no update may be published before
-> its pipeline sets a profile ([`spec/environments/README.md` § Mobile (EAS)](../../../spec/environments/README.md#mobile-eas)).
+> `expo start` or CI prebuild, where placeholder values still run, and also a bare `eas update`.
+> `npm run eas -- update` sets `FRAPP_EAS_UPDATE_PROFILE` to the channel's profile, so an update
+> through it gets the same fences on public values as a build (not the google-services check,
+> which is native-only), and a production update must carry the Sentry DSN too
+> ([`mobile.md` § 6.7](../../ops/deployment/mobile.md#67-ota-updates-by-hand)).
 
 `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
 CI, a local `expo start`, and every Expo Go session run without it, and none of
