@@ -255,13 +255,13 @@ Officers get one **Set up your chapter** list instead of an officer half on ever
 
 | Line | Shown to holders of | Module | Done when |
 | --- | --- | --- | --- |
-| Invite members | `members:invite` | always on | the roster has someone besides the officer |
+| Invite members | `members:invite` | always on | the roster has someone besides the officer, or an invite is out |
 | Schedule the first event | `events:create` | `events` | the chapter has an event |
-| Add a study zone | `geofences:manage` | `hours` | the chapter has a study zone |
+| Add a study zone | `geofences:manage` | `geofences` | the chapter has a study zone |
 | Upload the bylaws | `chapter_docs:upload` | `documents` | the library has a document |
-| Send the first dues | `billing:manage` | `dues` | the chapter has an invoice |
+| Send the first dues | `billing:manage` and `billing:view` (only `view` reads the whole chapter's invoices) | `dues` | the chapter has an invoice |
 
-A line shows only to an officer who can do it, and only while its module is on (switching a module on is the ops nudge's job, above). The list draws nothing until every read it needs has loaded, so it never flashes in half-checked, and it goes away for good once every line it shows is done. An officer can hide it sooner; like a nudge, the hide is stored per user per chapter, as `setup-checklist` in `members.dismissed_ops_nudges`. The rule is shared by both clients (`useChapterSetupChecklist` in `@repo/hooks`); mobile chat home does not draw it yet.
+A line shows only to an officer who can do it, and only while the module the server gates its action on is on (switching a module on is the ops nudge's job, above). The list draws nothing until every read it needs has loaded, so it never flashes in half-checked, and a read that fails leaves it undrawn rather than guessing a line. It is worked out from live counts, so it goes away while every line it shows is done and comes back if one comes undone, say the only event is deleted or a module is switched on. An officer can hide it for good; like a nudge, the hide is stored per user per chapter, as `setup-checklist` in `members.dismissed_ops_nudges`. The rule is shared by both clients (`useChapterSetupChecklist` in `@repo/hooks`); mobile chat home does not draw it yet.
 
 ## Module disabling behavior
 

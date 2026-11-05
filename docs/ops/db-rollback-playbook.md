@@ -784,8 +784,10 @@ After any rollback event:
   column, row, policy, or function is touched, so nothing that predates the migration
   can be lost and rolling back cannot corrupt anything. What it removes is the memory of
   which suggestions an officer has already closed: every eligible chapter's officers see
-  the Dues nudge again. Annoying, not damaging, and no data outside this column depends
-  on it.
+  the Dues nudge again, and the "Set up your chapter" list returns for every officer who
+  hid it (its hide is the `setup-checklist` entry in the same column), with the hide
+  failing until the column is back. Annoying, not damaging, and no data outside this
+  column depends on it.
 * **Data caveat**: the column is the *only* record of a dismissal — there is no second
   copy and no way to recompute it, because "this officer chose to close this card" is
   not derivable from any other state. Dropping it is therefore lossy in a way the
@@ -796,8 +798,8 @@ After any rollback event:
   FROM members WHERE dismissed_ops_nudges <> '{}';` — that predicate keeps the snapshot
   to the rows that actually carry a choice. Restore with an `UPDATE ... FROM` on `id`.
   The loss is one UI preference per officer, so prefer simply not rolling this back:
-  hiding the card is a web-side change (stop rendering `OpsSetupNudge`) that needs no
-  migration at all.
+  hiding the cards is a web-side change (stop rendering `OpsSetupNudge` and
+  `SetupChecklistSection`) that needs no migration at all.
 
 ## Rollback the chat-archive upload quota
 

@@ -54,13 +54,23 @@ describe("selectSetupChecklist", () => {
   it("shows only the lines the viewer's permissions allow", () => {
     // The seeded Treasurer: billing and events, no invites, zones or docs.
     const list = select({
-      permissions: ["members:view", "billing:manage", "events:create"],
+      permissions: [
+        "members:view",
+        "billing:view",
+        "billing:manage",
+        "events:create",
+      ],
     });
     expect(list?.lines.map((l) => l.key)).toEqual(["event", "dues"]);
   });
 
+  it("needs billing:view for dues, since only it reads the chapter's invoices", () => {
+    const list = select({ permissions: ["billing:manage", "events:create"] });
+    expect(list?.lines.map((l) => l.key)).toEqual(["event"]);
+  });
+
   it("leaves out lines for modules the chapter has turned off", () => {
-    const list = select({ enabledModules: { dues: false, hours: false } });
+    const list = select({ enabledModules: { dues: false, geofences: false } });
     expect(list?.lines.map((l) => l.key)).toEqual([
       "invite",
       "event",
@@ -104,6 +114,15 @@ describe("selectSetupChecklist", () => {
 });
 
 describe("eligibleSetupLines", () => {
+  it("gates study zones on the geofences module the server checks, not hours", () => {
+    expect(eligibleSetupLines(PRESIDENT, { hours: false })).toContain(
+      "study-zone",
+    );
+    expect(eligibleSetupLines(PRESIDENT, { geofences: false })).not.toContain(
+      "study-zone",
+    );
+  });
+
   it("is empty until permissions and modules have loaded", () => {
     expect(eligibleSetupLines(undefined, ALL_ON)).toEqual([]);
     expect(eligibleSetupLines(PRESIDENT, undefined)).toEqual([]);

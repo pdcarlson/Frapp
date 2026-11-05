@@ -4,10 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { reads, enabledCalls, mutate } = vi.hoisted(() => ({
   reads: {
+    chapterId: "ch-1",
     permissions: ["*"] as string[] | undefined,
     modules: {} as Record<string, boolean> | undefined,
-    dismissed: [] as string[],
-    members: [{}, {}] as unknown[],
+    dismissed: {} as Record<string, string[]>,
+    roster: [{}, {}] as unknown[],
+    invites: [] as unknown[],
     events: [] as unknown[],
     zones: [] as unknown[],
     documents: [] as unknown[],
@@ -17,7 +19,9 @@ const { reads, enabledCalls, mutate } = vi.hoisted(() => ({
   mutate: vi.fn(),
 }));
 
-vi.mock("./use-frapp-client", () => ({ useActiveChapterId: () => "ch-1" }));
+vi.mock("./use-frapp-client", () => ({
+  useActiveChapterId: () => reads.chapterId,
+}));
 vi.mock("./use-user", () => ({
   useMyPermissions: () => ({
     data: reads.permissions ? { permissions: reads.permissions } : undefined,
@@ -28,15 +32,21 @@ vi.mock("./use-chapters", () => ({
     data: reads.modules ? { enabled_modules: reads.modules } : undefined,
   }),
   useAccessibleChapters: () => ({
-    data: [{ chapter_id: "ch-1", dismissed_ops_nudges: reads.dismissed }],
+    data: ["ch-1", "ch-2"].map((id) => ({
+      chapter_id: id,
+      dismissed_ops_nudges: reads.dismissed[id] ?? [],
+    })),
   }),
 }));
 vi.mock("./use-members", () => ({
-  useMembers: (o: { enabled?: boolean }) => {
-    enabledCalls.members = o.enabled;
-    return { data: o.enabled ? reads.members : undefined };
-  },
+  useChapterRoster: () => ({ data: reads.roster }),
   useDismissOpsNudge: () => ({ mutate }),
+}));
+vi.mock("./use-invites", () => ({
+  useInvites: (o: { enabled?: boolean }) => {
+    enabledCalls.invites = o.enabled;
+    return { data: o.enabled ? reads.invites : undefined };
+  },
 }));
 vi.mock("./use-events", () => ({
   useEvents: (o: { enabled?: boolean }) => {
@@ -67,10 +77,12 @@ vi.mock("./use-invoices", () => ({
 const { useChapterSetupChecklist } = await import("./setup-checklist");
 
 beforeEach(() => {
+  reads.chapterId = "ch-1";
   reads.permissions = ["*"];
   reads.modules = {};
-  reads.dismissed = [];
-  reads.members = [{}, {}];
+  reads.dismissed = {};
+  reads.roster = [{}, {}];
+  reads.invites = [];
   reads.events = [];
   reads.zones = [];
   reads.documents = [];
@@ -80,7 +92,7 @@ beforeEach(() => {
 });
 
 describe("useChapterSetupChecklist", () => {
-  it("counts each line from its own list", () => {
+  it("counts each line from its own list, invites from the roster", () => {
     reads.events = [{}];
     const { result } = renderHook(() => useChapterSetupChecklist());
     expect(result.current.checklist?.lines.map((l) => [l.key, l.done])).toEqual(
@@ -94,6 +106,21 @@ describe("useChapterSetupChecklist", () => {
     );
   });
 
+  it("counts a sent invite before anyone has joined", () => {
+    reads.roster = [{}];
+    const { result, rerender } = renderHook(() => useChapterSetupChecklist());
+    expect(result.current.checklist?.lines[0]).toMatchObject({
+      key: "invite",
+      done: false,
+    });
+    reads.invites = [{}];
+    rerender();
+    expect(result.current.checklist?.lines[0]).toMatchObject({
+      key: "invite",
+      done: true,
+    });
+  });
+
   it("reads the whole chapter's invoices, not just the officer's own", () => {
     renderHook(() => useChapterSetupChecklist());
     expect(enabledCalls.invoicesForOneUser).toBe(false);
@@ -103,7 +130,7 @@ describe("useChapterSetupChecklist", () => {
     reads.permissions = ["members:view", "events:create"];
     const { result } = renderHook(() => useChapterSetupChecklist());
     expect(enabledCalls).toMatchObject({
-      members: false,
+      invites: false,
       events: true,
       zones: false,
       documents: false,
@@ -114,10 +141,17 @@ describe("useChapterSetupChecklist", () => {
     ]);
   });
 
-  it("honours a hide stored on the membership", () => {
-    reads.dismissed = ["setup-checklist"];
+  it("honours a hide stored on the membership, and reads nothing for it", () => {
+    reads.dismissed = { "ch-1": ["setup-checklist"] };
     const { result } = renderHook(() => useChapterSetupChecklist());
     expect(result.current.checklist).toBeNull();
+    expect(enabledCalls).toMatchObject({
+      invites: false,
+      events: false,
+      zones: false,
+      documents: false,
+      invoices: false,
+    });
   });
 
   it("hides at once and stores the hide for next time", () => {
@@ -129,5 +163,13 @@ describe("useChapterSetupChecklist", () => {
       { module_key: "setup-checklist" },
       expect.anything(),
     );
+  });
+
+  it("keeps a hide to the chapter it was made in", () => {
+    const { result, rerender } = renderHook(() => useChapterSetupChecklist());
+    act(() => result.current.hide());
+    reads.chapterId = "ch-2";
+    rerender();
+    expect(result.current.checklist).not.toBeNull();
   });
 });

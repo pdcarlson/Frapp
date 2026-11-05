@@ -1,6 +1,7 @@
 /**
  * The ops-module setup nudges, shared so the surface that renders them and the
- * endpoint that records their dismissal agree on one closed set of keys.
+ * endpoint that records their dismissal agree on one closed set of keys
+ * (`MEMBER_DISMISSAL_KEYS` below, which adds the setup checklist's key).
  *
  * `spec/product/modules.md` § "Ops-setup nudges" fixes both the membership and
  * the order: **one nudge per module, in the fixed priority Dues > Events >
@@ -93,8 +94,9 @@ const OPS_NUDGE_KEYS: ReadonlySet<string> = new Set(
 /**
  * Whether `value` is a module this catalog nudges for.
  *
- * The API validates a dismissal against this before writing, so a client
- * cannot grow the array with arbitrary strings.
+ * Nudge keys only. The API validates a dismissal against the wider
+ * `MEMBER_DISMISSAL_KEYS`, so don't use this to vet what the column holds: it
+ * rejects `setup-checklist`.
  */
 export function isOpsNudgeModuleKey(
   value: unknown,

@@ -649,7 +649,8 @@ export type {
 // ── Ops-setup nudges (issue #492) ────────────────────────────────────────────
 // Shared for the same reason as the categories above: each `key` is written
 // verbatim into `members.dismissed_ops_nudges`, the column is an unconstrained
-// `text[]`, and `DismissOpsNudgeDto` validates against this catalog — so a
+// `text[]`, and `DismissOpsNudgeDto` validates against `MEMBER_DISMISSAL_KEYS`
+// (these keys plus the setup checklist's) — so a
 // per-surface copy would drift into dismissal entries that suppress nothing.
 // `selectOpsNudge` carries the spec's priority order, which is behavior rather
 // than presentation, so it is shared too rather than re-derived per surface.
