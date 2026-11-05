@@ -193,8 +193,9 @@ describe("ListRow — detail", () => {
     const labelColumn = flat(labelText.parent!.props.style);
 
     expect(labelColumn.maxWidth).toBe("50%");
-    expect(labelColumn.flexShrink).toBe(1);
-    expect(labelColumn.flex).toBe(0);
+    // Its own width, shrinking only past half the row. Not `flex: 0`, which
+    // react-native-web hands to CSS as a zero basis (one letter a line).
+    expect(labelColumn.flex).toBe(-1);
     // No line cap on the label, so it wraps rather than clipping.
     expect(labelText.props.numberOfLines).toBeUndefined();
     // The value takes the rest of the row, whatever the label measures.

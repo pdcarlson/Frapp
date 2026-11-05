@@ -944,15 +944,15 @@ describe("Chat home loading and error states", () => {
     expect(screenTextOf(retry)).toBe("Retrying…");
   });
 
-  // writing.md §4, as amended 2026-11-05: a line saying channels appear here
-  // would only restate what Chat is for, so the card is its title alone.
-  it("says a chapter has no channels with its title alone", () => {
+  // writing.md §4, as amended 2026-11-05: no line saying channels appear
+  // here, which would only restate what Chat is for, but the next step.
+  it("says a chapter has no channels, and what to do about it", () => {
     channelsData.value = [];
     const tree = render();
 
     const empty = tree.root.findByType(EmptyState);
     expect(empty.props.title).toBe("No channels yet");
-    expect(empty.props.body).toBeUndefined();
+    expect(empty.props.body).toBe("Ask an admin to add one.");
   });
 });
 

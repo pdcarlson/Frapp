@@ -293,10 +293,12 @@ function createStyles(tokens: SignetTokens) {
     // to the value, the half that runs long (an email address). The label
     // stops at half the row and wraps there, so a long one (a chapter's
     // custom field has no length limit) never takes the row and leaves the
-    // value no width.
+    // value no width. `flex: -1` is "my own width, shrinking if I must" on
+    // both renderers; `flex: 0` is not, because react-native-web passes it
+    // to CSS, where it means a zero basis and squeezes the label to a letter
+    // a line.
     rowTextDetail: {
-      flex: 0,
-      flexShrink: 1,
+      flex: -1,
       maxWidth: "50%",
     },
     rowLabelDetail: {

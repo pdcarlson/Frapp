@@ -2,11 +2,13 @@ import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { tint } from "@/lib/theme";
 
 /**
- * The camera on s20's "Add photo proof" row, transcribed from
- * `canvas-screens.dc.html` s20: the duotone body (the stroke color at 16%,
- * iconography.md §1's emphasis fill, where the canvas draws 10%, behind a 1.6
- * stroke), the lens, and the viewfinder bump. The color arrives as a prop so
- * it follows the chapter accent rather than the drawn gold.
+ * A camera, transcribed from `canvas-screens.dc.html` s20's "Add photo proof"
+ * row: the duotone body (the stroke color at 16%, iconography.md §1's
+ * emphasis fill, where the canvas draws 10%, behind a 1.6 stroke), the lens,
+ * and the viewfinder bump. The color arrives as a prop so it follows the
+ * chapter accent rather than the drawn gold. The stroke width and the
+ * emphasis fill are matched by hand to `components/more/more-glyphs.tsx`
+ * until #3428 gives the glyphs one shared recipe.
  */
 export function CameraGlyph({
   color,

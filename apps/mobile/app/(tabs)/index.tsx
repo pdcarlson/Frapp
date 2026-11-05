@@ -308,9 +308,14 @@ export default function ChatHomeScreen() {
           isRetrying={channelsQuery.isFetching}
         />
       ) : allChannels.length === 0 ? (
-        // The title alone: a line saying channels appear here would only
-        // restate what Chat is for (writing.md §4, as amended 2026-11-05).
-        <EmptyState glyph="#" title="No channels yet" />
+        // No line saying channels appear here, which would only restate what
+        // Chat is for; the one line says what to do, since mobile has no way
+        // to create a channel (writing.md §4, as amended 2026-11-05).
+        <EmptyState
+          glyph="#"
+          title="No channels yet"
+          body="Ask an admin to add one."
+        />
       ) : (
         <>
           {/*
