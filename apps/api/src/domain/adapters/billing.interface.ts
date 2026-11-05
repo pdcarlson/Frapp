@@ -87,9 +87,10 @@ export interface InvoiceWebhookObject {
     } | null;
   } | null;
   /**
-   * Pre-Basil payloads only. Kept as a read fallback on purpose: until the
-   * live endpoint's version is recorded, a pre-Basil live payload can't be
-   * ruled out, and reading one extra field costs nothing.
+   * Pre-Basil payloads only. Kept as a read fallback on purpose: the live
+   * endpoint shows 2026-08-26.dahlia, but whether that is a pin or the
+   * account default isn't recorded (docs/ops/deployment/integrations.md § 7),
+   * and reading one extra field costs nothing.
    */
   subscription?: string | { id: string } | null;
   customer?: string | { id: string } | null;
