@@ -53,10 +53,9 @@ export interface InvitePreview {
   chapter_name: string;
   university: string;
   /**
-   * The chapter's text mark: its short name, else its Greek letters if it
-   * shows them (`chapterTextMark`), else null. Never letters a chapter hides,
-   * nor those of an organization that never displays them (FIJI), whatever
-   * the chapter's stored switch says (#3421).
+   * The chapter's text mark, resolved by `chapterTextMark` after the org
+   * override in `preview`. The rule clients read is the `mark_text`
+   * description on `InvitePreviewResponseDto` (invite.dto.ts).
    */
   mark_text: string | null;
   accent_color: string | null;

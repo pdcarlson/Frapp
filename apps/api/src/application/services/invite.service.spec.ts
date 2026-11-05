@@ -614,8 +614,11 @@ describe('InviteService', () => {
     });
 
     it('never sends letters a chapter hides', async () => {
+      // A name no letter-hiding organization matches, so only the chapter's
+      // own stored switch can keep the letters off (the default name is a
+      // FIJI chapter, which the org override would hide anyway).
       mockChapterRepo.findById.mockResolvedValue(
-        chapter({ greek_letters: 'ΦΓΔ', show_greek_letters: false }),
+        chapter({ greek_letters: 'ΦΓΔ', show_greek_letters: false }, 'Tau Nu'),
       );
       const preview = await service.preview('preview-token');
       expect(preview.mark_text).toBeNull();
