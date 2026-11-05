@@ -72,6 +72,9 @@ let invoices: unknown[] = [];
 let invoicesPending = false;
 /** A failed read: TanStack keeps the last data beside `isError`. */
 let invoicesError = false;
+/** A list read in flight, and when the last one ended (`dataUpdatedAt`). */
+let invoicesFetching = false;
+let invoicesEndedAt = 0;
 let viewerError = false;
 /** `null` while `/v1/users/me` hasn't answered. */
 let viewerId: string | null = VIEWER;
@@ -92,7 +95,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     data: invoicesPending ? undefined : invoices,
     isPending: invoicesPending,
     isError: invoicesError,
-    isFetching: false,
+    isFetching: invoicesFetching,
+    dataUpdatedAt: invoicesEndedAt,
+    errorUpdatedAt: 0,
     refetch: refetchInvoices,
   }),
   usePayInvoice: () => ({ mutateAsync: payInvoice }),
@@ -186,6 +191,8 @@ beforeEach(() => {
   invoices = [FALL];
   invoicesPending = false;
   invoicesError = false;
+  invoicesFetching = false;
+  invoicesEndedAt = 0;
   viewerError = false;
   viewerId = VIEWER;
   focusManager.setFocused(undefined);
@@ -449,7 +456,8 @@ describe("Dues after a captured payment", () => {
     refetchInvoices.mockClear();
     act(() => blur());
     await refocus();
-    expect(refetchInvoices).toHaveBeenCalled();
+    // Joining a read in flight, as the 10s re-reads do.
+    expect(refetchInvoices).toHaveBeenLastCalledWith({ cancelRefetch: false });
     expect(payButton(tree).props.disabled).toBe(true);
     expect(drawnText(cta(tree))).toBe("Confirming payment…");
     expect(card(tree)).toContain(PENDING_COPY);
@@ -501,6 +509,42 @@ describe("Dues after a captured payment", () => {
       rerender(tree);
       act(() => vi.advanceTimersByTime(30_000));
       expect(refetchInvoices).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("starts a read over once it has stayed in flight across two re-reads", async () => {
+    // React Native's Android networking sets no timeout, so a read that never
+    // answers would hold the card on "Confirming payment…" for good.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const tree = mount();
+      await tapPay(tree);
+      invoicesFetching = true;
+      rerender(tree);
+      refetchInvoices.mockClear();
+
+      act(() => vi.advanceTimersByTime(10_000));
+      act(() => vi.advanceTimersByTime(10_000));
+      expect(refetchInvoices.mock.calls).toEqual([
+        [{ cancelRefetch: false }],
+        [{ cancelRefetch: true }],
+      ]);
+
+      // Reads that keep ending are a slow network, not a hung one: each tick
+      // joins the read in flight.
+      refetchInvoices.mockClear();
+      invoicesEndedAt = 1;
+      rerender(tree);
+      act(() => vi.advanceTimersByTime(10_000));
+      invoicesEndedAt = 2;
+      rerender(tree);
+      act(() => vi.advanceTimersByTime(10_000));
+      expect(refetchInvoices.mock.calls).toEqual([
+        [{ cancelRefetch: false }],
+        [{ cancelRefetch: false }],
+      ]);
     } finally {
       vi.useRealTimers();
     }

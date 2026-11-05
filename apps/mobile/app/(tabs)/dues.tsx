@@ -87,7 +87,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * back to the screen (Dues is a hidden tab route, `href: null` in
  * `app/(tabs)/_layout.tsx`, which the tab navigator keeps mounted, so coming
  * back doesn't reset it). Re-reads wait for the viewer's id, so none goes out
- * unfiltered.
+ * unfiltered, and a read that hangs is started over after
+ * {@link HUNG_AFTER_TICKS} ticks.
  *
  * The hold lives in this screen's state, so a chapter switch, which remounts
  * the screen ({@link DuesScreen}), or the app being closed ends it. If the
@@ -141,6 +142,16 @@ const PENDING_COPY =
  * the list's 30s staleTime only matters to a read something triggers.
  */
 const HOLD_REREAD_MS = 10_000;
+
+/**
+ * Re-read ticks a read may stay in flight across, nothing having ended in
+ * between, before a tick takes it as hung and starts it over: two, so 20s at
+ * the least. React Native's Android networking sets no timeout of its own
+ * (`OkHttpClientProvider.kt` passes 0 for connect, read and write), so a read
+ * that never answers would otherwise hold the card on "Confirming payment…"
+ * for as long as the screen is up.
+ */
+const HUNG_AFTER_TICKS = 2;
 
 /** Names the invoice, because it sits beside the next invoice's CTA. */
 const paidCopy = (title: string) =>
@@ -203,8 +214,18 @@ function ChapterDues() {
   const lastAttemptRef = useRef(0);
   const isPaying = openingAttempt !== null;
   const refetchInvoicesRef = useRef(invoicesQuery.refetch);
+  // The list's read as of the last render, for the re-read ticks below:
+  // whether one is in flight, and when the last one ended either way.
+  const invoicesReadRef = useRef({ fetching: false, endedAt: 0 });
   useEffect(() => {
     refetchInvoicesRef.current = invoicesQuery.refetch;
+    invoicesReadRef.current = {
+      fetching: invoicesQuery.isFetching,
+      endedAt: Math.max(
+        invoicesQuery.dataUpdatedAt,
+        invoicesQuery.errorUpdatedAt,
+      ),
+    };
   });
 
   const rows = useMemo(
@@ -261,13 +282,24 @@ function ChapterDues() {
   useFocusEffect(
     useCallback(() => {
       if (!rereads) return undefined;
+      // Ticks in a row that found the same read in flight: still fetching,
+      // and nothing ended since the tick before.
+      let spanned = 0;
+      let endedAt = invoicesReadRef.current.endedAt;
       const timer = setInterval(() => {
         // Navigation focus doesn't see the app going to the background;
         // TanStack's focusManager does (`lib/connection/query-connectivity.ts`
-        // drives it from AppState). And a tick joins a read still in flight
-        // rather than cancelling it, so on a slow network one still finishes.
+        // drives it from AppState).
         if (!focusManager.isFocused()) return;
-        void refetchInvoicesRef.current({ cancelRefetch: false });
+        const read = invoicesReadRef.current;
+        spanned = read.fetching && read.endedAt === endedAt ? spanned + 1 : 0;
+        endedAt = read.endedAt;
+        // A tick joins a read still in flight rather than cancelling it, so
+        // on a slow network one still finishes, unless that read has been in
+        // flight for HUNG_AFTER_TICKS ticks: then it starts the read over.
+        const restart = spanned >= HUNG_AFTER_TICKS;
+        if (restart) spanned = 0;
+        void refetchInvoicesRef.current({ cancelRefetch: restart });
       }, HOLD_REREAD_MS);
       return () => clearInterval(timer);
     }, [rereads]),
