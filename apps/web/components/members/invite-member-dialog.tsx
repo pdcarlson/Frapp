@@ -116,7 +116,6 @@ function invitesToGenerate(draft: string): number {
   return Math.min(MAX_INVITE_BATCH, Math.max(1, parseGuardedInt(draft) ?? 1));
 }
 
-
 /**
  * The last four characters of a token, to tell same-role invites apart in a
  * control's label. A batch mints up to 50 invites of one role with one expiry,
