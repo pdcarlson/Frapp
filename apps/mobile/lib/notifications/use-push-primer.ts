@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import { getPushPermission, isPushAvailable } from "@/lib/notifications/push";
 import {
-  getPushPermission,
-  isPushAvailable,
-  requestPushPermission,
-} from "@/lib/notifications/push";
-import {
+  acceptPrimer,
   readPrimerDecision,
   recordPrimerDecision,
   shouldOfferPrimer,
@@ -15,7 +12,9 @@ import {
  * The C7 push primer's state for a screen that hosts the card: s03 for a
  * member who joined, and chapter setup for the officer who created the
  * chapter (#3351). Both ask the same way, so the decision, the permission read
- * and the two answers live here once.
+ * and the two answers live here once. "Turn on" itself is `acceptPrimer()` in
+ * `primer.ts`, which s16 Settings' push switch also calls, so a tap there
+ * accepts exactly as the card does.
  *
  * `showPrimer` stays false until the stored decision and the permission have
  * both been read, so the card never flashes in and out (`shouldOfferPrimer`).
@@ -68,9 +67,7 @@ export function usePushPrimer() {
   const turnOn = useCallback(async (): Promise<boolean> => {
     setIsRequesting(true);
     try {
-      await recordPrimerDecision("accepted");
-      setDecision("accepted");
-      const granted = await requestPushPermission();
+      const granted = await acceptPrimer(() => setDecision("accepted"));
       setPermissionGranted(granted);
       return granted;
     } catch {

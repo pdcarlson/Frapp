@@ -32,6 +32,9 @@ vi.mock("expo-constants", () => ({
 function fakeModule() {
   return {
     setNotificationChannelAsync: vi.fn().mockResolvedValue(null),
+    getNotificationChannelAsync: vi
+      .fn<(channelId: string) => Promise<{ importance: number } | null>>()
+      .mockResolvedValue({ importance: 5 }),
     getPermissionsAsync: vi
       .fn()
       .mockResolvedValue({
@@ -204,6 +207,64 @@ describe("push isolation module", () => {
     // prompt and delivery behave correctly only when the channel already
     // exists. The rule IS the ordering, so pin the ordering.
     expect(order).toEqual(["channel", "permission"]);
+  });
+
+  describe("isPushChannelBlocked", () => {
+    async function onAndroid<T>(run: () => Promise<T>): Promise<T> {
+      const { Platform } = await import("react-native");
+      const platform = Platform as { OS: string };
+      const original = platform.OS;
+      platform.OS = "android";
+      try {
+        return await run();
+      } finally {
+        platform.OS = original;
+      }
+    }
+
+    it("reads the app's channel switched off on Android as blocked", async () => {
+      // `AndroidImportance.NONE` is 2. The member turning off "Chapter
+      // notifications" leaves the permission granted, so this is the only
+      // read that sees it.
+      const push = await importPush();
+      const mod = fakeModule();
+      mod.getNotificationChannelAsync.mockResolvedValue({ importance: 2 });
+      push.setPushLoaderForTests(() => mod);
+
+      await expect(onAndroid(() => push.isPushChannelBlocked())).resolves.toBe(
+        true,
+      );
+      expect(mod.getNotificationChannelAsync).toHaveBeenCalledWith(
+        push.ANDROID_CHANNEL_ID,
+      );
+    });
+
+    it("reads a channel at any other importance, or none at all, as not blocked", async () => {
+      const push = await importPush();
+      const mod = fakeModule();
+      push.setPushLoaderForTests(() => mod);
+
+      // MIN still delivers, to the shade only.
+      mod.getNotificationChannelAsync.mockResolvedValue({ importance: 3 });
+      await expect(onAndroid(() => push.isPushChannelBlocked())).resolves.toBe(
+        false,
+      );
+      mod.getNotificationChannelAsync.mockResolvedValue(null);
+      await expect(onAndroid(() => push.isPushChannelBlocked())).resolves.toBe(
+        false,
+      );
+    });
+
+    it("doesn't read a channel on iOS, which has none", async () => {
+      // The suite's react-native stub is iOS.
+      const push = await importPush();
+      const mod = fakeModule();
+      mod.getNotificationChannelAsync.mockResolvedValue({ importance: 2 });
+      push.setPushLoaderForTests(() => mod);
+
+      await expect(push.isPushChannelBlocked()).resolves.toBe(false);
+      expect(mod.getNotificationChannelAsync).not.toHaveBeenCalled();
+    });
   });
 
   it("clears the cold-start response after reading it", async () => {
