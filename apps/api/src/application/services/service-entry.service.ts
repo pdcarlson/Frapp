@@ -12,6 +12,8 @@ import {
   isAllowedUploadMime,
   isWithinUploadSizeLimit,
   MAX_UPLOAD_LABEL,
+  SERVICE_RECEIPT_REQUIRED_CODE,
+  SERVICE_RECEIPT_REQUIRED_MESSAGE,
 } from '@repo/validation';
 import { SERVICE_ENTRY_REPOSITORY } from '#domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '#domain/repositories/service-entry.repository.interface';
@@ -365,9 +367,13 @@ export class ServiceEntryService {
         WORKFLOW_HOURS_RECEIPT,
       );
       if (receiptPolicy.enabled) {
-        throw new BadRequestException(
-          'This chapter requires a receipt (photo or signed slip) with service-hour submissions — attach proof and resubmit',
-        );
+        // The code is what mobile s20 matches on to ask for a photo; installed
+        // builds read it for as long as they stay installed, so it can't be
+        // renamed. Web shows the message.
+        throw new BadRequestException({
+          code: SERVICE_RECEIPT_REQUIRED_CODE,
+          message: SERVICE_RECEIPT_REQUIRED_MESSAGE,
+        });
       }
     } else {
       await this.assertValidProofPath(input.chapter_id, proofPath);

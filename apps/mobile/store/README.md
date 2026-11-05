@@ -308,7 +308,7 @@ Officers get what they need on their feet: take attendance at the door with a QR
 > | post to the right channel | **partly ships — kept, reworded** | An officer holding `announcements:post` gets a live composer in the read-only `#announcements` channel, and that send fans an URGENT push chapter-wide: `chat-thread.tsx` `canSend={canSend && channelCanPost}` off the server's `can_post`. But **creating or organising channels is web-only** (`useCreateChannel`'s only consumer is `apps/web/components/chat-admin/`), so "the right channel" overclaimed. Now "post an announcement every member gets" |
 > | invite members with a link | **partial — dropped** | `useCreateInvite` has exactly one consumer in `apps/mobile`, the one-time founding wizard (`app/(auth)/create-chapter.tsx`), reachable only while the account belongs to **zero** chapters. An officer of an existing chapter has no invite affordance, the role is hardcoded `Member`, and the link points at the web app. Invites are already covered honestly by the invite-only paragraph below |
 > | assign roles and permissions | **web only** | `components/directory/member-detail-sheet.tsx` renders a read-only `Role` value row; no mutation is imported. The editor is `apps/web/components/roles/` |
-> | track service and study hours | **web only** | No approve control on iOS — `service-hours.tsx`'s only mutation is `useCreateServiceEntry`, and `approve_service_entry`'s single non-test caller is reached from the web page. Officer-wide *study* tracking exists nowhere: `study.controller.ts`'s list has no admin branch at all |
+> | track service and study hours | **web only** | No approve control on iOS — Service hours' log sheet (`components/service-hours/log-hours-sheet.tsx`) holds its only two mutations, `useCreateServiceEntry` and the proof photo's `useRequestServiceProofUploadUrl`, neither of which approves anything, and `approve_service_entry`'s single non-test caller is reached from the web page. Officer-wide *study* tracking exists nowhere: `study.controller.ts`'s list has no admin branch at all |
 > | see who has paid | **web only** | Both mobile `useInvoices` call sites pass the viewer's id, and `selectInvoiceRows` filters to it. The chapter ledger is `apps/web/components/billing/invoice-list.tsx` |
 >
 > Two in-app strings were fixed in the same pass for the same reason, and a bug behind one of them: the Service hours tile promised review and approval, the invite-failure message sent officers to a directory with no invite affordance, and `GET /v1/service-entries` was read unscoped — which handed a `service:approve` holder the whole chapter's entries under a screen that says "you've logged". `lib/more/service-hours-screen.spec.tsx` and `lib/more/profile-screen.spec.tsx` pin the fix.
@@ -541,6 +541,20 @@ Advertising Data, Browsing History, Search History.
 > The iOS purpose string doesn't name it yet ([#3401](https://github.com/pdcarlson/Frapp/issues/3401)).
 > Deploy the landing before submitting a binary that carries #3399.
 >
+> **Service-hour proof photos use this row too (2026-11-05).** s20's "Add photo proof"
+> row lets a member attach a library photo to a service entry
+> (`lib/more/service-proof.ts`, the same pipeline). It is a *Photos or Videos* item
+> collected for *App Functionality* and linked to the member, so the row's values don't
+> change. The privacy policy's permissions clause (`apps/landing/app/privacy/page.tsx`)
+> names it, as #3399's did for documents, and on that precedent the edit moved only
+> the page's pin. Whether that edit is material, and what each ruling does:
+> [`legal.md` § Acceptance record](../../../spec/behavior/legal.md#acceptance-record).
+> The iOS purpose string (`app.json`'s `photosPermission`) doesn't name it: it can only
+> widen in a store build, and
+> [#3401](https://github.com/pdcarlson/Frapp/issues/3401) widens it to name document
+> uploads and service-hour proof and updates the store records to match. Deploy the
+> landing before submitting a binary that carries s20's photo row.
+>
 > ‡ **`Linked: No` on Crash Data and Performance Data is wrong, and this table's own
 > reasoning is what proves it (owner action — console change).** Found 2026-09-21. The
 > argument for calling User ID *linked* is that `distinct_id` is a pseudonym whose salt
@@ -571,10 +585,11 @@ Where each answer comes from:
   sends a library photo to the documents bucket, and that photo is declared
   under the Photos or Videos row above. A PDF or Office file still uploads only
   from the web dashboard, since picking one needs `expo-document-picker`, a
-  native module no store build carries yet. Backwork has no mobile screen, and
-  proof attachment in `app/(tabs)/service-hours.tsx` still omits its affordance
-  deliberately, so both stay web-dashboard-only and neither is claimed here as
-  shipped.
+  native module no store build carries yet. Service-hour proof uploads from
+  the phone too, photos only: the s20 sheet's "Add photo proof" row sends a
+  library photo to the service bucket, declared under the same row. Backwork
+  has no mobile screen, so it stays web-dashboard-only and is not claimed here
+  as shipped.
 - **User ID carries Analytics** because PostHog identifies members with
   `distinct_id = hmac_sha256(salt, user_id)`. The derivation lives in
   `hashUserIdForAnalytics` (`apps/api/src/domain/utils/analytics-keying.ts`), called from
@@ -666,7 +681,7 @@ Two of Play's definitions differ from Apple's, and they change answers:
 | Personal info → Phone number | Yes | No | Optional | App functionality | Deleted | A chapter's `phone` member field, as in the App Store row |
 | Personal info → User IDs | Yes | No | Required | App functionality, Analytics | Kept as an anonymous tombstone; the analytics id is forgotten | Member and account ids; the pseudonymous analytics `distinct_id` (see *User ID carries Analytics* above) |
 | Messages → Other in-app messages | Yes | No | Optional | App functionality | **Kept, anonymised** | Chat channels and DMs |
-| Photos and videos → Photos | Yes | No | Optional | App functionality | **Mixed**: chat photos are kept, anonymised, with their messages; the profile photo is deleted; a chapter logo and document photos stay with the chapter | Chat photo attachments (`lib/chat/attachment-upload.ts`), kept with their messages; the chapter logo an officer adds in chapter setup (`lib/onboarding/chapter-wizard/chapter-logo.ts`, #3351), which belongs to the chapter and stays until an officer replaces or removes it; a photo a member holding `chapter_docs:upload` adds to the chapter's documents (`lib/more/document-upload.ts`, #3399), which is filed in the chapter's library and stays, attributed to "Deleted User" after its uploader's account is deleted, until an officer deletes the document; and the member's profile photo (`lib/more/profile-photo.ts`, #2897), deleted when it is replaced or removed (best effort: a failed delete there is logged, not retried), when the member leaves the chapter, and on account deletion ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion)). The camera only reads check-in codes on the device, and no frame leaves the phone. Play's Data safety form isn't filled in yet (#2720); the owner enters this row as written here, profile photo included (#2895) |
+| Photos and videos → Photos | Yes | No | Optional | App functionality | **Mixed**: chat photos and service-hour proof photos are kept, anonymised, with their messages and entries; the profile photo is deleted; a chapter logo and document photos stay with the chapter | Chat photo attachments (`lib/chat/attachment-upload.ts`), kept with their messages; a photo a member attaches as proof to a service-hour entry (s20, `lib/more/service-proof.ts`), kept in the private service bucket with its entry: deleting a pending entry deletes its photo, but account deletion keeps the entry, anonymised, and its photo with it, since the deletion purge reaches only profile photos and generated reports ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion); whether it should reach proof is [#3425](https://github.com/pdcarlson/Frapp/issues/3425)) (a photo uploaded for an entry that never saved stays unclaimed until [#2197](https://github.com/pdcarlson/Frapp/issues/2197)'s sweep); the chapter logo an officer adds in chapter setup (`lib/onboarding/chapter-wizard/chapter-logo.ts`, #3351), which belongs to the chapter and stays until an officer replaces or removes it; a photo a member holding `chapter_docs:upload` adds to the chapter's documents (`lib/more/document-upload.ts`, #3399), which is filed in the chapter's library and stays, attributed to "Deleted User" after its uploader's account is deleted, until an officer deletes the document; and the member's profile photo (`lib/more/profile-photo.ts`, #2897), deleted when it is replaced or removed (best effort: a failed delete there is logged, not retried), when the member leaves the chapter, and on account deletion ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion)). The camera only reads check-in codes on the device, and no frame leaves the phone. Play's Data safety form isn't filled in yet (#2720); the owner enters this row as written here, profile photo included (#2895) |
 | App activity → App interactions | Yes | No | Required | Analytics | Forgotten (the analytics forget) | The server-side product events behind the App Store *Product Interaction* row. Required because the only opt-out is a chapter setting, not the member's choice |
 | App activity → In-app search history | Yes | **Yes** | Optional | App functionality | Nothing stored to delete | The directory and chapter-finder queries (`GET /v1/members/search`, `GET /v1/chapter-directory/search`). Ephemeral only while the App Store table's open question holds: if the API keeps query strings in its access logs, this answer is No |
 | App activity → Other user-generated content | Yes | No | Optional | App functionality | **Kept, anonymised** | Free text a member writes outside chat: service-hour entries, tasks they create, the details of a report they file (kept whole, as moderation history), and a chapter they create |
@@ -690,8 +705,8 @@ type), Health and fitness, Emails, SMS or MMS, Videos, Audio files, Files and do
 Contacts, Installed apps, Web browsing, and the remaining Personal info types.
 
 - **Files and docs:** the documents screen uploads photos only, declared under Photos (#3399). A
-  PDF or Office document, backwork and service-hour proof still upload only from the web dashboard
-  (see *Other User Content* above).
+  PDF or Office document, a PDF service-hour proof, and backwork still upload only from the web
+  dashboard (see *Other User Content* above).
 - **Calendar:** the event `.ics` export is handed to the phone's share sheet and never comes back
   to us.
 - **Financial info is conditional, as on iOS.** Payment info and Purchase history are *not
