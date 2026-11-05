@@ -78,8 +78,8 @@ vi.mock("@repo/org-archetypes", async (importOriginal) => {
     orgDefaultAccent: actual.orgDefaultAccent,
     orgColorsFor: actual.orgColorsFor,
     orgHidesGreekLetters: actual.orgHidesGreekLetters,
-    orgMarkFields: actual.orgMarkFields,
-    orgProfileFor: actual.orgProfileFor,
+    orgHidingGreekLettersIn: actual.orgHidingGreekLettersIn,
+    orgMarkFieldsFor: actual.orgMarkFieldsFor,
   };
 });
 
@@ -461,7 +461,7 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     }
   });
 
-  it("never overwrites a short name the founder typed, and never turns the letters back on", async () => {
+  it("never overwrites a short name the founder typed", async () => {
     render(<ChapterWizard onComplete={() => {}} />);
     gotoIdentityStep();
     fireEvent.change(screen.getByLabelText("Short name (optional)"), {
@@ -476,19 +476,76 @@ describe("ChapterWizard chapter mark (#2876)", () => {
       screen.queryByRole("switch", { name: /show greek letters/i }),
     ).not.toBeInTheDocument();
 
-    // Typing on past the match: the switch comes back for the new name, off.
+    // A name that adds to the organization's still names FIJI.
     fireEvent.change(name, { target: { value: "Phi Gamma Delta Colony" } });
     expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
       "Phi Gam",
     );
     expect(
-      screen.getByRole("switch", { name: /show greek letters/i }),
-    ).not.toBeChecked();
-    // And back onto the match leaves the founder's short name alone.
-    fireEvent.change(name, { target: { value: "Phi Gamma Delta" } });
+      screen.queryByRole("switch", { name: /show greek letters/i }),
+    ).not.toBeInTheDocument();
+
+    // Another organization: the switch comes back on, the typed name stays.
+    fireEvent.change(name, { target: { value: "Phi Delta Theta" } });
     expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
       "Phi Gam",
     );
+    expect(
+      screen.getByRole("switch", { name: /show greek letters/i }),
+    ).toBeChecked();
+  });
+
+  it("undoes the short name FIJI filled in when the name moves to another organization", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    const name = screen.getByLabelText("Chapter / organization name");
+    fireEvent.change(name, { target: { value: "Phi Gamma Delta" } });
+    expect(screen.getByLabelText("Short name (optional)")).toHaveValue("FIJI");
+
+    // Typing passes through names that match nothing on the way.
+    fireEvent.change(name, { target: { value: "Phi Gamma Delt" } });
+    fireEvent.change(name, { target: { value: "Phi Delta Theta" } });
+    expect(screen.getByLabelText("Short name (optional)")).toHaveValue("");
+    expect(
+      screen.getByRole("switch", { name: /show greek letters/i }),
+    ).toBeChecked();
+  });
+
+  it("keeps a typed short name when the founder then picks FIJI's row", async () => {
+    directoryRows.current = [
+      {
+        id: "dir-fiji",
+        org_letters: "ΦΓΔ",
+        org_name: "Phi Gamma Delta",
+        archetype: "ifc",
+        chapter_designation: "Tau Nu",
+        university: "Rensselaer Polytechnic Institute",
+        university_short: "RPI",
+        founded_year: 1893,
+        default_colors: { accent: "#C9A56F" },
+      },
+    ];
+    try {
+      render(<ChapterWizard onComplete={() => {}} />);
+      gotoIdentityStep();
+      fireEvent.change(screen.getByLabelText("Short name (optional)"), {
+        target: { value: "Phi Gam" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      fireEvent.change(screen.getByLabelText("Search the chapter directory"), {
+        target: { value: "Phi Gamma" },
+      });
+      fireEvent.click(await screen.findByText(/Phi Gamma Delta/));
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+        "Phi Gam",
+      );
+      expect(document.body.textContent).not.toContain("ΦΓΔ");
+    } finally {
+      directoryRows.current = [];
+    }
   });
 
   it("sets the accent from a swatch, without typing a hex", async () => {

@@ -12,12 +12,6 @@ import {
   parseGuardedInt,
 } from "./utils";
 
-/**
- * Dashboard toasts use this helper so openapi-fetch's thrown body (a plain
- * object with `message`, not an `Error`) surfaces the server string. Five
- * local copies used `instanceof Error` and always showed the fallback; this
- * spec is the regression lock for that shape.
- */
 describe("labelled", () => {
   it("puts the label before a formatted value", () => {
     expect(labelled("Due", "Fri, Nov 6")).toBe("Due Fri, Nov 6");
@@ -28,6 +22,12 @@ describe("labelled", () => {
   });
 });
 
+/**
+ * Dashboard toasts use this helper so openapi-fetch's thrown body (a plain
+ * object with `message`, not an `Error`) surfaces the server string. Five
+ * local copies used `instanceof Error` and always showed the fallback; this
+ * spec is the regression lock for that shape.
+ */
 describe("getErrorMessage", () => {
   const fallback = "Something went wrong. Please retry.";
 

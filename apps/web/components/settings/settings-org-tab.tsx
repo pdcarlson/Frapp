@@ -6,7 +6,7 @@ import {
   ARCHETYPES,
   VOCABULARY_DEFAULTS,
   getArchetype,
-  orgHidesGreekLetters,
+  orgHidingGreekLettersIn,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import { type PatchChapterConfig } from "@repo/validation";
@@ -129,6 +129,9 @@ export function SettingsOrgTab({
     university: storedUniversity,
     donation_url: storedDonation,
   } = profile;
+  // FIJI's chapters never show their letters, also when the chapter's name
+  // adds to the organization's ("Phi Gamma Delta Tau Nu").
+  const lettersHidden = orgHidingGreekLettersIn(storedName) !== undefined;
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seed profile draft from the chapter config query
     setProfileDraft({
@@ -322,7 +325,7 @@ export function SettingsOrgTab({
         <CardHeader>
           <CardTitle>Identity &amp; founding</CardTitle>
           <CardDescription>
-            {orgHidesGreekLetters(storedName)
+            {lettersHidden
               ? "Saving writes an entry to the chapter audit log."
               : "Whether the letters show is set under Chapter mark. Saving writes an entry to the chapter audit log."}
           </CardDescription>
@@ -335,7 +338,7 @@ export function SettingsOrgTab({
                 them either. They stay stored: the hidden field's draft is
                 the stored value, so a save writes them back unchanged.
               */}
-              {orgHidesGreekLetters(storedName) ? null : (
+              {lettersHidden ? null : (
                 <div className="grid gap-1">
                   <Label htmlFor="greek-letters">Greek letters</Label>
                   <Input

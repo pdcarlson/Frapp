@@ -119,10 +119,13 @@ Billing, legal, and data-sensitive surfaces MUST:
 - Avoid overpromising
 - Explicitly indicate preview/demo data when shown
 
-Examples:
+Example (the event detail sheet's preview notice):
 
-- `Showing preview event data`
-- `Sign in to load live event scheduling and attendance records`
+- `Showing preview event details. Sign in to edit and delete live events.`
+
+The events pair that used to sit here (`Showing preview event data` /
+`Sign in to load live event scheduling and attendance records`) had no reader
+left and was deleted from `stateMicrocopy.events` (2026-11-05).
 
 The billing pair that used to sit here (`Showing preview billing data` /
 `Sign in to load live chapter subscription and invoice records`) went with the

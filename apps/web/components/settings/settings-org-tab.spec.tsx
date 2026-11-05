@@ -519,6 +519,21 @@ describe("SettingsOrgTab for an organization that hides its letters", () => {
     },
   };
 
+  it("draws neither for a chapter whose name adds to the organization's", () => {
+    render(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...fiji}
+        profile={{ ...fiji.profile, name: "Phi Gamma Delta Tau Nu" }}
+      />,
+    );
+    expect(screen.queryByLabelText(/^greek letters$/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: /show greek letters/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/ΦΓΔ/)).not.toBeInTheDocument();
+  });
+
   it("draws neither the letters field nor the switch, and the mark skips them", () => {
     render(<SettingsOrgTab archetypeKey="ifc" {...fiji} />);
     expect(screen.queryByLabelText(/^greek letters$/i)).not.toBeInTheDocument();

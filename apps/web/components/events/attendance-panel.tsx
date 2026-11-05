@@ -30,7 +30,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
-import { asArray } from "@/lib/utils";
+import { asArray, getErrorMessage } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { Can } from "@/components/shared/can";
 import {
@@ -185,10 +185,10 @@ export function AttendancePanel({
     } catch (error) {
       toast({
         title: "Couldn't update attendance",
-        description:
-          error instanceof Error
-            ? error.message
-            : "Retry in a moment. Your change hasn't been saved.",
+        description: getErrorMessage(
+          error,
+          "Retry in a moment. Your change hasn't been saved.",
+        ),
         variant: "destructive",
       });
       throw error;
@@ -207,10 +207,7 @@ export function AttendancePanel({
     } catch (error) {
       toast({
         title: "Couldn't run auto-absent",
-        description:
-          error instanceof Error
-            ? error.message
-            : "Check your permissions and retry.",
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }

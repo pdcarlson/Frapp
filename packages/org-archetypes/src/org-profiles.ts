@@ -159,9 +159,7 @@ export const ORG_PROFILES: Readonly<Record<string, Readonly<OrgProfile>>> =
       ],
     }),
     "Kappa Alpha Psi": profile({
-      colors: [
-        { name: "Crimson", hex: "#70110C" },
-      ],
+      colors: [{ name: "Crimson", hex: "#70110C" }],
     }),
     "Phi Beta Sigma": profile({
       colors: [{ name: "Royal Blue", hex: "#164F90" }],
@@ -363,12 +361,62 @@ export function orgProfileFor(
  * Whether the organization keeps its Greek letters off every surface (Phi
  * Gamma Delta). A screen that would show or ask for letters (a directory
  * result, a setup or settings field, the show-letters switch) draws neither
- * for such an organization; its short name stands in.
+ * for such an organization; its short name stands in. It matches the name
+ * exactly: for a chapter's own name, which often adds to the organization's,
+ * read `orgHidingGreekLettersIn`.
  */
 export function orgHidesGreekLetters(
   orgName: string | null | undefined,
 ): boolean {
   return orgProfileFor(orgName)?.displaysGreekLetters === false;
+}
+
+function words(name: string): string[] {
+  return nameKey(name)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+function containsRun(
+  haystack: readonly string[],
+  needle: readonly string[],
+): boolean {
+  if (needle.length === 0) return false;
+  for (let i = 0; i + needle.length <= haystack.length; i++) {
+    if (needle.every((word, j) => haystack[i + j] === word)) return true;
+  }
+  return false;
+}
+
+/** Organizations that hide their letters, with the word runs that name them. */
+const LETTER_HIDING_ORGS: readonly { name: string; runs: string[][] }[] =
+  Object.entries(ORG_PROFILES)
+    .filter(([, p]) => p.displaysGreekLetters === false)
+    .map(([name, p]) => ({
+      name,
+      runs: [words(name), ...(p.shortName ? [words(p.shortName)] : [])],
+    }));
+
+/**
+ * The organization whose letters a chapter of this name must not show: one
+ * that hides its letters (Phi Gamma Delta) and whose name or short name the
+ * chapter's name contains as whole words ("Phi Gamma Delta", "Phi Gamma Delta
+ * Tau Nu", "FIJI at RPI"). Returns that organization's name, or `undefined`.
+ *
+ * `orgHidesGreekLetters` matches an organization's name exactly, which is
+ * right for a directory row's `org_name`. A chapter's own name is often its
+ * organization's plus more, so a screen deciding whether to draw a chapter's
+ * letters reads this instead. It looks only at organizations that hide their
+ * letters, so its looser match can hide letters but never show them.
+ */
+export function orgHidingGreekLettersIn(
+  chapterName: string | null | undefined,
+): string | undefined {
+  if (!chapterName) return undefined;
+  const name = words(chapterName);
+  return LETTER_HIDING_ORGS.find((org) =>
+    org.runs.some((run) => containsRun(name, run)),
+  )?.name;
 }
 
 /** The organization's official colors, or an empty list when unknown. */
@@ -403,6 +451,10 @@ export type OrgMarkFields = { shortName: string; showGreekLetters: boolean };
  * founder's own choice stands, except what an earlier match's profile set:
  * picking FIJI by mistake, then another row, must not leave "FIJI" and the
  * letters off behind.
+ *
+ * Mobile's setup reads this; web's reads `orgMarkFieldsFor`, which never
+ * replaces a typed short name. Mobile moving over and this being deleted is
+ * #3421.
  */
 export function orgMarkFields(
   orgName: string | null | undefined,
@@ -414,7 +466,9 @@ export function orgMarkFields(
     return {
       shortName: profile.shortName ?? current.shortName,
       showGreekLetters:
-        profile.displaysGreekLetters === false ? false : current.showGreekLetters,
+        profile.displaysGreekLetters === false
+          ? false
+          : current.showGreekLetters,
     };
   }
   const previous = orgProfileFor(previousOrgName);
@@ -424,6 +478,56 @@ export function orgMarkFields(
         ? ""
         : current.shortName,
     showGreekLetters:
-      previous?.displaysGreekLetters === false ? true : current.showGreekLetters,
+      previous?.displaysGreekLetters === false
+        ? true
+        : current.showGreekLetters,
   };
+}
+
+/** The profile a setup form's organization name stands for. */
+function markProfileFor(
+  name: string | null | undefined,
+): Readonly<OrgProfile> | undefined {
+  return orgProfileFor(name) ?? orgProfileFor(orgHidingGreekLettersIn(name));
+}
+
+/**
+ * The short name and letters switch a setup form holds after its
+ * organization name changes from `previousName` to `nextName`, whether by
+ * typing or by picking a directory row.
+ *
+ * - The same organization before and after changes nothing. A name that
+ *   contains a letter-hiding organization's counts as that organization, so
+ *   typing "Phi Gamma Delta Tau Nu" past "Phi Gamma Delta" keeps FIJI's short
+ *   name and the letters off.
+ * - Leaving an organization undoes what its profile filled in: its short name,
+ *   if the field still holds exactly that, and the letters switch it turned
+ *   off. Picking FIJI by mistake, then another organization, leaves neither
+ *   behind.
+ * - Arriving at an organization fills an empty short-name field from its
+ *   profile, and turns the switch off when it hides its letters. A short name
+ *   the founder typed is never replaced.
+ *
+ * Web's setup reads this. Mobile's still reads `orgMarkFields`, which replaces
+ * a typed short name on a match (#3421).
+ */
+export function orgMarkFieldsFor(
+  nextName: string | null | undefined,
+  previousName: string | null | undefined,
+  current: OrgMarkFields,
+): OrgMarkFields {
+  const next = markProfileFor(nextName);
+  const previous = markProfileFor(previousName);
+  if (next === previous) {
+    return {
+      shortName: current.shortName,
+      showGreekLetters: current.showGreekLetters,
+    };
+  }
+  let { shortName, showGreekLetters } = current;
+  if (previous?.shortName && shortName === previous.shortName) shortName = "";
+  if (previous?.displaysGreekLetters === false) showGreekLetters = true;
+  if (next?.shortName && !shortName.trim()) shortName = next.shortName;
+  if (next?.displaysGreekLetters === false) showGreekLetters = false;
+  return { shortName, showGreekLetters };
 }

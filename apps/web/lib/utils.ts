@@ -103,6 +103,14 @@ export function guardDecimalDraft(raw: string): string | undefined {
 }
 
 /** Human-readable message for caught errors (e.g. toast descriptions). */
+export function getErrorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: string }).message;
+    if (typeof message === "string" && message.length > 0) return message;
+  }
+  return fallback;
+}
+
 /**
  * `"Due Fri, Nov 6"`: a label before a formatted value, or null when the value
  * didn't format. The house date helpers return null for a value they can't
@@ -114,14 +122,6 @@ export function labelled(
   formatted: string | null,
 ): string | null {
   return formatted ? `${label} ${formatted}` : null;
-}
-
-export function getErrorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: string }).message;
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return fallback;
 }
 
 /** Escape one CSV cell per RFC 4180 (quote when it contains a comma, quote, or newline). */

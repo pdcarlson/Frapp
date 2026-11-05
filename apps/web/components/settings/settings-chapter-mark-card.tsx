@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import type { ChapterLogoUpload } from "@repo/hooks";
-import { orgHidesGreekLetters } from "@repo/org-archetypes";
+import { orgHidingGreekLettersIn } from "@repo/org-archetypes";
 import {
   CHAPTER_SHORT_NAME_MAX_LENGTH,
   acceptAttribute,
@@ -85,7 +85,7 @@ export function SettingsChapterMarkCard({
   // An organization that never displays its letters (FIJI) gets no switch:
   // its letters stay off, and the next save writes that down even for a
   // chapter created before the profile turned them off.
-  const lettersHidden = orgHidesGreekLetters(name);
+  const lettersHidden = orgHidingGreekLettersIn(name) !== undefined;
   const [shortName, setShortName] = useState(branding.short_name ?? "");
   const [showLetters, setShowLetters] = useState(greekLettersShown(branding));
   const [logoError, setLogoError] = useState<string | null>(null);

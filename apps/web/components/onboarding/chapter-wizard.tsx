@@ -18,8 +18,8 @@ import {
   getArchetype,
   orgDefaultAccent,
   orgHidesGreekLetters,
-  orgMarkFields,
-  orgProfileFor,
+  orgHidingGreekLettersIn,
+  orgMarkFieldsFor,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import {
@@ -152,13 +152,14 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
     setDirectoryId(row.id);
     setMatchedOrgName(row.org_name ?? null);
     setArchetype(resolvedArchetype);
-    const mark = orgMarkFields(row.org_name, identity.name, identity);
+    const mark = orgMarkFieldsFor(row.org_name, identity.name, identity);
     setIdentity({
       name: row.org_name ?? "",
       university: row.university ?? "",
       greekLetters: row.org_letters ?? "",
       // The directory knows letters, not whether an organization shows them:
-      // FIJI's profile switches them off (`orgMarkFields`).
+      // FIJI's profile switches them off (`orgMarkFieldsFor`), and fills the
+      // short name only if the founder left it empty.
       ...mark,
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
@@ -193,11 +194,12 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   }
 
   // The organization whose rule hides the letters, by the picked row first,
-  // then by the name typed. Null when neither hides them.
+  // then by the name typed ("Phi Gamma Delta Tau Nu" still names FIJI). Null
+  // when neither hides them.
   const lettersHiddenBy =
-    [matchedOrgName, identity.name]
-      .find((name) => orgHidesGreekLetters(name))
-      ?.trim() ?? null;
+    orgHidingGreekLettersIn(matchedOrgName) ??
+    orgHidingGreekLettersIn(identity.name) ??
+    null;
 
   const identityValid = chapterIdentityIsValid(identity);
   // Gate "Create chapter" on the required Terms/Privacy acceptance as well as a
@@ -518,32 +520,19 @@ function directoryRowTitle(row: ChapterDirectoryResult): string {
 }
 
 /**
- * The identity after the organization's name is typed. When the name comes to
- * match an organization we hold a profile for, that profile applies once, as a
- * directory match applies it: an organization that hides its letters (FIJI)
- * turns the switch off, and its short name fills an empty short-name field.
- * Any other keystroke changes the name alone, so typing on past a match never
- * overwrites a short name the founder chose and never turns the letters back
- * on by itself.
+ * The identity after the organization's name is typed. The short name and the
+ * letters switch follow `orgMarkFieldsFor`: a profile applies when the name
+ * comes to name its organization and is undone when the name leaves it, and a
+ * short name the founder typed is never replaced.
  */
 function withOrgName(
   identity: ChapterIdentityForm,
   name: string,
 ): ChapterIdentityForm {
-  const profile = orgProfileFor(name);
-  if (!profile || profile === orgProfileFor(identity.name)) {
-    return { ...identity, name };
-  }
   return {
     ...identity,
     name,
-    shortName: identity.shortName.trim()
-      ? identity.shortName
-      : (profile.shortName ?? identity.shortName),
-    showGreekLetters:
-      profile.displaysGreekLetters === false
-        ? false
-        : identity.showGreekLetters,
+    ...orgMarkFieldsFor(name, identity.name, identity),
   };
 }
 

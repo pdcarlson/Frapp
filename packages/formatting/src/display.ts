@@ -15,9 +15,10 @@
  * than print a placeholder (`spec/ui/web-dashboard/README.md`: an absent
  * value is absent, not a glyph).
  *
- * The relative forms ("Today · 5:00 PM", "Due tomorrow") are mobile's
- * `formatEventRowTime` and `formatDueSubtitle`, worded the same way so a
- * member reads one product across both apps.
+ * The relative forms ("Today · 5:00 PM", "Due tomorrow") are worded like
+ * mobile's `formatEventRowTime` and `formatDueSubtitle`, so a member reads one
+ * product across both apps. Those mobile copies still lack "Yesterday" and the
+ * out-of-year year until mobile reads these (#3420).
  */
 
 import { parseInstantOrBareLocalNoon } from "./bare-date";

@@ -56,7 +56,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
-import { asArray, downloadCsv } from "@/lib/utils";
+import { asArray, downloadCsv, getErrorMessage } from "@/lib/utils";
 
 type ReportKind = "attendance" | "points" | "roster" | "service";
 
@@ -497,10 +497,12 @@ export function ReportsPage() {
       });
     } catch (error) {
       if (token !== runToken.current) return;
-      const description =
-        error instanceof Error
-          ? error.message
-          : "Confirm your chapter access and retry.";
+      // The report hooks throw openapi-fetch's error body, a plain object,
+      // so an `instanceof Error` check never reached the server's message.
+      const description = getErrorMessage(
+        error,
+        "Confirm your chapter access and retry.",
+      );
       // Both, deliberately: the toast reports the moment, and the panel keeps
       // saying so after the toast dismisses. A failed run that leaves the idle
       // copy on screen is a failure reported as "nothing has happened yet".
@@ -580,10 +582,10 @@ export function ReportsPage() {
     } catch (error) {
       toast({
         title: `Couldn't export ${reportLabel[kind].toLowerCase()} PDF`,
-        description:
-          error instanceof Error
-            ? error.message
-            : "Confirm your chapter access and retry.",
+        description: getErrorMessage(
+          error,
+          "Confirm your chapter access and retry.",
+        ),
         variant: "destructive",
       });
     } finally {

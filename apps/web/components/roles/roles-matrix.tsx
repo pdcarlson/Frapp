@@ -59,7 +59,8 @@ type Props = {
  * permission namespace. A permission with no prefix lands under "Chapter",
  * which is where the ungrouped chapter-wide permissions belong anyway. A row
  * reads as `permission-labels.ts` words it ("Create events"), never as the
- * constant; the raw string stays in the row's tooltip.
+ * constant or the raw string; the tooltip repeats the words for a label the
+ * column truncates.
  *
  * **The marks take no opacity modifier.** `●` and `○` are characters, so
  * §6's 4.5:1 text floor applies rather than the 3:1 glyph one, and
@@ -291,7 +292,7 @@ export function RolesMatrix({
                 <span
                   role="rowheader"
                   className="truncate pr-2"
-                  title={entry.permission}
+                  title={permissionLabel(entry.permission)}
                 >
                   {permissionLabel(entry.permission)}
                 </span>

@@ -9,7 +9,7 @@ import {
   useMyPermissions,
 } from "@repo/hooks";
 import type { ChapterMembershipSummary } from "@repo/hooks";
-import { orgHidesGreekLetters } from "@repo/org-archetypes";
+import { orgHidingGreekLettersIn } from "@repo/org-archetypes";
 import { resolveChapterMark, type ChapterMark } from "@repo/validation";
 import { CrestTile } from "@/components/layout/crest-tile";
 import {
@@ -111,10 +111,11 @@ export function ChapterNavHeader({
   // to the next step, so one bad key costs the mark a step, never the row's
   // name (#2844). An organization that never displays its letters (FIJI)
   // keeps them out of the crest even when its stored switch was never turned
-  // off, as for a chapter created before the profile knew to.
+  // off, as for a chapter created before the profile knew to. The match reads
+  // the organization's name inside the chapter's ("Phi Gamma Delta Tau Nu").
   const identity = useMemo(() => {
     if (!chapterData) return null;
-    const branding = orgHidesGreekLetters(chapterData.name)
+    const branding = orgHidingGreekLettersIn(chapterData.name)
       ? { ...chapterData.branding, show_greek_letters: false }
       : chapterData.branding;
     return {

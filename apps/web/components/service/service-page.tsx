@@ -291,10 +291,7 @@ export function ServiceHoursPage() {
     } catch (error) {
       toast({
         title: "Couldn't log service entry",
-        description: getErrorMessage(
-          error,
-          "Confirm service:log permission and retry.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     } finally {

@@ -427,6 +427,17 @@ describe("ChapterNavHeader chapter mark", () => {
     expect(screen.queryByText("ΦΓΔ")).not.toBeInTheDocument();
   });
 
+  it.each(["Phi Gamma Delta Tau Nu", "FIJI at RPI"])(
+    "hides those letters when the chapter's name, %j, adds to the organization's",
+    (name) => {
+      withBranding({ name, branding: { greek_letters: "ΦΓΔ" } });
+      expect(screen.getByTestId("chapter-mark-text")).not.toHaveTextContent(
+        "ΦΓΔ",
+      );
+      expect(screen.queryByText("ΦΓΔ")).not.toBeInTheDocument();
+    },
+  );
+
   /*
    * `branding` is jsonb, so a stored row can carry a value no schema would
    * pass. The row used to run the whole payload through a zod twin of the
