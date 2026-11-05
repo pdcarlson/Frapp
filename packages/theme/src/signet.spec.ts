@@ -494,7 +494,11 @@ describe("getSignetCssVars", () => {
     // accent-engine.md, so the day this list gains `--primary-500` a
     // digit-blind pattern would drop it and quietly stop checking the very
     // token most likely to be hard-coded to house gold.
-    const listed = section("Accent Slot").match(/`--[a-z0-9-]+`/g);
+    // The slot's own lead only: its `### Where the accent goes` subsection
+    // names neutral tokens (`--foreground`, `--card-hover`) as what the
+    // accent is NOT, and those are fixed tokens by design.
+    const lead = section("Accent Slot").split(/^### /m)[0] ?? "";
+    const listed = lead.match(/`--[a-z0-9-]+`/g);
     expect(
       listed,
       'foundations.md "Accent Slot" no longer names the accent-slot tokens in backticks — ' +

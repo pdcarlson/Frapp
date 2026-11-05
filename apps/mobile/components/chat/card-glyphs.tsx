@@ -19,10 +19,9 @@ import {
  * low opacity, and the detail strokes stay stroke-only.
  *
  * Points and Service hours draw the shared nav set (iconography.md §1.1)
- * through `TabGlyph`, the same shapes as web's cards (an accent eyebrow lifts
- * the silhouette like a focused tab; web's cards draw it at rest, a
- * difference that predates the nav set); the others below keep the stroke
- * recipe. The event and task cards draw the Events and Tasks tab glyphs
+ * through `TabGlyph`, the same shapes as web's cards, drawn at rest in the
+ * muted foreground (an eyebrow is a label, never the accent: foundations.md
+ * §6); the others below keep the stroke recipe. The event and task cards draw the Events and Tasks tab glyphs
  * themselves.
  */
 

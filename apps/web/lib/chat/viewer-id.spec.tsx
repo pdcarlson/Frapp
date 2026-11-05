@@ -163,14 +163,11 @@ describe("a warm timeline painted from the cached id alone", () => {
     Array.from(
       document.querySelectorAll<HTMLElement>('[data-slot="message-body"]'),
     );
-  /** The author label of the one row these render, and whether it is accented. */
+  /** The author label of the one row these render. */
   const author = () => {
     const line = document.querySelector<HTMLElement>('[data-slot="author-line"]');
     const label = line?.firstElementChild as HTMLElement | null | undefined;
-    return {
-      text: label?.textContent ?? null,
-      accented: label?.className.includes("text-accent-text") ?? false,
-    };
+    return { text: label?.textContent ?? null };
   };
 
   function Timeline({
@@ -217,7 +214,7 @@ describe("a warm timeline painted from the cached id alone", () => {
 
       It fails if the cached id stops reaching the timeline, and it fails just as
       loudly if a row that *is* the member's paints as somebody else's: the
-      member's own author line says "You" in the chapter accent, and
+      member's own author line says "You", and
       `Member 111111` is `memberFallbackLabel` reading the viewer's own uuid
       back to them — the literal "Member … · BF" string staging reported on
       #2243.
@@ -232,7 +229,7 @@ describe("a warm timeline painted from the cached id alone", () => {
     );
 
     expect(screen.getByText("mine")).toBeInTheDocument();
-    expect(author()).toEqual({ text: "You", accented: true });
+    expect(author()).toEqual({ text: "You" });
     expect(screen.queryByText("Member 111111")).not.toBeInTheDocument();
   });
 
@@ -249,7 +246,7 @@ describe("a warm timeline painted from the cached id alone", () => {
       />,
     );
 
-    expect(author()).toEqual({ text: "Alice Chen", accented: false });
+    expect(author()).toEqual({ text: "Alice Chen" });
   });
 
   it("does not paint one member's history against another member's cached id", () => {
@@ -274,7 +271,6 @@ describe("a warm timeline painted from the cached id alone", () => {
     expect(screen.getByText("mine")).toBeInTheDocument();
     expect(author().text).not.toBeNull();
     expect(author().text).not.toBe("You");
-    expect(author().accented).toBe(false);
   });
 
   it("withholds every row when neither half knows the viewer", () => {

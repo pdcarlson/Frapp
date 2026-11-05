@@ -1,14 +1,24 @@
 import type { DiscordImportChannel } from '../entities/discord-import.entity';
 
 /**
+ * A channel group name as an import compares it: trimmed, in any case, so
+ * "Committees" joins an existing "committees" rather than making a second.
+ */
+export function channelGroupKey(name: string): string {
+  return name.trim().toLocaleLowerCase('en-US');
+}
+
+/**
  * Which mapping rows of one import share the channel they create (#2856).
  *
  * Owner's decision: like-named channels merge by default. Two Discord channels
  * the admin sends to a new channel of the same name land in ONE Frapp channel,
  * provided they agree on everything that decides who reads it and how: the
- * type, the gate's permissions, and read-only. Rows that differ get a channel
- * each, as before, so a merge never widens who reads a message. The wizard
- * asks about a shared name whose rows differ before it sends one.
+ * type, the gate's permissions, and read-only, and on the channel group it
+ * goes into (`new_channel_group`, compared as `channelGroupKey` does), so a
+ * kept Discord category never loses a channel to another one. Rows that differ
+ * get a channel each, as before, so a merge never widens who reads a message.
+ * The wizard asks about a shared name whose rows differ before it sends one.
  *
  * The name compares the way the wizard's does (`normaliseChannelName` in
  * `apps/web/components/discord-import/mapping-issues.ts`): trimmed, any
@@ -24,6 +34,7 @@ export function newChannelMergeKey(
     | 'new_channel_type'
     | 'new_channel_is_read_only'
     | 'new_channel_required_permissions'
+    | 'new_channel_group'
   >,
 ): string | null {
   if (mapping.mapping_action !== 'create_new') return null;
@@ -41,6 +52,7 @@ export function newChannelMergeKey(
     mapping.new_channel_type,
     mapping.new_channel_is_read_only,
     permissions,
+    channelGroupKey(mapping.new_channel_group ?? ''),
   ]);
 }
 

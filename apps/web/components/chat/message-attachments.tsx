@@ -74,7 +74,7 @@ export function MessageAttachments({
 
   const rowClass = cn(
     "flex items-center gap-2 rounded-md border border-border bg-surface-1 px-2 py-1.5",
-    "text-caption hover:bg-accent-subtle hover:text-accent-text",
+    "text-caption hover:bg-card-hover hover:text-foreground",
     FOCUS_RING,
   );
 

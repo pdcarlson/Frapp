@@ -479,7 +479,7 @@ export function EventsPage() {
 
       <TabsContent value="list" className="mt-0 space-y-3">
         {/*
-          The selection bar, as a flush tinted strip rather than the accent
+          The selection bar, as a flush neutral strip rather than the accent
           `<Card>` it used to be. Only the count and the bulk action are
           conditional; select-all lives in the list header below, because a
           control inside this bar would unmount itself when it cleared the
@@ -490,8 +490,8 @@ export function EventsPage() {
           delete, so there is no real mutation to call without inventing one.
         */}
         {canMarkAttendance && selectedEventIds.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-md border border-accent-border bg-accent-subtle px-2 py-1.5">
-            <p className="text-caption font-semibold text-accent-text">
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-popover px-2 py-1.5">
+            <p className="text-caption font-semibold text-foreground">
               {selectedEventIds.length} selected
             </p>
             <Button
@@ -601,7 +601,7 @@ export function EventsPage() {
                     className={cn(
                       "flex items-center gap-1",
                       // Fill means state, never striping.
-                      isSelected && "bg-accent-subtle-hover text-accent-text",
+                      isSelected && "bg-popover",
                     )}
                   >
                     {canMarkAttendance ? (
@@ -634,7 +634,7 @@ export function EventsPage() {
                       className={cn(
                         "flex min-h-11 min-w-0 flex-1 flex-col items-start gap-1 rounded-md px-2 py-1.5 text-left transition-colors sm:flex-row sm:items-center sm:gap-3",
                         !isSelected &&
-                          "hover:bg-accent-subtle hover:text-foreground",
+                          "hover:bg-card-hover hover:text-foreground",
                         FOCUS_RING_OFFSET,
                       )}
                     >

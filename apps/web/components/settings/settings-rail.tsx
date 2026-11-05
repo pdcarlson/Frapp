@@ -179,12 +179,12 @@ export function SettingsToolsOnly({
               href={tool.href}
               className={cn(
                 // A row in a card list hovers like a table row
-                // (`ui/table.tsx`): the accent tint, which moves hue where
-                // `bg-accent`, the elevated step, moved 1.105:1. The end rows
+                // (`ui/table.tsx`): `--card-hover`, the step above the whole
+                // ladder, where `bg-accent`, the elevated step, moved 1.105:1. The end rows
                 // take the list's inner radius (14px less its 1px border) so
                 // the visible tint stays inside its corners; clipping the list
                 // with `overflow-hidden` instead would clip the focus ring too.
-                "flex flex-col gap-0.5 px-4 py-3 transition hover:bg-accent-subtle",
+                "flex flex-col gap-0.5 px-4 py-3 transition hover:bg-card-hover",
                 "group-first:rounded-t-[13px] group-last:rounded-b-[13px]",
                 FOCUS_RING,
               )}

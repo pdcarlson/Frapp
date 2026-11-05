@@ -8,10 +8,6 @@ import {
 } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import {
-  type ChapterBranding,
-  useChapterBranding,
-} from "@/lib/chapter-branding";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
 
@@ -28,10 +24,9 @@ import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
  * rows separated by a hairline, each a glyph + title + `· context` with a
  * trailing time. The glyphs are the Events and Tasks tab glyphs at the drawn
  * 20pt (since 2026-11-05 the shared nav set's shapes, not the board's
- * geometry), the calendar in the accent and the check in the inactive tab's
- * muted paint, so each row says at a glance
- * whether it is an event or a task (a dot said neither). The event's trailing
- * time is the chapter accent; an imminent task due date is
+ * geometry), both at rest in the inactive tab's muted paint: the shape says
+ * at a glance whether a row is an event or a task (a dot said neither). The
+ * event's trailing time is the foreground text; an imminent task due date is
  * `semantic.destructive`, which is the drawn `#F85149` — **not** the mention red
  * `#E5484D`, which `foundations.md:67` reserves for direct address alone.
  *
@@ -39,6 +34,9 @@ import { EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
  * still gets its event row. With neither, the strip renders nothing at all
  * rather than an empty-state card — it is chrome above the real content, and an
  * "everything is clear" card would push the channel list down to say nothing.
+ *
+ * Nothing here takes the chapter accent: row icons, labels and times are
+ * neutral (foundations.md §6, "Where the accent goes", 2026-11-05).
  */
 
 /** The board draws the strip's glyphs at 20 (the tab bar's are 24). */
@@ -224,8 +222,7 @@ export function UpNextStrip({
   now,
 }: UpNextStripProps) {
   const { tokens } = useFrappTheme();
-  const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
   const router = useRouter();
 
   // `now` is read once per render rather than per row, so the two rows cannot
@@ -261,8 +258,8 @@ export function UpNextStrip({
           style={styles.row}
         >
           <EventsGlyph
-            focused
-            accent={brand.accent}
+            focused={false}
+            accent={tokens.color.text.muted}
             muted={tokens.color.text.muted}
             size={UP_NEXT_GLYPH_SIZE}
           />
@@ -290,7 +287,7 @@ export function UpNextStrip({
         >
           <TasksGlyph
             focused={false}
-            accent={brand.accent}
+            accent={tokens.color.text.muted}
             muted={tokens.color.text.muted}
             size={UP_NEXT_GLYPH_SIZE}
           />
@@ -311,7 +308,7 @@ export function UpNextStrip({
   );
 }
 
-function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     strip: {
       gap: tokens.spacing.xs,
@@ -344,7 +341,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     eventTime: {
       ...typeRole(tokens.typography.role.caption),
-      color: brand.accent,
+      color: tokens.color.text.foreground,
     },
     dueUrgent: {
       ...typeRole(tokens.typography.role.caption),

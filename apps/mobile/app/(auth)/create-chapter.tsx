@@ -855,7 +855,7 @@ function FindStep({
 
       {hasQuery && isFetching ? (
         <View style={styles.centerRow}>
-          <ActivityIndicator color={tokens.color.gold.house} />
+          <ActivityIndicator color={tokens.color.text.muted} />
           <Text style={styles.helperText}>Searching…</Text>
         </View>
       ) : null}

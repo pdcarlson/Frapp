@@ -100,6 +100,12 @@ export interface DiscordChannelRef {
   guildId: string | null;
   /** Category name for a top-level channel; the parent channel for a thread. */
   categoryName: string | null;
+  /**
+   * The category's position in the server, for a top-level channel in one.
+   * Absent or null for a thread, a channel with no category, and wherever the
+   * position was not read.
+   */
+  categoryPosition?: number | null;
   /** Set only for threads — the channel the thread lives in. */
   parentChannelId: string | null;
   isThread: boolean;
