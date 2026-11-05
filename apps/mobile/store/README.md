@@ -14,7 +14,7 @@ The owner approved renders of the real app on Expo web as the screens (2026-09-2
 no longer wait on a device build or on `preview` (#2415), and picked a framed design for both
 stores (2026-11-05): `node scripts/demo/capture-mobile.mjs --store` signs in to the local demo
 chapter, captures seven screens once, and frames them with a caption in the feature graphic's
-charcoal and gold, into `screenshots/app-store/` (1320 × 2868, the 6.9" iPhone size) and
+charcoal and gold, into `screenshots/app-store/` (1320 × 2868; the console took 1206 × 2622 instead, see § 6.4) and
 `screenshots/google-play/` (1242 × 2208). No Ask screen, because this binary has none (#2259),
 and no Dues screen, because a populated ledger shows the Stripe footer § Review notes keeps from
 App Review. The procedure, the captions, and where the sizes come from are in
@@ -39,6 +39,22 @@ icon field: the iOS icon ships in the binary from `apps/mobile/app.json` and cha
 with a new build
 ([App Store Connect Help, "Add an app icon"](https://developer.apple.com/help/app-store-connect/manage-app-information/add-an-app-icon);
 dark and tinted variants: [`spec/ui/assets.md` § 7](../../../spec/ui/assets.md#7-mobile-expo-rasters)).
+
+**App Store product page images: made by hand, committed, uploaded by the owner.** App Store
+Connect's version page has a *Header and Search Results* panel with one optional asset per
+tab. Both are in [`graphics/app-store/`](graphics/app-store/):
+`app-store-header-5244x2950.png` (Header tab; it also takes 3840 × 1646) and
+`app-store-search-results-3840x2560.png` (Search Results tab; it also takes 5244 × 2950 and
+1920 × 1280). Sizes were read from the console on 2026-11-05. Without a search results asset,
+App Store Connect uses the screenshots instead. Both images were composed on 2026-11-05 from
+the charcoal screenshot set (`scripts/demo/store-frames.mjs`). Nothing renders them, so
+`check:brand-assets` doesn't check them, and they go stale when the screenshots change. The
+header is centered: on an iPhone the product page shows only its middle (about 62% of the
+width, and the top three quarters above the app card), so the first, left-aligned version
+lost its headline there and was replaced the same day.
+
+**App Store screenshot size.** The console took 1206 × 2622 on 2026-11-05, not the
+pipeline's 1320 × 2868: [`mobile.md` § 6.4](../../../docs/ops/deployment/mobile.md#64-store-screenshots).
 
 **The product is Frapp** ([ADR-25](../../../spec/architecture/adr/adr-25.md),
 2026-09-23). The App Store **listing** name is **`Frapp: Chapter Hub`**. The
@@ -71,11 +87,12 @@ trademark record is on #1901; this file is the listing paste.
 | Field | Value |
 | --- | --- |
 | Name (App Store listing, 30 chars) | Frapp: Chapter Hub (claimed 2026-09-23; was Signet: Chapter Hub) |
+| Name (Google Play listing, 30 chars) | Frapp: Chapter Hub, entered 2026-11-05 to match the App Store ([#2720](https://github.com/pdcarlson/Frapp/issues/2720)). Play names aren't unique, so plain Frapp should have been allowed *(rule unverified)*; the owner chose to match |
 | Display name (home screen, from `expo.name`) | Frapp (Signet until ADR-25 step 2) |
 | Subtitle (iOS, 30 chars) / Short description (Android, 80 chars) | Your chapter, in one place |
 | Bundle id / package | `live.frapp.mobile` |
 | Category | Productivity (primary); Social Networking (secondary, iOS) |
-| Age rating | **13+** (iOS) / Everyone (Android, **pending**: the IARC questionnaire in Play Console issues the real rating, [#2720](https://github.com/pdcarlson/Frapp/issues/2720)). See § Age rating below — 13+ is a deliberate override of the 4+ the questionnaire calculated. |
+| Age rating | **13+** (iOS) / Everyone (Android: issued by the IARC questionnaire in Play Console on 2026-11-05, ESRB **Everyone** with the interactive element *Users Interact* and no content descriptors; North America is the only distribution region, [#2720](https://github.com/pdcarlson/Frapp/issues/2720)). See § Age rating below — 13+ is a deliberate override of the 4+ the questionnaire calculated. |
 | Price | Free (chapters subscribe on the web dashboard. The app has no in-app purchases, and no payment can be taken in the app at all — card payments are not switched on for this build. **Basis: no Stripe key in the EAS `production` environment, per #2415's `env:list` of 2026-09-18. Re-run `npm run eas -- env:list --environment production` (from the repo root) against the build you actually submit before pasting this.** See § Review notes.) |
 | Privacy policy URL | https://frapp.live/privacy |
 | Terms URL | https://frapp.live/terms |
@@ -253,7 +270,7 @@ the work; the detail lives there, not here.
 
 | # | Risk | Kind |
 | --- | --- | --- |
-| [#2454](https://github.com/pdcarlson/Frapp/issues/2454) | **No screenshots uploaded.** Filed 2026-09-21 because the gate's only tracker was #2196 §4, and #2196 was closed as completed with every box unticked. Since 2026-11-05 both stores' framed sets come from `capture-mobile.mjs --store` (see the note at the top of this file); what remains is the owner's upload and confirming the accepted size in the console | hard gate |
+| [#2454](https://github.com/pdcarlson/Frapp/issues/2454) | **Screenshots uploaded to both stores on 2026-11-05.** Filed 2026-09-21 because the gate's only tracker was #2196 §4, and #2196 was closed as completed with every box unticked. Since 2026-11-05 both stores' framed sets come from `capture-mobile.mjs --store` (see the note at the top of this file); the owner uploaded both on 2026-11-05, and the App Store slot took 1206 × 2622, not 1320 × 2868 (`mobile.md` § 6.4); what remains is the pipeline rendering that size itself in the console | hard gate |
 | [#2415](https://github.com/pdcarlson/Frapp/issues/2415) | EAS `preview` holds only `SENTRY_AUTH_TOKEN`. It no longer owns the screenshot route (#2454 shoots from Expo web), but a `preview` build still cannot sign in. Its other half, no Stripe key in `production`, stopped gating submission on 2026-09-21: this listing no longer claims card payments, so that key is a product decision rather than a blocker. Neither half now gates submission, which ships the `production` build | no longer a gate (2026-09-22) |
 | [#2195](https://github.com/pdcarlson/Frapp/issues/2195) | Apple Developer trader status (EU DSA) — **probably already done, and only needs confirming.** #2195 was filed 2026-09-13 off a banner reading "Developers must provide their trader status to submit new apps", which gates submission itself rather than only EU availability. The dialog it sends you to *is* the trader-status dialog, and § As submitted records answering it the next day, 2026-09-14, on the "I don't plan to distribute in the EU" limb. So the action has very likely been taken and the issue is stale. Confirm the banner is gone from the Apps page and close #2195; do not re-answer the dialog, because re-picking is how you end up declaring trader and publishing a home address on an EU listing | confirm, then close |
 | [#2308](https://github.com/pdcarlson/Frapp/issues/2308) / [#2309](https://github.com/pdcarlson/Frapp/issues/2309) | The App Review login exists in `frapp-prod` (created 2026-09-17 and marked for the seed on 2026-09-24, #2309), but its chapter is seeded only on the day of submission, because the check-in event goes stale 43 to 67 hours after a seed (#2478 § D). Until that seed runs, the reviewer signs in to no chapter. The seed is ready: `scripts/demo/seed-demo.mjs --reviewer` targets a hosted project, and its `auth` → `sql` → `storage` → `verify` path passed end to end on staging on 2026-09-23 at `69e0021` (output in [#2537](https://github.com/pdcarlson/Frapp/pull/2537); staging was cleaned afterwards). Changes made after that run, which reached `main` in the follow-up PR that links back to #2537 rather than in #2537 itself, were verified against the local stack, unit tests and the `pglite-migrations` check only: `sql` (a guard that runs between its deletes, and a refusal to adopt a login that other rows reference), `storage` (`--remove` clears the chapter's folder in every bucket, and refuses while the chapter exists) and `verify` (a stricter staleness check). Applying it to production is the owner's step, [`demo-data.md` § Production (App Review)](../../../docs/guides/demo-data.md#production-app-review) | hard gate |
@@ -281,6 +298,42 @@ the work; the detail lives there, not here.
 > and a build without Ask draws no ✦ pill ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).
 > The copy lives in [`spec/ui/design-system/writing.md`](../../../spec/ui/design-system/writing.md)
 > § 7, Sign in. When Ask ships, move the listing subtitle and the sign-in line together.
+
+**Paste this** (App Store Connect and Play Console, entered by the owner on 2026-11-05):
+
+```text
+Frapp is where your chapter runs day to day.
+
+Announcements, channels, events, study hours, points, dues and the member directory all live in one app, so nobody has to dig through six group chats to find out what's going on.
+
+For members:
+- Chat in chapter channels and direct messages
+- See what's coming up and check in at events with a QR code
+- Log study hours inside your chapter's study zones
+- Log service hours and track your points and house rank
+- See your dues and payment history
+- Look up anyone in the member directory
+
+For officers:
+- Take attendance at the door with a QR code
+- Assign a task to any member
+- Post announcements that reach every member
+
+Bigger setup jobs like roles, dues, service hour approvals, channels and points are handled on the web dashboard.
+
+Members join by invite. Your officers send you a link, you open it on your phone, and you're in.
+
+Notifications are yours to control, with quiet hours built in.
+```
+
+> **Rewritten 2026-11-05 at the owner's request** so it reads like a person wrote it, with no
+> em dashes. It makes the same claims as the earlier text below, plus one: "Log service
+> hours", which the member's Service hours log sheet does
+> (`components/service-hours/log-hours-sheet.tsx`). The earlier text and its notes stay
+> because the notes are the evidence that each claim holds in the binary (Guideline 2.3).
+> Check a new claim against them before you add it.
+
+**Before 2026-11-05** the listing read:
 
 Frapp is the app your chapter actually runs on.
 
@@ -314,8 +367,14 @@ Officers get what they need on their feet: take attendance at the door with a QR
 
 Frapp is invite-only. Your chapter's officers create the chapter on the web and send you an invite link; open it on your phone and you are in.
 
+> **Changed 2026-11-05, in both consoles** (Play first, then App Store Connect the same day). This read "Frapp is invite-only. Your chapter's officers create the chapter on the web
+> and send you an invite link". Neither half holds: the app has its own create-chapter flow
+> (`app/(auth)/create-chapter.tsx`, the founding wizard, reached from the join screen's "I'm starting
+> our chapter" and from More), and `POST /v1/chapters/onboard` needs only a signed-in account, so a
+> founder needs no invite. What is invite-only is joining an existing chapter.
+
 Features
-- Chapter channels, and direct messages your chapter has started
+- Chapter channels and direct messages your chapter has started
 - Events with QR check-in and attendance
 - Study hours with chapter study zones
 - Points, house rank and service hours
@@ -347,10 +406,21 @@ Features
 > builds before it. The narrowed bullet stays true either way but undersells such a
 > build: widen it back to "direct messages" only for a submitted build that contains
 > #2773.
+>
+> **Widened 2026-11-05.** The 0.9.1 store builds (EAS iOS build 8 and Android build 3, both from
+> `cca52dec` per their EAS build records) contain #2773, as does Android build 2 (`ea9bc12`): the directory's
+> Message action (`components/directory/member-detail-sheet.tsx`) starts a DM. So the bullet now
+> reads "Chapter channels and direct messages", on Play and in App Store Connect, both
+> entered by the owner on 2026-11-05.
 
 ## Keywords (iOS, 100 chars)
 
-fraternity,sorority,chapter,greek life,dues,attendance,study hours,events,members,officers
+fraternity,sorority,greek life,dues,attendance,study hours,service hours,events,points,officers
+
+> **Changed 2026-11-05** (95 characters). "chapter" was dropped because it's already in the
+> listing name, and Apple indexes name words for search on its own, so repeating it in the
+> keywords wastes characters. "members" made room for "service hours" and "points". Before:
+> `fraternity,sorority,chapter,greek life,dues,attendance,study hours,events,members,officers`.
 
 ## What's new (first release)
 
@@ -373,14 +443,14 @@ states what a reviewer will actually be shown.
 | --- | --- |
 | A reviewer account that can sign in | The App Review login already exists in `frapp-prod`, carries the seed's namespace marker, and has the password entered in App Store Connect (#2309, done 2026-09-24), so don't run `seed-demo.mjs auth` again unless `verify` rejects that password. On the day of submission, seed: the seed makes that login, and only a login `auth` created or marked, the president of the demo chapter (namespace `a9900000`), and `verify` proves the sign-in lands there. Give App Review its email and password. Do not plan on an invite: 24h hardcoded, single-use, no override. The seed sets `subscription_status` `active`, without which paid-ops **writes** are refused (#2297) — reads are exempt (`chapter.guard.ts` returns early for `GET`/`HEAD`/`OPTIONS`), so every screen still loads |
 | Location confirms "inside a chapter study zone" | Seeded: the chapter carries study zones at fixed coordinates on its campus in Akron, Ohio, and the reviewer has past sessions in them (the required `pglite-migrations` CI check asserts both). A reviewer anywhere else is told the device is outside a zone when starting one, which is the check working; § Review notes says so, so it does not read as broken. Zone creation is web-dashboard-only, so it cannot be done from the app being reviewed |
-| "direct messages your chapter has started" | Seeded by `--reviewer`: one DM from the chapter's treasurer into the reviewer's account. The DIRECT section is hidden entirely when the list is empty |
+| "direct messages" (was "direct messages your chapter has started" until 2026-11-05) | Seeded by `--reviewer`: one DM from the chapter's treasurer into the reviewer's account. The DIRECT section is hidden entirely when the list is empty. Starting a new DM from the directory's Message action needs another real member in the roster, which the seeded chapter has |
 | "Long-press any message from another member to report it or block them" | Seeded: #general and the chapter's other public channels carry ordinary text messages from other members, and `--reviewer` adds the treasurer's in the reviewer's DM, so a long-press in #general offers Block. The required `pglite-migrations` CI check goes red, blocking the merge, if #general has no such message left. A reseed or a hand edit must keep at least one such message, **from another real member of the seeded chapter**, in a channel the reviewer can read. The system actor's posts — the welcome post, the audit bridge — offer Report only, never Block (it is unblockable by design), and the reviewer's own messages offer nothing, so a chapter whose only chat is system posts cannot show Guideline 1.2's block control at all. Any real member's message offers Block, including one from a member who joined after the app loaded its roster; the only other member it is withheld for is one a block attempt already proved has left the chapter. It inverts the `chat_messages` count in § Identity |
 | *(nothing — the dues sentence was dropped 2026-09-21)* | **Leave the reviewer with no invoices at all**, which `--reviewer` does. Zero rows is the only state that shows them nothing about payments — no Pay control and no Stripe footer; § Review notes owns the mechanics and is the copy to keep current. **Nothing to undo:** the ledger is viewer-scoped, so the 2 OPEN invoices in § Identity's production reading belong to the two pre-existing auth users and are invisible to the reviewer. **Do not void or delete those** — they are live beta-chapter billing. If a populated ledger is wanted anyway, insert a **PAID** row directly in SQL — never through the API, where `DRAFT → OPEN` is the only route to PAID and writes a persisted "New Invoice" notification deep-linked to the Dues tab (`financial-invoice.service.ts`). That fallback surfaces the Stripe footer, leaves the balance at $0.00, and inverts § Identity's invoice count — re-run that query too |
 
 ## Review notes (App Store Connect → App Review Information)
 
-- The app is invite-only. **Give App Review an email and password for a seeded account that is already a member of a chapter — never an invite token.** Put them in the Sign-In Required fields, not prose. Invites cannot work here: `prepareInviteData` hardcodes `expiresAt.setHours(+24)` and `redeem` throws `GoneException` on `used_at` or on a past `expires_at`, with no override parameter anywhere — so a token is dead before a first review answers and certainly dead on a re-review. (Corrected 2026-09-21; this bullet used to hand over a token, and every earlier note about "minting one whose expiry outlasts review" was describing something the API cannot do.)
-- The account signs in as the president of a fictional demo chapter. On first sign-in the app asks the account to agree to the Terms of Service and Privacy Policy, which forbid objectionable content and abusive users; tick the box and continue. Worth trying: Chat (the chapter's channels, the officer composer in #announcements, and a direct message from the chapter's treasurer), Events, Tasks (including New task), and under More: Documents (open one), Directory, Service hours, Study hours, and Profile for points. Study hours lists past sessions; a new one starts only inside one of the chapter's study zones, and the demo chapter's zones are on its campus in Ohio, so elsewhere the app will say the device is outside a zone. Setting a chapter up is done on the web dashboard, not in this app: roles and permissions, dues and who has paid, service-hour approvals, channels, points, and study zones.
+- Members join a chapter by invite. **Give App Review an email and password for a seeded account that is already a member of a chapter — never an invite token.** Put them in the Sign-In Required fields, not prose. Invites cannot work here: `prepareInviteData` hardcodes `expiresAt.setHours(+24)` and `redeem` throws `GoneException` on `used_at` or on a past `expires_at`, with no override parameter anywhere — so a token is dead before a first review answers and certainly dead on a re-review. (Corrected 2026-09-21; this bullet used to hand over a token, and every earlier note about "minting one whose expiry outlasts review" was describing something the API cannot do.)
+- The account signs in as the president of a fictional demo chapter. On first sign-in the app asks the account to agree to the Terms of Service and Privacy Policy, which forbid objectionable content and abusive users; tick the box and continue. Worth trying: Chat (the chapter's channels, the officer composer in #announcements, and a direct message from the chapter's treasurer), Events, Tasks (including New task), and under More: Documents (open one), Directory, Service hours, Study hours, and Profile for points. Study hours lists past sessions; a new one starts only inside one of the chapter's study zones, and the demo chapter's zones are on its campus in Ohio, so elsewhere the app will say the device is outside a zone. These parts of running a chapter are on the web dashboard, not in this app: roles and permissions, dues and who has paid, service-hour approvals, channels, points, and study zones.
   > **Submitter note, not for the paste (2026-09-23, #2308).** Every screen named above
   > was checked against the binary (tabs in `app/(tabs)/_layout.tsx`, More in
   > `more.tsx`, the announcements composer and New task per § Description's verdicts)
@@ -567,6 +637,12 @@ Advertising Data, Browsing History, Search History.
 > written in the table above, because this table is the record of what was entered on
 > 2026-09-14 — the `‡` marks them as answers to correct in the console, not values to
 > edit here. Nothing in CI can see the console, so this footnote is the only reminder.
+>
+> **Done: the console reads Linked: Yes on both (checked 2026-11-05).** The owner's
+> screenshots of App Privacy that day show all eleven data types in the table above, each
+> linked to the user, and its product page preview has only a "Data Linked to You" section,
+> so nothing is declared as tracking. Crash Data and Performance Data are both
+> App Functionality, linked. Photos or Videos (†) is still declared.
 
 Where each answer comes from:
 
@@ -655,7 +731,9 @@ Where each answer comes from:
 What Play Console asks under **Policy and programs → App content** before any release, including
 the Data safety form. These are the answers to enter. The developer account exists, and the app
 `live.frapp.mobile` was created in it on 2026-10-09
-([#2556](https://github.com/pdcarlson/Frapp/issues/2556)), so the forms can be filled in. Written
+([#2556](https://github.com/pdcarlson/Frapp/issues/2556)). **The owner entered every App content
+answer below, Data safety included, on 2026-11-05**; what was entered, and where it differs from
+this file, is on [#2720](https://github.com/pdcarlson/Frapp/issues/2720). Written
 2026-09-27 for [#2557](https://github.com/pdcarlson/Frapp/issues/2557). Where an answer rests on a
 Play rule, the rule comes from search-result snippets of Play Console Help, because
 support.google.com is blocked from the cloud sandbox. Those answers carry *(rule unverified)*: check
@@ -684,7 +762,7 @@ Two of Play's definitions differ from Apple's, and they change answers:
 | Personal info → Phone number | Yes | No | Optional | App functionality | Deleted | A chapter's `phone` member field, as in the App Store row |
 | Personal info → User IDs | Yes | No | Required | App functionality, Analytics | Kept as an anonymous tombstone; the analytics id is forgotten | Member and account ids; the pseudonymous analytics `distinct_id` (see *User ID carries Analytics* above) |
 | Messages → Other in-app messages | Yes | No | Optional | App functionality | **Kept, anonymised** | Chat channels and DMs |
-| Photos and videos → Photos | Yes | No | Optional | App functionality | **Mixed**: chat photos and service-hour proof photos are kept, anonymised, with their messages and entries; the profile photo is deleted; a chapter logo and document photos stay with the chapter | Chat photo attachments (`lib/chat/attachment-upload.ts`), kept with their messages; a photo a member attaches as proof to a service-hour entry (s20, `lib/more/service-proof.ts`), kept in the private service bucket with its entry: deleting a pending entry deletes its photo, but account deletion keeps the entry, anonymised, and its photo with it, since the deletion purge reaches only profile photos and generated reports ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion); whether it should reach proof is [#3425](https://github.com/pdcarlson/Frapp/issues/3425)) (a photo uploaded for an entry that never saved stays unclaimed until [#2197](https://github.com/pdcarlson/Frapp/issues/2197)'s sweep); the chapter logo an officer adds in chapter setup (`lib/onboarding/chapter-wizard/chapter-logo.ts`, #3351), which belongs to the chapter and stays until an officer replaces or removes it; a photo a member holding `chapter_docs:upload` adds to the chapter's documents (`lib/more/document-upload.ts`, #3399), which is filed in the chapter's library and stays, attributed to "Deleted User" after its uploader's account is deleted, until an officer deletes the document; and the member's profile photo (`lib/more/profile-photo.ts`, #2897), deleted when it is replaced or removed (best effort: a failed delete there is logged, not retried), when the member leaves the chapter, and on account deletion ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion)). The camera only reads check-in codes on the device, and no frame leaves the phone. Play's Data safety form isn't filled in yet (#2720); the owner enters this row as written here, profile photo included (#2895) |
+| Photos and videos → Photos | Yes | No | Optional | App functionality | **Mixed**: chat photos and service-hour proof photos are kept, anonymised, with their messages and entries; the profile photo is deleted; a chapter logo and document photos stay with the chapter | Chat photo attachments (`lib/chat/attachment-upload.ts`), kept with their messages; a photo a member attaches as proof to a service-hour entry (s20, `lib/more/service-proof.ts`), kept in the private service bucket with its entry: deleting a pending entry deletes its photo, but account deletion keeps the entry, anonymised, and its photo with it, since the deletion purge reaches only profile photos and generated reports ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion); whether it should reach proof is [#3425](https://github.com/pdcarlson/Frapp/issues/3425)) (a photo uploaded for an entry that never saved stays unclaimed until [#2197](https://github.com/pdcarlson/Frapp/issues/2197)'s sweep); the chapter logo an officer adds in chapter setup (`lib/onboarding/chapter-wizard/chapter-logo.ts`, #3351), which belongs to the chapter and stays until an officer replaces or removes it; a photo a member holding `chapter_docs:upload` adds to the chapter's documents (`lib/more/document-upload.ts`, #3399), which is filed in the chapter's library and stays, attributed to "Deleted User" after its uploader's account is deleted, until an officer deletes the document; and the member's profile photo (`lib/more/profile-photo.ts`, #2897), deleted when it is replaced or removed (best effort: a failed delete there is logged, not retried), when the member leaves the chapter, and on account deletion ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion)). The camera only reads check-in codes on the device, and no frame leaves the phone. The owner entered this row in Play's Data safety form as written here, profile photo included, on 2026-11-05 (#2720, #2895) |
 | App activity → App interactions | Yes | No | Required | Analytics | Forgotten (the analytics forget) | The server-side product events behind the App Store *Product Interaction* row, plus the SDK's `$screen` route views and app lifecycle events (#3382). Required because the only opt-out is a chapter setting, not the member's choice |
 | App activity → In-app search history | Yes | **Yes** | Optional | App functionality | Nothing stored to delete | The directory and chapter-finder queries (`GET /v1/members/search`, `GET /v1/chapter-directory/search`). Ephemeral only while the App Store table's open question holds: if the API keeps query strings in its access logs, this answer is No |
 | App activity → Other user-generated content | Yes | No | Optional | App functionality | **Kept, anonymised** | Free text a member writes outside chat: service-hour entries, tasks they create, the details of a report they file (kept whole, as moderation history), and a chapter they create |
@@ -733,7 +811,7 @@ Contacts, Installed apps, Web browsing, and the remaining Personal info types.
 | Privacy policy | `https://frapp.live/privacy` |
 | App access | **All or some functionality is restricted.** Give the same login App Review gets, with the same caveats: § Seed the reviewer's chapter and § Review notes. The login exists in `frapp-prod` (#2309); seed its chapter before this submission too, since the seed goes stale |
 | Ads | **No ads.** There is no ad SDK |
-| Advertising ID | **No, the app doesn't use the advertising ID.** Nothing in `apps/mobile` reads it, and PostHog and Sentry identify members by the pseudonymous id instead. **Before entering this, confirm the first AAB's merged manifest has no `com.google.android.gms.permission.AD_ID`** ([#2720](https://github.com/pdcarlson/Frapp/issues/2720) tracks it): `bundletool dump manifest --bundle <the .aab>`, then search the output for `AD_ID`. Play checks the declaration against the manifest *(rule unverified)*. A static walk on 2026-09-27 found it in none of the Maven Central artifacts the native modules pull in (Stripe, Sentry, the image cropper, ShortcutBadger) or in any module's own manifest. It could not open the Google-hosted ones (`firebase-messaging`, `play-services-location`, `installreferrer`, and ML Kit and code-scanner from `expo-camera`), because the sandbox can't reach Google's Maven. If the AAB has it, don't answer Yes: add it to `expo.android.blockedPermissions` in `app.json` and rebuild. The same walk found no `READ_MEDIA_*` permission, so the photo-and-video permissions declaration shouldn't apply. `expo-location` does declare a `LocationTaskService` with `foregroundServiceType="location"`, but the app requests no `FOREGROUND_SERVICE*` permission, because background location is off in `app.json`. Whether Play Console still asks for a foreground-service declaration because of that service is unverified; #2720 records what it asks |
+| Advertising ID | **No, the app doesn't use the advertising ID.** Nothing in `apps/mobile` reads it, and PostHog and Sentry identify members by the pseudonymous id instead. **Before entering this, confirm the first AAB's merged manifest has no `com.google.android.gms.permission.AD_ID`** ([#2720](https://github.com/pdcarlson/Frapp/issues/2720) tracks it): `bundletool dump manifest --bundle <the .aab>`, then search the output for `AD_ID`. Play checks the declaration against the manifest *(rule unverified)*. A static walk on 2026-09-27 found it in none of the Maven Central artifacts the native modules pull in (Stripe, Sentry, the image cropper, ShortcutBadger) or in any module's own manifest. It could not open the Google-hosted ones (`firebase-messaging`, `play-services-location`, `installreferrer`, and ML Kit and code-scanner from `expo-camera`), because the sandbox can't reach Google's Maven. If the AAB has it, don't answer Yes: add it to `expo.android.blockedPermissions` in `app.json` and rebuild. The same walk found no `READ_MEDIA_*` permission, so the photo-and-video permissions declaration shouldn't apply. `expo-location` does declare a `LocationTaskService` with `foregroundServiceType="location"`, but the app requests no `FOREGROUND_SERVICE*` permission, because background location is off in `app.json`. Whether Play Console still asks for a foreground-service declaration because of that service is unverified; #2720 records what it asks. **Checked 2026-11-05 and declared No:** Play Console's App bundle explorer lists 36 permissions for bundle 2 (0.9.0), with no `AD_ID` and no `FOREGROUND_SERVICE*`; `BIND_GET_INSTALL_REFERRER_SERVICE` is the install referrer, not the advertising ID. Bundle 3 (0.9.1, EAS Android build 3 from `cca52dec`, still building when this was written) changes the native layer in two ways: it adds `expo-haptics`, which declares only `VIBRATE`, and it moves `@sentry/react-native` from 8.28 to 8.33. Neither is known to add `AD_ID`, but that is derived from the dependency diff, not read from the bundle: recheck the same view for bundle 3 and every bundle after it |
 | Content rating | Answer the IARC questionnaire with these inputs. **Users interact or communicate: yes** (channel chat, DMs and photo sharing, with member-level report and block, #2257). **Shares the user's location with other users: no** (location reaches our API only, as above). **Digital purchases: no. Unrestricted internet access: no.** Violence, sexual content, profanity, drugs and gambling: **none in the app's own content.** Whatever members post is user-generated, which the interaction answer covers. The rating is whatever the questionnaire issues; record it in § Identity ([#2720](https://github.com/pdcarlson/Frapp/issues/2720)) |
 | Target audience and content | The target audience § Android-specific declares, which owns the answer and the reasons not to change it |
 | News app | No |
