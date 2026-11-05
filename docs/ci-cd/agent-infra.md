@@ -302,7 +302,7 @@ same `typescript` alias in every workspace that lists it):
 what `require('typescript').version` and `npx tsc6 --version` report (currently 6.0.3). Root
 `overrides` pin `@typescript/old` to `npm:typescript@6.0.3` so a `^6` float cannot land 6.1
 while the wrapper still looks like 6.0.2 (`typescript-eslint`'s peer is `<6.1.0`). `@nestjs/cli`
-(12.x, peer `~6.0.2`) resolves the hoisted wrapper too, as do ESLint, ts-jest, and Next's API mode
+(12.x, dependency `~6.0.2`) resolves the hoisted wrapper too, as do ESLint, ts-jest, and Next's API mode
 *(corrected 2026-11-05: this said the CLI nested its own `typescript@5.9.3`; it no longer does)*. TypeScript 7 also stopped inferring `rootDir` from the common source directory — emitting
 packages set `"rootDir": "src"` in their own `tsconfig.json` (not in
 `@repo/typescript-config/base.json`: TypeScript resolves `rootDir` relative to the file that
