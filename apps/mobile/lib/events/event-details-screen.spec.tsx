@@ -258,7 +258,7 @@ describe("Event details layout", () => {
     expect(screenText(tree)).toMatch(/· .+ · Chapter House — Great Room\n/);
     expect(textNode(tree, "Chapter House — Great Room")).toBeUndefined();
     expect(flat(textNode(tree, "Mandatory")!).color).toBe(
-      signetDarkTokens.color.semantic.destructive,
+      signetDarkTokens.color.semantic.destructiveText,
     );
     expect(flat(textNode(tree, "+10 pts")!).color).toBe(ACCENT);
   });

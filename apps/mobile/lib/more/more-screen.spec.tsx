@@ -231,16 +231,14 @@ describe("More hub anatomy (#1048)", () => {
       ...[card.props.style({ pressed: false })].flat(Infinity),
     ) as Record<string, unknown>;
 
-    expect(resting.backgroundColor).toBe(
-      signetDarkTokens.color.surface.surface1,
-    );
+    expect(resting.backgroundColor).toBe(signetDarkTokens.color.surface.card);
     expect(card.props.android_ripple?.color).toMatch(/^rgba\(/);
     // The suite's react-native stub runs as iOS.
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
     expect(held).not.toHaveProperty("opacity");
     // The ripple is rounded by a parent clip with the card's radius
     // (`PressableRow`); the card's own `overflow` would leave it square.
-    expectRoundedRipple(card, signetDarkTokens.radius.cardLarge);
+    expectRoundedRipple(card, signetDarkTokens.radius.card);
     // The chevron is `ListRow`'s, at the label role's size.
     const chevron = card.find(
       (node) =>

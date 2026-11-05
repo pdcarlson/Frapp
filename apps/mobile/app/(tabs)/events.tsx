@@ -4,7 +4,11 @@ import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useActiveChapterId, useEvents, useNowDate } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { PressableRow } from "@/components/list-section";
+import {
+  gutterBleed,
+  PressableRow,
+  SectionHeader,
+} from "@/components/list-section";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import {
@@ -21,7 +25,11 @@ import {
   formatEventDateBlock,
   resolveCheckInWindow,
 } from "@/lib/events/format";
-import { selectEventRows, type EventRow } from "@/lib/events/select";
+import {
+  groupByWeek,
+  selectEventRows,
+  type EventRow,
+} from "@/lib/events/select";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -101,14 +109,39 @@ export default function EventsScreen() {
       );
     }
 
-    return events.map((event) => (
-      <EventRowCard
-        key={event.id}
-        event={event}
-        now={now}
-        onPress={() => openEvent(event.id)}
-      />
-    ));
+    // The next event is the one card on the page; everything after it is a
+    // flush row, as web's Events list draws its rows. Mobile adds the This
+    // week / Later split the Tasks tab already uses (owner pick 2026-11-05,
+    // recorded in `spec/ui/mobile/screens.md` s06).
+    const [next, ...rest] = events;
+    const { thisWeek, later } = groupByWeek(rest, now);
+
+    return (
+      <>
+        <EventRowCard
+          key={next.id}
+          event={next}
+          now={now}
+          onPress={() => openEvent(next.id)}
+        />
+        {thisWeek.length > 0 ? (
+          <EventGroup
+            label="This week"
+            events={thisWeek}
+            now={now}
+            onOpen={openEvent}
+          />
+        ) : null}
+        {later.length > 0 ? (
+          <EventGroup
+            label="Later"
+            events={later}
+            now={now}
+            onOpen={openEvent}
+          />
+        ) : null}
+      </>
+    );
   }
 
   return (
@@ -209,6 +242,96 @@ function EventRowCard({
   );
 }
 
+function EventGroup({
+  label,
+  events,
+  now,
+  onOpen,
+}: {
+  label: string;
+  events: EventRow[];
+  now: Date;
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <View>
+      <SectionHeader>{label}</SectionHeader>
+      {events.map((event, index) => (
+        <EventRowFlat
+          key={event.id}
+          event={event}
+          now={now}
+          isFirst={index === 0}
+          onPress={() => onOpen(event.id)}
+        />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * An event after the first: the same date block and name as the card, on the
+ * floor with a hairline between rows. Points move into the meta line, as web
+ * writes them ("7:00 PM · Great Room · 10 pts"), and Mandatory sits at the
+ * row's end, so a row is one line of chips at most.
+ */
+function EventRowFlat({
+  event,
+  now,
+  isFirst,
+  onPress,
+}: {
+  event: EventRow;
+  now: Date;
+  isFirst: boolean;
+  onPress: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const date = formatEventDateBlock(event.start_time, now);
+  const meta = [
+    date?.clock,
+    event.location,
+    event.point_value ? `${event.point_value} pts` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const isOpen =
+    resolveCheckInWindow(event.start_time, event.end_time, now).state ===
+    "open";
+
+  return (
+    <PressableRow
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${event.name}`}
+      accessibilityHint="View event details and check in."
+      onPress={onPress}
+      style={[styles.flatRow, isFirst ? null : styles.flatDivider]}
+    >
+      {date ? (
+        <View style={styles.dateBlock}>
+          <Text style={styles.dateLabel}>{date.label}</Text>
+          <Text style={styles.flatDay}>{date.day}</Text>
+        </View>
+      ) : null}
+      <View style={styles.body}>
+        <Text numberOfLines={1} style={styles.flatTitle}>
+          {event.name}
+        </Text>
+        {meta ? (
+          <Text numberOfLines={1} style={styles.meta}>
+            {meta}
+          </Text>
+        ) : null}
+        {isOpen ? <Text style={styles.openNow}>Check-in is open</Text> : null}
+      </View>
+      {event.is_mandatory ? (
+        <StatusChip label="Mandatory" hue={tokens.color.semantic.destructive} />
+      ) : null}
+    </PressableRow>
+  );
+}
+
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     card: {
@@ -219,6 +342,33 @@ function createStyles(tokens: SignetTokens) {
       borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
+    },
+    flatRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
+      paddingVertical: tokens.spacing.md,
+      // Square and hairline-split like the Directory's member rows, so it
+      // bleeds the same way: content on the gutter line, press feedback clear
+      // of it.
+      ...gutterBleed(tokens, { rounded: false }),
+    },
+    flatDivider: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: tokens.color.border.hairline,
+    },
+    flatDay: {
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.foreground,
+    },
+    flatTitle: {
+      ...typeRole(tokens.typography.role.body),
+      fontFamily: typeRole({
+        ...tokens.typography.role.body,
+        weight: tokens.typography.weight.semibold,
+      }).fontFamily,
+      color: tokens.color.text.foreground,
     },
     dateBlock: {
       // 52 as drawn. No spacing token sits near it, and the column has to

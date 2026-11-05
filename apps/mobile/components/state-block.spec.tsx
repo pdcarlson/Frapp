@@ -346,15 +346,16 @@ describe("SkeletonLines", () => {
     expect(style.alignSelf).toBe("stretch");
   });
 
-  // A skeleton takes the tone of what replaces it, so the screen doesn't
-  // change tone when its content lands: the cards most skeletons stand in for
-  // by default, and a grouped list's `surface1` when the caller says so.
+  // A skeleton takes the shape of what replaces it, so the screen doesn't
+  // change when its content lands: every tone sits on `card`, and a grouped
+  // list's skeleton takes the list's smaller corners.
   it("sits on the tone of what it turns into", () => {
-    const { surface1, card } = signetDarkTokens.color.surface;
+    const { card } = signetDarkTokens.color.surface;
+    const { radius } = signetDarkTokens;
     expect(cardStyle(render(<SkeletonLines />)).backgroundColor).toBe(card);
-    expect(
-      cardStyle(render(<SkeletonLines tone="list" />)).backgroundColor,
-    ).toBe(surface1);
+    const list = cardStyle(render(<SkeletonLines tone="list" />));
+    expect(list.backgroundColor).toBe(card);
+    expect(list.borderRadius).toBe(radius.card);
     expect(cardStyle(render(<EmptyState title="None" />)).backgroundColor).toBe(
       card,
     );
