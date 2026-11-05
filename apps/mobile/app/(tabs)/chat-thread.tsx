@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
@@ -45,11 +44,13 @@ import {
   ImageViewerContext,
   useImageViewer,
 } from "@/components/chat/image-viewer";
+import { JumpToLatestButton } from "@/components/chat/jump-to-latest-button";
 import {
   MessageActionsSheet,
   type MessageActionsSheetHandle,
   type MessageActionsTarget,
 } from "@/components/chat/message-actions-sheet";
+import { groupReactions } from "@/components/chat/message-item";
 import {
   NotificationLevelControl,
   NotificationLevelMenu,
@@ -58,6 +59,7 @@ import {
 } from "@/components/chat/notification-level-control";
 import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
+import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
 import { threadLayout } from "@/lib/chat/thread-layout";
 import { ErrorState } from "@/components/state-block";
 import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
@@ -72,17 +74,44 @@ import { useThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import {
   postRefusalHint,
   selectPostCapability,
+  THREAD_HEADER_FALLBACK,
   threadHeaderTitle,
 } from "@/lib/chat/channel-list";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
+import {
+  FOLLOW_ARRIVALS_WITHIN,
+  useJumpToLatest,
+  type LatestRow,
+} from "@/lib/chat/use-jump-to-latest";
 import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
+import { selectionHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 const NO_DEPARTED: ReadonlySet<string> = new Set();
+
+/** One object for the list's life: the native prop is diffed by identity. */
+const MAINTAIN_POSITION = {
+  minIndexForVisible: 0,
+  // `useJumpToLatest` watches the same line: past it an arrival is unseen.
+  autoscrollToTopThreshold: FOLLOW_ARRIVALS_WITHIN,
+} as const;
+
+/**
+ * The typing line's line height. A caption has none of its own, so this gives
+ * the caption and the blank that holds its place one line box. The slot takes
+ * its height from that Text, not from this number: React Native scales a
+ * Text's fontSize and lineHeight with the system text size (Dynamic Type,
+ * Android font scale), and a fixed slot height would not, so a large-text
+ * caption spilled onto the composer (iOS) or was cut off (Android).
+ */
+const TYPING_LINE_HEIGHT = 16;
+
+/** Holds the typing line's place when nobody types: a line box, no glyphs. */
+const TYPING_LINE_BLANK = "\u00a0";
 
 /**
  * s05 — Chat thread.
@@ -151,6 +180,7 @@ export default function ChatThreadScreen() {
     viewerId,
     canSend,
     send,
+    sendInFlight,
     edit,
     remove,
     react,
@@ -209,6 +239,12 @@ export default function ChatThreadScreen() {
       roster.byId,
     ],
   );
+  // `Message #general`, `Message Casey`, as s05 draws it. Plain `Message`
+  // while the title is still blank or fell back, rather than `Message Thread`.
+  const composerPlaceholder =
+    headerTitle && headerTitle !== THREAD_HEADER_FALLBACK
+      ? `Message ${headerTitle}`
+      : "Message";
 
   // Delete on someone else's message (#2775). The server resolves the
   // permission in the message's own chapter; this only decides whether the
@@ -407,6 +443,33 @@ export default function ChatThreadScreen() {
   // out oldest first; `threadLayout` says why.
   const layout = useMemo(() => threadLayout(thread.rows), [thread.rows]);
 
+  // A reply quote's tap scrolls to its parent (`lib/chat/use-jump-to-message.ts`).
+  const {
+    listRef,
+    jumpToMessage,
+    onScrollToIndexFailed: handleScrollToIndexFailed,
+  } = useJumpToMessage<FlatList<ThreadRow>>(inverted, channelId);
+  // The way back to the newest message after reading back through history,
+  // and the notice that something new landed there, judged on the rows in
+  // the order the list draws them.
+  const latestRows = useMemo<LatestRow[]>(
+    () =>
+      inverted.map(({ message, visibility }) => ({
+        id: message.client_message_id,
+        own:
+          message._status !== "confirmed" ||
+          (viewerId !== null && message.sender_id === viewerId),
+        silent: visibility === "tombstone" || message.is_deleted,
+      })),
+    [inverted, viewerId],
+  );
+  const latest = useJumpToLatest({
+    listRef,
+    rows: latestRows,
+    channelKey: channelId,
+  });
+  const jumpToLatest = latest.jumpToLatest;
+
   // Older history (#2772). The list is inverted, so its end is the top: reaching
   // it loads the next page, which is appended past the rows on screen and so
   // leaves them where they are. A failed read waits for Retry in the edge row
@@ -442,6 +505,22 @@ export default function ChatThreadScreen() {
     return index;
   }, [messages]);
 
+  // A new message lands at the bottom, so a member who sends from deep in
+  // history is taken there on the tap to see it go: `onSending` runs once the
+  // composer has decided a message goes out, before `send` is awaited, which
+  // online settles only after the server answers. Waiting for that moved the
+  // reader a round-trip later, wherever they had scrolled to by then, and in
+  // whichever channel was on screen. Nothing runs when the send settles, so a
+  // switch in between can't scroll the next channel. A send that then queues
+  // nothing (the outbox write failed) has cost them a jump they asked for by
+  // tapping Send, and its hint below says why nothing went. An edit, a tap
+  // while an earlier send is still on its way (which `send` would refuse), and
+  // an empty draft don't move them at all: an edit's message is the one they
+  // were reading.
+  const followSend = useCallback(
+    () => jumpToLatest({ animated: false }),
+    [jumpToLatest],
+  );
   // A staged reply or an open edit (#2775), keyed by channel. Typing into the
   // draft still emits typing; typing into an edit does not, since nothing new
   // is on its way.
@@ -453,8 +532,11 @@ export default function ChatThreadScreen() {
     blockState,
     draft,
     setDraft: handleChangeText,
+    hasAttachments: attachments.length > 0,
     send,
+    sendInFlight,
     edit,
+    onSending: followSend,
   });
   const submitComposer = staging.submit;
   const handleSend = useCallback(() => {
@@ -470,12 +552,24 @@ export default function ChatThreadScreen() {
     [remove],
   );
 
-  // A reply quote's tap scrolls to its parent (`lib/chat/use-jump-to-message.ts`).
-  const {
-    listRef,
-    jumpToMessage,
-    onScrollToIndexFailed: handleScrollToIndexFailed,
-  } = useJumpToMessage<FlatList<ThreadRow>>(inverted, channelId);
+  // A reaction chip's tap and the actions sheet's quick row, through the same
+  // optimistic calls; a refusal lands in the reaction banner. Each tap ticks
+  // once (`spec/ui/mobile/README.md` § Native-feel rules), here where the
+  // member acted, so a rollback or a re-render never does.
+  const handleReact = useCallback(
+    (messageId: string, emoji: string) => {
+      selectionHaptic();
+      void react(messageId, emoji);
+    },
+    [react],
+  );
+  const handleUnreact = useCallback(
+    (messageId: string, emoji: string) => {
+      selectionHaptic();
+      void unreact(messageId, emoji);
+    },
+    [unreact],
+  );
 
   const { unblock, reloadMaskedCopies } = useBlockActions();
   const handleUnblock = useCallback(
@@ -506,9 +600,10 @@ export default function ChatThreadScreen() {
   // One sheet for the thread, retargeted per long-press — the same shape the
   // directory uses for its member sheet.
   const actionsSheetRef = useRef<MessageActionsSheetHandle>(null);
-  const [actionTarget, setActionTarget] = useState<MessageActionsTarget | null>(
-    null,
-  );
+  const [actionTarget, setActionTarget] = useState<Omit<
+    MessageActionsTarget,
+    "reactedWith"
+  > | null>(null);
   const openActions = useCallback(
     (message: ChatMessage) => {
       const actions = messageActionsFor(message, viewerId, {
@@ -555,6 +650,40 @@ export default function ChatThreadScreen() {
     ],
   );
 
+  // The viewer's reactions on the sheet's message, read from the cache on
+  // every render rather than kept from the long-press: a rollback, or a
+  // reaction from their other device, can change them while the sheet is
+  // open, and the quick row's selected state and which way a tap goes must
+  // follow.
+  const sheetTarget = useMemo<MessageActionsTarget | null>(() => {
+    if (!actionTarget) return null;
+    const current = byId.get(actionTarget.messageId);
+    return {
+      ...actionTarget,
+      reactedWith:
+        current && viewerId
+          ? groupReactions(current, viewerId)
+              .filter((group) => group.mine)
+              .map((group) => group.emoji)
+          : [],
+    };
+  }, [actionTarget, byId, viewerId]);
+
+  // A message deleted while its sheet is open (by its sender, a moderator, or
+  // the viewer on another device) closes the sheet. A deleted message offers
+  // no actions at all (`messageActionsFor`), so the sheet never opens on one,
+  // and its rows would otherwise stay live: a quick reaction would be written
+  // to a message whose reactions the thread no longer draws (`MessageItem`
+  // drops them), and Reply or Edit would stage against `[message deleted]`.
+  // Gone from the cache counts the same. The report form, if the member has
+  // moved on to it, stays: what they are reporting still happened.
+  const sheetMessageGone = actionTarget
+    ? (byId.get(actionTarget.messageId)?.is_deleted ?? true)
+    : false;
+  useEffect(() => {
+    if (sheetMessageGone) actionsSheetRef.current?.dismiss();
+  }, [sheetMessageGone]);
+
   const renderItem = useCallback(
     ({ item }: { item: ThreadRow }) => {
       // Unreachable while the gate below withholds the list, and here so the
@@ -578,8 +707,8 @@ export default function ChatThreadScreen() {
           }
           onRetry={(id) => void retry(id)}
           onDiscard={(id) => void discard(id)}
-          onReact={(id, emoji) => void react(id, emoji)}
-          onUnreact={(id, emoji) => void unreact(id, emoji)}
+          onReact={handleReact}
+          onUnreact={handleUnreact}
           onOpenActions={openActions}
           onJumpToMessage={jumpToMessage}
           onUnblock={handleUnblock}
@@ -596,8 +725,8 @@ export default function ChatThreadScreen() {
       nameFor,
       retry,
       discard,
-      react,
-      unreact,
+      handleReact,
+      handleUnreact,
       act,
       byId,
       layout,
@@ -815,7 +944,7 @@ export default function ChatThreadScreen() {
             </View>
           ) : loadError ? (
             // Ahead of the identity gate, as on web (#2243): a failed read
-            // must not hide behind "Loading messages…" while `/users/me` is
+            // must not hide behind the loading skeleton while `/users/me` is
             // still in flight.
             // With a Retry: the channel query never refetches on its own
             // (`staleTime: Infinity`), so without one the member's only way
@@ -842,10 +971,8 @@ export default function ChatThreadScreen() {
             // still loading (#2250). Rendering rows now would paint the
             // member's own messages as incoming, then flip them when identity
             // lands; messages can arrive from cache well before `/users/me`.
-            <View style={styles.stateBlock}>
-              <ActivityIndicator color={tokens.color.text.muted} />
-              <Text style={styles.stateBody}>Loading messages…</Text>
-            </View>
+            // Message-shaped, at the bottom where the rows will land (§10).
+            <ThreadSkeleton />
           ) : thread.rows.length === 0 && thread.heldCount === 0 ? (
             // Counted after the block list, held rows included: a channel whose
             // only messages are being held is not an empty channel, and the
@@ -860,33 +987,94 @@ export default function ChatThreadScreen() {
             // The rows reach the image viewer through this, not through a
             // prop threaded down the row and its body.
             <ImageViewerContext.Provider value={imageViewer.open}>
-              <FlatList
-                ref={listRef}
-                onScrollToIndexFailed={handleScrollToIndexFailed}
-                data={inverted}
-                renderItem={renderItem}
-                // `client_message_id` is always present and is stable across the
-                // optimistic → confirmed transition, which the server id is not.
-                keyExtractor={(item) => item.message.client_message_id}
-                inverted
-                onEndReached={handleEndReached}
-                onEndReachedThreshold={0.5}
-                // An inverted list draws its footer at the top, above the oldest
-                // loaded row.
-                ListFooterComponent={historyEdge}
-                contentContainerStyle={styles.listContent}
-                style={styles.flex}
-              />
+              {/* The list and the jump control over its corner. */}
+              <View style={styles.flex}>
+                <FlatList
+                  // One list per channel. The screen stays mounted across a
+                  // switch, so a shared list kept the last channel's scroll
+                  // offset and opened a cached channel mid-history, with no
+                  // jump control to say so. A fresh list opens at offset 0,
+                  // the newest message.
+                  key={channelId ?? undefined}
+                  ref={listRef}
+                  onScrollToIndexFailed={handleScrollToIndexFailed}
+                  data={inverted}
+                  renderItem={renderItem}
+                  // `client_message_id` is always present and is stable across
+                  // the optimistic → confirmed transition, which the server id
+                  // is not.
+                  keyExtractor={(item) => item.message.client_message_id}
+                  inverted
+                  // A new message is inserted at index 0, the scroll origin of
+                  // an inverted list, so without this every arrival moved what
+                  // a member reading back through history was reading by a
+                  // row. The native scroll view keeps the first visible row
+                  // where it was (iOS, and Android's Fabric scroll view in RN
+                  // 0.86, which this app runs) and, within
+                  // `FOLLOW_ARRIVALS_WITHIN` of the newest message, scrolls on
+                  // to show the arrival instead. Older pages append at the far
+                  // end, which this never touches.
+                  maintainVisibleContentPosition={MAINTAIN_POSITION}
+                  onScroll={latest.onScroll}
+                  onLayout={latest.onLayout}
+                  // A tap on a reaction, link, photo, quote or Retry acts at
+                  // once with the keyboard up; React Native's default spent
+                  // that tap on dismissing the keyboard. Dragging the thread
+                  // puts the keyboard away, as every messenger does, and so
+                  // does a tap on a plain message (`MessageRowFrame`). A tap
+                  // on a card's body doesn't (#3461): the card's own
+                  // long-press Pressable takes it first.
+                  // `on-drag` rather than iOS's `interactive`, on both: the
+                  // avoiding view under the composer follows keyboard frame
+                  // events, which an interactive drag only sends at its end,
+                  // so the composer would hang in mid-air while the keyboard
+                  // followed the finger down.
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
+                  onEndReached={handleEndReached}
+                  onEndReachedThreshold={0.5}
+                  // An inverted list draws its footer at the top, above the
+                  // oldest loaded row.
+                  ListFooterComponent={historyEdge}
+                  contentContainerStyle={styles.listContent}
+                  style={styles.flex}
+                />
+                {latest.showsJump ? (
+                  <JumpToLatestButton
+                    hasNew={latest.hasNewBelow}
+                    onPress={() => jumpToLatest()}
+                  />
+                ) : null}
+              </View>
             </ImageViewerContext.Provider>
           )}
 
-          {shownTypingUsers.length > 0 ? (
-            <Text style={styles.typing}>
-              {shownTypingUsers.length === 1
-                ? "Someone is typing…"
-                : `${shownTypingUsers.length} people are typing…`}
+          {/*
+          Always mounted, so someone starting or stopping typing moves nothing
+          above it. The caption Text is always there too: when nobody types it
+          holds a non-breaking space, so the line it reserves is the caption's
+          own line box, scaled with the system text size like the words it
+          stands in for. Empty, it is hidden from a screen reader rather than
+          read as a blank element. It is not a live region, as it never was: a
+          line that changes with every keystroke pause would talk over the
+          thread.
+          */}
+          <View
+            testID="typing-line"
+            style={styles.typingSlot}
+            accessibilityElementsHidden={shownTypingUsers.length === 0}
+            importantForAccessibility={
+              shownTypingUsers.length === 0 ? "no-hide-descendants" : "auto"
+            }
+          >
+            <Text style={styles.typing} numberOfLines={1}>
+              {shownTypingUsers.length === 0
+                ? TYPING_LINE_BLANK
+                : shownTypingUsers.length === 1
+                  ? "Someone is typing…"
+                  : `${shownTypingUsers.length} people are typing…`}
             </Text>
-          ) : null}
+          </View>
 
           {/*
           react/unreact and inline card actions (poll votes, #528) have no
@@ -931,7 +1119,7 @@ export default function ChatThreadScreen() {
             onSend={handleSend}
             canSend={canSend && channelCanPost && !staging.isSavingEdit}
             context={staging.context}
-            placeholder="Message"
+            placeholder={composerPlaceholder}
             // A send that never reached the outbox has no failed row to show
             // (nothing was queued), so this line is the only report of it.
             //
@@ -1005,11 +1193,13 @@ export default function ChatThreadScreen() {
       </KeyboardAvoidingArea>
       <MessageActionsSheet
         ref={actionsSheetRef}
-        target={actionTarget}
+        target={sheetTarget}
         onSenderDeparted={markDeparted}
         onReply={staging.startReply}
         onEdit={staging.startEdit}
         onDelete={handleDelete}
+        onReact={handleReact}
+        onUnreact={handleUnreact}
       />
       {/*
         Last, so it is above the header, the thread, the composer and the mute
@@ -1077,11 +1267,16 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       color: tokens.color.text.mutedForeground,
       textAlign: "center",
     },
-    typing: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
+    typingSlot: {
       paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xs,
+    },
+    typing: {
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        lineHeight: TYPING_LINE_HEIGHT,
+      }),
+      color: tokens.color.text.muted,
     },
     reactionErrorBanner: {
       flexDirection: "row",

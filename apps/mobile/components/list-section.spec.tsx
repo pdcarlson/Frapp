@@ -88,6 +88,123 @@ describe("ListRow — press feedback", () => {
   });
 });
 
+describe("ListRow — busy", () => {
+  function renderRow(props: ListRowProps) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ListRow {...props} />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  // A row whose action is running is working, not unavailable: it keeps its
+  // label colour, swaps the chevron for a spinner, and takes no second press.
+  it("keeps the label's colour and puts a spinner where the chevron was", () => {
+    const tree = renderRow({ label: "Bylaws", onPress: vi.fn(), busy: true });
+    const label = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "Bylaws",
+    );
+    const color = Object.assign({}, ...[label.props.style].flat()).color;
+
+    expect(color).toBe(signetDarkTokens.color.text.foreground);
+    expect(
+      tree.root.findAll(
+        (node) => (node.type as unknown) === "ActivityIndicator",
+      ),
+    ).toHaveLength(1);
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" && node.props.children === "›",
+      ),
+    ).toHaveLength(0);
+
+    const row = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    expect(row.props.disabled).toBe(true);
+    expect(row.props.accessibilityState).toEqual({
+      disabled: false,
+      busy: true,
+    });
+  });
+});
+
+describe("ListRow — detail", () => {
+  // s15 draws a fact row with the label quiet and the value bright: the
+  // default row's emphasis the other way round.
+  it("mutes the label at regular weight and sets the value at the label's weight", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ListRow variant="detail" label="Email" value="pc@rpi.edu" />
+        </FrappThemeProvider>,
+      );
+    });
+    const styleOf = (text: string) => {
+      const node = tree.root.find(
+        (candidate) =>
+          (candidate.type as unknown) === "Text" &&
+          candidate.props.children === text,
+      );
+      return Object.assign({}, ...[node.props.style].flat()) as Record<
+        string,
+        unknown
+      >;
+    };
+    const label = styleOf("Email");
+    const value = styleOf("pc@rpi.edu");
+    const { text } = signetDarkTokens.color;
+
+    expect(label.color).toBe(text.mutedForeground);
+    expect(value.color).toBe(text.foreground);
+    expect(value.fontSize).toBe(label.fontSize);
+    expect(value.fontFamily).not.toBe(label.fontFamily);
+  });
+
+  // A chapter's custom-field label has no length limit. Sized to its text
+  // with nothing to stop it, a long one took the whole row and squeezed the
+  // value to no width; it stops at half the row and wraps there instead.
+  it("wraps a long label at half the row and keeps the value's width", () => {
+    const longLabel = "Emergency contact name and phone number";
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ListRow variant="detail" label={longLabel} value="Jordan Lee" />
+        </FrappThemeProvider>,
+      );
+    });
+    const flat = (style: unknown) =>
+      Object.assign({}, ...[style].flat()) as Record<string, unknown>;
+    const labelText = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === longLabel,
+    );
+    const valueText = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        node.props.children === "Jordan Lee",
+    );
+    const labelColumn = flat(labelText.parent!.props.style);
+
+    expect(labelColumn.maxWidth).toBe("50%");
+    // Its own width, shrinking only past half the row. Not `flex: 0`, which
+    // react-native-web hands to CSS as a zero basis (one letter a line).
+    expect(labelColumn.flex).toBe(-1);
+    // No line cap on the label, so it wraps rather than clipping.
+    expect(labelText.props.numberOfLines).toBeUndefined();
+    // The value takes the rest of the row, whatever the label measures.
+    expect(flat(valueText.props.style).flex).toBe(1);
+  });
+});
+
 describe("usePressFeedback", () => {
   function feedbackOn(
     os: string,

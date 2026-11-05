@@ -2,8 +2,15 @@
 import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
-import { Text } from "react-native";
+import { AccessibilityInfo, Text } from "react-native";
+import {
+  cancelAnimation,
+  useReducedMotion,
+  withRepeat,
+} from "react-native-reanimated";
+import { NavigationContext } from "expo-router/react-navigation";
 import { describe, expect, it, vi } from "vitest";
+import { ChapterGlyph, DocumentsGlyph } from "@/components/more/more-glyphs";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, tint } from "@/lib/theme";
 
@@ -280,7 +287,7 @@ describe("SkeletonLines", () => {
   it("draws content-shaped blocks rather than a spinner", () => {
     const tree = render(<SkeletonLines lines={3} />);
     const blocks = tree.root
-      .findAllByType("View" as unknown as React.ComponentType)
+      .findAllByType("Animated.View" as unknown as React.ComponentType)
       .map((node) => flatten(node.props.style))
       .filter((style) => typeof style.width === "string");
 
@@ -315,7 +322,8 @@ describe("SkeletonLines", () => {
     // takes the control radius, text lines the chip radius (TODO-DESIGN: 6).
     const drawn = blocks.map((block) =>
       flatten(
-        block.findByType("View" as unknown as React.ComponentType).props.style,
+        block.findByType("Animated.View" as unknown as React.ComponentType)
+          .props.style,
       ),
     );
     expect(drawn[0]!.borderRadius).toBe(signetDarkTokens.radius.control);
@@ -336,5 +344,266 @@ describe("SkeletonLines", () => {
 
     expect(style.alignItems).toBe("flex-start");
     expect(style.alignSelf).toBe("stretch");
+  });
+
+  // A skeleton takes the tone of what replaces it, so the screen doesn't
+  // change tone when its content lands: the cards most skeletons stand in for
+  // by default, and a grouped list's `surface1` when the caller says so.
+  it("sits on the tone of what it turns into", () => {
+    const { surface1, card } = signetDarkTokens.color.surface;
+    expect(cardStyle(render(<SkeletonLines />)).backgroundColor).toBe(card);
+    expect(
+      cardStyle(render(<SkeletonLines tone="list" />)).backgroundColor,
+    ).toBe(surface1);
+    expect(cardStyle(render(<EmptyState title="None" />)).backgroundColor).toBe(
+      card,
+    );
+    expect(
+      cardStyle(render(<ErrorState title="Failed" body="Retry." />))
+        .backgroundColor,
+    ).toBe(card);
+  });
+});
+
+describe("SkeletonBlock's pulse", () => {
+  const blockStyle = (tree: ReactTestRenderer) =>
+    flatten(
+      tree.root.findByType("Animated.View" as unknown as React.ComponentType)
+        .props.style,
+    );
+
+  // The suite's Reanimated resolves an animation to its target at once, so a
+  // running pulse reads as its low point. No screen around it, as in a
+  // sheet (which renders above the navigators), so nothing pauses it.
+  it("pulses between full and half opacity, for as long as it is up", () => {
+    vi.mocked(withRepeat).mockClear();
+    const tree = render(<SkeletonBlock width="60%" height={12} />);
+
+    expect(blockStyle(tree).opacity).toBe(0.5);
+    // Forever (-1), and back and forth rather than snapping to the top.
+    expect(vi.mocked(withRepeat)).toHaveBeenCalledWith(0.5, -1, true);
+
+    vi.mocked(cancelAnimation).mockClear();
+    act(() => tree.unmount());
+    expect(vi.mocked(cancelAnimation)).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds still at full opacity under the system's reduced motion", () => {
+    vi.mocked(useReducedMotion).mockReturnValue(true);
+    vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValueOnce(
+      true,
+    );
+    vi.mocked(withRepeat).mockClear();
+    try {
+      const tree = render(<SkeletonBlock width="60%" height={12} />);
+
+      expect(blockStyle(tree).opacity).toBe(1);
+      expect(vi.mocked(withRepeat)).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(useReducedMotion).mockReturnValue(false);
+    }
+  });
+
+  // Reanimated's `useReducedMotion` is the setting at launch. A member who
+  // turns Reduce Motion on mid-session gets a still skeleton at once, and one
+  // who turned it on before this block mounted gets one too.
+  it("follows Reduce Motion as it changes, not as it was at launch", () => {
+    const listeners = vi.mocked(AccessibilityInfo.addEventListener);
+    listeners.mockClear();
+    const tree = render(<SkeletonBlock width="60%" height={12} />);
+    expect(blockStyle(tree).opacity).toBe(0.5);
+
+    const [event, changed] = listeners.mock.calls.at(-1)! as unknown as [
+      string,
+      (enabled: boolean) => void,
+    ];
+    expect(event).toBe("reduceMotionChanged");
+
+    vi.mocked(cancelAnimation).mockClear();
+    act(() => changed(true));
+    expect(blockStyle(tree).opacity).toBe(1);
+    expect(vi.mocked(cancelAnimation)).toHaveBeenCalledTimes(1);
+
+    act(() => changed(false));
+    expect(blockStyle(tree).opacity).toBe(0.5);
+  });
+
+  it("reads the setting when it mounts", async () => {
+    vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValueOnce(
+      true,
+    );
+    let tree!: ReactTestRenderer;
+    await act(async () => {
+      tree = create(
+        <FrappThemeProvider>
+          <SkeletonBlock width="60%" height={12} />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(blockStyle(tree).opacity).toBe(1);
+  });
+
+  /** A screen's navigation, as far as a block reads it: focus, blur, and now. */
+  function screenNavigation() {
+    let focused = true;
+    const handlers: Record<string, Set<() => void>> = {
+      focus: new Set(),
+      blur: new Set(),
+    };
+    const navigation = {
+      isFocused: () => focused,
+      addListener: (event: "focus" | "blur", handler: () => void) => {
+        handlers[event]!.add(handler);
+        return () => handlers[event]!.delete(handler);
+      },
+    };
+    const emit = (event: "focus" | "blur") => {
+      focused = event === "focus";
+      for (const handler of [...handlers[event]!]) handler();
+    };
+    return { navigation, handlers, emit };
+  }
+
+  // Tab screens stay mounted after the member leaves them, so a skeleton on
+  // one kept animating with nobody watching.
+  it("pauses while its screen is out of view, and picks up on return", () => {
+    const { navigation, emit } = screenNavigation();
+    const tree = render(
+      <NavigationContext.Provider value={navigation as never}>
+        <SkeletonBlock width="60%" height={12} />
+      </NavigationContext.Provider>,
+    );
+    expect(blockStyle(tree).opacity).toBe(0.5);
+
+    vi.mocked(cancelAnimation).mockClear();
+    act(() => emit("blur"));
+    expect(blockStyle(tree).opacity).toBe(1);
+    expect(vi.mocked(cancelAnimation)).toHaveBeenCalledTimes(1);
+
+    vi.mocked(withRepeat).mockClear();
+    act(() => emit("focus"));
+    expect(blockStyle(tree).opacity).toBe(0.5);
+    expect(vi.mocked(withRepeat)).toHaveBeenCalledTimes(1);
+  });
+
+  // A skeleton is several blocks, and screens mount and unmount them all
+  // session. A block that kept its listeners after unmounting would be called
+  // on every tab change and Reduce Motion toggle from then on.
+  it("lets go of its screen's focus and blur when it unmounts", () => {
+    const { navigation, handlers } = screenNavigation();
+    const tree = render(
+      <NavigationContext.Provider value={navigation as never}>
+        <SkeletonBlock width="60%" height={12} />
+      </NavigationContext.Provider>,
+    );
+    expect(handlers.focus!.size).toBe(1);
+    expect(handlers.blur!.size).toBe(1);
+
+    act(() => tree.unmount());
+    expect(handlers.focus!.size).toBe(0);
+    expect(handlers.blur!.size).toBe(0);
+  });
+
+  it("stops listening for Reduce Motion when it unmounts", () => {
+    const listeners = vi.mocked(AccessibilityInfo.addEventListener);
+    listeners.mockClear();
+    const tree = render(<SkeletonBlock width="60%" height={12} />);
+    const index = listeners.mock.calls.findIndex(
+      ([event]) => (event as string) === "reduceMotionChanged",
+    );
+    expect(index).toBeGreaterThanOrEqual(0);
+    // The stub hands each listener a fresh subscription.
+    const subscription = listeners.mock.results[index]!.value as {
+      remove: () => void;
+    };
+    expect(vi.mocked(subscription.remove)).not.toHaveBeenCalled();
+
+    act(() => tree.unmount());
+    expect(vi.mocked(subscription.remove)).toHaveBeenCalledTimes(1);
+  });
+
+  // The first read is asked as the block mounts. A member who turns Reduce
+  // Motion on before it answers has said something newer than the answer.
+  it("keeps a change it heard over a first read that answers after it", async () => {
+    let answer!: (enabled: boolean) => void;
+    vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const listeners = vi.mocked(AccessibilityInfo.addEventListener);
+    listeners.mockClear();
+    const tree = render(<SkeletonBlock width="60%" height={12} />);
+    const [, changed] = listeners.mock.calls.find(
+      ([event]) => (event as string) === "reduceMotionChanged",
+    )! as unknown as [string, (enabled: boolean) => void];
+
+    act(() => changed(true));
+    expect(blockStyle(tree).opacity).toBe(1);
+
+    await act(async () => {
+      answer(false);
+    });
+    expect(blockStyle(tree).opacity).toBe(1);
+  });
+
+  // A skeleton is many blocks. They share one pulse, so the work it costs is
+  // one Reduce Motion subscription, one pair of focus and blur listeners and
+  // one animation however many blocks it draws, and every block reads it.
+  it("drives every block of a skeleton from one pulse", () => {
+    const { navigation, handlers, emit } = screenNavigation();
+    const listeners = vi.mocked(AccessibilityInfo.addEventListener);
+    listeners.mockClear();
+    vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockClear();
+    vi.mocked(withRepeat).mockClear();
+    const tree = render(
+      <NavigationContext.Provider value={navigation as never}>
+        <SkeletonLines lines={4} showTile />
+      </NavigationContext.Provider>,
+    );
+    const opacities = () =>
+      tree.root
+        .findAllByType("Animated.View" as unknown as React.ComponentType)
+        .map((node) => flatten(node.props.style).opacity);
+
+    expect(opacities()).toEqual([0.5, 0.5, 0.5, 0.5, 0.5]);
+    expect(
+      listeners.mock.calls.filter(
+        ([event]) => (event as string) === "reduceMotionChanged",
+      ),
+    ).toHaveLength(1);
+    expect(
+      vi.mocked(AccessibilityInfo.isReduceMotionEnabled),
+    ).toHaveBeenCalledTimes(1);
+    expect(handlers.focus!.size).toBe(1);
+    expect(handlers.blur!.size).toBe(1);
+    expect(vi.mocked(withRepeat)).toHaveBeenCalledTimes(1);
+
+    act(() => emit("blur"));
+    expect(opacities()).toEqual([1, 1, 1, 1, 1]);
+  });
+});
+
+describe("EmptyState's glyph", () => {
+  // The More hub's duotone glyphs, in the chapter accent, rather than a
+  // character Figtree doesn't carry.
+  it("draws a glyph component in the chapter accent", () => {
+    const tree = render(<EmptyState glyph={DocumentsGlyph} title="Nothing yet" />);
+    const glyph = tree.root.findByType(DocumentsGlyph);
+
+    expect(glyph.props.color).toBe("#F4CB63");
+    expect(texts(tree)).toEqual(["Nothing yet"]);
+  });
+
+  it("draws a title alone, with no body line, when it is given no body", () => {
+    const tree = render(<EmptyState glyph={DocumentsGlyph} title="Nothing yet" />);
+    expect(
+      tree.root.findAllByType("Text" as unknown as React.ComponentType),
+    ).toHaveLength(1);
+  });
+
+  it("points the no-chapter state at the Switch chapter row's glyph", () => {
+    const tree = render(<NoChapterState noun="the directory" />);
+    expect(tree.root.findAllByType(ChapterGlyph)).toHaveLength(1);
   });
 });

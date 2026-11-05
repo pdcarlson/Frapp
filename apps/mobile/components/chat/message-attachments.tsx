@@ -30,6 +30,21 @@ import { useOpenImageViewer, viewerImages } from "./image-viewer";
  * message body, so degrading to nothing would read as data loss to anyone who
  * remembers seeing the file.
  *
+ * **Loading reserves a photo's room.** While the files are read, each one
+ * draws a tile in the frame a preview takes, as tall as an unsized preview
+ * (`PREVIEW_FALLBACK_HEIGHT`), rather than a one-line caption that a photo up
+ * to 240pt tall then replaced, pushing the thread with every one that landed
+ * (components.md §10: the skeleton mirrors the layout it becomes).
+ *
+ * The count is all the row knows yet, not which files are photos: the message
+ * carries only `metadata.attachment_count`, and type, name and dimensions
+ * arrive with this query. So the tile is a bet, and it is placed on photos.
+ * Mobile's composer attaches only photos; web's attaches photos and documents
+ * (a PDF, say), and a document resolves to a one-line file row, so a web-sent
+ * document shrinks by about 150pt when it lands. A file-row-height placeholder
+ * would only move that jump onto every photo, which is the commoner case, and
+ * grow it, as a photo can be up to 240pt.
+ *
  * An image opens the thread's image viewer, stepping through the
  * message's other images (#2874). Any other file, and an image outside a
  * screen that hosts a viewer, opens through the signed URL in the browser.
@@ -61,15 +76,24 @@ export function MessageAttachments({
   const [openFailed, setOpenFailed] = useState(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
 
-  const noteStyle = styles.note;
-
   if (count === 0) return null;
 
   if (query.isPending) {
     return (
-      <Text style={noteStyle}>
-        {count === 1 ? "Loading attachment…" : `Loading ${count} attachments…`}
-      </Text>
+      <View
+        accessible
+        accessibilityRole="progressbar"
+        accessibilityLabel={
+          count === 1 ? "Loading attachment…" : `Loading ${count} attachments…`
+        }
+        style={styles.list}
+      >
+        {Array.from({ length: count }, (_, index) => (
+          <View key={index} testID="attachment-loading-tile" style={styles.row}>
+            <View style={styles.loadingTile} />
+          </View>
+        ))}
+      </View>
     );
   }
 
@@ -165,6 +189,12 @@ export function MessageAttachments({
   );
 }
 
+/**
+ * An image preview's height when the attachment stores no dimensions, and the
+ * loading tile's, so a photo replaces a box of its own likely size.
+ */
+const PREVIEW_FALLBACK_HEIGHT = 180;
+
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     list: {
@@ -205,14 +235,14 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
     },
     previewUnsized: {
-      height: 180,
+      height: PREVIEW_FALLBACK_HEIGHT,
     },
-    // Same token pair as the body, one step quieter — a note about the message,
-    // not the message.
-    note: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-      marginTop: tokens.spacing.xs,
+    // A preview's block, inside the same row frame, in the skeleton's neutral
+    // elevated fill (components.md §10: neutral only).
+    loadingTile: {
+      height: PREVIEW_FALLBACK_HEIGHT,
+      borderRadius: tokens.radius.control,
+      backgroundColor: tokens.color.surface.popover,
     },
     error: {
       ...typeRole(tokens.typography.role.caption),

@@ -46,6 +46,7 @@ import {
   UnreadBadge,
 } from "@/components/chat/channel-row";
 import { gutterBleed, PressableRow } from "@/components/list-section";
+import { SearchGlyph } from "@/components/search-glyph";
 import {
   EmptyState,
   EmptyStateAction,
@@ -310,10 +311,13 @@ export default function ChatHomeScreen() {
           isRetrying={channelsQuery.isFetching}
         />
       ) : allChannels.length === 0 ? (
+        // No line saying channels appear here, which would only restate what
+        // Chat is for; the one line says what to do, since mobile has no way
+        // to create a channel (writing.md §4, as amended 2026-11-05).
         <EmptyState
           glyph="#"
           title="No channels yet"
-          body="Channels your chapter creates will appear here."
+          body="Ask an admin to add one."
         />
       ) : (
         <>
@@ -408,7 +412,7 @@ export default function ChatHomeScreen() {
 
           {arranged.emptiedByFilters ? (
             <EmptyState
-              glyph="⌕"
+              glyph={SearchGlyph}
               // No title: writing.md § Arrange the channel list gives this
               // state none, and web shows none either.
               body={NO_MATCHING_CHANNELS}

@@ -82,8 +82,8 @@ Copy never shows a permission key such as `roles:manage`. A permission-denied li
 
 Every empty state MUST include:
 
-- A clear title
-- A short explanation
+- A clear title, except a state inside a list or panel that already sits under its own heading, which may say what is missing in its explanation alone: [§ Arrange the channel list](#arrange-the-channel-list-mobile-and-web)'s `Filtered to nothing` row, the [Notifications (dashboard)](#notifications-dashboard) drawer's `Empty` row and [Discord Import](#discord-import-dashboard)'s `Empty (channel panel)` row
+- A short explanation **only when it tells the member something the title doesn't**: why the view is empty, or what to do next. Never one that restates what the screen is for; without one the title stands alone.
 - A next-step CTA when possible
 
 Example (the Events surface, from the tables below):
@@ -91,6 +91,10 @@ Example (the Events surface, from the tables below):
 `No events yet`
 `Create your first chapter event to unlock attendance and point automation.`
 `[Create first event]`
+
+**Amended 2026-11-05**, after the owner's review of the Android build (2026-11-04): "we don't need to narrate stuff". The explanation used to be required on every empty state, which is how empty cards came to describe their own screen ("Documents the chapter uploads show up here.", "Members appear here once they join the chapter."). The rule above governs new and changed copy, for the reason [`../mobile/patterns.md` § Screen headers](../mobile/patterns.md#screen-headers) took the line under each screen title away: the member is already on the screen. The change that amended it removed those lines from the mobile screens it touched: Documents (s12), Directory (s13) and the notifications inbox (s14). Chat home's no-channels card (s04) swapped its line for what to do next: `No channels yet` / `Ask an admin to add one.` (mobile has no way to create one). A line that carries a fact stays: a search names its query, a filtered view says how to widen it, and the no-chapter state says where to pick a chapter.
+
+Lines that still narrate are follow-up ([#3429](https://github.com/pdcarlson/Frapp/issues/3429)), not changed by the amendment: mobile Events' `Events your chapter schedules will appear here.`; the second sentence of mobile Dues' empty body, `Anything they send will show up here.` ([Dues (mobile, s11)](#dues-mobile-s11)); and on web the empty rows of [Members](#members-dashboard) (`Actives appear here once they join.`), [Alumni](#alumni-dashboard) (`Graduated members appear here.`), [Notifications](#notifications-dashboard) (`… will appear here.`) and [Points](#points-dashboard)' empty transactions (`Your attendance, study sessions, and adjustments will appear here.`).
 
 The skeleton/empty/error state variants themselves — layout, structure, when each renders — are component-level and owned by [components.md](components.md). This document owns the words inside them.
 
@@ -189,7 +193,7 @@ The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.g
 
 - **Empty and no-results were one row doing two jobs.** `No members match this view` / `Try a broader search or invite your first members to populate this directory.` had to cover a chapter with no roster *and* a search that matched nothing, so it asserted neither and instructed the reader in both. The split is the one the Points table below already makes between an empty leaderboard and a search that matched nothing, for the same reason: a filtered view that matches nothing is not a claim about the data.
 - **The descriptions state a fact instead of giving an instruction**, except in the no-results hint slot, where the board's own drawn hint is an instruction (`Check the spelling`).
-- **`actives`, not `members`,** in the two titles about the list itself: it is the word the tab and the section label above the list already use, and it is what the shipped mobile Directory renders for the same state (`apps/mobile/app/(tabs)/directory.tsx`). The error and offline rows keep `members`, because those are about the *records*, not about the tab.
+- **`actives`, not `members`,** in the two titles about the list itself: it is the word the tab and the section label above the list already use, and the shipped mobile Directory's empty title is the same `No actives yet` (`apps/mobile/app/(tabs)/directory.tsx`). Mobile draws that title alone, without this row's description, under §4 as amended 2026-11-05 *(corrected 2026-11-05: this said mobile renders the same state, which stopped being true of the description)*. Mobile's Actives tab has no filters, so the filters row has no mobile twin. The error and offline rows keep `members`, because those are about the *records*, not about the tab.
 - **The old error string named a concept that no longer exists.** "The members workflow no longer falls back to preview data" described the removal of a preview mode to a member who never saw one; `stateMicrocopy.members.preview*` had already lost both its readers.
 
 Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assembled at the call site because it quotes the live query.
@@ -306,6 +310,8 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | Empty | `No documents here yet` | `Upload chapter files like bylaws, agendas, and meeting minutes so everyone can find them.` |
 | Empty (search, all files) | `No documents match that search` | `Nothing in the chapter library has "{query}" in its title.` |
 | Empty (search, inside a folder) | `No documents match that search` | `No match in this folder. Try "All files" to search the whole library.` |
+| Empty (search, all files), mobile s12 | `No matches` | `No document title matches “{query}”.` |
+| Empty (search, inside a folder), mobile s12 | `No matches` | `Nothing in {folder} matches “{query}”.` Mobile's search stays inside the picked folder chip, so the line names the folder it searched |
 | Error | `Couldn't load documents` | `Confirm your chapter access and retry.` |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
 | Offline (search active) | `Search needs a connection` | `Clear the search to browse the documents already on this device.` |
@@ -495,6 +501,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Jump target not in the channel's history | — | `That message isn't in this channel anymore.` · `Dismiss` |
 | Jump could not load a page it needed (newer or older) | — | `Couldn't load the messages needed to reach that message.` · `Dismiss` |
 | Jump into a channel whose messages failed to load | — | `Couldn't load this channel's messages to reach that message.` · `Dismiss` |
+| Jump to latest (mobile: a `↓` over the thread once the reader is back in history; `components/chat/jump-to-latest-button.tsx`, `jumpToLatestLabel`) | — | Read `Jump to latest`, or `New messages. Jump to latest` once something new lands out of sight |
 | No channels | `No channels yet` | `New chapters seed #general, #announcements, and #chapter-audit during onboarding. Ask an admin if none appear.` |
 | Empty timeline | `Nothing in this channel yet` | `Be the first to post — everyone in the channel sees it right away.` |
 | Error | `Couldn't load channels` / `Couldn't load messages` | `Confirm your chapter access and retry.` |
@@ -502,6 +509,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | Archived conversation (mobile only: a Group DM everyone else left, #348; web's channel list leaves archived channels out) | — | `This conversation is archived because everyone else left. You can still read it.` |
 | No chapter selected | `No chapter selected` | `Pick an active chapter to load its channels and messages.` |
+| Composer placeholder (mobile; `app/(tabs)/chat-thread.tsx`) | — | `Message <title>`, the header's title (`Message #general`, `Message Casey`); plain `Message` while the title is blank or falls back to `Thread`. The input's accessible name is the same string |
 | Offline (composer) | — | `You're offline — messages send when you reconnect.` |
 | Composer mounted before the channels resolve (#2176); visible after Enter, announced from the first render | — | `Still opening your channels. You can keep typing.` |
 | Send refused by the outbox, message put back (toast, #1728) | `Message not sent` | `It couldn't be queued for delivery. It's back in the composer.` |
@@ -823,7 +831,8 @@ Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 
 | State | Title | Description | Home |
 |---|---|---|---|
-| Actions sheet rows | — | `Reply` · `Edit message` · `Delete message` (destructive), above the Report and Block rows | mobile `components/chat/message-actions-sheet.tsx` |
+| Actions sheet rows | — | The quick row first, web's four reactions, each read `React with <emoji>`, or `Remove <emoji> reaction` for one the viewer already made; then `Reply` · `Edit message` · `Delete message` (destructive), above the Report and Block rows | mobile `components/chat/message-actions-sheet.tsx` (`quickReactionLabel`) |
+| Add-reaction chip | — | `+` after a message's reactions, read `Add reaction`; it opens the actions sheet | mobile `components/chat/message-item.tsx` (`ADD_REACTION_A11Y_LABEL`) |
 | Delete confirmation | `Delete this message?` | `This can't be undone. Everyone in the channel will see "[message deleted]" in its place.` · confirm `Delete message`. A native alert on mobile, the shell's confirm dialog on web | `message-actions` (`DELETE_MESSAGE_CONFIRM_TITLE`, `_BODY`, `_LABEL`) |
 | Delete failed | `Couldn't delete message` | The reason chat-core classified from the response (an alert) | mobile `lib/chat/confirm-delete-message.ts` |
 | Reply strip | `Replying to <name>` | One line of the parent, as its quote will show it. A parent the block list hides, or one not loaded: `Replying to a message` over the quote's placeholder. Cancel reads `Cancel reply` | mobile `lib/chat/use-composer-staging.ts`; the cancel label in `components/chat/chat-composer.tsx` (`composerCancelLabel`) |
@@ -862,6 +871,7 @@ no reason and no way back.
 | Loading | — | `Loading alumni directory...` |
 | Empty | `No alumni yet` | `Graduated members appear here.` |
 | No results (filters) | `No alumni match the filters` | `Clear a field to see more.` |
+| No results (filters), mobile s13 | `No alumni match the filters` | `Clear a filter to see more.` The fields sit behind a chip named Filters there, so the line names that |
 | Error | `Couldn't load alumni` | `Check your chapter access.` |
 | Offline | `Alumni unavailable offline` | `Reconnect to load alumni records.` |
 | No chapter selected | `No chapter selected` | `Pick a chapter to browse alumni.` |

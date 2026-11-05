@@ -64,8 +64,8 @@ export function ProfileCard({
 
   return (
     <PressableRow
-      // The card sits on the card step, so its iOS lift is to the popover.
-      onCard
+      // The card is `surface1`, like the ListSections under it, so its iOS
+      // lift is the default one step, to `card`.
       accessibilityRole="button"
       accessibilityLabel={name}
       accessibilityValue={pointsLabel ? { text: pointsLabel } : undefined}
@@ -115,7 +115,9 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      // The More list's tone, so the card and the rows under it read as one
+      // surface (s09). It was the warmer `card`, a step browner than them.
+      backgroundColor: tokens.color.surface.surface1,
     },
     avatar: {
       width: AVATAR_SIZE,
@@ -142,8 +144,9 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
     },
+    // `ListRow`'s chevron, so the two on More are the same size.
     chevron: {
-      ...typeRole(tokens.typography.role.title),
+      ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.muted,
     },
   });
