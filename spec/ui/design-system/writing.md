@@ -1101,6 +1101,29 @@ title for what actually failed. The description and the action are the rows abov
 
 No row uses an em dash, for the reason the terminal pages above do not.
 
+### Mobile render errors
+
+The mobile app's three boundaries ([#3378](https://github.com/pdcarlson/Frapp/issues/3378)), all in
+[`apps/mobile/components/route-error.tsx`](../../../apps/mobile/components/route-error.tsx). Both
+rows render [components.md](components.md) §10's Error card, with its one button, centered in what
+failed.
+
+| State | Title | Description | Action |
+|---|---|---|---|
+| A tab screen failed (screen row) | `Couldn't load this screen` | `The error has been reported. Retrying usually clears it.` | `Retry`, with a `‹ Chat` back row above the card on a screen that hides the tab bar |
+| The app failed: the root layout or the tab group's (app row) | `Something broke on our side.` | `The error has been reported. Retrying usually clears it.` | `Retry` |
+
+- **The screen row is web's degraded segment, on a phone.** Each tab screen has its own boundary, so
+  the tab bar and the other tabs still work and the title names the screen, as web's names the page.
+  Where the screen hides the tab bar, the way out is a `‹ Chat` back row above the card, not a second
+  action on it, because on iOS a member there would otherwise have only a Retry that keeps failing.
+  Elsewhere the tab bar is the way out. Which screens get the row is
+  [`../mobile/navigation.md` § Back rows](../mobile/navigation.md#back-rows)'s to say.
+- **The app row is web's route error (`500`), on a phone.** It replaces a layout, so there is nothing
+  left to go back to, and Retry, which mounts the layout again, is the only action.
+- **Both borrow the route error's description**, for the reason the degraded segment does. Neither
+  shows the error's own text, which can hold whatever the screen was rendering.
+
 ## 8. Mobile reliability labels
 
 Use these exact labels for operational state pills:

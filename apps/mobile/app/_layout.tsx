@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Stack } from "expo-router";
+import { Stack, type ErrorBoundaryProps } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
 import * as Sentry from "@sentry/react-native";
@@ -10,6 +10,7 @@ import { useFonts } from "@expo-google-fonts/figtree";
 import * as SplashScreen from "expo-splash-screen";
 import { AppRuntime } from "@/components/app-runtime";
 import { ClientPolicyGate } from "@/components/client-policy-gate";
+import { AppErrorScreen } from "@/components/route-error";
 import { NetworkBanner } from "@/components/network-banner";
 import { FrappProvider } from "@/lib/frapp-client";
 import { AnalyticsProvider } from "@/lib/analytics-provider";
@@ -149,3 +150,13 @@ function RootLayout() {
  * wrapper too, not just the `init` call.
  */
 export default sentryDsn ? Sentry.wrap(RootLayout) : RootLayout;
+
+/**
+ * What expo-router renders in place of this layout when anything below it
+ * fails to render and no nearer boundary caught it: a provider, the sign-in
+ * stack, or the tab group's own fallback. It sits outside every provider
+ * above, so `AppErrorScreen` needs none (#3378).
+ */
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <AppErrorScreen {...props} boundary="root" />;
+}

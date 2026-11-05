@@ -87,6 +87,7 @@ export {
   DEFAULT_REPORT_INTERVAL_MS,
   UNKEYED_ROOT,
 } from "./query-errors";
+export { createReportOnce } from "./report-once";
 export type {
   QueryErrorKind,
   QueryErrorReport,
