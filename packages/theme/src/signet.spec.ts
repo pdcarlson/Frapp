@@ -351,7 +351,7 @@ describe("Signet scales match foundations.md", () => {
     const steps = numbers(body.match(/Steps:\s*([\d\s/]+)/)?.[1] ?? "");
     expect(Object.values(signetDarkTokens.spacing)).toEqual(steps);
 
-    // "Touch targets MUST be ≥ 44px. Buttons run 46–48px tall. Tab bar items
+    // "Touch targets MUST be ≥ 44px. Buttons run 44–48px tall. Tab bar items
     // are 56px tall."
     const [minimum] = numbers(body.match(/≥\s*(\d+)px/)?.[0] ?? "");
     const buttons = numbers(body.match(/Buttons run ([\d–-]+)px/)?.[1] ?? "");

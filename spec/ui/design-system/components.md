@@ -24,7 +24,7 @@ Colors below are given by **token role** (`accent-N` per [accent-engine.md](acce
 
 ## 2. Shared rules
 
-- **Every height in this file is a step of [foundations.md](foundations.md) §9's control size scale** (Chip 24, Row 32, Compact 36, Field 40 to a mouse; 44 on touch, 48 for a full-width touch primary). A section names its step; where a number below disagrees with the scale, the scale wins and the number is stale. *(Added 2026-11-05.)*
+- **Every control height in this file is a step of [foundations.md](foundations.md) §9's control size scale**, which owns the numbers; a section names its step. *(Added 2026-11-05.)* The scale's Small step (36) is not §3's Compact button (34, web app bar only).
 
 - **Touch targets MUST be ≥ 44px** on touch surfaces. Compact 34px controls (§7) are web/pointer-only.
 - **No drop shadows.** Elevation is a lighter surface fill ([foundations.md](foundations.md)).
@@ -88,8 +88,8 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 | Size | Height | Radius | Label | Use |
 | ---- | ------ | ------ | ----- | --- |
-| Default | Field: 40 to a mouse, 44 on touch; a full-width sheet or flow primary is Primary, 48 on touch | 12 | 15px | standalone actions, forms, sheet primary |
-| Inline | Compact: 36 to a mouse, 44 on touch | 12 | 14.5px | action rows inside cards |
+| Default | Field: 40 to a mouse, 44 on touch; on mobile a full-width sheet or flow primary is Primary, 48 | 12 | 15px | standalone actions, forms, sheet primary |
+| Inline | Small: 36 to a mouse, 44 on touch | 12 | 14.5px | action rows inside cards |
 | Compact | 34px | 10 | 13.5px | web app bar only (pointer) |
 
 **Web takes the dense heights on a mouse** (added 2026-11-05). To a fine pointer the Default button is 40 and the Inline and icon ones 36, and `pointer-coarse` gives all three 44, so the touch floor (§2) holds wherever a finger lands. At 48 a form's inputs and Save buttons stood well above the 34px sidebar rows beside them, and the owner called the whole Settings page oversized. Mobile is touch-only: its Default is 44 (`touch.button`, 46 until this change) and its full-width sheet CTA 48 (`touch.buttonLarge`; the board draws 50). Implementation: Button's `default`, `sm` and `icon` sizes.
@@ -111,7 +111,7 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 | Error | surface `#1A1A1A` | 1px `#f85149` + 3px ring danger @ ~25% | caption 12.5 `#f85149` below |
 | Disabled | surface `#1A1A1A` | 1px `rgba(255,255,255,.08)` | `#57534C` |
 
-The Field step: 40px with padding-x 12 to a fine pointer, 44px with padding-x 14 on touch, radius 12 (corrected 2026-11-05 from 48px everywhere, with §3's button heights, for the same reason). A multi-line field (`Textarea`) takes the same padding and grows. A sheet's fields sit one step down, at Compact. The value stays 16px at either height, the body floor ([foundations.md](foundations.md) §7). The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#131211` inside the surface-level app bar). The web top bar's find field is the named exception: it shares the bar's surface (§7). *(Exception added 2026-11-05.)*
+The Field step: 40px to a fine pointer and 44px on touch, padding-x 12 at both, radius 12 (corrected 2026-11-05 from 48px and padding-x 14 everywhere, with §3's button heights, for the same reason). A multi-line field (`Textarea`) takes the same padding and grows. A web sheet's fields sit one step down, at Small. The value stays 16px at either height, the body floor ([foundations.md](foundations.md) §7). The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#131211` inside the surface-level app bar). The web top bar's find field is the named exception: it shares the bar's surface (§7). *(Exception added 2026-11-05.)*
 
 In the Error state the caption MUST be wired to the field, not merely placed under it: `aria-describedby` on the input references the caption's id, and `aria-invalid` marks the input while the error stands.
 
@@ -125,7 +125,7 @@ Track 36×22px with an 18px thumb to a fine pointer (the board's `4c` toggle) an
 
 ## 5. Badges and chips
 
-The Chip step: height 24px on every pointer (26–28 until 2026-11-05), radius 8–10, padding-x 8, text 12.5px / 600. On touch a chip that is a control carries the 44px hit area through padding or `hitSlop`, not a taller fill. Mobile's filter chips draw 32 (s13 draws 34).
+The Chip step ([foundations.md](foundations.md) §9): height 24px on every pointer (26–28 until 2026-11-05), radius 8–10, padding-x 8, text 12.5px / 600. On touch a chip that is a control carries the 44px hit area through padding or `hitSlop`, not a taller fill. Mobile's filter chips draw 32 (s13 draws 34).
 
 | Kind | Fill | Border | Text | Use |
 | ---- | ---- | ------ | ---- | --- |
@@ -146,7 +146,7 @@ The Chip step: height 24px on every pointer (26–28 until 2026-11-05), radius 8
 
 Underline style only — no segmented pill controls.
 
-- Row: 1px bottom hairline `rgba(255,255,255,.08)`; items gap 22px. An item is the Compact step: 36px to a fine pointer, 44 on touch (padding 11px vertical as drawn, which is the touch size).
+- Row: 1px bottom hairline `rgba(255,255,255,.08)`; items gap 22px. An item is the Small step: 36px to a fine pointer, 44 on touch, set by a min-height so a caller's padding cannot push it past its row.
 - Active: 15px / 600 `#EDEAE3` (web: 14), 2px bottom underline `accent-9`.
 - Inactive: 15px / 400 `#78716A` (web: 14); hover lifts text to `#A9A399`.
 - On touch surfaces the item hit area MUST be ≥ 44px tall.
@@ -202,7 +202,7 @@ There is no command menu and no ⌘K. The find field binds Cmd/Ctrl+F without ad
 - Grabber: 40×4.5px, full-round, `rgba(255,255,255,.18)`, centered, 10px from the top edge, 14px above the header.
 - Header row: title 19px / 700 `#EDEAE3`, "Cancel" text control 14.5px `#78716A` right-aligned — **where the reference draws one**. s19, s20, s21 and s23 do; **s17 does not**: its header is the ✦ glyph + "Ask Frapp" in gold with a trailing caption where Cancel would sit, and the grabber plus the scrim are the dismissal. Reference wins, so a Cancel MUST NOT be added there.
 - Scrim: `rgba(0,0,0,.55)` behind a presented sheet, fading in at the first detent and gone at dismissal. Mobile mechanics (`BottomSheetBackdrop`, snap points, sheet-aware scrollables): [patterns.md](../mobile/patterns.md).
-- Body: standard controls (§3–§4) at default sizes, padding-x 18.
+- Body: standard controls (§3–§4) at their touch sizes, padding-x 18. A web sheet (the upload sheet) takes the Small step for its fields and footer buttons.
 - Primary action: full-width Primary button at the Primary step, 48px, pinned last (the board draws 50; rounded onto the scale 2026-11-05).
 - **Sheet chrome MUST NOT be styled through NativeWind** (locked ban) — grabber, container, and header use the platform styling path. Mobile usage patterns: [patterns.md](../mobile/patterns.md).
 

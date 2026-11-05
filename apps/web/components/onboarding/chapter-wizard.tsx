@@ -890,8 +890,8 @@ function IdentityStep({
               type="color"
               value={identity.colorAccent}
               onChange={(e) => set("colorAccent", e.target.value)}
-              // 36px was under §2's 44px floor on a control that is nothing but
-              // a tap target. `rounded` already maps to `--radius` (12) via the
+              // The Field step: 40 to a mouse, 44 to a finger (§2's floor on a
+              // control that is nothing but a tap target). `rounded` already maps to `--radius` (12) via the
               // preset's `DEFAULT`; spelled `rounded-md` so the radius step is
               // named rather than inherited.
               className="h-10 w-14 cursor-pointer pointer-coarse:h-11 rounded-md border border-border bg-background"

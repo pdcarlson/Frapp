@@ -15,14 +15,14 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * for the scanner — they do not, and re-typing them would have left a copy that
  * silently stops tracking the recipe.)
  *
- * The filter takes `components.md` §4's field recipe at the Inline height so it
- * lines up with the buttons in the same toolbar row. The checkbox takes §4's
- * 24x24 at radius 7 and paints through the browser's own `accent-color`, which
+ * The filter takes `components.md` §4's field recipe at the toolbar height so
+ * it lines up with the buttons in the same toolbar row. The checkbox takes
+ * §4's box (20x20 at radius 6 to a mouse, 24x24 at radius 7 to a finger) and paints through the browser's own `accent-color`, which
  * is what `accent-primary` sets — the previous 16px box was half that, and its
  * `text-primary` did nothing at all, since the text colour of a checkbox is not
  * what fills it.
  *
- * §2's ≥44px hit area is not satisfied by the control alone: the checkbox is
+ * §2's ≥44px hit area is not satisfied by the control alone: the checkbox was
  * 24px inside a `TableCell`, whose `p-2` brought the tappable area to 40px, and
  * the cells were pinned `w-10` so widening the padding overflowed the column
  * before it reached 44 (#1187). The Directory & Finance slice of #920 owns
@@ -35,15 +35,16 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * chat slice found under its reaction chips. So the `<label>` *is* 44x44, and
  * only where 44 is the rule: `pointer-coarse` is §2's own carve-out that
  * "compact 34px controls (§7) are web/pointer-only", read in the other direction.
- * A mouse keeps the 24px box and the 48px column; a finger gets a real 44px
+ * A mouse keeps the small box (20px since 2026-11-05) and the 48px column; a finger gets a real 44px
  * target and the column is already wide enough to hold it.
  *
- * The cell recipe is `w-12` (48), which is the width a *pointer* gets: 24px of
- * control plus `TableCell`'s 2x8px padding, with room to spare. It is not a
+ * The cell recipe is `w-12` (48), which is the width a *pointer* gets: the
+ * box plus `TableCell`'s 2x8px padding, with room to spare. It is not a
  * clamp — `width` on a `<td>` is a minimum hint to the table layout algorithm,
  * so on a coarse pointer the column simply grows to fit the 44px label rather
- * than clipping it. Measured in Chromium at a 375px viewport: 48px column with
- * a 24x24 label under `(pointer: fine)`, 60px column with a real 44x44 label
+ * than clipping it. Measured in Chromium at a 375px viewport (before the box
+ * shrank to 20 on a mouse): 48px column with a 24x24 label under
+ * `(pointer: fine)`, 60px column with a real 44x44 label
  * and the 24px box still centred under `(pointer: coarse)`. The table sits in
  * `Table`'s own `overflow-auto` wrapper, so those 12px scroll the table rather
  * than the page and the 375px floor is unaffected.
@@ -82,7 +83,7 @@ export const dashboardToolbarSearchGlyphClassName =
  * A `<select>` that is a **form field** rather than filter chrome, at §4's
  * field height: 40 to a mouse, 44 to a finger, the same as `Input`.
  *
- * §4's 44 is a carve-out for filter rows specifically — "secondary chrome
+ * §4's toolbar height (36, 44 to a finger) is a carve-out for filter rows specifically — "secondary chrome
  * sitting above the thing it filters" — and reading it as the height for every
  * native select gets the same defect §4 was written about, one context over:
  * the event editor put two of these in a `sm:grid-cols-2` beside `Input`s,

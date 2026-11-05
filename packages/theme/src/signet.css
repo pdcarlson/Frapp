@@ -303,8 +303,9 @@
     --space-3xl: 48px;
 
     /* ── Touch floors (foundations §9) ────────────────────────────
-     * Web honors the same 44px minimum as mobile. A pointer does not
-     * make a small target acceptable. */
+     * Web honors the same 44px minimum as mobile wherever a finger
+     * lands (`pointer: coarse`); a mouse gets the denser steps of the
+     * control size scale. */
     --touch-min: 44px;
     --touch-button: 44px;
 

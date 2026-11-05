@@ -72,7 +72,9 @@ function createStyles(tokens: SignetTokens) {
       alignSelf: "center",
       borderRadius: tokens.radius.control,
       backgroundColor: tokens.color.gold.house,
-      minHeight: tokens.touch.button,
+      // The Primary step (foundations.md §9): a full-width button that ends
+      // a flow step, the same 48 as the sheet CTAs.
+      minHeight: tokens.touch.buttonLarge,
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: tokens.spacing.md,

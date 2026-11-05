@@ -82,7 +82,7 @@ export function DocumentList({
 
           Icon placement follows the dashboard's existing search inputs
           (`events-page.tsx`, `alumni-directory.tsx`): the shared glyph at a
-          fixed `top-2.5` against an `h-11` field. The wrapper carries the
+          glyph class sized against the toolbar field. The wrapper carries the
           spacing so the icon offset never has to compensate for it.
         */}
         <div className="relative w-full sm:w-64">

@@ -34,6 +34,16 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * size a defect, exactly as §1 there locks the radius map over the same board's
  * drawings; the sizes below differentiate by height and padding instead.
  */
+/*
+ * The Small step (foundations.md §9): 36 to a mouse, 44 to a finger. Padding
+ * does not change with the pointer on purpose: a `pointer-coarse:px-*` class
+ * survives `cn()` next to a caller's plain `px-0` (tailwind-merge only merges
+ * classes with the same variant), so link-style buttons would grow a box on
+ * touch. Only the height splits, and a caller that cancels it says so with
+ * `pointer-coarse:h-auto`.
+ */
+const SMALL = "h-9 px-3 text-sm pointer-coarse:h-11";
+
 const buttonVariants = cva(
   cn(
     "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent transition-colors",
@@ -89,7 +99,7 @@ const buttonVariants = cva(
         // the names are the scaffold's and are kept so 68 call sites do not
         // churn for a rename.
         default: "h-10 px-4 text-sm pointer-coarse:h-11",
-        sm: "h-9 px-3 text-sm pointer-coarse:h-11 pointer-coarse:px-3.5",
+        sm: SMALL,
         // Square: 36 to a mouse, and 44 to a finger so an icon-only control
         // clears the touch-target floor (§2) on the 375px layout.
         icon: "h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11",
@@ -97,7 +107,9 @@ const buttonVariants = cva(
         // §3's Compact on a mouse, the 44 touch floor on a finger, which is
         // the README's row rule. At 48 the primary action stood taller than
         // the page's title row and every list row under it.
-        toolbar: "h-9 px-3 text-sm pointer-coarse:h-11 pointer-coarse:px-3.5",
+        // Since 2026-11-05 the same step as `sm`; both names stay so the call
+        // sites read as what they are.
+        toolbar: SMALL,
       },
     },
     defaultVariants: {

@@ -438,10 +438,11 @@ export function OfflineState({
  * is the badge-companion carve-out, and this glyph leads the notice rather
  * than trailing a badge.
  *
- * `min-h-11` does **not** make the Retry reach §2's floor — `Button size="sm"`
- * is `h-11` on its own and the row sizes to it. It is for the other branch:
- * with no `onRetry` the row is text-only, and a bare caption standing in for a
- * 44px control would let the layout collapse around it.
+ * The min-height does **not** make the Retry reach §2's floor — `Button
+ * size="sm"` is 36 to a mouse and 44 to a finger on its own, and the row sizes
+ * to it. It is for the other branch: with no `onRetry` the row is text-only,
+ * and a bare caption standing in for the control would let the layout
+ * collapse around it, so it holds the same 36 / 44.
  *
  * Copy names the blocker and the next action (`writing.md` §1). It says
  * "access" rather than "permissions" because the member is not the one who
@@ -490,7 +491,7 @@ export function PermissionsOffline({
   return (
     <div
       className={cn(
-        "inline-flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground",
+        "inline-flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground pointer-coarse:min-h-11",
         className,
       )}
     >

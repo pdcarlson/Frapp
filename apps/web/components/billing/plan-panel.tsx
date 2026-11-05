@@ -394,7 +394,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
             <Button
               variant="link"
               size="sm"
-              className="h-auto px-0"
+              className="h-auto px-0 pointer-coarse:h-auto"
               onClick={() => void statusQuery.refetch()}
             >
               Retry
@@ -696,11 +696,17 @@ function ActivationWait({
       <Button variant="secondary" onClick={onRecheck}>
         Check again
       </Button>
-      {/* `h-auto px-0` cancels the size's box classes, which `link` does not
-          reset — without them the anchor renders as a 44px padded block beside
-          the button rather than as inline text. Same pairing as
-          `service-page.tsx`'s proof link. */}
-      <Button asChild variant="link" size="sm" className="h-auto px-0">
+      {/* `h-auto px-0 pointer-coarse:h-auto` cancels the size's box classes,
+          which `link` does not reset — without them the anchor renders as a
+          padded block beside the button rather than as inline text. The
+          `pointer-coarse:` half is needed because `cn()` cannot merge a plain
+          class over a variant one. */}
+      <Button
+        asChild
+        variant="link"
+        size="sm"
+        className="h-auto px-0 pointer-coarse:h-auto"
+      >
         <a href="/billing">I haven&apos;t paid yet</a>
       </Button>
     </>

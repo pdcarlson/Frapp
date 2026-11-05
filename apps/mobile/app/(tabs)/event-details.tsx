@@ -292,7 +292,7 @@ function CheckInCard({
       {zone ? <Text style={styles.zoneText}>{zone}</Text> : null}
 
       {isOpen ? (
-        // The app's one primary button (`sheet-scaffold.tsx`): 50pt, the
+        // The app's one primary button (`sheet-scaffold.tsx`): 48pt, the
         // control radius, the chapter accent under `gold.onHouse` ink, as the
         // dues Pay button and every sheet's CTA draw it.
         <SheetPrimaryButton

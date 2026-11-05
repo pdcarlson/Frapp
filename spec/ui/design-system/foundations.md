@@ -230,19 +230,19 @@ Canonical map (locked; supersedes panel 4h — see deviation note):
 
 ### Control size scale
 
-*(Added 2026-11-05, owner direction: the old system was "flawed" and "all the bubbles just feel way too big".)* Every control, row and chip in both apps takes a step from this table. A height that is not on it is a defect, the same as an off-grid spacing value. It is the rule the sizing, icon-button, chrome and dialog passes all build on, so a component spec names its step rather than restating a number.
+*(Added 2026-11-05, owner direction: the old system was "flawed" and "all the bubbles just feel way too big".)* Every control, row and chip takes a step from this table, and new work never invents a height off it. It is the rule the sizing, icon-button, chrome and dialog passes all build on, so a component spec names its step rather than restating a number. The shipped surfaces still off the scale are listed in [#3511](https://github.com/pdcarlson/Frapp/issues/3511) until they move.
 
 | Step | Mouse (web, fine pointer) | Touch (web coarse pointer, and mobile) | Takes it |
 |------|------|------|------|
 | Chip | 24 | 24 drawn, 44 hit area through padding or `hitSlop` | badges, status chips, counts. Mobile's filter chips draw 32 |
-| Row | 32 | 44 | menu, select and command rows; a list row with one line; a checkbox row inside a form |
-| Compact | 36 | 44 | toolbar controls, Inline (`sm`) and icon buttons, tabs, a table header, a row's trailing action, a sheet's fields and footer buttons |
+| Row | 32 | 44 | menu, select and command rows; a checkbox row inside a form |
+| Small | 36 | 44 | toolbar controls, Inline (`sm`) and icon buttons, tabs, a table header, a dense list row, a sheet's fields and footer buttons |
 | Field | 40 | 44 | text fields, select triggers, Default buttons, the color picker |
-| Primary | 40 | 48 | a full-width primary action that ends a sheet or a flow (mobile's sheet CTA, onboarding's Continue) |
+| Primary | (web: Field) | 48 | mobile only: a full-width button that ends a sheet or a flow step (the sheet CTA, the dues Pay button, onboarding's buttons). A web full-width primary is a Default button, 44 on touch |
 
 - **Mouse and touch are one rule, not two designs.** Web reads `pointer-coarse` for the touch column (Tailwind's `pointer-coarse:` variant), so a laptop gets the dense column and a phone or tablet browser the 44 floor. Mobile is touch-only and reads the touch column alone. The web sidebar (34) and app bar (34) are older pointer-only geometry and stay as [components.md](components.md) §7 draws them.
-- **Labels follow the height, values do not.** A Row or Compact label is 14px on a mouse and 16px on touch; a Field's typed value stays 16px at every height, because §7's body floor binds on text a member types.
-- **Padding scales with the step.** Field padding-x is 12 on a mouse and 14 on touch; a Default button's is 16; Compact and Inline 12.
+- **Labels stay 14, values stay 16.** Button, tab and table-header labels are 14px at every height. A menu or select row's label is 14px on a mouse and 16px on touch. A typed value is 16px at every height, because §7's body floor binds on text a member types.
+- **Padding does not split by pointer.** Field padding-x is 12, a Default button's 16, a Small one's 12, on every pointer. Only heights split: on web a `pointer-coarse:` padding class survives a caller's plain `pl-9` or `px-0` (tailwind-merge merges only classes with the same variant), which put search glyphs on top of typed text.
 - **Two lines grow a row, not the scale.** A row whose meta line wraps under its name takes the Row floor as a `min-height` and grows with its content.
 - **The toggle has its own two sizes**: a 36×22 track with an 18px thumb on a mouse, and 50×30 with a 24px thumb on touch ([components.md](components.md) §4).
 

@@ -289,8 +289,9 @@ export function getSignetCssVars(
     "--space-2xl": `${t.spacing["2xl"]}px`,
     "--space-3xl": `${t.spacing["3xl"]}px`,
 
-    // Touch floors (foundations.md §9). Web honors the same 44px minimum;
-    // pointer input does not make a small target acceptable.
+    // Touch floors (foundations.md §9). Web honors the same 44px minimum
+    // wherever a finger lands (`pointer: coarse`); a mouse gets the denser
+    // steps of the control size scale.
     "--touch-min": `${t.touch.minimum}px`,
     "--touch-button": `${t.touch.button}px`,
 
