@@ -46,6 +46,7 @@ import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 // `use-chat-channel` boundary before #544 added `warning`.
 import type { DispatchResult } from "@repo/chat-core/dispatch";
 import { useToast } from "@/lib/hooks/use-toast";
+import type { ChapterModuleGateStatus } from "@/lib/hooks/use-chapter-module-gate";
 import {
   COLD_LOAD_MARKS,
   markColdLoad,
@@ -462,12 +463,12 @@ interface ComposerBaseProps {
    */
   recruitmentVocab?: string;
   /**
-   * Status of the read behind `isModuleEnabled`. `"loading"` and `"error"`
-   * surface explicit states inside the slash palette instead of an empty
-   * filter, and refuse a typed module command with their own copy; defaults
-   * to `"ready"` for callers that don't gate the catalog.
+   * Status of the read behind `isModuleEnabled`. `"loading"`, `"offline"`
+   * and `"error"` surface explicit states inside the slash palette instead of
+   * an empty filter, and refuse a typed module command with their own copy;
+   * defaults to `"ready"` for callers that don't gate the catalog.
    */
-  slashCommandsStatus?: "loading" | "error" | "ready";
+  slashCommandsStatus?: ChapterModuleGateStatus;
   onRetrySlashCommands?: () => void;
   /**
    * Realtime is down. The composer stays **live** and says so — it does not
@@ -569,14 +570,14 @@ function slashToken(command: SlashCommand): string {
  * module gate lets it through. The same gate the palette filters by
  * (`filterSlashCommands`), for a command typed out in full (#2993).
  *
- * Fails closed while the chapter's modules are loading or failed to load
- * (#310), with its own copy for each, so a member isn't told a module is off
- * when the gate simply hasn't answered. A command with no module (`/announce`)
- * is never refused here.
+ * Fails closed while the chapter's modules are loading, can't be checked
+ * offline, or failed to load (#310, #3160), with its own copy for each, so a
+ * member isn't told a module is off when the gate simply hasn't answered. A
+ * command with no module (`/announce`) is never refused here.
  */
 export function slashModuleRefusal(
   command: SlashCommand,
-  status: "loading" | "error" | "ready",
+  status: ChapterModuleGateStatus,
   isModuleEnabled: (moduleKey: string) => boolean,
 ): { title: string; description: string } | null {
   const moduleKey = command.requiredModule;
@@ -587,6 +588,15 @@ export function slashModuleRefusal(
       title: `/${token} isn't ready yet`,
       description:
         "Still checking which commands your chapter has on. Your text is still here. Send it again in a moment.",
+    };
+  }
+  // The module read is paused or failing offline even though the channel may
+  // not say so yet, so "try again in a moment" would be the wrong advice.
+  if (status === "offline") {
+    return {
+      title: `/${token} needs a connection`,
+      description:
+        "You're offline, so we can't check which commands your chapter has on. Your text is still here. Send it when you're back online.",
     };
   }
   if (status === "error") {

@@ -15,8 +15,13 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { ErrorState, LoadingState } from "@/components/shared/async-states";
+import {
+  ErrorState,
+  LoadingState,
+  OfflineState,
+} from "@/components/shared/async-states";
 import { filterSlashCommands, type SlashCommand } from "@repo/chat-core/integrations";
+import type { ChapterModuleGateStatus } from "@/lib/hooks/use-chapter-module-gate";
 
 export interface SlashPaletteProps {
   open: boolean;
@@ -33,12 +38,13 @@ export interface SlashPaletteProps {
   /**
    * Reflects the state of the read behind the module gate, the member view
    * (`useChapterModuleGateState`), so the palette can fail closed while
-   * modules are still loading or errored. Never wire it to `useOrgConfig()`,
-   * which errors for every member below President (#2957). Defaults to
-   * `"ready"` so existing callers and tests don't need to thread the prop.
+   * modules are still loading, can't be checked offline, or errored. Never
+   * wire it to `useOrgConfig()`, which errors for every member below President
+   * (#2957). Defaults to `"ready"` so existing callers and tests don't need to
+   * thread the prop.
    */
-  status?: "loading" | "error" | "ready";
-  /** Retry callback rendered in the error state. */
+  status?: ChapterModuleGateStatus;
+  /** Retry callback rendered in the offline and error states. */
   onRetry?: () => void;
   onSelect: (command: SlashCommand) => void;
   onOpenChange: (open: boolean) => void;
@@ -50,9 +56,11 @@ export interface SlashPaletteProps {
  * a command surfaces an "Available in Chunk 05" toast via the caller — the
  * palette itself is module-aware and accessible.
  *
- * Fails closed while the chapter's modules are still loading or errored — see
- * issue #310. The dialog opens to an explicit Loading or Error state instead
- * of a filtered list that defaults to "no modules enabled".
+ * Fails closed while the chapter's modules are still loading, offline or
+ * errored (#310). The dialog opens to an explicit Loading, Offline or Error
+ * state instead of a filtered list that defaults to "no modules enabled". Only
+ * a read that is actually running gets the Loading panel: a paused or disabled
+ * one never answers by itself, so it gets a Retry instead (#3160).
  *
  * The input is parent-controlled (`initialQuery` + `onQueryChange`) so the
  * displayed filter stays in lockstep with the composer's slash text without
@@ -92,6 +100,13 @@ export function SlashPalette({
         {status === "loading" ? (
           <div className="p-2">
             <LoadingState message="Loading commands…" />
+          </div>
+        ) : status === "offline" ? (
+          <div className="p-2">
+            <OfflineState
+              description="Reconnect to load the commands your chapter has on."
+              onRetry={onRetry}
+            />
           </div>
         ) : status === "error" ? (
           <div className="p-2">
