@@ -90,10 +90,7 @@ export function AskPill({ className }: { className?: string }) {
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             In the meantime, everything Ask would quote is already readable:
-            find channels, members and messages from the top bar, or press{" "}
-            <kbd className="rounded-xs border border-border px-1 py-0.5 text-xs">
-              ⌘F
-            </kbd>
+            find channels, members and messages from the top bar
             {documentsEnabled ? ", and chapter files live under Documents." : "."}
           </p>
           <DialogFooter>

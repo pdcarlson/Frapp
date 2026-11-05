@@ -129,7 +129,8 @@ function segmentErrorCopy(
     // connection returns.
     return {
       title: SEGMENT_ERROR_TITLE,
-      description: "You're offline, so part of this page couldn't load. Retry once you're back.",
+      description:
+        "You're offline, so part of this page couldn't load. Retry once you're back.",
       actionLabel: "Retry",
       isChunkError,
       shouldReload: false,
@@ -160,7 +161,6 @@ export function SegmentError({
   error,
   retry,
   title,
-  headingLevel,
 }: {
   error: unknown;
   retry: () => void;
@@ -174,7 +174,6 @@ export function SegmentError({
    * those do not depend on which surface failed.
    */
   title?: string;
-  headingLevel?: "h1" | "h2";
 }) {
   // `linkOnline`, not `isOffline`: the question here is whether a reload
   // could fetch the document, which is a browser-link question. `isOffline`
@@ -196,7 +195,6 @@ export function SegmentError({
       title={title ?? copy.title}
       description={description}
       actionLabel={actionLabel}
-      headingLevel={headingLevel}
       onRetry={shouldReload ? () => window.location.reload() : retry}
     />
   );

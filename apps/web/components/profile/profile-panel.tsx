@@ -43,7 +43,6 @@ import {
   NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
-import { PageHeader } from "@/components/layout/page-header";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { Switch } from "@/components/ui/switch";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -179,7 +178,6 @@ export function ProfilePanel() {
   if (isOffline && anyReadUncached(userQuery)) {
     return (
       <>
-        <PageHeader title="Profile" />
         <NestedOffline
           title="Your profile is unavailable offline"
           description="Reconnect to load your directory entry and notification preferences."
@@ -192,7 +190,6 @@ export function ProfilePanel() {
   if (userQuery.isLoading || userPaused) {
     return (
       <>
-        <PageHeader title="Profile" />
         <NestedLoading message="Loading your profile..." sole />
       </>
     );
@@ -200,7 +197,6 @@ export function ProfilePanel() {
   if (userQuery.isError && anyReadUncached(userQuery)) {
     return (
       <>
-        <PageHeader title="Profile" />
         <NestedError
           title="Couldn't load your profile"
           description="You're signed in, but Frapp couldn't be reached. Try again in a moment."
@@ -499,7 +495,6 @@ export function ProfilePanel() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Profile" />
       {/*
         One column, capped at a form's width: a 1,100px name field is not a
         form anyone reads. Each block is a section on the page surface under

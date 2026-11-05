@@ -7,7 +7,7 @@ import {
   useDocuments,
 } from "@repo/hooks";
 import { Can } from "@/components/shared/can";
-import { PageHeader } from "@/components/layout/page-header";
+import { PageActions } from "@/components/layout/page-actions";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
   SubscriptionNotice,
@@ -248,14 +248,11 @@ export function DocumentsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Documents"
-        actions={
-          <Can permission="chapter_docs:upload">
-            <UploadDocumentDialog gate={gate} upload={upload} />
-          </Can>
-        }
-      />
+      <PageActions>
+        <Can permission="chapter_docs:upload">
+          <UploadDocumentDialog gate={gate} upload={upload} />
+        </Can>
+      </PageActions>
       {/*
         The page-narration paragraph that sat here is deleted, not restyled.
         The framework board lists "page-narration paragraphs" under Removed

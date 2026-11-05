@@ -6,7 +6,8 @@
   "exports": {
     "./tailwind": "./src/tailwind.config.ts",
     "./signet.css": "./src/signet.css",
-    "./signet": "./src/signet.ts"
+    "./signet": "./src/signet.ts",
+    "./nav-glyphs": "./src/nav-glyphs.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",

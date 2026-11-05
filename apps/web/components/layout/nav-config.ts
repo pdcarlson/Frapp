@@ -23,8 +23,9 @@ import {
  * Permission-aware dashboard navigation.
  *
  * Kept in a single module so the sidebar and the mobile drawer stay in sync.
- * (There is no longer a command palette or a breadcrumb title map; #2141
- * deleted both.) The row-by-row table in `spec/ui/web-dashboard/README.md`
+ * It also names the open page: `page-title.ts` reads each row's label as the
+ * top bar's title, so the row and the heading cannot disagree. (There is no
+ * command palette; #2141 deleted it.) The row-by-row table in `spec/ui/web-dashboard/README.md`
  * § Navigation map mirrors this file, and a change to one changes the other.
  *
  * Structure (#2946): a Chat anchor with no section header, then Chapter, then
@@ -231,7 +232,8 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Directory",
         icon: DirectoryGlyph,
         href: "/members",
-        description: "Actives and alumni, profile cards, invites, deactivation.",
+        description:
+          "Actives and alumni, profile cards, invites, deactivation.",
         requirePermission: "members:view",
       },
       {
@@ -267,4 +269,3 @@ export const DASHBOARD_NAV: NavSection[] = [
 export const DASHBOARD_NAV_ITEMS: NavItem[] = DASHBOARD_NAV.flatMap(
   (section) => section.items,
 );
-

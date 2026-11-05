@@ -10,8 +10,9 @@ All Signet-reskinned surfaces draw icons with the duotone recipe locked in the
 [design-system reference](reference/signet-design-system.dc.html) and rendered
 throughout the [Canvas screens](reference/canvas-screens.dc.html). On web the
 recipe is one module — [`apps/web/components/ui/duotone.tsx`](../../../apps/web/components/ui/duotone.tsx)
-— which every glyph file composes, so a surface cannot drift off it while
-looking like it complies:
+— which every stroke-recipe glyph composes, so a surface cannot drift off it
+while looking like it complies. The navigation glyphs, and the in-screen
+glyphs that sit beside them, draw the two-tone nav set instead (§1.1):
 
 | Layer | Spec |
 |-------|------|
@@ -26,6 +27,28 @@ Color per state (roles defined in [foundations](foundations.md)):
 | Neutral / inactive | Muted text role | White at 6% opacity |
 | Active / emphasis | Accent text (step 11) | Stroke hue at 16–18% opacity |
 | Status | Semantic role color (see §3) | Stroke hue at low opacity, same recipe |
+
+### 1.1 Nav glyphs (two-tone, shared by web and mobile)
+
+The navigation glyphs (the web sidebar, the mobile tab bar and the More hub's
+rows), the web in-screen families' re-exports of them, and the few in-screen
+glyphs drawn beside those (folder, schedule, invite, profile) draw one shared
+set instead of the stroke recipe above: [`packages/theme/src/nav-glyphs.ts`](../../../packages/theme/src/nav-glyphs.ts)
+(`@repo/theme/nav-glyphs`), path data from Phosphor's duotone weight (MIT),
+rendered by `apps/web/components/layout/nav-glyphs.tsx` and
+`apps/mobile/components/nav-glyph.tsx`. Changed 2026-11-05 at Paul's request:
+the stroke recipe's 6% white fill vanished on the charcoal surfaces, so the nav
+read as plain outlines, and its hand-built gear looked off.
+
+| Layer | Spec |
+|-------|------|
+| Silhouette (`back`) | The glyph's own hue at 20% at rest, 30% when active |
+| Outline and details (`front`) | The glyph's own hue at full strength |
+
+The hue follows the same state table as above (muted at rest, accent text when
+active). Rule 1 below holds: selection recolors and lifts the silhouette, and
+never swaps to a solid variant. A new nav intent takes its shape from the same
+Phosphor duotone folder so the set stays one family.
 
 Rules:
 
@@ -99,21 +122,27 @@ duotone. Interim rules:
 
 - **Web (Lucide)** — keep the default stroke weight; do not restyle individual
   icons. **The dashboard shell and the chat family have left this interim
-  path**: the shell's sidebar and top-bar glyphs are duotone SVG components in
-  `apps/web/components/layout/nav-glyphs.tsx`, and chat's are in
-  `apps/web/components/chat/chat-glyphs.tsx`, both transcribed from the
-  reference boards; the Directory & Finance, Chapter Ops and Resources &
+  path**: the shell's sidebar and top-bar glyphs are SVG components in
+  `apps/web/components/layout/nav-glyphs.tsx` (the sidebar's from the shared
+  nav set, §1.1; the top bar's in the §1 stroke recipe), and chat's are in
+  `apps/web/components/chat/chat-glyphs.tsx`; the Directory & Finance, Chapter Ops and Resources &
   Reporting families have since followed (§6.2.3, §6.2.4, §6.2.5). Lucide
   remains the interim pack for the screen families
   whose #920 slice has not landed, and — on every surface, reskinned or not —
   for control furniture (§6.2).
 - **Mobile (Ionicons)** — outline variants for navigation and neutral states;
   fill variants only for explicit active/high-emphasis affordances. **The tab
-  bar has left this interim path**: its four glyphs are now duotone
-  `react-native-svg` components in `apps/mobile/components/tab-glyphs.tsx`,
-  transcribed from the Canvas reference. Ionicons remains the interim pack for
+  bar has left this interim path**: its four glyphs are `react-native-svg`
+  components in `apps/mobile/components/tab-glyphs.tsx` drawing the shared nav
+  set (§1.1). Ionicons remains the interim pack for
   in-screen icons until each screen is reskinned.
-- Do not mix icon packs within a single surface.
+- Do not mix icon packs within a single surface. The §1 stroke recipe and the
+  §1.1 nav set count as one Signet family for this rule, and the target is a
+  single family: a glyph drawn in the same list as a nav glyph takes the nav
+  set (the folder rail, the event schedule rows, invite and profile,
+  §6.2.3–§6.2.7). The rest of the stroke-recipe glyphs, `SearchGlyph` in the
+  toolbars among them, move over under
+  [#3491](https://github.com/pdcarlson/Frapp/issues/3491).
 - Surfaces built or rebuilt under the Signet reskin use the duotone recipe
   (§1); legacy surfaces keep their pack until reskinned.
 - Note the interim outline/fill pairs below are a *deliberate* violation of §1
@@ -131,18 +160,17 @@ substitutions.
 ### 6.1 Mobile tab bar (duotone, shipped)
 
 The tab bar is reskinned. Its four glyphs live in
-`apps/mobile/components/tab-glyphs.tsx` as `react-native-svg` components at
-24px, with geometry transcribed from the tab bar drawn in
-[`reference/canvas-screens.dc.html`](reference/canvas-screens.dc.html). There is
-one component per tab and it recolors between states per §1 rule 1 — there is no
+`apps/mobile/components/tab-glyphs.tsx` at 24px and draw the shared nav set
+(§1.1), so each tab has the same shape as its web sidebar row. There is one
+component per tab and it recolors between states per §1 rule 1; there is no
 second, filled variant to swap to.
 
-| Semantic intent | Glyph | Notes |
+| Semantic intent | Glyph (nav set key, Phosphor name) | Notes |
 |---|---|---|
-| Chat tab (home) | Speech bubble with tail | |
-| Events tab | Calendar body; rules and hangers stay stroke-only | |
-| Tasks tab | Circle-check; the checkmark stays stroke-only | |
-| More tab | **2×2 grid of rounded squares** | Not an ellipsis. Canvas draws the grid, and Canvas wins for visuals — the earlier `ellipsis-horizontal-circle` mapping here was wrong. |
+| Chat tab (home) | `chat`, `chat-circle-dots` | |
+| Events tab | `events`, `calendar-dots` | |
+| Tasks tab | `tasks`, `seal-check` | |
+| More tab | `more`, `squares-four` | Not an ellipsis: Canvas draws a 2×2 grid, and Canvas wins for visuals. |
 
 Retired with the 4-tab collapse: the Home, Points, and Profile tabs. Home and
 Points no longer exist as screens; Profile moved into the More hub.
@@ -161,25 +189,24 @@ cluster replaces its own as it rebuilds; there is no separate icon migration.
 ### 6.1.2 Mobile More hub (Signet duotone, shipped)
 
 The More hub's leading row glyphs (s09, #1048) live in
-`apps/mobile/components/more/more-glyphs.tsx` at 20px (§2's list-row size).
-Where the board draws the row, the geometry is transcribed from it; where it
-doesn't, the shape is the web shell's glyph for the same intent (§6.2), so one
-intent draws one shape on both surfaces. Member rows stroke in the chapter
-accent; the Admin rows are drawn neutral, as the board draws them.
+`apps/mobile/components/more/more-glyphs.tsx` at 20px (§2's list-row size)
+and draw the shared nav set (§1.1), so one intent draws one shape on both
+surfaces. Member rows are painted in the chapter accent; the Admin rows in
+`text.muted`.
 
-| Semantic intent | Glyph | Source |
+| Semantic intent | Glyph (nav set key, Phosphor name) | Web counterpart |
 |---|---|---|
-| Study hours | Clock: circle body, hands stroke-only | s09 (same shape as web `StudyGlyph`) |
-| Service hours | Heart | web `ServiceGlyph` (the board draws no Service hours row) |
-| Dues | Card: body plus a stroke-only stripe | s09 (web `BillingGlyph`) |
-| Documents | Page with a folded corner | s09 (web `DocumentsGlyph`) |
-| Directory | Two people, the second stroke-only | s09 (web `DirectoryGlyph`) |
-| Settings | Gear, hub stroke-only | web `SettingsGlyph` (the board's s09 cog is drawn half-open) |
-| Switch chapter | Crest carrying two opposed swap arrows | Drawn fresh in the §1 recipe: no board draws this row |
-| Host check-in (Admin) | Three squares and a QR corner, neutral | s09 |
+| Study hours | `study`, `graduation-cap` | `StudyGlyph` |
+| Service hours | `service`, `hand-heart` | `ServiceGlyph` |
+| Dues | `billing`, `credit-card` | `BillingGlyph` |
+| Documents | `documents`, `file-text` | `DocumentsGlyph` |
+| Directory | `directory`, `users-three` | `DirectoryGlyph` |
+| Settings | `settings`, `gear-six` | `SettingsGlyph` |
+| Switch chapter, Create a chapter | `chapter`, `bank` (the columned chapter house) | none |
+| Host check-in (Admin) | `hostCheckIn`, `qr-code` | none |
 
-The same file's `NotificationsGlyph` (bell, clapper stroke-only; s09 and web
-`NotificationsGlyph`) is drawn by Chat home's inbox bell
+The same file's `NotificationsGlyph` (bell, clapper stroke-only, still in the
+§1 stroke recipe; s09 and web `NotificationsGlyph`) is drawn by Chat home's inbox bell
 (`components/chat/notifications-bell.tsx`), in `text.foreground` with the
 neutral fill, since the More row it was drawn for moved there (#3362).
 The More screens' empty-state tiles (`EmptyState` in `components/state-block.tsx`) reuse the same file's glyphs for the screen they sit on, in the chapter accent: `DocumentsGlyph` on s12, `DirectoryGlyph` on s13 and the Blocked members sheet, `NotificationsGlyph` on s14's inbox, and `ChapterGlyph` on the no-chapter card. A search or filter that finds nothing draws `SearchGlyph`, there and on Chat home's filtered channel list (s04): `components/search-glyph.tsx`, web's search geometry drawn with the same file's recipe (its exported `paint` and `Frame`). s15's avatar badge draws s20's camera (`CameraGlyph`, `components/service-hours/camera-glyph.tsx`) in the accent's on-colour, its body at §1's emphasis fill.
@@ -187,17 +214,19 @@ The More screens' empty-state tiles (`EmptyState` in `components/state-block.tsx
 ### 6.1.3 Mobile chat cards (Signet duotone, shipped)
 
 The eyebrow glyph over each s05 chat card, drawn at 16px by `CardEyebrow`
-(`apps/mobile/components/chat/chat-card.tsx`) in the tab bar's props and
-recipe, so a card and the tab it belongs to share a silhouette. Each is the
-web glyph for the same intent (§6.2.2). Accent-stroked, except the audit
-card's, which is drawn neutral, as web draws it.
+(`apps/mobile/components/chat/chat-card.tsx`) in the tab bar's props, so a
+card and the tab it belongs to share a silhouette. The event, task, points and
+hours glyphs are nav-set shapes (§1.1, through `TabGlyph`); the rest keep the
+§1 stroke recipe. Each is the web glyph for the same intent (§6.2.2). Painted
+in the accent, except the audit card's, which is drawn neutral, as web draws
+it.
 
 | Semantic intent | Glyph | Lives in |
 |---|---|---|
 | Event card | `EventsGlyph` (the Events tab's) | `components/tab-glyphs.tsx` |
 | Task card | `TasksGlyph` (the Tasks tab's) | `components/tab-glyphs.tsx` |
-| Points card | `PointsGlyph` (star) | `components/chat/card-glyphs.tsx` |
-| Hours card | The More hub's `ServiceGlyph` heart, adapted as `ServiceHoursGlyph` | `components/chat/card-glyphs.tsx` |
+| Points card | `PointsGlyph` (the nav set's trophy, §1.1) | `components/chat/card-glyphs.tsx` |
+| Hours card | `ServiceHoursGlyph` (the nav set's hand-heart, the More hub's shape) | `components/chat/card-glyphs.tsx` |
 | Recruitment candidate card | `RushGlyph` (funnel, inner line stroke-only; the module catalog's `funnel`) | `components/chat/card-glyphs.tsx` |
 | Announcement card | `AnnouncementGlyph` (megaphone, sound arc stroke-only) | `components/chat/card-glyphs.tsx` |
 | `#chapter-audit` card, neutral | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |
@@ -206,37 +235,41 @@ The poll card has no glyph: its eyebrow is muted text on both surfaces.
 
 ### 6.2 Web Dashboard shell (Signet duotone)
 
-Since the #920 shell slice the dashboard's shell chrome draws the duotone
-recipe (§1), not Lucide. The glyphs live in
-`apps/web/components/layout/nav-glyphs.tsx` — transcribed from the reference
-boards where the boards draw the shape, drawn fresh in the same recipe where
-they do not — and `apps/web/components/layout/nav-config.ts` consumes them.
+Since the #920 shell slice the dashboard's shell chrome draws Signet glyphs,
+not Lucide. The glyphs live in `apps/web/components/layout/nav-glyphs.tsx`
+and `apps/web/components/layout/nav-config.ts` consumes them. The sidebar
+rows and the in-screen `RolesGlyph`, `StudyZonesGlyph` and
+`ReportsGlyph` draw the shared nav set (§1.1); the top-bar controls keep the
+§1 stroke recipe.
 Sidebar items render them at 18px ([components.md](components.md) §7);
 top-bar controls at 18px (`apps/web/components/layout/top-bar.tsx` — the top
 bar moved out of `dashboard-shell.tsx` in #2141).
 This table is the intent → glyph map; it MUST change in the same PR as
 `nav-glyphs.tsx`.
 
-| Semantic intent | Glyph |
-|---|---|
-| Chat | `ChatGlyph` |
-| Events | `EventsGlyph` |
-| Tasks | `TasksGlyph` |
-| Points | `PointsGlyph` |
-| Study hours | `StudyGlyph` |
-| Service hours | `ServiceGlyph` |
-| Polls | `PollsGlyph` |
-| Documents | `DocumentsGlyph` |
-| Backwork | `BackworkGlyph` |
-| Directory | `DirectoryGlyph` |
-| Billing | `BillingGlyph` |
-| Settings | `SettingsGlyph` |
-| Search (top bar) | `SearchGlyph` |
-| Notifications (top bar) | `NotificationsGlyph` |
-| Mobile nav trigger (top bar) | `MenuGlyph` |
+| Semantic intent | Glyph | Shape (nav set key, Phosphor name) |
+|---|---|---|
+| Chat | `ChatGlyph` | `chat`, `chat-circle-dots` |
+| Events | `EventsGlyph` | `events`, `calendar-dots` |
+| Tasks | `TasksGlyph` | `tasks`, `seal-check` |
+| Points | `PointsGlyph` | `points`, `trophy` |
+| Study hours | `StudyGlyph` | `study`, `graduation-cap` |
+| Service hours | `ServiceGlyph` | `service`, `hand-heart` |
+| Polls | `PollsGlyph` | `polls`, `chart-bar` |
+| Documents | `DocumentsGlyph` | `documents`, `file-text` |
+| Backwork | `BackworkGlyph` | `backwork`, `books` |
+| Directory | `DirectoryGlyph` | `directory`, `users-three` |
+| Billing | `BillingGlyph` | `billing`, `credit-card` |
+| Settings | `SettingsGlyph` | `settings`, `gear-six` |
+| Roles (in-screen) | `RolesGlyph` | `roles`, `shield-check` |
+| Study zones (in-screen) | `StudyZonesGlyph` | `studyZones`, `map-pin-area` |
+| Reports (in-screen) | `ReportsGlyph` | `reports`, `chart-line-up` |
+| Search (top bar) | `SearchGlyph` | §1 stroke recipe |
+| Notifications (top bar) | `NotificationsGlyph` | §1 stroke recipe |
+| Mobile nav trigger (top bar) | `MenuGlyph` | §1 stroke recipe |
 
-Service hours and Reports are now distinct glyphs (heart vs. chart-in-frame) —
-the legacy nav's `FileText` double-duty is resolved. The nav's Admin group
+Service hours and Reports are distinct glyphs (hand-heart vs. rising chart),
+so the legacy nav's `FileText` double-duty stays resolved. The nav's Admin group
 (Roles, Study Zones, Discord Import, Chat Admin, Reports) folded into the
 Settings row in #2946, so those intents left this table. `RolesGlyph`,
 `StudyZonesGlyph` and `ReportsGlyph` survive in `nav-glyphs.tsx` because
@@ -322,12 +355,12 @@ Three things this table deliberately does not contain:
 
 ### 6.2.3 Directory & Finance (Signet duotone)
 
-Since the #920 Directory & Finance slice these four families draw the duotone
-recipe (§1). The glyphs live in
+Since the #920 Directory & Finance slice these four families draw Signet
+glyphs: the nav set (§1.1) for the re-exports and `InviteGlyph`, the §1 stroke
+recipe for the points glyphs and search. The glyphs live in
 [`apps/web/components/members/directory-glyphs.tsx`](../../../apps/web/components/members/directory-glyphs.tsx)
 and [`apps/web/components/points/points-glyphs.tsx`](../../../apps/web/components/points/points-glyphs.tsx),
-both composing the shared recipe module and re-exporting the shell's
-silhouettes rather than redrawing them. Rendered at 20px in card, dialog and
+both re-exporting the shell's silhouettes rather than redrawing them. Rendered at 20px in card, dialog and
 sheet titles, 16px in table cells, and 14–16px as a badge companion (§2).
 Inside a `Button` they render at 16 whatever the call site asks for, because
 `buttonVariants` pins `[&_svg]:size-4` — which is also what keeps the required
@@ -343,7 +376,7 @@ where an import points.
 
 | Semantic intent | Glyph | Home |
 | --- | --- | --- |
-| Invite a member | `InviteGlyph` | `directory-glyphs.tsx` |
+| Invite a member | `InviteGlyph` (the nav set's `invite`, Phosphor `user-plus`, §1.1) | `directory-glyphs.tsx` |
 | Member record (detail sheet) | `DirectoryGlyph` | re-export, shell |
 | Role access | `RolesGlyph` | re-export, shell |
 | Directory / ledger search | `SearchGlyph` | re-export, shell |
@@ -392,8 +425,9 @@ four and is corrected here rather than left drifting):
 
 ### 6.2.4 Chapter Ops (Signet duotone)
 
-Since the #920 Chapter Ops slice these five families draw the duotone recipe
-(§1). The glyphs live in
+Since the #920 Chapter Ops slice these five families draw Signet glyphs, all
+from the nav set (§1.1) except the stroke-recipe search glyph. The glyphs live
+in
 [`apps/web/components/events/chapter-ops-glyphs.tsx`](../../../apps/web/components/events/chapter-ops-glyphs.tsx),
 one file for five screens rather than five files, because the five share their
 intents rather than partitioning them — the map pin marks an event's location,
@@ -415,8 +449,9 @@ Eight of the nine are re-exports from
 [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
 which is the rule §1 rule 1 already sets and the Directory family already
 follows: a second copy of the same path data is the drift the rule exists to
-stop. Only `ScheduleGlyph` is drawn here, and only because no nav intent
-covers it.
+stop. Only `ScheduleGlyph` is not a re-export, because no nav intent covers
+it; it draws the nav set's `schedule` entry (Phosphor `clock`, §1.1) so the
+detail sheet's schedule, location and points rows stay one family.
 
 Two of the swaps were corrections rather than a pack change. The event detail
 sheet marked its **point value** row with `CalendarDays` — a calendar labelling
@@ -433,8 +468,9 @@ points — and the events table drew its role-targeting and recurrence markers a
 
 ### 6.2.5 Resources & Reporting (Signet duotone)
 
-Since the #920 Resources & Reporting slice these four families draw the
-duotone recipe (§1). The glyphs live in
+Since the #920 Resources & Reporting slice these four families draw Signet
+glyphs, all from the nav set (§1.1) except the stroke-recipe search glyph. The
+glyphs live in
 [`apps/web/components/documents/resources-glyphs.tsx`](../../../apps/web/components/documents/resources-glyphs.tsx),
 one file for four screens rather than four files, for the reason §6.2.4 gives:
 the four share their intents rather than partitioning them. The document
@@ -453,21 +489,21 @@ button, and the PDF a report exports to.
 Five of the six are re-exports from
 [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
 which is §1 rule 1's rule and the two preceding families' practice. Only
-`FolderGlyph` is drawn here, and only because no nav intent covers a folder —
-the sidebar links to Documents as a whole.
+`FolderGlyph` is not a re-export, because no nav intent covers a folder (the
+sidebar links to Documents as a whole); it draws the nav set's `folder` entry
+(Phosphor `folder`, §1.1) so the folder rail's rows stay one family.
 
-This is the one family where the reference settles the geometry directly:
-`DocumentsGlyph`'s path is the file glyph
-[`canvas-screens.dc.html`](reference/canvas-screens.dc.html) draws on **s12**
-(the Documents screen) and **s21** (the upload sheet). s12 marks every document
-row with it, which `/documents` did not — the rows carried no glyph at all —
-so the leading marker was added with the pack change rather than left for a
-later pass. s12 also draws the two-tone split this family uses on its folder
-rail: the *pinned* rows take the accent duotone and the ordinary rows the
-neutral one, which is `fillProps(active)`. Web has no pin field
+[`canvas-screens.dc.html`](reference/canvas-screens.dc.html) marks every
+document row on **s12** (the Documents screen) and **s21** (the upload sheet)
+with a file glyph, which `/documents` did not (the rows carried no glyph at
+all), so the leading marker was added with the pack change rather than left
+for a later pass. Since 2026-11-05 that marker is the nav set's `file-text`
+(§1.1), not the board's file geometry. s12 also draws a two-tone split on its
+folder rail: the *pinned* rows take the accent and the ordinary rows the
+neutral paint. Web has no pin field
 ([`../mobile/screens.md`](../mobile/screens.md) records the same absence on
-mobile), so document rows take the neutral variant and only the selected
-folder is accented.
+mobile), so document rows take the neutral paint and only the selected folder
+is accented.
 
 Two of the swaps were corrections rather than a pack change, in §6.2.4's sense:
 
@@ -503,6 +539,9 @@ the cutover skill calls out by name ("do not add a parallel token set next to
 the one in use"; "a definition or `index.ts` re-export is not evidence anything
 still calls it"). The four preceding family files each earn their place by
 drawing at least one glyph no nav intent covers; this family has none to draw.
+(Since 2026-11-05 the geometry of those glyphs, folder, schedule, invite and
+profile, lives in the shared set in `packages/theme` with the nav glyphs; the
+family files still own the intent and the component.)
 
 **The tab rail stays text-only.** Ten triggers, no icons, and adding them would
 be new design rather than a repaint — the Canvas reference draws Settings
@@ -519,23 +558,24 @@ draws for the same tone, not a domain intent.
 The #920 Profile & pre-auth slice — `/profile`, the onboarding wizard and
 tutorial, and the routes outside `(dashboard)`. Family file:
 [`apps/web/components/profile/profile-glyphs.tsx`](../../../apps/web/components/profile/profile-glyphs.tsx),
-homed in `profile/` because `ProfileGlyph` is the one glyph both it and
-`onboarding/` consume; §6.2.3's rule applies, so importing across a directory
-is fine and redrawing is not.
+homed in `profile/` because `ProfileGlyph` is a profile intent, though its one
+consumer today is the onboarding tutorial; §6.2.3's rule applies, so importing
+across a directory is fine and redrawing is not.
 
 | Semantic intent | Glyph |
 |---|---|
-| You — the viewer's own account (tutorial slide 7) | `ProfileGlyph`, **drawn here** |
+| You — the viewer's own account (tutorial slide 7) | `ProfileGlyph`, defined here; its shape is the nav set's `profile` entry (Phosphor `user`, §1.1) |
 | An invite link (s02's hint card on `/join`) | `LinkGlyph`, **drawn here** |
 | Chat, Events, Backwork, Study hours, Points (tutorial slides 2–6) | `ChatGlyph`, `EventsGlyph`, `BackworkGlyph`, `StudyGlyph`, `PointsGlyph`, re-exported from [`nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx) |
 | Directory search (the wizard's no-results state) | `SearchGlyph`, same source |
 | Locked out of the chapter (`/no-access`) | `LockGlyph`, re-exported from [`chat-glyphs.tsx`](../../../apps/web/components/chat/chat-glyphs.tsx) |
 
-**Two drawn, and both were genuinely undrawn.** `ProfileGlyph` has no nav
+**Two defined here, and both were genuinely undrawn.** `ProfileGlyph` has no nav
 intent to re-export because Profile left the sidebar for the account menu in
-the Wave 0 restructure, and neither neighbour is it: `DirectoryGlyph` is *two*
-people and `InviteGlyph` is a person *plus a mark*, the officer issuing a
-token. `LinkGlyph` is transcribed from the s02 hint card, which draws a chain
+the Wave 0 restructure, and neither neighbour is it: `DirectoryGlyph` is a
+group and `InviteGlyph` is a person *plus a mark*, the officer issuing a
+token. All three draw the nav set (§1.1), so the tutorial's slides 2–7 are one
+family. `LinkGlyph` is transcribed from the s02 hint card, which draws a chain
 link — reusing `InviteGlyph` there would contradict the drawing, and
 [`../README.md`](../README.md)'s precedence rule puts the board first. It is
 legitimately stroke-only, the `AttachGlyph` exception: an open curve fills into

@@ -44,7 +44,7 @@ import {
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
-import { PageHeader } from "@/components/layout/page-header";
+import { PageActions } from "@/components/layout/page-actions";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -422,7 +422,6 @@ export function ServiceHoursPage() {
   if (isOffline && anyReadUncached(entriesQuery, membersQuery)) {
     return (
       <>
-        <PageHeader title="Service hours" />
         <OfflineState
           title="Service hours unavailable offline"
           description="Reconnect to log hours and review the approval queue."
@@ -438,7 +437,6 @@ export function ServiceHoursPage() {
   if (entriesQuery.isPending) {
     return (
       <>
-        <PageHeader title="Service hours" />
         <LoadingState message="Loading service entries..." />
       </>
     );
@@ -447,7 +445,6 @@ export function ServiceHoursPage() {
   if (entriesQuery.isError) {
     return (
       <>
-        <PageHeader title="Service hours" />
         <ErrorState
           title="Couldn't load service entries"
           description="Confirm your chapter access and retry."
@@ -459,144 +456,132 @@ export function ServiceHoursPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Service hours"
-        actions={
-          <Can permission="service:log">
-            <Dialog {...logDialog.dialogProps}>
-              <DialogTrigger asChild>
-                <Button
-                  size="toolbar"
-                  className="gap-2"
-                  {...gate.controlProps()}
-                >
-                  <Plus className="h-4 w-4" /> Log service
-                </Button>
-              </DialogTrigger>
-              <DialogContent
-                className="sm:max-w-lg"
-                {...logDialog.contentProps}
+      <PageActions>
+        <Can permission="service:log">
+          <Dialog {...logDialog.dialogProps}>
+            <DialogTrigger asChild>
+              <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
+                <Plus className="h-4 w-4" /> Log service
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-lg" {...logDialog.contentProps}>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <ServiceGlyph className="h-4 w-4" />
+                  Log service hours
+                </DialogTitle>
+                <DialogDescription>
+                  An admin approves it before points are awarded.
+                </DialogDescription>
+              </DialogHeader>
+              <form
+                id="service-log-form"
+                onSubmit={submitDraft}
+                className="space-y-4"
               >
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2">
-                    <ServiceGlyph className="h-4 w-4" />
-                    Log service hours
-                  </DialogTitle>
-                  <DialogDescription>
-                    An admin approves it before points are awarded.
-                  </DialogDescription>
-                </DialogHeader>
-                <form
-                  id="service-log-form"
-                  onSubmit={submitDraft}
-                  className="space-y-4"
-                >
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="grid gap-1">
-                      <Label htmlFor="service-date">Date</Label>
-                      <Input
-                        id="service-date"
-                        type="date"
-                        value={draft.date}
-                        onChange={(event) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            date: event.target.value,
-                          }))
-                        }
-                        required
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="service-hours">Hours</Label>
-                      <Input
-                        id="service-hours"
-                        type="number"
-                        min={0}
-                        step="any"
-                        value={draft.hours}
-                        onChange={(event) => {
-                          const next = guardDecimalDraft(event.target.value);
-                          if (next === undefined) return;
-                          setDraft((prev) => ({ ...prev, hours: next }));
-                        }}
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="service-minutes">Minutes</Label>
-                      <Input
-                        id="service-minutes"
-                        type="number"
-                        min={0}
-                        max={59}
-                        value={draft.minutes}
-                        onChange={(event) => {
-                          const next = guardIntDraft(event.target.value);
-                          if (next === undefined) return;
-                          setDraft((prev) => ({ ...prev, minutes: next }));
-                        }}
-                      />
-                    </div>
-                  </div>
+                <div className="grid gap-3 sm:grid-cols-3">
                   <div className="grid gap-1">
-                    <Label htmlFor="service-description">
-                      What did you do?
-                    </Label>
-                    <Textarea
-                      id="service-description"
-                      rows={3}
-                      value={draft.description}
+                    <Label htmlFor="service-date">Date</Label>
+                    <Input
+                      id="service-date"
+                      type="date"
+                      value={draft.date}
                       onChange={(event) =>
                         setDraft((prev) => ({
                           ...prev,
-                          description: event.target.value,
+                          date: event.target.value,
                         }))
                       }
                       required
                     />
                   </div>
                   <div className="grid gap-1">
-                    <Label htmlFor="service-proof">{proofLabel}</Label>
+                    <Label htmlFor="service-hours">Hours</Label>
                     <Input
-                      id="service-proof"
-                      type="file"
-                      accept={acceptAttribute("proof")}
-                      onChange={(event) =>
-                        setProofFile(event.target.files?.[0] ?? null)
-                      }
-                      required={receiptRequired}
+                      id="service-hours"
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={draft.hours}
+                      onChange={(event) => {
+                        const next = guardDecimalDraft(event.target.value);
+                        if (next === undefined) return;
+                        setDraft((prev) => ({ ...prev, hours: next }));
+                      }}
                     />
-                    <p className="text-caption text-muted-foreground">
-                      Photo or PDF, up to {MAX_UPLOAD_LABEL}.
-                    </p>
                   </div>
-                </form>
-                <DialogFooter>
-                  {/* Cancel only closes the dialog — gating the way out of a
-                      surface the gate just blocked would be a trap. */}
-                  <Button
-                    variant="secondary"
-                    onClick={() => logDialog.setOpen(false)}
-                    disabled={submitting}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    form="service-log-form"
-                    type="submit"
-                    {...gate.controlProps(submitting)}
-                  >
-                    {submitting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : null}
-                    Submit for approval
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </Can>
-        }
-      />
+                  <div className="grid gap-1">
+                    <Label htmlFor="service-minutes">Minutes</Label>
+                    <Input
+                      id="service-minutes"
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={draft.minutes}
+                      onChange={(event) => {
+                        const next = guardIntDraft(event.target.value);
+                        if (next === undefined) return;
+                        setDraft((prev) => ({ ...prev, minutes: next }));
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="service-description">What did you do?</Label>
+                  <Textarea
+                    id="service-description"
+                    rows={3}
+                    value={draft.description}
+                    onChange={(event) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        description: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="service-proof">{proofLabel}</Label>
+                  <Input
+                    id="service-proof"
+                    type="file"
+                    accept={acceptAttribute("proof")}
+                    onChange={(event) =>
+                      setProofFile(event.target.files?.[0] ?? null)
+                    }
+                    required={receiptRequired}
+                  />
+                  <p className="text-caption text-muted-foreground">
+                    Photo or PDF, up to {MAX_UPLOAD_LABEL}.
+                  </p>
+                </div>
+              </form>
+              <DialogFooter>
+                {/* Cancel only closes the dialog — gating the way out of a
+                    surface the gate just blocked would be a trap. */}
+                <Button
+                  variant="secondary"
+                  onClick={() => logDialog.setOpen(false)}
+                  disabled={submitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  form="service-log-form"
+                  type="submit"
+                  {...gate.controlProps(submitting)}
+                >
+                  {submitting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  Submit for approval
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </Can>
+      </PageActions>
       {/*
         Disable, don't hide (§5 rule 4): the review queue, history, and proof
         links stay readable for a lapsed chapter — only logging and reviewing

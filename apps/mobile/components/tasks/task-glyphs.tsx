@@ -5,9 +5,9 @@ import Svg, { Path, Rect } from "react-native-svg";
  * `spec/ui/design-system/reference/canvas-screens.dc.html` — the visual truth
  * that wins over prose per #937. Nothing here is invented.
  *
- * Colors arrive as props rather than baked hexes, for the reason
- * `components/tab-glyphs.tsx` states: the values agree with Canvas today, but
- * the chapter accent is free to differ and a baked hex would not follow it.
+ * Colors arrive as props rather than baked hexes: the values agree with Canvas
+ * today, but the chapter accent is free to differ and a baked hex would not
+ * follow it.
  */
 
 /**

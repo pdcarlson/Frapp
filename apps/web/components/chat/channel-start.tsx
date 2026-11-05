@@ -101,7 +101,9 @@ export function ChannelStart({
           hashClassName="text-[32px] font-bold leading-none"
         />
       </div>
-      <h2 className="text-2xl font-bold text-foreground">{copy.title}</h2>
+      {/* `h3`: under the channel name's `h2` in the header, which sits under
+          the top bar's `h1`. */}
+      <h3 className="text-2xl font-bold text-foreground">{copy.title}</h3>
       <div className="flex max-w-prose flex-col gap-1 text-sm text-muted-foreground">
         <p>{copy.startLine}</p>
         {copy.description ? (
