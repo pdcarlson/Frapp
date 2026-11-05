@@ -17,10 +17,13 @@ import { FOCUS_RING } from "@/components/ui/focus";
  *
  * The filter takes `components.md` §4's field recipe at the toolbar height so
  * it lines up with the buttons in the same toolbar row. The checkbox takes
- * §4's box (20x20 at radius 6 to a mouse, 24x24 at radius 7 to a finger) and paints through the browser's own `accent-color`, which
- * is what `accent-primary` sets — the previous 16px box was half that, and its
- * `text-primary` did nothing at all, since the text colour of a checkbox is not
- * what fills it.
+ * §4's box (20x20 at radius 6 to a mouse, 24x24 at radius 7 to a finger), and
+ * its paint is the `.signet-checkbox` rule in `app/globals.css`, which draws
+ * `components.md` § Checkbox by hand. It used to paint through the browser's
+ * own `accent-color` (`accent-primary`), which only reaches the checked fill:
+ * the unchecked box stayed the browser's own control, a white square per row
+ * before `color-scheme: dark` and a grey one after, and the `border-input` and
+ * `rounded-*` beside it did nothing to either (#3186).
  *
  * §2's ≥44px hit area is not satisfied by the control alone: the checkbox was
  * 24px inside a `TableCell`, whose `p-2` brought the tappable area to 40px, and
@@ -91,8 +94,12 @@ export const dashboardToolbarSearchGlyphClassName =
  */
 export const dashboardFormSelectClassName = `h-10 pointer-coarse:h-11 ${NATIVE_SELECT}`;
 
+/**
+ * A native checkbox drawn as `components.md` § Checkbox: `.signet-checkbox`
+ * (`app/globals.css`) paints it, and the utilities here size it and ring it.
+ */
 export const dashboardTableCheckboxClassName = [
-  "h-5 w-5 rounded-[6px] border-input accent-primary pointer-coarse:h-6 pointer-coarse:w-6 pointer-coarse:rounded-[7px]",
+  "signet-checkbox h-5 w-5 rounded-[6px] transition-colors pointer-coarse:h-6 pointer-coarse:w-6 pointer-coarse:rounded-[7px]",
   FOCUS_RING,
 ].join(" ");
 

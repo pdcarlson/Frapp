@@ -155,7 +155,7 @@ In the Error state the caption MUST be wired to the field, not merely placed und
 
 ### Checkbox
 
-20×20px with radius 6 to a fine pointer, 24×24px with radius 7 on touch (the smaller box added 2026-11-05). Unchecked: transparent fill, 1.5px border `rgba(255,255,255,.25)`. Checked: fill `accent-9`, check glyph in `accent-contrast` at 2.2px stroke, round caps/joins. The row hit area MUST be ≥ 44px on touch. A checkbox row in a form (a role list, a channel list) is the Row step: flush, no border of its own, an `accent-3` hover, 32px to a mouse and 44 on touch.
+20×20px with radius 6 to a fine pointer, 24×24px with radius 7 on touch (the smaller box added 2026-11-05). Unchecked: transparent fill, 1.5px border `rgba(255,255,255,.25)`. Checked: fill `accent-9`, check glyph in `accent-contrast` at 2.2px stroke, round caps/joins. The row hit area MUST be ≥ 44px on touch. A checkbox row in a form (a role list, a channel list) is the Row step: flush, no border of its own, an `accent-3` hover, 32px to a mouse and 44 on touch. On web the box is a native input painted by `.signet-checkbox` (`apps/web/app/globals.css`), because the browser's dark control matches none of this ([foundations.md](foundations.md) §14).
 
 ### Toggle
 
