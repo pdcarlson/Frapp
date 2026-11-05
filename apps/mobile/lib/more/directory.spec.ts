@@ -6,6 +6,7 @@ describe("selectDirectoryRows", () => {
     expect(
       selectDirectoryRows([
         {
+          id: "m-u-1",
           user_id: "u-1",
           display_name: "Marcus Reid",
           graduation_year: 2027,
@@ -16,6 +17,7 @@ describe("selectDirectoryRows", () => {
       ]),
     ).toEqual([
       {
+        memberId: "m-u-1",
         userId: "u-1",
         displayName: "Marcus Reid",
         initials: "MR",
@@ -27,9 +29,9 @@ describe("selectDirectoryRows", () => {
 
   it("sorts by display name so the list is scannable", () => {
     const rows = selectDirectoryRows([
-      { user_id: "u-2", display_name: "Zoe Adams" },
-      { user_id: "u-1", display_name: "Andre Silva" },
-      { user_id: "u-3", display_name: "Marcus Reid" },
+      { id: "m-u-2", user_id: "u-2", display_name: "Zoe Adams" },
+      { id: "m-u-1", user_id: "u-1", display_name: "Andre Silva" },
+      { id: "m-u-3", user_id: "u-3", display_name: "Marcus Reid" },
     ]);
     expect(rows.map((row) => row.displayName)).toEqual([
       "Andre Silva",
@@ -44,15 +46,30 @@ describe("selectDirectoryRows", () => {
     expect(
       selectDirectoryRows([
         { display_name: "Nobody" },
-        { user_id: "u-1", display_name: "Somebody" },
+        { id: "m-u-1", user_id: "u-1", display_name: "Somebody" },
       ]),
     ).toHaveLength(1);
+  });
+
+  // `GET /v1/members/{id}` takes the member row's id, not the user id, so the
+  // profile sheet needs both; a row missing either cannot open it.
+  it("keeps the member id the profile route takes and drops a row without one", () => {
+    const rows = selectDirectoryRows([
+      { user_id: "u-2", display_name: "No member id" },
+      { id: "m-1", user_id: "u-1", display_name: "Somebody" },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ memberId: "m-1", userId: "u-1" });
   });
 
   it("falls back for an unset display name rather than rendering blank", () => {
     // The shared `Member <6>` label, the same words web renders for this member.
     const [row] = selectDirectoryRows([
-      { user_id: "2f4a1c9d-0000-4000-8000-000000000000", display_name: "" },
+      {
+        id: "m-x",
+        user_id: "2f4a1c9d-0000-4000-8000-000000000000",
+        display_name: "",
+      },
     ]);
     expect(row?.displayName).toBe("Member 2f4a1c");
     expect(row?.initials).toBe("?");
@@ -61,14 +78,19 @@ describe("selectDirectoryRows", () => {
   // Absent parts must not leave a dangling separator.
   it("omits the meta line entirely when nothing is known", () => {
     const [row] = selectDirectoryRows([
-      { user_id: "u-1", display_name: "Dev Kapoor" },
+      { id: "m-u-1", user_id: "u-1", display_name: "Dev Kapoor" },
     ]);
     expect(row?.meta).toBeNull();
   });
 
   it("joins only the parts that are present", () => {
     const [row] = selectDirectoryRows([
-      { user_id: "u-1", display_name: "Dev Kapoor", graduation_year: 2028 },
+      {
+        id: "m-u-1",
+        user_id: "u-1",
+        display_name: "Dev Kapoor",
+        graduation_year: 2028,
+      },
     ]);
     expect(row?.meta).toBe("'28");
   });
@@ -86,10 +108,30 @@ describe("selectDirectoryRows", () => {
 // `directory-screen.spec.tsx`.
 describe("selectActives", () => {
   const chapter = [
-    { user_id: "u-1", display_name: "Marcus Reid", is_alumni: false },
-    { user_id: "u-2", display_name: "Charles Whitmore III", is_alumni: true },
-    { user_id: "u-3", display_name: "Andre Silva", is_alumni: false },
-    { user_id: "u-4", display_name: "Daniel Kirkpatrick", is_alumni: true },
+    {
+      id: "m-u-1",
+      user_id: "u-1",
+      display_name: "Marcus Reid",
+      is_alumni: false,
+    },
+    {
+      id: "m-u-2",
+      user_id: "u-2",
+      display_name: "Charles Whitmore III",
+      is_alumni: true,
+    },
+    {
+      id: "m-u-3",
+      user_id: "u-3",
+      display_name: "Andre Silva",
+      is_alumni: false,
+    },
+    {
+      id: "m-u-4",
+      user_id: "u-4",
+      display_name: "Daniel Kirkpatrick",
+      is_alumni: true,
+    },
   ];
 
   it("keeps only the members the server did not flag as alumni", () => {
@@ -100,7 +142,9 @@ describe("selectActives", () => {
 
   it("treats a row without the flag as active, as an older API would send it", () => {
     expect(
-      selectActives([{ user_id: "u-1", display_name: "Marcus Reid" }]),
+      selectActives([
+        { id: "m-u-1", user_id: "u-1", display_name: "Marcus Reid" },
+      ]),
     ).toHaveLength(1);
   });
 

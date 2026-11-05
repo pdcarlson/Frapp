@@ -83,8 +83,9 @@ export const UPLOAD_SHEET_BUTTON_CLASS =
  * the container carries none.
  *
  * The 56px title row is also what puts `DialogContent`'s built-in close button
- * where the board draws it: that control is a 24px box pinned at `top-4`, so
- * its centre lands at 28px, which is the centre of a 56px row.
+ * where the board draws it: that control is a 26px box (a 16px glyph, `p-1`
+ * and a 1px border) pinned at `top-4`, so its centre sits at 29px, a pixel
+ * under the 56px row's centre.
  *
  * **`aria-describedby={undefined}` is load-bearing, not a tidy-up.** The board
  * deletes the instructional paragraph, so there is no `DialogDescription` to

@@ -265,7 +265,7 @@ export function FolderDialog({
   */
   return (
     <Dialog {...folderDialog.dialogProps}>
-      <DialogContent className="sm:max-w-md" {...folderDialog.contentProps}>
+      <DialogContent {...folderDialog.contentProps}>
         <DialogHeader>
           <DialogTitle>
             {folderDraft.id ? "Rename folder" : "New folder"}
