@@ -369,8 +369,9 @@ export class MemberService {
    * retried request cannot grow the column without bound.
    *
    * Read-then-write rather than a Postgres `array_append`, because the repository
-   * boundary takes whole column values and the array is at most four entries —
-   * the width of `OPS_NUDGE_MODULES`.
+   * boundary takes whole column values and the array is at most five entries —
+   * the width of `MEMBER_DISMISSAL_KEYS` (the four nudges and the setup
+   * checklist).
    *
    * That does open a lost-update window, and it is **reachable**, not theoretical:
    * dismissing one nudge falls the next one through immediately, putting a fresh

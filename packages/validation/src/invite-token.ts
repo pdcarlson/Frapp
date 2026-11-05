@@ -3,7 +3,7 @@
  * full web/app URL (`app.frapp.live/join?token=…`, `frapp://join?token=…`).
  *
  * Officers copy the join URL (`buildJoinUrl` / first-officer wizard) or the
- * Members "Copy link" payload, which wraps that URL in role and expiry lines.
+ * Members invite dialog's copy-link payload, which wraps that URL in role and expiry lines.
  * Mobile already pulled the query off a paste; web `/join` used to POST the
  * whole clipboard as the token, which the API treated as unknown (**410 Gone**).
  * Both surfaces call this before `POST /v1/invites/redeem`. The API still

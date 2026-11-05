@@ -12,6 +12,7 @@ describe('newChannelMergeKey (#2856)', () => {
     new_channel_type: 'PUBLIC',
     new_channel_is_read_only: true,
     new_channel_required_permissions: null,
+    new_channel_group: null,
     ...overrides,
   });
 
@@ -53,6 +54,19 @@ describe('newChannelMergeKey (#2856)', () => {
     expect(
       newChannelMergeKey(row({ new_channel_is_read_only: false })),
     ).not.toBe(newChannelMergeKey(row()));
+  });
+
+  it('keeps apart rows bound for different channel groups, comparing names in any case', () => {
+    // Two #general in two kept Discord categories stay two channels, one in
+    // each group, rather than one channel in whichever group came first.
+    const social = row({ new_channel_group: 'Social' });
+    expect(newChannelMergeKey(social)).not.toBe(
+      newChannelMergeKey(row({ new_channel_group: 'Committees' })),
+    );
+    expect(newChannelMergeKey(social)).not.toBe(newChannelMergeKey(row()));
+    expect(newChannelMergeKey(row({ new_channel_group: ' social ' }))).toBe(
+      newChannelMergeKey(social),
+    );
   });
 
   it('is null for a row that creates nothing', () => {
