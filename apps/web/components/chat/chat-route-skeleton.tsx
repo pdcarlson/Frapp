@@ -1,7 +1,6 @@
 "use client";
 
 import { Skeleton } from "@/components/shared/async-states";
-import { ChannelListSkeleton } from "@/components/chat/channel-list";
 import { MessageTimelineSkeleton } from "@/components/chat/message-timeline";
 import {
   COMPOSER_BOX_CLASS,
@@ -14,9 +13,14 @@ import {
  *
  * The shell already draws its own cold-load skeletons once it mounts; this is
  * the frame around them, on the shell's own geometry, so the route loader and
- * the mounted shell are the same picture: the 240px `--surface-1` channels
- * column with its 48px header, and the main column's 48px header, bottom-up
- * message rows and the composer box.
+ * the mounted shell are the same picture: the main column's 48px header,
+ * bottom-up message rows and the composer box.
+ *
+ * No channels column. From `lg` up the channel list is the dashboard shell's
+ * left column (`components/layout/chat-nav-column.tsx`), which draws its own
+ * placeholder while the route loads; a second one here stood beside it, 480px
+ * of skeleton, until chat mounted and the thread jumped left. Below `lg` the
+ * route opens on the thread, so there was never a column to draw there.
  *
  * A client module only because the composer's class constants are exported
  * from one: a server component importing them would get a reference, not the
@@ -31,17 +35,6 @@ export function ChatRouteSkeleton() {
       className="flex min-h-0 flex-1"
     >
       <span className="sr-only">Loading chat</span>
-      <div
-        aria-hidden="true"
-        className="hidden min-h-0 w-60 shrink-0 flex-col border-r border-border bg-surface-1 lg:flex"
-      >
-        <div className="flex h-12 shrink-0 items-center border-b border-border px-3">
-          <Skeleton className="h-[13px] w-20" />
-        </div>
-        <div className="min-h-0 flex-1 overflow-hidden p-2">
-          <ChannelListSkeleton />
-        </div>
-      </div>
       <div aria-hidden="true" className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="flex h-12 shrink-0 items-center border-b border-border px-4">
           <Skeleton className="h-[13px] w-28" />
