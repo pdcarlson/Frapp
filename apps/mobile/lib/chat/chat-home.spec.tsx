@@ -188,6 +188,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import ChatHomeScreen from "@/app/(tabs)/index";
 import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
+import { SearchGlyph } from "@/components/search-glyph";
 import {
   EmptyState,
   EmptyStateAction,
@@ -605,6 +606,8 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     // writing.md § Arrange the channel list gives this state no title, and
     // every string it shows lives in `@repo/hooks`; web shows none either.
     expect(empty.props.title).toBeUndefined();
+    // The search glyph, not the "⌕" character Figtree doesn't carry.
+    expect(empty.props.glyph).toBe(SearchGlyph);
     expect(
       tree.root.findAll(
         (node) =>
@@ -942,6 +945,17 @@ describe("Chat home loading and error states", () => {
     const retry = pressableLabelled(tree, "Try loading channels again");
     expect(retry.props.disabled).toBe(true);
     expect(screenTextOf(retry)).toBe("Retrying…");
+  });
+
+  // writing.md §4, as amended 2026-11-05: no line saying channels appear
+  // here, which would only restate what Chat is for, but the next step.
+  it("says a chapter has no channels, and what to do about it", () => {
+    channelsData.value = [];
+    const tree = render();
+
+    const empty = tree.root.findByType(EmptyState);
+    expect(empty.props.title).toBe("No channels yet");
+    expect(empty.props.body).toBe("Ask an admin to add one.");
   });
 });
 

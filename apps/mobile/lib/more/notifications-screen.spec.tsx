@@ -52,6 +52,9 @@ const NOTIFICATIONS = [
   },
 ];
 
+/** What the inbox query returns; a spec sets `data` for an inbox of its own. */
+const inbox = vi.hoisted(() => ({ data: null as unknown[] | null }));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => "chapter-1",
@@ -59,13 +62,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
     isError: false,
     isFetching: false,
-    data: NOTIFICATIONS,
+    data: inbox.data ?? NOTIFICATIONS,
     refetch: vi.fn(),
   }),
   useMarkNotificationRead: () => ({ mutateAsync: vi.fn() }),
 }));
 
 import { signetDarkTokens } from "@repo/theme/signet";
+import { NotificationsGlyph } from "@/components/more/more-glyphs";
+import { EmptyState } from "@/components/state-block";
 import NotificationsScreen, {
   NotificationListRow,
 } from "@/app/(tabs)/notifications";
@@ -136,9 +141,39 @@ describe("Notifications back row (#3022)", () => {
 });
 
 /**
+ * s14's empty inbox: the bell the inbox opens from, drawn in the accent, and
+ * the title alone. A line saying chapter activity shows up here would only
+ * restate what the screen is for (writing.md §4, as amended 2026-11-05).
+ */
+describe("Notifications empty inbox", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    inbox.data = null;
+  });
+
+  it("draws the bell and a title, with no line under it", () => {
+    inbox.data = [];
+    const tree = render();
+    const empty = tree.root.findByType(EmptyState);
+
+    expect(empty.props.glyph).toBe(NotificationsGlyph);
+    expect(empty.props.title).toBe("You're all caught up");
+    expect(empty.props.body).toBeUndefined();
+    expect(empty.findAllByType(NotificationsGlyph)).toHaveLength(1);
+    expect(
+      empty
+        .findAll((node) => (node.type as unknown as string) === "Text")
+        .map((node) => node.props.children),
+    ).toEqual(["You're all caught up"]);
+  });
+});
+
+/**
  * Every list row answers a press the same way (`usePressFeedback`): a ripple
- * on Android, a lift on iOS. A read row recedes through its text, not the
- * whole row, so its press lift is as strong as an unread row's.
+ * on Android, a lift on iOS. A read row recedes through its title's colour,
+ * not an opacity, so its press lift is as strong as an unread row's.
  */
 describe("Notification row press feedback", () => {
   afterEach(() => {
@@ -147,7 +182,7 @@ describe("Notification row press feedback", () => {
     });
   });
 
-  function renderRow(isUnread: boolean) {
+  function renderRow(isUnread: boolean, body: string | null = null) {
     let tree!: ReactTestRenderer;
     act(() => {
       tree = create(
@@ -156,7 +191,7 @@ describe("Notification row press feedback", () => {
             row={{
               id: "n1",
               title: "Dues reminder",
-              body: null,
+              body,
               categoryLabel: "Dues",
               href: "/dues",
               time: "4:00 PM",
@@ -187,27 +222,74 @@ describe("Notification row press feedback", () => {
     }
   });
 
-  // s14 draws a read notification receding, not gone: its text block dims,
-  // and only the text block, so the press lift behind it stays full strength.
-  it("dims a read row's text, and only an unread row's stays full", () => {
-    function textBlockOpacity(isUnread: boolean) {
-      const row = renderRow(isUnread);
-      const title = row.find(
-        (node) =>
-          (node.type as unknown as string) === "Text" &&
-          node.props.children === "Dues reminder",
-      );
-      const block = Object.assign(
-        {},
-        ...[title.parent!.props.style].flat(Infinity),
-      ) as Record<string, unknown>;
-      return block.opacity;
-    }
+  function textStyle(
+    row: ReturnType<typeof renderRow>,
+    text: string,
+  ): Record<string, unknown> {
+    const node = row.find(
+      (candidate) =>
+        (candidate.type as unknown as string) === "Text" &&
+        candidate.props.children === text,
+    );
+    return Object.assign({}, ...[node.props.style].flat(Infinity));
+  }
 
-    expect(textBlockOpacity(true)).toBeUndefined();
-    expect(Number(textBlockOpacity(false))).toBeLessThan(1);
+  // s14 draws a read notification receding, not gone. The title drops to the
+  // body's tone; nothing on the row fades, so the press lift behind a read
+  // row stays full strength.
+  it("recedes a read row's title by colour, with no opacity anywhere", () => {
+    const { foreground, mutedForeground } = signetDarkTokens.color.text;
+    expect(textStyle(renderRow(true), "Dues reminder").color).toBe(foreground);
+
+    const read = renderRow(false);
+    expect(textStyle(read, "Dues reminder").color).toBe(mutedForeground);
+    expect(JSON.stringify(read.props.style({ pressed: false }))).not.toContain(
+      "opacity",
+    );
     expect(
-      JSON.stringify(renderRow(false).props.style({ pressed: false })),
-    ).not.toContain("opacity");
+      read.findAll((node) =>
+        JSON.stringify([node.props.style].flat(Infinity)).includes('"opacity"'),
+      ),
+    ).toHaveLength(0);
+  });
+
+  // The owner's design review, 2026-11-04: the body was the 16pt body role
+  // under a 14pt title, so the second line outsized the headline.
+  it("sets the body at the title's size, regular weight, two lines at most", () => {
+    const row = renderRow(
+      true,
+      "Spring dues are open for every active member.",
+    );
+    const title = textStyle(row, "Dues reminder");
+    const body = textStyle(
+      row,
+      "Spring dues are open for every active member.",
+    );
+
+    expect(body.fontSize).toBe(title.fontSize);
+    expect(body.fontFamily).not.toBe(title.fontFamily);
+    expect(body.lineHeight).toBe(title.lineHeight);
+    const bodyNode = row.find(
+      (node) =>
+        (node.type as unknown as string) === "Text" &&
+        node.props.children === "Spring dues are open for every active member.",
+    );
+    expect(bodyNode.props.numberOfLines).toBe(2);
+    // The two-line cut is visual only: a screen reader hears all of it.
+    expect(row.props.accessibilityLabel).toBe(
+      "Dues reminder. Spring dues are open for every active member.",
+    );
+  });
+
+  it("centres the unread dot on the title's first line", () => {
+    const row = renderRow(true);
+    const title = textStyle(row, "Dues reminder");
+    const [dot] = row.children as ReactTestRenderer["root"][];
+    const dotStyle = Object.assign(
+      {},
+      ...[dot!.props.style].flat(Infinity),
+    ) as Record<string, number>;
+
+    expect(dotStyle.marginTop * 2 + dotStyle.height).toBe(title.lineHeight);
   });
 });
