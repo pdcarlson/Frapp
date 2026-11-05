@@ -7,7 +7,6 @@ import {
   applyObservabilityIdentity,
   namedAnalyticsEventBody,
   bindPostHogAdapterForTests,
-  captureRouteView,
   createRouteViewRecorder,
   captureSentryErrorCorrelated,
   createMemoryPostHogAdapter,
@@ -351,11 +350,11 @@ describe("sentry-error-correlated marker", () => {
   });
 });
 
-describe("captureRouteView", () => {
+describe("route views", () => {
   it("sends the route as a template", () => {
     const memory = createMemoryPostHogAdapter();
     bindPostHogAdapterForTests(memory.adapter);
-    captureRouteView(`/events/${UUID}?tab=rsvp`);
+    createRouteViewRecorder()(`/events/${UUID}?tab=rsvp`);
     expect(memory.calls).toEqual([
       { type: "routeView", path: "/events/[id]" },
     ]);
@@ -364,12 +363,13 @@ describe("captureRouteView", () => {
   it("sends nothing while the chapter is opted out, and again once it opts in", () => {
     const memory = createMemoryPostHogAdapter();
     bindPostHogAdapterForTests(memory.adapter);
+    const record = createRouteViewRecorder();
     applyAnalyticsOptOut(true);
-    captureRouteView("/chat");
+    record("/chat");
     expect(memory.calls.some((c) => c.type === "routeView")).toBe(false);
 
     applyAnalyticsOptOut(false);
-    captureRouteView("/chat");
+    record("/chat");
     expect(memory.calls.filter((c) => c.type === "routeView")).toEqual([
       { type: "routeView", path: "/chat" },
     ]);
@@ -378,7 +378,7 @@ describe("captureRouteView", () => {
   it("sends nothing for a value that is not a path", () => {
     const memory = createMemoryPostHogAdapter();
     bindPostHogAdapterForTests(memory.adapter);
-    captureRouteView("mailto:a@b.c");
+    createRouteViewRecorder()("mailto:a@b.c");
     expect(memory.calls).toEqual([]);
   });
 });
@@ -422,6 +422,18 @@ describe("createRouteViewRecorder", () => {
     applyAnalyticsOptOut(false);
     record("/chapter-picker");
     expect(views(memory)).toEqual(["/chapter-picker"]);
+  });
+
+  // A notification for another thread pushes the same screen with new
+  // params: a new visit, still sent as the bare template.
+  it("starts a new visit when the visit key changes on the same path", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const record = createRouteViewRecorder();
+    record("/chat-thread", '/chat-thread {"channelId":"a"}');
+    record("/chat-thread", '/chat-thread {"channelId":"a"}');
+    record("/chat-thread", '/chat-thread {"channelId":"b"}');
+    expect(views(memory)).toEqual(["/chat-thread", "/chat-thread"]);
   });
 
   it("ignores a missing pathname", () => {

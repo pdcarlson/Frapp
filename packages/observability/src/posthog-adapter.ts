@@ -23,7 +23,7 @@ export interface PostHogAdapter {
   /**
    * Record that a page or screen was opened, as the platform's own view event:
    * `$pageview` on web, `$screen` on mobile. `path` is already a route
-   * template ({@link captureRouteView}).
+   * template ({@link createRouteViewRecorder}).
    */
   routeView(path: string): void;
   getSessionId(): string | undefined;
@@ -166,11 +166,10 @@ export function applyAnalyticsOptOut(next: boolean): void {
  * A page or screen view (#3382), sent straight from the SDK like `$identify`.
  * Nothing while the chapter is opted out, and the path goes as a route
  * template ({@link analyticsRouteTemplate}): no query, no host, no record id.
- * Each `AnalyticsProvider` calls it on every route change, and again when the
- * opt-out lifts, so the screen a member is on when the chapter read answers
- * is counted.
+ * Private: apps record views through {@link createRouteViewRecorder}, which
+ * keeps one view per visit.
  */
-export function captureRouteView(path: string): void {
+function captureRouteView(path: string): void {
   if (optedOut) return;
   const template = analyticsRouteTemplate(path);
   if (!template) return;
@@ -179,20 +178,26 @@ export function captureRouteView(path: string): void {
 
 /**
  * One route view per visit (#3382). Call the returned function with the
- * current pathname whenever the pathname or the chapter's opt-out changes:
- * it records a visit once, as soon as capture is on, so the first route is
- * recorded when the chapter read opts in, and a gate that flips while the
- * member stays put (a chapter switch reloads the chapter read) records
- * nothing more. A route reached while opted out is still recorded if the
- * member is on it when capture turns on.
+ * current pathname whenever the pathname, the visit or the chapter's opt-out
+ * changes. It records a visit once, as soon as capture is on: the first route
+ * is recorded when the chapter read opts in, and a gate that flips while the
+ * member stays put (a chapter switch reloads the chapter read) records nothing
+ * more. A route reached while opted out is still recorded if the member is on
+ * it when capture turns on.
+ *
+ * `visitKey` (default: the pathname) is what makes a new visit. Mobile passes
+ * the pathname plus its params, because pushing the same screen with new
+ * params (a notification for another thread) is a navigation the pathname
+ * alone cannot see. The key stays in memory; only the path's template is sent.
  */
 export function createRouteViewRecorder(): (
   path: string | null | undefined,
+  visitKey?: string,
 ) => void {
-  let visit: { path: string; recorded: boolean } | null = null;
-  return (path) => {
-    if (!path) return;
-    if (visit?.path !== path) visit = { path, recorded: false };
+  let visit: { key: string; recorded: boolean } | null = null;
+  return (path, visitKey = path ?? undefined) => {
+    if (!path || visitKey === undefined) return;
+    if (visit?.key !== visitKey) visit = { key: visitKey, recorded: false };
     if (optedOut || visit.recorded) return;
     visit.recorded = true;
     captureRouteView(path);

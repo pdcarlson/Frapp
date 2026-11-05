@@ -2,7 +2,7 @@
 import { useContext } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { usePathname } from "expo-router";
+import { useGlobalSearchParams, usePathname } from "expo-router";
 import {
   bindPostHogAdapterForTests,
   createMemoryPostHogAdapter,
@@ -178,6 +178,21 @@ describe("mobile AnalyticsProvider screen views", () => {
   afterEach(() => {
     bindPostHogAdapterForTests(null);
     vi.mocked(usePathname).mockReturnValue("/");
+    vi.mocked(useGlobalSearchParams).mockReturnValue({});
+  });
+
+  // A notification for another thread pushes `/chat-thread` again with new
+  // params: a new screen view, sent as the bare template.
+  it("records a push of the same screen with new params", () => {
+    atPath("/chat-thread");
+    vi.mocked(useGlobalSearchParams).mockReturnValue({ channelId: "chan-a" });
+    harness.chapter.mockReturnValue({ data: { analytics_opt_out: false } });
+    const view = render(tree());
+    view.rerender(tree());
+    vi.mocked(useGlobalSearchParams).mockReturnValue({ channelId: "chan-b" });
+    view.rerender(tree());
+    expect(screens()).toEqual(["/chat-thread", "/chat-thread"]);
+    expect(JSON.stringify(memory.calls)).not.toContain("chan-");
   });
 
   it("records the first screen once the chapter read opts in", () => {

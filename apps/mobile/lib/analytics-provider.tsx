@@ -5,7 +5,7 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import { usePathname } from "expo-router";
+import { useGlobalSearchParams, usePathname } from "expo-router";
 import {
   useFrappClient,
   useActiveChapterId,
@@ -63,12 +63,15 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   // recorded once the chapter read opts in. The recorder keeps the visit, so a
   // gate that flips while the member stays put (a chapter switch reloads the
   // chapter read) records nothing more. expo-router's pathname drops params and
-  // groups, so Chat home is `/` and a thread is `/chat-thread`.
+  // groups, so Chat home is `/` and a thread is `/chat-thread`. The params
+  // only tell visits apart (a notification pushing another thread onto
+  // `/chat-thread` is a new one); they are never sent.
   const pathname = usePathname();
+  const visitKey = `${pathname} ${JSON.stringify(useGlobalSearchParams())}`;
   const [recordRouteView] = useState(createRouteViewRecorder);
   useEffect(() => {
-    recordRouteView(pathname);
-  }, [optedOut, pathname, recordRouteView]);
+    recordRouteView(pathname, visitKey);
+  }, [optedOut, pathname, visitKey, recordRouteView]);
 
   const track = useCallback<TrackFn>(
     (name, properties) => {

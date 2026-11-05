@@ -3,7 +3,7 @@ import {
   applyAnalyticsIdentity,
   applyAnalyticsOptOut,
   bindPostHogAdapterForTests,
-  captureRouteView,
+  createRouteViewRecorder,
 } from "@repo/observability/identified-posthog";
 import { initWebPostHog } from "./client";
 
@@ -113,13 +113,14 @@ describe("initWebPostHog", () => {
   it("sends a route view as a $pageview with the template as its URL", () => {
     vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "phc_test_write_only");
     initWebPostHog();
-    captureRouteView("/events/3f2a9c1e-4b5d-4e6f-8a7b-9c0d1e2f3a4b?id=x");
+    const record = createRouteViewRecorder();
+    record("/events/3f2a9c1e-4b5d-4e6f-8a7b-9c0d1e2f3a4b?id=x");
     expect(posthogCapture).toHaveBeenCalledWith("$pageview", {
       $pathname: "/events/[id]",
       $current_url: "/events/[id]",
     });
     applyAnalyticsOptOut(true);
-    captureRouteView("/chat");
+    record("/chat");
     expect(posthogCapture).toHaveBeenCalledTimes(1);
   });
 });

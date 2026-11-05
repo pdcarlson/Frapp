@@ -4,7 +4,7 @@ import {
   applyAnalyticsIdentity,
   applyAnalyticsOptOut,
   bindPostHogAdapterForTests,
-  captureRouteView,
+  createRouteViewRecorder,
   isAnalyticsCaptureOptedOut,
   isPostHogReady,
 } from "@repo/observability/identified-posthog";
@@ -65,10 +65,11 @@ describe("initMobilePostHog", () => {
     try {
       vi.stubEnv("EXPO_PUBLIC_POSTHOG_KEY", "phc_test_write_only");
       initMobilePostHog();
-      captureRouteView("/chat-thread");
+      const record = createRouteViewRecorder();
+      record("/chat-thread");
       expect(screen).not.toHaveBeenCalled();
       applyAnalyticsOptOut(false);
-      captureRouteView("/chat-thread");
+      record("/chat-thread");
       expect(screen).toHaveBeenCalledTimes(1);
       expect(screen).toHaveBeenCalledWith("/chat-thread");
     } finally {
