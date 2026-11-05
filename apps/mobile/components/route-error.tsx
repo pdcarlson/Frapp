@@ -1,5 +1,5 @@
 import { Component, useEffect, type ReactElement, type ReactNode } from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import * as Sentry from "@sentry/react-native";
 import { usePathname, type ErrorBoundaryProps } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -28,8 +28,9 @@ import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
  *   so they use the app row.
  *
  * Both rows are `components.md` §10's Error card, which carries one button:
- * Retry. A screen's way out is the `‹ Chat` back row above the card, the
- * navigation every pushed screen already draws, not a second action on it.
+ * Retry. Where a screen hides the tab bar, its way out is a `‹ Chat` back row
+ * above the card, not a second action on it; elsewhere the tab bar is the way
+ * out (`spec/ui/mobile/navigation.md` § Back rows).
  *
  * ## Why the root's surface can't use the theme it was given
  *
@@ -44,8 +45,10 @@ import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
  *
  * Catching an error without reporting it would leave the app looking better
  * and reporting less (web's `app/error.tsx` makes the same point). Each error
- * is reported once, however many times its fallback remounts, through the
- * `createReportOnce` web's `SegmentError` uses. The event is tagged with the
+ * object is reported once, however many times its fallback remounts, through
+ * the `createReportOnce` web's `SegmentError` uses. A retry that throws again
+ * (Retry, new params, or leaving the screen) usually throws a new object, which
+ * is a new report. The event is tagged with the
  * boundary that caught it (`error_boundary`) and the route as a path
  * (`route_path`, such as `/event-details` or `/sign-in`). No route here has a
  * dynamic segment, so a path names a screen and never a record.
@@ -128,18 +131,17 @@ function tabRoutePath(route: string): string {
 }
 
 /**
- * One screen's fallback. The tab bar is still there, so it fills the screen
- * rather than the window. A screen other than Chat home draws the `‹ Chat`
- * back row: some screens hide the tab bar (`FULL_WINDOW` in
- * `app/(tabs)/_layout.tsx`, listed in `spec/ui/mobile/navigation.md` § Tab
- * bar), and on iOS a member there would otherwise have only a Retry that keeps
- * failing.
+ * One screen's fallback, filling the screen rather than the window. A screen
+ * that hides the tab bar (`FULL_WINDOW` in `app/(tabs)/_layout.tsx`, listed in
+ * `spec/ui/mobile/navigation.md` § Tab bar) draws the `‹ Chat` back row: on
+ * iOS a member there would otherwise have only a Retry that keeps failing.
+ * Every other screen keeps the tab bar, which is its way out.
  */
 export function ScreenErrorScreen({
-  route,
+  showBack,
   retry,
 }: {
-  route: string;
+  showBack: boolean;
   retry: () => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -148,7 +150,7 @@ export function ScreenErrorScreen({
 
   return (
     <View style={[styles.screen, { paddingTop: top + tokens.spacing.sm }]}>
-      {route === CHAT_HOME_ROUTE ? null : (
+      {!showBack ? null : (
         <View style={styles.backRow}>
           <BackRow {...BACK_TO_CHAT} />
         </View>
@@ -167,8 +169,17 @@ export function ScreenErrorScreen({
 
 /** What `screenLayout` hands a screen's boundary of its navigation object. */
 type ScreenEvents = {
-  addListener: (event: "focus" | "blur", callback: () => void) => () => void;
+  addListener: (event: "blur", callback: () => void) => () => void;
 };
+
+/**
+ * Whether a screen's options hide the tab bar, as `FULL_WINDOW` does. The tab
+ * navigator types `tabBarStyle` as an animated style; `display` is never
+ * animated, so flattening it as a plain style reads it correctly.
+ */
+function hidesTabBar(tabBarStyle: unknown): boolean {
+  return StyleSheet.flatten(tabBarStyle as StyleProp<ViewStyle>)?.display === "none";
+}
 
 /**
  * The tab navigator's `screenLayout`: every tab screen in its own boundary.
@@ -181,16 +192,19 @@ type ScreenEvents = {
 export function screenErrorLayout({
   route,
   navigation,
+  options,
   children,
 }: {
   route: { name: string; params?: object };
   navigation: ScreenEvents;
+  options: { tabBarStyle?: unknown };
   children: ReactNode;
 }): ReactElement {
   return (
     <RouteErrorBoundary
       route={route.name}
       resetKey={paramsKey(route.params)}
+      showBack={hidesTabBar(options.tabBarStyle)}
       navigation={navigation}
     >
       {children}
@@ -209,8 +223,10 @@ function paramsKey(params: object | undefined): string {
 }
 
 type ScreenBoundaryProps = {
-  /** The route's name: the route tag, and whether the back row shows. */
+  /** The route's name, for the route tag. */
   route: string;
+  /** Whether the fallback draws the `‹ Chat` back row: the tab bar is hidden. */
+  showBack?: boolean;
   /**
    * Changes when the screen is opened for something else. Tab screens stay
    * mounted, so without this an event that failed would keep its fallback
@@ -218,9 +234,10 @@ type ScreenBoundaryProps = {
    */
   resetKey: string;
   /**
-   * The screen's focus events. A tab screen that failed stays mounted when
-   * the member leaves it, so coming back to it tries the screen again rather
-   * than showing the old fallback until they find Retry.
+   * The screen's blur event. A tab screen that failed stays mounted when the
+   * member leaves it, so leaving clears the fallback: the screen renders again
+   * while they are away, and is back when they return if the failure has
+   * passed. If it fails again, they come back to the fallback and its Retry.
    */
   navigation?: ScreenEvents;
   children: ReactNode;
@@ -239,30 +256,25 @@ export class RouteErrorBoundary extends Component<
 > {
   state: ScreenBoundaryState = { error: undefined, failed: false };
 
-  /** Set when the member leaves the screen while it shows the fallback. */
-  private leftWhileFailed = false;
-  private unsubscribers: (() => void)[] = [];
+  private unsubscribe: (() => void) | null = null;
 
   static getDerivedStateFromError(error: unknown): ScreenBoundaryState {
     return { error, failed: true };
   }
 
   componentDidMount(): void {
-    const { navigation } = this.props;
-    if (!navigation) return;
-    this.unsubscribers = [
-      navigation.addListener("blur", () => {
-        if (this.state.failed) this.leftWhileFailed = true;
-      }),
-      navigation.addListener("focus", () => {
-        if (this.state.failed && this.leftWhileFailed) this.retry();
-      }),
-    ];
+    // Blur, not focus: a focus can arrive in the same transition that made the
+    // screen throw (new params opening it), and retrying there would render
+    // the failure straight back. A blur is always the member leaving.
+    this.unsubscribe =
+      this.props.navigation?.addListener("blur", () => {
+        if (this.state.failed) this.retry();
+      }) ?? null;
   }
 
   componentWillUnmount(): void {
-    for (const unsubscribe of this.unsubscribers) unsubscribe();
-    this.unsubscribers = [];
+    this.unsubscribe?.();
+    this.unsubscribe = null;
   }
 
   componentDidCatch(error: unknown): void {
@@ -282,13 +294,14 @@ export class RouteErrorBoundary extends Component<
   }
 
   retry = (): void => {
-    this.leftWhileFailed = false;
     this.setState({ error: undefined, failed: false });
   };
 
   render(): ReactNode {
     if (!this.state.failed) return this.props.children;
-    return <ScreenErrorScreen route={this.props.route} retry={this.retry} />;
+    return (
+      <ScreenErrorScreen showBack={this.props.showBack ?? false} retry={this.retry} />
+    );
   }
 }
 

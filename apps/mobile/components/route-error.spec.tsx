@@ -53,22 +53,22 @@ function makeBomb(...thrown: [unknown?]) {
   return { Bomb, state };
 }
 
-/** A stand-in for a screen's navigation object, with its focus events. */
+/** A stand-in for a screen's navigation object, with its blur event. */
 function fakeNavigation() {
-  const listeners = { focus: new Set<() => void>(), blur: new Set<() => void>() };
+  const listeners = new Set<() => void>();
   return {
-    addListener: (event: "focus" | "blur", callback: () => void) => {
-      listeners[event].add(callback);
+    addListener: (_event: "blur", callback: () => void) => {
+      listeners.add(callback);
       return () => {
-        listeners[event].delete(callback);
+        listeners.delete(callback);
       };
     },
-    emit: (event: "focus" | "blur") => {
+    blur: () => {
       act(() => {
-        for (const callback of listeners[event]) callback();
+        for (const callback of listeners) callback();
       });
     },
-    listenerCount: () => listeners.focus.size + listeners.blur.size,
+    listenerCount: () => listeners.size,
   };
 }
 
@@ -217,7 +217,7 @@ describe("a screen's boundary", () => {
     // beside it is the defect.
     const { Bomb } = makeBomb();
     const tree = renderInTheme(
-      <RouteErrorBoundary route="chat-thread" resetKey="null">
+      <RouteErrorBoundary route="chat-thread" resetKey="null" showBack>
         <Bomb />
       </RouteErrorBoundary>,
     );
@@ -227,10 +227,10 @@ describe("a screen's boundary", () => {
     expect(vi.mocked(useRouter)().navigate).toHaveBeenCalledWith("/");
   });
 
-  it("draws no back row on Chat home, which is where it leads", () => {
+  it("draws no back row where the tab bar is the way out", () => {
     const { Bomb } = makeBomb();
     const tree = renderInTheme(
-      <RouteErrorBoundary route="index" resetKey="null">
+      <RouteErrorBoundary route="event-details" resetKey="null">
         <Bomb />
       </RouteErrorBoundary>,
     );
@@ -244,13 +244,26 @@ describe("when a screen's boundary tries again", () => {
     params: object | undefined,
     Bomb: () => React.ReactElement,
     navigation = fakeNavigation(),
+    options: { tabBarStyle?: { display: "none" } } = {},
   ) {
     return screenErrorLayout({
       route: { name: "event-details", params },
       navigation,
+      options,
       children: <Bomb />,
     });
   }
+
+  it("draws the back row only on a screen whose options hide the tab bar", () => {
+    const { Bomb } = makeBomb();
+    const hidden = renderInTheme(
+      layout(undefined, Bomb, fakeNavigation(), { tabBarStyle: { display: "none" } }),
+    );
+    const shown = renderInTheme(layout(undefined, Bomb));
+
+    expect(buttonLabels(hidden)).toEqual([BACK_LABEL, SCREEN_ERROR_COPY.retry]);
+    expect(buttonLabels(shown)).toEqual([SCREEN_ERROR_COPY.retry]);
+  });
 
   it("clears a fallback when the screen is opened for something else", () => {
     // Tab screens stay mounted, so a failed event must not keep its fallback
@@ -294,36 +307,47 @@ describe("when a screen's boundary tries again", () => {
     expect(captureException).toHaveBeenCalledTimes(1);
   });
 
-  it("tries the screen again when the member comes back to it", () => {
+  it("renders the screen again when the member leaves it", () => {
     const { Bomb, state } = makeBomb();
     const navigation = fakeNavigation();
     const tree = renderInTheme(layout({ id: "evt-1" }, Bomb, navigation));
 
     state.fail = false;
-    navigation.emit("blur");
-    navigation.emit("focus");
+    navigation.blur();
 
     expect(texts(tree)).toContain("Screen content");
   });
 
-  it("doesn't retry on a focus that wasn't a return", () => {
-    // The screen can fail while it is being focused; that focus is not the
-    // member coming back.
+  it("keeps the fallback for the member's return when the screen still fails", () => {
     const { Bomb, state } = makeBomb();
+    state.fresh = true;
     const navigation = fakeNavigation();
     const tree = renderInTheme(layout({ id: "evt-1" }, Bomb, navigation));
 
-    state.fail = false;
-    navigation.emit("focus");
+    navigation.blur();
 
     expect(texts(tree)).toContain(SCREEN_ERROR_COPY.title);
+    // A new error object each render, so the second failure is its own report.
+    expect(captureException).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves a healthy screen alone when the member leaves it", () => {
+    const { Bomb, state } = makeBomb();
+    state.fail = false;
+    const navigation = fakeNavigation();
+    const tree = renderInTheme(layout({ id: "evt-1" }, Bomb, navigation));
+
+    navigation.blur();
+
+    expect(texts(tree)).toContain("Screen content");
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("stops listening when the screen unmounts", () => {
     const { Bomb } = makeBomb();
     const navigation = fakeNavigation();
     const tree = renderInTheme(layout({ id: "evt-1" }, Bomb, navigation));
-    expect(navigation.listenerCount()).toBe(2);
+    expect(navigation.listenerCount()).toBe(1);
 
     act(() => tree.unmount());
 
