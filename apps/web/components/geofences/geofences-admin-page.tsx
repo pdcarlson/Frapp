@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Power, PowerOff, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Plus, Power, PowerOff, Trash2 } from "lucide-react";
 import { StudyZonesGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   useCreateGeofence,
@@ -11,6 +11,7 @@ import {
   useUpdateGeofence,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
@@ -674,36 +675,27 @@ export function GeofencesAdminPage() {
                     claim writes are blocked while still offering three.
                   */}
                   <div className="flex shrink-0 flex-wrap items-center gap-1 pl-7 sm:pl-0">
-                    <Button
-                      size="toolbar"
-                      variant="ghost"
+                    <IconButton
+                      label={`Edit ${zone.name}`}
                       {...gate.controlProps()}
                       onClick={() => openEditor(zone)}
                     >
-                      Edit
-                    </Button>
-                    <Button
-                      size="toolbar"
-                      variant="ghost"
+                      <Pencil />
+                    </IconButton>
+                    <IconButton
+                      label={`${zone.is_active ? "Disable" : "Enable"} ${zone.name}`}
                       {...gate.controlProps()}
                       onClick={() => void toggleActive(zone)}
                     >
-                      {zone.is_active ? (
-                        <PowerOff className="h-4 w-4" />
-                      ) : (
-                        <Power className="h-4 w-4" />
-                      )}
-                      {zone.is_active ? "Disable" : "Enable"}
-                    </Button>
-                    <Button
-                      size="toolbar"
-                      variant="ghost"
+                      {zone.is_active ? <PowerOff /> : <Power />}
+                    </IconButton>
+                    <IconButton
+                      label={`Delete ${zone.name}`}
                       {...gate.controlProps()}
                       onClick={() => void handleDelete(zone)}
                     >
-                      <Trash2 className="h-4 w-4" />
-                      Delete
-                    </Button>
+                      <Trash2 />
+                    </IconButton>
                   </div>
                 </li>
               ))}

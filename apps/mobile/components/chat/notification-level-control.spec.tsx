@@ -209,6 +209,19 @@ describe("NotificationLevelControl", () => {
     expect(trigger.props.disabled).toBe(false);
   });
 
+  // components.md § Icon-only actions: the muted speaker draws its own ×, so
+  // no "Muted" word sits beside it. The label above still says it.
+  it("draws the muted glyph alone, with no word beside it", () => {
+    const tree = renderControl({ level: "off" });
+    const trigger = byLabel(
+      tree,
+      "Notifications: muted. Change notification level",
+    );
+    expect(
+      trigger.findAll((node) => (node.type as unknown) === "Text"),
+    ).toHaveLength(0);
+  });
+
   it("names the current level when not muted", () => {
     const tree = renderControl({ level: "all" });
     expect(

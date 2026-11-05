@@ -99,6 +99,28 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 **Ghost is neutral** (changed 2026-11-05, owner's call). It painted `accent-11` until then, so every icon button in the chat composer, a row's Edit and Delete, and each wizard's Back and Cancel drew in the chapter accent and read as the loudest thing on screen. The accent belongs to the one action that matters (Primary, Tinted); a tertiary control blends in and lights up on hover. It absorbed the `quiet` variant added earlier that day for list rows' secondary actions, which was this recipe under a second name. A text link that should read as a link takes the `link` variant, which keeps `accent-11`.
 
+### Icon-only actions
+
+> **Owner decision, 2026-11-05 (Paul, UI audit).** A button whose icon already says what it does draws the icon alone, on web and mobile. "Download" beside a download arrow, "Dismiss" beside an ×, and "Muted" beside a muted speaker said the same thing twice and made secondary controls louder than the content they act on.
+
+**Which buttons lose their words.** Secondary and row actions with a glyph everyone reads: download, dismiss or close, copy, edit, delete or remove, enable or disable, mark all read. A bare word with no icon counts too when such a glyph exists (mobile Profile's "Edit" is a pencil now, in the back-row slot where Documents already drew its upload glyph).
+
+**Which keep them.**
+
+- A form's primary action (Save changes, Create event, Send invite) and a sheet's commit.
+- A choice between outcomes, where the word is the decision: a moderation queue's Mark reviewed / Dismiss / Mark actioned, a dialog's Cancel beside its commit.
+- An error state's Retry: it is that state's one action, and it sits on text the eye is already reading.
+- A verb with no glyph that says it alone ("Change photo", "Enable Dues"). Don't invent an icon to drop a word.
+
+**What the word becomes.** It never disappears; it moves.
+
+- Web: `aria-label` plus a native `title` tooltip, both from one `label`. `apps/web/components/ui/icon-button.tsx` (`IconButton`) requires the label and sets both. A caller's own `title` (the subscription gate's "Reconnect to make changes.") is added after the label, never in place of it, and a disabled icon button still takes the pointer so its tooltip shows (the shared button recipe turns pointer events off when disabled, which hid both). Use it rather than `Button size="icon"` with hand-written attributes: a `title=` placed before `{...gate.controlProps()}` is wiped by the gate's `title: undefined`.
+- Mobile: `accessibilityLabel`, plus `accessibilityHint` for what the label can't say. `apps/mobile/components/icon-button.tsx` (`IconButton`) requires the label.
+- Touch has no hover, on the app or on the web dashboard in a phone's browser, so a finger never sees the tooltip. That is why the list above is short: the glyph has to be one a member already knows. If it isn't, the button keeps its word.
+- A label names its object when a screen has several of the same control: "Download Bylaws", "Delete North Library", "Revoke the Member invite", never a column of bare "Delete".
+
+**What it looks like.** An icon button is Ghost (above, neutral since 2026-11-05) and takes the Small step of [foundations.md](foundations.md) §9's control size scale, 36px to a mouse and 44 to a finger, in a row or standing alone (`IconButton` sets it). On mobile the glyph is 20pt in a box its own size with 12pt of slop on each side, which reaches the 44pt floor (§2) without taking layout height, so a one-line banner doesn't grow. Every dismiss is the same ×: Lucide `X` on web, `CloseGlyph` on mobile ([iconography.md](iconography.md) §6.1.5). A control that was busy says so in the glyph's place (a spinner) instead of swapping in a word like "Marking…".
+
 ## 4. Inputs and selection
 
 **Dashboard filter toolbars take the toolbar height, not the default field height (40 to a mouse, 44 to a finger).** The toolbar height is 36 to a mouse and 44 to a finger (§3, corrected 2026-11-05; it was the Inline 44 on both, and the paragraph below is the reasoning for matching the row, which still holds). That is a carve-out for filter chrome specifically, and reading it as "the height for a native `<select>`" reproduces the same defect one context over — the event editor put two filter-height selects in a `sm:grid-cols-2` beside 48px `Input`s, so a *form* row rendered at two heights. `apps/web/components/shared/table-controls.ts` therefore writes the paint once and exports two heights, `dashboardFilterSelectClassName` (the toolbar height) and `dashboardFormSelectClassName` (the field height). A filter row is secondary chrome sitting above the thing it filters, and mixing §4's 48px field with §3's 44px Inline button in one row renders two visibly different heights — which is what `/members`, `/events`, `/polls` and `/roles` all did. On a coarse pointer the row is 44, the touch floor (§2), so nothing a finger hits goes under it; a select in a dialog or form is a field and takes `dashboardFormSelectClassName`. This settles the second half of #1187 once rather than per family: the Directory & Finance slice applies it to its own screens, and each remaining #920 slice applies it to theirs.
