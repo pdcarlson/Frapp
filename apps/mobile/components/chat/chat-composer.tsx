@@ -10,6 +10,7 @@ import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { formatBytes } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { CloseGlyph } from "@/components/control-glyphs";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 /**
@@ -159,14 +160,14 @@ export function ChatComposer({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={composerCancelLabel(context.kind)}
-            hitSlop={12}
+            hitSlop={14}
             onPress={context.onCancel}
             style={({ pressed }) => [
               styles.chipRemove,
               pressed ? styles.pressed : null,
             ]}
           >
-            <Text style={styles.chipRemoveGlyph}>×</Text>
+            <CloseGlyph color={tokens.color.text.muted} size={16} />
           </Pressable>
         </View>
       ) : null}
@@ -186,14 +187,14 @@ export function ChatComposer({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`Remove ${attachment.filename}`}
-                hitSlop={8}
+                hitSlop={14}
                 onPress={() => onRemoveAttachment?.(attachment.storagePath)}
                 style={({ pressed }) => [
                   styles.chipRemove,
                   pressed ? styles.pressed : null,
                 ]}
               >
-                <Text style={styles.chipRemoveGlyph}>×</Text>
+                <CloseGlyph color={tokens.color.text.muted} size={16} />
               </Pressable>
             </View>
           ))}
@@ -352,15 +353,13 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       color: tokens.color.text.muted,
       flexShrink: 0,
     },
+    // A 16pt × with 14pt of slop on each side reaches the 44pt floor (§2)
+    // without making the chip taller.
     chipRemove: {
       marginLeft: "auto",
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: tokens.spacing.xs,
-    },
-    chipRemoveGlyph: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.muted,
     },
     row: {
       flexDirection: "row",
