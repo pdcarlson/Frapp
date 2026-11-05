@@ -19,7 +19,6 @@ import { EmptyState, anyReadUncached } from "@/components/shared/async-states";
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import {
@@ -30,6 +29,7 @@ import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { asArray, cn, initials } from "@/lib/utils";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { AlumniRowsSkeleton } from "@/components/members/directory-skeleton";
 
 type AlumniRow = {
   id: string;
@@ -264,7 +264,7 @@ export function AlumniDirectory() {
       </div>
 
       {query.isPending ? (
-        <NestedLoading sole message="Loading alumni directory..." />
+        <AlumniRowsSkeleton />
       ) : query.isError ? (
         <NestedError
           sole

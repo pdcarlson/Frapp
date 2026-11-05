@@ -5,7 +5,6 @@ import { Label } from "@/components/ui/label";
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { SearchGlyph } from "@/components/documents/resources-glyphs";
@@ -18,6 +17,7 @@ import {
   denseListClassName,
 } from "@/components/shared/table-controls";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
+import { DocumentRowsSkeleton } from "@/components/documents/documents-skeleton";
 
 export type DocumentListState =
   "offline-search" | "offline" | "loading" | "error" | "empty" | "ready";
@@ -125,7 +125,7 @@ export function DocumentList({
             onRetry={onRetry}
           />
         ) : listState === "loading" ? (
-          <NestedLoading message="Loading chapter documents..." sole />
+          <DocumentRowsSkeleton />
         ) : listState === "error" ? (
           <NestedError
             sole

@@ -43,11 +43,7 @@ import {
 } from "@/components/ui/select";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedLoading,
-} from "@/components/shared/nested-states";
+import { NestedEmpty, NestedError } from "@/components/shared/nested-states";
 import {
   dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
@@ -73,6 +69,7 @@ import {
   getErrorMessage,
   labelled,
 } from "@/lib/utils";
+import { InvoiceRowsSkeleton } from "@/components/billing/billing-skeleton";
 
 /**
  * The chapter's invoices, as **one** list.
@@ -703,7 +700,7 @@ export function InvoiceList({ id }: { id?: string }) {
         rows it is about actually render.
       */}
       {invoicesQuery.isPending || currentUserQuery.isPending ? (
-        <NestedLoading sole message={stateMicrocopy.billing.loading} />
+        <InvoiceRowsSkeleton />
       ) : invoicesQuery.isError ? (
         <NestedError
           sole

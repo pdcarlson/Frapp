@@ -140,9 +140,7 @@ describe("PollsPage disabled-query handling", () => {
 
     render(<PollsPage />);
 
-    expect(
-      screen.queryByText("Loading chapter polls..."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading chapter polls")).not.toBeInTheDocument();
     // Inside the granted `<Can>` the permission half of `enabled` is already
     // true, so an idle query settles on the empty state rather than repeating
     // the denied copy, which lives in `deniedFallback` alone.
@@ -159,7 +157,7 @@ describe("PollsPage disabled-query handling", () => {
 
     render(<PollsPage />);
 
-    expect(screen.getByText("Loading chapter polls...")).toBeInTheDocument();
+    expect(screen.getByText("Loading chapter polls")).toBeInTheDocument();
   });
 
   it("spins when the query is paused (offline) rather than claiming view_all is missing", () => {
@@ -174,7 +172,7 @@ describe("PollsPage disabled-query handling", () => {
 
     render(<PollsPage />);
 
-    expect(screen.getByText("Loading chapter polls...")).toBeInTheDocument();
+    expect(screen.getByText("Loading chapter polls")).toBeInTheDocument();
     expect(
       screen.queryByText("No polls match this view"),
     ).not.toBeInTheDocument();
@@ -182,7 +180,7 @@ describe("PollsPage disabled-query handling", () => {
 
   it("offers a retry when offline instead of a spinner that cannot resolve", () => {
     // README §4 item 4. A paused query is `isPending`, so without this branch
-    // an offline member with no cached polls sat on "Loading chapter polls..."
+    // an offline member with no cached polls sat on "Loading chapter polls"
     // for as long as they stayed offline.
     mockOffline.value = true;
     pollsQuery.data = undefined as unknown as unknown[];
@@ -192,9 +190,7 @@ describe("PollsPage disabled-query handling", () => {
     render(<PollsPage />);
 
     expect(screen.getByText(/polls unavailable offline/i)).toBeInTheDocument();
-    expect(
-      screen.queryByText("Loading chapter polls..."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading chapter polls")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
   });
 
@@ -225,9 +221,7 @@ describe("PollsPage disabled-query handling", () => {
     render(<PollsPage />);
 
     expect(screen.getAllByText("Pizza night?").length).toBeGreaterThan(0);
-    expect(
-      screen.queryByText("Loading chapter polls..."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading chapter polls")).not.toBeInTheDocument();
   });
 
   it("answers the permission question before the network one", () => {
@@ -254,9 +248,7 @@ describe("PollsPage disabled-query handling", () => {
 
     render(<PollsPage />);
 
-    expect(
-      screen.queryByText("Loading chapter polls..."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading chapter polls")).not.toBeInTheDocument();
     expect(screen.getByText(/can.t see every poll/i)).toBeInTheDocument();
     expect(screen.getByText(/you can still vote in chat/i)).toBeInTheDocument();
   });
