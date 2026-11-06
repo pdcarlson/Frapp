@@ -405,18 +405,15 @@ describe("getSignetCssVars", () => {
    * mobile's StatusChip started drawing danger text in it, so it now ships in
    * `signetDarkTokens` and is emitted like any other semantic.
    *
-   * The mention-chip pair is here for the mobile half of that reason only — it
-   * is **not** a lift. It is a second fixed semantic family (§5's table, and
-   * `signet.css.spec.ts`'s `FIXED` list), and web draws the in-body mention
-   * chip today while mobile draws no in-body mention at all.
+   * The mention-chip pair sat here until 2026-11-06, when mobile started
+   * drawing the in-body mention chip, so it now ships in `signetDarkTokens`
+   * and is emitted like any other semantic.
    *
    * A token here is a real token with a real home. This is not a suppression
    * list for tokens that were forgotten.
    */
   const CSS_ONLY = [
     "--info-text",
-    "--mention-chip",
-    "--mention-chip-text",
     // The §5 status tints (#2376). A web answer to a web problem: the alpha
     // utility's `color-mix` fallback they avoid does not exist in React Native.
     "--success-tint",
