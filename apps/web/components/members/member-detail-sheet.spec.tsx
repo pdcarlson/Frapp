@@ -10,8 +10,10 @@ const {
   mockCurrentUserId,
   mockCurrentUserLoading,
   mockPermissions,
+  memberQueryState,
 } =
   vi.hoisted(() => ({
+    memberQueryState: { isLoading: false },
     dmMutateAsync: vi.fn(),
     mockRouterPush: vi.fn(),
     mockToast: vi.fn(),
@@ -25,7 +27,7 @@ const {
 // The sheet pulls live data + mutations from @repo/hooks; stub them so the
 // component renders from its `member` prop (usingPreviewData bypasses useMember).
 vi.mock("@repo/hooks", () => ({
-  useMember: () => ({ data: undefined, isLoading: false, isError: false, refetch: vi.fn() }),
+  useMember: () => ({ data: undefined, isLoading: memberQueryState.isLoading, isError: false, refetch: vi.fn() }),
   useRoles: () => ({ data: [], isError: false }),
   useRemoveMember: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateMemberRoles: () => ({ mutateAsync: updateRolesMutateAsync, isPending: false }),
@@ -488,5 +490,27 @@ describe("MemberDetailSheet write controls", () => {
       screen.getByRole("button", { name: "Save role changes" }),
     ).toBeEnabled();
     expect(screen.getByRole("button", { name: /Remove member/ })).toBeEnabled();
+  });
+});
+
+describe("MemberDetailSheet loading", () => {
+  it("draws a skeleton and one screen-reader status line, not a spinner with a caption (components.md §10)", () => {
+    memberQueryState.isLoading = true;
+    try {
+      render(
+        <MemberDetailSheet
+          open
+          onOpenChange={() => {}}
+          usingPreviewData={false}
+          points={0}
+          member={baseMember}
+        />,
+      );
+      const status = screen.getByRole("status");
+      expect(status).toHaveTextContent("Loading member profile");
+      expect(status).toHaveClass("sr-only");
+    } finally {
+      memberQueryState.isLoading = false;
+    }
   });
 });

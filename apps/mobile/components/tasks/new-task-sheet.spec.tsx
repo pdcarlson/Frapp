@@ -186,6 +186,27 @@ const sheetModal = (tree: ReactTestRenderer) =>
       typeof node.props.onDismiss === "function",
   );
 
+describe("New task assignee picker", () => {
+  it("opens as a tall sheet with its header pinned (components.md § Surface size)", () => {
+    const tree = render();
+    const picker = tree.root.find(
+      (node) =>
+        node.type === ("BottomSheetModal" as never) &&
+        typeof node.props.onDismiss !== "function",
+    );
+    expect(picker.props.snapPoints).toEqual(["100%"]);
+    // Without this, @gorhom adds a content-height detent and the sheet opens
+    // short again.
+    expect(picker.props.enableDynamicSizing).toBe(false);
+    expect(picker.props.topInset).toBeGreaterThan(0);
+    const list = picker.find(
+      (node) => node.props.stickyHeaderIndices !== undefined,
+    );
+    expect(list.props.stickyHeaderIndices).toEqual([0]);
+    act(() => tree.unmount());
+  });
+});
+
 describe("New task after a gate refusal", () => {
   const REFUSALS = [
     ["a subscription refusal", REFUSED, SUBSCRIPTION_REFUSAL_COPY.task],

@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Copy, Loader2, Trash2 } from "lucide-react";
-import { InviteGlyph } from "@/components/members/directory-glyphs";
 import {
   useBatchCreateInvites,
   useCreateInvite,
   useInvites,
   useOrgConfig,
+  useActiveChapterId,
   useRevokeInvite,
   useRoles,
 } from "@repo/hooks";
@@ -19,14 +19,12 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { Sheet, SheetTrigger } from "@/components/ui/sheet";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  PanelBody,
+  PanelContent,
+  PanelHeader,
+} from "@/components/shared/panel";
 import { Input } from "@/components/ui/input";
 import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
 import { formatDayTime } from "@repo/formatting";
@@ -138,6 +136,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const [inviteCountDraft, setInviteCountDraft] = useState("1");
   const inviteCount = invitesToGenerate(inviteCountDraft);
   const [generatedInvites, setGeneratedInvites] = useState<InviteRow[]>([]);
+  const activeChapterId = useActiveChapterId();
   const rolesQuery = useRoles();
   const orgConfigQuery = useOrgConfig();
   const invitesQuery = useInvites();
@@ -274,14 +273,29 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
    * Reopening starts a fresh invite, so the chapter default applies again
    * rather than the role picked during a previous session.
    *
-   * Every close path routes through here, including the footer's Done button.
-   * Radix only fires `onOpenChange` for its own dismiss paths (Escape, the
-   * overlay, X, the trigger), so a `setOpen(false)` wired directly to a button
-   * would skip the reset — leaving Done and Escape to produce different state
-   * from the same user intent.
+   * Every open and close path routes through here. Radix only fires
+   * `onOpenChange` for its own paths (Escape, the overlay, X, the trigger), so
+   * a `setOpen` wired directly to a button would skip the reset.
+   *
+   * Opening re-reads invites and roles. That is what the footer's Refresh
+   * button did by hand before the panel dropped its footer: the list is
+   * mounted with the page and cached for a minute, so an invite another
+   * officer revoked would otherwise still show here.
    */
+  function refetchLiveData() {
+    // `refetch()` skips the hooks' `enabled: !!chapterId`, so with no chapter
+    // yet it would send both reads unscoped and show a load error.
+    if (!activeChapterId) return;
+    void invitesQuery.refetch();
+    void rolesQuery.refetch();
+  }
+
   function handleOpenChange(next: boolean) {
-    if (!next) setHasPickedRole(false);
+    if (next) {
+      refetchLiveData();
+    } else {
+      setHasPickedRole(false);
+    }
     setOpen(next);
   }
 
@@ -379,9 +393,15 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
+      <SheetTrigger asChild>{trigger}</SheetTrigger>
       {/*
+        A panel, not a dialog (`components.md` § Surface size): the generator,
+        the fresh tokens and every live invite are one list that grows with the
+        chapter, and it scrolled inside a 672px dialog capped at 88vh. It has
+        no footer: Done repeated the panel's X, and Refresh is now what opening
+        it does (`handleOpenChange`).
+
         The instructional paragraph under the title is deleted, not restyled.
         Board `1j` gives a sheet "no instructional paragraph" and `1t` lists
         page-narration under gone; this one ("Generate a join link and assign a
@@ -389,24 +409,16 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         beneath it, which name themselves.
 
         `aria-describedby={undefined}` for the reason `UploadSheetContent`
-        carries it: with no `DialogDescription` rendered, Radix warns on every
+        carries it: with no `SheetDescription` rendered, Radix warns on every
         open for a `Content` pointing at a description id nothing renders.
       */}
-      <DialogContent
-        aria-describedby={undefined}
-        className="max-h-[88vh] overflow-y-auto sm:max-w-2xl"
-      >
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <InviteGlyph className="h-5 w-5" />
-            Invite members
-          </DialogTitle>
-        </DialogHeader>
-
-        {hasLiveDataError ? (
-          <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning-tint p-3 text-caption text-warning">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            {/*
+      <PanelContent aria-describedby={undefined}>
+        <PanelHeader>Invite members</PanelHeader>
+        <PanelBody>
+          {hasLiveDataError ? (
+            <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning-tint p-3 text-caption text-warning">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              {/*
               This banner is the **only** explanation for two disabled controls
               — `hasLiveDataError` greys out Generate and every Revoke, and
               `gate.controlProps` supplies a `title` only when offline and an
@@ -423,156 +435,158 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
               What did go is the instruction to fix the API, which is not
               something the reader can act on from this dialog.
             */}
-            <div>
-              Invite data could not load, so issuing and revoking are paused.
-            </div>
-          </div>
-        ) : null}
-
-        <div className="grid gap-3 sm:grid-cols-[1fr_160px_auto]">
-          <label className="space-y-1 text-sm">
-            <span className="text-muted-foreground">Role</span>
-            <select
-              value={roleName}
-              onChange={(event) => {
-                setHasPickedRole(true);
-                setRoleName(event.target.value);
-              }}
-              className={dashboardFormSelectClassName}
-            >
-              {roleOptions.map((role) => (
-                <option key={role.id} value={role.name}>
-                  {role.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="text-muted-foreground">Invite count</span>
-            <Input
-              type="number"
-              min={1}
-              max={MAX_INVITE_BATCH}
-              value={inviteCountDraft}
-              onChange={handleInviteCountChange}
-            />
-          </label>
-          <div className="flex items-end">
-            <Button
-              onClick={handleGenerateInvites}
-              {...gate.controlProps(
-                hasLiveDataError || isSubmitting || roleOptions.length === 0,
-              )}
-              className="w-full"
-            >
-              {isSubmitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : null}
-              Generate
-            </Button>
-          </div>
-        </div>
-
-        <SubscriptionNotice gate={gate} feature="issuing invites" />
-
-        {generatedInvites.length > 0 ? (
-          <div className="space-y-2 rounded-md border border-border p-3">
-            <p className="text-sm font-semibold">Freshly generated tokens</p>
-            <div className="space-y-2">
-              {generatedInvites.map((invite) => (
-                <div
-                  key={invite.id}
-                  className="flex items-center justify-between gap-2 rounded-md border border-border p-2"
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+                <span>
+                  Invite data could not load, so issuing and revoking are
+                  paused.
+                </span>
+                {/* The retry the old footer's Refresh gave, where the failure
+                    is said, so the fix sits next to the reason. */}
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0 text-caption font-semibold text-warning"
+                  onClick={refetchLiveData}
                 >
-                  <div className="min-w-0">
-                    <p className="truncate font-mono text-caption">
-                      {invite.token}
-                    </p>
-                    <p className="text-caption text-muted-foreground">
-                      {[
-                        invite.role,
-                        labelled("Expires", formatDayTime(invite.expires_at)),
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                  </div>
-                  <IconButton
-                    label={`Copy the ${invite.role} invite link ending ${tokenTail(invite.token)}`}
-                    onClick={() => handleCopyInvite(invite)}
-                  >
-                    <Copy />
-                  </IconButton>
-                </div>
-              ))}
+                  Try again
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-[1fr_160px_auto]">
+            <label className="grid gap-1 text-sm">
+              <span className="text-muted-foreground">Role</span>
+              <select
+                value={roleName}
+                onChange={(event) => {
+                  setHasPickedRole(true);
+                  setRoleName(event.target.value);
+                }}
+                className={dashboardFormSelectClassName}
+              >
+                {roleOptions.map((role) => (
+                  <option key={role.id} value={role.name}>
+                    {role.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="text-muted-foreground">Invite count</span>
+              <Input
+                type="number"
+                min={1}
+                max={MAX_INVITE_BATCH}
+                value={inviteCountDraft}
+                onChange={handleInviteCountChange}
+              />
+            </label>
+            <div className="flex items-end">
+              <Button
+                onClick={handleGenerateInvites}
+                {...gate.controlProps(
+                  hasLiveDataError || isSubmitting || roleOptions.length === 0,
+                )}
+                className="w-full"
+              >
+                {isSubmitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
+                Generate
+              </Button>
             </div>
           </div>
-        ) : null}
 
-        <div className="space-y-2">
-          <p className="text-sm font-semibold">Active invite tokens</p>
-          {/*
+          <SubscriptionNotice gate={gate} feature="issuing invites" />
+
+          {generatedInvites.length > 0 ? (
+            <div className="space-y-2 rounded-md border border-border p-3">
+              <p className="text-sm font-semibold">Freshly generated tokens</p>
+              <div className="space-y-2">
+                {generatedInvites.map((invite) => (
+                  <div
+                    key={invite.id}
+                    className="flex items-center justify-between gap-2 rounded-md border border-border p-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-mono text-caption">
+                        {invite.token}
+                      </p>
+                      <p className="text-caption text-muted-foreground">
+                        {[
+                          invite.role,
+                          labelled("Expires", formatDayTime(invite.expires_at)),
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    </div>
+                    <IconButton
+                      label={`Copy the ${invite.role} invite link ending ${tokenTail(invite.token)}`}
+                      onClick={() => handleCopyInvite(invite)}
+                    >
+                      <Copy />
+                    </IconButton>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="space-y-2">
+            <p className="text-sm font-semibold">Active invite tokens</p>
+            {/*
             Revoke's verdict differs from Generate's — free-tier vs
             grace-blocked diverge exactly inside the grace window — so it needs
             its own notice for its own `aria-describedby` target.
           */}
-          <SubscriptionNotice gate={revokeGate} feature="revoking invites" />
-          {activeInviteRows.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
-              No active invite tokens.
-            </div>
-          ) : (
-            activeInviteRows.map((invite) => (
-              <div
-                key={invite.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-input p-3"
-              >
-                <div className="space-y-1">
-                  <p className="font-mono text-caption">{invite.token}</p>
+            <SubscriptionNotice gate={revokeGate} feature="revoking invites" />
+            {activeInviteRows.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
+                No active invite tokens.
+              </div>
+            ) : (
+              activeInviteRows.map((invite) => (
+                <div
+                  key={invite.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-input p-3"
+                >
+                  <div className="space-y-1">
+                    <p className="font-mono text-caption">{invite.token}</p>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{invite.role}</Badge>
+                      {formatDayTime(invite.expires_at) ? (
+                        <span className="text-caption text-muted-foreground">
+                          Expires {formatDayTime(invite.expires_at)}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline">{invite.role}</Badge>
-                    {formatDayTime(invite.expires_at) ? (
-                      <span className="text-caption text-muted-foreground">
-                        Expires {formatDayTime(invite.expires_at)}
-                      </span>
-                    ) : null}
+                    <IconButton
+                      label={`Copy the ${invite.role} invite link ending ${tokenTail(invite.token)}`}
+                      onClick={() => handleCopyInvite(invite)}
+                    >
+                      <Copy />
+                    </IconButton>
+                    <IconButton
+                      label={`Revoke the ${invite.role} invite ending ${tokenTail(invite.token)}`}
+                      onClick={() => handleRevokeInvite(invite.id)}
+                      {...revokeGate.controlProps(
+                        revokeInviteMutation.isPending || hasLiveDataError,
+                      )}
+                    >
+                      <Trash2 />
+                    </IconButton>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <IconButton
-                    label={`Copy the ${invite.role} invite link ending ${tokenTail(invite.token)}`}
-                    onClick={() => handleCopyInvite(invite)}
-                  >
-                    <Copy />
-                  </IconButton>
-                  <IconButton
-                    label={`Revoke the ${invite.role} invite ending ${tokenTail(invite.token)}`}
-                    onClick={() => handleRevokeInvite(invite.id)}
-                    {...revokeGate.controlProps(
-                      revokeInviteMutation.isPending || hasLiveDataError,
-                    )}
-                  >
-                    <Trash2 />
-                  </IconButton>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              void invitesQuery.refetch();
-              void rolesQuery.refetch();
-            }}
-          >
-            Refresh
-          </Button>
-          <Button onClick={() => handleOpenChange(false)}>Done</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+              ))
+            )}
+          </div>
+        </PanelBody>
+      </PanelContent>
+    </Sheet>
   );
 }
