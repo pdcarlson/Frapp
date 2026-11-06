@@ -14,11 +14,11 @@ import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 
 /**
- * The module nav: 240px expanded, 56px as an icon rail.
+ * The module nav: its rows, section headings and the collapse toggle.
  *
- * Geometry is board option `1b` (expanded) and `1c` (rail): 8px of padding,
- * 2px between rows. The width was 220px until 2026-11-06, when one column
- * started serving every route (`nav-column.tsx`).
+ * Row geometry is board option `1b` (expanded) and `1c` (rail), 2px between
+ * rows. The width and padding around it are not this component's; they belong
+ * to whatever holds it.
  *
  * **It is not the column.** From `lg` up it is the modules face of the
  * shell's one left column (`nav-column.tsx`), which owns the width, the

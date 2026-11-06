@@ -184,13 +184,25 @@ export function NavColumn({
         : channelsRef.current;
     previousFace.current = face;
     if (!outgoing?.contains(document.activeElement)) return;
-    const target =
-      face === "modules"
-        ? modulesRef.current?.querySelector<HTMLElement>(
-            '[aria-current="page"], [aria-current="true"]',
-          )
-        : channelsRef.current?.querySelector<HTMLElement>("[data-nav-back]");
-    target?.focus();
+    if (face === "modules") {
+      // `true` is a Settings tool's route, which marks the Settings row.
+      modulesRef.current
+        ?.querySelector<HTMLElement>(
+          '[aria-current="page"], [aria-current="true"]',
+        )
+        ?.focus();
+      return;
+    }
+    // Chat's own back arrow when its pane is in the slot. While the slot is
+    // empty (arriving at Chat, with the route still loading) the only arrow is
+    // the placeholder's, which hides the moment the pane lands and would drop
+    // focus to the document; the face itself holds focus instead, and the
+    // next Tab reaches whichever arrow is showing.
+    const channels = channelsRef.current;
+    const back = channels?.querySelector<HTMLElement>(
+      "[data-nav-channels-slot] [data-nav-back]",
+    );
+    (back ?? channels)?.focus();
   }, [face]);
 
   const showingChannels = face === "channels";
@@ -202,26 +214,30 @@ export function NavColumn({
         isCollapsed ? "w-14" : "w-60",
       )}
     >
-      <div
-        className={cn(
-          "box-border min-h-12 shrink-0 border-b border-border px-2 pt-1",
-          isCollapsed && "flex justify-center",
-        )}
-      >
+      {/*
+        Not a centering flex box in the rail: the chapter row fills the band's
+        40px and centers its own crest, and the recovery card, which is 200px
+        wide whatever the rail says, must overflow to the right, into view,
+        not to both sides.
+      */}
+      <div className="box-border min-h-12 shrink-0 border-b border-border px-2 pt-1">
         <ChapterNavHeader collapsed={isCollapsed} />
       </div>
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {/*
           The channels face is mounted on every route, out of view and inert
           off `/chat`, so arriving at Chat slides it in rather than swapping
-          the column, and chat's pane has its slot from the first frame.
+          the column, and chat's pane has its slot from the first frame. It
+          takes focus itself (`tabIndex={-1}`) only from the effect above.
         */}
         <div
           ref={channelsRef}
           inert={!showingChannels}
+          tabIndex={-1}
           style={SLIDE_STYLE}
           className={cn(
             SLIDE,
+            "outline-none",
             showingChannels ? "translate-x-0" : "translate-x-full opacity-0",
           )}
         >
@@ -230,17 +246,26 @@ export function NavColumn({
             data-nav-channels-slot=""
             className="peer flex min-h-0 flex-1 flex-col empty:hidden"
           />
-          <div className="hidden min-h-0 flex-1 flex-col peer-empty:flex">
-            <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
-              <NavBackButton onClick={onShowModules} />
-              <span className="text-sm font-semibold text-foreground">
-                Channels
-              </span>
+          {/*
+            The placeholder exists on `/chat` only. Off it, the slot is always
+            empty, and a mounted placeholder would keep the skeleton's shimmer
+            animating out of view on every route, and would be what slides out
+            when leaving Chat from the channels (chat's pane unmounts with the
+            route, before the slide starts).
+          */}
+          {onChat ? (
+            <div className="hidden min-h-0 flex-1 flex-col peer-empty:flex">
+              <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
+                <NavBackButton onClick={onShowModules} />
+                <span className="text-sm font-semibold text-foreground">
+                  Channels
+                </span>
+              </div>
+              <div aria-hidden="true" className="p-2">
+                <ChannelListSkeleton />
+              </div>
             </div>
-            <div aria-hidden="true" className="p-2">
-              <ChannelListSkeleton />
-            </div>
-          </div>
+          ) : null}
         </div>
         <div
           ref={modulesRef}

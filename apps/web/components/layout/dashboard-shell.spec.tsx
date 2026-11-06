@@ -1,4 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
+import { createPortal } from "react-dom";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 
 /*
@@ -23,8 +24,10 @@ const {
   mockUnread,
   mockLevels,
   mockChannels,
+  unreadReads,
 } = vi.hoisted(() => ({
   mockPathname: { value: "/events" },
+  unreadReads: { count: 0 },
   mockUnread: {
     value: [] as {
       channel_id: string;
@@ -52,7 +55,10 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     // The real rules for which counts mean "unread" and which get past a mute.
     sidebarUnreadCounts: actual.sidebarUnreadCounts,
     countsAddressMember: actual.countsAddressMember,
-    useChannelUnreadCounts: () => ({ data: mockUnread.value, isError: false }),
+    useChannelUnreadCounts: () => {
+      unreadReads.count += 1;
+      return { data: mockUnread.value, isError: false };
+    },
     useChannelNotificationPreferences: () => ({
       data: mockLevels.value,
       isError: false,
@@ -110,6 +116,7 @@ afterEach(() => {
   mockLevels.value = [];
   mockChannels.value = [];
   mockChapter.value = undefined;
+  unreadReads.count = 0;
 });
 
 /** Stands in for the back arrow ChatShell's own pane puts beside "Channels". */
@@ -510,6 +517,37 @@ describe("DashboardShell", () => {
       const chatRow = within(nav).getByRole("button", { name: /^Chat/ });
       expect(document.activeElement).toBe(chatRow);
 
+      // With no pane the placeholder's arrow is the only one, and it hides
+      // the moment a pane lands, so the face itself takes focus; the next Tab
+      // reaches whichever arrow is showing.
+      fireEvent.click(chatRow);
+      expect(document.activeElement).toBe(back.closest("[tabindex='-1']"));
+    });
+
+    it("hands focus to chat's own back arrow once its pane is in the slot", () => {
+      mockPathname.value = "/chat";
+      function Pane() {
+        const navFace = useNavFace();
+        if (!navFace?.channelsSlot) return null;
+        return createPortal(
+          <button type="button" data-nav-back="" onClick={navFace.showModules}>
+            Pane back arrow
+          </button>,
+          navFace.channelsSlot,
+        );
+      }
+      render(
+        <DashboardShell>
+          <Pane />
+        </DashboardShell>,
+      );
+      const back = screen.getByRole("button", { name: "Pane back arrow" });
+      back.focus();
+      fireEvent.click(back);
+      const chatRow = within(
+        screen.getByRole("navigation", { name: "Primary" }),
+      ).getByRole("button", { name: /^Chat/ });
+      expect(document.activeElement).toBe(chatRow);
       fireEvent.click(chatRow);
       expect(document.activeElement).toBe(back);
     });
@@ -607,9 +645,10 @@ describe("DashboardShell", () => {
       const nav = screen.getByRole("navigation", { name: "Primary" });
       expect(nav.closest("[inert]")).toBeNull();
       expect(screen.getByText("no nav face")).toBeInTheDocument();
-      expect(
-        within(nav).getByRole("link", { name: "Chat" }),
-      ).toHaveAttribute("href", "/chat");
+      expect(within(nav).getByRole("link", { name: "Chat" })).toHaveAttribute(
+        "href",
+        "/chat",
+      );
     });
 
     it("keeps one column across Chat and every other route (Paul, 2026-11-06)", () => {
@@ -620,25 +659,76 @@ describe("DashboardShell", () => {
         <DashboardShell>content</DashboardShell>,
       );
       const column = () =>
-        container.querySelector("[data-nav-channels-slot]")!.closest(
-          ".border-r",
-        ) as HTMLElement;
+        container
+          .querySelector("[data-nav-channels-slot]")!
+          .closest(".border-r") as HTMLElement;
       const switcher = () =>
         screen.getByRole("button", { name: /chapter menu/i });
+      // The geometry the jump was made of: the 48px hairlined band, and the
+      // modules face with no top padding of its own, so the first row sits
+      // 52px down. Checked on every route, since a per-route class is how it
+      // could come back.
+      const expectGeometry = () => {
+        expect(column().className).toContain("w-60");
+        const band = switcher().closest(".border-b") as HTMLElement;
+        expect(band.className).toMatch(/\bmin-h-12\b/);
+        expect(band.className).toMatch(/\bpt-1\b/);
+        const face = screen.getByRole("navigation", { name: "Primary" })
+          .parentElement!.parentElement!;
+        expect(face.className).toMatch(/\bpt-0\b/);
+      };
       const before = { column: column(), switcher: switcher() };
-      expect(before.column.className).toContain("w-60");
+      expectGeometry();
 
       mockPathname.value = "/chat";
       rerender(<DashboardShell>content</DashboardShell>);
       // The same nodes: nothing was unmounted, so nothing can jump.
       expect(column()).toBe(before.column);
       expect(switcher()).toBe(before.switcher);
-      expect(column().className).toContain("w-60");
+      expectGeometry();
 
       mockPathname.value = "/tasks";
       rerender(<DashboardShell>content</DashboardShell>);
       expect(column()).toBe(before.column);
       expect(switcher()).toBe(before.switcher);
+      expectGeometry();
+    });
+
+    it("reads Chat's unread counts on /chat only, and draws no placeholder elsewhere", () => {
+      mockPathname.value = "/events";
+      const { rerender } = render(<DashboardShell>content</DashboardShell>);
+      expect(unreadReads.count).toBe(0);
+      // The placeholder's skeleton would shimmer out of view on every route.
+      expect(
+        screen.queryByRole("button", { name: "Back to menu" }),
+      ).not.toBeInTheDocument();
+
+      mockPathname.value = "/chat";
+      rerender(<DashboardShell>content</DashboardShell>);
+      expect(unreadReads.count).toBeGreaterThan(0);
+    });
+
+    it("arriving at Chat with focus in the nav keeps it in the column, not on a placeholder", () => {
+      mockPathname.value = "/events";
+      const { container, rerender } = render(
+        <DashboardShell>content</DashboardShell>,
+      );
+      // Browser Back to Chat while a row other than Chat's has focus (the
+      // Chat row itself turns from a link into a button on arrival, so its
+      // focus is gone before the face changes).
+      within(screen.getByRole("navigation", { name: "Primary" }))
+        .getByRole("link", { name: "Tasks" })
+        .focus();
+
+      // Chat's route is still loading: the slot is empty and only the
+      // placeholder's arrow exists, which hides once the pane lands.
+      mockPathname.value = "/chat";
+      rerender(<DashboardShell>content</DashboardShell>);
+      const face = container.querySelector(
+        "[data-nav-channels-slot]",
+      )!.parentElement!;
+      expect(document.activeElement).toBe(face);
+      expect(face.closest("[inert]")).toBeNull();
     });
 
     it("lets the rail apply off Chat only", () => {
@@ -647,9 +737,9 @@ describe("DashboardShell", () => {
         <DashboardShell defaultNavCollapsed>content</DashboardShell>,
       );
       const column = () =>
-        container.querySelector("[data-nav-channels-slot]")!.closest(
-          ".border-r",
-        ) as HTMLElement;
+        container
+          .querySelector("[data-nav-channels-slot]")!
+          .closest(".border-r") as HTMLElement;
       expect(column().className).toContain("w-14");
 
       mockPathname.value = "/chat";
