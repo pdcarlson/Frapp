@@ -368,6 +368,13 @@ vi.mock("@gorhom/bottom-sheet", () => ({
   BottomSheetFlatList: "BottomSheetFlatList",
 }));
 
+// A native module: a string stand-in for the iOS picker, and the Android
+// dialog's imperative opener as a spy a spec can drive.
+vi.mock("@react-native-community/datetimepicker", () => ({
+  default: "DateTimePicker",
+  DateTimePickerAndroid: { open: vi.fn(), dismiss: vi.fn() },
+}));
+
 vi.mock("expo-web-browser", () => ({
   openBrowserAsync: vi.fn().mockResolvedValue({ type: "dismiss" }),
 }));

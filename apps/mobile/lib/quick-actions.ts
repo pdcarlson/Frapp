@@ -67,12 +67,6 @@ export type QuickActionAccess = {
   permissions: readonly string[];
   /** The chapter's `enabled_modules`, once read. Unread counts as on. */
   enabledModules: Record<string, boolean> | null | undefined;
-  /**
-   * Whether this build can open New event. It arrives with the mobile event
-   * sheet, so until then the action stays out of the panel rather than
-   * leading nowhere.
-   */
-  canOpenNewEvent: boolean;
 };
 
 /**
@@ -84,16 +78,13 @@ export type QuickActionAccess = {
 export function availableQuickActions({
   permissions,
   enabledModules,
-  canOpenNewEvent,
 }: QuickActionAccess): QuickActionKey[] {
   const on = (key: string) => isModuleEnabled(enabledModules, key);
   const allowed: Record<QuickActionKey, boolean> = {
     // The event sheet's own gate: creating reads the roster, which the events
     // controller guards with members:view.
     newEvent:
-      canOpenNewEvent &&
-      on("events") &&
-      canAll(["events:create", "members:view"], permissions),
+      on("events") && canAll(["events:create", "members:view"], permissions),
     newTask: on("tasks") && can("tasks:manage", permissions),
     // The Directory lists the roster (`GET /v1/members`, `members:view`).
     message: can("members:view", permissions),

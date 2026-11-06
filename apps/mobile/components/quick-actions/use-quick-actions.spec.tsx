@@ -33,11 +33,7 @@ vi.mock("@/lib/quick-actions", async (importOriginal) => ({
   writeSavedQuickActions: state.write,
 }));
 
-import {
-  NEW_EVENT_IN_PANEL,
-  type QuickActionsState,
-  useQuickActions,
-} from "./use-quick-actions";
+import { type QuickActionsState, useQuickActions } from "./use-quick-actions";
 
 let latest!: QuickActionsState;
 const capture = (value: QuickActionsState) => {
@@ -73,15 +69,18 @@ beforeEach(() => {
 });
 
 describe("useQuickActions", () => {
-  it("keeps New event out of this build", () => {
-    expect(NEW_EVENT_IN_PANEL).toBe(false);
+  it("offers New event to an officer who can create events", () => {
     render();
+    expect(latest.available).toContain("newEvent");
+    state.permissions = ["events:create"];
+    render();
+    // The events controller also guards create with members:view.
     expect(latest.available).not.toContain("newEvent");
   });
 
   it("shows the saved arrangement once it is read", async () => {
     render();
-    expect(latest.shown[0]).toBe("newTask");
+    expect(latest.shown[0]).toBe("newEvent");
     await settle("chapter-1", ["study", "message"]);
     expect(latest.shown).toEqual(["study", "message"]);
   });

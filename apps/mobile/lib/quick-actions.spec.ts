@@ -28,12 +28,11 @@ import {
 const OFFICER = ["*"];
 
 describe("which actions a member can use", () => {
-  it("gives an officer every action this build can open", () => {
+  it("gives an officer every action", () => {
     expect(
       availableQuickActions({
         permissions: OFFICER,
         enabledModules: undefined,
-        canOpenNewEvent: true,
       }),
     ).toEqual([
       "newEvent",
@@ -52,7 +51,6 @@ describe("which actions a member can use", () => {
       availableQuickActions({
         permissions: ["members:view", "service:log"],
         enabledModules: undefined,
-        canOpenNewEvent: true,
       }),
     ).toEqual(["message", "checkIn", "logHours", "study"]);
   });
@@ -62,7 +60,6 @@ describe("which actions a member can use", () => {
       availableQuickActions({
         permissions,
         enabledModules: undefined,
-        canOpenNewEvent: false,
       });
     // New Member and Alumni hold members:view but not service:log.
     expect(keys(["members:view"])).toEqual(["message", "checkIn", "study"]);
@@ -74,7 +71,6 @@ describe("which actions a member can use", () => {
     const officer = availableQuickActions({
       permissions: ["events:update", "events:create"],
       enabledModules: undefined,
-      canOpenNewEvent: true,
     });
     expect(officer).toContain("checkIn");
     expect(officer).toContain("hostCheckIn");
@@ -84,14 +80,12 @@ describe("which actions a member can use", () => {
     const keys = availableQuickActions({
       permissions: OFFICER,
       enabledModules: { events: false, hours: false, documents: false },
-      canOpenNewEvent: true,
     });
     expect(keys).toEqual(["newTask", "message"]);
     expect(
       availableQuickActions({
         permissions: OFFICER,
         enabledModules: { tasks: false },
-        canOpenNewEvent: true,
       }),
     ).not.toContain("newTask");
   });
@@ -101,7 +95,6 @@ describe("which actions a member can use", () => {
       availableQuickActions({
         permissions: ["members:view"],
         enabledModules: modules,
-        canOpenNewEvent: false,
       });
     expect(keys({ geofences: false })).not.toContain("study");
     expect(keys({ hours: false })).not.toContain("study");
@@ -113,20 +106,9 @@ describe("which actions a member can use", () => {
       availableQuickActions({
         permissions,
         enabledModules: undefined,
-        canOpenNewEvent: true,
       });
     expect(keys(["events:create"])).not.toContain("newEvent");
     expect(keys(["events:create", "members:view"])).toContain("newEvent");
-  });
-
-  it("keeps New event out until this build can open it", () => {
-    expect(
-      availableQuickActions({
-        permissions: OFFICER,
-        enabledModules: undefined,
-        canOpenNewEvent: false,
-      }),
-    ).not.toContain("newEvent");
   });
 });
 
@@ -134,7 +116,6 @@ describe("what the panel shows", () => {
   const officer = availableQuickActions({
     permissions: OFFICER,
     enabledModules: undefined,
-    canOpenNewEvent: true,
   });
 
   it("starts an officer on the first six", () => {
@@ -152,7 +133,6 @@ describe("what the panel shows", () => {
     const member = availableQuickActions({
       permissions: ["members:view", "service:log"],
       enabledModules: undefined,
-      canOpenNewEvent: true,
     });
     expect(resolveQuickActions(null, member)).toEqual([
       "message",

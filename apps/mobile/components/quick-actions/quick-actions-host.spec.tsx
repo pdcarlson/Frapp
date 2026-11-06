@@ -33,6 +33,9 @@ function sheet(name: string) {
     },
   );
 }
+vi.mock("@/components/events/new-event-sheet", () => ({
+  NewEventSheet: sheet("NewEventSheet"),
+}));
 vi.mock("@/components/tasks/new-task-sheet", () => ({
   NewTaskSheet: sheet("NewTaskSheet"),
 }));
@@ -108,16 +111,22 @@ describe("the sheets", () => {
     expect(data.present).toHaveBeenCalledTimes(2);
   });
 
-  it("opens Log hours and Upload the same way", () => {
+  it("opens New event, Log hours and Upload the same way", () => {
     const tree = render();
+    run("newEvent");
     run("logHours");
     run("upload");
+    expect(hosts(tree, "NewEventSheet")).toHaveLength(1);
     expect(hosts(tree, "LogHoursSheet")).toHaveLength(1);
     expect(hosts(tree, "UploadDocumentSheet")).toHaveLength(1);
     expect(data.present.mock.calls).toEqual([
+      ["NewEventSheet"],
       ["LogHoursSheet"],
       ["UploadDocumentSheet"],
     ]);
+    // New event is a sheet over the screen the member is on, not a trip to
+    // Events.
+    expect(router.navigate).not.toHaveBeenCalled();
   });
 
   it("starts the sheets over in another chapter", () => {
@@ -175,8 +184,11 @@ describe("a confirmation after a create", () => {
     expect(latest.notice).toBe("Added to your tasks.");
   });
 
-  it("confirms logged hours and an upload", () => {
+  it("confirms a new event, logged hours and an upload", () => {
     const tree = render();
+    run("newEvent");
+    act(() => (sheetProps(tree, "NewEventSheet").onCreated as () => void)());
+    expect(latest.notice).toBe("Event added.");
     run("logHours");
     act(() => (sheetProps(tree, "LogHoursSheet").onLogged as () => void)());
     expect(latest.notice).toBe("Hours logged.");

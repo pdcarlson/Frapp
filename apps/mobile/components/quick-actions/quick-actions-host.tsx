@@ -13,6 +13,7 @@ import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useActiveChapterId, useDocumentFolders, useEvents } from "@repo/hooks";
 import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
+import { NewEventSheet } from "@/components/events/new-event-sheet";
 import { reportRouteError } from "@/components/route-error";
 import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
@@ -21,7 +22,7 @@ import { selectEventRows } from "@/lib/events/select";
 import { selectDocumentFolders } from "@/lib/more/documents";
 import type { QuickActionKey } from "@/lib/quick-actions";
 
-type SheetKey = "newTask" | "logHours" | "upload";
+type SheetKey = "newEvent" | "newTask" | "logHours" | "upload";
 
 const NONE: ReadonlySet<SheetKey> = new Set();
 
@@ -58,11 +59,17 @@ export function useQuickActionsHost({
   const chapterId = useActiveChapterId() ?? null;
   const eventsQuery = useEvents({ enabled: events });
 
+  const eventRef = useRef<BottomSheetModal>(null);
   const taskRef = useRef<BottomSheetModal>(null);
   const hoursRef = useRef<BottomSheetModal>(null);
   const uploadRef = useRef<BottomSheetModal>(null);
   const refs: Record<SheetKey, RefObject<BottomSheetModal | null>> = useMemo(
-    () => ({ newTask: taskRef, logHours: hoursRef, upload: uploadRef }),
+    () => ({
+      newEvent: eventRef,
+      newTask: taskRef,
+      logHours: hoursRef,
+      upload: uploadRef,
+    }),
     [],
   );
 
@@ -107,8 +114,9 @@ export function useQuickActionsHost({
     [],
   );
 
-  // Log hours' date chips read this clock: re-read on each open and when the
-  // app comes back, as Service hours does, so "Today" is today.
+  // Log hours' date chips and New event's default start read this clock:
+  // re-read on each open and when the app comes back, as Service hours does,
+  // so "Today" is today.
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (next) => {
@@ -140,6 +148,7 @@ export function useQuickActionsHost({
   const run = useCallback(
     (key: QuickActionKey) => {
       switch (key) {
+        case "newEvent":
         case "newTask":
         case "logHours":
         case "upload":
@@ -185,11 +194,6 @@ export function useQuickActionsHost({
           }
           return;
         }
-        case "newEvent":
-          // Not in the panel until the mobile event sheet lands
-          // (`NEW_EVENT_IN_PANEL`); Events is where it will live.
-          router.navigate("/events");
-          return;
       }
     },
     [eventsQuery.data, openSheet, router],
@@ -197,6 +201,18 @@ export function useQuickActionsHost({
 
   const sheets = (
     <>
+      {mounted.has("newEvent") ? (
+        <SheetBoundary
+          key={`event-${chapterId ?? "none"}`}
+          onError={() => dropSheet("newEvent")}
+        >
+          <NewEventSheet
+            ref={eventRef}
+            now={now}
+            onCreated={() => confirm("Event added.")}
+          />
+        </SheetBoundary>
+      ) : null}
       {mounted.has("newTask") ? (
         <SheetBoundary
           key={`task-${chapterId ?? "none"}`}

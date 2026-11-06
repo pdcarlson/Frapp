@@ -14,13 +14,6 @@ import {
   writeSavedQuickActions,
 } from "@/lib/quick-actions";
 
-/**
- * Whether this build can open New event from the panel. It turns on with the
- * mobile event sheet ("Let officers add events on mobile"), which mounts in
- * `QuickActionsHost` beside the others.
- */
-export const NEW_EVENT_IN_PANEL = false;
-
 export type QuickActionsState = {
   /** What the panel shows, in order. */
   shown: QuickActionKey[];
@@ -59,12 +52,7 @@ export function useQuickActions(): QuickActionsState {
   const chapterId = useActiveChapterId() ?? null;
 
   const available = useMemo(
-    () =>
-      availableQuickActions({
-        permissions,
-        enabledModules,
-        canOpenNewEvent: NEW_EVENT_IN_PANEL,
-      }),
+    () => availableQuickActions({ permissions, enabledModules }),
     [permissions, enabledModules],
   );
 
