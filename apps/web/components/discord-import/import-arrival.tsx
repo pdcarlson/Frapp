@@ -52,27 +52,45 @@ function reducedMotion(): boolean {
 }
 
 /**
- * Whether the landing is playing now. It plays on a completed import this
- * browser hasn't landed yet, unless the person asked for reduced motion,
- * from the first frame (the finished state mounts on the client, once the
- * import has loaded) and stops after `signatureMoment.totalMs`. It is
+ * How long after an import finishes its landing may still play: the window
+ * in which "it just landed" is true (the finish notification brings the
+ * admin here). An import that finished before it, such as every import
+ * already done on the day this shipped, rests from the first frame.
+ */
+export const ARRIVAL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+function recent(completedAt: string | null | undefined, now: number): boolean {
+  if (!completedAt) return false;
+  const at = Date.parse(completedAt);
+  return Number.isFinite(at) && now - at <= ARRIVAL_WINDOW_MS;
+}
+
+/**
+ * Whether the landing is playing now. It may play on an import that
+ * completed within `ARRIVAL_WINDOW_MS` and that this browser hasn't landed
+ * yet, unless the person asked for reduced motion; that is settled once,
+ * when the finished state mounts (on the client, once the import has
+ * loaded). It starts when `ready` (everything it lands is loaded, so nothing
+ * arrives mid-moment) and stops `signatureMoment.totalMs` later. It is
  * remembered as played only once it has run to the end, so leaving mid-way
  * plays it again next time.
  */
-export function useArrival(row: ImportRow): boolean {
-  const completed = row.status === "completed";
-  const [playing, setPlaying] = useState(
+export function useArrival(row: ImportRow, ready: boolean): boolean {
+  const [eligible] = useState(
     () =>
-      completed &&
+      row.status === "completed" &&
       typeof window !== "undefined" &&
+      recent(row.completed_at, Date.now()) &&
       !reducedMotion() &&
       !seen(row.id),
   );
+  const [over, setOver] = useState(false);
+  const playing = eligible && ready && !over;
   useEffect(() => {
     if (!playing) return;
     const timer = window.setTimeout(() => {
       remember(row.id);
-      setPlaying(false);
+      setOver(true);
     }, signatureMoment.totalMs);
     return () => window.clearTimeout(timer);
   }, [playing, row.id]);
@@ -116,9 +134,10 @@ export function ArrivalMark({ playing }: { playing: boolean }) {
 }
 
 /**
- * The accent passing once across what it sits in (a `relative` box with its
- * overflow hidden), as the count lands. Nothing is left behind: at rest the
- * figures are neutral, as foundations §6 has numbers.
+ * The accent passing once behind what it sits in (an `isolate`d `relative`
+ * box with its overflow hidden, so `-z-10` keeps it under the figures'
+ * text), as the count lands. Nothing is left behind: at rest the figures
+ * are neutral (foundations §6 § A signature moment's accent).
  */
 export function ArrivalSweep({ playing }: { playing: boolean }) {
   if (!playing) return null;
@@ -126,7 +145,7 @@ export function ArrivalSweep({ playing }: { playing: boolean }) {
     <span
       aria-hidden="true"
       data-testid="discord-import-sweep"
-      className="pointer-events-none absolute inset-0 hidden bg-gradient-to-r from-transparent via-accent-subtle to-transparent motion-safe:block motion-safe:animate-signature-sweep"
+      className="pointer-events-none absolute inset-0 -z-10 hidden bg-gradient-to-r from-transparent via-accent-subtle to-transparent motion-safe:block motion-safe:animate-signature-sweep"
       style={{ animationDelay: `${signatureMoment.countMs}ms` }}
     />
   );
@@ -141,8 +160,7 @@ function described(tile: CategoryTile): string {
 /**
  * What came over, by Discord category: the moment's list. Each row drops in
  * after the one above it; past `signatureMoment.maxStaggered`, the rest land
- * with the last. Categories that arrive after the moment has ended are drawn
- * in place.
+ * with the last.
  */
 export function ArrivalCategories({
   tiles,

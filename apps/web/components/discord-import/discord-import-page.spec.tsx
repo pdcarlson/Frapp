@@ -812,7 +812,8 @@ describe("DiscordImportPage — the landing (#3493)", () => {
     imported_messages: 145574,
     channels_total: 1146,
     channels_done: 1146,
-    completed_at: "2026-09-30T20:12:00Z",
+    // It just finished: the landing plays only within a week of that.
+    completed_at: new Date(Date.now() - 60_000).toISOString(),
   };
   const categories = [
     { category: null, channels: 2, threads: 0, done: 2, failed: 0 },
@@ -882,16 +883,35 @@ describe("DiscordImportPage — the landing (#3493)", () => {
       "60ms",
       "120ms",
     ]);
-    expect(screen.getByTestId("discord-import-sweep")).toBeInTheDocument();
-    expect(
-      container.querySelector(".motion-safe\\:animate-signature-pop"),
-    ).not.toBeNull();
+    // The mark and the sweep wait for the count to land.
+    const sweep = screen.getByTestId("discord-import-sweep");
+    expect(sweep.style.animationDelay).toBe("1200ms");
+    const mark = container.querySelector(
+      ".motion-safe\\:animate-signature-pop",
+    ) as HTMLElement | null;
+    expect(mark?.style.animationDelay).toBe("1200ms");
     // The count starts from nothing on screen; a reader gets the total.
     expect(messagesShown()).toBe("0");
     expect(screen.getByText(n(145574))).toHaveClass("sr-only");
 
     act(() => {
-      vi.advanceTimersByTime(1800);
+      vi.advanceTimersByTime(600);
+    });
+    const midway = Number(messagesShown()?.replace(/,/g, ""));
+    expect(midway).toBeGreaterThan(0);
+    expect(midway).toBeLessThan(145574);
+
+    act(() => {
+      vi.advanceTimersByTime(1199);
+    });
+    // Still playing at 1,799ms.
+    expect(screen.getByTestId("discord-import-sweep")).toBeInTheDocument();
+    expect(
+      window.localStorage.getItem("frapp:discord-import-landed:big"),
+    ).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
     });
 
     expect(screen.queryByTestId("discord-import-sweep")).toBeNull();
@@ -902,6 +922,59 @@ describe("DiscordImportPage — the landing (#3493)", () => {
     expect(window.localStorage.getItem("frapp:discord-import-landed:big")).toBe(
       "1",
     );
+  });
+
+  it("waits for the categories, so none arrive mid-moment", () => {
+    vi.useFakeTimers();
+    reducedMotion(false);
+    hooks.progress.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    const { container, rerender } = render(<DiscordImportPage />);
+    expect(container.innerHTML).not.toContain("animate-signature");
+
+    hooks.progress.mockReturnValue({
+      data: { ...progress, categories },
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    rerender(<DiscordImportPage />);
+    expect(screen.getByTestId("discord-import-sweep")).toBeInTheDocument();
+  });
+
+  it("plays again next time when the person leaves mid-way", () => {
+    vi.useFakeTimers();
+    reducedMotion(false);
+    const { unmount } = render(<DiscordImportPage />);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    unmount();
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(
+      window.localStorage.getItem("frapp:discord-import-landed:big"),
+    ).toBeNull();
+  });
+
+  it("rests on an import that finished more than a week ago", () => {
+    reducedMotion(false);
+    hooks.rows = [
+      {
+        ...done,
+        completed_at: new Date(Date.now() - 8 * 86_400_000).toISOString(),
+      },
+    ];
+    const { container } = render(<DiscordImportPage />);
+    expect(container.innerHTML).not.toContain("animate-signature");
+    expect(
+      screen.getByRole("heading", { name: "By Discord category" }),
+    ).toBeInTheDocument();
   });
 
   it("shows the frame it lands on under reduced motion", () => {

@@ -595,9 +595,10 @@ deliberate race. The page shows that one import in the state it is in:
   warnings the import keeps; and Delete import. A deletion that failed
   part-way also leaves the import `failed`, and is titled as a failed
   deletion, with no Resume. A completed bot import also lists what came
-  over by Discord category. The first time a browser shows a completed
-  import, it plays the landing, the import's signature moment (about 1.8s,
-  never with reduced motion on), and then rests on its final frame; the
+  over by Discord category. A completed import shown within a week of
+  finishing plays the landing, the import's signature moment (about 1.8s,
+  never with reduced motion on), until it has played to the end once in
+  that browser; otherwise the page rests on the moment's final frame. The
   rules and the catalog are in
   [`../../ui/design-system/README.md`](../../ui/design-system/README.md#signature-moments)
   § Signature moments (2026-11-06, #3493).

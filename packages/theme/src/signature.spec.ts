@@ -3,6 +3,16 @@ import { motionTokens } from "./motion";
 import { countUpValue, settleProgress, signatureMoment } from "./signature";
 
 describe("signature moment", () => {
+  it("keeps the budget README §7 states", () => {
+    expect(signatureMoment).toEqual({
+      totalMs: 1800,
+      staggerMs: 60,
+      maxStaggered: 8,
+      countMs: 1200,
+    });
+    expect(motionTokens.duration.signature).toBe(520);
+  });
+
   it("lands each piece inside the whole moment", () => {
     const { totalMs, staggerMs, maxStaggered, countMs } = signatureMoment;
     const lastLanding =

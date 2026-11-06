@@ -371,13 +371,14 @@ export function ImportFinished({
   // read lands, or on an upload, the row's combined count stands in. One
   // stopped part-way counts only what it got through, which the categories
   // don't split, so nothing is read for it.
-  const categories = (
-    useBotImportProgress(row, false, done).data as ImportProgress | undefined
-  )?.categories;
+  const progress = useBotImportProgress(row, false, done);
+  const categories = (progress.data as ImportProgress | undefined)?.categories;
   const totals = done && categories?.length ? importTotals(categories) : null;
   // The landing (#3493): once, on a completed import this browser hasn't
   // landed yet. Every other time this is the frame it lands on.
-  const playing = useArrival(row);
+  // A bot import's landing waits for its categories, so none arrive
+  // mid-moment and the figures don't regroup under it; an upload has none.
+  const playing = useArrival(row, row.source !== "bot" || !progress.isPending);
   const messages = useCountUp(row.imported_messages, playing);
   const tiles = done && categories ? categoryTiles(categories) : [];
   return (
@@ -408,7 +409,7 @@ export function ImportFinished({
         ) : null}
       </div>
 
-      <div className="relative overflow-hidden rounded-lg">
+      <div className="relative isolate overflow-hidden rounded-lg">
         <ArrivalSweep playing={playing} />
         <dl
           className={cn(
