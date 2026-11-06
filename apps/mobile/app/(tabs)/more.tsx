@@ -25,6 +25,7 @@ import {
   DocumentsGlyph,
   DuesGlyph,
   HostCheckInGlyph,
+  InviteGlyph,
   ServiceGlyph,
   SettingsGlyph,
   StudyGlyph,
@@ -79,6 +80,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * section renders for nobody, Presidents included. It fails closed, which is
  * the right direction.
  *
+ * It holds Invite members (`members:invite`, owner ask 2026-11-06: the phone
+ * had no way to invite) and Host check-in (`events:update`), each row drawn
+ * only for a role that holds its permission, and the section only when one
+ * row is.
+ *
  * Canvas labels the section "ADMIN · PRESIDENT", the viewer's role name. No
  * role string is readable on mobile (`/v1/users/me/permissions` returns
  * permissions only), so it reads "Admin", and the profile card shows no role
@@ -132,6 +138,8 @@ export default function MoreScreen() {
   // grant is the wildcard `*`, so a membership test would hide the Admin
   // section from exactly the people who need it.
   const canHost = can("events:update", permissions);
+  // Every invite route checks `members:invite`; by default the President's.
+  const canInvite = can("members:invite", permissions);
 
   // The setup gate needs to tell "still loading" from "holds nothing", which
   // `usePermissionList` (`[]` while loading) can't, so it reads the query.
@@ -300,39 +308,49 @@ export default function MoreScreen() {
         )}
       </ListSection>
 
-      {canHost ? (
+      {canHost || canInvite ? (
         <>
           <SectionHeader>Admin</SectionHeader>
           <ListSection>
-            <ListRow
-              label="Host check-in"
-              leading={<HostCheckInGlyph color={glyphColor} />}
-              accessibilityValue={
-                nextEvent ? nextEvent.name : "No upcoming event"
-              }
-              trailing={
-                <Text numberOfLines={1} style={styles.eventName}>
-                  {nextEvent ? nextEvent.name : "No upcoming event"}
-                </Text>
-              }
-              disabled={!nextEvent}
-              // A disabled row's hint is not what it would open, which it
-              // cannot do; its value already says why.
-              accessibilityHint={
-                nextEvent
-                  ? "Opens the host check-in display for the next event."
-                  : undefined
-              }
-              onPress={() => {
-                if (!nextEvent) return;
-                // Object form: the only navigation shape `lib/routes.spec.ts`
-                // matches when a param is involved.
-                router.push({
-                  pathname: "/host-check-in",
-                  params: { eventId: nextEvent.id },
-                });
-              }}
-            />
+            {canInvite ? (
+              <ListRow
+                label="Invite members"
+                leading={<InviteGlyph color={glyphColor} />}
+                accessibilityHint="Opens invite links to share with new members."
+                onPress={() => router.push("/invite")}
+              />
+            ) : null}
+            {canHost ? (
+              <ListRow
+                label="Host check-in"
+                leading={<HostCheckInGlyph color={glyphColor} />}
+                accessibilityValue={
+                  nextEvent ? nextEvent.name : "No upcoming event"
+                }
+                trailing={
+                  <Text numberOfLines={1} style={styles.eventName}>
+                    {nextEvent ? nextEvent.name : "No upcoming event"}
+                  </Text>
+                }
+                disabled={!nextEvent}
+                // A disabled row's hint is not what it would open, which it
+                // cannot do; its value already says why.
+                accessibilityHint={
+                  nextEvent
+                    ? "Opens the host check-in display for the next event."
+                    : undefined
+                }
+                onPress={() => {
+                  if (!nextEvent) return;
+                  // Object form: the only navigation shape `lib/routes.spec.ts`
+                  // matches when a param is involved.
+                  router.push({
+                    pathname: "/host-check-in",
+                    params: { eventId: nextEvent.id },
+                  });
+                }}
+              />
+            ) : null}
           </ListSection>
         </>
       ) : null}

@@ -5,8 +5,9 @@ import { serverMessageOf } from "@repo/api-sdk";
 import { inviteTokenOf, webJoinUrl } from "./invite-link";
 
 /**
- * The setup invite step's links (`spec/behavior/onboarding.md`, owner pick
- * 2026-11-06 "Share first").
+ * Share-first invite links: setup's invite step (`spec/behavior/onboarding.md`,
+ * owner pick 2026-11-06 "Share first") and, inside a chapter, the Invite
+ * members screen (`app/(tabs)/invite.tsx`) draw the same flow from here.
  *
  * An invite lets one person in and lapses after a day, so every press of
  * Share invite mints a fresh link and opens the share sheet with it. The
@@ -65,11 +66,19 @@ export function usedInviteTokens(list: unknown): Set<string> {
 export function useInviteShares({
   active,
   chapterName,
+  role,
   onError,
 }: {
   /** True while the invite step is on screen. */
   active: boolean;
   chapterName: string;
+  /**
+   * The role joining grants, by name. Setup names {@link INVITE_ROLE}; the
+   * Invite members screen leaves it out, so the server grants the chapter's
+   * configured default invite role (`default_invite_role_id`, #422), as web's
+   * invite dialog does.
+   */
+  role?: string;
   onError: (message: string | null) => void;
 }) {
   const createInvite = useCreateInvite();
@@ -97,7 +106,7 @@ export function useInviteShares({
     const run = (async () => {
       try {
         const token = inviteTokenOf(
-          await createInvite.mutateAsync({ role: INVITE_ROLE }),
+          await createInvite.mutateAsync(role ? { role } : {}),
         );
         if (!token) {
           onError("The invite did not return a token. Try again in a moment.");

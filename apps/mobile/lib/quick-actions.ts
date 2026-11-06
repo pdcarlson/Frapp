@@ -12,6 +12,7 @@ import { can, canAll, isModuleEnabled } from "@repo/validation";
 export type QuickActionKey =
   | "newEvent"
   | "newTask"
+  | "invite"
   | "message"
   | "checkIn"
   | "hostCheckIn"
@@ -24,14 +25,17 @@ export const QUICK_ACTION_LIMIT = 6;
 
 /**
  * Every action, in the order a member who never edits the panel sees them.
- * The starting set is the first six of these the member may use, so an
- * officer starts with New event (once this build can open it), New task,
- * Message, Check in, Host check-in and Log hours (Study until then), and a
- * member whose role logs hours with Message, Check in, Log hours and Study.
+ * The starting set is the first six of these the member may use, so a
+ * President starts with New event, New task, Invite, Message, Check in and
+ * Host check-in, and a member whose role logs hours with Message, Check in,
+ * Log hours and Study. Invite sits third so the officer who can invite finds
+ * it on the first open (owner ask 2026-11-06, "I couldn't find a way to
+ * invite new members"); Log hours moves to the Add row for that officer.
  */
 export const QUICK_ACTION_ORDER: readonly QuickActionKey[] = [
   "newEvent",
   "newTask",
+  "invite",
   "message",
   "checkIn",
   "hostCheckIn",
@@ -43,6 +47,7 @@ export const QUICK_ACTION_ORDER: readonly QuickActionKey[] = [
 export const QUICK_ACTION_LABELS: Record<QuickActionKey, string> = {
   newEvent: "New event",
   newTask: "New task",
+  invite: "Invite",
   message: "Message",
   checkIn: "Check in",
   hostCheckIn: "Host check-in",
@@ -55,6 +60,7 @@ export const QUICK_ACTION_LABELS: Record<QuickActionKey, string> = {
 export const QUICK_ACTION_HINTS: Record<QuickActionKey, string> = {
   newEvent: "Opens the new event sheet.",
   newTask: "Opens the new task sheet.",
+  invite: "Opens invite links to share with new members.",
   message: "Opens the directory to pick who to message.",
   checkIn: "Opens check-in for the event happening now.",
   hostCheckIn: "Opens the host check-in display for the next event.",
@@ -86,6 +92,9 @@ export function availableQuickActions({
     newEvent:
       on("events") && canAll(["events:create", "members:view"], permissions),
     newTask: on("tasks") && can("tasks:manage", permissions),
+    // Every invite route (`POST /v1/invites`, `GET /v1/invites`) checks
+    // `members:invite`. Invites have no module switch.
+    invite: can("members:invite", permissions),
     // The Directory lists the roster (`GET /v1/members`, `members:view`).
     message: can("members:view", permissions),
     checkIn: on("events"),

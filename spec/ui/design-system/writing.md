@@ -1066,6 +1066,17 @@ Mobile's first-officer setup, `(auth)/create-chapter.tsx` (#3351). Titles are `S
 | Invite | `Invite your chapter` | `Send each person their own link. A link lets one person in and lasts 24 hours.` No link is ever drawn: a card reads `A new link for each person` over `<host>, good for 24 hours`. The gold primary is `Share invite` with the platform's share mark; each press shares a fresh link under the line `Join <name> on Frapp` (owner pick 2026-11-06, "Share first"). Links shared list under a `Shared` caption, newest first, as `Link <n>` with `Not used yet` or `Joined`. Leaving is the quiet line under the primary: `Skip for now`, then `Go to chat` once a link has gone out. |
 | Invite failed | — | The server's message, else `Couldn't create an invite. You can invite members from the web dashboard.` When the share sheet won't open: `Couldn't open the share sheet. Try again, or invite members from the web dashboard.` |
 
+### Invite members (mobile)
+
+`(tabs)/invite.tsx`, setup's invite step inside the chapter (2026-11-06; [`navigation.md` § Inviting members](../mobile/navigation.md#inviting-members)). The body, the card, the `Shared` list and both failure sentences are the setup Invite rows' above, word for word; the share message names the chapter the same way.
+
+| State | Title | Copy |
+|---|---|---|
+| Can invite | `Invite members` | Setup's line, card and list. The primary is `Share invite` with the platform's share mark, in the chapter accent. Its screen-reader hint: `Makes a new link and opens the share sheet.` |
+| Can't invite | `Invite members` | Empty state `Ask an officer for a link` + `Your role can't send invites. An officer who can will send each person their own link.` No button. |
+| Role didn't load | `Invite members` | Error state `Couldn't load your role` + `Whether you can send invites depends on it, so it has to load first.`, with `Try again`. |
+| Doors | — | More's row and the Directory's + read `Invite members`; the quick action reads `Invite`. Each door's hint: `Opens invite links to share with new members.` |
+
 ### Chapter picker (mobile)
 
 `(auth)/chapter-picker.tsx`. When each error shows, and when a failed select leaves instead, is [`screens.md`'s supporting-routes paragraph](../mobile/screens.md)'s.

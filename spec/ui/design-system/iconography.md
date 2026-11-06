@@ -283,8 +283,8 @@ the chapter accent in a back-row slot (2026-11-05).
 | Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply and attachment chips (16px), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px) | Lucide `X` |
 | Edit | `PencilGlyph` | Profile's back row | Lucide `Pencil` |
 | Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | Lucide `CheckCheck` |
-| Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button, in the button's ink | Lucide `Share` |
-| Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px) | Lucide `Link` |
+| Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button and Invite members' accent one, in the button's ink | Lucide `Share` |
+| Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px); Invite members (`(tabs)/invite.tsx`) draws the same card in the chapter accent on its subtle tile | Lucide `Link` |
 
 ### 6.2 Web Dashboard shell (Signet duotone)
 
