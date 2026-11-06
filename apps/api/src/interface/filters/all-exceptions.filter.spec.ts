@@ -559,6 +559,34 @@ describe('AllExceptionsFilter', () => {
     expect(String(logged.error)).toContain('boom');
   });
 
+  it("logs a 5xx's cause beside its stack, without the row values (#3143)", () => {
+    const thrown = new ServiceUnavailableException(
+      'Could not verify your chapter membership right now',
+      {
+        cause: {
+          code: '57014',
+          message: 'canceling statement due to statement timeout',
+          details: 'Key (email)=(a@b.com)',
+        },
+      },
+    );
+
+    new AllExceptionsFilter().catch(thrown, host());
+
+    const logged = JSON.parse(captured.error[0] ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    expect(String(logged.cause)).toContain('statement timeout');
+    expect(captured.error[0]).not.toContain('a@b.com');
+  });
+
+  it('logs no cause field for a 5xx without one', () => {
+    new AllExceptionsFilter().catch(new Error('boom'), host());
+
+    expect(JSON.parse(captured.error[0] ?? '{}')).not.toHaveProperty('cause');
+  });
+
   describe('response body contract (#1020)', () => {
     it("serves a throttled request the guard's sentence, not the framework text (#3142)", () => {
       new AllExceptionsFilter().catch(

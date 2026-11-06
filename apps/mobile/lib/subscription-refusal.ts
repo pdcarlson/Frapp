@@ -22,7 +22,7 @@
  * arms, which for an `incomplete` chapter reads "…complete checkout to use
  * this feature."
  *
- * THE GATE IS WRITES-ONLY. `chapter.guard.ts:211` returns early for
+ * THE GATE IS WRITES-ONLY. `chapter.guard.ts` returns early for
  * `GET/HEAD/OPTIONS`, so reads are never refused and no read surface needs a
  * branch here. A gate state rendered on a *read* error would be dead code for
  * this issue and actively harmful — the 403s that do reach reads are

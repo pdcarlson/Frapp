@@ -12,7 +12,7 @@
  * Two properties this file deliberately keeps:
  *
  * - **Writes only.** The guard returns early for `GET/HEAD/OPTIONS`
- *   (`chapter.guard.ts:211`), so a lapsed chapter can still read everything.
+ *   (`READ_METHODS` in `chapter.guard.ts`), so a lapsed chapter can still read everything.
  *   Callers gate write affordances; read surfaces stay untouched.
  * - **Never a security boundary.** §5 rule 5 — a direct API call bypasses all
  *   of this, and the server gate stays regardless. This exists so the user is
