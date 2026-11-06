@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { backRowView } from "@/test/back-row";
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -118,7 +119,7 @@ describe("Profile back row (#3022)", () => {
     currentUser = user;
     const tree = render();
     // The loaded profile also draws Edit at the far end of the row (#3387).
-    expect(screenText(tree)).toMatch(/^‹ More\n(Edit\n)?Profile/);
+    expect(screenText(tree)).toMatch(/^More\n(Edit\n)?Profile/);
     expectBackRow(tree, "More", "/more");
     tree.unmount();
   });
@@ -161,12 +162,7 @@ describe("Profile Edit (#3387)", () => {
     const [edit] = editControls(tree);
     expect(edit).toBeDefined();
     // Same row as `‹ More`: the back row's own view holds both.
-    const backRow = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityLabel === "Back to More",
-    ).parent!;
-    expect(backRow.findAll((node) => node === edit)).toHaveLength(1);
+    expect(backRowView(tree).findAll((node) => node === edit)).toHaveLength(1);
     // A pencil, not the word (components.md § Icon-only actions), in the
     // back row's own colour: the chapter accent (the mock's), not gold.
     expect(

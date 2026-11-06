@@ -1,12 +1,15 @@
 import { act } from "react";
 import { expect, vi } from "vitest";
 import { useRouter } from "expo-router";
-import type { ReactTestRenderer } from "react-test-renderer";
+import type {
+  ReactTestInstance,
+  ReactTestRenderer,
+} from "react-test-renderer";
 import { drawnText } from "@/test/screen-text";
 
 /**
  * #3022. Asserts a rendered screen draws exactly one back row, that it reads
- * `‹ <label>` with a label naming its destination, and that pressing it goes
+ * `<label>` beside the drawn `‹`, naming its destination, and that pressing it goes
  * to `href` rather than back through history. Shared by the screen specs so
  * each one checks the same three things.
  *
@@ -28,7 +31,7 @@ export function expectBackRow(
   const [row] = rows;
   expect(row!.props.accessibilityRole).toBe("button");
   expect(row!.props.accessibilityLabel).toBe(`Back to ${label}`);
-  expect(drawnText(row!)).toBe(`‹ ${label}`);
+  expect(drawnText(row!)).toBe(label);
 
   const router = vi.mocked(useRouter)();
   vi.mocked(router.navigate).mockClear();
@@ -37,4 +40,21 @@ export function expectBackRow(
   });
   expect(router.navigate).toHaveBeenCalledWith(href);
   expect(router.back).not.toHaveBeenCalled();
+}
+
+/**
+ * The colour of a back row's drawn `‹`: the stroke of the arrow's `Svg`. The
+ * arrow is a glyph, not a character, so a row's accent or house gold lives
+ * there rather than on its text.
+ */
+export function backArrowColor(row: ReactTestInstance): unknown {
+  return row.findByType("Path" as never).parent!.props.stroke;
+}
+
+/** The view that holds a back capsule and its trailing control side by side. */
+export function backRowView(tree: ReactTestRenderer): ReactTestInstance {
+  return tree.root.find(
+    (node) =>
+      (node.type as unknown) === "View" && node.props.testID === "back-row",
+  );
 }
